@@ -1,0 +1,5 @@
+PLEASE: Run code as module
+python -m [path to file separated by dots instead of backslashes]
+ - Note: Do not add .py to the file name
+ - Note: Filepaths are separated by dots. For example EdgeWARN\download\ingest.py -> EdgeWARN.download.ingest
+
