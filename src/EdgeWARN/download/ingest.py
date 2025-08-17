@@ -19,8 +19,7 @@ import numpy as np
 import xarray as xr
 import time
 import warnings
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-import util.file as fs
+from util import file as fs
 
 GOES_GLM_DIR = Path(r"C:\input_data\goes_glm")
 """
