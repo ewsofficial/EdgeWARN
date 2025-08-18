@@ -21,7 +21,7 @@ import util.file as fs
 """
 
 print("EdgeWARN Storm Cell Detection")
-print("Build: 2025-08-17")
+print("Build: 2025-08-17 Debugged")
 print("NOT FOR EXTERNAL USE")
 time.sleep(1)
 
