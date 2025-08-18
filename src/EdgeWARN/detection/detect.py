@@ -462,7 +462,11 @@ def detect_cells(filepath, lat_limits, lon_limits, output_json, plot=False):
 
 from pathlib import Path
 if __name__ == "__main__":
-    filepath = Path(fs.latest_mosaic(1)[0])
+    try:
+        filepath = Path(fs.latest_mosaic(1)[0])
+    except Exception as e:
+        print(f"Error finding latest MRMS mosaic: {e}")
+        sys.exit(1)
     print(filepath)
     lat_limits = (38.8, 40.1)
     lon_limits = (256, 258.5)  # MRMS longitude is 0-360

@@ -1,5 +1,5 @@
-from . import detection
-from ..util import file as fs
+from . import detect
+import util.file as fs
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 import matplotlib.pyplot as plt
@@ -32,10 +32,10 @@ filepath_new = latest_files[1]
 lat_limits = (35, 40)
 lon_limits = (252, 258.5)
 
-refl, lat_grid, lon_grid = detection.load_mrms_slice(filepath_old, lat_limits, lon_limits)
+refl, lat_grid, lon_grid = detect.load_mrms_slice(filepath_old, lat_limits, lon_limits)
 
-cells0 = detection.detect_cells(filepath_old, lat_limits, lon_limits, "stormcell_test.json", plot=True)
-cells1 = detection.detect_cells(filepath_new, lat_limits, lon_limits, "stormcell_test.json", plot=True)
+cells0 = detect.detect_cells(filepath_old, lat_limits, lon_limits, "stormcell_test.json", plot=True)
+cells1 = detect.detect_cells(filepath_new, lat_limits, lon_limits, "stormcell_test.json", plot=True)
 
 print(f"Cells from old scan: {cells0}")
 print(f"Cells from new scan: {cells1}")
