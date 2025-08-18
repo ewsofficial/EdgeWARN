@@ -4,23 +4,14 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 import matplotlib.pyplot as plt
 import math
+from pathlib import Path
+import json
 
 import util.file as fs
 
-"""
-To Do: Test matching
-Also get motion vector
- - dx = difference in x-val
- - dy = difference in y-val
- - dy = time (seconds elapsed)
-Get motion vector into cell data
- - New dict in cell: storm_history
-Link new cell to old cell
- - Update position and bbox
- - Add new entry in storm_history
-"""
-filepath_old = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_combined.nc" 
-filepath_new = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250805-000242_combined.nc"
+filepath_old = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc" 
+filepath_new = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250805-000242_renamed.nc"
+
 
 """
 # Use this code for production models
@@ -214,9 +205,43 @@ def plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches):
     plt.show()
 
 matches = match_cells(cells0, cells1)
-
-
-
 plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches)
 
-# detection.save_cells_to_json(cells1, "stormcell_test.json")
+storm_json = Path("stormcell_test.json")
+
+# Load existing storm history
+if storm_json.exists():
+    with storm_json.open("r") as f:
+        storm_data = json.load(f)
+else:
+    storm_data = []
+
+# Convert to dict by centroid for quick lookup (or use your own unique ID if available)
+def cell_key(cell):
+    # Round centroid for stability in matching across runs
+    lat, lon = cell["centroid_latlon"]
+    return f"{round(lat,4)}_{round(lon,4)}"
+
+storm_index = {cell_key(c): idx for idx, c in enumerate(storm_data)}
+
+# Update matched cells
+updated = set()
+for i, j, cost in matches:
+    new_cell = cells1[j]
+    key = cell_key(cells0[i])
+
+    if key in storm_index:
+        # Replace old with new data
+        storm_data[storm_index[key]] = new_cell
+        updated.add(j)
+
+# Add unmatched new cells
+for j, cell in enumerate(cells1):
+    if j not in updated:
+        storm_data.append(cell)
+
+# Save back to JSON
+with storm_json.open("w") as f:
+    json.dump(storm_data, f, indent=2)
+
+print(f"Storm data updated in {storm_json}")

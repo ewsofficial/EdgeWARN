@@ -7,6 +7,7 @@ import json
 import time
 import sys
 from pathlib import Path
+import pyart
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -61,78 +62,58 @@ def convert_lon_0_360_to_pm180(lon):
     return np.where(lon > 180, lon - 360, lon)
 
 def load_mrms_slice(filepath, lat_limits=None, lon_limits=None):
-    """
-    Load a slice of MRMS data from a NetCDF file and crop it to specified latitude and longitude limits.
-
-    Parameters:
-    - filepath: Path to the MRMS NetCDF file.
-    - lat_limits: Tuple of (lat_min, lat_max) to crop latitude.
-    - lon_limits: Tuple of (lon_min, lon_max) to crop longitude.
-
-    Returns:
-    - refl_crop: 2D array of reflectivity values cropped to the specified limits.
-    - lat_crop: 2D array of latitude values corresponding to the cropped reflectivity.
-    - lon_crop: 2D array of longitude values corresponding to the cropped reflectivity.
-    """
     ds = xr.open_dataset(filepath)
 
-    refl = ds["unknown"]
-    lat = ds["latitude"]
-    lon = ds["longitude"]
+    # --- Reflectivity ---
+    if "reflectivity_combined" in ds:
+        refl = ds["reflectivity_combined"]
+    elif "unknown" in ds:
+        refl = ds["unknown"]
+    else:
+        raise ValueError("No valid reflectivity data found.")
 
-    refl_masked = refl.where(refl > -999.0, np.nan)
+    # --- Coordinates ---
+    if "x" in ds and "y" in ds:
+        lat = ds["y"]
+        lon = ds["x"]
+        lat_dim, lon_dim = "y", "x"
+    elif "latitude" in ds and "longitude" in ds:
+        lat = ds["latitude"]
+        lon = ds["longitude"]
+        lat_dim, lon_dim = "latitude", "longitude"
+    else:
+        raise ValueError("No valid coordinates.")
 
-    # --- Latitude cropping ---
-    if lat_limits:
-        lat_min, lat_max = lat_limits
-        y_inds = np.where((lat >= lat_min) & (lat <= lat_max))[0]
-        y_start, y_end = y_inds[0], y_inds[-1] + 1
+    # Find index ranges that satisfy bounding box
+    if lat_limits is not None:
+        lat_mask = (lat >= lat_limits[0]) & (lat <= lat_limits[1])
+        y_start, y_end = np.where(lat_mask)[0][[0, -1]] + [0, 1]
     else:
         y_start, y_end = 0, lat.shape[0]
 
-    # --- Longitude cropping ---
-    if lon_limits:
-        lon_min, lon_max = lon_limits
-        x_inds = np.where((lon >= lon_min) & (lon <= lon_max))[0]
-        x_start, x_end = x_inds[0], x_inds[-1] + 1
+    if lon_limits is not None:
+        lon_mask = (lon >= lon_limits[0]) & (lon <= lon_limits[1])
+        x_start, x_end = np.where(lon_mask)[0][[0, -1]] + [0, 1]
     else:
         x_start, x_end = 0, lon.shape[0]
 
-    # --- Crop reflectivity directly with latitude/longitude ---
-    refl_crop = refl_masked.isel(
-        latitude=slice(y_start, y_end),
-        longitude=slice(x_start, x_end)
-    ).values
-
-    # --- Build lat/lon grids ---
-    lat_crop, lon_crop = np.meshgrid(
-        lat[y_start:y_end].values,
-        lon[x_start:x_end].values,
-        indexing="ij"
-    )
-
-    lon_crop = convert_lon_0_360_to_pm180(lon_crop)
+    # Slice reflectivity and coords
+    refl_crop = refl.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
+    lat_crop = lat.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
+    lon_crop = lon.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
 
     ds.close()
     return refl_crop, lat_crop, lon_crop
 
-
 def get_alpha_shape_from_mask(mask, lat_grid, lon_grid, alpha=0.1):
-    """
-    Generate an alpha shape polygon from the storm cell mask using a fixed alpha.
-
-    Parameters:
-    - mask: boolean 2D array where True indicates the cell pixels
-    - lat_grid, lon_grid: 2D arrays with lat/lon corresponding to each pixel
-    - alpha: float controlling the shape tightness (default 0.1)
-
-    Returns:
-    - shapely geometry (Polygon, LineString, or Point) representing the cell boundary
-    """
     if np.sum(mask) == 0:
         return None
 
-    points = np.column_stack((lon_grid[mask], lat_grid[mask]))
+    # Ensure we are working with NumPy arrays (like in plotting)
+    lat_np = np.array(lat_grid)
+    lon_np = np.array(lon_grid)
+
+    points = np.column_stack((lon_np[mask], lat_np[mask]))
     points_list = [tuple(p) for p in points]
 
     n_points = len(points_list)
@@ -142,17 +123,25 @@ def get_alpha_shape_from_mask(mask, lat_grid, lon_grid, alpha=0.1):
         return Point(points_list[0])
     elif n_points == 2:
         return LineString(points_list)
-    elif n_points == 3:
-        pts = points_list + [points_list[0]]  # close polygon
-        return Polygon(pts)
     else:
-        alpha_shape = alphashape.alphashape(points_list, alpha)
-        if alpha_shape.geom_type == 'MultiPolygon':
-            alpha_shape = max(alpha_shape.geoms, key=lambda p: p.area)
-        return alpha_shape
+        from shapely.geometry import MultiPoint
+        mp = MultiPoint(points_list)
+        if mp.convex_hull.geom_type in ['Point', 'LineString']:
+            return mp.convex_hull
+        else:
+            import alphashape
+            alpha_shape = alphashape.alphashape(points_list, alpha)
+            if alpha_shape.geom_type == 'MultiPolygon':
+                alpha_shape = max(alpha_shape.geoms, key=lambda p: p.area)
+            return alpha_shape
 
 def propagate_cells(reflectivity, lat_grid, lon_grid, seed_dbz=50,
                     expand_dbz=40, min_gates=25, max_iterations=100, alpha=0.1):
+    """
+    Detect and grow storm cells based on reflectivity thresholds.
+    Returns a list of detected cell dictionaries.
+    """
+
     refl_data = np.nan_to_num(reflectivity, nan=-9999)
 
     # Step 1: Detect seed cells ≥ seed_dbz
@@ -179,8 +168,7 @@ def propagate_cells(reflectivity, lat_grid, lon_grid, seed_dbz=50,
             candidates = np.logical_and(dilated, refl_data >= expand_dbz)
             candidates = np.logical_and(candidates, np.logical_not(current_mask))
 
-            # Only expand into pixels not claimed by any other cell
-            # So exclude pixels in claimed_mask except current_mask pixels
+            # Only expand into pixels not claimed by other cells
             allowed_candidates = np.logical_and(candidates, np.logical_not(claimed_mask))
 
             if np.any(allowed_candidates):
@@ -203,21 +191,36 @@ def propagate_cells(reflectivity, lat_grid, lon_grid, seed_dbz=50,
 
     print(f"Expansion completed after {iteration + 1} iterations.")
 
-    # The rest of your cell output building logic unchanged...
+    # Build detected cell list
     detected_cells = []
     for seed_id, mask in grown_masks.items():
         if np.sum(mask) < min_gates:
             continue
         max_dbz = refl_data[mask].max()
-        high_refl_mask = np.logical_and(mask, refl_data >= 50)
-        centroid_idx = center_of_mass(high_refl_mask) if np.any(high_refl_mask) else center_of_mass(mask)
+
+        # centroid of high-reflectivity region if present
+        high_refl_mask = np.logical_and(mask, refl_data >= seed_dbz)
+        centroid_idx = center_of_mass(high_refl_mask if np.any(high_refl_mask) else mask)
         centroid_lat = lat_grid[int(round(centroid_idx[0])), int(round(centroid_idx[1]))]
         centroid_lon = lon_grid[int(round(centroid_idx[0])), int(round(centroid_idx[1]))]
-        poly = get_alpha_shape_from_mask(mask, lat_grid, lon_grid, alpha)
-        if poly is not None and hasattr(poly, "exterior"):
-            alpha_shape_coords = [[float(x), float(y)] for x, y in poly.exterior.coords]
-        else:
-            alpha_shape_coords = []
+
+        # Create alpha shape using only True pixels
+        points_idx = np.column_stack(np.where(mask))
+        points = [(float(lon_grid[i, j]), float(lat_grid[i, j])) for i, j in points_idx]
+
+        poly = None
+        if len(points) == 1:
+            poly = Point(points[0])
+        elif len(points) == 2:
+            poly = LineString(points)
+        elif len(points) > 2:
+            import alphashape
+            poly = alphashape.alphashape(points, alpha)
+            if poly.geom_type == 'MultiPolygon':
+                poly = max(poly.geoms, key=lambda p: p.area)
+
+        alpha_shape_coords = [[float(x), float(y)] for x, y in poly.exterior.coords] if poly and hasattr(poly, "exterior") else []
+
         bbox = polygon_to_bbox(poly)
         detected_cells.append({
             "id": int(seed_id),
@@ -386,55 +389,87 @@ def save_cells_to_json(cells, filepath, float_precision=4):
         json.dump(json_data, f, indent=4)
     print(f"Saved cell data to {filepath}")
 
-def plot_storm_cells(cells, reflectivity, lat_grid, lon_grid, title="Storm Cell Detection"):
+def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection",
+                     lat_limits=(38.8, 40.1), lon_limits=(256, 258.5)):
     """
-    DEBUG: DO NOT CALL IN AN OFFICIAL PRODUCT
-    Plots storm cells on a map with reflectivity overlay.
+    Plot MRMS reflectivity and storm cells, hardcoding the lat/lon limits.
+    lon_limits assumed 0-360.
     """
 
-    fig, ax = plt.subplots(figsize=(10, 8), subplot_kw={'projection': ccrs.PlateCarree()})
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+    import matplotlib.colors as mcolors
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
 
-    ax.set_title(title)
+    # Convert 0–360 lon limits to -180..180
+    lon_limits_pm = convert_lon_0_360_to_pm180(np.array(lon_limits))
+
+    # Convert full lon array
+    lon_pm = convert_lon_0_360_to_pm180(lon)
+
+    # Create 2D grid if necessary
+    if lat.ndim == 1 and lon_pm.ndim == 1:
+        lon2d, lat2d = np.meshgrid(lon_pm, lat)
+    else:
+        lon2d, lat2d = lon_pm, lat
+
+    # Mask reflectivity outside hardcoded limits
+    mask = (lat2d >= lat_limits[0]) & (lat2d <= lat_limits[1]) & \
+           (lon2d >= lon_limits_pm[0]) & (lon2d <= lon_limits_pm[1])
+    refl_masked = np.where(mask, reflectivity, np.nan)
+    refl_masked = np.ma.masked_invalid(refl_masked)
+
+    fig, ax = plt.subplots(figsize=(12, 10), subplot_kw={'projection': ccrs.PlateCarree()})
+    ax.set_title(title, fontsize=16)
+
+    # Set hardcoded extent
+    ax.set_extent([lon_limits_pm[0], lon_limits_pm[1], lat_limits[0], lat_limits[1]], crs=ccrs.PlateCarree())
+
+    # Add map features
     ax.add_feature(cfeature.STATES.with_scale('50m'), edgecolor='gray')
     ax.add_feature(cfeature.COASTLINE)
     ax.add_feature(cfeature.BORDERS, linestyle=':')
-    ax.add_feature(cfeature.LAND)
-    ax.add_feature(cfeature.OCEAN)
-    ax.add_feature(cfeature.LAKES, alpha=0.5)
-    ax.add_feature(cfeature.RIVERS)
-    ax.gridlines(draw_labels=True)
+    ax.add_feature(cfeature.LAND, facecolor='lightgray')
+    ax.add_feature(cfeature.OCEAN, facecolor='lightblue')
+    ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', alpha=0.5)
 
-    refl_masked = np.ma.masked_invalid(reflectivity)
-    im = ax.pcolormesh(lon_grid, lat_grid, refl_masked,
-                       cmap='NWSRef', vmin=0, vmax=75, shading='auto')
+    # Plot reflectivity
+    im = ax.pcolormesh(lon2d, lat2d, refl_masked, cmap='NWSRef', vmin=0, vmax=75, shading='auto')
 
+    # Cell colors
     cmap = cm.get_cmap('tab20')
     norm = mcolors.Normalize(vmin=0, vmax=max(1, len(cells) - 1))
 
     for idx, cell in enumerate(cells):
         lat_c, lon_c = cell["centroid_latlon"]
-        bbox = cell["bbox"]
+        lon_c = lon_c if lon_c <= 180 else lon_c - 360
         color = cmap(norm(idx))
 
-        ax.scatter(lon_c, lat_c, marker='x', s=100, color=color, label=f'Cell {cell["id"]}', zorder=5)
+        # Plot centroid
+        ax.scatter(lon_c, lat_c, marker='x', s=100, color=color, zorder=5)
 
-        # Bounding box
-        ax.plot(
-            [bbox["lon_min"], bbox["lon_max"], bbox["lon_max"], bbox["lon_min"], bbox["lon_min"]],
-            [bbox["lat_min"], bbox["lat_min"], bbox["lat_max"], bbox["lat_max"], bbox["lat_min"]],
-            linestyle='--', linewidth=1.5, color=color, alpha=0.6
-        )
+        # Plot bounding box
+        bbox = cell.get("bbox")
+        if bbox:
+            lons = [bbox["lon_min"], bbox["lon_max"], bbox["lon_max"], bbox["lon_min"], bbox["lon_min"]]
+            lats = [bbox["lat_min"], bbox["lat_min"], bbox["lat_max"], bbox["lat_max"], bbox["lat_min"]]
+            lons = [convert_lon_0_360_to_pm180(lon) for lon in lons]
+            ax.plot(lons, lats, linestyle='--', linewidth=2, color=color, alpha=0.7)
 
-        # Alpha shape polygon (cell boundary)
-        if len(cell.get("alpha_shape", [])) >= 3:
-            boundary_pts = np.array(cell["alpha_shape"])
-            boundary_pts = np.vstack([boundary_pts, boundary_pts[0]])  # close polygon
+        # Plot alpha shape
+        alpha_shape = cell.get("alpha_shape", [])
+        if len(alpha_shape) >= 3:
+            boundary_pts = np.array(alpha_shape)
+            boundary_pts[:,0] = convert_lon_0_360_to_pm180(boundary_pts[:,0])
+            boundary_pts = np.vstack([boundary_pts, boundary_pts[0]])
             ax.plot(boundary_pts[:, 0], boundary_pts[:, 1], color='black', linewidth=2)
 
+    # Colorbar
     cbar = fig.colorbar(im, ax=ax, orientation='horizontal', pad=0.05)
     cbar.set_label('Reflectivity (dBZ)')
 
-    ax.legend(loc='upper right')
     plt.show()
 
 def detect_cells(filepath, lat_limits, lon_limits, output_json, plot=False):
@@ -463,7 +498,7 @@ def detect_cells(filepath, lat_limits, lon_limits, output_json, plot=False):
 from pathlib import Path
 if __name__ == "__main__":
     try:
-        filepath = Path(fs.latest_mosaic(1)[0])
+        filepath = Path(r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc")
     except Exception as e:
         print(f"Error finding latest MRMS mosaic: {e}")
         sys.exit(1)
