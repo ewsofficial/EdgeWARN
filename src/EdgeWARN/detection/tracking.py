@@ -9,29 +9,6 @@ import json
 
 import util.file as fs
 
-filepath_old = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc" 
-filepath_new = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250805-000242_renamed.nc"
-
-
-"""
-# Use this code for production models
-latest_files = fs.latest_mosaic(2)
-filepath_old = latest_files[0]
-filepath_new = latest_files[1]
-"""
-
-lat_limits = (35, 40)
-lon_limits = (252, 258.5)
-
-refl, lat_grid, lon_grid = detect.load_mrms_slice(filepath_old, lat_limits, lon_limits)
-
-cells0 = detect.detect_cells(filepath_old, lat_limits, lon_limits, "stormcell_test.json", plot=True)
-cells1 = detect.detect_cells(filepath_new, lat_limits, lon_limits, "stormcell_test.json", plot=True)
-
-print(f"Cells from old scan: {cells0}")
-print(f"Cells from new scan: {cells1}")
-
-
 def haversine_dist(coord1, coord2):
     R = 6371  # km
     lat1, lon1 = np.radians(coord1)
@@ -99,7 +76,6 @@ def polygon_area_km2(latlon_points):
 def add_area_to_cells(cells):
     for cell in cells:
         polygon = cell.get('convex_hull')
-        print("WARN:Convex Hull not found within cell dict. Switching to alpha_shape")
         # If convex_hull is missing or empty, try alpha_shape
         if not polygon:
             polygon = cell.get('alpha_shape')
@@ -108,10 +84,6 @@ def add_area_to_cells(cells):
             cell['area_km2'] = polygon_area_km2(polygon)
         else:
             cell['area_km2'] = 0.0
-
-
-add_area_to_cells(cells0)
-add_area_to_cells(cells1)
 
 def normalize_diff(val1, val2, max_val):
     return abs(val1 - val2) / max_val if max_val > 0 else 0
@@ -200,48 +172,71 @@ def plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches):
 
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
-    ax.set_title('Radar Matches you fat fuck, now lock in')
+    ax.set_title('Radar Matches')
 
     plt.show()
 
-matches = match_cells(cells0, cells1)
-plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches)
+def main():
+    filepath_old = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc" 
+    filepath_new = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250805-000242_renamed.nc"
 
-storm_json = Path("stormcell_test.json")
+    """
+    # Use this code for production models
+    latest_files = fs.latest_mosaic(2)
+    filepath_old = latest_files[0]
+    filepath_new = latest_files[1]
+    """
 
-# Load existing storm history
-if storm_json.exists():
-    with storm_json.open("r") as f:
-        storm_data = json.load(f)
-else:
-    storm_data = []
+    lat_limits = (35, 40)
+    lon_limits = (252, 258.5)
 
-# Convert to dict by centroid for quick lookup (or use your own unique ID if available)
-def cell_key(cell):
-    # Round centroid for stability in matching across runs
-    lat, lon = cell["centroid_latlon"]
-    return f"{round(lat,4)}_{round(lon,4)}"
+    refl, lat_grid, lon_grid = detect.load_mrms_slice(filepath_old, lat_limits, lon_limits)
 
-storm_index = {cell_key(c): idx for idx, c in enumerate(storm_data)}
+    cells0 = detect.detect_cells(filepath_old, lat_limits, lon_limits, "stormcell_test.json", plot=False)
+    cells1 = detect.detect_cells(filepath_new, lat_limits, lon_limits, "stormcell_test.json", plot=False)
 
-# Update matched cells
-updated = set()
-for i, j, cost in matches:
-    new_cell = cells1[j]
-    key = cell_key(cells0[i])
+    add_area_to_cells(cells0)
+    add_area_to_cells(cells1)
 
-    if key in storm_index:
-        # Replace old with new data
-        storm_data[storm_index[key]] = new_cell
-        updated.add(j)
+    matches = match_cells(cells0, cells1)
+    plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches)
 
-# Add unmatched new cells
-for j, cell in enumerate(cells1):
-    if j not in updated:
-        storm_data.append(cell)
+    storm_json = Path("stormcell_test.json")
 
-# Save back to JSON
-with storm_json.open("w") as f:
-    json.dump(storm_data, f, indent=2)
+    # Load existing storm history
+    if storm_json.exists():
+        with storm_json.open("r") as f:
+            storm_data = json.load(f)
+    else:
+        storm_data = []
 
-print(f"Storm data updated in {storm_json}")
+    # Convert to dict by centroid for quick lookup
+    def cell_key(cell):
+        lat, lon = cell["centroid_latlon"]
+        return f"{round(lat,4)}_{round(lon,4)}"
+
+    storm_index = {cell_key(c): idx for idx, c in enumerate(storm_data)}
+
+    # Update matched cells
+    updated = set()
+    for i, j, cost in matches:
+        new_cell = cells1[j]
+        key = cell_key(cells0[i])
+        if key in storm_index:
+            storm_data[storm_index[key]] = new_cell
+            updated.add(j)
+
+    # Add unmatched new cells
+    for j, cell in enumerate(cells1):
+        if j not in updated:
+            storm_data.append(cell)
+
+    # Save back to JSON
+    with storm_json.open("w") as f:
+        json.dump(storm_data, f, indent=2)
+
+    print(f"Storm data updated in {storm_json}")
+
+
+if __name__ == "__main__":
+    main()
