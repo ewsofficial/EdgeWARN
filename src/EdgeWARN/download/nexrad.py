@@ -1,7 +1,6 @@
 import boto3
 import botocore
 import datetime
-from pathlib import Path
 from datetime import timezone
 from util import file as fs
 

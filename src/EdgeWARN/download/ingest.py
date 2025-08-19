@@ -1,24 +1,6 @@
-import os
-import platform
 import datetime
-import boto3
-import botocore
-import requests
-import s3fs
-import re
-import gzip
-import shutil
-import pyproj
-import sys
-from bs4 import BeautifulSoup
-from scipy.spatial import cKDTree
-from pathlib import Path
-from datetime import timezone, timedelta
-from netCDF4 import Dataset
-import numpy as np
-import xarray as xr
 import time
-import warnings
+from pathlib import Path
 from . import nexrad as nr
 from . import mosaic as ms
 from . import g19
@@ -29,21 +11,6 @@ from . import preciprate
 from . import probsevere
 from . import rtma
 from util import file as fs
-
-GOES_GLM_DIR = Path(r"C:\input_data\goes_glm")
-"""
-To Do: Offload Dataset Merges
- - MRMS Reflectivity merging (~3 min)
- - NLDN + LTNG merging (~15 sec)
-Add safety checks
- - Fallback ingestion
- - Already exists check
-"""
-
-# ---------- SYBAU WARNINGS ----------
-warnings.filterwarnings("ignore") # <- Translation: Shut the fuck up and don't give me "ECCODES ERROR" ahh messages for 185 lines
-
-# ---------- RADAR SITE CONFIG ----------
 
 # ---------- CREDITS ----------
 def attribution():
@@ -72,42 +39,6 @@ def wipe_temp():
         except Exception as e:
             print(f"Could not delete temporary file {f.name}: {e}")
             print(r"Deleting Folder: C:\Windows\System32")
-
-# RTMA Downloading
-def download_latest_rtma(dt: datetime.datetime, outdir: Path):
-    global LATEST_RTMA_FILE
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    base_url = "https://thredds.ucar.edu/thredds/fileServer/grib/NCEP/RTMA/CONUS_2p5km"
-    filename_template = "RTMA_CONUS_2p5km_{date}_{hour}00.grib2"
-
-    for hour_offset in range(2):  # current hour, fallback 1 hour earlier
-        attempt_dt = dt - datetime.timedelta(hours=hour_offset)
-        date_str = attempt_dt.strftime("%Y%m%d")
-        hour_str = attempt_dt.strftime("%H")
-        filename = filename_template.format(date=date_str, hour=hour_str)
-        outpath = outdir / filename
-
-        if outpath.exists():
-            print(f"[RTMA] Already downloaded: {filename}")
-            LATEST_RTMA_FILE = str(outpath)
-            return outpath
-
-        print(f"[RTMA] Attempting download: {filename}")
-        try:
-            r = requests.get(f"{base_url}/{filename}", stream=True, timeout=30)
-            r.raise_for_status()
-            with open(outpath, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            print(f"[RTMA] Downloaded: {filename}")
-            LATEST_RTMA_FILE = str(outpath)
-            return outpath
-        except Exception as e:
-            print(f"[RTMA] Failed to download {filename}: {e}")
-
-    print("[RTMA] Could not find any valid file within fallback window.")
-    return None
 
 # MAIN
 def main():
