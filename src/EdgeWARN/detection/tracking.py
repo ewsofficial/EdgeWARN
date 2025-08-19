@@ -89,7 +89,7 @@ def normalize_diff(val1, val2, max_val):
     return abs(val1 - val2) / max_val if max_val > 0 else 0
 
 def compute_cost(cellA, cellB, max_vals, weights):
-    dist = haversine_dist(cellA['centroid_latlon'], cellB['centroid_latlon'])
+    dist = haversine_dist(cellA['centroid'], cellB['centroid'])
     if dist > 10:
         return np.inf  # beyond 10 km, discard
 
@@ -154,7 +154,7 @@ def plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches):
         if polygon:
             hull_lon, hull_lat = zip(*polygon)
             ax.fill(hull_lon, hull_lat, color='blue', alpha=0.3)
-        ax.plot(cell['centroid_latlon'][1], cell['centroid_latlon'][0], 'bo')
+        ax.plot(cell['centroid'][1], cell['centroid'][0], 'bo')
 
     for cell in cells1:
         polygon = cell.get('convex_hull')
@@ -163,11 +163,11 @@ def plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches):
         if polygon:
             hull_lon, hull_lat = zip(*polygon)
             ax.fill(hull_lon, hull_lat, color='red', alpha=0.3)
-        ax.plot(cell['centroid_latlon'][1], cell['centroid_latlon'][0], 'ro')
+        ax.plot(cell['centroid'][1], cell['centroid'][0], 'ro')
 
     for i, j, cost in matches:
-        c0 = cells0[i]['centroid_latlon']
-        c1 = cells1[j]['centroid_latlon']
+        c0 = cells0[i]['centroid']
+        c1 = cells1[j]['centroid']
         ax.plot([c0[1], c1[1]], [c0[0], c1[0]], 'k--', linewidth=1)
 
     ax.set_xlabel('Longitude')
@@ -190,15 +190,31 @@ def main():
     lat_limits = (35, 40)
     lon_limits = (252, 258.5)
 
+    # Load radar slice
     refl, lat_grid, lon_grid = detect.load_mrms_slice(filepath_old, lat_limits, lon_limits)
 
+    # Detect cells
     cells0 = detect.detect_cells(filepath_old, lat_limits, lon_limits, "stormcell_test.json", plot=False)
+    print(cells0)
     cells1 = detect.detect_cells(filepath_new, lat_limits, lon_limits, "stormcell_test.json", plot=False)
+    print(cells1)
 
-    add_area_to_cells(cells0)
-    add_area_to_cells(cells1)
+    # Check for centroid naming variations
+    for cell in cells0 + cells1:
+        if "centroid_latlon" in cell:
+            cell["centroid"] = list(cell.pop("centroid_latlon"))
+    
+    print(cells0)
+    print(cells1)
 
+    # Add area calculation
+    # add_area_to_cells(cells0)
+    # add_area_to_cells(cells1)
+
+    # Match cells
     matches = match_cells(cells0, cells1)
+
+    # Plot radar with matches
     plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches)
 
     storm_json = Path("stormcell_test.json")
@@ -212,18 +228,27 @@ def main():
 
     # Convert to dict by centroid for quick lookup
     def cell_key(cell):
-        lat, lon = cell["centroid_latlon"]
+        lat, lon = cell["centroid"]
         return f"{round(lat,4)}_{round(lon,4)}"
 
     storm_index = {cell_key(c): idx for idx, c in enumerate(storm_data)}
 
-    # Update matched cells
+    # Update matched cells, preserving old ID and metadata
     updated = set()
     for i, j, cost in matches:
-        new_cell = cells1[j]
-        key = cell_key(cells0[i])
-        if key in storm_index:
-            storm_data[storm_index[key]] = new_cell
+        old_cell_idx = storm_index.get(cell_key(cells0[i]))
+        if old_cell_idx is not None:
+            old_cell = storm_data[old_cell_idx]
+            new_cell = cells1[j]
+
+            # Update only positional and bounding entries
+            old_cell['centroid'] = new_cell['centroid']
+            old_cell['bbox'] = new_cell.get('bbox', old_cell.get('bbox'))
+            old_cell['bbox_points'] = new_cell.get('bbox_points', old_cell.get('bbox_points'))
+            old_cell['convex_hull'] = new_cell.get('convex_hull', old_cell.get('convex_hull'))
+            old_cell['alpha_shape'] = new_cell.get('alpha_shape', old_cell.get('alpha_shape'))
+            old_cell['area_km2'] = new_cell.get('area_km2', old_cell.get('area_km2'))
+
             updated.add(j)
 
     # Add unmatched new cells
@@ -240,3 +265,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

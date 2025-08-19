@@ -361,26 +361,13 @@ def convert_to_json_serializable(obj, float_precision=6):
         return obj
 
 def save_cells_to_json(cells, filepath, float_precision=4):
-    """
-    Save storm cell data to a JSON file with controlled float precision.
-
-    Parameters:
-    - cells: List of detected storm cell dictionaries.
-    - filepath: Path to the output JSON file.
-    - float_precision: Number of decimal places for float values.
-    """
     json_data = []
     for cell in cells:
-        bbox = cell.get("bbox")
-        bbox_points = bbox_to_points(bbox)
-        
         json_data.append({
-            "id": cell.get("id"),
-            "centroid_latlon": cell.get("centroid_latlon"),
-            "convex_hull": cell.get("convex_hull"),
-            "bbox": bbox,
-            "bbox_points": bbox_points,
-            "num_gates": cell.get("num_gates")
+            "id": cell["id"],
+            "num_gates": cell["num_gates"],
+            "centroid": [round(v, float_precision) for v in cell["centroid_latlon"]],
+            "bbox": [[round(v[0], float_precision), round(v[1], float_precision)] for v in cell["alpha_shape"]]  # save alpha_shape into bbox
         })
 
     json_data = convert_to_json_serializable(json_data, float_precision=float_precision)
