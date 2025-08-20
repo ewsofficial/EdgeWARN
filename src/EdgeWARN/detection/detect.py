@@ -7,6 +7,7 @@ import json
 import time
 import sys
 from pathlib import Path
+import datetime
 import pyart
 
 import matplotlib.pyplot as plt
@@ -191,6 +192,9 @@ def propagate_cells(reflectivity, lat_grid, lon_grid, seed_dbz=50,
 
     print(f"Expansion completed after {iteration + 1} iterations.")
 
+    # Get timestamp for this scan
+    scan_time = datetime.datetime.utcnow().isoformat()
+
     # Build detected cell list
     detected_cells = []
     for seed_id, mask in grown_masks.items():
@@ -222,14 +226,26 @@ def propagate_cells(reflectivity, lat_grid, lon_grid, seed_dbz=50,
         alpha_shape_coords = [[float(x), float(y)] for x, y in poly.exterior.coords] if poly and hasattr(poly, "exterior") else []
 
         bbox = polygon_to_bbox(poly)
-        detected_cells.append({
+
+        # Create the cell dict
+        cell_dict = {
             "id": int(seed_id),
             "num_gates": int(np.sum(mask)),
-            "centroid_latlon": (float(centroid_lat), float(centroid_lon)),
+            "centroid": [float(centroid_lat), float(centroid_lon)],
             "bbox": bbox,
             "max_reflectivity_dbz": float(max_dbz),
-            "alpha_shape": alpha_shape_coords
-        })
+            "alpha_shape": alpha_shape_coords,
+            # Add storm history list
+            "storm_history": [
+                {
+                    "timestamp": scan_time,
+                    "max_reflectivity_dbz": float(max_dbz),
+                    "num_gates": int(np.sum(mask))
+                }
+            ]
+        }
+
+        detected_cells.append(cell_dict)
 
     return detected_cells
 
@@ -267,9 +283,9 @@ def merge_connected_small_cells(cells, size_ratio_threshold=0.35, buffer_km=1.0,
         """Merge small cell into large cell."""
         # Update num_gates and centroid
         total_gates = large["num_gates"] + small["num_gates"]
-        lat1, lon1 = large["centroid_latlon"]
-        lat2, lon2 = small["centroid_latlon"]
-        large["centroid_latlon"] = (
+        lat1, lon1 = large["centroid"]
+        lat2, lon2 = small["centroid"]
+        large["centroid"] = (
             (lat1 * large["num_gates"] + lat2 * small["num_gates"]) / total_gates,
             (lon1 * large["num_gates"] + lon2 * small["num_gates"]) / total_gates
         )
@@ -313,7 +329,7 @@ def merge_connected_small_cells(cells, size_ratio_threshold=0.35, buffer_km=1.0,
         remaining_small = []
 
         for s in small_cells:
-            lat_c, lon_c = s["centroid_latlon"]
+            lat_c, lon_c = s["centroid"]
             buffer_lat, buffer_lon = deg_buffer(lat_c, buffer_km)
 
             # Find adjacent large cells within ~1 km
@@ -328,8 +344,8 @@ def merge_connected_small_cells(cells, size_ratio_threshold=0.35, buffer_km=1.0,
 
             # Merge into closest by centroid
             def centroid_dist(c1, c2):
-                lat1, lon1 = c1["centroid_latlon"]
-                lat2, lon2 = c2["centroid_latlon"]
+                lat1, lon1 = c1["centroid"]
+                lat2, lon2 = c2["centroid"]
                 return np.hypot(lat1 - lat2, lon1 - lon2)
 
             closest_large = min(adjacent_large_cells, key=lambda c: centroid_dist(c, s))
@@ -361,20 +377,42 @@ def convert_to_json_serializable(obj, float_precision=6):
         return obj
 
 def save_cells_to_json(cells, filepath, float_precision=4):
+    """
+    Save detected storm cells to a JSON file, keeping bbox, alpha_shape, and storm history.
+    Rounds numeric values to the specified float_precision.
+    """
     json_data = []
     for cell in cells:
-        json_data.append({
-            "id": cell["id"],
-            "num_gates": cell["num_gates"],
-            "centroid": [round(v, float_precision) for v in cell["centroid_latlon"]],
-            "bbox": [[round(v[0], float_precision), round(v[1], float_precision)] for v in cell["alpha_shape"]]  # save alpha_shape into bbox
-        })
+        cell_entry = {
+            "id": int(cell["id"]),
+            "num_gates": int(cell["num_gates"]),
+            "centroid": [round(float(v), float_precision) for v in cell["centroid"]],
+            "bbox": cell.get("bbox", {}),
+            "alpha_shape": [
+                [round(float(x), float_precision), round(float(y), float_precision)]
+                for x, y in cell.get("alpha_shape", [])
+            ],
+            "max_reflectivity_dbz": round(float(cell.get("max_reflectivity_dbz", 0)), float_precision),
+            "storm_history": []
+        }
 
-    json_data = convert_to_json_serializable(json_data, float_precision=float_precision)
+        # Add storm history entries if they exist
+        for hist_entry in cell.get("storm_history", []):
+            cell_entry["storm_history"].append({
+                "timestamp": hist_entry.get("timestamp", ""),
+                "max_reflectivity_dbz": round(float(hist_entry.get("max_reflectivity_dbz", 0)), float_precision),
+                "num_gates": int(hist_entry.get("num_gates", 0)),
+                "centroid": [round(float(v), float_precision) for v in hist_entry.get("centroid", [0, 0])],
+                "bbox": hist_entry.get("bbox", {})
+            })
 
+        json_data.append(cell_entry)
+
+    # Save to file
     with open(filepath, 'w') as f:
         json.dump(json_data, f, indent=4)
-    print(f"Saved cell data to {filepath}")
+
+    print(f"Saved {len(cells)} cells to {filepath}")
 
 def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection",
                      lat_limits=(38.8, 40.1), lon_limits=(256, 258.5)):
@@ -430,7 +468,7 @@ def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection"
     norm = mcolors.Normalize(vmin=0, vmax=max(1, len(cells) - 1))
 
     for idx, cell in enumerate(cells):
-        lat_c, lon_c = cell["centroid_latlon"]
+        lat_c, lon_c = cell["centroid"]
         lon_c = lon_c if lon_c <= 180 else lon_c - 360
         color = cmap(norm(idx))
 
@@ -463,13 +501,38 @@ def detect_cells(filepath, lat_limits, lon_limits, output_json, plot=False):
     print("Loading MRMS data slice...")
     refl, lat, lon = load_mrms_slice(filepath, lat_limits, lon_limits)
 
+    # Extract scan timestamp from file if available
+    import datetime
+    try:
+        import xarray as xr
+        ds = xr.open_dataset(filepath)
+        scan_time = str(ds.attrs.get('start_date', datetime.datetime.now()))
+        ds.close()
+    except:
+        scan_time = str(datetime.datetime.now())
+
     print("Running cell propagation...")
     cells = propagate_cells(refl, lat, lon, alpha=0.1)
 
     print("Merging small cells...")
     merged_cells = merge_connected_small_cells(cells)
 
-    print(f"Saving cells to {output_json} ...")
+    # --- Build storm history per cell ---
+    storm_history = {}
+    for cell in merged_cells:
+        cell_id = cell["id"]
+        entry = {
+            "scan_time": scan_time,
+            "max_reflectivity_dbz": cell["max_reflectivity_dbz"],
+            "num_gates": cell["num_gates"],
+            "centroid": cell["centroid"],
+            "bbox": cell["bbox"],
+        }
+        if cell_id not in storm_history:
+            storm_history[cell_id] = []
+        storm_history[cell_id].append(entry)
+
+    # Save to JSON
     save_cells_to_json(merged_cells, output_json, float_precision=4)
 
     if plot:
@@ -478,9 +541,8 @@ def detect_cells(filepath, lat_limits, lon_limits, output_json, plot=False):
         print("Plotting final cells ... ")
         plot_storm_cells(merged_cells, refl, lat, lon, title="Detected Storm Cells (Final Pass)")
 
-    print("Done.")
-
-    return merged_cells
+    print(f"Storm history created for {len(storm_history)} cells.")
+    return merged_cells, storm_history
 
 from pathlib import Path
 if __name__ == "__main__":
