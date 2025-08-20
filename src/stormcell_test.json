@@ -122,10 +122,9 @@
                 39.515
             ]
         ],
-        "max_reflectivity_dbz": 60.5,
         "storm_history": [
             {
-                "timestamp": "2025-08-20T01:08:56.048576",
+                "timestamp": "2025-08-20T01:50:13.822294",
                 "max_reflectivity_dbz": 60.5,
                 "num_gates": 884,
                 "centroid": [
@@ -235,10 +234,9 @@
                 39.765
             ]
         ],
-        "max_reflectivity_dbz": 58.5,
         "storm_history": [
             {
-                "timestamp": "2025-08-20T01:08:56.048576",
+                "timestamp": "2025-08-20T01:50:13.822294",
                 "max_reflectivity_dbz": 58.5,
                 "num_gates": 362,
                 "centroid": [

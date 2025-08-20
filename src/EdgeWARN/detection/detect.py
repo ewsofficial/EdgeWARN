@@ -392,7 +392,6 @@ def save_cells_to_json(cells, filepath, float_precision=4):
                 [round(float(x), float_precision), round(float(y), float_precision)]
                 for x, y in cell.get("alpha_shape", [])
             ],
-            "max_reflectivity_dbz": round(float(cell.get("max_reflectivity_dbz", 0)), float_precision),
             "storm_history": []
         }
 
