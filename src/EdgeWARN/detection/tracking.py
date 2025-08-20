@@ -93,12 +93,10 @@ def compute_cost(cellA, cellB, max_vals, weights):
     if dist > 10:
         return np.inf  # beyond 10 km, discard
 
-    d_area = normalize_diff(cellA['area_km2'], cellB['area_km2'], max_vals['area_km2'])
     d_num_gates = normalize_diff(cellA['num_gates'], cellB['num_gates'], max_vals['num_gates'])  # proxy for area
     d_reflect = normalize_diff(cellA['max_reflectivity_dbz'], cellB['max_reflectivity_dbz'], max_vals['max_reflectivity_dbz'])
 
     cost = (weights['distance'] * (dist / 10) +
-            weights['area'] * d_area +
             weights['num_gates'] * d_num_gates +
             weights['max_reflectivity'] * d_reflect)
     return cost
@@ -106,14 +104,12 @@ def compute_cost(cellA, cellB, max_vals, weights):
 def match_cells(cells0, cells1, weights=None):
     if weights is None:
         weights = {
-            'distance': 0.4,
-            'area': 0.2,
-            'num_gates': 0.2,
+            'distance': 0.5,
+            'num_gates': 0.3,
             'max_reflectivity': 0.2
         }
 
     max_vals = {
-        'area_km2': max(max(cell['area_km2'] for cell in cells0), max(cell['area_km2'] for cell in cells1)),
         'num_gates': max(max(cell['num_gates'] for cell in cells0), max(cell['num_gates'] for cell in cells1)),
         'max_reflectivity_dbz': max(max(cell['max_reflectivity_dbz'] for cell in cells0), max(cell['max_reflectivity_dbz'] for cell in cells1))
     }
@@ -207,7 +203,7 @@ def main():
     print(cells0)
     print(cells1)
 
-    # Add area calculation
+    # Add area calculation (Broken, needs a fix)
     # add_area_to_cells(cells0)
     # add_area_to_cells(cells1)
 
