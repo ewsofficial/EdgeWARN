@@ -173,6 +173,67 @@ def plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches):
 
     plt.show()
 
+def update_storm_cell_history(existing_cell, new_data):
+    """
+    Update a storm cell's history, preventing duplicate timestamp entries
+    
+    Args:
+        existing_cell (dict): The existing cell data with history
+        new_data (dict): New data to potentially add to history
+    
+    Returns:
+        bool: True if history was updated, False if duplicate was found
+    """
+    # Extract the timestamp from new data
+    new_timestamp = new_data.get('timestamp')
+    if not new_timestamp:
+        return False  # No timestamp, can't add to history
+    
+    # Check if this timestamp already exists in history
+    for history_entry in existing_cell.get('storm_history', []):
+        if history_entry.get('timestamp') == new_timestamp:
+            # Update the existing entry with new data instead of adding a duplicate
+            history_entry.update(new_data)
+            return True  # Entry was updated
+    
+    # If we get here, this is a new timestamp - add it to history
+    if 'storm_history' not in existing_cell:
+        existing_cell['storm_history'] = []
+    
+    existing_cell['storm_history'].append(new_data)
+    return True  # New entry was added
+
+def process_matched_cell(existing_cell, new_cell_data, timestamp):
+    """
+    Process a matched cell and update its history without duplicates
+    
+    Args:
+        existing_cell (dict): The existing cell to update
+        new_cell_data (dict): New cell data from current scan
+        timestamp (str): Current timestamp
+    
+    Returns:
+        bool: True if history was updated, False otherwise
+    """
+    # Create history entry
+    history_entry = {
+        'timestamp': timestamp,
+        'max_reflectivity_dbz': new_cell_data['max_reflectivity_dbz'],
+        'num_gates': new_cell_data['num_gates'],
+        'centroid': new_cell_data['centroid']
+    }
+    
+    # Update cell properties
+    existing_cell.update({
+        'num_gates': new_cell_data['num_gates'],
+        'centroid': new_cell_data['centroid'],
+        'bbox': new_cell_data.get('bbox', existing_cell.get('bbox')),
+        'alpha_shape': new_cell_data.get('alpha_shape', existing_cell.get('alpha_shape'))
+    })
+    
+    # Update history without duplicates
+    return update_storm_cell_history(existing_cell, history_entry)
+
 def main():
     filepath_old = Path(r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc")
     filepath_new = Path(r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250805-000242_renamed.nc")
@@ -186,10 +247,16 @@ def main():
     print("DEBUG: Detecting cells from old scan...")
     cells_old, _ = detect.detect_cells(filepath_old, lat_limits, lon_limits, plot=False)
     print(f"DEBUG: Found {len(cells_old)} cells in old scan: {[cell['id'] for cell in cells_old]}")
+
+    if cells_old:
+        print(f"DEBUG: Old scan timestamp: {cells_old[0]['storm_history'][0]['timestamp']}")
     
     print("DEBUG: Detecting cells from new scan...")
     cells_new, _ = detect.detect_cells(filepath_new, lat_limits, lon_limits, plot=False)
     print(f"DEBUG: Found {len(cells_new)} cells in new scan: {[cell['id'] for cell in cells_new]}")
+
+    if cells_new:
+        print(f"DEBUG: New scan timestamp: {cells_new[0]['storm_history'][0]['timestamp']}")
 
     # --- Match cells between scans ---
     print("DEBUG: Matching cells between scans...")
@@ -210,12 +277,30 @@ def main():
             if cell_id not in unique_cells:
                 unique_cells[cell_id] = cell
             else:
-                # Keep the cell with the most recent timestamp
-                existing_timestamp = unique_cells[cell_id]['storm_history'][-1]['timestamp']
-                new_timestamp = cell['storm_history'][-1]['timestamp']
-                if new_timestamp > existing_timestamp:
-                    unique_cells[cell_id] = cell
-        
+                # Merge history from both cells while preserving unique timestamps
+                existing_cell = unique_cells[cell_id]
+                
+                # Collect all unique timestamps from both cells
+                existing_timestamps = {entry["timestamp"] for entry in existing_cell["storm_history"]}
+                new_timestamps = {entry["timestamp"] for entry in cell["storm_history"]}
+                
+                # If the new cell has unique timestamps, add them to history
+                for history_entry in cell["storm_history"]:
+                    if history_entry["timestamp"] not in existing_timestamps:
+                        existing_cell["storm_history"].append(history_entry)
+                
+                # Always keep the most recent properties (from whichever cell has the latest timestamp)
+                existing_last_time = existing_cell["storm_history"][-1]["timestamp"]
+                new_last_time = cell["storm_history"][-1]["timestamp"]
+                
+                if new_last_time > existing_last_time:
+                    # Update current properties with the newer cell's data
+                    existing_cell["num_gates"] = cell["num_gates"]
+                    existing_cell["centroid"] = cell["centroid"]
+                    existing_cell["bbox"] = cell.get("bbox", {})
+                    existing_cell["alpha_shape"] = cell.get("alpha_shape", [])
+                    existing_cell["max_reflectivity_dbz"] = cell["max_reflectivity_dbz"]
+
         storm_data = list(unique_cells.values())
         print(f"DEBUG: After deduplication: {len(storm_data)} unique cells: {[cell['id'] for cell in storm_data]}")
     else:
@@ -231,6 +316,7 @@ def main():
     for match_idx, (i, j, cost) in enumerate(matches):
         old_cell = cells_old[i]
         new_cell = cells_new[j]
+        current_timestamp = new_cell["storm_history"][0]["timestamp"]
         
         print(f"DEBUG: Match {match_idx + 1}: Old cell ID {old_cell['id']} -> New cell ID {new_cell['id']} (cost: {cost:.3f})")
         
@@ -239,27 +325,13 @@ def main():
             print(f"DEBUG:   Cell ID {new_cell['id']} exists in storm data - updating")
             existing_cell = existing_cells[new_cell['id']]
             
-            # Create new history entry
-            new_history_entry = {
-                "timestamp": new_cell["storm_history"][0]["timestamp"],
-                "max_reflectivity_dbz": new_cell["max_reflectivity_dbz"],
-                "num_gates": new_cell["num_gates"],
-                "centroid": new_cell["centroid"]
-            }
+            # Use the new function to update without duplicates
+            updated = process_matched_cell(existing_cell, new_cell, current_timestamp)
             
-            print(f"DEBUG:   Adding history entry: {new_history_entry}")
-            
-            # Add to storm history (preserve all prior entries)
-            existing_cell["storm_history"].append(new_history_entry)
-            
-            # Update current properties
-            existing_cell["num_gates"] = new_cell["num_gates"]
-            existing_cell["centroid"] = new_cell["centroid"]
-            existing_cell["bbox"] = new_cell.get("bbox", {})
-            existing_cell["alpha_shape"] = new_cell.get("alpha_shape", [])
-            existing_cell["max_reflectivity_dbz"] = new_cell["max_reflectivity_dbz"]
-            
-            print(f"DEBUG:   Updated cell properties for ID {new_cell['id']}")
+            if updated:
+                print(f"DEBUG:   Updated cell properties for ID {new_cell['id']}")
+            else:
+                print(f"DEBUG:   No update needed for ID {new_cell['id']} (duplicate timestamp)")
         else:
             print(f"DEBUG:   Cell ID {new_cell['id']} is new - adding to storm data")
             # New cell - add it to our data

@@ -103,15 +103,6 @@
                     39.5789,
                     257.2666
                 ]
-            },
-            {
-                "timestamp": "2025-08-05T00:02:42",
-                "max_reflectivity_dbz": 61.0,
-                "num_gates": 945,
-                "centroid": [
-                    39.5789,
-                    257.2666
-                ]
             }
         ]
     },
@@ -255,15 +246,6 @@
                     39.5419,
                     256.8078
                 ]
-            },
-            {
-                "timestamp": "2025-08-05T00:02:42",
-                "max_reflectivity_dbz": 60.0,
-                "num_gates": 677,
-                "centroid": [
-                    39.5419,
-                    256.8078
-                ]
             }
         ]
     },
@@ -399,15 +381,6 @@
             ]
         ],
         "storm_history": [
-            {
-                "timestamp": "2025-08-05T00:02:42",
-                "max_reflectivity_dbz": 68.0,
-                "num_gates": 801,
-                "centroid": [
-                    37.845,
-                    257.025
-                ]
-            },
             {
                 "timestamp": "2025-08-05T00:02:42",
                 "max_reflectivity_dbz": 68.0,
