@@ -124,12 +124,12 @@
         ],
         "storm_history": [
             {
-                "timestamp": "2025-08-20T01:50:13.822294",
+                "timestamp": "2025-08-04T23:52:41",
                 "max_reflectivity_dbz": 60.5,
                 "num_gates": 884,
                 "centroid": [
-                    0.0,
-                    0.0
+                    39.605,
+                    257.275
                 ],
                 "bbox": {}
             }
@@ -236,12 +236,12 @@
         ],
         "storm_history": [
             {
-                "timestamp": "2025-08-20T01:50:13.822294",
+                "timestamp": "2025-08-04T23:52:41",
                 "max_reflectivity_dbz": 58.5,
                 "num_gates": 362,
                 "centroid": [
-                    0.0,
-                    0.0
+                    39.525,
+                    256.755
                 ],
                 "bbox": {}
             }

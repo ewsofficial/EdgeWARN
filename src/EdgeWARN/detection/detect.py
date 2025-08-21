@@ -8,7 +8,9 @@ import time
 import sys
 from pathlib import Path
 import datetime
+from datetime import datetime
 import pyart
+import re
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -137,7 +139,7 @@ def get_alpha_shape_from_mask(mask, lat_grid, lon_grid, alpha=0.1):
             return alpha_shape
 
 def propagate_cells(reflectivity, lat_grid, lon_grid, seed_dbz=50,
-                    expand_dbz=40, min_gates=25, max_iterations=100, alpha=0.1):
+                    expand_dbz=40, min_gates=25, max_iterations=100, alpha=0.1, filepath=None):
     """
     Detect and grow storm cells based on reflectivity thresholds.
     Returns a list of detected cell dictionaries.
@@ -192,8 +194,16 @@ def propagate_cells(reflectivity, lat_grid, lon_grid, seed_dbz=50,
 
     print(f"Expansion completed after {iteration + 1} iterations.")
 
-    # Get timestamp for this scan
-    scan_time = datetime.datetime.utcnow().isoformat()
+    if filepath:
+        # Extract timestamp from filename like 20250804-235241
+        m = re.search(r'(\d{8}-\d{6})', str(filepath))
+        if m:
+            timestamp_str = m.group(1)
+            scan_time = datetime.strptime(timestamp_str, "%Y%m%d-%H%M%S").isoformat()
+        else:
+            scan_time = datetime.utcnow().isoformat()
+    else:
+        scan_time = datetime.utcnow().isoformat()
 
     # Build detected cell list
     detected_cells = []
@@ -240,7 +250,8 @@ def propagate_cells(reflectivity, lat_grid, lon_grid, seed_dbz=50,
                 {
                     "timestamp": scan_time,
                     "max_reflectivity_dbz": float(max_dbz),
-                    "num_gates": int(np.sum(mask))
+                    "num_gates": int(np.sum(mask)),
+                    "centroid": [float(centroid_lat), float(centroid_lon)]
                 }
             ]
         }
@@ -511,7 +522,7 @@ def detect_cells(filepath, lat_limits, lon_limits, output_json, plot=False):
         scan_time = str(datetime.datetime.now())
 
     print("Running cell propagation...")
-    cells = propagate_cells(refl, lat, lon, alpha=0.1)
+    cells = propagate_cells(refl, lat, lon, alpha=0.1, filepath=filepath)
 
     print("Merging small cells...")
     merged_cells = merge_connected_small_cells(cells)
