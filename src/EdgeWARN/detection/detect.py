@@ -412,8 +412,7 @@ def save_cells_to_json(cells, filepath, float_precision=4):
                 "timestamp": hist_entry.get("timestamp", ""),
                 "max_reflectivity_dbz": round(float(hist_entry.get("max_reflectivity_dbz", 0)), float_precision),
                 "num_gates": int(hist_entry.get("num_gates", 0)),
-                "centroid": [round(float(v), float_precision) for v in hist_entry.get("centroid", [0, 0])],
-                "bbox": hist_entry.get("bbox", {})
+                "centroid": [round(float(v), float_precision) for v in hist_entry.get("centroid", [0, 0])]
             })
 
         json_data.append(cell_entry)
