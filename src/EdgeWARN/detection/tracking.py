@@ -74,12 +74,11 @@ def polygon_area_km2(latlon_points):
 
 # Add area calculation to each cell
 def add_area_to_cells(cells):
+    """
+    Compute area_km2 for each cell based on convex_hull or alpha_shape.
+    """
     for cell in cells:
-        polygon = cell.get('convex_hull')
-        # If convex_hull is missing or empty, try alpha_shape
-        if not polygon:
-            polygon = cell.get('alpha_shape')
-
+        polygon = cell.get('convex_hull') or cell.get('alpha_shape')
         if polygon and len(polygon) >= 3:
             cell['area_km2'] = polygon_area_km2(polygon)
         else:
@@ -101,6 +100,7 @@ def compute_cost(cellA, cellB, max_vals, weights):
             weights['max_reflectivity'] * d_reflect)
     return cost
 
+# --- Matching function stays the same ---
 def match_cells(cells0, cells1, weights=None):
     if weights is None:
         weights = {
@@ -111,7 +111,8 @@ def match_cells(cells0, cells1, weights=None):
 
     max_vals = {
         'num_gates': max(max(cell['num_gates'] for cell in cells0), max(cell['num_gates'] for cell in cells1)),
-        'max_reflectivity_dbz': max(max(cell['max_reflectivity_dbz'] for cell in cells0), max(cell['max_reflectivity_dbz'] for cell in cells1))
+        'max_reflectivity_dbz': max(max(cell['max_reflectivity_dbz'] for cell in cells0),
+                                    max(cell['max_reflectivity_dbz'] for cell in cells1))
     }
 
     n0, n1 = len(cells0), len(cells1)
@@ -173,92 +174,126 @@ def plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches):
     plt.show()
 
 def main():
-    filepath_old = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc" 
-    filepath_new = r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250805-000242_renamed.nc"
-
-    """
-    # Use this code for production models
-    latest_files = fs.latest_mosaic(2)
-    filepath_old = latest_files[0]
-    filepath_new = latest_files[1]
-    """
-
+    filepath_old = Path(r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc")
+    filepath_new = Path(r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250805-000242_renamed.nc")
+    storm_json = Path("stormcell_test.json")
     lat_limits = (35, 40)
     lon_limits = (252, 258.5)
 
-    # Load radar slice
-    refl, lat_grid, lon_grid = detect.load_mrms_slice(filepath_old, lat_limits, lon_limits)
-
-    # Detect cells
-    cells0 = detect.detect_cells(filepath_old, lat_limits, lon_limits, "stormcell_test.json", plot=False)
-    print(cells0)
-    cells1 = detect.detect_cells(filepath_new, lat_limits, lon_limits, "stormcell_test.json", plot=False)
-    print(cells1)
-
-    # Check for centroid naming variations
-    for cell in cells0 + cells1:
-        if "centroid_latlon" in cell:
-            cell["centroid"] = list(cell.pop("centroid_latlon"))
+    print("=== DEBUG: Starting tracking process ===")
     
-    print(cells0)
-    print(cells1)
+    # --- Detect cells from each scan ---
+    print("DEBUG: Detecting cells from old scan...")
+    cells_old, _ = detect.detect_cells(filepath_old, lat_limits, lon_limits, plot=False)
+    print(f"DEBUG: Found {len(cells_old)} cells in old scan: {[cell['id'] for cell in cells_old]}")
+    
+    print("DEBUG: Detecting cells from new scan...")
+    cells_new, _ = detect.detect_cells(filepath_new, lat_limits, lon_limits, plot=False)
+    print(f"DEBUG: Found {len(cells_new)} cells in new scan: {[cell['id'] for cell in cells_new]}")
 
-    # Add area calculation (Broken, needs a fix)
-    # add_area_to_cells(cells0)
-    # add_area_to_cells(cells1)
+    # --- Match cells between scans ---
+    print("DEBUG: Matching cells between scans...")
+    matches = match_cells(cells_old, cells_new)
+    print(f"DEBUG: Found {len(matches)} matches: {matches}")
 
-    # Match cells
-    matches = match_cells(cells0, cells1)
-
-    # Plot radar with matches
-    plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches)
-
-    storm_json = Path("stormcell_test.json")
-
-    # Load existing storm history
+    # --- Load existing storm data ---
+    print("DEBUG: Loading existing storm data...")
     if storm_json.exists():
-        with storm_json.open("r") as f:
+        with open(storm_json, "r") as f:
             storm_data = json.load(f)
+        print(f"DEBUG: Loaded {len(storm_data)} existing cells: {[cell['id'] for cell in storm_data]}")
+        
+        # CRITICAL FIX: Remove duplicate entries and keep only the most recent version of each cell
+        unique_cells = {}
+        for cell in storm_data:
+            cell_id = cell['id']
+            if cell_id not in unique_cells:
+                unique_cells[cell_id] = cell
+            else:
+                # Keep the cell with the most recent timestamp
+                existing_timestamp = unique_cells[cell_id]['storm_history'][-1]['timestamp']
+                new_timestamp = cell['storm_history'][-1]['timestamp']
+                if new_timestamp > existing_timestamp:
+                    unique_cells[cell_id] = cell
+        
+        storm_data = list(unique_cells.values())
+        print(f"DEBUG: After deduplication: {len(storm_data)} unique cells: {[cell['id'] for cell in storm_data]}")
     else:
         storm_data = []
+        print("DEBUG: No existing storm data found, starting fresh")
 
-    # Convert to dict by centroid for quick lookup
-    def cell_key(cell):
-        lat, lon = cell["centroid"]
-        return f"{round(lat,4)}_{round(lon,4)}"
+    # Create index of existing cells by ID
+    existing_cells = {cell['id']: cell for cell in storm_data}
+    print(f"DEBUG: Existing cells index: {list(existing_cells.keys())}")
 
-    storm_index = {cell_key(c): idx for idx, c in enumerate(storm_data)}
+    # Process matched cells
+    print("DEBUG: Processing matched cells...")
+    for match_idx, (i, j, cost) in enumerate(matches):
+        old_cell = cells_old[i]
+        new_cell = cells_new[j]
+        
+        print(f"DEBUG: Match {match_idx + 1}: Old cell ID {old_cell['id']} -> New cell ID {new_cell['id']} (cost: {cost:.3f})")
+        
+        # Check if the NEW cell ID exists in our storm data
+        if new_cell['id'] in existing_cells:
+            print(f"DEBUG:   Cell ID {new_cell['id']} exists in storm data - updating")
+            existing_cell = existing_cells[new_cell['id']]
+            
+            # Create new history entry
+            new_history_entry = {
+                "timestamp": new_cell["storm_history"][0]["timestamp"],
+                "max_reflectivity_dbz": new_cell["max_reflectivity_dbz"],
+                "num_gates": new_cell["num_gates"],
+                "centroid": new_cell["centroid"]
+            }
+            
+            print(f"DEBUG:   Adding history entry: {new_history_entry}")
+            
+            # Add to storm history (preserve all prior entries)
+            existing_cell["storm_history"].append(new_history_entry)
+            
+            # Update current properties
+            existing_cell["num_gates"] = new_cell["num_gates"]
+            existing_cell["centroid"] = new_cell["centroid"]
+            existing_cell["bbox"] = new_cell.get("bbox", {})
+            existing_cell["alpha_shape"] = new_cell.get("alpha_shape", [])
+            existing_cell["max_reflectivity_dbz"] = new_cell["max_reflectivity_dbz"]
+            
+            print(f"DEBUG:   Updated cell properties for ID {new_cell['id']}")
+        else:
+            print(f"DEBUG:   Cell ID {new_cell['id']} is new - adding to storm data")
+            # New cell - add it to our data
+            storm_data.append(new_cell)
+            existing_cells[new_cell['id']] = new_cell
+            print(f"DEBUG:   Added new cell ID {new_cell['id']} to storm data")
 
-    # Update matched cells, preserving old ID and metadata
-    updated = set()
-    for i, j, cost in matches:
-        old_cell_idx = storm_index.get(cell_key(cells0[i]))
-        if old_cell_idx is not None:
-            old_cell = storm_data[old_cell_idx]
-            new_cell = cells1[j]
+    # Add unmatched new cells (completely new detections)
+    print("DEBUG: Processing unmatched new cells...")
+    matched_new_indices = {j for _, j, _ in matches}
+    unmatched_count = 0
+    for j, new_cell in enumerate(cells_new):
+        if j not in matched_new_indices and new_cell['id'] not in existing_cells:
+            print(f"DEBUG:   Found unmatched new cell ID {new_cell['id']} - adding")
+            storm_data.append(new_cell)
+            existing_cells[new_cell['id']] = new_cell
+            unmatched_count += 1
+    
+    print(f"DEBUG: Added {unmatched_count} unmatched new cells")
 
-            # Update only positional and bounding entries
-            old_cell['centroid'] = new_cell['centroid']
-            old_cell['bbox'] = new_cell.get('bbox', old_cell.get('bbox'))
-            old_cell['bbox_points'] = new_cell.get('bbox_points', old_cell.get('bbox_points'))
-            old_cell['convex_hull'] = new_cell.get('convex_hull', old_cell.get('convex_hull'))
-            old_cell['alpha_shape'] = new_cell.get('alpha_shape', old_cell.get('alpha_shape'))
-            old_cell['area_km2'] = new_cell.get('area_km2', old_cell.get('area_km2'))
+    # --- Save updated JSON ---
+    print("DEBUG: Saving updated JSON...")
+    detect.save_cells_to_json(storm_data, storm_json)
 
-            updated.add(j)
+    # Debug: Verify final structure
+    print("DEBUG: Final storm data structure:")
+    for cell in storm_data:
+        print(f"  Cell ID {cell['id']}: {len(cell['storm_history'])} history entries")
+        for hist_idx, hist_entry in enumerate(cell['storm_history']):
+            print(f"    History {hist_idx + 1}: {hist_entry['timestamp']} - {hist_entry['num_gates']} gates")
 
-    # Add unmatched new cells
-    for j, cell in enumerate(cells1):
-        if j not in updated:
-            storm_data.append(cell)
-
-    # Save back to JSON
-    with storm_json.open("w") as f:
-        json.dump(storm_data, f, indent=2)
-
-    print(f"Storm data updated in {storm_json}")
-
+    print(f"=== DEBUG: Completed tracking process ===")
+    print(f"Updated {storm_json} with {len(matches)} matched pairs and {unmatched_count} new cells.")
+    print(f"Total cells in database: {len(storm_data)}")
 
 if __name__ == "__main__":
     main()
-

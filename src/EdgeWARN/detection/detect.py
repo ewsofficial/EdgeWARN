@@ -387,10 +387,10 @@ def convert_to_json_serializable(obj, float_precision=6):
     else:
         return obj
 
+# --- JSON saving function matching detection.py ---
 def save_cells_to_json(cells, filepath, float_precision=4):
     """
-    Save detected storm cells to a JSON file, keeping bbox, alpha_shape, and storm history.
-    Rounds numeric values to the specified float_precision.
+    Save tracked storm cells to JSON (like detection.py).
     """
     json_data = []
     for cell in cells:
@@ -406,7 +406,6 @@ def save_cells_to_json(cells, filepath, float_precision=4):
             "storm_history": []
         }
 
-        # Add storm history entries if they exist
         for hist_entry in cell.get("storm_history", []):
             cell_entry["storm_history"].append({
                 "timestamp": hist_entry.get("timestamp", ""),
@@ -417,11 +416,10 @@ def save_cells_to_json(cells, filepath, float_precision=4):
 
         json_data.append(cell_entry)
 
-    # Save to file
     with open(filepath, 'w') as f:
         json.dump(json_data, f, indent=4)
 
-    print(f"Saved {len(cells)} cells to {filepath}")
+    print(f"Saved {len(cells)} tracked cells to {filepath}")
 
 def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection",
                      lat_limits=(38.8, 40.1), lon_limits=(256, 258.5)):
@@ -506,7 +504,7 @@ def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection"
 
     plt.show()
 
-def detect_cells(filepath, lat_limits, lon_limits, output_json, plot=False):
+def detect_cells(filepath, lat_limits, lon_limits, plot=False):
     print("Loading MRMS data slice...")
     refl, lat, lon = load_mrms_slice(filepath, lat_limits, lon_limits)
 
@@ -541,12 +539,7 @@ def detect_cells(filepath, lat_limits, lon_limits, output_json, plot=False):
             storm_history[cell_id] = []
         storm_history[cell_id].append(entry)
 
-    # Save to JSON
-    save_cells_to_json(merged_cells, output_json, float_precision=4)
-
     if plot:
-        print("Plotting detected storm cells before merge ...")
-        plot_storm_cells(cells, refl, lat, lon, title="Detected Storm Cells (Initial Pass)")
         print("Plotting final cells ... ")
         plot_storm_cells(merged_cells, refl, lat, lon, title="Detected Storm Cells (Final Pass)")
 
@@ -566,6 +559,6 @@ if __name__ == "__main__":
 
     if filepath.exists():
         print("Running detection!")
-        detect_cells(filepath, lat_limits, lon_limits, "stormcell_test.json", plot=True)
+        detect_cells(filepath, lat_limits, lon_limits, plot=True)
     else:
         print(f"Filepath: {filepath} does not exist")
