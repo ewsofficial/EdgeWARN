@@ -1,6 +1,6 @@
-EdgeWARN WEATHER HAZARDS DETECTION ANALYSIS AND NOWCASTING
-Developed by: Edgemont Weather Service EWS
-Edgemont Jr./Sr. High School
-200 White Oak Ln, Scarsdale NY 10583
+EdgeWARN WEATHER HAZARDS DETECTION ANALYSIS AND NOWCASTING \n
+Developed by: Edgemont Weather Service EWS \n
+Edgemont Jr./Sr. High School \n
+200 White Oak Ln, Scarsdale NY 10583 \n
 
-Build Version: 2025.08.17 DEV
+Build Version: 2025.08.21 DEV
