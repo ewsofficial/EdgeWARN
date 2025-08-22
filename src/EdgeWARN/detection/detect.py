@@ -7,10 +7,7 @@ import json
 import time
 import sys
 from pathlib import Path
-import datetime
-from datetime import datetime
-import pyart
-import re
+
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -71,13 +68,6 @@ def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection"
     Plot MRMS reflectivity and storm cells, hardcoding the lat/lon limits.
     lon_limits assumed 0-360.
     """
-
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import matplotlib.cm as cm
-    import matplotlib.colors as mcolors
-    import cartopy.crs as ccrs
-    import cartopy.feature as cfeature
 
     # Convert 0–360 lon limits to -180..180
     lon_limits_pm = cellmask.convert_lon_0_360_to_pm180(np.array(lon_limits))
