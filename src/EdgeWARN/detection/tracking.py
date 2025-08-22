@@ -7,8 +7,6 @@ import math
 from pathlib import Path
 import json
 
-import util.file as fs
-
 def haversine_dist(coord1, coord2):
     R = 6371  # km
     lat1, lon1 = np.radians(coord1)

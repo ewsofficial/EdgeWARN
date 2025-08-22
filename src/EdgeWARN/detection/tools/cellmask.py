@@ -5,7 +5,7 @@ import alphashape
 from shapely.geometry import Point, Polygon, LineString
 import datetime
 from datetime import datetime
-from . import timestamp
+from .. import timestamp
 
 def bbox_to_points(bbox):
     if bbox is None:
