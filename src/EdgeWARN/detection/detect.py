@@ -15,7 +15,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 import util.file as fs
-from . import timestamp
+from .tools import timestamp
 from .tools import load
 from .tools import cellmask
 
