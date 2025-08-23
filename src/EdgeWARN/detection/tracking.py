@@ -203,34 +203,51 @@ def update_storm_cell_history(existing_cell, new_data):
 
 def process_matched_cell(existing_cell, new_cell_data, timestamp):
     """
-    Process a matched cell and update its history without duplicates
-    
-    Args:
-        existing_cell (dict): The existing cell to update
-        new_cell_data (dict): New cell data from current scan
-        timestamp (str): Current timestamp
-    
-    Returns:
-        bool: True if history was updated, False otherwise
+    Process a matched cell: preserve the existing ID and history, 
+    update all other properties with new data, and append new scan to history
     """
-    # Create history entry
-    history_entry = {
-        'timestamp': timestamp,
-        'max_reflectivity_dbz': new_cell_data['max_reflectivity_dbz'],
-        'num_gates': new_cell_data['num_gates'],
-        'centroid': new_cell_data['centroid']
-    }
+    # Store the existing ID and history before updating
+    existing_id = existing_cell["id"]
+    existing_history = existing_cell.get("storm_history", [])
     
-    # Update cell properties
+    # Update ALL properties except ID and history with new data
     existing_cell.update({
-        'num_gates': new_cell_data['num_gates'],
-        'centroid': new_cell_data['centroid'],
-        'bbox': new_cell_data.get('bbox', existing_cell.get('bbox')),
-        'alpha_shape': new_cell_data.get('alpha_shape', existing_cell.get('alpha_shape'))
+        # DO NOT update the ID - keep the original tracking ID
+        "num_gates": new_cell_data["num_gates"],
+        "centroid": new_cell_data["centroid"],
+        "bbox": new_cell_data.get("bbox", {}),
+        "alpha_shape": new_cell_data.get("alpha_shape", []),
+        "max_reflectivity_dbz": new_cell_data["max_reflectivity_dbz"],
+        # Keep the existing storm_history intact
+        "storm_history": existing_history
     })
     
-    # Update history without duplicates
-    return update_storm_cell_history(existing_cell, history_entry)
+    # Create the new snapshot for this scan
+    new_snapshot = {
+        "timestamp": timestamp,
+        "max_reflectivity_dbz": new_cell_data["max_reflectivity_dbz"],
+        "num_gates": new_cell_data["num_gates"],
+        "centroid": new_cell_data["centroid"],
+    }
+    
+    # Check if this timestamp already exists in history
+    timestamp_exists = False
+    for hist_entry in existing_history:
+        if hist_entry.get("timestamp") == timestamp:
+            # Update the existing entry with new data
+            hist_entry.update(new_snapshot)
+            timestamp_exists = True
+            break
+    
+    # If timestamp doesn't exist, append new entry
+    if not timestamp_exists:
+        existing_history.append(new_snapshot)
+    
+    # Keep history sorted by timestamp
+    existing_history.sort(key=lambda h: h["timestamp"])
+    
+    print(f"DEBUG: Updated cell ID {existing_id} with data from new cell ID {new_cell_data['id']}")
+    return True
 
 def main():
     filepath_old = Path(r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc")
@@ -256,12 +273,7 @@ def main():
     if cells_new:
         print(f"DEBUG: New scan timestamp: {cells_new[0]['storm_history'][0]['timestamp']}")
 
-    # --- Match cells between scans ---
-    print("DEBUG: Matching cells between scans...")
-    matches = match_cells(cells_old, cells_new)
-    print(f"DEBUG: Found {len(matches)} matches: {matches}")
-
-    # --- Load existing storm data ---
+    # --- If no JSON exists, create it with old cells first ---
     print("DEBUG: Loading existing storm data...")
     if storm_json.exists():
         with open(storm_json, "r") as f:
@@ -302,12 +314,20 @@ def main():
         storm_data = list(unique_cells.values())
         print(f"DEBUG: After deduplication: {len(storm_data)} unique cells: {[cell['id'] for cell in storm_data]}")
     else:
-        storm_data = []
-        print("DEBUG: No existing storm data found, starting fresh")
+        # NO EXISTING JSON - CREATE IT WITH OLD CELLS FIRST
+        print("DEBUG: No existing storm data found - creating with old scan cells")
+        storm_data = cells_old.copy()  # Start with old cells
+        detect.save_cells_to_json(storm_data, storm_json)
+        print(f"DEBUG: Created new JSON with {len(storm_data)} cells from old scan: {[cell['id'] for cell in storm_data]}")
 
     # Create index of existing cells by ID
     existing_cells = {cell['id']: cell for cell in storm_data}
     print(f"DEBUG: Existing cells index: {list(existing_cells.keys())}")
+
+    # --- Match cells between scans ---
+    print("DEBUG: Matching cells between scans...")
+    matches = match_cells(cells_old, cells_new)
+    print(f"DEBUG: Found {len(matches)} matches: {matches}")
 
     # Process matched cells
     print("DEBUG: Processing matched cells...")
@@ -318,36 +338,36 @@ def main():
         
         print(f"DEBUG: Match {match_idx + 1}: Old cell ID {old_cell['id']} -> New cell ID {new_cell['id']} (cost: {cost:.3f})")
         
-        # Check if the NEW cell ID exists in our storm data
-        if new_cell['id'] in existing_cells:
-            print(f"DEBUG:   Cell ID {new_cell['id']} exists in storm data - updating")
-            existing_cell = existing_cells[new_cell['id']]
+        # CRITICAL FIX: Check if the OLD cell ID exists in our storm data (not the new one)
+        if old_cell['id'] in existing_cells:
+            print(f"DEBUG:   Tracked cell ID {old_cell['id']} exists - updating with data from new cell {new_cell['id']}")
+            existing_cell = existing_cells[old_cell['id']]
             
             # Use the new function to update without duplicates
             updated = process_matched_cell(existing_cell, new_cell, current_timestamp)
             
             if updated:
-                print(f"DEBUG:   Updated cell properties for ID {new_cell['id']}")
+                print(f"DEBUG:   Updated tracked cell ID {old_cell['id']} with properties from scan {current_timestamp}")
             else:
-                print(f"DEBUG:   No update needed for ID {new_cell['id']} (duplicate timestamp)")
+                print(f"DEBUG:   No update needed for ID {old_cell['id']} (duplicate timestamp)")
         else:
-            print(f"DEBUG:   Cell ID {new_cell['id']} is new - adding to storm data")
-            # New cell - add it to our data
-            storm_data.append(new_cell)
-            existing_cells[new_cell['id']] = new_cell
-            print(f"DEBUG:   Added new cell ID {new_cell['id']} to storm data")
+            print(f"DEBUG:   Cell ID {old_cell['id']} not found - adding old cell to maintain tracking")
+            # Add the old cell to maintain tracking continuity
+            storm_data.append(old_cell)
+            existing_cells[old_cell['id']] = old_cell
+            print(f"DEBUG:   Added tracked cell ID {old_cell['id']} to storm data")
 
     # Add unmatched new cells (completely new detections)
     print("DEBUG: Processing unmatched new cells...")
     matched_new_indices = {j for _, j, _ in matches}
     unmatched_count = 0
     for j, new_cell in enumerate(cells_new):
-        if j not in matched_new_indices and new_cell['id'] not in existing_cells:
-            print(f"DEBUG:   Found unmatched new cell ID {new_cell['id']} - adding")
+        if j not in matched_new_indices:
+            print(f"DEBUG:   Found unmatched new cell ID {new_cell['id']} - adding as new detection")
             storm_data.append(new_cell)
             existing_cells[new_cell['id']] = new_cell
             unmatched_count += 1
-    
+
     print(f"DEBUG: Added {unmatched_count} unmatched new cells")
 
     # --- Save updated JSON ---

@@ -1,6 +1,6 @@
 [
     {
-        "id": 3,
+        "id": 8,
         "num_gates": 945,
         "centroid": [
             39.5789,
@@ -96,6 +96,15 @@
         ],
         "storm_history": [
             {
+                "timestamp": "2025-08-04T23:52:41",
+                "max_reflectivity_dbz": 60.5,
+                "num_gates": 884,
+                "centroid": [
+                    39.605,
+                    257.275
+                ]
+            },
+            {
                 "timestamp": "2025-08-05T00:02:42",
                 "max_reflectivity_dbz": 61.0,
                 "num_gates": 945,
@@ -107,7 +116,7 @@
         ]
     },
     {
-        "id": 11,
+        "id": 12,
         "num_gates": 677,
         "centroid": [
             39.5419,
@@ -239,6 +248,15 @@
         ],
         "storm_history": [
             {
+                "timestamp": "2025-08-04T23:52:41",
+                "max_reflectivity_dbz": 58.5,
+                "num_gates": 362,
+                "centroid": [
+                    39.525,
+                    256.755
+                ]
+            },
+            {
                 "timestamp": "2025-08-05T00:02:42",
                 "max_reflectivity_dbz": 60.0,
                 "num_gates": 677,
@@ -250,7 +268,7 @@
         ]
     },
     {
-        "id": 14,
+        "id": 15,
         "num_gates": 801,
         "centroid": [
             37.845,
@@ -381,6 +399,15 @@
             ]
         ],
         "storm_history": [
+            {
+                "timestamp": "2025-08-04T23:52:41",
+                "max_reflectivity_dbz": 64.5,
+                "num_gates": 760,
+                "centroid": [
+                    37.895,
+                    257.025
+                ]
+            },
             {
                 "timestamp": "2025-08-05T00:02:42",
                 "max_reflectivity_dbz": 68.0,
