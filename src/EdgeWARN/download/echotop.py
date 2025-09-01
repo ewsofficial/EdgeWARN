@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import timedelta
 
 # ---------- MRMS ECHOTOP18 ----------
-def download_mrms_echotop18(dt: datetime.datetime, outdir: Path, max_lookback_minutes=60):
+def download_mrms_echotop18(dt, outdir: Path, max_lookback_minutes=60):
     """
     Downloads the latest MRMS EchoTop 18 file by searching back minute-by-minute.
     """

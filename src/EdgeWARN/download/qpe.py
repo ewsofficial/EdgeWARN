@@ -4,7 +4,7 @@ import gzip
 import requests
 
 # ---------- MRMS QPE 15 MIN ----------
-def download_latest_mrms_qpe15(dt: datetime.datetime, outdir: Path):
+def download_latest_mrms_qpe15(dt, outdir: Path):
     global LATEST_MRMS_QPE15
     outdir.mkdir(parents=True, exist_ok=True)
     base_url = "https://mrms.ncep.noaa.gov/2D/RadarOnly_QPE_15M"

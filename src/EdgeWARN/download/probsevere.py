@@ -4,7 +4,7 @@ import requests, re
 from datetime import timedelta
 
 # ---------- MRMS ProbSevere ----------
-def download_latest_mrms_probsevere_flexible(dt: datetime.datetime, outdir: Path, max_lookback_minutes=60):
+def download_latest_mrms_probsevere_flexible(dt, outdir: Path, max_lookback_minutes=60):
     outdir.mkdir(parents=True, exist_ok=True)
     base_url = "https://mrms.ncep.noaa.gov/ProbSevere/PROBSEVERE/"
     attempt_dt = dt.replace(second=0, microsecond=0)

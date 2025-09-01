@@ -384,7 +384,7 @@ def main():
     print(f"=== DEBUG: Completed tracking process ===")
     print(f"Updated {storm_json} with {len(matches)} matched pairs and {unmatched_count} new cells.")
     print(f"Total cells in database: {len(storm_data)}")
-    vector = vectors.write_vectors()
+    vectors.write_vectors()
 
 if __name__ == "__main__":
     main()

@@ -5,7 +5,7 @@ import gzip
 
 
 # ---------- MRMS PrecipRate 10 MIN ----------
-def download_latest_mrms_preciprate_10min(dt: datetime.datetime, outdir: Path):
+def download_latest_mrms_preciprate_10min(dt, outdir: Path):
     global LATEST_MRMS_PRECIPRATE
     outdir.mkdir(parents=True, exist_ok=True)
     base_url = "https://mrms.ncep.noaa.gov/2D/PrecipRate"
@@ -18,6 +18,9 @@ def download_latest_mrms_preciprate_10min(dt: datetime.datetime, outdir: Path):
 
     # Define where unzipped file goes — parent directory of outdir
     extracted_path = outdir / filename[:-3]  # remove ".gz"
+
+    # Debug to check if timestamp is correct
+    print(f"MRMS Preciprate using timestamp: {dt}")
 
     if not extracted_path.exists():
         if not gz_outpath.exists():

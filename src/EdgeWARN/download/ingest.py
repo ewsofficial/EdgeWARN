@@ -1,6 +1,7 @@
 import datetime
 import time
 from pathlib import Path
+
 from . import nexrad as nr
 from . import mosaic as ms
 from . import g19
@@ -11,6 +12,8 @@ from . import preciprate
 from . import probsevere
 from . import rtma
 from util import file as fs
+from EdgeWARN.detection.tools import timestamp
+import os
 
 # ---------- CREDITS ----------
 def attribution():
@@ -38,7 +41,6 @@ def wipe_temp():
             print(f"Deleted temporary file: {f.name}")
         except Exception as e:
             print(f"Could not delete temporary file {f.name}: {e}")
-            print(r"Deleting Folder: C:\Windows\System32")
 
 # MAIN
 def main():
@@ -66,20 +68,36 @@ def main():
     ms.download_mrms_composite_reflectivity(outdir=fs.MRMS_RADAR_DIR, tempdir=fs.TEMP_DIR)
     ms.find_and_concat_refl()
 
+    # Find the most recent MRMS reflectivity file and extract its timestamp
+    refl_files = sorted(
+            fs.MRMS_RADAR_DIR.glob("MRMS_MergedReflectivityQC_max_*.nc"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True
+        )
+    if not refl_files:
+        print("No MRMS reflectivity files found! Using current UTC time.")
+        target_time = datetime.datetime.utcnow()
+    else:
+        refl_file = refl_files[0]
+        ts_str = timestamp.extract_timestamp_from_filename(str(refl_file))
+        try:
+            target_time = datetime.datetime.fromisoformat(ts_str)
+        except Exception:
+            print(f"Could not parse timestamp '{ts_str}', using current UTC time.")
+            target_time = datetime.datetime.utcnow()
+
     # Download latest GOES GLM
     g19.download_latest_goes_glm()
 
-    now_utc = datetime.datetime.utcnow()
-
-    # Download MRMS files with fallback logic
-    nldn.download_latest_mrms_nldn(now_utc, fs.MRMS_NLDN_DIR)  # <-- uses updated function with unzip
-    et.download_mrms_echotop18(now_utc, fs.MRMS_ECHOTOP18_DIR)
-    qpe.download_latest_mrms_qpe15(now_utc, fs.MRMS_QPE15_DIR)
-    preciprate.download_latest_mrms_preciprate_10min(now_utc, fs.MRMS_PRECIPRATE_DIR)
-    probsevere.download_latest_mrms_probsevere_flexible(now_utc, fs.MRMS_PROBSEVERE_DIR)
+    # Download MRMS files with fallback logic, using the reflectivity timestamp
+    nldn.download_latest_mrms_nldn(target_time, fs.MRMS_NLDN_DIR)
+    et.download_mrms_echotop18(target_time, fs.MRMS_ECHOTOP18_DIR)
+    qpe.download_latest_mrms_qpe15(target_time, fs.MRMS_QPE15_DIR)
+    preciprate.download_latest_mrms_preciprate_10min(target_time, fs.MRMS_PRECIPRATE_DIR)
+    probsevere.download_latest_mrms_probsevere_flexible(target_time, fs.MRMS_PROBSEVERE_DIR)
 
     # Download THREDDS RTMA
-    rtma.download_latest_rtma(now_utc, fs.THREDDS_RTMA_DIR)
+    rtma.download_latest_rtma(target_time, fs.THREDDS_RTMA_DIR)
 
 # Only run this for testing purposes
 # """

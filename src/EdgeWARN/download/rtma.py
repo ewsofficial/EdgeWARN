@@ -3,7 +3,7 @@ from pathlib import Path
 import requests
 
 # RTMA Downloading
-def download_latest_rtma(dt: datetime.datetime, outdir: Path):
+def download_latest_rtma(dt, outdir: Path):
     global LATEST_RTMA_FILE
     outdir.mkdir(parents=True, exist_ok=True)
 

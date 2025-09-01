@@ -172,7 +172,7 @@ def concat_refl(files):
     if not match:
         raise ValueError(f"Could not find YYYYMMDD-HHMMSS in filename: {first_file}")
     timestamp = match.group(0)
-    output_path = r"C:\input_data\nexrad_merged\MRMS_MergedReflectivityQC_max_{timestamp}.nc"
+    output_path = rf"C:\input_data\nexrad_merged\MRMS_MergedReflectivityQC_max_{timestamp}.nc"
 
     # Open all files lazily with xarray
     datasets = [xr.open_dataset(f, chunks={'x': 500, 'y': 500}) for f in files]

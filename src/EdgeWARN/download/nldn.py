@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import timedelta
 
 # ---------- MRMS NLDN ----------
-def download_latest_mrms_nldn(dt: datetime.datetime, outdir: Path, max_lookback_minutes=20):
+def download_latest_mrms_nldn(dt, outdir: Path, max_lookback_minutes=20):
     """
     Download latest MRMS NLDN CG 5-min AvgDensity file by searching back minute-by-minute.
     Files named like:
@@ -17,6 +17,9 @@ def download_latest_mrms_nldn(dt: datetime.datetime, outdir: Path, max_lookback_
     base_url = "https://mrms.ncep.noaa.gov/2D/NLDN_CG_001min_AvgDensity"
     outdir.mkdir(parents=True, exist_ok=True)
     attempt_dt = dt.replace(second=0, microsecond=0)
+
+    # Debug to check that timestamp works
+    print(f"NLDN is using timestamp: {dt}")
 
     for _ in range(max_lookback_minutes + 1):
         date_str = attempt_dt.strftime("%Y%m%d")
