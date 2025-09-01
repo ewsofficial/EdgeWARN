@@ -37,10 +37,18 @@ def load_mrms_slice(filepath, lat_limits=None, lon_limits=None):
     else:
         x_start, x_end = 0, lon.shape[0]
 
-    # Slice reflectivity and coords
-    refl_crop = refl.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
-    lat_crop = lat.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
-    lon_crop = lon.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
-
-    ds.close()
-    return refl_crop, lat_crop, lon_crop
+    # Handle 1D or 2D lat/lon arrays
+    if lat.ndim == 1 and lon.ndim == 1:
+        refl_crop = refl.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
+        lat_crop = lat.isel({lat_dim: slice(y_start, y_end)}).values
+        lon_crop = lon.isel({lon_dim: slice(x_start, x_end)}).values
+        # Expand to 2D meshgrid for compatibility
+        lon_grid, lat_grid = np.meshgrid(lon_crop, lat_crop)
+        ds.close()
+        return refl_crop, lat_grid, lon_grid
+    else:
+        refl_crop = refl.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
+        lat_crop = lat.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
+        lon_crop = lon.isel({lat_dim: slice(y_start, y_end), lon_dim: slice(x_start, x_end)}).values
+        ds.close()
+        return refl_crop, lat_crop, lon_crop

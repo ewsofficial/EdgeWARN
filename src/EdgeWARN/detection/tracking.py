@@ -107,28 +107,65 @@ def match_cells(cells0, cells1, weights=None):
             'num_gates': 0.3,
             'max_reflectivity': 0.2
         }
+    # Quick guards for empty inputs
+    n0, n1 = len(cells0), len(cells1)
+    if n0 == 0 or n1 == 0:
+        print(f"DEBUG: No cells to match (n0={n0}, n1={n1})")
+        return []
+
+    # Safely compute max values (fall back to 0 if necessary)
+    max_num_gates = 0
+    max_reflect = 0
+    if n0 > 0:
+        max_num_gates = max(max_num_gates, max(cell['num_gates'] for cell in cells0))
+        max_reflect = max(max_reflect, max(cell['max_reflectivity_dbz'] for cell in cells0))
+    if n1 > 0:
+        max_num_gates = max(max_num_gates, max(cell['num_gates'] for cell in cells1))
+        max_reflect = max(max_reflect, max(cell['max_reflectivity_dbz'] for cell in cells1))
 
     max_vals = {
-        'num_gates': max(max(cell['num_gates'] for cell in cells0), max(cell['num_gates'] for cell in cells1)),
-        'max_reflectivity_dbz': max(max(cell['max_reflectivity_dbz'] for cell in cells0),
-                                    max(cell['max_reflectivity_dbz'] for cell in cells1))
+        'num_gates': max_num_gates,
+        'max_reflectivity_dbz': max_reflect
     }
 
-    n0, n1 = len(cells0), len(cells1)
+    # Build cost matrix and check feasibility before assignment
     cost_matrix = np.full((n0, n1), np.inf)
-
     for i, c0 in enumerate(cells0):
         for j, c1 in enumerate(cells1):
             cost_matrix[i, j] = compute_cost(c0, c1, max_vals, weights)
 
-    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    # If there are no finite costs, there are no feasible matches
+    if not np.isfinite(cost_matrix).any():
+        print(f"DEBUG: All cost matrix entries are infinite (n0={n0}, n1={n1}); no feasible matches.")
+        return []
 
-    matches = []
-    for i, j in zip(row_ind, col_ind):
-        if cost_matrix[i, j] != np.inf:
-            matches.append((i, j, cost_matrix[i, j]))
+    # Try the Hungarian algorithm first; if it fails (infeasible), fall back to a greedy matcher
+    try:
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        matches = []
+        for i, j in zip(row_ind, col_ind):
+            if np.isfinite(cost_matrix[i, j]):
+                matches.append((i, j, float(cost_matrix[i, j])))
+        return matches
+    except ValueError as e:
+        print(f"DEBUG: linear_sum_assignment failed: {e}; falling back to greedy matching.")
 
-    return matches
+        # Greedy matching: sort all finite pairs by cost and take the lowest-cost disjoint pairs
+        finite_pairs = [(i, j, float(cost_matrix[i, j]))
+                        for i in range(n0) for j in range(n1) if np.isfinite(cost_matrix[i, j])]
+        finite_pairs.sort(key=lambda x: x[2])
+
+        used_rows = set()
+        used_cols = set()
+        greedy_matches = []
+        for i, j, c in finite_pairs:
+            if i in used_rows or j in used_cols:
+                continue
+            used_rows.add(i)
+            used_cols.add(j)
+            greedy_matches.append((i, j, c))
+
+        return greedy_matches
 
 def plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches):
 
@@ -251,24 +288,24 @@ def process_matched_cell(existing_cell, new_cell_data, timestamp):
     return True
 
 def main():
-    filepath_old = Path(r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc")
-    filepath_new = Path(r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250805-000242_renamed.nc")
+    filepath_old = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250901-201640.nc")
+    filepath_new = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250901-202040.nc")
     storm_json = Path("stormcell_test.json")
-    lat_limits = (35, 40)
-    lon_limits = (252, 258.5)
+    lat_limits = (36.7, 39.3)
+    lon_limits = (259.1, 263.7)
 
     print("=== DEBUG: Starting tracking process ===")
     
     # --- Detect cells from each scan ---
     print("DEBUG: Detecting cells from old scan...")
-    cells_old, _ = detect.detect_cells(filepath_old, lat_limits, lon_limits, plot=False)
+    cells_old, _ = detect.detect_cells(filepath_old, lat_limits, lon_limits, plot=True)
     print(f"DEBUG: Found {len(cells_old)} cells in old scan: {[cell['id'] for cell in cells_old]}")
 
     if cells_old:
         print(f"DEBUG: Old scan timestamp: {cells_old[0]['storm_history'][0]['timestamp']}")
     
     print("DEBUG: Detecting cells from new scan...")
-    cells_new, _ = detect.detect_cells(filepath_new, lat_limits, lon_limits, plot=False)
+    cells_new, _ = detect.detect_cells(filepath_new, lat_limits, lon_limits, plot=True)
     print(f"DEBUG: Found {len(cells_new)} cells in new scan: {[cell['id'] for cell in cells_new]}")
 
     if cells_new:

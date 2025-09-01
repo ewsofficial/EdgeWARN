@@ -13,6 +13,7 @@ import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import pyart
 
 import util.file as fs
 from .tools import timestamp
@@ -61,8 +62,9 @@ def save_cells_to_json(cells, filepath, float_precision=4):
 
     print(f"Saved {len(cells)} tracked cells to {filepath}")
 
+### Find a way to get the lat and lon limits to work
 def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection",
-                     lat_limits=(38.8, 40.1), lon_limits=(256, 258.5)):
+                     lat_limits=(36.7, 39.3), lon_limits=(259.1, 263.7)):
     """
     Plot MRMS reflectivity and storm cells, hardcoding the lat/lon limits.
     lon_limits assumed 0-360.
