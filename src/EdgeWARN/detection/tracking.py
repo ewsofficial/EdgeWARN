@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import math
 from pathlib import Path
 import json
+from .tools import vectors
 
 def haversine_dist(coord1, coord2):
     R = 6371  # km
@@ -369,7 +370,6 @@ def main():
             unmatched_count += 1
 
     print(f"DEBUG: Added {unmatched_count} unmatched new cells")
-
     # --- Save updated JSON ---
     print("DEBUG: Saving updated JSON...")
     detect.save_cells_to_json(storm_data, storm_json)
@@ -384,6 +384,7 @@ def main():
     print(f"=== DEBUG: Completed tracking process ===")
     print(f"Updated {storm_json} with {len(matches)} matched pairs and {unmatched_count} new cells.")
     print(f"Total cells in database: {len(storm_data)}")
+    vector = vectors.write_vectors()
 
 if __name__ == "__main__":
     main()

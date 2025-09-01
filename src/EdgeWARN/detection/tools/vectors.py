@@ -11,14 +11,7 @@ Vectors provides EdgeWARN functions that determine vector components of detected
 THIS IS NOT A STANDALONE SCRIPT
 """
 
-def calculate_storm_vectors(json_path):
-	"""
-	Reads storm cell data from a JSON file and calculates vector components (dx, dy, dt) for each cell.
-	Returns a list of dicts: {id, dx, dy, dt, t0, t1, c0, c1}
-	"""
-	with open(json_path, 'r') as f:
-		cells = json.load(f)
-
+def calculate_storm_vectors(cells):
 	vectors = []
 	for cell in cells:
 		history = cell.get('storm_history', [])
@@ -31,21 +24,22 @@ def calculate_storm_vectors(json_path):
 		c1 = h1['centroid']
 		t0 = h0['timestamp']
 		t1 = h1['timestamp']
-		# Parse timestamps to datetime
 		try:
 			dt0 = datetime.fromisoformat(t0)
 			dt1 = datetime.fromisoformat(t1)
 		except Exception:
-			# fallback: try to extract with tools.timestamp
 			dt0 = datetime.fromisoformat(timestamp.extract_timestamp_from_filename(t0))
 			dt1 = datetime.fromisoformat(timestamp.extract_timestamp_from_filename(t1))
 		dt_seconds = (dt1 - dt0).total_seconds()
-		import math
 		avg_lat = (c0[0] + c1[0]) / 2
 		deg_to_m_lat = 111320.0
 		deg_to_m_lon = 111320.0 * math.cos(math.radians(avg_lat))
 		dx = (c1[1] - c0[1]) * deg_to_m_lon
 		dy = (c1[0] - c0[0]) * deg_to_m_lat
+		# Add dx, dy, dt to the latest (h1) history entry
+		h1['dx'] = dx
+		h1['dy'] = dy
+		h1['dt'] = dt_seconds
 		vectors.append({
 			'id': cell['id'],
 			'dx': dx,
@@ -58,11 +52,20 @@ def calculate_storm_vectors(json_path):
 		})
 	return vectors
 
-if __name__ == "__main__":
+def write_vectors():
 	import sys
 	# Default path or from command line
 	json_path = sys.argv[1] if len(sys.argv) > 1 else "stormcell_test.json"
-	vectors = calculate_storm_vectors(json_path)
+	with open(json_path, 'r') as f:
+		cells = json.load(f)
+	vectors = calculate_storm_vectors(cells)
+	# Write updated cells back to file
+	with open(json_path, 'w') as f:
+		json.dump(cells, f, indent=4)
 	for v in vectors:
 		print(f"id: {v['id']}, dx: {v['dx']:.2f} m, dy: {v['dy']:.2f} m, dt: {v['dt']} s")
+
+if __name__ == "__main__":
+	write_vectors()
+
 	
