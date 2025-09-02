@@ -8,6 +8,9 @@ from pathlib import Path
 import json
 from .tools import vectors
 
+# Penalty cost used instead of np.inf for disallowed pairs (keeps cost matrix finite)
+PENALTY_COST = 1000.0
+
 def haversine_dist(coord1, coord2):
     R = 6371  # km
     lat1, lon1 = np.radians(coord1)
@@ -89,7 +92,8 @@ def normalize_diff(val1, val2, max_val):
 def compute_cost(cellA, cellB, max_vals, weights):
     dist = haversine_dist(cellA['centroid'], cellB['centroid'])
     if dist > 10:
-        return np.inf  # beyond 10 km, discard
+        # Use a large finite penalty instead of infinity so the Hungarian solver stays feasible
+        return PENALTY_COST
 
     d_num_gates = normalize_diff(cellA['num_gates'], cellB['num_gates'], max_vals['num_gates'])  # proxy for area
     d_reflect = normalize_diff(cellA['max_reflectivity_dbz'], cellB['max_reflectivity_dbz'], max_vals['max_reflectivity_dbz'])
@@ -134,9 +138,9 @@ def match_cells(cells0, cells1, weights=None):
         for j, c1 in enumerate(cells1):
             cost_matrix[i, j] = compute_cost(c0, c1, max_vals, weights)
 
-    # If there are no finite costs, there are no feasible matches
-    if not np.isfinite(cost_matrix).any():
-        print(f"DEBUG: All cost matrix entries are infinite (n0={n0}, n1={n1}); no feasible matches.")
+    # If there are no costs below the penalty threshold, there are no reasonable matches
+    if not (cost_matrix < PENALTY_COST).any():
+        print(f"DEBUG: No candidate pairs with cost < PENALTY_COST (n0={n0}, n1={n1}); no feasible matches.")
         return []
 
     # Try the Hungarian algorithm first; if it fails (infeasible), fall back to a greedy matcher
@@ -149,11 +153,38 @@ def match_cells(cells0, cells1, weights=None):
         return matches
     except ValueError as e:
         print(f"DEBUG: linear_sum_assignment failed: {e}; falling back to greedy matching.")
+        # Debug: list cost-matrix info before greedy fallback
+        try:
+            print(f"DEBUG: cost_matrix shape: {cost_matrix.shape}")
+            finite_pairs = [(i, j, float(cost_matrix[i, j]))
+                            for i in range(n0) for j in range(n1) if np.isfinite(cost_matrix[i, j])]
+            print(f"DEBUG: finite pairs found: {len(finite_pairs)}")
+            if len(finite_pairs) > 0:
+                # show up to first 30 candidate pairs (sorted by cost) for quick inspection
+                finite_pairs.sort(key=lambda x: x[2])
+                for idx, (i, j, c) in enumerate(finite_pairs[:30]):
+                    print(f"DEBUG: candidate {idx+1}: row={i}, col={j}, cost={c:.6f}")
+            else:
+                print("DEBUG: No finite pairs found (unexpected, handled earlier).")
+
+            # If the cost matrix is small, print the entire matrix for full visibility
+            if cost_matrix.size <= 400:
+                print("DEBUG: full cost_matrix:")
+                print(np.array2string(cost_matrix, precision=6, threshold=1000, suppress_small=True))
+            else:
+                # give a brief summary if too large
+                finite_costs = [c for (_, _, c) in finite_pairs]
+                if finite_costs:
+                    print(f"DEBUG: min_cost={min(finite_costs):.6f}, max_cost={max(finite_costs):.6f}")
+        except Exception as dbg_e:
+            print(f"DEBUG: failed to print cost matrix details: {dbg_e}")
 
         # Greedy matching: sort all finite pairs by cost and take the lowest-cost disjoint pairs
-        finite_pairs = [(i, j, float(cost_matrix[i, j]))
-                        for i in range(n0) for j in range(n1) if np.isfinite(cost_matrix[i, j])]
-        finite_pairs.sort(key=lambda x: x[2])
+        # Note: finite_pairs is sorted above when present
+        if 'finite_pairs' not in locals():
+            finite_pairs = [(i, j, float(cost_matrix[i, j]))
+                            for i in range(n0) for j in range(n1) if np.isfinite(cost_matrix[i, j])]
+            finite_pairs.sort(key=lambda x: x[2])
 
         used_rows = set()
         used_cols = set()
@@ -298,14 +329,14 @@ def main():
     
     # --- Detect cells from each scan ---
     print("DEBUG: Detecting cells from old scan...")
-    cells_old, _ = detect.detect_cells(filepath_old, lat_limits, lon_limits, plot=True)
+    cells_old, _ = detect.detect_cells(filepath_old, lat_limits, lon_limits, plot=False)
     print(f"DEBUG: Found {len(cells_old)} cells in old scan: {[cell['id'] for cell in cells_old]}")
 
     if cells_old:
         print(f"DEBUG: Old scan timestamp: {cells_old[0]['storm_history'][0]['timestamp']}")
     
     print("DEBUG: Detecting cells from new scan...")
-    cells_new, _ = detect.detect_cells(filepath_new, lat_limits, lon_limits, plot=True)
+    cells_new, _ = detect.detect_cells(filepath_new, lat_limits, lon_limits, plot=False)
     print(f"DEBUG: Found {len(cells_new)} cells in new scan: {[cell['id'] for cell in cells_new]}")
 
     if cells_new:
