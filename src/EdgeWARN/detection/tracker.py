@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 import json
 from .tools import vectors
+from .tools import load
 
 # Penalty cost used instead of np.inf for disallowed pairs (keeps cost matrix finite)
 PENALTY_COST = 1000.0
@@ -324,6 +325,7 @@ def main():
     storm_json = Path("stormcell_test.json")
     lat_limits = (36.7, 39.3)
     lon_limits = (259.1, 263.7)
+    refl, lat_crop, lon_crop = load.load_mrms_slice(filepath_new, lat_limits, lon_limits)
 
     print("=== DEBUG: Starting tracking process ===")
     
@@ -453,6 +455,7 @@ def main():
     print(f"Updated {storm_json} with {len(matches)} matched pairs and {unmatched_count} new cells.")
     print(f"Total cells in database: {len(storm_data)}")
     vectors.write_vectors()
+    plot_radar_and_cells(refl, lat_crop, lon_crop, cells_old, cells_new, matches)
 
 if __name__ == "__main__":
     main()

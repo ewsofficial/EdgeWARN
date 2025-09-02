@@ -190,7 +190,7 @@ def propagate_cells(reflectivity, lat_grid, lon_grid, seed_dbz=50,
 
     return detected_cells
 
-def merge_connected_small_cells(cells, size_ratio_threshold=0.35, buffer_km=1.0, alpha=0.1):
+def merge_connected_small_cells(cells, size_ratio_threshold=0.9, buffer_km=1.0, alpha=0.1):
     """
     Merge small storm cells into nearby larger cells if bounding boxes are within ~1 km.
 
@@ -299,4 +299,64 @@ def merge_connected_small_cells(cells, size_ratio_threshold=0.35, buffer_km=1.0,
 
         small_cells = remaining_small
 
-    return large_cells + small_cells
+    # After merging small nearby cells, also merge any overlapping cells (by polygon intersection)
+    merged_cells = large_cells + small_cells
+
+    def _cell_to_polygon(cell):
+        """Return a shapely Polygon representing the cell: prefer alpha_shape, fall back to bbox box."""
+        try:
+            if cell.get('alpha_shape') and len(cell['alpha_shape']) >= 3:
+                return Polygon([(p[0], p[1]) for p in cell['alpha_shape']])
+            b = cell.get('bbox')
+            if b:
+                return Polygon([(b['lon_min'], b['lat_min']), (b['lon_min'], b['lat_max']), (b['lon_max'], b['lat_max']), (b['lon_max'], b['lat_min'])])
+        except Exception:
+            return None
+        return None
+
+    # Iteratively merge overlapping polygons until stable
+    overlap_merged = True
+    while overlap_merged:
+        overlap_merged = False
+        n = len(merged_cells)
+        i = 0
+        while i < n:
+            a = merged_cells[i]
+            poly_a = _cell_to_polygon(a)
+            if poly_a is None:
+                i += 1
+                continue
+            j = i + 1
+            merged_this_round = False
+            while j < n:
+                b = merged_cells[j]
+                poly_b = _cell_to_polygon(b)
+                if poly_b is None:
+                    j += 1
+                    continue
+
+                try:
+                    if poly_a.intersects(poly_b) and poly_a.intersection(poly_b).area > 0:
+                        # Merge the smaller into the larger (by num_gates)
+                        if a['num_gates'] >= b['num_gates']:
+                            merge_cells(a, b, alpha)
+                            del merged_cells[j]
+                        else:
+                            merge_cells(b, a, alpha)
+                            del merged_cells[i]
+                        overlap_merged = True
+                        merged_this_round = True
+                        break
+                except Exception:
+                    # If geometry operation failed, skip
+                    pass
+
+                j += 1
+
+            if not merged_this_round:
+                i += 1
+            else:
+                # restart since list has changed
+                n = len(merged_cells)
+
+    return merged_cells
