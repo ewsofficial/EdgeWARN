@@ -10,6 +10,7 @@ EdgeWARN is a program developed by the Edgemont Weather Service to accurately no
 
 <h2 align="center">Installation Instructions</h2>
 EdgeWARN is NOT ready for deployment. Use code at own risk.
+
 1. Clone the repository
 2. Run `pip install -r requirements.txt` to install dependencies
 3. Navigate to EdgeWARN/src to run scripts
