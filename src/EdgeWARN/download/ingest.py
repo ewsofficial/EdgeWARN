@@ -17,10 +17,11 @@ import os
 
 # ---------- CREDITS ----------
 def attribution():
-    print(f"You are using the EWS-Ingest module, which is part of the edgeWARN Suite. \n"
-          "This module is developed by Yuchen Wei and the EWS development team \n" \
-          "Data sources are courtesy of NOAA and the NWS.\n")
-    time.sleep(2)
+    print("EdgeWARN Data Ingestion")
+    print("Build: 2025-08-31")
+    print("Credits: Yuchen Wei")
+    print("Made by the EWS")
+    time.sleep(1)
 
 # ---------- CLEANUP ----------
 def clean_old_files(directory: Path, max_age_minutes=20):

@@ -24,8 +24,9 @@ from .tools import cellmask
 """
 
 print("EdgeWARN Storm Cell Detection")
-print("Build: 2025-08-17 Debugged")
-print("NOT FOR EXTERNAL USE")
+print("Build: 2025-09-01")
+print("Credits: Yuchen Wei")
+print("Made by the EWS")
 time.sleep(1)
 
 # --- JSON saving function matching detection.py ---
