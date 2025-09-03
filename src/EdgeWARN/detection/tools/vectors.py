@@ -52,20 +52,82 @@ def calculate_storm_vectors(cells):
 		})
 	return vectors
 
+def clean_vectors(cells, min_magnitude_m=9000.0):
+	"""
+	Remove cells whose latest vector magnitude (sqrt(dx^2+dy^2)) exceeds min_magnitude_m.
+
+	Args:
+		cells (list): List of cell dicts (modified in-place if returned list is reassigned).
+		min_magnitude_m (float): Minimum magnitude in meters used to decide removal. Default 0.0
+
+	Returns:
+		removed (list): List of dicts {'id': id, 'magnitude_m': mag} for removed cells.
+
+	Behavior / assumptions:
+	- Expects latest history entry to have 'dx' and 'dy' in meters (as produced by calculate_storm_vectors).
+	- If a cell has no dx/dy in its latest history, it is ignored (not removed).
+	- Removal is performed by returning a new list with the removed cells filtered out; caller can overwrite original list.
+	"""
+	removed = []
+	kept = []
+	for cell in cells:
+		hist = cell.get('storm_history', [])
+		if not hist:
+			kept.append(cell)
+			continue
+		# assume history is sorted oldest->newest; take last
+		latest = hist[-1]
+		dx = latest.get('dx')
+		dy = latest.get('dy')
+		if dx is None or dy is None:
+			# No vector recorded, keep the cell
+			kept.append(cell)
+			continue
+		try:
+			mag = math.hypot(float(dx), float(dy))
+		except Exception:
+			kept.append(cell)
+			continue
+		if mag > float(min_magnitude_m):
+			removed.append({'id': cell.get('id'), 'magnitude_m': mag})
+		else:
+			kept.append(cell)
+
+	# mutate list in-place by clearing and extending (caller may reassign instead)
+	cells.clear()
+	cells.extend(kept)
+	return removed
+
 def write_vectors():
-	import sys
-	# Default path or from command line
-	json_path = sys.argv[1] if len(sys.argv) > 1 else "stormcell_test.json"
-	with open(json_path, 'r') as f:
-		cells = json.load(f)
-	vectors = calculate_storm_vectors(cells)
-	# Write updated cells back to file
-	with open(json_path, 'w') as f:
-		json.dump(cells, f, indent=4)
-	for v in vectors:
-		print(f"id: {v['id']}, dx: {v['dx']:.2f} m, dy: {v['dy']:.2f} m, dt: {v['dt']} s")
+    import sys
+    # Default path or from command line
+    json_path = sys.argv[1] if len(sys.argv) > 1 else "stormcell_test.json"
+    with open(json_path, 'r') as f:
+        cells = json.load(f)
+    
+    # Calculate vectors
+    vectors = calculate_storm_vectors(cells)
+    
+    # Clean vectors with default threshold
+    removed_cells = clean_vectors(cells, min_magnitude_m=9000.0)
+    
+    # Write updated cells back to file
+    with open(json_path, 'w') as f:
+        json.dump(cells, f, indent=4)
+    
+    # Print vectors
+    for v in vectors:
+        print(f"id: {v['id']}, dx: {v['dx']:.2f} m, dy: {v['dy']:.2f} m, dt: {v['dt']} s")
+    
+    # Print removed cells
+    if removed_cells:
+        print("\nRemoved cells due to high vector magnitude:")
+        for r in removed_cells:
+            print(f"id: {r['id']}, magnitude: {r['magnitude_m']:.2f} m")
+
 
 if __name__ == "__main__":
 	write_vectors()
+
 
 	

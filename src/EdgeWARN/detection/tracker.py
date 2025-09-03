@@ -174,6 +174,7 @@ def match_cells(cells0, cells1, weights=None):
                 print(np.array2string(cost_matrix, precision=6, threshold=1000, suppress_small=True))
             else:
                 # give a brief summary if too large
+                print("DEBUG: cost matrix too large to display, summarizing ...")
                 finite_costs = [c for (_, _, c) in finite_pairs]
                 if finite_costs:
                     print(f"DEBUG: min_cost={min(finite_costs):.6f}, max_cost={max(finite_costs):.6f}")
@@ -208,7 +209,7 @@ def plot_radar_and_cells(refl, lat_grid, lon_grid, cells0, cells1, matches):
 
     fig, ax = plt.subplots(figsize=(12, 10))
 
-    pcm = ax.pcolormesh(lon_grid, lat_grid, refl, cmap='NWSRef', shading='auto', vmin=0, vmax=75)
+    pcm = ax.pcolormesh(lon_grid, lat_grid, refl, cmap='NWSRef', shading='auto', vmin=0, vmax=80)
     fig.colorbar(pcm, ax=ax, label='Reflectivity (dBZ)')
 
     # Plot cells, same as before
