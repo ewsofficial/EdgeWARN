@@ -2,14 +2,9 @@ import datetime
 import time
 from pathlib import Path
 
-from . import nexrad as nr
-from . import mosaic as ms
-from . import g19
-from . import nldn
-from . import echotop as et
-from . import qpe
-from . import preciprate
-from . import probsevere
+from . import s3download as s3d
+from . import refl
+from . import mrms
 from . import rtma
 from util import file as fs
 from EdgeWARN.detection.tools import timestamp
@@ -63,11 +58,11 @@ def main():
     wipe_temp()
 
     # Download latest NEXRAD Level II
-    nr.download_nexrad_l2(site="KOKX")
+    s3d.download_nexrad_l2(site="KOKX")
 
     # Download latest MRMS Reflectivity Mosaic
-    ms.download_mrms_composite_reflectivity(outdir=fs.MRMS_RADAR_DIR, tempdir=fs.TEMP_DIR)
-    ms.find_and_concat_refl()
+    refl.download_mrms_composite_reflectivity(outdir=fs.MRMS_RADAR_DIR, tempdir=fs.TEMP_DIR)
+    refl.find_and_concat_refl()
 
     # Find the most recent MRMS reflectivity file and extract its timestamp
     refl_files = sorted(
@@ -88,14 +83,14 @@ def main():
             target_time = datetime.datetime.utcnow()
 
     # Download latest GOES GLM
-    g19.download_latest_goes_glm()
+    s3d.download_latest_goes_glm()
 
     # Download MRMS files with fallback logic, using the reflectivity timestamp
-    nldn.download_latest_mrms_nldn(target_time, fs.MRMS_NLDN_DIR)
-    et.download_mrms_echotop18(target_time, fs.MRMS_ECHOTOP18_DIR)
-    qpe.download_latest_mrms_qpe15(target_time, fs.MRMS_QPE15_DIR)
-    preciprate.download_latest_mrms_preciprate_10min(target_time, fs.MRMS_PRECIPRATE_DIR)
-    probsevere.download_latest_mrms_probsevere_flexible(target_time, fs.MRMS_PROBSEVERE_DIR)
+    mrms.download_latest_mrms_nldn(target_time, fs.MRMS_NLDN_DIR)
+    mrms.download_mrms_echotop18(target_time, fs.MRMS_ECHOTOP18_DIR)
+    mrms.download_latest_mrms_qpe15(target_time, fs.MRMS_QPE15_DIR)
+    mrms.download_latest_mrms_preciprate_10min(target_time, fs.MRMS_PRECIPRATE_DIR)
+    mrms.download_latest_mrms_probsevere(target_time, fs.MRMS_PROBSEVERE_DIR)
 
     # Download THREDDS RTMA
     rtma.download_latest_rtma(target_time, fs.THREDDS_RTMA_DIR)
