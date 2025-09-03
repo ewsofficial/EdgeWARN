@@ -1,6 +1,10 @@
 <h1 align="center">EdgeWARN</h1>
 
-<h2 align="center">A Edgemont Weather Service Project</h2>
+<p align="center">
+<img src="assets/EWS_logo_072025.png" alt="EWS-logo" width="15%"/>
+</p>
+
+<h2 align="center">An Edgemont Weather Service Project</h2>
 
 EdgeWARN is a program developed by the Edgemont Weather Service to accurately nowcast severe weather, provide a 
 user friendly GUI, and the capability to be run on any modern PC. As a high school organization, our goals are to provide 
