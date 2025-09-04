@@ -18,7 +18,7 @@ import pyart
 import util.file as fs
 from .tools import timestamp
 from .tools import load
-from .tools import cellmask
+from .tools.cellmask import StormCellDetector
 
 """
 """
@@ -72,10 +72,10 @@ def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection"
     """
 
     # Convert 0–360 lon limits to -180..180
-    lon_limits_pm = cellmask.convert_lon_0_360_to_pm180(np.array(lon_limits))
+    lon_limits_pm = StormCellDetector.convert_lon_0_360_to_pm180(np.array(lon_limits))
 
     # Convert full lon array
-    lon_pm = cellmask.convert_lon_0_360_to_pm180(lon)
+    lon_pm = StormCellDetector.convert_lon_0_360_to_pm180(lon)
 
     # Create 2D grid if necessary
     if lat.ndim == 1 and lon_pm.ndim == 1:
@@ -123,14 +123,14 @@ def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection"
         if bbox:
             lons = [bbox["lon_min"], bbox["lon_max"], bbox["lon_max"], bbox["lon_min"], bbox["lon_min"]]
             lats = [bbox["lat_min"], bbox["lat_min"], bbox["lat_max"], bbox["lat_max"], bbox["lat_min"]]
-            lons = [cellmask.convert_lon_0_360_to_pm180(lon) for lon in lons]
+            lons = [StormCellDetector.convert_lon_0_360_to_pm180(lon) for lon in lons]
             ax.plot(lons, lats, linestyle='--', linewidth=2, color=color, alpha=0.7)
 
         # Plot alpha shape
         alpha_shape = cell.get("alpha_shape", [])
         if len(alpha_shape) >= 3:
             boundary_pts = np.array(alpha_shape)
-            boundary_pts[:,0] = cellmask.convert_lon_0_360_to_pm180(boundary_pts[:,0])
+            boundary_pts[:,0] = StormCellDetector.convert_lon_0_360_to_pm180(boundary_pts[:,0])
             boundary_pts = np.vstack([boundary_pts, boundary_pts[0]])
             ax.plot(boundary_pts[:, 0], boundary_pts[:, 1], color='black', linewidth=2)
 
@@ -155,10 +155,10 @@ def detect_cells(filepath, lat_limits, lon_limits, plot=False):
         scan_time = str(datetime.datetime.now())
 
     print("Running cell propagation...")
-    cells = cellmask.propagate_cells(refl, lat, lon, alpha=0.1, filepath=filepath)
+    cells = StormCellDetector.propagate_cells(refl, lat, lon, alpha=0.1, filepath=filepath)
 
     print("Merging small cells...")
-    merged_cells = cellmask.merge_connected_small_cells(cells)
+    merged_cells = StormCellDetector.merge_connected_small_cells(cells)
 
     # --- Build storm history per cell ---
     storm_history = {}
