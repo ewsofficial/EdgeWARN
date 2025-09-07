@@ -18,10 +18,10 @@ def download_mrms_composite_reflectivity(outdir: Path, tempdir: Path,
     """
     if sweep_heights is None:
         sweep_heights = [
-            "00.50", "00.75", "01.00", "01.25", "01.50", "02.00",
-            "02.50", "03.00", "03.50", "04.00", "04.50", "05.00", "05.50",
+            "00.50", "00.75", "01.00", "01.25", "01.50", "1.75", "02.00", "2.25",
+            "02.50", "2.75", "03.00", "03.50", "04.00", "04.50", "05.00", "05.50",
             "06.00", "06.50", "07.00", "07.50", "08.00", "08.50", "09.00", "10.00",
-            "11.00", "12.00", "13.00", "14.00", "15.00"
+            "11.00", "12.00", "13.00", "14.00", "15.00", "16.00", "17.00", "18.00"
         ]
 
     if base_dir_url is None:
@@ -175,7 +175,7 @@ def concat_refl(files):
     output_path = rf"C:\input_data\nexrad_merged\MRMS_MergedReflectivityQC_max_{timestamp}.nc"
 
     # Open all files lazily with xarray
-    datasets = [xr.open_dataset(f, chunks={'x': 500, 'y': 500}) for f in files]
+    datasets = [xr.open_dataset(f, chunks={'x': 500, 'y': 500}, decode_timedelta=True) for f in files]
 
     # Select the reflectivity variable from each
     refl_vars = [ds['unknown'] for ds in datasets]

@@ -43,18 +43,9 @@ def main():
     attribution()
     print("Current UTC time:", datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")), time.sleep(1)
     # Clean old files
-    clean_old_files(fs.NEXRAD_L2_DIR)
-    clean_old_files(fs.GOES_GLM_DIR)
-    clean_old_files(fs.MRMS_LTNG_DIR)
-    clean_old_files(fs.MRMS_NLDN_DIR)
-    clean_old_files(fs.MRMS_ECHOTOP18_DIR)
-    clean_old_files(fs.MRMS_QPE15_DIR)
-    clean_old_files(fs.MRMS_PRECIPRATE_DIR)
-    clean_old_files(fs.MRMS_MESH_DIR)
-    clean_old_files(fs.MRMS_PROBSEVERE_DIR)
-    clean_old_files(fs.MRMS_COMBINED_DIR)
-    clean_old_files(fs.THREDDS_RTMA_DIR)
-    clean_old_files(fs.MRMS_RADAR_DIR)
+    folders = [fs.NEXRAD_L2_DIR, fs.GOES_GLM_DIR, fs.MRMS_NLDN_DIR, fs.MRMS_ECHOTOP18_DIR, fs.MRMS_QPE15_DIR, fs.MRMS_PRECIPRATE_DIR, fs.MRMS_PROBSEVERE_DIR, fs.THREDDS_RTMA_DIR, fs.MRMS_RADAR_DIR]
+    for f in folders:
+        clean_old_files(f)
     wipe_temp()
 
     # Download latest NEXRAD Level II

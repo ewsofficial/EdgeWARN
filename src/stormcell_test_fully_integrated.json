@@ -114,7 +114,11 @@
                 ],
                 "dx": 885.8153383771684,
                 "dy": -2226.399999999557,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": 1.0130000114440918,
+                "nldn_timestamp": "2025-09-01T20:20:00Z",
+                "max_echotop_height": 16.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -209,7 +213,11 @@
                 ],
                 "dx": 995.6027380332619,
                 "dy": -1324.707999999681,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": 1.0360000133514404,
+                "nldn_timestamp": "2025-09-01T20:20:00Z",
+                "max_echotop_height": 14.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -296,7 +304,10 @@
                 ],
                 "dx": 0.0,
                 "dy": -2226.400000000348,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 10.125,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -387,7 +398,10 @@
                 ],
                 "dx": 0.0,
                 "dy": -2226.399999999557,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 12.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -470,7 +484,10 @@
                 ],
                 "dx": -473.2958673025105,
                 "dy": -2938.8480000002696,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 13.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -577,7 +594,10 @@
                 ],
                 "dx": 3509.571864808628,
                 "dy": 0.0,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 11.428999900817871,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -688,7 +708,10 @@
                 ],
                 "dx": 2635.0461754270514,
                 "dy": -2226.399999999557,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 13.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -759,7 +782,10 @@
                 ],
                 "dx": 880.1361562756967,
                 "dy": -4452.799999999905,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 11.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -850,7 +876,10 @@
                 ],
                 "dx": 2343.0850068972863,
                 "dy": -2560.3599999995695,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 15.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -921,7 +950,10 @@
                 ],
                 "dx": 888.4560779746135,
                 "dy": 1113.1999999997786,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 12.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -1032,7 +1064,10 @@
                 ],
                 "dx": 889.2164093233915,
                 "dy": -2226.399999999557,
-                "dt": 240.0
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 13.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -1111,7 +1146,10 @@
                 "centroid": [
                     38.365,
                     262.485
-                ]
+                ],
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 11.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     },
@@ -1178,7 +1216,10 @@
                 "centroid": [
                     37.755,
                     260.085
-                ]
+                ],
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 12.0,
+                "echotop_timestamp": "2025-09-01T20:20:40Z"
             }
         ]
     }
