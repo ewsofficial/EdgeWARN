@@ -167,20 +167,20 @@ class StatFileHandler:
                 
             cell_data = self._extract_probsevere_cell_data(feature)
             if cell_data:
-                # Extract coordinates from GeoJSON geometry if available
-                if 'geometry' in feature and 'coordinates' in feature['geometry']:
-                    coords = feature['geometry']['coordinates']
-                    if coords and len(coords) > 0:
-                        # Assuming Point geometry: [lon, lat]
-                        if isinstance(coords[0], (int, float)) and len(coords) >= 2:
-                            cell_data['lon'] = coords[0]
-                            cell_data['lat'] = coords[1]
-                        # Or Polygon geometry: [[[lon1, lat1], [lon2, lat2], ...]]
-                        elif isinstance(coords[0], list) and len(coords[0]) > 0:
-                            if isinstance(coords[0][0], (int, float)) and len(coords[0][0]) >= 2:
-                                # Use first coordinate of polygon as centroid
-                                cell_data['lon'] = coords[0][0][0]
-                                cell_data['lat'] = coords[0][0][1]
+                # Extract coordinates from GeoJSON geometry
+                if 'geometry' in feature and feature['geometry']:
+                    geometry = feature['geometry']
+                    if geometry.get('type') == 'Polygon' and 'coordinates' in geometry:
+                        coords = geometry['coordinates']
+                        if coords and len(coords) > 0 and len(coords[0]) > 0:
+                            # Calculate centroid from polygon coordinates
+                            polygon_coords = np.array(coords[0])
+                            centroid_lon = np.mean(polygon_coords[:, 0])
+                            centroid_lat = np.mean(polygon_coords[:, 1])
+                            
+                            cell_data['lon'] = float(centroid_lon)
+                            cell_data['lat'] = float(centroid_lat)
+                            cell_data['polygon_coords'] = coords[0]  # Store full polygon for reference
                 
                 storm_cells.append(cell_data)
         
@@ -216,6 +216,35 @@ class StatFileHandler:
         except (ValueError, KeyError, TypeError) as e:
             print(f"Error extracting ProbSevere cell data: {e}")
             return None
+    
+    def debug_probsevere_structure(self, probsevere_cells):
+        """Debug function to understand the structure of ProbSevere data"""
+        if not probsevere_cells:
+            print("No ProbSevere cells to debug")
+            return
+        
+        print("=== ProbSevere Data Structure Debug ===")
+        print(f"Number of ProbSevere cells: {len(probsevere_cells)}")
+        
+        # Show first few cells
+        for i, cell in enumerate(probsevere_cells[:3]):
+            print(f"\nCell {i} keys: {list(cell.keys())}")
+            for key, value in cell.items():
+                if isinstance(value, (int, float, str)) and len(str(value)) < 50:
+                    print(f"  {key}: {value}")
+                else:
+                    print(f"  {key}: {type(value)}")
+        
+        # Check for coordinates in first cell
+        first_cell = probsevere_cells[0]
+        coord_sources = ['lat', 'lon', 'latitude', 'longitude', 'centroid', 'geometry']
+        found_coords = []
+        
+        for source in coord_sources:
+            if source in first_cell:
+                found_coords.append(f"{source}: {first_cell[source]}")
+        
+        print(f"\nCoordinate sources found: {found_coords}")
 
 class StormIntegrationUtils:
     """
@@ -522,64 +551,67 @@ class StormCellIntegrator:
         """
         Integrate ProbSevere probability data with storm cells by matching based on 
         spatial proximity to cell centroids at the time of each storm history entry.
-        
-        Args:
-            probsevere_cells: List of ProbSevere cell dictionaries (with lat/lon coordinates)
-            storm_cells: List of storm cell dictionaries with storm_history entries
-            probsevere_timestamp: Timestamp of the ProbSevere data
-            max_distance_km: Maximum distance in km for matching (default: 20km)
-            
-        Returns:
-            List of storm cells with integrated ProbSevere data
         """
         print(f"Integrating ProbSevere data for {len(probsevere_cells)} cells with {len(storm_cells)} storm cells...")
         print(f"ProbSevere timestamp: {probsevere_timestamp}")
         
         # Convert max distance from km to degrees (approximate)
-        max_distance_deg = max_distance_km / 111.0  # ~111 km per degree
+        max_distance_deg = max_distance_km / 111.0
+        matches_found = 0
+        
+        # Debug: Print first few ProbSevere cells with their coordinates
+        print(f"\nFirst 5 ProbSevere cells with coordinates:")
+        for i, cell in enumerate(probsevere_cells[:5]):
+            if 'lat' in cell and 'lon' in cell:
+                print(f"  Cell {i}: lat={cell['lat']:.4f}, lon={cell['lon']:.4f}")
+            else:
+                print(f"  Cell {i}: No coordinates found")
         
         for storm_cell in storm_cells:
             cell_id = storm_cell.get('id', 'unknown')
             
             # Skip cells without storm history
             if 'storm_history' not in storm_cell or not storm_cell['storm_history']:
+                print(f"  Cell {cell_id}: No storm history")
                 continue
                 
             # Find the storm history entry closest to the ProbSevere timestamp
             closest_idx = self.find_closest_storm_history_entry(storm_cell['storm_history'], probsevere_timestamp)
             
             if closest_idx is None:
+                print(f"  Cell {cell_id}: No history entry close to ProbSevere timestamp")
                 continue
                 
             entry = storm_cell['storm_history'][closest_idx]
             
             # Get the centroid coordinates from this entry
             if 'centroid' not in entry or len(entry['centroid']) < 2:
+                print(f"  Cell {cell_id}: No centroid in history entry")
                 continue
                 
             storm_lat, storm_lon = entry['centroid'][0], entry['centroid'][1]
+            print(f"  Cell {cell_id}: Looking for ProbSevere match near ({storm_lat:.4f}, {storm_lon:.4f})")
             
             # Find the closest ProbSevere cell to this centroid
             closest_probsevere = None
             min_distance = float('inf')
             
-            for probsevere_cell in probsevere_cells:
+            for i, probsevere_cell in enumerate(probsevere_cells):
                 # Extract coordinates from ProbSevere cell
-                # Assuming ProbSevere cells have 'lat' and 'lon' or similar coordinates
                 if 'lat' in probsevere_cell and 'lon' in probsevere_cell:
                     ps_lat = probsevere_cell['lat']
                     ps_lon = probsevere_cell['lon']
-                elif 'centroid' in probsevere_cell and len(probsevere_cell['centroid']) >= 2:
-                    ps_lat, ps_lon = probsevere_cell['centroid'][0], probsevere_cell['centroid'][1]
-                else:
-                    continue
                     
-                # Calculate distance (simple Euclidean distance in degrees)
-                distance = np.sqrt((storm_lat - ps_lat)**2 + (storm_lon - ps_lon)**2)
-                
-                if distance < min_distance and distance <= max_distance_deg:
-                    min_distance = distance
-                    closest_probsevere = probsevere_cell
+                    # Convert storm cell longitude from 0-360 to -180-180 range to match ProbSevere
+                    storm_lon_converted = storm_lon - 360 if storm_lon > 180 else storm_lon
+                    
+                    # Calculate distance (simple Euclidean distance in degrees)
+                    distance = np.sqrt((storm_lat - ps_lat)**2 + (storm_lon_converted - ps_lon)**2)
+                    
+                    if distance < min_distance and distance <= max_distance_deg:
+                        min_distance = distance
+                        closest_probsevere = probsevere_cell
+                        closest_idx = i
             
             # If we found a matching ProbSevere cell, integrate the data
             if closest_probsevere is not None:
@@ -587,25 +619,30 @@ class StormCellIntegrator:
                 distance_km = min_distance * 111.0
                 
                 entry.update({
-                    'prob_severe': closest_probsevere['prob_severe'],
-                    'prob_hail': closest_probsevere['prob_hail'],
-                    'prob_wind': closest_probsevere['prob_wind'],
-                    'prob_tornado': closest_probsevere['prob_tornado'],
-                    'probsevere_mesh': closest_probsevere['mesh'],
-                    'probsevere_vil': closest_probsevere['vil'],
-                    'probsevere_flash_rate': closest_probsevere['flash_rate'],
-                    'probsevere_mucape': closest_probsevere['mucape'],
-                    'probsevere_mlcape': closest_probsevere['mlcape'],
-                    'probsevere_mlcin': closest_probsevere['mlcin'],
-                    'probsevere_ebshear': closest_probsevere['ebshear'],
-                    'probsevere_srh_1km': closest_probsevere['srh_1km'],
-                    'probsevere_mean_wind_1_3km': closest_probsevere['mean_wind_1_3km'],
+                    'prob_severe': closest_probsevere.get('prob_severe', 0),
+                    'prob_hail': closest_probsevere.get('prob_hail', 0),
+                    'prob_wind': closest_probsevere.get('prob_wind', 0),
+                    'prob_tornado': closest_probsevere.get('prob_tornado', 0),
+                    'probsevere_mesh': closest_probsevere.get('mesh', 0),
+                    'probsevere_vil': closest_probsevere.get('vil', 0),
+                    'probsevere_flash_rate': closest_probsevere.get('flash_rate', 0),
+                    'probsevere_mucape': closest_probsevere.get('mucape', 0),
+                    'probsevere_mlcape': closest_probsevere.get('mlcape', 0),
+                    'probsevere_mlcin': closest_probsevere.get('mlcin', 0),
+                    'probsevere_ebshear': closest_probsevere.get('ebshear', 0),
+                    'probsevere_srh_1km': closest_probsevere.get('srh_1km', 0),
+                    'probsevere_mean_wind_1_3km': closest_probsevere.get('mean_wind_1_3km', 0),
                     'probsevere_timestamp': probsevere_timestamp.isoformat() + 'Z',
-                    'probsevere_distance_km': round(distance_km, 2)
+                    'probsevere_distance_km': round(distance_km, 2),
+                    'probsevere_area_sq_km': closest_probsevere.get('area_sq_km', 0)
                 })
                 
-                print(f"Matched cell {cell_id} with ProbSevere cell (distance: {distance_km:.2f} km)")
+                print(f"  ✓ Matched cell {cell_id} with ProbSevere cell {closest_idx} (distance: {distance_km:.2f} km)")
+                matches_found += 1
+            else:
+                print(f"  ✗ No ProbSevere cell found within {max_distance_km}km of cell {cell_id}")
         
+        print(f"ProbSevere integration completed: {matches_found} matches found")
         return storm_cells
     
 def main():
@@ -682,6 +719,9 @@ def main():
         probsevere_data = handler.load_json(probsevere_path)
         if probsevere_data:
             probsevere_cells = handler.parse_probsevere_json(probsevere_data)
+            
+            # DEBUG: Print structure of ProbSevere data
+            handler.debug_probsevere_structure(probsevere_cells)
             
             # Extract timestamp from ProbSevere data
             probsevere_timestamp_str = probsevere_data.get('validTime', '').replace('_', ' ')

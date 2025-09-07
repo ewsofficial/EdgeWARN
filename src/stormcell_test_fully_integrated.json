@@ -115,10 +115,22 @@
                 "dx": 885.8153383771684,
                 "dy": -2226.399999999557,
                 "dt": 240.0,
-                "max_flash_rate": 1.0130000114440918,
-                "nldn_timestamp": "2025-09-01T20:20:00Z",
-                "max_echotop_height": 16.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 91.0,
+                "prob_hail": 91.0,
+                "prob_wind": 64.0,
+                "prob_tornado": 16.0,
+                "probsevere_mesh": 2.05,
+                "probsevere_vil": 54.0,
+                "probsevere_flash_rate": 27.0,
+                "probsevere_mucape": 2081.0,
+                "probsevere_mlcape": 1561.0,
+                "probsevere_mlcin": -5.0,
+                "probsevere_ebshear": 46.0,
+                "probsevere_srh_1km": 54.0,
+                "probsevere_mean_wind_1_3km": 17.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 2.34,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -214,10 +226,22 @@
                 "dx": 995.6027380332619,
                 "dy": -1324.707999999681,
                 "dt": 240.0,
-                "max_flash_rate": 1.0360000133514404,
-                "nldn_timestamp": "2025-09-01T20:20:00Z",
-                "max_echotop_height": 14.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 27.0,
+                "prob_hail": 8.0,
+                "prob_wind": 27.0,
+                "prob_tornado": 1.0,
+                "probsevere_mesh": 0.65,
+                "probsevere_vil": 34.0,
+                "probsevere_flash_rate": 30.0,
+                "probsevere_mucape": 1569.0,
+                "probsevere_mlcape": 1191.0,
+                "probsevere_mlcin": 0.0,
+                "probsevere_ebshear": 19.0,
+                "probsevere_srh_1km": 19.0,
+                "probsevere_mean_wind_1_3km": 11.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 4.39,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -305,9 +329,22 @@
                 "dx": 0.0,
                 "dy": -2226.400000000348,
                 "dt": 240.0,
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 10.125,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 1.0,
+                "prob_hail": 0.0,
+                "prob_wind": 1.0,
+                "prob_tornado": 0.0,
+                "probsevere_mesh": 0.05,
+                "probsevere_vil": 10.0,
+                "probsevere_flash_rate": 0.0,
+                "probsevere_mucape": 1675.0,
+                "probsevere_mlcape": 1476.0,
+                "probsevere_mlcin": 0.0,
+                "probsevere_ebshear": 21.0,
+                "probsevere_srh_1km": 13.0,
+                "probsevere_mean_wind_1_3km": 13.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 2.15,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -399,9 +436,22 @@
                 "dx": 0.0,
                 "dy": -2226.399999999557,
                 "dt": 240.0,
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 12.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 9.0,
+                "prob_hail": 1.0,
+                "prob_wind": 9.0,
+                "prob_tornado": 0.0,
+                "probsevere_mesh": 0.37,
+                "probsevere_vil": 20.0,
+                "probsevere_flash_rate": 3.0,
+                "probsevere_mucape": 1633.0,
+                "probsevere_mlcape": 1477.0,
+                "probsevere_mlcin": 0.0,
+                "probsevere_ebshear": 25.0,
+                "probsevere_srh_1km": 16.0,
+                "probsevere_mean_wind_1_3km": 13.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 1.76,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -485,9 +535,22 @@
                 "dx": -473.2958673025105,
                 "dy": -2938.8480000002696,
                 "dt": 240.0,
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 13.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 29.0,
+                "prob_hail": 24.0,
+                "prob_wind": 18.0,
+                "prob_tornado": 1.0,
+                "probsevere_mesh": 0.44,
+                "probsevere_vil": 15.0,
+                "probsevere_flash_rate": 5.0,
+                "probsevere_mucape": 2089.0,
+                "probsevere_mlcape": 1546.0,
+                "probsevere_mlcin": 0.0,
+                "probsevere_ebshear": 39.0,
+                "probsevere_srh_1km": 25.0,
+                "probsevere_mean_wind_1_3km": 15.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 1.97,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -595,9 +658,22 @@
                 "dx": 3509.571864808628,
                 "dy": 0.0,
                 "dt": 240.0,
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 11.428999900817871,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 7.0,
+                "prob_hail": 4.0,
+                "prob_wind": 6.0,
+                "prob_tornado": 0.0,
+                "probsevere_mesh": 0.23,
+                "probsevere_vil": 12.0,
+                "probsevere_flash_rate": 1.0,
+                "probsevere_mucape": 2050.0,
+                "probsevere_mlcape": 1452.0,
+                "probsevere_mlcin": -1.0,
+                "probsevere_ebshear": 36.0,
+                "probsevere_srh_1km": 27.0,
+                "probsevere_mean_wind_1_3km": 15.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 1.22,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -709,9 +785,22 @@
                 "dx": 2635.0461754270514,
                 "dy": -2226.399999999557,
                 "dt": 240.0,
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 13.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 57.0,
+                "prob_hail": 21.0,
+                "prob_wind": 55.0,
+                "prob_tornado": 3.0,
+                "probsevere_mesh": 0.8,
+                "probsevere_vil": 36.0,
+                "probsevere_flash_rate": 30.0,
+                "probsevere_mucape": 1478.0,
+                "probsevere_mlcape": 1293.0,
+                "probsevere_mlcin": 0.0,
+                "probsevere_ebshear": 29.0,
+                "probsevere_srh_1km": 8.0,
+                "probsevere_mean_wind_1_3km": 13.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 1.25,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -783,9 +872,22 @@
                 "dx": 880.1361562756967,
                 "dy": -4452.799999999905,
                 "dt": 240.0,
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 11.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 12.0,
+                "prob_hail": 8.0,
+                "prob_wind": 4.0,
+                "prob_tornado": 0.0,
+                "probsevere_mesh": 0.05,
+                "probsevere_vil": 9.0,
+                "probsevere_flash_rate": 1.0,
+                "probsevere_mucape": 1573.0,
+                "probsevere_mlcape": 1210.0,
+                "probsevere_mlcin": -1.0,
+                "probsevere_ebshear": 39.0,
+                "probsevere_srh_1km": 25.0,
+                "probsevere_mean_wind_1_3km": 15.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 1.34,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -877,9 +979,22 @@
                 "dx": 2343.0850068972863,
                 "dy": -2560.3599999995695,
                 "dt": 240.0,
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 15.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 69.0,
+                "prob_hail": 48.0,
+                "prob_wind": 58.0,
+                "prob_tornado": 5.0,
+                "probsevere_mesh": 0.59,
+                "probsevere_vil": 32.0,
+                "probsevere_flash_rate": 29.0,
+                "probsevere_mucape": 1885.0,
+                "probsevere_mlcape": 1490.0,
+                "probsevere_mlcin": -4.0,
+                "probsevere_ebshear": 46.0,
+                "probsevere_srh_1km": 31.0,
+                "probsevere_mean_wind_1_3km": 19.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 2.02,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -951,9 +1066,22 @@
                 "dx": 888.4560779746135,
                 "dy": 1113.1999999997786,
                 "dt": 240.0,
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 12.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 45.0,
+                "prob_hail": 15.0,
+                "prob_wind": 45.0,
+                "prob_tornado": 1.0,
+                "probsevere_mesh": 0.18,
+                "probsevere_vil": 19.0,
+                "probsevere_flash_rate": 6.0,
+                "probsevere_mucape": 1687.0,
+                "probsevere_mlcape": 1266.0,
+                "probsevere_mlcin": -7.0,
+                "probsevere_ebshear": 42.0,
+                "probsevere_srh_1km": 38.0,
+                "probsevere_mean_wind_1_3km": 16.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 10.28,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -1065,9 +1193,22 @@
                 "dx": 889.2164093233915,
                 "dy": -2226.399999999557,
                 "dt": 240.0,
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 13.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 45.0,
+                "prob_hail": 15.0,
+                "prob_wind": 45.0,
+                "prob_tornado": 1.0,
+                "probsevere_mesh": 0.18,
+                "probsevere_vil": 19.0,
+                "probsevere_flash_rate": 6.0,
+                "probsevere_mucape": 1687.0,
+                "probsevere_mlcape": 1266.0,
+                "probsevere_mlcin": -7.0,
+                "probsevere_ebshear": 42.0,
+                "probsevere_srh_1km": 38.0,
+                "probsevere_mean_wind_1_3km": 16.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 3.98,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -1147,9 +1288,22 @@
                     38.365,
                     262.485
                 ],
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 11.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 1.0,
+                "prob_hail": 0.0,
+                "prob_wind": 1.0,
+                "prob_tornado": 0.0,
+                "probsevere_mesh": 0.13,
+                "probsevere_vil": 12.0,
+                "probsevere_flash_rate": 1.0,
+                "probsevere_mucape": 1729.0,
+                "probsevere_mlcape": 1417.0,
+                "probsevere_mlcin": 0.0,
+                "probsevere_ebshear": 21.0,
+                "probsevere_srh_1km": 9.0,
+                "probsevere_mean_wind_1_3km": 13.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 2.28,
+                "probsevere_area_sq_km": 0
             }
         ]
     },
@@ -1217,9 +1371,22 @@
                     37.755,
                     260.085
                 ],
-                "max_flash_rate": "N/A",
-                "max_echotop_height": 12.0,
-                "echotop_timestamp": "2025-09-01T20:20:40Z"
+                "prob_severe": 7.0,
+                "prob_hail": 7.0,
+                "prob_wind": 2.0,
+                "prob_tornado": 0.0,
+                "probsevere_mesh": 0.22,
+                "probsevere_vil": 9.0,
+                "probsevere_flash_rate": 2.0,
+                "probsevere_mucape": 2194.0,
+                "probsevere_mlcape": 1801.0,
+                "probsevere_mlcin": -2.0,
+                "probsevere_ebshear": 41.0,
+                "probsevere_srh_1km": 27.0,
+                "probsevere_mean_wind_1_3km": 14.0,
+                "probsevere_timestamp": "2025-09-01T20:20:40Z",
+                "probsevere_distance_km": 3.64,
+                "probsevere_area_sq_km": 0
             }
         ]
     }
