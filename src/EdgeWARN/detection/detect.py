@@ -16,9 +16,7 @@ import cartopy.feature as cfeature
 import pyart
 
 import util.file as fs
-from .tools import timestamp
-from .tools import load
-from .tools.cellmask import StormCellDetector
+from util.detect_utils import StormCellDetector, load_mrms_slice
 
 """
 """
@@ -142,7 +140,7 @@ def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection"
 
 def detect_cells(filepath, lat_limits, lon_limits, plot=False):
     print("Loading MRMS data slice...")
-    refl, lat, lon = load.load_mrms_slice(filepath, lat_limits, lon_limits)
+    refl, lat, lon = load_mrms_slice(filepath, lat_limits, lon_limits)
 
     # Extract scan timestamp from file if available
     import datetime

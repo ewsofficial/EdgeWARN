@@ -2,9 +2,7 @@ import json
 from pathlib import Path
 # assumes your existing imports: detect, load, match_cells, process_matched_cell, vectors, plot_radar_and_cells
 from . import detect
-from .tools.matches import StormCellTracker, Visualizer, CellProcessor, CellMatcher
-from .tools import load
-from .tools.vectors import write_vectors
+from util.detect_utils import StormCellTracker, Visualizer, CellProcessor, CellMatcher, write_vectors, load_mrms_slice
 
 class StormCellDataManager:
     def __init__(self, storm_json: Path):
@@ -69,7 +67,7 @@ class RadarHandler:
         self.lon_limits = lon_limits
 
     def load_reflectivity(self, filepath):
-        return load.load_mrms_slice(filepath, self.lat_limits, self.lon_limits)
+        return load_mrms_slice(filepath, self.lat_limits, self.lon_limits)
 
     def plot(self, refl, lat, lon, cells_old, cells_new, matches):
         # Use the Visualizer class from tracker
