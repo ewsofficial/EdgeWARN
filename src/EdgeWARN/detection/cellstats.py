@@ -1,250 +1,9 @@
 import xarray as xr
-from util import file as fs
+import util.file as fs
+from util.file import StatFileHandler
 import numpy as np
-import json
-from pathlib import Path as PathLibPath
 from matplotlib.path import Path
-import re
 from datetime import datetime
-from typing import Dict, List, Optional
-
-class StatFileHandler:
-    def __init__(self):
-        """
-        Initialize the StatFileLoader for loading data files.
-        """
-        self.dataset = None
-        self.file_path = None
-
-    def convert_lon_to_360(self, lon):
-        """
-        Convert longitude from -180 to 180 range to 0 to 360 range.
-        
-        Args:
-            lon (array-like): Longitude values in -180 to 180 range
-            
-        Returns:
-            array-like: Longitude values converted to 0 to 360 range
-        """
-        return np.where(lon < 0, lon + 360, lon)
-    
-    def convert_lon_to_180(self, lon):
-        """
-        Convert longitude from 0 to 360 range to -180 to 180 range.
-        
-        Args:
-            lon (array-like): Longitude values in 0 to 360 range
-            
-        Returns:
-            array-like: Longitude values converted to -180 to 180 range
-        """
-        return np.where(lon > 180, lon - 360, lon)
-        
-    def load_file(self, file_path):
-        """
-        Load a radar data file using xarray.
-        
-        Args:
-            file_path (str): Path to the radar data file
-            
-        Returns:
-            xarray.Dataset: Loaded dataset or None if failed
-        """
-        self.file_path = file_path
-        
-        try:
-            self.dataset = xr.open_dataset(file_path)
-            print(f"Successfully loaded dataset from {file_path}")
-            return self.dataset
-        except Exception as e:
-            print(f"Error loading file {file_path}: {e}")
-            return None
-        
-    def load_json(self, filepath):
-        print(f"DEBUG: Loading JSON file {filepath}")
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-        if not data:
-            print(f"ERROR: {filepath} did not have any data")
-            return None
-        else:
-            return data
-    
-    def write_json(self, data, filepath):
-        print(f"DEBUG: Writing to JSON file {filepath}")
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=4)
-        print(f"Successfully wrote to JSON file {filepath}")
-    
-    def find_timestamp(self, filepath):
-        """
-        Extract timestamp from meteorological file path using common naming patterns.
-        
-        Args:
-            filepath (str): Path to the file
-            
-        Returns:
-            datetime: Extracted timestamp or None if not found
-        """
-        filename = PathLibPath(filepath).name
-        
-        # Common timestamp patterns in meteorological files
-        patterns = [
-            # YYYYMMDD_HHMMSS pattern
-            r'(\d{8}[_\.-]\d{6})',
-            # YYYYMMDD_HHMM pattern
-            r'(\d{8}[_\.-]\d{4})',
-            # YYYYMMDD pattern
-            r'(\d{8})',
-            # Unix timestamp pattern
-            r'(\d{10,})'
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, filename)
-            if match:
-                timestamp_str = match.group(1)
-                
-                try:
-                    # Try to parse different timestamp formats
-                    if len(timestamp_str) == 15 and ('_' in timestamp_str or '.' in timestamp_str or '-' in timestamp_str):
-                        # YYYYMMDD_HHMMSS format
-                        date_part, time_part = re.split(r'[_\.-]', timestamp_str)
-                        if len(time_part) == 6:
-                            return datetime.strptime(f"{date_part}{time_part}", "%Y%m%d%H%M%S")
-                        elif len(time_part) == 4:
-                            return datetime.strptime(f"{date_part}{time_part}00", "%Y%m%d%H%M%S")
-                    
-                    elif len(timestamp_str) == 14:
-                        # YYYYMMDDHHMMSS format
-                        return datetime.strptime(timestamp_str, "%Y%m%d%H%M%S")
-                    
-                    elif len(timestamp_str) == 12:
-                        # YYYYMMDDHHMM format
-                        return datetime.strptime(timestamp_str + "00", "%Y%m%d%H%M%S")
-                    
-                    elif len(timestamp_str) == 8:
-                        # YYYYMMDD format
-                        return datetime.strptime(timestamp_str + "000000", "%Y%m%d%H%M%S")
-                    
-                    elif len(timestamp_str) >= 10:
-                        # Unix timestamp
-                        return datetime.fromtimestamp(int(timestamp_str[:10]))
-                        
-                except (ValueError, TypeError) as e:
-                    print(f"Warning: Could not parse timestamp '{timestamp_str}' from {filename}: {e}")
-                    continue
-        
-        # If no pattern matched, try to extract from dataset if it's loaded
-        if self.dataset is not None:
-            try:
-                # Check for common time coordinate names
-                time_coords = ['time', 'valid_time', 'forecast_time', 'reference_time']
-                for coord in time_coords:
-                    if coord in self.dataset.coords:
-                        time_data = self.dataset[coord].values
-                        if len(time_data) > 0:
-                            if hasattr(time_data[0], 'item'):
-                                return datetime.utcfromtimestamp(time_data[0].item() / 1e9)
-                            else:
-                                return datetime.utcfromtimestamp(time_data[0] / 1e9)
-            except Exception as e:
-                print(f"Warning: Could not extract time from dataset: {e}")
-        
-        print(f"Warning: Could not find timestamp in filename: {filename}")
-        return None
-    
-    def parse_probsevere_json(self, json_data: Dict) -> List[Dict]:
-        """Parse ProbSevere JSON data and extract storm cell probabilities with coordinates."""
-        storm_cells = []
-        
-        if not isinstance(json_data, dict) or 'features' not in json_data:
-            return storm_cells
-        
-        for feature in json_data['features']:
-            if feature.get('type') != 'Feature':
-                continue
-                
-            cell_data = self._extract_probsevere_cell_data(feature)
-            if cell_data:
-                # Extract coordinates from GeoJSON geometry
-                if 'geometry' in feature and feature['geometry']:
-                    geometry = feature['geometry']
-                    if geometry.get('type') == 'Polygon' and 'coordinates' in geometry:
-                        coords = geometry['coordinates']
-                        if coords and len(coords) > 0 and len(coords[0]) > 0:
-                            # Calculate centroid from polygon coordinates
-                            polygon_coords = np.array(coords[0])
-                            centroid_lon = np.mean(polygon_coords[:, 0])
-                            centroid_lat = np.mean(polygon_coords[:, 1])
-                            
-                            cell_data['lon'] = float(centroid_lon)
-                            cell_data['lat'] = float(centroid_lat)
-                            cell_data['polygon_coords'] = coords[0]  # Store full polygon for reference
-                
-                storm_cells.append(cell_data)
-        
-        return storm_cells
-
-    def _extract_probsevere_cell_data(self, feature: Dict) -> Optional[Dict]:
-        """Extract probability data from a single ProbSevere feature."""
-        if not feature or 'properties' not in feature:
-            return None
-        
-        try:
-            properties = feature['properties']
-            
-            cell_data = {
-                'id': properties.get('id', 'unknown'),  # Add cell ID if available
-                'prob_severe': float(properties.get('ProbSevere', '0')),
-                'prob_hail': float(properties.get('ProbHail', '0')),
-                'prob_wind': float(properties.get('ProbWind', '0')),
-                'prob_tornado': float(properties.get('ProbTor', '0')),
-                'mesh': float(properties.get('MESH', '0')),
-                'vil': float(properties.get('VIL', '0')),
-                'flash_rate': float(properties.get('FLASH_RATE', '0')),
-                'mucape': float(properties.get('MUCAPE', '0')),
-                'mlcape': float(properties.get('MLCAPE', '0')),
-                'mlcin': float(properties.get('MLCIN', '0')),
-                'ebshear': float(properties.get('EBSHEAR', '0')),
-                'srh_1km': float(properties.get('SRH01KM', '0')),
-                'mean_wind_1_3km': float(properties.get('MEANWIND_1-3kmAGL', '0')),
-            }
-            
-            return cell_data
-            
-        except (ValueError, KeyError, TypeError) as e:
-            print(f"Error extracting ProbSevere cell data: {e}")
-            return None
-    
-    def debug_probsevere_structure(self, probsevere_cells):
-        """Debug function to understand the structure of ProbSevere data"""
-        if not probsevere_cells:
-            print("No ProbSevere cells to debug")
-            return
-        
-        print("=== ProbSevere Data Structure Debug ===")
-        print(f"Number of ProbSevere cells: {len(probsevere_cells)}")
-        
-        # Show first few cells
-        for i, cell in enumerate(probsevere_cells[:3]):
-            print(f"\nCell {i} keys: {list(cell.keys())}")
-            for key, value in cell.items():
-                if isinstance(value, (int, float, str)) and len(str(value)) < 50:
-                    print(f"  {key}: {value}")
-                else:
-                    print(f"  {key}: {type(value)}")
-        
-        # Check for coordinates in first cell
-        first_cell = probsevere_cells[0]
-        coord_sources = ['lat', 'lon', 'latitude', 'longitude', 'centroid', 'geometry']
-        found_coords = []
-        
-        for source in coord_sources:
-            if source in first_cell:
-                found_coords.append(f"{source}: {first_cell[source]}")
-        
-        print(f"\nCoordinate sources found: {found_coords}")
 
 class StormIntegrationUtils:
     """
@@ -645,6 +404,99 @@ class StormCellIntegrator:
         print(f"ProbSevere integration completed: {matches_found} matches found")
         return storm_cells
     
+    def integrate_glm(self, glm_dataset, storm_cells, glm_timestamp, output_key='glm_flashrate_1m'):
+        """
+        Integrate GLM lightning data with storm cells.
+        Counts flashes within each cell's bounding box and calculates flash rate.
+        
+        Args:
+            glm_dataset: Loaded xarray Dataset containing GLM data
+            storm_cells: List of storm cell dictionaries
+            glm_timestamp: Start timestamp of the GLM data
+            output_key: Key to store the flash rate under in each cell
+            
+        Returns:
+            List of storm cells with integrated GLM flash rate data
+        """
+        # Extract flash locations from GLM dataset
+        if 'flash_lat' not in glm_dataset.coords or 'flash_lon' not in glm_dataset.coords:
+            print("Error: GLM dataset missing flash_lat or flash_lon coordinates")
+            return storm_cells
+        
+        flash_lats = glm_dataset.flash_lat.values
+        flash_lons = glm_dataset.flash_lon.values
+        
+        print(f"Integrating GLM flash data for {len(storm_cells)} storm cells...")
+        print(f"GLM timestamp: {glm_timestamp}")
+        print(f"Found {len(flash_lats)} flashes in GLM data")
+        
+        # Debug: Print first few flash locations
+        print(f"First 5 flash locations:")
+        for i in range(min(5, len(flash_lats))):
+            print(f"  Flash {i}: lat={flash_lats[i]:.4f}, lon={flash_lons[i]:.4f}")
+        
+        for cell in storm_cells:
+            cell_id = cell.get('id', 'unknown')
+            
+            # Find the closest storm history entry to the GLM timestamp
+            if 'storm_history' not in cell or not cell['storm_history']:
+                print(f"Warning: Cell {cell_id} has no storm history")
+                continue
+                
+            closest_idx = self.find_closest_storm_history_entry(cell['storm_history'], glm_timestamp)
+            
+            if closest_idx is None:
+                print(f"Warning: Could not find suitable storm history entry for cell {cell_id}")
+                continue
+            
+            # Create polygon for this cell (convert to -180 to 180 longitude range)
+            polygon = StormIntegrationUtils.create_cell_polygon(cell)
+            if polygon is None:
+                cell['storm_history'][closest_idx][output_key] = "N/A"
+                continue
+            
+            try:
+                # Convert polygon coordinates from 0-360 to -180-180 range to match GLM
+                polygon_180 = []
+                for point in polygon:
+                    lon = point[0]
+                    lat = point[1]
+                    # Convert longitude from 0-360 to -180-180
+                    if lon > 180:
+                        lon -= 360
+                    polygon_180.append([lon, lat])
+                
+                # Count flashes within the cell polygon
+                flash_count = 0
+                path = Path(polygon_180)
+                
+                # Check each flash location
+                for i in range(len(flash_lats)):
+                    if not np.isnan(flash_lats[i]) and not np.isnan(flash_lons[i]):
+                        point = [flash_lons[i], flash_lats[i]]
+                        if path.contains_point(point):
+                            flash_count += 1
+                
+                # GLM data typically covers 1 minute, so multiply by 3 to get 3-minute equivalent
+                # and convert to flashes per minute
+                flash_rate_per_min = flash_count * 3  # Convert to minutely flash rate
+                
+                cell['storm_history'][closest_idx][output_key] = float(flash_rate_per_min)
+                
+                # Also add timestamp of the GLM data for reference
+                cell['storm_history'][closest_idx]['glm_timestamp'] = glm_timestamp.isoformat() + 'Z'
+                cell['storm_history'][closest_idx]['glm_flash_count'] = int(flash_count)
+                
+                # Debug output for cells with flashes
+                if flash_count > 0:
+                    print(f"Cell {cell_id}: Found {flash_count} flashes (rate: {flash_rate_per_min}/min)")
+                
+            except Exception as e:
+                print(f"Error processing cell {cell_id}: {e}")
+                cell['storm_history'][closest_idx][output_key] = "N/A"
+        
+        return storm_cells
+        
 def main():
     """
     Main function to run integration of all data types with storm cells.
@@ -736,6 +588,28 @@ def main():
     else:
         print("No ProbSevere files found")
     
+    # 4. Integrate GLM lightning data
+    print("\n" + "="*50)
+    print("INTEGRATING GLM LIGHTNING DATA")
+    print("="*50)
+    glm_list = fs.latest_glm(1)  # Assuming you have a function for GLM files
+    if glm_list:
+        glm_path = glm_list[-1]
+        print(f"Using GLM file: {glm_path}")
+        
+        glm_timestamp = handler.find_glm_timestamp(glm_path)
+        if glm_timestamp:
+            try:
+                glm_ds = xr.open_dataset(glm_path)
+                result_cells = integrator.integrate_glm(glm_ds, result_cells, glm_timestamp)
+                print("GLM integration completed successfully")
+            except Exception as e:
+                print(f"Failed to integrate GLM data: {e}")
+        else:
+            print("Could not determine timestamp from GLM file")
+    else:
+        print("No GLM files found")
+    
     # Save final integrated results
     output_json = storm_json_path.replace('.json', '_fully_integrated.json')
     print(f"\nSaving fully integrated results to {output_json}")
@@ -750,6 +624,7 @@ def main():
     cells_with_nldn = 0
     cells_with_echotop = 0
     cells_with_probsevere = 0
+    cells_with_glm = 0
     total_entries = 0
     
     for cell in result_cells:
@@ -762,12 +637,15 @@ def main():
                     cells_with_echotop += 1
                 if isinstance(entry.get('prob_severe', "N/A"), (int, float)):
                     cells_with_probsevere += 1
+                if isinstance(entry.get('glm_flashrate_1m', "N/A"), (int, float)):
+                    cells_with_glm += 1
     
     print(f"Total storm cells: {total_cells}")
     print(f"Total storm history entries: {total_entries}")
     print(f"Entries with NLDN data: {cells_with_nldn}/{total_entries}")
     print(f"Entries with EchoTop data: {cells_with_echotop}/{total_entries}")
     print(f"Entries with ProbSevere data: {cells_with_probsevere}/{total_entries}")
+    print(f"Entries with GLM data: {cells_with_glm}/{total_entries}")
     print("="*60)
     print(f"Integration complete! Results saved to {output_json}")
 
