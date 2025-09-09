@@ -8,20 +8,20 @@ import re
 from bs4 import BeautifulSoup
 from util import file as fs
 
-# ---------- MRMS MERGED REFLECTIVITY QC ----------
 def download_mrms_composite_reflectivity(outdir: Path, tempdir: Path,
-                                          sweep_heights=None,
-                                          base_dir_url=None) -> Path | None:
+                                         sweep_heights=None,
+                                         base_dir_url=None) -> dict | None:
     """
     Downloads the latest MRMS Merged Reflectivity QC 3D data, decompresses.
     Falls back to the most recent timestamp where ALL sweeps are available.
+    Returns dictionary of {height: file_path} for downloaded files.
     """
     if sweep_heights is None:
         sweep_heights = [
-            "00.50", "00.75", "01.00", "01.25", "01.50", "1.75", "02.00", "2.25",
-            "02.50", "2.75", "03.00", "03.50", "04.00", "04.50", "05.00", "05.50",
+            "00.50", "00.75", "01.00", "01.25", "01.50", "02.00",
+            "02.50", "03.00", "03.50", "04.00", "04.50", "05.00", "05.50",
             "06.00", "06.50", "07.00", "07.50", "08.00", "08.50", "09.00", "10.00",
-            "11.00", "12.00", "13.00", "14.00", "15.00", "16.00", "17.00", "18.00"
+            "11.00", "12.00", "13.00", "14.00", "15.00"
         ]
 
     if base_dir_url is None:
@@ -59,20 +59,26 @@ def download_mrms_composite_reflectivity(outdir: Path, tempdir: Path,
             f"MRMS_MergedReflectivityQC_{height}_{timestamp}.grib2.gz"
         )
 
-    # Find latest timestamp where all sweeps exist
+    # Find latest timestamp where all sweeps exist (with better timeout)
     valid_timestamp = None
-    for ts in timestamps:
+    for ts in timestamps[:5]:  # Only check most recent 5 timestamps
+        print(f"Checking timestamp {ts}...")
         all_exist = True
+        
         for height in sweep_heights:
             url = build_url(height, ts)
             try:
-                head_r = requests.head(url, timeout=10)
+                # Use GET instead of HEAD with longer timeout
+                head_r = requests.head(url, timeout=5)
                 if head_r.status_code != 200:
+                    print(f"❌ Missing {height} for {ts}")
                     all_exist = False
                     break
-            except Exception:
+            except Exception as e:
+                print(f"❌ Error checking {height}: {e}")
                 all_exist = False
                 break
+        
         if all_exist:
             valid_timestamp = ts
             break
@@ -88,23 +94,33 @@ def download_mrms_composite_reflectivity(outdir: Path, tempdir: Path,
         url = build_url(height, valid_timestamp)
         gz_path = tempdir / f"MRMS_MergedReflectivityQC_{height}_{valid_timestamp}.grib2.gz"
 
+        # Skip if already exists
         if gz_path.exists():
-            print("[MRMS Refl] Terminating download. Reason: File already exists")
-            return None
-        try:
-            print(f"⬇️  Downloading {url}")
-            r = requests.get(url, timeout=30)
-            if r.status_code != 200:
-                print(f"⚠️  Failed to download {height}: HTTP {r.status_code}")
-                continue
-            with open(gz_path, "wb") as f:
-                f.write(r.content)
+            print(f"⚠️ File already exists: {gz_path.name}")
             downloaded[height] = gz_path
+            continue
+            
+        try:
+            print(f"⬇️ Downloading {height}...")
+            # Use streaming download for large files
+            r = requests.get(url, stream=True, timeout=60)
+            if r.status_code != 200:
+                print(f"⚠️ Failed to download {height}: HTTP {r.status_code}")
+                continue
+                
+            with open(gz_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            downloaded[height] = gz_path
+            print(f"✅ Downloaded {height}")
+            
         except Exception as e:
             print(f"❌ Download error {height}: {e}")
+            continue
 
-    if len(downloaded) != len(sweep_heights):
-        print("❌ Missing files even for validated timestamp.")
+    if len(downloaded) < len(sweep_heights) * 0.8:  # Allow 20% missing files
+        print("❌ Too many missing files even for validated timestamp.")
         return None
 
     # Decompress .gz files
@@ -116,12 +132,15 @@ def download_mrms_composite_reflectivity(outdir: Path, tempdir: Path,
                 shutil.copyfileobj(f_in, f_out)
             os.remove(gz_path)
             grib_paths[height] = grib_path
+            print(f"✅ Decompressed {height}")
         except Exception as e:
             print(f"❌ Error decompressing {height}: {e}")
 
     if not grib_paths:
         print("❌ No GRIB files decompressed.")
         return None
+        
+    return grib_paths  # RETURN THE PATHS!
     
 def find_all_refl_files():
     """

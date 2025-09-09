@@ -7,13 +7,13 @@ from . import refl
 from . import mrms
 from . import rtma
 from util import file as fs
-from EdgeWARN.detection.tools import timestamp
+from util import detect_utils as utils
 import os
 
 # ---------- CREDITS ----------
 def attribution():
     print("EdgeWARN Data Ingestion")
-    print("Build: 2025-08-31")
+    print("Build: 2025-09-09")
     print("Credits: Yuchen Wei")
     print("Made by the EWS")
     time.sleep(1)
@@ -66,7 +66,7 @@ def main():
         target_time = datetime.datetime.utcnow()
     else:
         refl_file = refl_files[0]
-        ts_str = timestamp.extract_timestamp_from_filename(str(refl_file))
+        ts_str = utils.extract_timestamp_from_filename(str(refl_file))
         try:
             target_time = datetime.datetime.fromisoformat(ts_str)
         except Exception:
@@ -80,8 +80,10 @@ def main():
     mrms.download_latest_mrms_nldn(target_time, fs.MRMS_NLDN_DIR)
     mrms.download_mrms_echotop18(target_time, fs.MRMS_ECHOTOP18_DIR)
     mrms.download_latest_mrms_qpe15(target_time, fs.MRMS_QPE15_DIR)
-    mrms.download_latest_mrms_preciprate_10min(target_time, fs.MRMS_PRECIPRATE_DIR)
+    mrms.download_mrms_preciprate(target_time, fs.MRMS_PRECIPRATE_DIR)
     mrms.download_latest_mrms_probsevere(target_time, fs.MRMS_PROBSEVERE_DIR)
+    mrms.download_mrms_vil_density(target_time, fs.MRMS_VIL_DIR)
+    mrms.download_mrms_ffg(target_time, fs.MRMS_FLASH_DIR)
 
     # Download THREDDS RTMA
     rtma.download_latest_rtma(target_time, fs.THREDDS_RTMA_DIR)

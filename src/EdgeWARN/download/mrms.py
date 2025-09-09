@@ -10,7 +10,6 @@ def download_mrms_echotop18(dt, outdir: Path, max_lookback_minutes=60):
     """
     Downloads the latest MRMS EchoTop 18 file by searching back minute-by-minute.
     """
-    global LATEST_MRMS_ECHOTOP18
     base_url = "https://mrms.ncep.noaa.gov/2D/EchoTop_18"
     outdir.mkdir(parents=True, exist_ok=True)
     attempt_dt = dt
@@ -75,7 +74,6 @@ def download_latest_mrms_nldn(dt, outdir: Path, max_lookback_minutes=20):
       MRMS_NLDN_CG_005min_AvgDensity_00.00_YYYYMMDD-HHMMSS.grib2.gz
     Unzips into 'outdir' and deletes .gz and .idx files.
     """
-    global LATEST_MRMS_NLDN
     base_url = "https://mrms.ncep.noaa.gov/2D/NLDN_CG_001min_AvgDensity"
     outdir.mkdir(parents=True, exist_ok=True)
     attempt_dt = dt.replace(second=0, microsecond=0)
@@ -153,56 +151,66 @@ def download_latest_mrms_nldn(dt, outdir: Path, max_lookback_minutes=20):
     return None
 
 # ---------- MRMS PrecipRate 10 MIN ----------
-def download_latest_mrms_preciprate_10min(dt, outdir: Path):
-    global LATEST_MRMS_PRECIPRATE
-    outdir.mkdir(parents=True, exist_ok=True)
+def download_mrms_preciprate(dt, outdir: Path, max_lookback_minutes=60):
+    """
+    Downloads the latest MRMS PrecipRate file by searching back minute-by-minute.
+    Unzips the downloaded file and extracts the .grib2 file before deleting the .gz file.
+    """
     base_url = "https://mrms.ncep.noaa.gov/2D/PrecipRate"
+    outdir.mkdir(parents=True, exist_ok=True)
+    attempt_dt = dt
 
-    rounded_minute = (dt.minute // 10) * 10
-    snapped_dt = dt.replace(minute=rounded_minute, second=0, microsecond=0)
-    file_ts = snapped_dt.strftime("%Y%m%d-%H%M")
-    filename = f"MRMS_PrecipRate_00.00_{file_ts}00.grib2.gz"
-    gz_outpath = outdir / filename
+    for _ in range(max_lookback_minutes + 1):
+        date_str = attempt_dt.strftime("%Y%m%d")
+        hour_min = attempt_dt.strftime("%H%M")
+        prefix = f"MRMS_PrecipRate_00.00_{date_str}-{hour_min}"
 
-    # Define where unzipped file goes — parent directory of outdir
-    extracted_path = outdir / filename[:-3]  # remove ".gz"
+        print(f"Looking for PrecipRate files with prefix: {prefix}")
 
-    # Debug to check if timestamp is correct
-    print(f"MRMS Preciprate using timestamp: {dt}")
-
-    if not extracted_path.exists():
-        if not gz_outpath.exists():
-            print(f"[MRMS PrecipRate] Attempting download: {filename}")
-            try:
-                r = requests.get(f"{base_url}/{filename}", stream=True, timeout=30)
-                r.raise_for_status()
-                with open(gz_outpath, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                print(f"[MRMS PrecipRate] Downloaded: {filename}")
-            except Exception as e:
-                print(f"[MRMS PrecipRate] Failed to download: {e}")
-                return None
-        else:
-            print(f"[MRMS PrecipRate] Found existing gz file: {filename}")
-
-        # Decompress the gz file into parent directory
         try:
-            with gzip.open(gz_outpath, 'rb') as f_in:
-                with open(extracted_path, 'wb') as f_out:
-                    f_out.write(f_in.read())
-            print(f"[MRMS PrecipRate] Extracted to: {extracted_path.name}")
+            r = requests.get(f"{base_url}/", timeout=20)
+            r.raise_for_status()
+            matches = sorted(re.findall(rf"{prefix}\d{{2}}\.grib2\.gz", r.text), reverse=True)
 
-            # Delete the original .gz file
-            gz_outpath.unlink()
+            if matches:
+                filename = matches[0]
+                gz_outpath = outdir / filename
+                extracted_path = outdir / filename[:-3]  # Remove '.gz'
+
+                if extracted_path.exists():
+                    print(f"PrecipRate uncompressed file already exists: {extracted_path.name}")
+                    LATEST_MRMS_PRECIPRATE = str(extracted_path)
+                    return extracted_path
+
+                print(f"Downloading PrecipRate file: {filename}")
+                file_req = requests.get(f"{base_url}/{filename}", stream=True, timeout=30)
+                file_req.raise_for_status()
+                with open(gz_outpath, "wb") as f:
+                    for chunk in file_req.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                print(f"Downloaded PrecipRate file: {filename}")
+
+                # Decompress into outdir
+                with gzip.open(gz_outpath, 'rb') as f_in:
+                    with open(extracted_path, 'wb') as f_out:
+                        f_out.write(f_in.read())
+
+                print(f"Extracted PrecipRate to: {extracted_path.name}")
+
+                # Delete .gz file
+                gz_outpath.unlink()
+
+                LATEST_MRMS_PRECIPRATE = str(extracted_path)
+                return extracted_path
+            else:
+                print(f"No PrecipRate file for {hour_min}, trying previous minute...")
+                attempt_dt -= timedelta(minutes=1)
         except Exception as e:
-            print(f"[MRMS PrecipRate] Extraction failed: {e}")
-            return None
-    else:
-        print(f"[MRMS PrecipRate] Uncompressed file already exists: {extracted_path.name}")
+            print(f"Error fetching PrecipRate: {e}")
+            break
 
-    LATEST_MRMS_PRECIPRATE = str(extracted_path)
-    return extracted_path
+    print(f"No PrecipRate file found in last {max_lookback_minutes} minutes.")
+    return None
 
 import datetime
 from pathlib import Path
@@ -256,7 +264,6 @@ import requests
 
 # ---------- MRMS QPE 15 MIN ----------
 def download_latest_mrms_qpe15(dt, outdir: Path):
-    global LATEST_MRMS_QPE15
     outdir.mkdir(parents=True, exist_ok=True)
     base_url = "https://mrms.ncep.noaa.gov/2D/RadarOnly_QPE_15M"
 
@@ -300,3 +307,127 @@ def download_latest_mrms_qpe15(dt, outdir: Path):
 
     LATEST_MRMS_QPE15 = str(extracted_path)
     return extracted_path
+
+# ---------- MRMS VIL Density ----------
+def download_mrms_vil_density(dt, outdir: Path, max_lookback_minutes=60):
+    """
+    Downloads the latest MRMS VIL Density file by searching back minute-by-minute.
+    Unzips the downloaded file and extracts the .grib2 file before deleting the .gz file.
+    """
+    base_url = "https://mrms.ncep.noaa.gov/2D/VIL_Density"
+    outdir.mkdir(parents=True, exist_ok=True)
+    attempt_dt = dt
+
+    for _ in range(max_lookback_minutes + 1):
+        date_str = attempt_dt.strftime("%Y%m%d")
+        hour_min = attempt_dt.strftime("%H%M")
+        prefix = f"MRMS_VIL_Density_00.50_{date_str}-{hour_min}"
+
+        print(f"Looking for VIL Density files with prefix: {prefix}")
+
+        try:
+            r = requests.get(f"{base_url}/", timeout=20)
+            r.raise_for_status()
+            matches = sorted(re.findall(rf"{prefix}\d{{2}}\.grib2\.gz", r.text), reverse=True)
+
+            if matches:
+                filename = matches[0]
+                gz_outpath = outdir / filename
+                extracted_path = outdir / filename[:-3]  # Remove '.gz'
+
+                if extracted_path.exists():
+                    print(f"VIL Density uncompressed file already exists: {extracted_path.name}")
+                    LATEST_MRMS_VIL_DENSITY = str(extracted_path)
+                    return extracted_path
+
+                print(f"Downloading VIL Density file: {filename}")
+                file_req = requests.get(f"{base_url}/{filename}", stream=True, timeout=30)
+                file_req.raise_for_status()
+                with open(gz_outpath, "wb") as f:
+                    for chunk in file_req.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                print(f"Downloaded VIL Density file: {filename}")
+
+                # Decompress into outdir
+                with gzip.open(gz_outpath, 'rb') as f_in:
+                    with open(extracted_path, 'wb') as f_out:
+                        f_out.write(f_in.read())
+
+                print(f"Extracted VIL Density to: {extracted_path.name}")
+
+                # Delete .gz file
+                gz_outpath.unlink()
+
+                LATEST_MRMS_VIL_DENSITY = str(extracted_path)
+                return extracted_path
+            else:
+                print(f"No VIL Density file for {hour_min}, trying previous minute...")
+                attempt_dt -= timedelta(minutes=1)
+        except Exception as e:
+            print(f"Error fetching VIL Density: {e}")
+            break
+
+    print(f"No VIL Density file found in last {max_lookback_minutes} minutes.")
+    return None
+
+# ---------- MRMS FLASH FLOOD GUIDANCE (FFG) ----------
+def download_mrms_ffg(dt, outdir: Path, max_lookback_minutes=60):
+    """
+    Downloads the latest MRMS Flash Flood Guidance (FFG) file by searching back minute-by-minute.
+    Unzips the downloaded file and extracts the .grib2 file before deleting the .gz file.
+    """
+    base_url = "https://mrms.ncep.noaa.gov/2D/FLASH/QPE_FFG01H"
+    outdir.mkdir(parents=True, exist_ok=True)
+    attempt_dt = dt
+
+    for _ in range(max_lookback_minutes + 1):
+        date_str = attempt_dt.strftime("%Y%m%d")
+        hour_min = attempt_dt.strftime("%H%M")
+        prefix = f"MRMS_FLASH_QPE_FFG01H_00.00_{date_str}-{hour_min}"
+
+        print(f"Looking for FFG files with prefix: {prefix}")
+
+        try:
+            r = requests.get(f"{base_url}/", timeout=20)
+            r.raise_for_status()
+            matches = sorted(re.findall(rf"{prefix}\d{{2}}\.grib2\.gz", r.text), reverse=True)
+
+            if matches:
+                filename = matches[0]
+                gz_outpath = outdir / filename
+                extracted_path = outdir / filename[:-3]  # Remove '.gz'
+
+                if extracted_path.exists():
+                    print(f"FFG uncompressed file already exists: {extracted_path.name}")
+                    LATEST_MRMS_FFG = str(extracted_path)
+                    return extracted_path
+
+                print(f"Downloading FFG file: {filename}")
+                file_req = requests.get(f"{base_url}/{filename}", stream=True, timeout=30)
+                file_req.raise_for_status()
+                with open(gz_outpath, "wb") as f:
+                    for chunk in file_req.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                print(f"Downloaded FFG file: {filename}")
+
+                # Decompress into outdir
+                with gzip.open(gz_outpath, 'rb') as f_in:
+                    with open(extracted_path, 'wb') as f_out:
+                        f_out.write(f_in.read())
+
+                print(f"Extracted FFG to: {extracted_path.name}")
+
+                # Delete .gz file
+                gz_outpath.unlink()
+
+                LATEST_MRMS_FFG = str(extracted_path)
+                return extracted_path
+            else:
+                print(f"No FFG file for {hour_min}, trying previous minute...")
+                attempt_dt -= timedelta(minutes=1)
+        except Exception as e:
+            print(f"Error fetching FFG: {e}")
+            break
+
+    print(f"No FFG file found in last {max_lookback_minutes} minutes.")
+    return None

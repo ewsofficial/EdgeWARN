@@ -16,7 +16,7 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 3. Navigate to EdgeWARN/src to run scripts
 4. Run scripts as `python -B -m path.to.script`
 
-#### Current Build Version: 2025.09.01
+#### Current Build Version: 2025.09.08
  
 ### Credits
 - Edgemont Weather Service (Edgemont Jr/Sr High School, 200 White Oak Ln, Scarsdale NY 10583)

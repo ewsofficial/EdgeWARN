@@ -18,10 +18,12 @@ MRMS_NLDN_DIR = BASE_DIR / "mrms_nldn"
 MRMS_ECHOTOP18_DIR = BASE_DIR / "mrms_echotop18"
 MRMS_QPE15_DIR = BASE_DIR / "mrms_qpe15"
 MRMS_PRECIPRATE_DIR = BASE_DIR / "mrms_preciprate"
-MRMS_MESH_DIR = BASE_DIR / "mrms_mesh"
 MRMS_PROBSEVERE_DIR = BASE_DIR / "mrms_probsevere"
 MRMS_COMBINED_DIR = BASE_DIR / "mrms_combined_strikes"
 MRMS_RADAR_DIR = BASE_DIR / "nexrad_merged"
+MRMS_FLASH_DIR = BASE_DIR / "mrms_flash"
+MRMS_VIL_DIR = BASE_DIR / "mrms_vil_density"
+MRMS_ROTATIONT_DIR = BASE_DIR / "mrms_rotationtrack"
 THREDDS_RTMA_DIR = BASE_DIR / "rtma"
 TEMP_DIR = BASE_DIR / "temp"
 MRMS_COMBINED_DIR.mkdir(parents=True, exist_ok=True)
@@ -56,17 +58,7 @@ def latest_glm(n):
         raise RuntimeError(f"No GOES GLM files in {GOES_GLM_DIR}")
     return [str(f) for f in files[-n:]]
 
-def latest_ltng(n): #For Debug Purposes; use get_latest_mrms_lightning_combined_files for operational use
-    """Return the n most recent MRMS Lightning files as a list (oldest to newest)."""
-    if not MRMS_LTNG_DIR.exists():
-        print("WARNING: MRMS Lightning directory doesn't exist!")
-        return
-    files = sorted([f for f in MRMS_LTNG_DIR.glob("*") if f.is_file()], key=lambda f: f.stat().st_mtime)
-    if len(files) < n:
-        raise RuntimeError(f"No MRMS Lightning files in {MRMS_LTNG_DIR}")
-    return [str(f) for f in files[-n:]]
-
-def latest_nldn(n): #For Debug Purposes; use get_latest_mrms_lightning_combined_files for operational use
+def latest_nldn(n):
     """Return the n most recent MRMS NLDN files as a list (oldest to newest)."""
     if not MRMS_NLDN_DIR.exists():
         print("WARNING: MRMS NLDN directory doesn't exist!")
@@ -106,14 +98,35 @@ def latest_preciprate(n):
         raise RuntimeError(f"No MRMS PrecipRate files in {MRMS_PRECIPRATE_DIR}")
     return [str(f) for f in files[-n:]]
 
-"""
-def latest_mesh(n=2):
-    ""Return the n most recent MRMS MESH files as a list (oldest to newest).""
-    files = sorted([f for f in MRMS_MESH_DIR.glob("*") if f.is_file()], key=lambda f: f.stat().st_mtime)
+def latest_vil_density(n):
+    """Return the n most recent MRMS VIL Density files as a list (oldest to newest)."""
+    if not MRMS_VIL_DIR.exists():
+        print("WARNING: MRMS VIL Density directory doesn't exist!")
+        return
+    files = sorted([f for f in MRMS_VIL_DIR.glob("*") if f.is_file()], key=lambda f: f.stat().st_mtime)
     if len(files) < n:
-        raise RuntimeError(f"No MRMS MESH files in {MRMS_MESH_DIR}")
+        raise RuntimeError(f"NO MRMS VIL Density files in {MRMS_VIL_DIR}")
     return [str(f) for f in files[-n:]]
-"""
+
+def latest_ffg(n):
+    """Return the n most recent FFG Guidance files as a list (oldest to newest)."""
+    if not MRMS_FLASH_DIR.exists():
+        print("WARNING: MRMS FFG Guidance directory doesn't exist!")
+        return
+    files = sorted([f for f in MRMS_FLASH_DIR.glob("*") if f.is_file()], key=lambda f: f.stat().st_mtime)
+    if len(files) < n:
+        raise RuntimeError(f"No MRMS FFG files in {MRMS_FLASH_DIR}")
+    return [str(f) for f in files[-n:]]
+
+def latest_rotationtrack(n):
+    """Return the n most recent 30min rotation track files as a list (oldest to newest)."""
+    if not MRMS_ROTATIONT_DIR.exists():
+        print("WARNING: MRMS RotationTrack30min directory doesn't exist!")
+        return
+    files = sorted([f for f in MRMS_ROTATIONT_DIR.glob("*") if f.is_file], key=lambda f: f.stat().st_mtime)
+    if len(files) < n:
+        raise RuntimeError(f"No MRMS RotationTrack30min in {MRMS_ROTATIONT_DIR}")
+    return [str(f) for f in files[-n:]]
 
 def latest_probsevere(n=2):
     """Return the n most recent MRMS ProbSevere files as a list (oldest to newest)."""
@@ -133,22 +146,6 @@ def latest_rtma(n=1):
     files = sorted([f for f in THREDDS_RTMA_DIR.glob("*") if f.is_file()], key=lambda f: f.stat().st_mtime)
     if len(files) < n:
         raise RuntimeError(f"No RTMA files in {THREDDS_RTMA_DIR}")
-    return [str(f) for f in files[-n:]]
-
-def latest_ltng_combined(n=2):
-    """Return the n most recent combined MRMS Lightning/NLDN files as a list (oldest to newest)."""
-    if not MRMS_LTNG_DIR.exists():
-        print("WARNING: MRMS Lightning directory doesn't exist!")
-        return
-    if not MRMS_NLDN_DIR.exists():
-        print("WARNING: MRMS NLDN directory doesn't exist!")
-        return
-    if not MRMS_COMBINED_DIR.exists():
-        print("WARNING: MRMS Combined Strikes directory doesn't exist!")
-        return
-    files = sorted([f for f in MRMS_COMBINED_DIR.glob("*") if f.is_file()], key=lambda f: f.stat().st_mtime)
-    if len(files) < n:
-        raise RuntimeError(f"No combined MRMS Lightning/NLDN files in {MRMS_COMBINED_DIR}")
     return [str(f) for f in files[-n:]]
 
 def clean_idx_files(folders):
