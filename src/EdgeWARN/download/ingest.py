@@ -5,7 +5,7 @@ from pathlib import Path
 from . import s3download as s3d
 from . import refl
 from . import mrms
-from . import rtma
+from . import synoptic
 from util import file as fs
 from util import detect_utils as utils
 import os
@@ -85,8 +85,10 @@ def main():
     mrms.download_mrms_vil_density(target_time, fs.MRMS_VIL_DIR)
     mrms.download_mrms_ffg(target_time, fs.MRMS_FLASH_DIR)
 
-    # Download THREDDS RTMA
-    rtma.download_latest_rtma(target_time, fs.THREDDS_RTMA_DIR)
+    # Download Synoptic
+    synoptic.download_latest_rtma(target_time, fs.THREDDS_RTMA_DIR)
+    synoptic.download_rap_awp(target_time, fs.NOAA_RAP_DIR)
+
 
 # Only run this for testing purposes
 # """
