@@ -25,6 +25,7 @@ MRMS_FLASH_DIR = BASE_DIR / "mrms_flash"
 MRMS_VIL_DIR = BASE_DIR / "mrms_vil_density"
 MRMS_ROTATIONT_DIR = BASE_DIR / "mrms_rotationtrack"
 THREDDS_RTMA_DIR = BASE_DIR / "rtma"
+NOAA_RAP_DIR = BASE_DIR / "rap"
 TEMP_DIR = BASE_DIR / "temp"
 MRMS_COMBINED_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -146,6 +147,16 @@ def latest_rtma(n=1):
     files = sorted([f for f in THREDDS_RTMA_DIR.glob("*") if f.is_file()], key=lambda f: f.stat().st_mtime)
     if len(files) < n:
         raise RuntimeError(f"No RTMA files in {THREDDS_RTMA_DIR}")
+    return [str(f) for f in files[-n:]]
+
+def latest_rap(n=1):
+    """Return the n most recent RAP files as a list (oldest to newest)."""
+    if not NOAA_RAP_DIR.exists():
+        print("WARNING: NOAA RAP directory doesn't exist!")
+        return
+    files = sorted([f for f in NOAA_RAP_DIR.glob("*") if f.is_file()], key=lambda f: f.stat().st_mtime)
+    if len(files) < n:
+        raise RuntimeError(f"No RAP files in {NOAA_RAP_DIR}")
     return [str(f) for f in files[-n:]]
 
 def clean_idx_files(folders):

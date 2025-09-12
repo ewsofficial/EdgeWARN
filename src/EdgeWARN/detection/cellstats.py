@@ -4,6 +4,7 @@ from util.file import StatFileHandler
 import numpy as np
 from matplotlib.path import Path
 from datetime import datetime
+from shapely.geometry import shape
 
 class StormIntegrationUtils:
     """
@@ -306,103 +307,149 @@ class StormCellIntegrator:
         
         return storm_cells
     
-    def integrate_probsevere(self, probsevere_cells, storm_cells, probsevere_timestamp, max_distance_km=20.0):
+    def integrate_probsevere(self, probsevere_data, storm_cells, probsevere_timestamp, max_distance_km=25.0):
         """
         Integrate ProbSevere probability data with storm cells by matching based on 
         spatial proximity to cell centroids at the time of each storm history entry.
         """
-        print(f"Integrating ProbSevere data for {len(probsevere_cells)} cells with {len(storm_cells)} storm cells...")
-        print(f"ProbSevere timestamp: {probsevere_timestamp}")
+        if not isinstance(probsevere_data, dict) or 'features' not in probsevere_data:
+            print("Error: Invalid ProbSevere data format")
+            return storm_cells
         
-        # Convert max distance from km to degrees (approximate)
+        probsevere_features = probsevere_data['features']
+        print(f"Integrating ProbSevere data for {len(probsevere_features)} features with {len(storm_cells)} storm cells...")
+        print(f"ProbSevere timestamp: {probsevere_timestamp}")
+
+        # Convert max distance from km to degrees (approximate, at mid-latitudes)
         max_distance_deg = max_distance_km / 111.0
         matches_found = 0
-        
-        # Debug: Print first few ProbSevere cells with their coordinates
-        print(f"\nFirst 5 ProbSevere cells with coordinates:")
-        for i, cell in enumerate(probsevere_cells[:5]):
-            if 'lat' in cell and 'lon' in cell:
-                print(f"  Cell {i}: lat={cell['lat']:.4f}, lon={cell['lon']:.4f}")
-            else:
-                print(f"  Cell {i}: No coordinates found")
-        
+
         for storm_cell in storm_cells:
             cell_id = storm_cell.get('id', 'unknown')
-            
-            # Skip cells without storm history
+
             if 'storm_history' not in storm_cell or not storm_cell['storm_history']:
-                print(f"  Cell {cell_id}: No storm history")
                 continue
-                
-            # Find the storm history entry closest to the ProbSevere timestamp
+
             closest_idx = self.find_closest_storm_history_entry(storm_cell['storm_history'], probsevere_timestamp)
-            
             if closest_idx is None:
-                print(f"  Cell {cell_id}: No history entry close to ProbSevere timestamp")
                 continue
-                
+
             entry = storm_cell['storm_history'][closest_idx]
-            
-            # Get the centroid coordinates from this entry
+
             if 'centroid' not in entry or len(entry['centroid']) < 2:
-                print(f"  Cell {cell_id}: No centroid in history entry")
                 continue
-                
+
             storm_lat, storm_lon = entry['centroid'][0], entry['centroid'][1]
-            print(f"  Cell {cell_id}: Looking for ProbSevere match near ({storm_lat:.4f}, {storm_lon:.4f})")
-            
-            # Find the closest ProbSevere cell to this centroid
+            storm_lon_converted = storm_lon - 360 if storm_lon > 180 else storm_lon
+
             closest_probsevere = None
             min_distance = float('inf')
-            
-            for i, probsevere_cell in enumerate(probsevere_cells):
-                # Extract coordinates from ProbSevere cell
-                if 'lat' in probsevere_cell and 'lon' in probsevere_cell:
-                    ps_lat = probsevere_cell['lat']
-                    ps_lon = probsevere_cell['lon']
-                    
-                    # Convert storm cell longitude from 0-360 to -180-180 range to match ProbSevere
-                    storm_lon_converted = storm_lon - 360 if storm_lon > 180 else storm_lon
-                    
-                    # Calculate distance (simple Euclidean distance in degrees)
-                    distance = np.sqrt((storm_lat - ps_lat)**2 + (storm_lon_converted - ps_lon)**2)
-                    
-                    if distance < min_distance and distance <= max_distance_deg:
-                        min_distance = distance
-                        closest_probsevere = probsevere_cell
-                        closest_idx = i
-            
-            # If we found a matching ProbSevere cell, integrate the data
-            if closest_probsevere is not None:
-                # Convert distance back to km for reporting
+
+            for feature in probsevere_features:
+                props = feature.get('properties', {})
+                try:
+                    geom = feature.get('geometry')
+                    if geom:
+                        polygon = shape(geom)
+                        ps_lon, ps_lat = polygon.centroid.x, polygon.centroid.y
+                    else:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+
+                if np.isnan(ps_lat) or np.isnan(ps_lon):
+                    continue
+
+                distance = np.sqrt((storm_lat - ps_lat) ** 2 + (storm_lon_converted - ps_lon) ** 2)
+
+                if distance < min_distance and distance <= max_distance_deg:
+                    min_distance = distance
+                    closest_probsevere = props
+
+            if closest_probsevere:
                 distance_km = min_distance * 111.0
-                
-                entry.update({
-                    'prob_severe': closest_probsevere.get('prob_severe', 0),
-                    'prob_hail': closest_probsevere.get('prob_hail', 0),
-                    'prob_wind': closest_probsevere.get('prob_wind', 0),
-                    'prob_tornado': closest_probsevere.get('prob_tornado', 0),
-                    'probsevere_mesh': closest_probsevere.get('mesh', 0),
-                    'probsevere_vil': closest_probsevere.get('vil', 0),
-                    'probsevere_flash_rate': closest_probsevere.get('flash_rate', 0),
-                    'probsevere_mucape': closest_probsevere.get('mucape', 0),
-                    'probsevere_mlcape': closest_probsevere.get('mlcape', 0),
-                    'probsevere_mlcin': closest_probsevere.get('mlcin', 0),
-                    'probsevere_ebshear': closest_probsevere.get('ebshear', 0),
-                    'probsevere_srh_1km': closest_probsevere.get('srh_1km', 0),
-                    'probsevere_mean_wind_1_3km': closest_probsevere.get('mean_wind_1_3km', 0),
-                    'probsevere_timestamp': probsevere_timestamp.isoformat() + 'Z',
-                    'probsevere_distance_km': round(distance_km, 2),
-                    'probsevere_area_sq_km': closest_probsevere.get('area_sq_km', 0)
-                })
-                
-                print(f"  ✓ Matched cell {cell_id} with ProbSevere cell {closest_idx} (distance: {distance_km:.2f} km)")
+
+                # Core probabilities (flat at top level)
+                entry['prob_severe'] = float(closest_probsevere.get('ProbSevere', 0))
+                entry['prob_hail']   = float(closest_probsevere.get('ProbHail', 0))
+                entry['prob_wind']   = float(closest_probsevere.get('ProbWind', 0))
+                entry['prob_tor']    = float(closest_probsevere.get('ProbTor', 0))
+
+                # Nested supporting fields
+                entry['probsevere_details'] = {
+                    # --- Atmospheric Instability ---
+                    'mlcape': float(closest_probsevere.get('MLCAPE', 0)),
+                    'mucape': float(closest_probsevere.get('MUCAPE', 0)),
+                    'mlcin': float(closest_probsevere.get('MLCIN', 0)),
+                    'dcape': float(closest_probsevere.get('DCAPE', 0)),
+                    'cape_m10m30': float(closest_probsevere.get('CAPE_M10M30', 0)),
+                    'lcl': float(closest_probsevere.get('LCL', 0)),
+                    'wetbulb_0c_hgt': float(closest_probsevere.get('WETBULB_0C_HGT', 0)),
+                    'lllr': float(closest_probsevere.get('LLLR', 0)),
+                    'mllr': float(closest_probsevere.get('MLLR', 0)),
+
+                    # --- Wind / Shear / Rotation ---
+                    'ebshear': float(closest_probsevere.get('EBSHEAR', 0)),
+                    'srh01km': float(closest_probsevere.get('SRH01KM', 0)),
+                    'srw02km': float(closest_probsevere.get('SRW02KM', 0)),
+                    'srw46km': float(closest_probsevere.get('SRW46KM', 0)),
+                    'meanwind_1_3kmagl': float(closest_probsevere.get('MEANWIND_1-3kmAGL', 0)),
+                    'lja': float(closest_probsevere.get('LJA', 0)),
+
+                    # --- Radar / Reflectivity ---
+                    'compref': float(closest_probsevere.get('COMPREF', 0)),
+                    'ref10': float(closest_probsevere.get('REF10', 0)),
+                    'ref20': float(closest_probsevere.get('REF20', 0)),
+                    'mesh': float(closest_probsevere.get('MESH', 0)),
+                    'h50_above_0c': float(closest_probsevere.get('H50_Above_0C', 0)),
+                    'echo_top_50': float(closest_probsevere.get('EchoTop_50', 0)),
+                    'vil': float(closest_probsevere.get('VIL', 0)),
+
+                    # --- Lightning / Electrical ---
+                    'maxfed': float(closest_probsevere.get('MaxFED', 0)),
+                    'maxfcd': float(closest_probsevere.get('MaxFCD', 0)),
+                    'accumfcd': float(closest_probsevere.get('AccumFCD', 0)),
+                    'minflasharea': float(closest_probsevere.get('MinFlashArea', 0)),
+                    'te_at_maxfcd': float(closest_probsevere.get('TE@MaxFCD', 0)),
+                    'flash_rate': float(closest_probsevere.get('FLASH_RATE', 0)),
+                    'flash_density': float(closest_probsevere.get('FLASH_DENSITY', 0)),
+                    'maxllaz': float(closest_probsevere.get('MAXLLAZ', 0)),
+                    'p98llaz': float(closest_probsevere.get('P98LLAZ', 0)),
+                    'p98mlaz': float(closest_probsevere.get('P98MLAZ', 0)),
+                    'maxrc_emiss': float(closest_probsevere.get('MAXRC_EMISS', 0)),
+                    'icp': float(closest_probsevere.get('ICP', 0)),
+
+                    # --- Precipitable Water ---
+                    'pwat': float(closest_probsevere.get('PWAT', 0)),
+
+                    # --- Probabilities / Hazards ---
+                    'probsevere': float(closest_probsevere.get('ProbSevere', 0)),
+                    'probhail': float(closest_probsevere.get('ProbHail', 0)),
+                    'probwind': float(closest_probsevere.get('ProbWind', 0)),
+                    'probtorn': float(closest_probsevere.get('ProbTor', 0)),
+
+                    # --- Storm Motion / Location ---
+                    'mlat': float(closest_probsevere.get('MLAT', 0)),
+                    'mlon': float(closest_probsevere.get('MLON', 0)),
+                    'motion_east': float(closest_probsevere.get('MOTION_EAST', 0)),
+                    'motion_south': float(closest_probsevere.get('MOTION_SOUTH', 0)),
+
+                    # --- Storm Size / Geometry ---
+                    'size': float(closest_probsevere.get('SIZE', 0)),
+                    'avg_beam_hgt': float(closest_probsevere.get('AVG_BEAM_HGT', 0)),
+                }
+
+
+                # Metadata
+                entry['probsevere_timestamp'] = probsevere_timestamp.isoformat() + 'Z'
+                entry['probsevere_distance_km'] = round(distance_km, 2)
+
+                print(f"  ✓ Matched cell {cell_id} with ProbSevere feature (distance: {distance_km:.2f} km)")
                 matches_found += 1
-            else:
-                print(f"  ✗ No ProbSevere cell found within {max_distance_km}km of cell {cell_id}")
-        
+
         print(f"ProbSevere integration completed: {matches_found} matches found")
         return storm_cells
+
     
     def integrate_glm(self, glm_dataset, storm_cells, glm_timestamp, output_key='glm_flashrate_1m'):
         """
@@ -567,19 +614,18 @@ def main():
         probsevere_path = probsevere_list[-1]
         print(f"Using ProbSevere file: {probsevere_path}")
         
-        # Load and parse ProbSevere data
+        # Load raw ProbSevere JSON
         probsevere_data = handler.load_json(probsevere_path)
         if probsevere_data:
-            probsevere_cells = handler.parse_probsevere_json(probsevere_data)
-            
-            # DEBUG: Print structure of ProbSevere data
-            handler.debug_probsevere_structure(probsevere_cells)
+            # DEBUG: print the raw structure
+            handler.debug_probsevere_structure(probsevere_data.get("features", []))
             
             # Extract timestamp from ProbSevere data
             probsevere_timestamp_str = probsevere_data.get('validTime', '').replace('_', ' ')
             try:
                 probsevere_timestamp = datetime.strptime(probsevere_timestamp_str, "%Y%m%d %H%M%S UTC")
-                result_cells = integrator.integrate_probsevere(probsevere_cells, result_cells, probsevere_timestamp)
+                # Pass the full JSON dict instead of just features
+                result_cells = integrator.integrate_probsevere(probsevere_data, result_cells, probsevere_timestamp)
                 print("ProbSevere integration completed successfully")
             except ValueError:
                 print(f"Could not parse timestamp from ProbSevere data: {probsevere_timestamp_str}")
@@ -587,28 +633,6 @@ def main():
             print("Failed to load ProbSevere JSON data")
     else:
         print("No ProbSevere files found")
-    
-    # 4. Integrate GLM lightning data
-    print("\n" + "="*50)
-    print("INTEGRATING GLM LIGHTNING DATA")
-    print("="*50)
-    glm_list = fs.latest_glm(1)  # Assuming you have a function for GLM files
-    if glm_list:
-        glm_path = glm_list[-1]
-        print(f"Using GLM file: {glm_path}")
-        
-        glm_timestamp = handler.find_glm_timestamp(glm_path)
-        if glm_timestamp:
-            try:
-                glm_ds = xr.open_dataset(glm_path)
-                result_cells = integrator.integrate_glm(glm_ds, result_cells, glm_timestamp)
-                print("GLM integration completed successfully")
-            except Exception as e:
-                print(f"Failed to integrate GLM data: {e}")
-        else:
-            print("Could not determine timestamp from GLM file")
-    else:
-        print("No GLM files found")
     
     # Save final integrated results
     output_json = storm_json_path.replace('.json', '_fully_integrated.json')
