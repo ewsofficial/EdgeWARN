@@ -119,11 +119,11 @@ class CellTracker:
 
 
 def main():
-    filepath_old = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250901-201640.nc")
-    filepath_new = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250901-202040.nc")
+    filepath_old = Path(r"C:\input_data\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-003641.nc")
+    filepath_new = Path(r"C:\input_data\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-004041.nc")
     storm_json = Path("stormcell_test.json")
-    lat_limits = (36.7, 39.3)
-    lon_limits = (259.1, 263.7)
+    lat_limits = (45.3, 47.3)
+    lon_limits = (256.6, 260.2)
 
     print("=== DEBUG: Starting tracking process ===")
 

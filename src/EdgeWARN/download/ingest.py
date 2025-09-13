@@ -93,5 +93,10 @@ def main():
 # Only run this for testing purposes
 # """
 if __name__ == "__main__":
-    main()
+    import time
+    for i in range(6):
+        print("Ingesting data!")
+        main()
+        print("Sleeping for 180 sec")
+        time.sleep(180)
 # """

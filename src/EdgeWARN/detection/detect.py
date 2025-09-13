@@ -63,7 +63,7 @@ def save_cells_to_json(cells, filepath, float_precision=4):
 
 ### Find a way to get the lat and lon limits to work
 def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection",
-                     lat_limits=(36.7, 39.3), lon_limits=(259.1, 263.7)):
+                     lat_limits=(45.3, 47.3), lon_limits=(256.6, 260.2)):
     """
     Plot MRMS reflectivity and storm cells, hardcoding the lat/lon limits.
     lon_limits assumed 0-360.
@@ -183,13 +183,13 @@ def detect_cells(filepath, lat_limits, lon_limits, plot=False):
 from pathlib import Path
 if __name__ == "__main__":
     try:
-        filepath = Path(r"C:\input_data\MRMS_MergedReflectivityQC_3D_20250804-235241_renamed.nc")
+        filepath = Path(r"C:\input_data\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-002439.nc")
     except Exception as e:
         print(f"Error finding latest MRMS mosaic: {e}")
         sys.exit(1)
     print(filepath)
-    lat_limits = (38.8, 40.1)
-    lon_limits = (256, 258.5)  # MRMS longitude is 0-360
+    lat_limits = (45.3, 47.3)
+    lon_limits = (256.6, 260.2)  # MRMS longitude is 0-360
 
     if filepath.exists():
         print("Running detection!")
