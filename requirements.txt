@@ -1,0 +1,16 @@
+numpy==2.3.2
+xarray==2025.7.0
+netCDF4==1.7.2
+cfgrib==0.9.15.0
+matplotlib==3.10.6
+cartopy==0.25.0
+arm-pyart==2.1.0
+shapely==2.1.1
+alphashape==1.0.1
+requests==2.31.0
+beautifulsoup4==4.12.2
+s3fs==2025.7.0
+boto3==2.13.0
+botocore==2.13.0
+scipy==1.11.0
+pyproj==3.7.0

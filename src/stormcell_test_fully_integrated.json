@@ -1,0 +1,1265 @@
+[
+    {
+        "id": 3,
+        "num_gates": 859,
+        "centroid": [
+            46.2018,
+            259.1651
+        ],
+        "bbox": {
+            "lat_min": 46.055000000001776,
+            "lat_max": 46.365000000001714,
+            "lon_min": 258.9149999999737,
+            "lon_max": 259.4949999999732
+        },
+        "alpha_shape": [
+            [
+                258.915,
+                46.105
+            ],
+            [
+                258.915,
+                46.115
+            ],
+            [
+                259.005,
+                46.275
+            ],
+            [
+                259.035,
+                46.295
+            ],
+            [
+                259.075,
+                46.305
+            ],
+            [
+                259.345,
+                46.365
+            ],
+            [
+                259.425,
+                46.345
+            ],
+            [
+                259.455,
+                46.325
+            ],
+            [
+                259.485,
+                46.285
+            ],
+            [
+                259.495,
+                46.255
+            ],
+            [
+                259.495,
+                46.235
+            ],
+            [
+                259.495,
+                46.225
+            ],
+            [
+                259.455,
+                46.185
+            ],
+            [
+                259.355,
+                46.155
+            ],
+            [
+                259.065,
+                46.065
+            ],
+            [
+                258.935,
+                46.055
+            ],
+            [
+                258.925,
+                46.055
+            ],
+            [
+                258.915,
+                46.065
+            ],
+            [
+                258.915,
+                46.075
+            ],
+            [
+                258.915,
+                46.095
+            ],
+            [
+                258.915,
+                46.105
+            ]
+        ],
+        "storm_history": [
+            {
+                "timestamp": "2025-09-13T00:36:41",
+                "max_reflectivity_dbz": 64.0,
+                "num_gates": 488,
+                "centroid": [
+                    46.215,
+                    259.245
+                ]
+            },
+            {
+                "timestamp": "2025-09-13T00:40:41",
+                "max_reflectivity_dbz": 62.5,
+                "num_gates": 859,
+                "centroid": [
+                    46.2018,
+                    259.1651
+                ],
+                "dx": -6155.304071996951,
+                "dy": -1469.4240000005302,
+                "dt": 240.0,
+                "max_flash_rate": 1.1670000553131104,
+                "nldn_timestamp": "2025-09-13T00:44:00Z",
+                "max_echotop_height": 18.0,
+                "echotop_timestamp": "2025-09-13T00:44:42Z",
+                "prob_severe": 34.0,
+                "prob_hail": 34.0,
+                "prob_wind": 5.0,
+                "prob_tor": 4.0,
+                "probsevere_details": {
+                    "mlcape": 3230.0,
+                    "mucape": 3572.0,
+                    "mlcin": -6.0,
+                    "dcape": 1069.0,
+                    "cape_m10m30": 712.0,
+                    "lcl": 543.0,
+                    "wetbulb_0c_hgt": 10.9,
+                    "lllr": 8.1,
+                    "mllr": 7.6,
+                    "ebshear": 41.0,
+                    "srh01km": 74.0,
+                    "srw02km": 19.0,
+                    "srw46km": 30.2,
+                    "meanwind_1_3kmagl": 13.0,
+                    "lja": 0.0,
+                    "compref": 64.0,
+                    "ref10": 58.0,
+                    "ref20": 56.0,
+                    "mesh": 0.96,
+                    "h50_above_0c": 6.0,
+                    "echo_top_50": 10.3,
+                    "vil": 47.0,
+                    "maxfed": 102.0,
+                    "maxfcd": 25.0,
+                    "accumfcd": 120.0,
+                    "minflasharea": 80.0,
+                    "te_at_maxfcd": 164.0,
+                    "flash_rate": 0.0,
+                    "flash_density": 0.0,
+                    "maxllaz": 0.006,
+                    "p98llaz": 0.004,
+                    "p98mlaz": 0.005,
+                    "maxrc_emiss": 0.0,
+                    "icp": 98.0,
+                    "pwat": 1.8,
+                    "probsevere": 34.0,
+                    "probhail": 34.0,
+                    "probwind": 5.0,
+                    "probtorn": 4.0,
+                    "size": 0.0,
+                    "avg_beam_hgt": 2.15
+                },
+                "probsevere_timestamp": "2025-09-13T00:40:41Z",
+                "probsevere_distance_km": 0.79,
+                "max_precip_rate": 125.0,
+                "preciprate_timestamp": "2025-09-13T00:42:00Z",
+                "max_vil_density": 3.0,
+                "vil_density_timestamp": "2025-09-13T00:44:42Z"
+            }
+        ]
+    },
+    {
+        "id": 1,
+        "num_gates": 115,
+        "centroid": [
+            46.555,
+            259.245
+        ],
+        "bbox": {
+            "lon_min": 259.1649999999735,
+            "lat_min": 46.515000000001685,
+            "lon_max": 259.3649999999733,
+            "lat_max": 46.615000000001665
+        },
+        "alpha_shape": [
+            [
+                259.265,
+                46.525
+            ],
+            [
+                259.215,
+                46.515
+            ],
+            [
+                259.185,
+                46.525
+            ],
+            [
+                259.175,
+                46.535
+            ],
+            [
+                259.165,
+                46.545
+            ],
+            [
+                259.195,
+                46.595
+            ],
+            [
+                259.265,
+                46.615
+            ],
+            [
+                259.365,
+                46.585
+            ],
+            [
+                259.365,
+                46.575
+            ],
+            [
+                259.355,
+                46.565
+            ],
+            [
+                259.345,
+                46.555
+            ],
+            [
+                259.265,
+                46.525
+            ]
+        ],
+        "storm_history": [
+            {
+                "timestamp": "2025-09-13T00:36:41",
+                "max_reflectivity_dbz": 65.0,
+                "num_gates": 207,
+                "centroid": [
+                    46.565,
+                    259.235
+                ]
+            },
+            {
+                "timestamp": "2025-09-13T00:40:41",
+                "max_reflectivity_dbz": 62.5,
+                "num_gates": 115,
+                "centroid": [
+                    46.555,
+                    259.245
+                ],
+                "dx": 765.4302955111494,
+                "dy": -1113.1999999997786,
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 15.0,
+                "echotop_timestamp": "2025-09-13T00:44:42Z",
+                "prob_severe": 13.0,
+                "prob_hail": 12.0,
+                "prob_wind": 4.0,
+                "prob_tor": 2.0,
+                "probsevere_details": {
+                    "mlcape": 3670.0,
+                    "mucape": 4016.0,
+                    "mlcin": -5.0,
+                    "dcape": 995.0,
+                    "cape_m10m30": 796.0,
+                    "lcl": 861.0,
+                    "wetbulb_0c_hgt": 10.9,
+                    "lllr": 7.9,
+                    "mllr": 7.9,
+                    "ebshear": 43.0,
+                    "srh01km": 53.0,
+                    "srw02km": 19.5,
+                    "srw46km": 30.4,
+                    "meanwind_1_3kmagl": 13.0,
+                    "lja": 0.0,
+                    "compref": 65.0,
+                    "ref10": 49.0,
+                    "ref20": 45.0,
+                    "mesh": 0.46,
+                    "h50_above_0c": 0.8,
+                    "echo_top_50": 5.1,
+                    "vil": 32.0,
+                    "maxfed": 18.0,
+                    "maxfcd": 1.0,
+                    "accumfcd": 2.0,
+                    "minflasharea": 160.0,
+                    "te_at_maxfcd": 7.0,
+                    "flash_rate": 0.0,
+                    "flash_density": 0.0,
+                    "maxllaz": 0.004,
+                    "p98llaz": 0.004,
+                    "p98mlaz": 0.005,
+                    "maxrc_emiss": 0.0,
+                    "icp": 84.0,
+                    "pwat": 1.7,
+                    "probsevere": 13.0,
+                    "probhail": 12.0,
+                    "probwind": 4.0,
+                    "probtorn": 2.0,
+                    "size": 0.0,
+                    "avg_beam_hgt": 0.51
+                },
+                "probsevere_timestamp": "2025-09-13T00:40:41Z",
+                "probsevere_distance_km": 2.96,
+                "max_precip_rate": 99.0999984741211,
+                "preciprate_timestamp": "2025-09-13T00:42:00Z",
+                "max_vil_density": 1.100000023841858,
+                "vil_density_timestamp": "2025-09-13T00:44:42Z"
+            }
+        ]
+    },
+    {
+        "id": 10,
+        "num_gates": 104,
+        "centroid": [
+            46.1758,
+            258.4154
+        ],
+        "bbox": {
+            "lat_min": 46.105000000001766,
+            "lat_max": 46.22500000000174,
+            "lon_min": 258.33499999997423,
+            "lon_max": 258.4649999999741
+        },
+        "alpha_shape": [
+            [
+                258.355,
+                46.185
+            ],
+            [
+                258.395,
+                46.215
+            ],
+            [
+                258.415,
+                46.225
+            ],
+            [
+                258.435,
+                46.225
+            ],
+            [
+                258.445,
+                46.225
+            ],
+            [
+                258.465,
+                46.215
+            ],
+            [
+                258.465,
+                46.205
+            ],
+            [
+                258.465,
+                46.185
+            ],
+            [
+                258.465,
+                46.175
+            ],
+            [
+                258.455,
+                46.125
+            ],
+            [
+                258.365,
+                46.105
+            ],
+            [
+                258.345,
+                46.105
+            ],
+            [
+                258.335,
+                46.105
+            ],
+            [
+                258.335,
+                46.115
+            ],
+            [
+                258.355,
+                46.185
+            ]
+        ],
+        "storm_history": [
+            {
+                "timestamp": "2025-09-13T00:36:41",
+                "max_reflectivity_dbz": 62.5,
+                "num_gates": 117,
+                "centroid": [
+                    46.175,
+                    258.395
+                ]
+            },
+            {
+                "timestamp": "2025-09-13T00:40:41",
+                "max_reflectivity_dbz": 59.0,
+                "num_gates": 104,
+                "centroid": [
+                    46.1758,
+                    258.4154
+                ],
+                "dx": 1572.5109030636672,
+                "dy": 89.05600000058342,
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 12.0,
+                "echotop_timestamp": "2025-09-13T00:44:42Z",
+                "prob_severe": 2.0,
+                "prob_hail": 1.0,
+                "prob_wind": 1.0,
+                "prob_tor": 0.0,
+                "probsevere_details": {
+                    "mlcape": 2428.0,
+                    "mucape": 2865.0,
+                    "mlcin": -14.0,
+                    "dcape": 1013.0,
+                    "cape_m10m30": 617.0,
+                    "lcl": 1444.0,
+                    "wetbulb_0c_hgt": 10.8,
+                    "lllr": 7.9,
+                    "mllr": 7.8,
+                    "ebshear": 36.0,
+                    "srh01km": 13.0,
+                    "srw02km": 17.6,
+                    "srw46km": 25.7,
+                    "meanwind_1_3kmagl": 3.0,
+                    "lja": 0.0,
+                    "compref": 62.5,
+                    "ref10": 35.0,
+                    "ref20": 30.0,
+                    "mesh": 0.12,
+                    "h50_above_0c": 0.0,
+                    "echo_top_50": 3.1,
+                    "vil": 16.0,
+                    "maxfed": 2.0,
+                    "maxfcd": 0.0,
+                    "accumfcd": 0.0,
+                    "minflasharea": 160.0,
+                    "te_at_maxfcd": 0.0,
+                    "flash_rate": 0.0,
+                    "flash_density": 0.0,
+                    "maxllaz": 0.002,
+                    "p98llaz": 0.002,
+                    "p98mlaz": 0.002,
+                    "maxrc_emiss": 0.0,
+                    "icp": 68.0,
+                    "pwat": 1.3,
+                    "probsevere": 2.0,
+                    "probhail": 1.0,
+                    "probwind": 1.0,
+                    "probtorn": 0.0,
+                    "size": 0.0,
+                    "avg_beam_hgt": 4.71
+                },
+                "probsevere_timestamp": "2025-09-13T00:40:41Z",
+                "probsevere_distance_km": 1.53,
+                "max_precip_rate": 24.600000381469727,
+                "preciprate_timestamp": "2025-09-13T00:42:00Z",
+                "max_vil_density": 0.4000000059604645,
+                "vil_density_timestamp": "2025-09-13T00:44:42Z"
+            }
+        ]
+    },
+    {
+        "id": 15,
+        "num_gates": 126,
+        "centroid": [
+            45.975,
+            258.535
+        ],
+        "bbox": {
+            "lon_min": 258.4649999999741,
+            "lat_min": 45.9250000000018,
+            "lon_max": 258.62499999997397,
+            "lat_max": 46.02500000000178
+        },
+        "alpha_shape": [
+            [
+                258.615,
+                45.955
+            ],
+            [
+                258.605,
+                45.945
+            ],
+            [
+                258.595,
+                45.935
+            ],
+            [
+                258.535,
+                45.925
+            ],
+            [
+                258.475,
+                45.925
+            ],
+            [
+                258.465,
+                45.925
+            ],
+            [
+                258.465,
+                45.935
+            ],
+            [
+                258.465,
+                45.945
+            ],
+            [
+                258.465,
+                45.955
+            ],
+            [
+                258.465,
+                45.965
+            ],
+            [
+                258.475,
+                46.015
+            ],
+            [
+                258.545,
+                46.025
+            ],
+            [
+                258.555,
+                46.025
+            ],
+            [
+                258.615,
+                46.015
+            ],
+            [
+                258.625,
+                45.985
+            ],
+            [
+                258.625,
+                45.975
+            ],
+            [
+                258.615,
+                45.955
+            ]
+        ],
+        "storm_history": [
+            {
+                "timestamp": "2025-09-13T00:36:41",
+                "max_reflectivity_dbz": 56.5,
+                "num_gates": 113,
+                "centroid": [
+                    45.975,
+                    258.535
+                ]
+            },
+            {
+                "timestamp": "2025-09-13T00:40:41",
+                "max_reflectivity_dbz": 58.0,
+                "num_gates": 126,
+                "centroid": [
+                    45.975,
+                    258.535
+                ],
+                "dx": 0.0,
+                "dy": 0.0,
+                "dt": 240.0,
+                "max_flash_rate": 1.1610000133514404,
+                "nldn_timestamp": "2025-09-13T00:44:00Z",
+                "max_echotop_height": 16.0,
+                "echotop_timestamp": "2025-09-13T00:44:42Z",
+                "prob_severe": 11.0,
+                "prob_hail": 11.0,
+                "prob_wind": 2.0,
+                "prob_tor": 1.0,
+                "probsevere_details": {
+                    "mlcape": 2879.0,
+                    "mucape": 3453.0,
+                    "mlcin": -8.0,
+                    "dcape": 1037.0,
+                    "cape_m10m30": 708.0,
+                    "lcl": 1326.0,
+                    "wetbulb_0c_hgt": 10.9,
+                    "lllr": 7.7,
+                    "mllr": 7.7,
+                    "ebshear": 35.0,
+                    "srh01km": 23.0,
+                    "srw02km": 17.8,
+                    "srw46km": 25.9,
+                    "meanwind_1_3kmagl": 4.0,
+                    "lja": 0.0,
+                    "compref": 58.0,
+                    "ref10": 56.0,
+                    "ref20": 52.0,
+                    "mesh": 0.7,
+                    "h50_above_0c": 3.5,
+                    "echo_top_50": 7.8,
+                    "vil": 31.0,
+                    "maxfed": 24.0,
+                    "maxfcd": 5.0,
+                    "accumfcd": 19.0,
+                    "minflasharea": 80.0,
+                    "te_at_maxfcd": 21.0,
+                    "flash_rate": 0.0,
+                    "flash_density": 0.0,
+                    "maxllaz": 0.004,
+                    "p98llaz": 0.003,
+                    "p98mlaz": 0.005,
+                    "maxrc_emiss": 0.0,
+                    "icp": 97.0,
+                    "pwat": 1.5,
+                    "probsevere": 11.0,
+                    "probhail": 11.0,
+                    "probwind": 2.0,
+                    "probtorn": 1.0,
+                    "size": 0.0,
+                    "avg_beam_hgt": 5.14
+                },
+                "probsevere_timestamp": "2025-09-13T00:40:41Z",
+                "probsevere_distance_km": 1.67,
+                "max_precip_rate": 125.0,
+                "preciprate_timestamp": "2025-09-13T00:42:00Z",
+                "max_vil_density": 2.200000047683716,
+                "vil_density_timestamp": "2025-09-13T00:44:42Z"
+            }
+        ]
+    },
+    {
+        "id": 19,
+        "num_gates": 31,
+        "centroid": [
+            45.945,
+            258.425
+        ],
+        "bbox": {
+            "lon_min": 258.3649999999742,
+            "lat_min": 45.915000000001804,
+            "lon_max": 258.4549999999741,
+            "lat_max": 45.965000000001794
+        },
+        "alpha_shape": [
+            [
+                258.385,
+                45.915
+            ],
+            [
+                258.375,
+                45.915
+            ],
+            [
+                258.365,
+                45.925
+            ],
+            [
+                258.425,
+                45.965
+            ],
+            [
+                258.435,
+                45.965
+            ],
+            [
+                258.445,
+                45.965
+            ],
+            [
+                258.455,
+                45.965
+            ],
+            [
+                258.455,
+                45.955
+            ],
+            [
+                258.455,
+                45.945
+            ],
+            [
+                258.455,
+                45.935
+            ],
+            [
+                258.425,
+                45.915
+            ],
+            [
+                258.405,
+                45.915
+            ],
+            [
+                258.395,
+                45.915
+            ],
+            [
+                258.385,
+                45.915
+            ]
+        ],
+        "storm_history": [
+            {
+                "timestamp": "2025-09-13T00:36:41",
+                "max_reflectivity_dbz": 59.0,
+                "num_gates": 36,
+                "centroid": [
+                    45.945,
+                    258.415
+                ]
+            },
+            {
+                "timestamp": "2025-09-13T00:40:41",
+                "max_reflectivity_dbz": 50.5,
+                "num_gates": 31,
+                "centroid": [
+                    45.945,
+                    258.425
+                ],
+                "dx": 774.0620247146334,
+                "dy": 0.0,
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 14.0,
+                "echotop_timestamp": "2025-09-13T00:44:42Z",
+                "prob_severe": 11.0,
+                "prob_hail": 11.0,
+                "prob_wind": 2.0,
+                "prob_tor": 1.0,
+                "probsevere_details": {
+                    "mlcape": 2879.0,
+                    "mucape": 3453.0,
+                    "mlcin": -8.0,
+                    "dcape": 1037.0,
+                    "cape_m10m30": 708.0,
+                    "lcl": 1326.0,
+                    "wetbulb_0c_hgt": 10.9,
+                    "lllr": 7.7,
+                    "mllr": 7.7,
+                    "ebshear": 35.0,
+                    "srh01km": 23.0,
+                    "srw02km": 17.8,
+                    "srw46km": 25.9,
+                    "meanwind_1_3kmagl": 4.0,
+                    "lja": 0.0,
+                    "compref": 58.0,
+                    "ref10": 56.0,
+                    "ref20": 52.0,
+                    "mesh": 0.7,
+                    "h50_above_0c": 3.5,
+                    "echo_top_50": 7.8,
+                    "vil": 31.0,
+                    "maxfed": 24.0,
+                    "maxfcd": 5.0,
+                    "accumfcd": 19.0,
+                    "minflasharea": 80.0,
+                    "te_at_maxfcd": 21.0,
+                    "flash_rate": 0.0,
+                    "flash_density": 0.0,
+                    "maxllaz": 0.004,
+                    "p98llaz": 0.003,
+                    "p98mlaz": 0.005,
+                    "maxrc_emiss": 0.0,
+                    "icp": 97.0,
+                    "pwat": 1.5,
+                    "probsevere": 11.0,
+                    "probhail": 11.0,
+                    "probwind": 2.0,
+                    "probtorn": 1.0,
+                    "size": 0.0,
+                    "avg_beam_hgt": 5.14
+                },
+                "probsevere_timestamp": "2025-09-13T00:40:41Z",
+                "probsevere_distance_km": 10.99,
+                "max_precip_rate": 34.29999923706055,
+                "preciprate_timestamp": "2025-09-13T00:42:00Z",
+                "max_vil_density": 0.800000011920929,
+                "vil_density_timestamp": "2025-09-13T00:44:42Z"
+            }
+        ]
+    },
+    {
+        "id": 20,
+        "num_gates": 44,
+        "centroid": [
+            45.935,
+            258.305
+        ],
+        "bbox": {
+            "lon_min": 258.2449999999743,
+            "lat_min": 45.915000000001804,
+            "lon_max": 258.3549999999742,
+            "lat_max": 45.965000000001794
+        },
+        "alpha_shape": [
+            [
+                258.305,
+                45.915
+            ],
+            [
+                258.295,
+                45.915
+            ],
+            [
+                258.265,
+                45.925
+            ],
+            [
+                258.245,
+                45.955
+            ],
+            [
+                258.245,
+                45.965
+            ],
+            [
+                258.255,
+                45.965
+            ],
+            [
+                258.265,
+                45.965
+            ],
+            [
+                258.315,
+                45.965
+            ],
+            [
+                258.325,
+                45.965
+            ],
+            [
+                258.355,
+                45.955
+            ],
+            [
+                258.355,
+                45.945
+            ],
+            [
+                258.345,
+                45.935
+            ],
+            [
+                258.335,
+                45.925
+            ],
+            [
+                258.325,
+                45.915
+            ],
+            [
+                258.315,
+                45.915
+            ],
+            [
+                258.305,
+                45.915
+            ]
+        ],
+        "storm_history": [
+            {
+                "timestamp": "2025-09-13T00:36:41",
+                "max_reflectivity_dbz": 56.0,
+                "num_gates": 48,
+                "centroid": [
+                    45.935,
+                    258.295
+                ]
+            },
+            {
+                "timestamp": "2025-09-13T00:40:41",
+                "max_reflectivity_dbz": 60.0,
+                "num_gates": 44,
+                "centroid": [
+                    45.935,
+                    258.305
+                ],
+                "dx": 774.2016438700632,
+                "dy": 0.0,
+                "dt": 240.0,
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 12.0,
+                "echotop_timestamp": "2025-09-13T00:44:42Z",
+                "prob_severe": 3.0,
+                "prob_hail": 3.0,
+                "prob_wind": 1.0,
+                "prob_tor": 0.0,
+                "probsevere_details": {
+                    "mlcape": 2582.0,
+                    "mucape": 3085.0,
+                    "mlcin": -8.0,
+                    "dcape": 1034.0,
+                    "cape_m10m30": 654.0,
+                    "lcl": 1400.0,
+                    "wetbulb_0c_hgt": 10.8,
+                    "lllr": 7.8,
+                    "mllr": 7.8,
+                    "ebshear": 36.0,
+                    "srh01km": 17.0,
+                    "srw02km": 17.8,
+                    "srw46km": 26.4,
+                    "meanwind_1_3kmagl": 4.0,
+                    "lja": 0.0,
+                    "compref": 60.0,
+                    "ref10": 46.0,
+                    "ref20": 41.0,
+                    "mesh": 0.43,
+                    "h50_above_0c": 0.3,
+                    "echo_top_50": 4.6,
+                    "vil": 21.0,
+                    "maxfed": 40.0,
+                    "maxfcd": 13.0,
+                    "accumfcd": 19.0,
+                    "minflasharea": 80.0,
+                    "te_at_maxfcd": 70.0,
+                    "flash_rate": 0.0,
+                    "flash_density": 0.0,
+                    "maxllaz": 0.002,
+                    "p98llaz": 0.002,
+                    "p98mlaz": 0.003,
+                    "maxrc_emiss": 0.0,
+                    "icp": 97.0,
+                    "pwat": 1.4,
+                    "probsevere": 3.0,
+                    "probhail": 3.0,
+                    "probwind": 1.0,
+                    "probtorn": 0.0,
+                    "size": 0.0,
+                    "avg_beam_hgt": 6.47
+                },
+                "probsevere_timestamp": "2025-09-13T00:40:41Z",
+                "probsevere_distance_km": 0.81,
+                "max_precip_rate": 74.0,
+                "preciprate_timestamp": "2025-09-13T00:42:00Z",
+                "max_vil_density": 0.800000011920929,
+                "vil_density_timestamp": "2025-09-13T00:44:42Z"
+            }
+        ]
+    },
+    {
+        "id": 21,
+        "num_gates": 461,
+        "centroid": [
+            45.7599,
+            258.2843
+        ],
+        "bbox": {
+            "lat_min": 45.68500000000185,
+            "lat_max": 45.865000000001814,
+            "lon_min": 258.07499999997447,
+            "lon_max": 258.4749999999741
+        },
+        "alpha_shape": [
+            [
+                258.255,
+                45.685
+            ],
+            [
+                258.245,
+                45.685
+            ],
+            [
+                258.235,
+                45.685
+            ],
+            [
+                258.225,
+                45.685
+            ],
+            [
+                258.215,
+                45.685
+            ],
+            [
+                258.135,
+                45.685
+            ],
+            [
+                258.095,
+                45.695
+            ],
+            [
+                258.085,
+                45.705
+            ],
+            [
+                258.075,
+                45.755
+            ],
+            [
+                258.085,
+                45.765
+            ],
+            [
+                258.155,
+                45.795
+            ],
+            [
+                258.235,
+                45.825
+            ],
+            [
+                258.385,
+                45.865
+            ],
+            [
+                258.435,
+                45.845
+            ],
+            [
+                258.465,
+                45.815
+            ],
+            [
+                258.475,
+                45.785
+            ],
+            [
+                258.465,
+                45.755
+            ],
+            [
+                258.435,
+                45.735
+            ],
+            [
+                258.365,
+                45.705
+            ],
+            [
+                258.315,
+                45.695
+            ],
+            [
+                258.255,
+                45.685
+            ]
+        ],
+        "storm_history": [
+            {
+                "timestamp": "2025-09-13T00:36:41",
+                "max_reflectivity_dbz": 64.0,
+                "num_gates": 366,
+                "centroid": [
+                    45.755,
+                    258.265
+                ]
+            },
+            {
+                "timestamp": "2025-09-13T00:40:41",
+                "max_reflectivity_dbz": 64.0,
+                "num_gates": 461,
+                "centroid": [
+                    45.7599,
+                    258.2843
+                ],
+                "dx": 1498.9859372486262,
+                "dy": 545.4679999999153,
+                "dt": 240.0,
+                "max_flash_rate": 1.156999945640564,
+                "nldn_timestamp": "2025-09-13T00:44:00Z",
+                "max_echotop_height": 19.0,
+                "echotop_timestamp": "2025-09-13T00:44:42Z",
+                "prob_severe": 83.0,
+                "prob_hail": 83.0,
+                "prob_wind": 5.0,
+                "prob_tor": 3.0,
+                "probsevere_details": {
+                    "mlcape": 2867.0,
+                    "mucape": 3417.0,
+                    "mlcin": -5.0,
+                    "dcape": 1058.0,
+                    "cape_m10m30": 708.0,
+                    "lcl": 1303.0,
+                    "wetbulb_0c_hgt": 10.8,
+                    "lllr": 7.9,
+                    "mllr": 7.9,
+                    "ebshear": 34.0,
+                    "srh01km": 19.0,
+                    "srw02km": 17.7,
+                    "srw46km": 26.8,
+                    "meanwind_1_3kmagl": 6.0,
+                    "lja": 0.0,
+                    "compref": 64.5,
+                    "ref10": 64.0,
+                    "ref20": 63.0,
+                    "mesh": 1.99,
+                    "h50_above_0c": 9.4,
+                    "echo_top_50": 13.7,
+                    "vil": 64.0,
+                    "maxfed": 32.0,
+                    "maxfcd": 8.0,
+                    "accumfcd": 16.0,
+                    "minflasharea": 80.0,
+                    "te_at_maxfcd": 35.0,
+                    "flash_rate": 0.0,
+                    "flash_density": 0.0,
+                    "maxllaz": 0.007,
+                    "p98llaz": 0.005,
+                    "p98mlaz": 0.009,
+                    "maxrc_emiss": 0.0,
+                    "icp": 95.0,
+                    "pwat": 1.5,
+                    "probsevere": 83.0,
+                    "probhail": 83.0,
+                    "probwind": 5.0,
+                    "probtorn": 3.0,
+                    "size": 0.0,
+                    "avg_beam_hgt": 7.84
+                },
+                "probsevere_timestamp": "2025-09-13T00:40:41Z",
+                "probsevere_distance_km": 4.17,
+                "max_precip_rate": 53.79999923706055,
+                "preciprate_timestamp": "2025-09-13T00:42:00Z",
+                "max_vil_density": 3.700000047683716,
+                "vil_density_timestamp": "2025-09-13T00:44:42Z"
+            }
+        ]
+    },
+    {
+        "id": 3,
+        "num_gates": 34,
+        "centroid": [
+            46.625,
+            259.305
+        ],
+        "bbox": {
+            "lon_min": 259.29499999997336,
+            "lat_min": 46.60500000000167,
+            "lon_max": 259.3849999999733,
+            "lat_max": 46.67500000000165
+        },
+        "alpha_shape": [
+            [
+                259.385,
+                46.675
+            ],
+            [
+                259.365,
+                46.635
+            ],
+            [
+                259.335,
+                46.615
+            ],
+            [
+                259.315,
+                46.605
+            ],
+            [
+                259.305,
+                46.615
+            ],
+            [
+                259.295,
+                46.625
+            ],
+            [
+                259.305,
+                46.635
+            ],
+            [
+                259.315,
+                46.645
+            ],
+            [
+                259.325,
+                46.655
+            ],
+            [
+                259.335,
+                46.665
+            ],
+            [
+                259.375,
+                46.675
+            ],
+            [
+                259.385,
+                46.675
+            ]
+        ],
+        "storm_history": [
+            {
+                "timestamp": "2025-09-13T00:40:41",
+                "max_reflectivity_dbz": 50.5,
+                "num_gates": 34,
+                "centroid": [
+                    46.625,
+                    259.305
+                ],
+                "max_flash_rate": "N/A",
+                "max_echotop_height": 15.0,
+                "echotop_timestamp": "2025-09-13T00:44:42Z",
+                "prob_severe": 13.0,
+                "prob_hail": 12.0,
+                "prob_wind": 4.0,
+                "prob_tor": 2.0,
+                "probsevere_details": {
+                    "mlcape": 3670.0,
+                    "mucape": 4016.0,
+                    "mlcin": -5.0,
+                    "dcape": 995.0,
+                    "cape_m10m30": 796.0,
+                    "lcl": 861.0,
+                    "wetbulb_0c_hgt": 10.9,
+                    "lllr": 7.9,
+                    "mllr": 7.9,
+                    "ebshear": 43.0,
+                    "srh01km": 53.0,
+                    "srw02km": 19.5,
+                    "srw46km": 30.4,
+                    "meanwind_1_3kmagl": 13.0,
+                    "lja": 0.0,
+                    "compref": 65.0,
+                    "ref10": 49.0,
+                    "ref20": 45.0,
+                    "mesh": 0.46,
+                    "h50_above_0c": 0.8,
+                    "echo_top_50": 5.1,
+                    "vil": 32.0,
+                    "maxfed": 18.0,
+                    "maxfcd": 1.0,
+                    "accumfcd": 2.0,
+                    "minflasharea": 160.0,
+                    "te_at_maxfcd": 7.0,
+                    "flash_rate": 0.0,
+                    "flash_density": 0.0,
+                    "maxllaz": 0.004,
+                    "p98llaz": 0.004,
+                    "p98mlaz": 0.005,
+                    "maxrc_emiss": 0.0,
+                    "icp": 84.0,
+                    "pwat": 1.7,
+                    "probsevere": 13.0,
+                    "probhail": 12.0,
+                    "probwind": 4.0,
+                    "probtorn": 2.0,
+                    "size": 0.0,
+                    "avg_beam_hgt": 0.51
+                },
+                "probsevere_timestamp": "2025-09-13T00:40:41Z",
+                "probsevere_distance_km": 7.44,
+                "max_precip_rate": 27.200000762939453,
+                "preciprate_timestamp": "2025-09-13T00:42:00Z",
+                "max_vil_density": 0.20000000298023224,
+                "vil_density_timestamp": "2025-09-13T00:44:42Z"
+            }
+        ]
+    }
+]
