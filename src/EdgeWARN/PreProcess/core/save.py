@@ -100,20 +100,46 @@ class StormVectorCalculator:
     
     def calculate_storm_vectors(self, cells: List[Dict]) -> List[Dict]:
         """
-        Calculate vector components for storm cells based on their movement history.
-        
-        Args:
-            cells (list): List of storm cell dictionaries
-            
-        Returns:
-            list: Vector information for each cell with valid history
+        Calculate vector components for storm cells and save them directly
+        under the storm history entries as dx, dy, dt.
         """
         vectors = []
         for cell in cells:
-            vector_data = self._calculate_cell_vector(cell)
-            if vector_data:
-                vectors.append(vector_data)
+            history = cell.get('storm_history', [])
+            if len(history) < 2:
+                continue  # Need at least 2 entries
+
+            # Iterate through history pairs
+            for i in range(1, len(history)):
+                h0 = history[i-1]
+                h1 = history[i]
+
+                # Skip if this entry already has dx/dy/dt
+                if all(k in h1 for k in ('dx', 'dy', 'dt')):
+                    continue
+
+                dt0, dt1 = self._parse_timestamps(h0['timestamp'], h1['timestamp'])
+                dt_seconds = (dt1 - dt0).total_seconds()
+                dx, dy = self._calculate_movement(h0['centroid'], h1['centroid'], dt_seconds)
+
+                # Save directly under the history entry
+                h1['dx'] = dx
+                h1['dy'] = dy
+                h1['dt'] = dt_seconds
+
+                vectors.append({
+                    'id': cell['id'],
+                    'dx': dx,
+                    'dy': dy,
+                    'dt': dt_seconds,
+                    't0': h0['timestamp'],
+                    't1': h1['timestamp'],
+                    'c0': h0['centroid'],
+                    'c1': h1['centroid']
+                })
         return vectors
+
+
     
     def _calculate_cell_vector(self, cell: Dict) -> Optional[Dict]:
         """
@@ -146,11 +172,18 @@ class StormVectorCalculator:
         # Calculate movement in meters
         dx, dy = self._calculate_movement(c0, c1, dt_seconds)
         
-        # Add dx, dy, dt to the latest (h1) history entry
-        h1['dx'] = dx
-        h1['dy'] = dy
-        h1['dt'] = dt_seconds
+        # Create a COPY of the latest history entry to add vector data
+        # This preserves the original history data while adding vector info
+        vector_info = h1.copy()
+        vector_info.update({
+            'dx': dx,
+            'dy': dy,
+            'dt': dt_seconds,
+            'prev_centroid': c0,  # Store previous centroid for reference
+            'prev_timestamp': t0  # Store previous timestamp for reference
+        })
         
+        # Return vector info without modifying the original cell history
         return {
             'id': cell['id'],
             'dx': dx,
@@ -159,7 +192,8 @@ class StormVectorCalculator:
             't0': t0,
             't1': t1,
             'c0': c0,
-            'c1': c1
+            'c1': c1,
+            'vector_info': vector_info  # Include the enhanced history entry
         }
     
     def _parse_timestamps(self, t0: str, t1: str) -> Tuple[datetime, datetime]:
@@ -241,17 +275,17 @@ class StormVectorCalculator:
         Returns:
             tuple: (should_keep, removal_info) where removal_info is None if keeping
         """
-        hist = cell.get('storm_history', [])
-        if not hist:
-            return True, None
+        # Check if cell has vector data
+        vectors = cell.get('vectors', [])
+        if not vectors:
+            return True, None  # No vector data, keep cell
         
-        # Assume history is sorted oldest->newest; take last
-        latest = hist[-1]
-        dx = latest.get('dx')
-        dy = latest.get('dy')
+        # Get the latest vector
+        latest_vector = vectors[-1]
+        dx = latest_vector.get('dx')
+        dy = latest_vector.get('dy')
         
         if dx is None or dy is None:
-            # No vector recorded, keep the cell
             return True, None
         
         try:

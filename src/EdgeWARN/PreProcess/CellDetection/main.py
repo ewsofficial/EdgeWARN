@@ -110,8 +110,8 @@ def main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits):
     radar.plot(refl, lat_crop, lon_crop, cells_old, cells_new, matches)
 
 if __name__ == "__main__":
-    filepath_old = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-003238.nc")
-    filepath_new = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-003641.nc")
+    filepath_old = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-004041.nc")
+    filepath_new = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-004442.nc")
     storm_json = Path("stormcell_test.json")
     lat_limits = (45.3, 47.3)
     lon_limits = (256.6, 260.2)

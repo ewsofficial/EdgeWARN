@@ -138,7 +138,7 @@ class Visualizer:
             print(f"Max distance: {np.max(distances):.2f} degrees")
             print(f"Min distance: {np.min(distances):.2f} degrees")
 
-    def graph_probsevere_stormcells(self, probsevere_data, storm_cells, output_path="probsevere_stormcells_map.png"):
+    def graph_probsevere_stormcells(self, probsevere_data, storm_cells):
         """
         Graph ProbSevere polygons (blue) and storm cell polygons (red) on a CONUS map.
         
@@ -204,12 +204,8 @@ class Visualizer:
         
         # Add title
         plt.title('ProbSevere and Storm Cell Polygons', fontsize=14)
-        
-        # Save and show
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    
         plt.show()
-        
-        print(f"Map saved to {output_path}")
 
 
 
