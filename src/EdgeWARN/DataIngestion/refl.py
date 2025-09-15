@@ -6,7 +6,7 @@ import requests
 import os
 import re
 from bs4 import BeautifulSoup
-from util import file as fs
+from util.core import file as fs
 
 def download_mrms_composite_reflectivity(outdir: Path, tempdir: Path,
                                          sweep_heights=None,

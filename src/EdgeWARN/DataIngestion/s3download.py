@@ -2,7 +2,7 @@ import boto3
 import botocore
 import datetime
 from datetime import timezone
-from util import file as fs
+from util.core import file as fs
 from pathlib import Path
 import s3fs
 import re

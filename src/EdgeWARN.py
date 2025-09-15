@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-import util.file as fs
+import util.core.file as fs
 import EdgeWARN.DataIngestion.main as ingest_main
 import EdgeWARN.PreProcess.CellDetection.main as detect_cells
 from datetime import datetime
