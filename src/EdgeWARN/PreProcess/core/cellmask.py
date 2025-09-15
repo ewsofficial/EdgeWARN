@@ -416,15 +416,19 @@ class CellMatcher:
             print(f"DEBUG: No cells to match (n0={n0}, n1={n1})")
             return []
 
-        # Safely compute max values (fall back to 0 if necessary)
-        max_num_gates = 0
-        max_reflect = 0
-        if n0 > 0:
-            max_num_gates = max(max_num_gates, max(cell['num_gates'] for cell in cells0))
-            max_reflect = max(max_reflect, max(cell['max_reflectivity_dbz'] for cell in cells0))
-        if n1 > 0:
-            max_num_gates = max(max_num_gates, max(cell['num_gates'] for cell in cells1))
-            max_reflect = max(max_reflect, max(cell['max_reflectivity_dbz'] for cell in cells1))
+        # Safely compute max values (fall back to 1 if necessary to avoid division by zero)
+        max_num_gates = 1.0
+        max_reflect = 1.0
+        
+        # Combine both cell sets to find global max values
+        all_cells = cells0 + cells1
+        if all_cells:
+            try:
+                max_num_gates = max(max_num_gates, max(cell.get('num_gates', 0) for cell in all_cells))
+                max_reflect = max(max_reflect, max(cell.get('max_reflectivity_dbz', 0) for cell in all_cells))
+            except (ValueError, KeyError):
+                # Handle cases where keys might be missing
+                pass
 
         max_vals = {
             'num_gates': max_num_gates,
@@ -435,7 +439,20 @@ class CellMatcher:
         cost_matrix = np.full((n0, n1), np.inf)
         for i, c0 in enumerate(cells0):
             for j, c1 in enumerate(cells1):
-                cost_matrix[i, j] = CellProcessor.compute_cost(c0, c1, max_vals, weights)
+                # Calculate distance between centroids first
+                lat1, lon1 = c0.get('centroid', [0, 0])
+                lat2, lon2 = c1.get('centroid', [0, 0])
+                
+                # Calculate dx and dy in km (approximate conversion)
+                # 1° latitude ≈ 111 km, 1° longitude ≈ 111 km * cos(latitude)
+                dx_km = abs(lon1 - lon2) * 111.0 * np.cos(np.radians((lat1 + lat2) / 2))
+                dy_km = abs(lat1 - lat2) * 111.0
+                
+                # Check if either dx or dy exceeds 10 km
+                if dx_km > 10.0 or dy_km > 10.0:
+                    cost_matrix[i, j] = np.inf  # Disallow this match
+                else:
+                    cost_matrix[i, j] = CellMatcher.compute_cost(c0, c1, max_vals, weights)
 
         # If there are no costs below the penalty threshold, there are no reasonable matches
         if not (cost_matrix < PENALTY_COST).any():
@@ -447,45 +464,36 @@ class CellMatcher:
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
             matches = []
             for i, j in zip(row_ind, col_ind):
-                if np.isfinite(cost_matrix[i, j]):
+                if np.isfinite(cost_matrix[i, j]) and cost_matrix[i, j] < PENALTY_COST:
                     matches.append((i, j, float(cost_matrix[i, j])))
             return matches
-        except ValueError as e:
+        except Exception as e:
             print(f"DEBUG: linear_sum_assignment failed: {e}; falling back to greedy matching.")
+            
             # Debug: list cost-matrix info before greedy fallback
             try:
                 print(f"DEBUG: cost_matrix shape: {cost_matrix.shape}")
                 finite_pairs = [(i, j, float(cost_matrix[i, j]))
-                                for i in range(n0) for j in range(n1) if np.isfinite(cost_matrix[i, j])]
+                                for i in range(n0) for j in range(n1) 
+                                if np.isfinite(cost_matrix[i, j]) and cost_matrix[i, j] < PENALTY_COST]
                 print(f"DEBUG: finite pairs found: {len(finite_pairs)}")
-                if len(finite_pairs) > 0:
-                    # show up to first 30 candidate pairs (sorted by cost) for quick inspection
+                
+                if finite_pairs:
                     finite_pairs.sort(key=lambda x: x[2])
                     for idx, (i, j, c) in enumerate(finite_pairs[:30]):
                         print(f"DEBUG: candidate {idx+1}: row={i}, col={j}, cost={c:.6f}")
                 else:
-                    print("DEBUG: No finite pairs found (unexpected, handled earlier).")
-
-                # If the cost matrix is small, print the entire matrix for full visibility
-                if cost_matrix.size <= 400:
-                    print("DEBUG: full cost_matrix:")
-                    print(np.array2string(cost_matrix, precision=6, threshold=1000, suppress_small=True))
-                else:
-                    # give a brief summary if too large
-                    print("DEBUG: cost matrix too large to display, summarizing ...")
-                    finite_costs = [c for (_, _, c) in finite_pairs]
-                    if finite_costs:
-                        print(f"DEBUG: min_cost={min(finite_costs):.6f}, max_cost={max(finite_costs):.6f}")
+                    print("DEBUG: No finite pairs found below penalty threshold.")
+                    
             except Exception as dbg_e:
                 print(f"DEBUG: failed to print cost matrix details: {dbg_e}")
 
             # Greedy matching: sort all finite pairs by cost and take the lowest-cost disjoint pairs
-            # Note: finite_pairs is sorted above when present
-            if 'finite_pairs' not in locals():
-                finite_pairs = [(i, j, float(cost_matrix[i, j]))
-                                for i in range(n0) for j in range(n1) if np.isfinite(cost_matrix[i, j])]
-                finite_pairs.sort(key=lambda x: x[2])
-
+            finite_pairs = [(i, j, float(cost_matrix[i, j]))
+                            for i in range(n0) for j in range(n1) 
+                            if np.isfinite(cost_matrix[i, j]) and cost_matrix[i, j] < PENALTY_COST]
+            finite_pairs.sort(key=lambda x: x[2])
+            
             used_rows = set()
             used_cols = set()
             greedy_matches = []
@@ -495,5 +503,34 @@ class CellMatcher:
                 used_rows.add(i)
                 used_cols.add(j)
                 greedy_matches.append((i, j, c))
-
+                
             return greedy_matches
+
+    @staticmethod
+    def compute_cost(cell0, cell1, max_vals, weights):
+        """
+        Compute cost between two cells based on distance, num_gates, and reflectivity
+        """
+        # Extract values with defaults
+        # Calculate distance between centroids
+        lat1, lon1 = cell0.get('centroid', [0, 0])
+        lat2, lon2 = cell1.get('centroid', [0, 0])
+        dist = np.sqrt((lat1 - lat2)**2 + (lon1 - lon2)**2)
+        
+        num_gates0 = cell0.get('num_gates', 0)
+        num_gates1 = cell1.get('num_gates', 0)
+        
+        reflect0 = cell0.get('max_reflectivity_dbz', 0)
+        reflect1 = cell1.get('max_reflectivity_dbz', 0)
+        
+        # Normalize differences (0-1 range)
+        norm_dist = min(dist / 10.0, 1.0)  # Adjust scaling as needed (10 degrees max distance)
+        norm_gates_diff = abs(num_gates0 - num_gates1) / max_vals['num_gates']
+        norm_reflect_diff = abs(reflect0 - reflect1) / max_vals['max_reflectivity_dbz']
+        
+        # Weighted cost
+        cost = (weights['distance'] * norm_dist +
+                weights['num_gates'] * norm_gates_diff +
+                weights['max_reflectivity'] * norm_reflect_diff)
+        
+        return cost
