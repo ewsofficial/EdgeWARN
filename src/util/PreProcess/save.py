@@ -334,3 +334,36 @@ def write_vectors():
         print("\nRemoved cells due to high vector magnitude:")
         for r in removed_cells:
             print(f"id: {r['id']}, magnitude: {r['magnitude_m']:.2f} m")
+
+def save_cells_to_json(cells, filepath, float_precision=4):
+    """
+    Save tracked storm cells to JSON (like detection.py).
+    """
+    json_data = []
+    for cell in cells:
+        cell_entry = {
+            "id": int(cell["id"]),
+            "num_gates": int(cell["num_gates"]),
+            "centroid": [round(float(v), float_precision) for v in cell["centroid"]],
+            "bbox": cell.get("bbox", {}),
+            "alpha_shape": [
+                [round(float(x), float_precision), round(float(y), float_precision)]
+                for x, y in cell.get("alpha_shape", [])
+            ],
+            "storm_history": []
+        }
+
+        for hist_entry in cell.get("storm_history", []):
+            cell_entry["storm_history"].append({
+                "timestamp": hist_entry.get("timestamp", ""),
+                "max_reflectivity_dbz": round(float(hist_entry.get("max_reflectivity_dbz", 0)), float_precision),
+                "num_gates": int(hist_entry.get("num_gates", 0)),
+                "centroid": [round(float(v), float_precision) for v in hist_entry.get("centroid", [0, 0])]
+            })
+
+        json_data.append(cell_entry)
+
+    with open(filepath, 'w') as f:
+        json.dump(json_data, f, indent=4)
+
+    print(f"Saved {len(cells)} tracked cells to {filepath}")

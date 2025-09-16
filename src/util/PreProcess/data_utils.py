@@ -23,56 +23,39 @@ class GeoUtils:
     @staticmethod
     def polygon_area_km2(latlon_points):
         """
-        Approximate polygon area on Earth's surface in km^2 using spherical excess formula.
-        Input: list of (lon, lat) tuples
+        Calculate polygon area on Earth's surface in km^2 using latitude-corrected shoelace formula.
+        Input: list of (lon, lat) tuples in degrees
         """
         if not latlon_points or len(latlon_points) < 3:
-            return 0.0  # or np.nan, since a polygon with < 3 points has no area
+            return 0.0
         
-        coords = np.radians(np.array(latlon_points))
+        coords = np.array(latlon_points)
         if coords.ndim != 2 or coords.shape[1] != 2:
             return 0.0
-
+        
         lons = coords[:, 0]
         lats = coords[:, 1]
+        
         # Earth's radius in km
         R = 6371.0
         
-        # Calculate area using spherical polygon area formula:
-        # Reference: https://trs.jpl.nasa.gov/handle/2014/40409 (equation simplified)
+        # Convert to radians and calculate mean latitude for correction
+        lat_rad = np.radians(lats)
+        mean_lat = np.mean(lat_rad)
         
-        # Compute the angles between edges
-        def angle_between_vectors(v1, v2):
-            return np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0))
+        # Calculate area using shoelace formula with latitude correction
+        area = 0.0
+        n = len(lats)
         
-        # Convert lat/lon to 3D Cartesian coordinates
-        def latlon_to_xyz(lat, lon):
-            x = np.cos(lat) * np.cos(lon)
-            y = np.cos(lat) * np.sin(lon)
-            z = np.sin(lat)
-            return np.array([x, y, z])
-        
-        vertices = [latlon_to_xyz(lat, lon) for lon, lat in zip(lons, lats)]
-        
-        n = len(vertices)
-        angles = 0.0
         for i in range(n):
-            v1 = vertices[i - 1]
-            v2 = vertices[i]
-            v3 = vertices[(i + 1) % n]
+            j = (i + 1) % n
+            # Convert longitude difference to km at this latitude
+            lon_diff_km = np.cos(mean_lat) * R * np.radians(lons[j] - lons[i])
+            lat_diff_km = R * np.radians(lats[j] - lats[i])
             
-            a = v1 - v2
-            b = v3 - v2
-            
-            a /= np.linalg.norm(a)
-            b /= np.linalg.norm(b)
-            
-            angle = np.arccos(np.clip(np.dot(a, b), -1.0, 1.0))
-            angles += angle
+            area += lons[i] * lat_diff_km - lats[i] * lon_diff_km
         
-        spherical_excess = angles - (n - 2) * np.pi
-        area = spherical_excess * R**2
-        return abs(area)
+        return abs(area) / 2.0
     
 class CellProcessor:
     @staticmethod

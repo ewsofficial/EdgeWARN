@@ -70,6 +70,9 @@ def main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits):
         # No existing storm data - detect from old scan and set up initial data
         print("DEBUG: No existing storm data found. Detecting cells from old scan...")
         cells_old, _ = detector.detect(filepath_old)
+
+        if len(cells_old) == 0:
+            print("DEBUG: No Cells Detected in scan, aborting ...")
         storm_data = cells_old.copy()  # Start with the old cells as initial data
         print(f"DEBUG: Created new storm data with {len(cells_old)} cells from old scan")
 
@@ -78,6 +81,9 @@ def main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits):
     print(f"DEBUG: Found {len(cells_new)} cells in new scan: {[cell['id'] for cell in cells_new]}")
     if cells_new:
         print(f"DEBUG: New scan timestamp: {cells_new[0]['storm_history'][0]['timestamp']}")
+    elif len(cells_new) == 0:
+        print("DEBUG: No Cells Detected in scan, aborting ...")
+        return
 
     # Add area to cells before matching
     CellProcessor.add_area_to_cells(cells_old)
