@@ -4,6 +4,8 @@ from .tracker import RadarHandler, CellDetector, CellTracker, StormCellDataManag
 from util.PreProcess.save import write_vectors
 import json
 
+print(f"EdgeWARN Storm Detection and Tracking Algorithm\nCurrent Build: 0.1.0a\nContributors: Yuchen Wei")
+
 def deduplicate_storm_data(storm_data):
     """Remove duplicate cells by ID, keeping the one with most history."""
     unique_cells = {}

@@ -19,15 +19,6 @@ import util.core.file as fs
 from util.PreProcess.cellmask import StormCellDetector
 from util.PreProcess.data_utils import load_mrms_slice
 
-"""
-"""
-
-print("EdgeWARN Storm Cell Detection")
-print("Build: 2025-09-01")
-print("Credits: Yuchen Wei")
-print("Made by the EWS")
-time.sleep(1)
-
 # --- JSON saving function matching detection.py ---
 def save_cells_to_json(cells, filepath, float_precision=4):
     """

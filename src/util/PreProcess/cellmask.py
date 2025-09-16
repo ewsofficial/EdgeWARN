@@ -110,6 +110,11 @@ class StormCellDetector:
         """
         refl_data = np.nan_to_num(reflectivity, nan=-9999)
 
+        # Pre-Process: Check if there is any reflectivity exceeding the seed dbz
+        if not np.any(refl_data >= seed_dbz):
+            print("Error: No reflectivity values greater than seed dbz in data")
+            return None
+
         # Step 1: Detect seed cells ≥ seed_dbz
         seed_mask = refl_data >= seed_dbz
         labeled_seeds, num_seeds = label(seed_mask)
@@ -244,6 +249,11 @@ class StormCellDetector:
         - List of merged cells (larger cells updated, small cells merged in and removed).
         """
         from shapely.geometry import Polygon
+
+        # Pre-Process: Check if cells contains any data
+        if not cells or len(cells) == 0:
+            print("Error: No cells detected in input")
+            return []
 
         def deg_buffer(lat, km):
             """Convert km to approximate degrees latitude/longitude."""
@@ -403,6 +413,9 @@ class StormCellDetector:
 
 class CellMatcher:
     @staticmethod
+
+    # TO DO: Need to treat old cells that are >75% covered by a new cell as terminated if not matched to the new cell.
+
     def match_cells(cells0, cells1, weights=None):
         if weights is None:
             weights = {
@@ -511,6 +524,12 @@ class CellMatcher:
         """
         Compute cost between two cells based on distance, num_gates, and reflectivity
         """
+
+        # Guard against empty inputs
+        n0, n1 = len(cell0), len(cell1)
+        if n0 == 0 or n1 == 0:
+            print("Error: No cells detected in input")
+            return []
         # Extract values with defaults
         # Calculate distance between centroids
         lat1, lon1 = cell0.get('centroid', [0, 0])

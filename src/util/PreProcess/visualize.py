@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from ..CellIntegration.utils import StormIntegrationUtils
+from EdgeWARN.PreProcess.CellIntegration.utils import StormIntegrationUtils
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.patches as mpatches
