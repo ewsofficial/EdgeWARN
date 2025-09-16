@@ -7,7 +7,7 @@ from . import refl
 from . import mrms
 from . import synoptic
 from util.core import file as fs
-from util.PreProcess.utils import extract_timestamp_from_filename
+from ..PreProcess.core.utils import extract_timestamp_from_filename
 import os
 
 # ---------- CREDITS ----------
@@ -18,26 +18,6 @@ def attribution():
     print("Made by the EWS")
     time.sleep(1)
 
-# ---------- CLEANUP ----------
-def clean_old_files(directory: Path, max_age_minutes=20):
-    now = datetime.datetime.now().timestamp()
-    cutoff = now - (max_age_minutes * 60)
-    for f in directory.glob("*"):
-        if f.is_file() and f.stat().st_mtime < cutoff:
-            try:
-                f.unlink()
-                print(f"Deleted old file: {f.name}")
-            except Exception as e:
-                print(f"Could not delete {f.name}: {e}")
-
-def wipe_temp():
-    for f in fs.TEMP_DIR.glob("*"):
-        try:
-            f.unlink()
-            print(f"Deleted temporary file: {f.name}")
-        except Exception as e:
-            print(f"Could not delete temporary file {f.name}: {e}")
-
 # MAIN
 def main():
     attribution()
@@ -45,8 +25,8 @@ def main():
     # Clean old files
     folders = [fs.NEXRAD_L2_DIR, fs.GOES_GLM_DIR, fs.MRMS_NLDN_DIR, fs.MRMS_ECHOTOP18_DIR, fs.MRMS_QPE15_DIR, fs.MRMS_PRECIPRATE_DIR, fs.MRMS_PROBSEVERE_DIR, fs.THREDDS_RTMA_DIR, fs.MRMS_RADAR_DIR]
     for f in folders:
-        clean_old_files(f)
-    wipe_temp()
+        fs.clean_old_files(f)
+    fs.wipe_temp()
 
     # Download latest NEXRAD Level II
     s3d.download_nexrad_l2(site="KOKX")
