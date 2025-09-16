@@ -113,7 +113,7 @@ class StormCellDetector:
         # Pre-Process: Check if there is any reflectivity exceeding the seed dbz
         if not np.any(refl_data >= seed_dbz):
             print("Error: No reflectivity values greater than seed dbz in data")
-            return None
+            return []
 
         # Step 1: Detect seed cells ≥ seed_dbz
         seed_mask = refl_data >= seed_dbz

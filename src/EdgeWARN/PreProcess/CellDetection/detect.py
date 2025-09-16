@@ -19,40 +19,6 @@ import util.core.file as fs
 from util.PreProcess.cellmask import StormCellDetector
 from util.PreProcess.data_utils import load_mrms_slice
 
-# --- JSON saving function matching detection.py ---
-def save_cells_to_json(cells, filepath, float_precision=4):
-    """
-    Save tracked storm cells to JSON (like detection.py).
-    """
-    json_data = []
-    for cell in cells:
-        cell_entry = {
-            "id": int(cell["id"]),
-            "num_gates": int(cell["num_gates"]),
-            "centroid": [round(float(v), float_precision) for v in cell["centroid"]],
-            "bbox": cell.get("bbox", {}),
-            "alpha_shape": [
-                [round(float(x), float_precision), round(float(y), float_precision)]
-                for x, y in cell.get("alpha_shape", [])
-            ],
-            "storm_history": []
-        }
-
-        for hist_entry in cell.get("storm_history", []):
-            cell_entry["storm_history"].append({
-                "timestamp": hist_entry.get("timestamp", ""),
-                "max_reflectivity_dbz": round(float(hist_entry.get("max_reflectivity_dbz", 0)), float_precision),
-                "num_gates": int(hist_entry.get("num_gates", 0)),
-                "centroid": [round(float(v), float_precision) for v in hist_entry.get("centroid", [0, 0])]
-            })
-
-        json_data.append(cell_entry)
-
-    with open(filepath, 'w') as f:
-        json.dump(json_data, f, indent=4)
-
-    print(f"Saved {len(cells)} tracked cells to {filepath}")
-
 ### Find a way to get the lat and lon limits to work
 def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection",
                      lat_limits=(45.3, 47.3), lon_limits=(256.6, 260.2)):
@@ -147,6 +113,9 @@ def detect_cells(filepath, lat_limits, lon_limits, plot=False):
     print("Running cell propagation...")
     cells = StormCellDetector.propagate_cells(refl, lat, lon, alpha=0.1, filepath=filepath)
 
+    if len(cells) == 0:
+        print("Error: No seed cells detected in propagate_cells function")
+        return []
     print("Merging small cells...")
     merged_cells = StormCellDetector.merge_connected_small_cells(cells)
 
