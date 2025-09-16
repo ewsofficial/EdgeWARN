@@ -212,7 +212,7 @@ class StormVectorCalculator:
             dt1 = datetime.fromisoformat(t1)
         except Exception:
             # Fallback to filename timestamp extraction if needed
-            from ..PreProcess.data_utils import extract_timestamp_from_filename
+            from .utils import extract_timestamp_from_filename
             dt0 = datetime.fromisoformat(extract_timestamp_from_filename(t0))
             dt1 = datetime.fromisoformat(extract_timestamp_from_filename(t1))
         

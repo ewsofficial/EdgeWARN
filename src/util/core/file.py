@@ -48,7 +48,7 @@ def latest_files(dir, n):
     )
     if len(files) < n:
         raise RuntimeError(f"Not enough files in {dir}")
-    return [str(f) for f in file[-n:]]
+    return [str(f) for f in files[-n:]]
 
 def latest_nexrad(n):
     """Return the n most recent NEXRAD L2 files as a list (oldest to newest), excluding .idx files."""
