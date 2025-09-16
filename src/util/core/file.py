@@ -50,188 +50,6 @@ def latest_files(dir, n):
         raise RuntimeError(f"Not enough files in {dir}")
     return [str(f) for f in files[-n:]]
 
-def latest_nexrad(n):
-    """Return the n most recent NEXRAD L2 files as a list (oldest to newest), excluding .idx files."""
-    if not NEXRAD_L2_DIR.exists():
-        print("WARNING: NEXRAD directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in NEXRAD_L2_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"Not enough NEXRAD L2 files in {NEXRAD_L2_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_mosaic(n):
-    """Return the n most recent MRMS Radar Mosaic files as a list (oldest to newest), excluding .idx files."""
-    if not MRMS_RADAR_DIR.exists():
-        print("WARNING: MRMS mosaic directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in MRMS_RADAR_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"Not enough MRMS Mosaic files in {MRMS_RADAR_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_glm(n):
-    """Return the n most recent GOES GLM files as a list (oldest to newest), excluding .idx files."""
-    if not GOES_GLM_DIR.exists():
-        print("WARNING: GOES GLM directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in GOES_GLM_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No GOES GLM files in {GOES_GLM_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_nldn(n):
-    """Return the n most recent MRMS NLDN files as a list (oldest to newest), excluding .idx files."""
-    if not MRMS_NLDN_DIR.exists():
-        print("WARNING: MRMS NLDN directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in MRMS_NLDN_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No MRMS NLDN files in {MRMS_NLDN_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_echotop18(n):
-    """Return the n most recent MRMS EchoTop18 files as a list (oldest to newest), excluding .idx files."""
-    if not MRMS_ECHOTOP18_DIR.exists():
-        print("WARNING: MRMS EchoTop18 directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in MRMS_ECHOTOP18_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No MRMS EchoTop18 files in {MRMS_ECHOTOP18_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_qpe15(n):
-    """Return the n most recent MRMS QPE15 files as a list (oldest to newest), excluding .idx files."""
-    if not MRMS_QPE15_DIR.exists():
-        print("WARNING: MRMS QPE15 directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in MRMS_QPE15_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No MRMS QPE15 files in {MRMS_QPE15_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_preciprate(n):
-    """Return the n most recent MRMS PrecipRate files as a list (oldest to newest), excluding .idx files."""
-    if not MRMS_PRECIPRATE_DIR.exists():
-        print("WARNING: MRMS PrecipRate directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in MRMS_PRECIPRATE_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No MRMS PrecipRate files in {MRMS_PRECIPRATE_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_vil_density(n):
-    """Return the n most recent MRMS VIL Density files as a list (oldest to newest), excluding .idx files."""
-    if not MRMS_VIL_DIR.exists():
-        print("WARNING: MRMS VIL Density directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in MRMS_VIL_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No MRMS VIL Density files in {MRMS_VIL_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_ffg(n):
-    """Return the n most recent FFG Guidance files as a list (oldest to newest), excluding .idx files."""
-    if not MRMS_FLASH_DIR.exists():
-        print("WARNING: MRMS FFG Guidance directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in MRMS_FLASH_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No MRMS FFG files in {MRMS_FLASH_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_rotationtrack(n):
-    """Return the n most recent 30min rotation track files as a list (oldest to newest), excluding .idx files."""
-    if not MRMS_ROTATIONT_DIR.exists():
-        print("WARNING: MRMS RotationTrack30min directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in MRMS_ROTATIONT_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No MRMS RotationTrack30min in {MRMS_ROTATIONT_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_probsevere(n):
-    """Return the n most recent MRMS ProbSevere files as a list (oldest to newest), excluding .idx files."""
-    if not MRMS_PROBSEVERE_DIR.exists():
-        print("WARNING: MRMS ProbSevere directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in MRMS_PROBSEVERE_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No MRMS ProbSevere files in {MRMS_PROBSEVERE_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_rtma(n):
-    """Return the n most recent RTMA files as a list (oldest to newest), excluding .idx files."""
-    if not THREDDS_RTMA_DIR.exists():
-        print("WARNING: THREDDS RTMA directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in THREDDS_RTMA_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No RTMA files in {THREDDS_RTMA_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
-def latest_rap(n):
-    """Return the n most recent RAP files as a list (oldest to newest), excluding .idx files."""
-    if not NOAA_RAP_DIR.exists():
-        print("WARNING: NOAA RAP directory doesn't exist!")
-        return
-    files = sorted(
-        [f for f in NOAA_RAP_DIR.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
-        key=lambda f: f.stat().st_mtime
-    )
-    if len(files) < n:
-        raise RuntimeError(f"No RAP files in {NOAA_RAP_DIR}")
-    return [str(f) for f in files[-n:]]
-
-
 def clean_idx_files(folders):
     """
     Remove IDX files in a specified list of folders.
@@ -253,6 +71,26 @@ def clean_idx_files(folders):
                         print(f"Failed to delete IDX file {f}: {e}")
         else:
             print(f"Folder not found: {folder}")
+
+def wipe_temp():
+    for f in TEMP_DIR.glob("*"):
+        try:
+            f.unlink()
+            print(f"Deleted temporary file: {f.name}")
+        except Exception as e:
+            print(f"Could not delete temporary file {f.name}: {e}")
+
+# ---------- CLEANUP ----------
+def clean_old_files(directory: Path, max_age_minutes=20):
+    now = datetime.datetime.now().timestamp()
+    cutoff = now - (max_age_minutes * 60)
+    for f in directory.glob("*"):
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            try:
+                f.unlink()
+                print(f"Deleted old file: {f.name}")
+            except Exception as e:
+                print(f"Could not delete {f.name}: {e}")
 
 class StatFileHandler:
     def __init__(self):

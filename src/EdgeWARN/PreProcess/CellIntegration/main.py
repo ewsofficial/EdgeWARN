@@ -104,7 +104,7 @@ def main():
     print("\n" + "="*50)
     print("INTEGRATING NLDN LIGHTNING DATA")
     print("="*50)
-    nldn_list = fs.latest_nldn(1)
+    nldn_list = fs.latest_files(fs.MRMS_NLDN_DIR, 1)
     if nldn_list:
         nldn_path = nldn_list[-1]
         print(f"Using NLDN file: {nldn_path}")
@@ -126,7 +126,7 @@ def main():
     print("\n" + "="*50)
     print("INTEGRATING ECHOTOP DATA")
     print("="*50)
-    echotop_list = fs.latest_echotop18(1)
+    echotop_list = fs.latest_files(fs.MRMS_ECHOTOP18_DIR, 1)
     if echotop_list:
         echotop_path = echotop_list[-1]
         print(f"Using EchoTop file: {echotop_path}")
@@ -148,7 +148,7 @@ def main():
     print("\n" + "="*50)
     print("INTEGRATING PROBSEVERE DATA")
     print("="*50)
-    probsevere_list = fs.latest_probsevere(1)
+    probsevere_list = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
     if probsevere_list:
         probsevere_path = probsevere_list[-1]
         print(f"Using ProbSevere file: {probsevere_path}")
@@ -179,7 +179,7 @@ def main():
     print("\n" + "="*50)
     print("INTEGRATING MRMS PRECIPRATE DATA")
     print("="*50)
-    preciprate_list = fs.latest_preciprate(1)
+    preciprate_list = fs.latest_files(fs.MRMS_PRECIPRATE_DIR, 1)
     if preciprate_list:
         preciprate_path = preciprate_list[-1]
         print(f"Using PrecipRate file: {preciprate_path}")
@@ -201,7 +201,7 @@ def main():
     print("\n" + "="*50)
     print("INTEGRATING GLM LIGHTNING DATA")
     print("="*50)
-    glm_list = fs.latest_glm(1)
+    glm_list = fs.latest_files(fs.GOES_GLM_DIR, 1)
     if glm_list:
         glm_path = glm_list[-1]
         print(f"Using GLM file: {glm_path}")
@@ -223,7 +223,7 @@ def main():
     print("\n" + "="*50)
     print("INTEGRATING MRMS VIL DENSITY DATA")
     print("="*50)
-    vil_density_list = fs.latest_vil_density(1)
+    vil_density_list = fs.latest_files(fs.MRMS_VIL_DIR, 1)
     if vil_density_list:
         vil_density_path = vil_density_list[-1]
         print(f"Using VIL Density file: {vil_density_path}")
