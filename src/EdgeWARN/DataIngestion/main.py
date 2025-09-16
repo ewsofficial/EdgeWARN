@@ -7,7 +7,7 @@ from . import refl
 from . import mrms
 from . import synoptic
 from util.core import file as fs
-from util.PreProcess.data_utils import extract_timestamp_from_filename
+from util.PreProcess.utils import extract_timestamp_from_filename
 import os
 
 # ---------- CREDITS ----------
