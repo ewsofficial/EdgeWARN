@@ -5,6 +5,7 @@ import re
 import datetime
 from datetime import datetime
 import math
+from shapely.geometry import Polygon
 
 PENALTY_COST = 1000.0
 
@@ -88,6 +89,109 @@ class CellProcessor:
                 weights['num_gates'] * d_num_gates +
                 weights['max_reflectivity'] * d_reflect)
         return cost
+    
+    @staticmethod
+    def calculate_cell_overlap(cell1, cell2):
+        """
+        Calculate the overlap area between two storm cells in km².
+        
+        Args:
+            cell1 (dict): First storm cell with 'alpha_shape' polygon
+            cell2 (dict): Second storm cell with 'alpha_shape' polygon
+        
+        Returns:
+            tuple: (overlap_area_km2, overlap_percentage_cell1, overlap_percentage_cell2)
+        """
+        # Get polygons from cells
+        poly1_points = cell1.get('alpha_shape', [])
+        poly2_points = cell2.get('alpha_shape', [])
+        
+        if len(poly1_points) < 3 or len(poly2_points) < 3:
+            return 0.0, 0.0, 0.0
+        
+        try:
+            # Create Shapely Polygon objects
+            poly1 = Polygon(poly1_points)
+            poly2 = Polygon(poly2_points)
+            
+            # Fix invalid geometries if needed
+            if not poly1.is_valid:
+                poly1 = poly1.buffer(0)
+            if not poly2.is_valid:
+                poly2 = poly2.buffer(0)
+            
+            # Calculate intersection
+            intersection = poly1.intersection(poly2)
+            
+            if intersection.is_empty:
+                return 0.0, 0.0, 0.0
+            
+            # Calculate areas using our existing method for consistency
+            area1 = GeoUtils.polygon_area_km2(poly1_points)
+            area2 = GeoUtils.polygon_area_km2(poly2_points)
+            intersection_area = GeoUtils.polygon_area_km2(list(intersection.exterior.coords))
+            
+            # Calculate overlap percentages
+            overlap_pct1 = (intersection_area / area1 * 100) if area1 > 0 else 0
+            overlap_pct2 = (intersection_area / area2 * 100) if area2 > 0 else 0
+            
+            return intersection_area, overlap_pct1, overlap_pct2
+            
+        except Exception as e:
+            print(f"Warning: Error calculating cell overlap: {e}")
+            return 0.0, 0.0, 0.0
+
+    @staticmethod
+    def filter_highly_covered_cells(cells, coverage_threshold=80):
+        """
+        Filter out cells that are highly covered by larger cells.
+        
+        Args:
+            cells (list): List of storm cell dictionaries
+            coverage_threshold (float): Percentage threshold for removal (default: 80%)
+        
+        Returns:
+            list: Filtered list of cells
+        """
+        if len(cells) <= 1:
+            return cells
+        
+        # Ensure all cells have area calculated
+        CellProcessor.add_area_to_cells(cells)
+        
+        # Sort by area descending (largest first)
+        cells_sorted = sorted(cells, key=lambda x: x.get('area_km2', 0), reverse=True)
+        
+        cells_to_remove = set()
+        
+        # Compare each cell with all larger cells
+        for i, smaller_cell in enumerate(cells_sorted):
+            smaller_id = smaller_cell['id']
+            if smaller_id in cells_to_remove:
+                continue
+                
+            for larger_cell in cells_sorted[:i]:  # Only check larger cells (earlier in list)
+                larger_id = larger_cell['id']
+                if larger_id in cells_to_remove:
+                    continue
+                    
+                # Calculate how much the smaller cell is covered by the larger cell
+                overlap_area, overlap_pct_smaller, overlap_pct_larger = GeoUtils.calculate_cell_overlap(
+                    smaller_cell, larger_cell
+                )
+                
+                # If smaller cell is highly covered by larger cell, mark for removal
+                if overlap_pct_smaller > coverage_threshold:
+                    cells_to_remove.add(smaller_id)
+                    print(f"Removing cell {smaller_id} ({smaller_cell['area_km2']:.1f} km²): "
+                          f"{overlap_pct_smaller:.1f}% covered by cell {larger_id} ({larger_cell['area_km2']:.1f} km²)")
+                    break  # No need to check other larger cells
+        
+        # Filter out the cells to remove
+        filtered_cells = [cell for cell in cells if cell['id'] not in cells_to_remove]
+        
+        print(f"Filtered out {len(cells_to_remove)} cells highly covered by larger cells")
+        return filtered_cells
 
 def load_mrms_slice(filepath, lat_limits=None, lon_limits=None):
     ds = xr.open_dataset(filepath)
