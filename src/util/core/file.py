@@ -29,6 +29,27 @@ NOAA_RAP_DIR = BASE_DIR / "rap"
 TEMP_DIR = BASE_DIR / "temp"
 MRMS_COMBINED_DIR.mkdir(parents=True, exist_ok=True)
 
+# NEW LATEST FILES FUNCTION
+def latest_files(dir, n):
+    """
+    Return the n most recent files in a directory as a list (oldest to newest), excluding .idx files
+    Inputs:
+    - dir: Directory
+    - n: Number of files
+    Outputs:
+    - List of files (oldest to newest) in the directory
+    """
+    if not dir.exists():
+        print(f"WARNING: {dir} doesn't exist!")
+        return
+    files = sorted(
+        [f for f in dir.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
+        key=lambda f: f.stat().st_mtime
+    )
+    if len(files) < n:
+        raise RuntimeError(f"Not enough files in {dir}")
+    return [str(f) for f in file[-n:]]
+
 def latest_nexrad(n):
     """Return the n most recent NEXRAD L2 files as a list (oldest to newest), excluding .idx files."""
     if not NEXRAD_L2_DIR.exists():
