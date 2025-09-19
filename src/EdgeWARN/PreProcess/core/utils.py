@@ -256,7 +256,8 @@ def extract_timestamp_from_filename(filepath):
         r'MRMS_MergedReflectivityQC_3D_(\d{8})-(\d{6})',
         r'(\d{8})-(\d{6})_renamed',
         r'(\d{8}-\d{6})',
-        r'.*(\d{8})-(\d{6}).*'
+        r'.*(\d{8})-(\d{6}).*',
+        r's(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)'
     ]
     
     for pattern_idx, pattern in enumerate(patterns):
