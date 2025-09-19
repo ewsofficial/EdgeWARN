@@ -10,16 +10,13 @@ from typing import Dict, List, Optional
 
 # ---------- PATH CONFIG ----------
 BASE_DIR = Path("C:/input_data") if platform.system() == "Windows" else Path("data_ingest")
-NEXRAD_L2_DIR = BASE_DIR / "nexrad_l2"
 MRMS_3D_DIR = BASE_DIR / "nexrad_merged"
-GOES_GLM_DIR = BASE_DIR / "goes_glm"
 MRMS_LTNG_DIR = BASE_DIR / "mrms_lightning"
 MRMS_NLDN_DIR = BASE_DIR / "mrms_nldn"
 MRMS_ECHOTOP18_DIR = BASE_DIR / "mrms_echotop18"
 MRMS_QPE15_DIR = BASE_DIR / "mrms_qpe15"
 MRMS_PRECIPRATE_DIR = BASE_DIR / "mrms_preciprate"
 MRMS_PROBSEVERE_DIR = BASE_DIR / "mrms_probsevere"
-MRMS_COMBINED_DIR = BASE_DIR / "mrms_combined_strikes"
 MRMS_RADAR_DIR = BASE_DIR / "nexrad_merged"
 MRMS_FLASH_DIR = BASE_DIR / "mrms_flash"
 MRMS_VIL_DIR = BASE_DIR / "mrms_vil_density"
@@ -27,7 +24,6 @@ MRMS_ROTATIONT_DIR = BASE_DIR / "mrms_rotationtrack"
 THREDDS_RTMA_DIR = BASE_DIR / "rtma"
 NOAA_RAP_DIR = BASE_DIR / "rap"
 TEMP_DIR = BASE_DIR / "temp"
-MRMS_COMBINED_DIR.mkdir(parents=True, exist_ok=True)
 
 # NEW LATEST FILES FUNCTION
 def latest_files(dir, n):
@@ -82,7 +78,7 @@ def wipe_temp():
 
 # ---------- CLEANUP ----------
 def clean_old_files(directory: Path, max_age_minutes=20):
-    now = datetime.datetime.now().timestamp()
+    now = datetime.now().timestamp()
     cutoff = now - (max_age_minutes * 60)
     for f in directory.glob("*"):
         if f.is_file() and f.stat().st_mtime < cutoff:

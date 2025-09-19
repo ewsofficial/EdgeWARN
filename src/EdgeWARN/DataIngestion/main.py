@@ -1,39 +1,28 @@
 import datetime
-import time
 from pathlib import Path
 
-from . import s3download as s3d
-from . import refl
-from . import mrms
-from . import synoptic
-from util.core import file as fs
-from ..PreProcess.core.utils import extract_timestamp_from_filename
-import os
+from EdgeWARN.DataIngestion.config import base_dir, mrms_modifiers
+from EdgeWARN.DataIngestion.download import FileFinder, FileDownloader
+from EdgeWARN.DataIngestion.custom import MRMSDownloader, SynopticDownloader
+from EdgeWARN.PreProcess.core.utils import extract_timestamp_from_filename
+import util.core.file as fs
 
-# ---------- CREDITS ----------
-def attribution():
-    print("EdgeWARN Data Ingestion")
-    print("Build: 2025-09-09")
-    print("Credits: Yuchen Wei")
-    print("Made by the EWS")
-    time.sleep(1)
+#################################
+### EWS Data Ingestion Module ###
+### Build Version: v1.0.0     ###
+### Contributors: Yuchen Wei  ###
+#################################
 
-# MAIN
 def main():
-    attribution()
-    print("Current UTC time:", datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")), time.sleep(1)
-    # Clean old files
-    folders = [fs.NEXRAD_L2_DIR, fs.GOES_GLM_DIR, fs.MRMS_NLDN_DIR, fs.MRMS_ECHOTOP18_DIR, fs.MRMS_QPE15_DIR, fs.MRMS_PRECIPRATE_DIR, fs.MRMS_PROBSEVERE_DIR, fs.THREDDS_RTMA_DIR, fs.MRMS_RADAR_DIR]
+    # Clear Files
+    folders = [fs.MRMS_3D_DIR, fs.MRMS_ECHOTOP18_DIR, fs.MRMS_FLASH_DIR, fs.MRMS_NLDN_DIR, fs.MRMS_PRECIPRATE_DIR, fs.MRMS_QPE15_DIR, fs.MRMS_ROTATIONT_DIR, fs.MRMS_VIL_DIR, fs.MRMS_PROBSEVERE_DIR]
     for f in folders:
-        fs.clean_old_files(f)
+        fs.clean_old_files(f, max_age_minutes=20)
     fs.wipe_temp()
 
-    # Download latest NEXRAD Level II
-    s3d.download_nexrad_l2(site="KOKX")
-
-    # Download latest MRMS Reflectivity Mosaic
-    refl.download_mrms_composite_reflectivity(outdir=fs.MRMS_RADAR_DIR, tempdir=fs.TEMP_DIR)
-    refl.find_and_concat_refl()
+    # Download MRMS Files
+    MRMSDownloader.download_mrms_composite_reflectivity(outdir=fs.MRMS_3D_DIR, tempdir=fs.TEMP_DIR)
+    MRMSDownloader.find_and_concat_refl()
 
     # Find the most recent MRMS reflectivity file and extract its timestamp
     refl_files = sorted(
@@ -43,40 +32,53 @@ def main():
         )
     if not refl_files:
         print("No MRMS reflectivity files found! Using current UTC time.")
-        target_time = datetime.datetime.utcnow()
+        dt = datetime.datetime.now(datetime.timezone.utc)
     else:
         refl_file = refl_files[0]
         ts_str = extract_timestamp_from_filename(str(refl_file))
         try:
-            target_time = datetime.datetime.fromisoformat(ts_str)
+            dt = datetime.datetime.fromisoformat(ts_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
         except Exception:
             print(f"Could not parse timestamp '{ts_str}', using current UTC time.")
-            target_time = datetime.datetime.utcnow()
+            dt = datetime.datetime.now(datetime.timezone.utc)
 
-    # Download latest GOES GLM
-    s3d.download_latest_goes_glm()
+    max_time = datetime.timedelta(hours=6)   # Look back 6 hours
+    max_entries = 10                         # How many files to check per source
 
-    # Download MRMS files with fallback logic, using the reflectivity timestamp
-    mrms.download_latest_mrms_nldn(target_time, fs.MRMS_NLDN_DIR)
-    mrms.download_mrms_echotop18(target_time, fs.MRMS_ECHOTOP18_DIR)
-    mrms.download_latest_mrms_qpe15(target_time, fs.MRMS_QPE15_DIR)
-    mrms.download_mrms_preciprate(target_time, fs.MRMS_PRECIPRATE_DIR)
-    mrms.download_latest_mrms_probsevere(target_time, fs.MRMS_PROBSEVERE_DIR)
-    mrms.download_mrms_vil_density(target_time, fs.MRMS_VIL_DIR)
-    mrms.download_mrms_ffg(target_time, fs.MRMS_FLASH_DIR)
+    for modifier, outdir in mrms_modifiers:
+        print("=" * 80)
+        print(f"🔍 Checking MRMS source: {modifier}")
 
-    # Download Synoptic
-    synoptic.download_latest_rtma(target_time, fs.THREDDS_RTMA_DIR)
-    synoptic.download_rap_awp(target_time, fs.NOAA_RAP_DIR)
+        # Create finder and downloader for this modifier
+        finder = FileFinder(dt, base_dir, max_time, max_entries)
+        downloader = FileDownloader(dt)
 
+        # Search for files
+        try:
+            files_with_timestamps = finder.lookup_files(modifier)
+            if not files_with_timestamps:
+                print(f"⚠️ No files found for {modifier}")
+                continue
 
-# Only run this for testing purposes
-# """
+            print(f"Found {len(files_with_timestamps)} candidate files for {modifier}")
+
+            # Download the latest file for this source
+            downloaded = downloader.download_latest(files_with_timestamps, outdir)
+            if downloaded:
+                print(outdir)
+                print(f"✅ Downloaded latest {modifier} file to {downloaded}")
+                print(f"Attempting to decompress {downloaded}")
+                downloader.decompress_file(downloaded)
+            else:
+                print(f"❌ Failed to download latest {modifier} file")
+
+        except Exception as e:
+            print(f"❌ Error processing {modifier}: {e}")
+
+    SynopticDownloader.download_latest_rtma(dt, fs.THREDDS_RTMA_DIR)
+    SynopticDownloader.download_rap_awp(dt, fs.NOAA_RAP_DIR)
+
 if __name__ == "__main__":
-    import time
-    for i in range(6):
-        print("Ingesting data!")
-        main()
-        print("Sleeping for 180 sec")
-        time.sleep(180)
-# """
+    main()
