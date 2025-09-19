@@ -18,19 +18,18 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 2025.09.15
+#### Build Version: 0.1.0a
 
 #### Changes Associated With This Build
-- Added safeguards to storm cell detection and tracking algorithms
-- Modified storm cell centroid detection to a reflectivity-weighted system
-- Storm tracking now contains sanity checks against unrealistic motion vectors
+- Completely rewrote DataIngestion folder for modularity
+- Specialized functions are still maintained for compatibility
+- Cleaned up unused files
 
 #### To Do
-- Add termination handling
-- Reformat DataIngestion folder more neatly
-- Reformat core functions to be more robust and compact
+- Fix ProbSevere and GLM data ingestion (may need custom functions)
+- Add termination handling to storm cells
 
-<h3 align="center">Credits</h3>
+<h2 align="center">Credits</h2>
 
 #### Credits
 - Edgemont Weather Service (Edgemont Jr/Sr High School, 200 White Oak Ln, Scarsdale NY 10583)
