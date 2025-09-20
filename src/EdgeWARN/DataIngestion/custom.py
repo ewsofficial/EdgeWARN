@@ -280,9 +280,11 @@ class SynopticDownloader:
         hour_str = dt.strftime("%H")
         filename = f"rap.t{hour_str}z.awp130pgrbf00.grib2"
         outpath = outdir / filename
+
+        # URL is: https://nomads.ncep.noaa.gov/pub/data/nccf/com/rap/prod/rap.{YYYYMMDD}/rap.t{HH}z.awp130pgrbf00.grib2
         
         # Direct URL format
-        url = f"https://nomads.ncep.noaa.gov/cgi-bin/filter_rap.pl?dir=/rap/{date_str}&file={filename}"
+        url = f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/rap/prod/rap.{date_str}/{filename}"
         
         # Check if file already exists
         if outpath.exists():
