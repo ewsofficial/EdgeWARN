@@ -9,8 +9,6 @@ class StormCellTerminator:
         Initializes Class
         """
     
-    
-
 class CellMatcher:
     @staticmethod
 
