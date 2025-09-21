@@ -1,5 +1,5 @@
 from pathlib import Path
-from ..core.cellmask import CellProcessor
+from ..core.utils import CellProcessor
 from ..core.match import CellMatcher
 from .tracker import RadarHandler, CellDetector, CellTracker, StormCellDataManager
 from ..core.save import write_vectors

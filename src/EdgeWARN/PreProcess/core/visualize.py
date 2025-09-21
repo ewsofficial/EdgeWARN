@@ -8,7 +8,7 @@ from matplotlib.patches import Polygon as MplPolygon
 from .cellmask import StormCellDetector
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
-
+import pyart
 
 class Visualizer:
     def __init__():
