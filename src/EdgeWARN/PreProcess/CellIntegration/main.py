@@ -1,17 +1,17 @@
 import xarray as xr
 import util.core.file as fs
-from util.core.file import StatFileHandler
 from datetime import datetime
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from matplotlib.patches import Polygon as MplPolygon
 import matplotlib.patches as mpatches
-from .utils import StormIntegrationUtils
-from .integrator import StormCellIntegrator
-    
+from EdgeWARN.PreProcess.CellIntegration.utils import StormIntegrationUtils, StatFileHandler
+from EdgeWARN.PreProcess.CellIntegration.integrator import StormCellIntegrator
+"""  
 def graph_probsevere_stormcells(self, probsevere_data, storm_cells, output_path="probsevere_stormcells_map.png"):
     """
+"""
     Graph ProbSevere polygons (blue) and storm cell polygons (red) on a CONUS map.
     
     Args:
@@ -19,6 +19,7 @@ def graph_probsevere_stormcells(self, probsevere_data, storm_cells, output_path=
         storm_cells: List of storm cell dictionaries
         output_path: Path to save the output image
     """
+"""
     # Create figure and map
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
@@ -82,7 +83,8 @@ def graph_probsevere_stormcells(self, probsevere_data, storm_cells, output_path=
     plt.show()
     
     print(f"Map saved to {output_path}")
-        
+"""
+
 def main():
     """
     Main function to run integration of all data types with storm cells.
@@ -113,7 +115,7 @@ def main():
         if nldn_timestamp:
             try:
                 nldn_ds = xr.open_dataset(nldn_path)
-                result_cells = integrator.integrate_nldn(nldn_ds, result_cells, nldn_timestamp)
+                result_cells = integrator.integrate_ds(nldn_ds, result_cells, nldn_timestamp, "flash_rate")
                 print("NLDN integration completed successfully")
             except Exception as e:
                 print(f"Failed to integrate NLDN data: {e}")
@@ -135,7 +137,7 @@ def main():
         if echotop_timestamp:
             try:
                 echotop_ds = xr.open_dataset(echotop_path)
-                result_cells = integrator.integrate_echotop(echotop_ds, result_cells, echotop_timestamp)
+                result_cells = integrator.integrate_ds(echotop_ds, result_cells, echotop_timestamp, "echotop_km")
                 print("EchoTop integration completed successfully")
             except Exception as e:
                 print(f"Failed to integrate EchoTop data: {e}")
@@ -166,7 +168,7 @@ def main():
                 
                 # Create visualization of ProbSevere and storm cell polygons
                 print("\nCreating visualization of ProbSevere and storm cell polygons...")
-                graph_probsevere_stormcells(probsevere_data, result_cells)
+                # graph_probsevere_stormcells(probsevere_data, result_cells)
                 
             except ValueError:
                 print(f"Could not parse timestamp from ProbSevere data: {probsevere_timestamp_str}")
@@ -188,7 +190,7 @@ def main():
         if preciprate_timestamp:
             try:
                 preciprate_ds = xr.open_dataset(preciprate_path)
-                result_cells = integrator.integrate_preciprate(preciprate_ds, result_cells, preciprate_timestamp)
+                result_cells = integrator.integrate_ds(preciprate_ds, result_cells, preciprate_timestamp, "preciprate")
                 print("MRMS PrecipRate integration completed successfully")
             except Exception as e:
                 print(f"Failed to integrate PrecipRate data: {e}")
@@ -196,30 +198,8 @@ def main():
             print("Could not determine timestamp from PrecipRate file")
     else:
         print("No PrecipRate files found")
-    
-    # 5. Integrate GLM lightning data
-    print("\n" + "="*50)
-    print("INTEGRATING GLM LIGHTNING DATA")
-    print("="*50)
-    glm_list = fs.latest_files(fs.GOES_GLM_DIR, 1)
-    if glm_list:
-        glm_path = glm_list[-1]
-        print(f"Using GLM file: {glm_path}")
-        
-        glm_timestamp = handler.find_timestamp(glm_path)
-        if glm_timestamp:
-            try:
-                glm_ds = xr.open_dataset(glm_path)
-                result_cells = integrator.integrate_glm(glm_ds, result_cells, glm_timestamp)
-                print("GLM integration completed successfully")
-            except Exception as e:
-                print(f"Failed to integrate GLM data: {e}")
-        else:
-            print("Could not determine timestamp from GLM file")
-    else:
-        print("No GLM files found")
 
-    # 6. Integrate MRMS VIL Density data
+    # 5. Integrate MRMS VIL Density data
     print("\n" + "="*50)
     print("INTEGRATING MRMS VIL DENSITY DATA")
     print("="*50)
@@ -232,7 +212,7 @@ def main():
         if vil_density_timestamp:
             try:
                 vil_density_ds = xr.open_dataset(vil_density_path)
-                result_cells = integrator.integrate_vil_density(vil_density_ds, result_cells, vil_density_timestamp)
+                result_cells = integrator.integrate_ds(vil_density_ds, result_cells, vil_density_timestamp, "vil_density")
                 print("MRMS VIL Density integration completed successfully")
             except Exception as e:
                 print(f"Failed to integrate VIL Density data: {e}")
@@ -255,7 +235,6 @@ def main():
     cells_with_nldn = 0
     cells_with_echotop = 0
     cells_with_probsevere = 0
-    cells_with_glm = 0
     cells_with_preciprate = 0
     cells_with_vil_density = 0 
     total_entries = 0
@@ -265,24 +244,21 @@ def main():
         if 'storm_history' in cell:
             for entry in cell['storm_history']:
                 total_entries += 1
-                if isinstance(entry.get('max_flash_rate', "N/A"), (int, float)):
+                if isinstance(entry.get('flash_rate', "N/A"), (int, float)):
                     cells_with_nldn += 1
-                if isinstance(entry.get('max_echotop_height', "N/A"), (int, float)):
+                if isinstance(entry.get('echotop_km', "N/A"), (int, float)):
                     cells_with_echotop += 1
                 if isinstance(entry.get('prob_severe', "N/A"), (int, float)):
                     cells_with_probsevere += 1
-                if isinstance(entry.get('glm_flashrate_1m', "N/A"), (int, float)):
-                    cells_with_glm += 1
-                if isinstance(entry.get('max_precip_rate', "N/A"), (int, float)):
+                if isinstance(entry.get('preciprate', "N/A"), (int, float)):
                     cells_with_preciprate += 1
-                if isinstance(entry.get('max_vil_density', "N/A"), (int, float)): 
+                if isinstance(entry.get('vil_density', "N/A"), (int, float)): 
                     cells_with_vil_density += 1
 
     # Print Summary
     print(f"Entries with NLDN data: {cells_with_nldn}/{total_entries}")
     print(f"Entries with EchoTop data: {cells_with_echotop}/{total_entries}")
     print(f"Entries with ProbSevere data: {cells_with_probsevere}/{total_entries}")
-    print(f"Entries with GLM data: {cells_with_glm}/{total_entries}")
     print(f"Entries with PrecipRate data: {cells_with_preciprate}/{total_entries}")
     print(f"Entries with VIL Density data: {cells_with_vil_density}/{total_entries}") 
 

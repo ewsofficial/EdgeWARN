@@ -1,5 +1,6 @@
 from pathlib import Path
-from ..core.cellmask import CellProcessor
+from ..core.terminator import CellTerminator
+from ..core.utils import CellProcessor
 from ..core.match import CellMatcher
 from .tracker import RadarHandler, CellDetector, CellTracker, StormCellDataManager
 from ..core.save import write_vectors
@@ -89,6 +90,12 @@ def main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits):
     # Add area to cells before matching
     CellProcessor.add_area_to_cells(cells_old)
     CellProcessor.add_area_to_cells(cells_new)
+
+    # Terminate overlapped cells
+    print("DEBUG: Terminating highly-covered cells in new scan...")
+    cells_new = CellTerminator.terminate_highly_covered_cells(cells_new, coverage_threshold=67.0)
+    print(f"DEBUG: {len(cells_new)} cells remain after termination: {[cell['id'] for cell in cells_new]}")
+
 
     existing_cells = {cell['id']: cell for cell in storm_data}
     print(f"DEBUG: Existing cells index: {list(existing_cells.keys())}")

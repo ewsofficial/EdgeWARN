@@ -1,4 +1,3 @@
-from util.core.file import StatFileHandler
 from .utils import StormIntegrationUtils
 from datetime import datetime
 from shapely.geometry import shape
@@ -63,39 +62,38 @@ class StormCellIntegrator:
         
         return closest_index
     
-    def integrate_nldn(self, nldn_dataset, storm_cells, nldn_timestamp, output_key='max_flash_rate'):
+    def integrate_ds(self, dataset, storm_cells, timestamp, output_key):
         """
-        Integrate NLDN lightning data with storm cells.
-        Returns the maximum flash rate for each cell and adds it to the closest temporal entry.
-        
+        Integrate dataset with storm cells.
+        Returns maximum value in the dataset for each cell and adds it to the closest temporal entry.
         Args:
-            nldn_dataset: Loaded xarray Dataset containing NLDN data
+            dataset: Loaded xarray Dataset containing data
             storm_cells: List of storm cell dictionaries
-            nldn_timestamp: Timestamp of the NLDN data
-            output_key: Key to store the max flash rate under in each cell
-            
+            timestamp: Dataset timestamp
+            output_key: Key to store data under in each cell
+
         Returns:
-            List of storm cells with integrated NLDN flash rate data
+            List of storm cells with integrated dataset data
         """
-        # Get lightning variable name
-        lightning_var = StormIntegrationUtils.get_nldn_variable_name(nldn_dataset)
-        lightning_data = nldn_dataset[lightning_var].values
-        
+        # Get variable name
+        ds_var = 'unknown'
+        ds_data = dataset[ds_var].values
+
         # Create coordinate grids
-        lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(nldn_dataset)
-        
-        print(f"Integrating NLDN {lightning_var} data for {len(storm_cells)} storm cells...")
-        print(f"NLDN timestamp: {nldn_timestamp}")
-        
+        lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(dataset)
+
+        print(f"Integrating dataset variable: {ds_var} for {len(storm_cells)} storm cells")
+        print(f"Dataset timestamp {timestamp}")
+
         for cell in storm_cells:
             cell_id = cell.get('id', 'unknown')
             
-            # Find the closest storm history entry to the NLDN timestamp
+            # Find the closest storm history entry to the dataset timestamp
             if 'storm_history' not in cell or not cell['storm_history']:
                 print(f"Warning: Cell {cell_id} has no storm history")
                 continue
                 
-            closest_idx = self.find_closest_storm_history_entry(cell['storm_history'], nldn_timestamp)
+            closest_idx = self.find_closest_storm_history_entry(cell['storm_history'], timestamp)
             
             if closest_idx is None:
                 print(f"Warning: Could not find suitable storm history entry for cell {cell_id}")
@@ -113,98 +111,27 @@ class StormCellIntegrator:
                 continue
             
             try:
-                # Extract lightning values within the cell polygon
-                cell_lightning = lightning_data[mask]
+                # Extract values within the cell polygon
+                cell_data = ds_data[mask]
                 
-                # Filter out negative values (no lightning) and NaN
-                valid_lightning = cell_lightning[(cell_lightning >= 0) & (~np.isnan(cell_lightning))]
+                # Filter out negative values (no data) and NaN
+                valid_data = cell_data[(cell_data >= 0) & (~np.isnan(cell_data))]
                 
-                if valid_lightning.size == 0:
+                if valid_data.size == 0:
                     cell['storm_history'][closest_idx][output_key] = "N/A"
                 else:
-                    max_flash_rate = float(np.max(valid_lightning))
+                    max_flash_rate = float(np.max(valid_data))
                     cell['storm_history'][closest_idx][output_key] = max_flash_rate
                     
-                    # Also add timestamp of the NLDN data for reference
-                    cell['storm_history'][closest_idx]['nldn_timestamp'] = nldn_timestamp.isoformat() + 'Z'
+                    # Also add timestamp of the data for reference
+                    cell['storm_history'][closest_idx]['nldn_timestamp'] = timestamp.isoformat() + 'Z'
                     
             except Exception as e:
                 print(f"Error processing cell {cell_id}: {e}")
                 cell['storm_history'][closest_idx][output_key] = "N/A"
         
         return storm_cells
-    
-    def integrate_echotop(self, echotop_dataset, storm_cells, echotop_timestamp, output_key='max_echotop_height'):
-        """
-        Integrate echotop data with storm cells.
-        Returns the maximum echotop height for each cell and adds it to the closest temporal entry.
-        
-        Args:
-            echotop_dataset: Loaded xarray Dataset containing echotop data
-            storm_cells: List of storm cell dictionaries
-            echotop_timestamp: Timestamp of the echotop data
-            output_key: Key to store the max echotop height under in each cell
-            
-        Returns:
-            List of storm cells with integrated echotop height data
-        """
-        # Get echotop variable name
-        echotop_var = StormIntegrationUtils.get_echotop_variable_name(echotop_dataset)
-        echotop_data = echotop_dataset[echotop_var].values
-        
-        # Create coordinate grids
-        lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(echotop_dataset)
-        
-        print(f"Integrating echotop {echotop_var} data for {len(storm_cells)} storm cells...")
-        print(f"Echotop timestamp: {echotop_timestamp}")
-        
-        for cell in storm_cells:
-            cell_id = cell.get('id', 'unknown')
-            
-            # Find the closest storm history entry to the echotop timestamp
-            if 'storm_history' not in cell or not cell['storm_history']:
-                print(f"Warning: Cell {cell_id} has no storm history")
-                continue
-                
-            closest_idx = self.find_closest_storm_history_entry(cell['storm_history'], echotop_timestamp)
-            
-            if closest_idx is None:
-                print(f"Warning: Could not find suitable storm history entry for cell {cell_id}")
-                continue
-            
-            # Create polygon and mask for this cell
-            polygon = StormIntegrationUtils.create_cell_polygon(cell)
-            if polygon is None:
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-                continue
-                
-            mask = StormIntegrationUtils.create_polygon_mask(polygon, lat_grid, lon_grid)
-            if mask is None or not np.any(mask):
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-                continue
-            
-            try:
-                # Extract echotop values within the cell polygon
-                cell_echotop = echotop_data[mask]
-                
-                # Filter out negative values and NaN
-                valid_echotop = cell_echotop[(cell_echotop >= 0) & (~np.isnan(cell_echotop))]
-                
-                if valid_echotop.size == 0:
-                    cell['storm_history'][closest_idx][output_key] = "N/A"
-                else:
-                    max_echotop_height = float(np.max(valid_echotop))
-                    cell['storm_history'][closest_idx][output_key] = max_echotop_height
-                    
-                    # Also add timestamp of the echotop data for reference
-                    cell['storm_history'][closest_idx]['echotop_timestamp'] = echotop_timestamp.isoformat() + 'Z'
-                    
-            except Exception as e:
-                print(f"Error processing cell {cell_id}: {e}")
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-        
-        return storm_cells
-    
+
     def integrate_probsevere(self, probsevere_data, storm_cells, probsevere_timestamp, max_distance_km=25.0):
         """
         Integrate ProbSevere probability data with storm cells by matching based on 
@@ -339,240 +266,4 @@ class StormCellIntegrator:
                 matches_found += 1
 
         print(f"ProbSevere integration completed: {matches_found} matches found")
-        return storm_cells
-
-    
-    def integrate_glm(self, glm_dataset, storm_cells, glm_timestamp, output_key='glm_flashrate_1m'):
-        """
-        Integrate GLM lightning data with storm cells.
-        Counts flashes within each cell's bounding box and calculates flash rate.
-        
-        Args:
-            glm_dataset: Loaded xarray Dataset containing GLM data
-            storm_cells: List of storm cell dictionaries
-            glm_timestamp: Start timestamp of the GLM data
-            output_key: Key to store the flash rate under in each cell
-            
-        Returns:
-            List of storm cells with integrated GLM flash rate data
-        """
-        # Extract flash locations from GLM dataset
-        if 'flash_lat' not in glm_dataset.coords or 'flash_lon' not in glm_dataset.coords:
-            print("Error: GLM dataset missing flash_lat or flash_lon coordinates")
-            return storm_cells
-        
-        flash_lats = glm_dataset.flash_lat.values
-        flash_lons = glm_dataset.flash_lon.values
-        
-        print(f"Integrating GLM flash data for {len(storm_cells)} storm cells...")
-        print(f"GLM timestamp: {glm_timestamp}")
-        print(f"Found {len(flash_lats)} flashes in GLM data")
-        
-        # Debug: Print first few flash locations
-        print(f"First 5 flash locations:")
-        for i in range(min(5, len(flash_lats))):
-            print(f"  Flash {i}: lat={flash_lats[i]:.4f}, lon={flash_lons[i]:.4f}")
-        
-        for cell in storm_cells:
-            cell_id = cell.get('id', 'unknown')
-            
-            # Find the closest storm history entry to the GLM timestamp
-            if 'storm_history' not in cell or not cell['storm_history']:
-                print(f"Warning: Cell {cell_id} has no storm history")
-                continue
-                
-            closest_idx = self.find_closest_storm_history_entry(cell['storm_history'], glm_timestamp)
-            
-            if closest_idx is None:
-                print(f"Warning: Could not find suitable storm history entry for cell {cell_id}")
-                continue
-            
-            # Create polygon for this cell (convert to -180 to 180 longitude range)
-            polygon = StormIntegrationUtils.create_cell_polygon(cell)
-            if polygon is None:
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-                continue
-            
-            try:
-                # Convert polygon coordinates from 0-360 to -180-180 range to match GLM
-                polygon_180 = []
-                for point in polygon:
-                    lon = point[0]
-                    lat = point[1]
-                    # Convert longitude from 0-360 to -180-180
-                    if lon > 180:
-                        lon -= 360
-                    polygon_180.append([lon, lat])
-                
-                # Count flashes within the cell polygon
-                flash_count = 0
-                path = Path(polygon_180)
-                
-                # Check each flash location
-                for i in range(len(flash_lats)):
-                    if not np.isnan(flash_lats[i]) and not np.isnan(flash_lons[i]):
-                        point = [flash_lons[i], flash_lats[i]]
-                        if path.contains_point(point):
-                            flash_count += 1
-                
-                # GLM data typically covers 1 minute, so multiply by 3 to get 3-minute equivalent
-                # and convert to flashes per minute
-                flash_rate_per_min = flash_count * 3  # Convert to minutely flash rate
-                
-                cell['storm_history'][closest_idx][output_key] = float(flash_rate_per_min)
-                
-                # Also add timestamp of the GLM data for reference
-                cell['storm_history'][closest_idx]['glm_timestamp'] = glm_timestamp.isoformat() + 'Z'
-                cell['storm_history'][closest_idx]['glm_flash_count'] = int(flash_count)
-                
-                # Debug output for cells with flashes
-                if flash_count > 0:
-                    print(f"Cell {cell_id}: Found {flash_count} flashes (rate: {flash_rate_per_min}/min)")
-                
-            except Exception as e:
-                print(f"Error processing cell {cell_id}: {e}")
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-        
-        return storm_cells
-    
-    def integrate_preciprate(self, preciprate_dataset, storm_cells, preciprate_timestamp, output_key='max_precip_rate'):
-        """
-        Integrate MRMS PrecipRate data with storm cells.
-        Returns the maximum precipitation rate for each cell and adds it to the closest temporal entry.
-        
-        Args:
-            preciprate_dataset: Loaded xarray Dataset containing MRMS PrecipRate data
-            storm_cells: List of storm cell dictionaries
-            preciprate_timestamp: Timestamp of the PrecipRate data
-            output_key: Key to store the max precip rate under in each cell
-            
-        Returns:
-            List of storm cells with integrated precip rate data
-        """
-        # Get precip rate variable name
-        preciprate_var = StormIntegrationUtils.get_preciprate_variable_name(preciprate_dataset)
-        preciprate_data = preciprate_dataset[preciprate_var].values
-        
-        # Create coordinate grids
-        lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(preciprate_dataset)
-        
-        print(f"Integrating MRMS PrecipRate {preciprate_var} data for {len(storm_cells)} storm cells...")
-        print(f"PrecipRate timestamp: {preciprate_timestamp}")
-        
-        for cell in storm_cells:
-            cell_id = cell.get('id', 'unknown')
-            
-            # Find the closest storm history entry to the preciprate timestamp
-            if 'storm_history' not in cell or not cell['storm_history']:
-                print(f"Warning: Cell {cell_id} has no storm history")
-                continue
-                
-            closest_idx = self.find_closest_storm_history_entry(cell['storm_history'], preciprate_timestamp)
-            
-            if closest_idx is None:
-                print(f"Warning: Could not find suitable storm history entry for cell {cell_id}")
-                continue
-            
-            # Create polygon and mask for this cell
-            polygon = StormIntegrationUtils.create_cell_polygon(cell)
-            if polygon is None:
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-                continue
-                
-            mask = StormIntegrationUtils.create_polygon_mask(polygon, lat_grid, lon_grid)
-            if mask is None or not np.any(mask):
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-                continue
-            
-            try:
-                # Extract precip rate values within the cell polygon
-                cell_preciprate = preciprate_data[mask]
-                
-                # Filter out negative values and NaN
-                valid_preciprate = cell_preciprate[(cell_preciprate >= 0) & (~np.isnan(cell_preciprate))]
-                
-                if valid_preciprate.size == 0:
-                    cell['storm_history'][closest_idx][output_key] = "N/A"
-                else:
-                    max_precip_rate = float(np.max(valid_preciprate))
-                    cell['storm_history'][closest_idx][output_key] = max_precip_rate
-                    
-                    # Also add timestamp of the precip rate data for reference
-                    cell['storm_history'][closest_idx]['preciprate_timestamp'] = preciprate_timestamp.isoformat() + 'Z'
-                    
-            except Exception as e:
-                print(f"Error processing cell {cell_id}: {e}")
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-        
-        return storm_cells
-    
-    def integrate_vil_density(self, vil_density_dataset, storm_cells, vil_density_timestamp, output_key='max_vil_density'):
-        """
-        Integrate MRMS VIL Density data with storm cells.
-        Returns the maximum VIL density for each cell and adds it to the closest temporal entry.
-        
-        Args:
-            vil_density_dataset: Loaded xarray Dataset containing MRMS VIL Density data
-            storm_cells: List of storm cell dictionaries
-            vil_density_timestamp: Timestamp of the VIL Density data
-            output_key: Key to store the max VIL density under in each cell
-            
-        Returns:
-            List of storm cells with integrated VIL density data
-        """
-        # Get VIL density variable name
-        vil_density_var = StormIntegrationUtils.get_vil_density_variable_name(vil_density_dataset)
-        vil_density_data = vil_density_dataset[vil_density_var].values
-        
-        # Create coordinate grids
-        lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(vil_density_dataset)
-        
-        print(f"Integrating MRMS VIL Density {vil_density_var} data for {len(storm_cells)} storm cells...")
-        print(f"VIL Density timestamp: {vil_density_timestamp}")
-        
-        for cell in storm_cells:
-            cell_id = cell.get('id', 'unknown')
-            
-            # Find the closest storm history entry to the vil_density timestamp
-            if 'storm_history' not in cell or not cell['storm_history']:
-                print(f"Warning: Cell {cell_id} has no storm history")
-                continue
-                
-            closest_idx = self.find_closest_storm_history_entry(cell['storm_history'], vil_density_timestamp)
-            
-            if closest_idx is None:
-                print(f"Warning: Could not find suitable storm history entry for cell {cell_id}")
-                continue
-            
-            # Create polygon and mask for this cell
-            polygon = StormIntegrationUtils.create_cell_polygon(cell)
-            if polygon is None:
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-                continue
-                
-            mask = StormIntegrationUtils.create_polygon_mask(polygon, lat_grid, lon_grid)
-            if mask is None or not np.any(mask):
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-                continue
-            
-            try:
-                # Extract VIL density values within the cell polygon
-                cell_vil_density = vil_density_data[mask]
-                
-                # Filter out negative values and NaN
-                valid_vil_density = cell_vil_density[(cell_vil_density >= 0) & (~np.isnan(cell_vil_density))]
-                
-                if valid_vil_density.size == 0:
-                    cell['storm_history'][closest_idx][output_key] = "N/A"
-                else:
-                    max_vil_density = float(np.max(valid_vil_density))
-                    cell['storm_history'][closest_idx][output_key] = max_vil_density
-                    
-                    # Also add timestamp of the VIL density data for reference
-                    cell['storm_history'][closest_idx]['vil_density_timestamp'] = vil_density_timestamp.isoformat() + 'Z'
-                    
-            except Exception as e:
-                print(f"Error processing cell {cell_id}: {e}")
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-        
         return storm_cells
