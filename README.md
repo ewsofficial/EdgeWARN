@@ -18,16 +18,17 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.1.0a
+#### Build Version: 0.1.1a
 
 #### Changes Associated With This Build
-- Completely rewrote DataIngestion folder for modularity
-- Specialized functions are still maintained for compatibility
-- Cleaned up unused files
+- Fixed RAP and ProbSevere downloading issues
+- Cell matching algorithm is more robust
+- Condensed multiple integration functions into a universal one
+- Added termination handling to storm cells
 
 #### To Do
-- Fix ProbSevere and GLM data ingestion (may need custom functions)
-- Add termination handling to storm cells
+- Integrate DBSCAN-like algorithm to cell detection
+- Fix GLM download
 
 <h2 align="center">Credits</h2>
 

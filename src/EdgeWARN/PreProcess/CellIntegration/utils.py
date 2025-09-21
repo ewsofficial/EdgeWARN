@@ -152,60 +152,7 @@ class StatFileHandler:
         print(f"Warning: Could not find timestamp in filename: {filename}")
         return None
 
-
 class StormIntegrationUtils:
-    """
-    Utility functions for integrating various datasets with storm cells.
-    """
-    
-    @staticmethod
-    def get_nldn_variable_name(nldn_dataset):
-        """Get the lightning variable name from NLDN dataset."""
-        # Try common NLDN variable names
-        possible_vars = ['lightning_flash_rate', 'unknown', 'flash_rate', 'nldn', 'lightning']
-        for var_name in possible_vars:
-            if var_name in nldn_dataset.data_vars:
-                return var_name
-        
-        # If no common names found, use the first data variable
-        return list(nldn_dataset.data_vars.keys())[0]
-    
-    @staticmethod
-    def get_echotop_variable_name(echotop_dataset):
-        """Get the echotop variable name from echotop dataset."""
-        # Try common echotop variable names
-        possible_vars = ['echotop', 'unknown']
-        for var_name in possible_vars:
-            if var_name in echotop_dataset.data_vars:
-                return var_name
-        
-        # If no common names found, use the first data variable
-        return list(echotop_dataset.data_vars.keys())[0]
-    
-    @staticmethod
-    def get_preciprate_variable_name(preciprate_dataset):
-        """Get the precip rate variable name from MRMS dataset."""
-        # Try common precip rate variable names
-        possible_vars = ['unknown', 'preciprate', 'PrecipRate', 'precipitation_rate', 'rate']
-        for var_name in possible_vars:
-            if var_name in preciprate_dataset.data_vars:
-                return var_name
-    
-        # If no common names found, use the first data variable
-        return list(preciprate_dataset.data_vars.keys())[0]
-    
-    @staticmethod
-    def get_vil_density_variable_name(vil_density_dataset):
-        """Get the VIL density variable name from MRMS dataset."""
-        # Try common VIL density variable names
-        possible_vars = ['unknown', 'vil_density', 'VIL_Density', 'vil', 'VIL', 'density']
-        for var_name in possible_vars:
-            if var_name in vil_density_dataset.data_vars:
-                return var_name
-        
-        # If no common names found, use the first data variable
-        return list(vil_density_dataset.data_vars.keys())[0]
-    
     @staticmethod
     def create_coordinate_grids(dataset):
         """
