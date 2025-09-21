@@ -1,13 +1,12 @@
 import xarray as xr
 import util.core.file as fs
-from util.core.file import StatFileHandler
 from datetime import datetime
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from matplotlib.patches import Polygon as MplPolygon
 import matplotlib.patches as mpatches
-from .utils import StormIntegrationUtils
+from .utils import StormIntegrationUtils, StatFileHandler
 from .integrator import StormCellIntegrator
     
 def graph_probsevere_stormcells(self, probsevere_data, storm_cells, output_path="probsevere_stormcells_map.png"):
