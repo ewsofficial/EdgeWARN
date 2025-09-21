@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-PENALTY_COST = 1000.0
+PENALTY_COST = 1.0
 
 class StormCellTerminator:
     def __init__():
@@ -9,8 +9,6 @@ class StormCellTerminator:
         Initializes Class
         """
     
-    
-
 class CellMatcher:
     @staticmethod
 
@@ -49,7 +47,7 @@ class CellMatcher:
         }
 
         # Build cost matrix and check feasibility before assignment
-        cost_matrix = np.full((n0, n1), np.inf)
+        cost_matrix = np.full((n0, n1), PENALTY_COST)
         for i, c0 in enumerate(cells0):
             for j, c1 in enumerate(cells1):
                 # Calculate distance between centroids first
@@ -63,9 +61,17 @@ class CellMatcher:
                 
                 # Check if either dx or dy exceeds 10 km
                 if dx_km > 10.0 or dy_km > 10.0:
-                    cost_matrix[i, j] = np.inf  # Disallow this match
+                    cost_matrix[i, j] = PENALTY_COST  # Disallow this match
                 else:
                     cost_matrix[i, j] = CellMatcher.compute_cost(c0, c1, max_vals, weights)
+        
+        all_inf_cols = np.all(np.isinf(cost_matrix), axis=0)  # True for columns that are all inf
+        if np.any(all_inf_cols):
+            print(f"DEBUG: Removing {np.sum(all_inf_cols)} columns with all inf")
+            # Keep only finite columns
+            cost_matrix = cost_matrix[:, ~all_inf_cols]
+            # Also remove the corresponding new cells from consideration
+            cells1 = [c for c, keep in zip(cells1, ~all_inf_cols) if keep]
 
         # If there are no costs below the penalty threshold, there are no reasonable matches
         if not (cost_matrix < PENALTY_COST).any():
@@ -74,6 +80,11 @@ class CellMatcher:
 
         # Try the Hungarian algorithm first; if it fails (infeasible), fall back to a greedy matcher
         try:
+            # DEBUG: Print the cost matrix
+            print("DEBUG: Full cost matrix (rows=old, cols=new):")
+            with np.printoptions(precision=3, suppress=True, linewidth=200):
+                print(cost_matrix)
+            
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
             matches = []
             for i, j in zip(row_ind, col_ind):

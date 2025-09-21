@@ -1,59 +1,158 @@
 import numpy as np
+import xarray as xr
 from matplotlib.path import Path
+import json
+from datetime import datetime
+import re
+from pathlib import Path as PathLibPath
+
+class StatFileHandler:
+    def __init__(self):
+        """
+        Initialize the StatFileLoader for loading data files.
+        """
+        self.dataset = None
+        self.file_path = None
+
+    def convert_lon_to_360(self, lon):
+        """
+        Convert longitude from -180 to 180 range to 0 to 360 range.
+        
+        Args:
+            lon (array-like): Longitude values in -180 to 180 range
+            
+        Returns:
+            array-like: Longitude values converted to 0 to 360 range
+        """
+        return np.where(lon < 0, lon + 360, lon)
+    
+    def convert_lon_to_180(self, lon):
+        """
+        Convert longitude from 0 to 360 range to -180 to 180 range.
+        
+        Args:
+            lon (array-like): Longitude values in 0 to 360 range
+            
+        Returns:
+            array-like: Longitude values converted to -180 to 180 range
+        """
+        return np.where(lon > 180, lon - 360, lon)
+        
+    def load_file(self, file_path):
+        """
+        Load a radar data file using xarray.
+        
+        Args:
+            file_path (str): Path to the radar data file
+            
+        Returns:
+            xarray.Dataset: Loaded dataset or None if failed
+        """
+        self.file_path = file_path
+        
+        try:
+            self.dataset = xr.open_dataset(file_path, cache=False)
+            print(f"Successfully loaded dataset from {file_path}")
+            return self.dataset
+        except Exception as e:
+            print(f"Error loading file {file_path}: {e}")
+            return None
+        
+    def load_json(self, filepath):
+        print(f"DEBUG: Loading JSON file {filepath}")
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        if not data:
+            print(f"ERROR: {filepath} did not have any data")
+            return None
+        else:
+            return data
+    
+    def write_json(self, data, filepath):
+        print(f"DEBUG: Writing to JSON file {filepath}")
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=4)
+        print(f"Successfully wrote to JSON file {filepath}")
+    
+    def find_timestamp(self, filepath):
+        """
+        Extract timestamp from meteorological file path using common naming patterns.
+        
+        Args:
+            filepath (str): Path to the file
+            
+        Returns:
+            datetime: Extracted timestamp or None if not found
+        """
+        filename = PathLibPath(filepath).name
+        
+        # Common timestamp patterns in meteorological files
+        patterns = [
+            # YYYYMMDD_HHMMSS pattern
+            r'(\d{8}[_\.-]\d{6})',
+            # YYYYMMDD_HHMM pattern
+            r'(\d{8}[_\.-]\d{4})',
+            # YYYYMMDD pattern
+            r'(\d{8})',
+            # Unix timestamp pattern
+            r'(\d{10,})'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, filename)
+            if match:
+                timestamp_str = match.group(1)
+                
+                try:
+                    # Try to parse different timestamp formats
+                    if len(timestamp_str) == 15 and ('_' in timestamp_str or '.' in timestamp_str or '-' in timestamp_str):
+                        # YYYYMMDD_HHMMSS format
+                        date_part, time_part = re.split(r'[_\.-]', timestamp_str)
+                        if len(time_part) == 6:
+                            return datetime.strptime(f"{date_part}{time_part}", "%Y%m%d%H%M%S")
+                        elif len(time_part) == 4:
+                            return datetime.strptime(f"{date_part}{time_part}00", "%Y%m%d%H%M%S")
+                    
+                    elif len(timestamp_str) == 14:
+                        # YYYYMMDDHHMMSS format
+                        return datetime.strptime(timestamp_str, "%Y%m%d%H%M%S")
+                    
+                    elif len(timestamp_str) == 12:
+                        # YYYYMMDDHHMM format
+                        return datetime.strptime(timestamp_str + "00", "%Y%m%d%H%M%S")
+                    
+                    elif len(timestamp_str) == 8:
+                        # YYYYMMDD format
+                        return datetime.strptime(timestamp_str + "000000", "%Y%m%d%H%M%S")
+                    
+                    elif len(timestamp_str) >= 10:
+                        # Unix timestamp
+                        return datetime.fromtimestamp(int(timestamp_str[:10]))
+                        
+                except (ValueError, TypeError) as e:
+                    print(f"Warning: Could not parse timestamp '{timestamp_str}' from {filename}: {e}")
+                    continue
+        
+        # If no pattern matched, try to extract from dataset if it's loaded
+        if self.dataset is not None:
+            try:
+                # Check for common time coordinate names
+                time_coords = ['time', 'valid_time', 'forecast_time', 'reference_time']
+                for coord in time_coords:
+                    if coord in self.dataset.coords:
+                        time_data = self.dataset[coord].values
+                        if len(time_data) > 0:
+                            if hasattr(time_data[0], 'item'):
+                                return datetime.utcfromtimestamp(time_data[0].item() / 1e9)
+                            else:
+                                return datetime.utcfromtimestamp(time_data[0] / 1e9)
+            except Exception as e:
+                print(f"Warning: Could not extract time from dataset: {e}")
+        
+        print(f"Warning: Could not find timestamp in filename: {filename}")
+        return None
 
 class StormIntegrationUtils:
-    """
-    Utility functions for integrating various datasets with storm cells.
-    """
-    
-    @staticmethod
-    def get_nldn_variable_name(nldn_dataset):
-        """Get the lightning variable name from NLDN dataset."""
-        # Try common NLDN variable names
-        possible_vars = ['lightning_flash_rate', 'unknown', 'flash_rate', 'nldn', 'lightning']
-        for var_name in possible_vars:
-            if var_name in nldn_dataset.data_vars:
-                return var_name
-        
-        # If no common names found, use the first data variable
-        return list(nldn_dataset.data_vars.keys())[0]
-    
-    @staticmethod
-    def get_echotop_variable_name(echotop_dataset):
-        """Get the echotop variable name from echotop dataset."""
-        # Try common echotop variable names
-        possible_vars = ['echotop', 'unknown']
-        for var_name in possible_vars:
-            if var_name in echotop_dataset.data_vars:
-                return var_name
-        
-        # If no common names found, use the first data variable
-        return list(echotop_dataset.data_vars.keys())[0]
-    
-    @staticmethod
-    def get_preciprate_variable_name(preciprate_dataset):
-        """Get the precip rate variable name from MRMS dataset."""
-        # Try common precip rate variable names
-        possible_vars = ['unknown', 'preciprate', 'PrecipRate', 'precipitation_rate', 'rate']
-        for var_name in possible_vars:
-            if var_name in preciprate_dataset.data_vars:
-                return var_name
-    
-        # If no common names found, use the first data variable
-        return list(preciprate_dataset.data_vars.keys())[0]
-    
-    @staticmethod
-    def get_vil_density_variable_name(vil_density_dataset):
-        """Get the VIL density variable name from MRMS dataset."""
-        # Try common VIL density variable names
-        possible_vars = ['unknown', 'vil_density', 'VIL_Density', 'vil', 'VIL', 'density']
-        for var_name in possible_vars:
-            if var_name in vil_density_dataset.data_vars:
-                return var_name
-        
-        # If no common names found, use the first data variable
-        return list(vil_density_dataset.data_vars.keys())[0]
-    
     @staticmethod
     def create_coordinate_grids(dataset):
         """

@@ -27,6 +27,7 @@ class FileFinder:
             r'MRMS_MergedReflectivityQC_3D_(\d{8})-(\d{6})',
             r'(\d{8})-(\d{6})_renamed',
             r'(\d{8})-(\d{6})',  # Pattern for timestamps like 20250915-230042
+            r'(\d{8})_(\d{6})',
             r'.*(\d{8})-(\d{6}).*',
             r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)"
         ]
@@ -101,6 +102,7 @@ class FileFinder:
                         if (filename.endswith('.gz') or 
                             filename.endswith('.grib2') or 
                             filename.endswith('.nc') or
+                            filename.endswith('.json') or
                             re.search(r'\d{8}-\d{6}', filename)):
                             files.append(filename)
             return files
@@ -308,25 +310,27 @@ class FileDownloader:
             return None
         
 import util.core.file as fs
-# Set up the parameters with timezone-aware datetime
-base_url = "https://mrms.ncep.noaa.gov/"
-modifier = "2D/NLDN_CG_001min_AvgDensity/"
-dt = datetime.datetime.now(datetime.timezone.utc)  # Current UTC time (timezone-aware)
-max_time = datetime.timedelta(hours=6)  # Look back 6 hours
-max_entries = 7 # Return top 10 most recent files
 
-# Create FileFinder instance
-file_finder = FileFinder(dt, base_url, max_time, max_entries)
-downloader = FileDownloader(dt)
+if __name__ == "__main__":
+    # Set up the parameters with timezone-aware datetime
+    base_url = "https://mrms.ncep.noaa.gov/"
+    modifier = "2D/NLDN_CG_001min_AvgDensity/"
+    dt = datetime.datetime.now(datetime.timezone.utc)  # Current UTC time (timezone-aware)
+    max_time = datetime.timedelta(hours=6)  # Look back 6 hours
+    max_entries = 7 # Return top 10 most recent files
 
-# Search for files
-try:
-    files_with_timestamps = file_finder.lookup_files(modifier)
-    
-    print(f"Found {len(files_with_timestamps)} files:")
-    print("-" * 80)
+    # Create FileFinder instance
+    file_finder = FileFinder(dt, base_url, max_time, max_entries)
+    downloader = FileDownloader(dt)
 
-    print(files_with_timestamps)
+    # Search for files
+    try:
+        files_with_timestamps = file_finder.lookup_files(modifier)
         
-except Exception as e:
-    print(f"Error searching directory: {e}")
+        print(f"Found {len(files_with_timestamps)} files:")
+        print("-" * 80)
+
+        print(files_with_timestamps)
+            
+    except Exception as e:
+        print(f"Error searching directory: {e}")
