@@ -35,7 +35,7 @@ class CellTerminator:
                 cell['area_km2'] = 0.0
         
         # Sort by area descending (largest first)
-        cells_sorted = sorted(cells, key=lambda x: x.get('area_km2', 0), reverse=True)
+        cells_sorted = sorted(cells, key=lambda x: x.get('num_gates', 0), reverse=True)
         
         cells_to_remove = set()
         
