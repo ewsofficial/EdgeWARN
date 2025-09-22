@@ -1,8 +1,8 @@
 import sys
 from pathlib import Path
-from ..core.cellmask import StormCellDetector
-from ..core.utils import load_mrms_slice
-from ..core.visualize import Visualizer
+from EdgeWARN.PreProcess.core.cellmask import StormCellDetector
+from EdgeWARN.PreProcess.core.utils import load_mrms_slice
+from EdgeWARN.PreProcess.core.visualize import Visualizer
 
 def detect_cells(filepath, lat_limits, lon_limits, plot=False):
     print("Loading MRMS data slice...")
@@ -44,7 +44,7 @@ def detect_cells(filepath, lat_limits, lon_limits, plot=False):
 
     if plot:
         print("Plotting final cells ... ")
-        Visualizer.plot_storm_cells(merged_cells, refl, lat, lon, title="Detected Storm Cells (Final Pass)")
+        Visualizer.plot_storm_cells(merged_cells, refl, lat, lon, title="Detected Storm Cells (Final Pass)", lat_limits=lat_limits, lon_limits=lon_limits)
 
     print(f"Storm history created for {len(storm_history)} cells.")
     return merged_cells, storm_history
