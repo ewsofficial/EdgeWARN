@@ -10,7 +10,7 @@ alphashape==1.0.1
 requests==2.31.0
 beautifulsoup4==4.12.2
 s3fs==2025.7.0
-boto3==2.13.0
-botocore==2.13.0
+boto3==1.40.25
+botocore==1.40.25
 scipy==1.11.0
 pyproj==3.7.0
