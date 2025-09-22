@@ -1,5 +1,4 @@
 import numpy as np
-import xarray as xr
 from matplotlib.path import Path
 import json
 from datetime import datetime
@@ -37,26 +36,6 @@ class StatFileHandler:
             array-like: Longitude values converted to -180 to 180 range
         """
         return np.where(lon > 180, lon - 360, lon)
-        
-    def load_file(self, file_path):
-        """
-        Load a radar data file using xarray.
-        
-        Args:
-            file_path (str): Path to the radar data file
-            
-        Returns:
-            xarray.Dataset: Loaded dataset or None if failed
-        """
-        self.file_path = file_path
-        
-        try:
-            self.dataset = xr.open_dataset(file_path, cache=False)
-            print(f"Successfully loaded dataset from {file_path}")
-            return self.dataset
-        except Exception as e:
-            print(f"Error loading file {file_path}: {e}")
-            return None
         
     def load_json(self, filepath):
         print(f"DEBUG: Loading JSON file {filepath}")

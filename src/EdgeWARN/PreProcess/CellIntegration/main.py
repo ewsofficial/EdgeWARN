@@ -1,86 +1,7 @@
-import xarray as xr
 import util.core.file as fs
 from datetime import datetime
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from matplotlib.patches import Polygon as MplPolygon
-import matplotlib.patches as mpatches
 from EdgeWARN.PreProcess.CellIntegration.utils import StormIntegrationUtils, StatFileHandler
 from EdgeWARN.PreProcess.CellIntegration.integrator import StormCellIntegrator
-"""  
-def graph_probsevere_stormcells(probsevere_data, storm_cells):
-    """
-"""
-    Graph ProbSevere polygons (blue) and storm cell polygons (red) on a CONUS map.
-    
-    Args:
-        probsevere_data: ProbSevere JSON data with features
-        storm_cells: List of storm cell dictionaries
-        output_path: Path to save the output image
-    """
-"""
-    # Create figure and map
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.LambertConformal())
-    
-    # Set extent for CONUS
-    ax.set_extent([-125, -65, 20, 50], ccrs.Geodetic())
-    
-    # Add map features
-    ax.add_feature(cfeature.STATES, linewidth=0.5)
-    ax.add_feature(cfeature.COASTLINE, linewidth=0.8)
-    ax.add_feature(cfeature.BORDERS, linewidth=0.8)
-    ax.add_feature(cfeature.LAND, color='lightgray', alpha=0.5)
-    ax.add_feature(cfeature.OCEAN, color='lightblue', alpha=0.3)
-    
-    # Plot ProbSevere polygons (blue)
-    if probsevere_data and 'features' in probsevere_data:
-        probsevere_features = probsevere_data['features']
-        for feature in probsevere_features:
-            try:
-                geometry = feature.get('geometry')
-                if geometry and geometry['type'] == 'Polygon':
-                    # Extract coordinates
-                    coords = geometry['coordinates'][0]
-                    # Convert to matplotlib polygon
-                    poly = MplPolygon(coords, closed=True, 
-                                        edgecolor='blue', facecolor='blue', 
-                                        alpha=0.3, transform=ccrs.PlateCarree())
-                    ax.add_patch(poly)
-            except Exception as e:
-                print(f"Error plotting ProbSevere polygon: {e}")
-    
-    # Plot storm cell polygons (red)
-    for cell in storm_cells:
-        try:
-            polygon = StormIntegrationUtils.create_cell_polygon(cell)
-            if polygon is not None:
-                # Convert to matplotlib polygon
-                poly = MplPolygon(polygon, closed=True, 
-                                    edgecolor='red', facecolor='red', 
-                                    alpha=0.3, transform=ccrs.PlateCarree())
-                ax.add_patch(poly)
-                
-                # Also plot centroid if available
-                if 'centroid' in cell and len(cell['centroid']) >= 2:
-                    lat, lon = cell['centroid'][0], cell['centroid'][1]
-                    ax.plot(lon, lat, 'ro', markersize=4, transform=ccrs.PlateCarree())
-                    
-        except Exception as e:
-            print(f"Error plotting storm cell polygon: {e}")
-    
-    # Add legend
-    probsevere_patch = mpatches.Patch(color='blue', alpha=0.3, label='ProbSevere Polygons')
-    stormcell_patch = mpatches.Patch(color='red', alpha=0.3, label='Storm Cell Polygons')
-    plt.legend(handles=[probsevere_patch, stormcell_patch], loc='lower right')
-    
-    # Add title
-    plt.title('ProbSevere and Storm Cell Polygons', fontsize=14)
-    
-    # Show Plot
-    plt.show()
-"""
 
 def main():
     """
@@ -111,8 +32,8 @@ def main():
         nldn_timestamp = handler.find_timestamp(nldn_path)
         if nldn_timestamp:
             try:
-                nldn_ds = xr.open_dataset(nldn_path)
-                result_cells = integrator.integrate_ds(nldn_ds, result_cells, nldn_timestamp, "flash_rate")
+                # FIXED: Pass filepath instead of loaded dataset
+                result_cells = integrator.integrate_ds(nldn_path, result_cells, nldn_timestamp, "flash_rate")
                 print("NLDN integration completed successfully")
             except Exception as e:
                 print(f"Failed to integrate NLDN data: {e}")
@@ -133,8 +54,8 @@ def main():
         echotop_timestamp = handler.find_timestamp(echotop_path)
         if echotop_timestamp:
             try:
-                echotop_ds = xr.open_dataset(echotop_path)
-                result_cells = integrator.integrate_ds(echotop_ds, result_cells, echotop_timestamp, "echotop_km")
+                # FIXED: Pass filepath instead of loaded dataset
+                result_cells = integrator.integrate_ds(echotop_path, result_cells, echotop_timestamp, "echotop_km")
                 print("EchoTop integration completed successfully")
             except Exception as e:
                 print(f"Failed to integrate EchoTop data: {e}")
@@ -186,8 +107,8 @@ def main():
         preciprate_timestamp = handler.find_timestamp(preciprate_path)
         if preciprate_timestamp:
             try:
-                preciprate_ds = xr.open_dataset(preciprate_path)
-                result_cells = integrator.integrate_ds(preciprate_ds, result_cells, preciprate_timestamp, "preciprate")
+                # FIXED: Pass filepath instead of loaded dataset
+                result_cells = integrator.integrate_ds(preciprate_path, result_cells, preciprate_timestamp, "preciprate")
                 print("MRMS PrecipRate integration completed successfully")
             except Exception as e:
                 print(f"Failed to integrate PrecipRate data: {e}")
@@ -208,8 +129,8 @@ def main():
         vil_density_timestamp = handler.find_timestamp(vil_density_path)
         if vil_density_timestamp:
             try:
-                vil_density_ds = xr.open_dataset(vil_density_path)
-                result_cells = integrator.integrate_ds(vil_density_ds, result_cells, vil_density_timestamp, "vil_density")
+                # FIXED: Pass filepath instead of loaded dataset
+                result_cells = integrator.integrate_ds(vil_density_path, result_cells, vil_density_timestamp, "vil_density")
                 print("MRMS VIL Density integration completed successfully")
             except Exception as e:
                 print(f"Failed to integrate VIL Density data: {e}")
