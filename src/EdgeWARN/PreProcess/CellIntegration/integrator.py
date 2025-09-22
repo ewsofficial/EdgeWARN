@@ -1,8 +1,8 @@
-from EdgeWARN.PreProcess.core.utils import StormIntegrationUtils
+from EdgeWARN.PreProcess.CellIntegration.utils import StormIntegrationUtils
 from datetime import datetime
 from shapely.geometry import shape
 import numpy as np
-from matplotlib.path import Path
+import xarray as xr
 
 
 class StormCellIntegrator:
@@ -61,13 +61,13 @@ class StormCellIntegrator:
                 continue
         
         return closest_index
-    
-    def integrate_ds(self, dataset, storm_cells, timestamp, output_key):
+
+    def integrate_ds(self, filepath, storm_cells, timestamp, output_key):
         """
-        Integrate dataset with storm cells.
+        Integrate dataset with storm cells by loading only bbox subsets.
         Returns maximum value in the dataset for each cell and adds it to the closest temporal entry.
         Args:
-            dataset: Loaded xarray Dataset containing data
+            filepath: Path to the dataset file
             storm_cells: List of storm cell dictionaries
             timestamp: Dataset timestamp
             output_key: Key to store data under in each cell
@@ -75,14 +75,7 @@ class StormCellIntegrator:
         Returns:
             List of storm cells with integrated dataset data
         """
-        # Get variable name
-        ds_var = 'unknown'
-        ds_data = dataset[ds_var].values
-
-        # Create coordinate grids
-        lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(dataset)
-
-        print(f"Integrating dataset variable: {ds_var} for {len(storm_cells)} storm cells")
+        print(f"Integrating dataset for {len(storm_cells)} storm cells")
         print(f"Dataset timestamp {timestamp}")
 
         for cell in storm_cells:
@@ -99,39 +92,102 @@ class StormCellIntegrator:
                 print(f"Warning: Could not find suitable storm history entry for cell {cell_id}")
                 continue
             
-            # Create polygon and mask for this cell
+            # Create polygon and get bbox for this cell
             polygon = StormIntegrationUtils.create_cell_polygon(cell)
             if polygon is None:
                 cell['storm_history'][closest_idx][output_key] = "N/A"
                 continue
                 
-            mask = StormIntegrationUtils.create_polygon_mask(polygon, lat_grid, lon_grid)
-            if mask is None or not np.any(mask):
-                cell['storm_history'][closest_idx][output_key] = "N/A"
-                continue
+            # Get bounding box of the polygon with some buffer
+            bbox = self.get_polygon_bbox(polygon, buffer_degrees=0.1)
             
             try:
-                # Extract values within the cell polygon
-                cell_data = ds_data[mask]
-                
-                # Filter out negative values (no data) and NaN
-                valid_data = cell_data[(cell_data >= 0) & (~np.isnan(cell_data))]
-                
-                if valid_data.size == 0:
-                    cell['storm_history'][closest_idx][output_key] = "N/A"
-                else:
-                    max_flash_rate = float(np.max(valid_data))
-                    cell['storm_history'][closest_idx][output_key] = max_flash_rate
+                # Load only the subset of data within the bbox
+                with xr.open_dataset(filepath, decode_timedelta=True) as ds:
+                    # Get variable name (you'll need to detect this properly)
+                    ds_var = self.detect_variable_name(ds)
+                    if ds_var is None:
+                        print(f"Warning: Could not detect variable name in dataset for cell {cell_id}")
+                        cell['storm_history'][closest_idx][output_key] = "N/A"
+                        continue
                     
-                    # Also add timestamp of the data for reference
-                    cell['storm_history'][closest_idx]['nldn_timestamp'] = timestamp.isoformat() + 'Z'
+                    # Detect latitude and longitude coordinate names dynamically
+                    lat_name = None
+                    lon_name = None
+                    for name in ds.coords:
+                        if name.lower() in ['lat', 'latitude']:
+                            lat_name = name
+                        elif name.lower() in ['lon', 'longitude']:
+                            lon_name = name
+
+                    if lat_name is None or lon_name is None:
+                        print(f"Error: Could not find latitude/longitude coordinates in dataset for cell {cell_id}")
+                        cell['storm_history'][closest_idx][output_key] = "N/A"
+                        continue
+
+                    # Select data using detected coordinate names
+                    ds_subset = ds.sel(
+                        {lat_name: slice(bbox['min_lat'], bbox['max_lat']),
+                        lon_name: slice(bbox['min_lon'], bbox['max_lon'])}
+                    )
                     
+                    # Extract the data array
+                    ds_data = ds_subset[ds_var].values
+                    lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(ds_subset)
+                    
+                    # Create mask for the specific polygon within the subset
+                    mask = StormIntegrationUtils.create_polygon_mask(polygon, lat_grid, lon_grid)
+                    
+                    if mask is None or not np.any(mask):
+                        cell['storm_history'][closest_idx][output_key] = "N/A"
+                        continue
+                    
+                    # Extract values within the cell polygon
+                    cell_data = ds_data[mask]
+                    
+                    # Filter out negative values (no data) and NaN
+                    valid_data = cell_data[(cell_data >= 0) & (~np.isnan(cell_data))]
+                    
+                    if valid_data.size == 0:
+                        cell['storm_history'][closest_idx][output_key] = "N/A"
+                    else:
+                        max_value = float(np.max(valid_data))
+                        cell['storm_history'][closest_idx][output_key] = max_value
+                        
+                        # Also add timestamp of the data for reference
+                        cell['storm_history'][closest_idx][f'{output_key}_timestamp'] = timestamp.isoformat() + 'Z'
+                        
             except Exception as e:
                 print(f"Error processing cell {cell_id}: {e}")
                 cell['storm_history'][closest_idx][output_key] = "N/A"
         
         return storm_cells
 
+    def get_polygon_bbox(self, polygon, buffer_degrees=0.1):
+        """Get bounding box for a polygon with optional buffer."""
+        lats = [point[0] for point in polygon]
+        lons = [point[1] for point in polygon]
+        
+        return {
+            'min_lat': max(-90, min(lats) - buffer_degrees),
+            'max_lat': min(90, max(lats) + buffer_degrees),
+            'min_lon': max(-180, min(lons) - buffer_degrees),
+            'max_lon': min(180, max(lons) + buffer_degrees)
+        }
+
+    def detect_variable_name(self, dataset):
+        """
+        Detect the main data variable name in the dataset.
+        Excludes common coordinate variables.
+        """
+        # Common coordinate variables to exclude
+        exclude_vars = ['lat', 'latitude', 'lon', 'longitude', 'x', 'y', 'time', 'z']
+        
+        for var_name in dataset.variables:
+            if var_name not in exclude_vars and dataset[var_name].ndim >= 2:
+                return var_name
+        return None
+    
     def integrate_probsevere(self, probsevere_data, storm_cells, probsevere_timestamp, max_distance_km=25.0):
         """
         Integrate ProbSevere probability data with storm cells by matching based on 
