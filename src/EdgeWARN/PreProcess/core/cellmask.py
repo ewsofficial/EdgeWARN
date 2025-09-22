@@ -3,7 +3,7 @@ from scipy.ndimage import label, binary_dilation, center_of_mass
 import alphashape
 from shapely.geometry import Point, LineString
 import datetime
-from .utils import extract_timestamp_from_filename
+from EdgeWARN.PreProcess.core.utils import extract_timestamp_from_filename
 
 class StormCellDetector:
     """

@@ -5,7 +5,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.patches as mpatches
 from matplotlib.patches import Polygon as MplPolygon
-from .cellmask import StormCellDetector
+from EdgeWARN.PreProcess.core.cellmask import StormCellDetector
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import pyart
@@ -210,8 +210,7 @@ class Visualizer:
     
         plt.show()
 
-    def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection",
-                     lat_limits=(45.3, 47.3), lon_limits=(256.6, 260.2)):
+    def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection", lat_limits=None, lon_limits=None):
         """
         Plot MRMS reflectivity and storm cells, hardcoding the lat/lon limits.
         lon_limits assumed 0-360.
