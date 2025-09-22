@@ -216,16 +216,40 @@ def load_mrms_slice(filepath, lat_limits=None, lon_limits=None):
     else:
         raise ValueError("No valid coordinates.")
 
+    # Normalize lat_limits/lon_limits if strings or lists are passed
+    def _to_tuple(lim):
+        if lim is None:
+            return None
+        if isinstance(lim, str):
+            # Expect formats like "(lat1, lat2)" or "lat1,lat2"
+            nums = [float(x) for x in re.findall(r"-?\d+\.?\d*", lim)]
+            return (nums[0], nums[1]) if len(nums) >= 2 else None
+        if isinstance(lim, (list, tuple)) and len(lim) >= 2:
+            return (float(lim[0]), float(lim[1]))
+        return None
+
+    lat_limits = _to_tuple(lat_limits)
+    lon_limits = _to_tuple(lon_limits)
+
     # Find index ranges that satisfy bounding box
     if lat_limits is not None:
         lat_mask = (lat >= lat_limits[0]) & (lat <= lat_limits[1])
-        y_start, y_end = np.where(lat_mask)[0][[0, -1]] + [0, 1]
+        idx = np.where(lat_mask)[0]
+        if idx.size == 0:
+            # No lat points in requested range; fallback to full extent
+            y_start, y_end = 0, lat.shape[0]
+        else:
+            y_start, y_end = idx[[0, -1]] + [0, 1]
     else:
         y_start, y_end = 0, lat.shape[0]
 
     if lon_limits is not None:
         lon_mask = (lon >= lon_limits[0]) & (lon <= lon_limits[1])
-        x_start, x_end = np.where(lon_mask)[0][[0, -1]] + [0, 1]
+        idx = np.where(lon_mask)[0]
+        if idx.size == 0:
+            x_start, x_end = 0, lon.shape[0]
+        else:
+            x_start, x_end = idx[[0, -1]] + [0, 1]
     else:
         x_start, x_end = 0, lon.shape[0]
 
@@ -268,10 +292,14 @@ def extract_timestamp_from_filename(filepath):
             
             if len(groups) == 2:
                 date_str, time_str = groups
-            else:
+            elif len(groups) == 1 and len(groups[0]) >= 15:  # 'YYYYMMDD-HHMMSS' min length
                 combined = groups[0]
-                date_str, time_str = combined[:8], combined[9:]
-            
+                date_str, time_str = combined[:8], combined[9:15]
+            else:
+                # fallback to next pattern
+                print(f"DEBUG: Unexpected group format: {groups}")
+                continue
+
             try:
                 formatted_time = (f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}T"
                                  f"{time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}")
