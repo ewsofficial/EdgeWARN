@@ -123,7 +123,7 @@ def main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits):
     print(f"Total cells in database: {len(storm_data)}")
 
     write_vectors()
-    radar.plot(refl, lat_crop, lon_crop, cells_old, cells_new, matches)
+    # radar.plot(refl, lat_crop, lon_crop, cells_old, cells_new, matches)
 
 if __name__ == "__main__":
     filepath_old = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-004041.nc")

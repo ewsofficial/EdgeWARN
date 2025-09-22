@@ -9,10 +9,27 @@ import EdgeWARN.PreProcess.CellDetection.main as detect_cells
 from datetime import datetime
 import time
 
+raw_lat_limits = input("Enter lat limits in the form: (lat_lower, lat_upper): ")
+raw_lon_limits = input("Enter lon limits in 0-360 form: (lon_lower, lon_upper): ")
+
+def _parse_limits(raw):
+    if not raw:
+        return None
+    nums = [float(x) for x in re.findall(r"-?\d+\.?\d*", raw)]
+    if len(nums) >= 2:
+        return (nums[0], nums[1])
+    return None
+
+import re
+
+lat_limits = _parse_limits(raw_lat_limits)
+lon_limits = _parse_limits(raw_lon_limits)
+
 # Constants
 refresh_time = 240 # In seconds
 storm_json = Path("stormcell_test.json")
-lat_limits, lon_limits = (31.5, 34.2), (260.0, 265.0)
+if lat_limits is None or lon_limits is None:
+    lat_limits, lon_limits = (31.5, 34.2), (260.0, 265.0)
 
 while True:
     current_time = datetime.now()
@@ -28,7 +45,9 @@ while True:
     except Exception as e:
         print(f"Error in file retrieval: {e}.")
         time.sleep(180)
+        print("Press CTRL + C to exit")
     detect_cells.main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits)
     time.sleep(170)
+    print("Press CTRL + C to exit")
 
 
