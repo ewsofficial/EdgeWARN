@@ -66,48 +66,46 @@ class StormCellIntegrator:
         """
         Integrate dataset with storm cells by loading only bbox subsets.
         Returns maximum value in the dataset for each cell and adds it to the closest temporal entry.
-        Args:
-            filepath: Path to the dataset file
-            storm_cells: List of storm cell dictionaries
-            timestamp: Dataset timestamp
-            output_key: Key to store data under in each cell
-
-        Returns:
-            List of storm cells with integrated dataset data
         """
-        print(f"Integrating dataset for {len(storm_cells)} storm cells")
-        print(f"Dataset timestamp {timestamp}")
+        cells_with_data = 0
 
         for cell in storm_cells:
             cell_id = cell.get('id', 'unknown')
             
             # Find the closest storm history entry to the dataset timestamp
             if 'storm_history' not in cell or not cell['storm_history']:
-                print(f"Warning: Cell {cell_id} has no storm history")
                 continue
                 
             closest_idx = self.find_closest_storm_history_entry(cell['storm_history'], timestamp)
             
             if closest_idx is None:
-                print(f"Warning: Could not find suitable storm history entry for cell {cell_id}")
                 continue
             
-            # Create polygon and get bbox for this cell
+            # Create polygon for masking
             polygon = StormIntegrationUtils.create_cell_polygon(cell)
             if polygon is None:
                 cell['storm_history'][closest_idx][output_key] = "N/A"
                 continue
-                
-            # Get bounding box of the polygon with some buffer
-            bbox = self.get_polygon_bbox(polygon, buffer_degrees=0.1)
+            
+            # Get bounding box (prefer cell['bbox'], fallback to polygon)
+            if "bbox" in cell:
+                raw_min_lon = cell["bbox"]["lon_min"] - 0.1
+                raw_max_lon = cell["bbox"]["lon_max"] + 0.1
+                bbox = {
+                    "min_lat": max(-90, cell["bbox"]["lat_min"] - 0.1),
+                    "max_lat": min(90,  cell["bbox"]["lat_max"] + 0.1),
+                    "min_lon": raw_min_lon,
+                    "max_lon": raw_max_lon
+                }
+            else:
+                bbox = self.get_polygon_bbox(polygon, buffer_degrees=0.1)
             
             try:
                 # Load only the subset of data within the bbox
                 with xr.open_dataset(filepath, decode_timedelta=True) as ds:
-                    # Get variable name (you'll need to detect this properly)
+                    # Get variable name
                     ds_var = self.detect_variable_name(ds)
                     if ds_var is None:
-                        print(f"Warning: Could not detect variable name in dataset for cell {cell_id}")
                         cell['storm_history'][closest_idx][output_key] = "N/A"
                         continue
                     
@@ -121,18 +119,115 @@ class StormCellIntegrator:
                             lon_name = name
 
                     if lat_name is None or lon_name is None:
-                        print(f"Error: Could not find latitude/longitude coordinates in dataset for cell {cell_id}")
+                        cell['storm_history'][closest_idx][output_key] = "N/A"
+                        continue
+                    
+                    # Normalize bbox longitudes to the dataset longitude convention (0-360 or -180..180)
+                    ds_lon_min = float(ds[lon_name].min().values)
+                    ds_lon_max = float(ds[lon_name].max().values)
+
+                    def _convert_lon_to_ds(lon_val):
+                        # If dataset longitudes are 0..360, convert negative lons -> +360
+                        if ds_lon_min >= 0:
+                            return lon_val if lon_val >= 0 else lon_val + 360
+                        # If dataset longitudes are -180..180, convert >180 -> -360
+                        return lon_val if lon_val <= 180 else lon_val - 360
+
+                    bbox_norm = bbox.copy()
+                    bbox_norm['min_lon'] = _convert_lon_to_ds(bbox['min_lon'])
+                    bbox_norm['max_lon'] = _convert_lon_to_ds(bbox['max_lon'])
+
+                    # If normalization creates a wrapped interval (min > max), expand to dataset extent
+                    if bbox_norm['min_lon'] > bbox_norm['max_lon']:
+                        bbox_norm['min_lon'] = ds_lon_min
+                        bbox_norm['max_lon'] = ds_lon_max
+
+                    # Check if bbox overlaps with dataset
+                    lat_overlap = (bbox['min_lat'] <= ds[lat_name].max().values) and (bbox['max_lat'] >= ds[lat_name].min().values)
+                    lon_overlap = (bbox_norm['min_lon'] <= ds[lon_name].max().values) and (bbox_norm['max_lon'] >= ds[lon_name].min().values)
+
+                    if not lat_overlap or not lon_overlap:
                         cell['storm_history'][closest_idx][output_key] = "N/A"
                         continue
 
                     # Select data using detected coordinate names
-                    ds_subset = ds.sel(
-                        {lat_name: slice(bbox['min_lat'], bbox['max_lat']),
-                        lon_name: slice(bbox['min_lon'], bbox['max_lon'])}
-                    )
+                    lat_vals = ds[lat_name].values
+                    lon_vals = ds[lon_name].values
+
+                    # Determine the actual slice bounds clipped to dataset extent
+                    lat_start, lat_end = float(bbox['min_lat']), float(bbox['max_lat'])
+                    lon_start, lon_end = float(bbox_norm['min_lon']), float(bbox_norm['max_lon'])
+
+                    # If dataset coordinates are descending, swap slice boundaries
+                    if lat_vals.size > 1 and lat_vals[0] > lat_vals[-1]:
+                        lat_slice = slice(lat_end, lat_start)
+                    else:
+                        lat_slice = slice(lat_start, lat_end)
+
+                    if lon_vals.size > 1 and lon_vals[0] > lon_vals[-1]:
+                        lon_slice = slice(lon_end, lon_start)
+                    else:
+                        lon_slice = slice(lon_start, lon_end)
+
+                    # Try a direct selection first
+                    ds_subset = ds.sel({
+                        lat_name: lat_slice,
+                        lon_name: lon_slice
+                    })
+
+                    # If the subset is empty, try a nearest-index fallback
+                    if ds_subset[ds_var].size == 0:
+                        try:
+                            import numpy as _np
+
+                            # Find nearest indices for lat/lon
+                            lat_arr = ds[lat_name].values
+                            lon_arr = ds[lon_name].values
+
+                            # Ensure 1D arrays
+                            if lat_arr.ndim != 1 or lon_arr.ndim != 1:
+                                raise ValueError("Latitude/Longitude coordinates are not 1-D")
+
+                            # Use searchsorted on sorted arrays
+                            lat_sorted = lat_arr if lat_arr[0] <= lat_arr[-1] else lat_arr[::-1]
+                            lon_sorted = lon_arr if lon_arr[0] <= lon_arr[-1] else lon_arr[::-1]
+
+                            lat_idx = max(0, min(len(lat_sorted) - 1, _np.searchsorted(lat_sorted, (lat_start + lat_end) / 2)))
+                            lon_idx = max(0, min(len(lon_sorted) - 1, _np.searchsorted(lon_sorted, (lon_start + lon_end) / 2)))
+
+                            # Build a small window (one point either side where possible)
+                            lat_i0 = max(0, lat_idx - 1)
+                            lat_i1 = min(len(lat_sorted) - 1, lat_idx + 1)
+                            lon_i0 = max(0, lon_idx - 1)
+                            lon_i1 = min(len(lon_sorted) - 1, lon_idx + 1)
+
+                            # Convert back to original indexing if arrays were reversed
+                            if lat_arr[0] > lat_arr[-1]:
+                                lat_sel = slice(len(lat_arr) - 1 - lat_i1, len(lat_arr) - 1 - lat_i0)
+                            else:
+                                lat_sel = slice(lat_i0, lat_i1)
+
+                            if lon_arr[0] > lon_arr[-1]:
+                                lon_sel = slice(len(lon_arr) - 1 - lon_i1, len(lon_arr) - 1 - lon_i0)
+                            else:
+                                lon_sel = slice(lon_i0, lon_i1)
+
+                            ds_subset = ds.isel({
+                                lat_name: lat_sel,
+                                lon_name: lon_sel
+                            })
+                        except Exception:
+                            # If fallback fails, continue with empty subset
+                            pass
+
+                    if ds_subset[ds_var].size == 0:
+                        cell['storm_history'][closest_idx][output_key] = "N/A"
+                        continue
                     
                     # Extract the data array
                     ds_data = ds_subset[ds_var].values
+                    
+                    # Create coordinate grids
                     lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(ds_subset)
                     
                     # Create mask for the specific polygon within the subset
@@ -145,8 +240,40 @@ class StormCellIntegrator:
                     # Extract values within the cell polygon
                     cell_data = ds_data[mask]
                     
-                    # Filter out negative values (no data) and NaN
-                    valid_data = cell_data[(cell_data >= 0) & (~np.isnan(cell_data))]
+                    # Determine nodata handling
+                    nodata_value = None
+                    try:
+                        var_attrs = ds_subset[ds_var].attrs if ds_subset is not None else ds[ds_var].attrs
+                        for key in ['_FillValue', 'missing_value', 'nodata', 'fill_value']:
+                            if key in var_attrs:
+                                nodata_value = var_attrs[key]
+                                break
+                    except Exception:
+                        nodata_value = None
+
+                    # Compute heuristics on the extracted cell_data
+                    if nodata_value is None:
+                        try:
+                            flat = cell_data[~np.isnan(cell_data)]
+                            if flat.size > 0:
+                                unique, counts = np.unique(flat, return_counts=True)
+                                top_idx = np.argmax(counts)
+                                top_value = unique[top_idx]
+                                top_prop = counts[top_idx] / flat.size
+
+                                if top_value is not None and top_prop >= 0.9:
+                                    nodata_value = top_value
+                        except Exception:
+                            pass
+
+                    # Build the final valid_data mask
+                    if nodata_value is not None:
+                        valid_mask = (cell_data != nodata_value) & (~np.isnan(cell_data))
+                    else:
+                        # fallback to original behaviour
+                        valid_mask = (cell_data >= 0) & (~np.isnan(cell_data))
+
+                    valid_data = cell_data[valid_mask]
                     
                     if valid_data.size == 0:
                         cell['storm_history'][closest_idx][output_key] = "N/A"
@@ -156,24 +283,37 @@ class StormCellIntegrator:
                         
                         # Also add timestamp of the data for reference
                         cell['storm_history'][closest_idx][f'{output_key}_timestamp'] = timestamp.isoformat() + 'Z'
+                        cells_with_data += 1
                         
-            except Exception as e:
-                print(f"Error processing cell {cell_id}: {e}")
+            except Exception:
                 cell['storm_history'][closest_idx][output_key] = "N/A"
         
         return storm_cells
 
-    def get_polygon_bbox(self, polygon, buffer_degrees=0.1):
-        """Get bounding box for a polygon with optional buffer."""
-        lats = [point[0] for point in polygon]
-        lons = [point[1] for point in polygon]
+    def get_polygon_bbox(self, polygon, cell=None, buffer_degrees=0.1):
+        """
+        Get bounding box for a polygon with optional buffer.
+        If the cell already has a 'bbox', use it directly.
+        """
+        if cell and "bbox" in cell:
+            bbox = cell["bbox"]
+            return {
+                "min_lat": max(-90, bbox["lat_min"] - buffer_degrees),
+                "max_lat": min(90,  bbox["lat_max"] + buffer_degrees),
+                "min_lon": max(-180, bbox["lon_min"] - buffer_degrees),
+                "max_lon": min(180,  bbox["lon_max"] + buffer_degrees)
+            }
         
+        # fallback to computing from polygon if bbox not provided
+        lons = [pt[0] for pt in polygon]
+        lats = [pt[1] for pt in polygon]
         return {
-            'min_lat': max(-90, min(lats) - buffer_degrees),
-            'max_lat': min(90, max(lats) + buffer_degrees),
-            'min_lon': max(-180, min(lons) - buffer_degrees),
-            'max_lon': min(180, max(lons) + buffer_degrees)
+            "min_lat": max(-90, min(lats) - buffer_degrees),
+            "max_lat": min(90,  max(lats) + buffer_degrees),
+            "min_lon": max(-180, min(lons) - buffer_degrees),
+            "max_lon": min(180,  max(lons) + buffer_degrees)
         }
+
 
     def detect_variable_name(self, dataset):
         """
