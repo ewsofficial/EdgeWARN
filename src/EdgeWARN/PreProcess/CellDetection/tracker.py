@@ -65,8 +65,8 @@ class CellDetector:
         self.lat_limits = lat_limits
         self.lon_limits = lon_limits
 
-    def detect(self, filepath):
-        return detect_cells(filepath, self.lat_limits, self.lon_limits, plot=False)
+    def detect(self, filepath, existing_storm_data=None):
+        return detect_cells(filepath, self.lat_limits, self.lon_limits, plot=False, existing_storm_data=existing_storm_data)
 
 
 class RadarHandler:

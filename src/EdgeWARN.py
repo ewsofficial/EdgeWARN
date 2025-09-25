@@ -6,10 +6,9 @@ sys.path.append(str(path))
 import util.core.file as fs
 import EdgeWARN.DataIngestion.main as ingest_main
 import EdgeWARN.PreProcess.CellDetection.main as detect_cells
-import EdgeWARN.PreProcess.CellIntegration.main as integrator
 from datetime import datetime
 import time
-
+"""
 raw_lat_limits = input("Enter lat limits in the form: (lat_lower, lat_upper): ")
 raw_lon_limits = input("Enter lon limits in 0-360 form: (lon_lower, lon_upper): ")
 
@@ -25,12 +24,11 @@ import re
 
 lat_limits = _parse_limits(raw_lat_limits)
 lon_limits = _parse_limits(raw_lon_limits)
-
+"""
 # Constants
 refresh_time = 240 # In seconds
 storm_json = Path("stormcell_test.json")
-if lat_limits is None or lon_limits is None:
-    lat_limits, lon_limits = (31.5, 34.2), (260.0, 265.0)
+lat_limits, lon_limits = (33.6, 34.8), (262.7, 264.6)
 
 while True:
     try:
@@ -44,14 +42,13 @@ while True:
         print("Starting Storm Cell Detection")
         try:
             filepath_old, filepath_new = fs.latest_files(fs.MRMS_3D_DIR, 2)
+            detect_cells.main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits)
+            time.sleep(130)
+            print("Press CTRL + C to exit")
         except Exception as e:
             print(f"Error in file retrieval: {e}.")
             time.sleep(180)
             print("Press CTRL + C to exit")
-        detect_cells.main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits)
-        integrator.main()
-        time.sleep(150)
-        print("Press CTRL + C to exit")
     
     except KeyboardInterrupt:
         print("CTRL + C Detected, exiting ...")
