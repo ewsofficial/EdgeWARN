@@ -418,10 +418,7 @@ def save_cells_to_json(cells, filepath, float_precision=4):
                         elif hist_key == "bbox" and isinstance(hist_value, dict):
                             hist_data[hist_key] = hist_value
                         elif hist_key == "alpha_shape":
-                            hist_data[hist_key] = [
-                                [round(float(x), float_precision), round(float(y), float_precision)]
-                                for x, y in hist_value
-                            ]
+                            continue # Skip alpha_shape for storm history
                         elif hist_key == "area_km2" and isinstance(hist_value, (int, float)):
                             hist_data[hist_key] = round(float(hist_value), float_precision)
                         else:
