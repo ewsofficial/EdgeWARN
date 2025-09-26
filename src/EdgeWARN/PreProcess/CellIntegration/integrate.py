@@ -152,7 +152,7 @@ class StormCellIntegrator:
                     
         return storm_cells
 
-    def integrate_probsevere(self, probsevere_data, storm_cells, probsevere_timestamp, max_distance_km=25.0):
+    def integrate_probsevere(self, probsevere_data, storm_cells, max_distance_km=25.0):
         """
         Integrate ProbSevere probability data with storm cells by matching based on 
         spatial proximity to cell centroids at the time of each storm history entry.
@@ -163,7 +163,6 @@ class StormCellIntegrator:
         
         probsevere_features = probsevere_data['features']
         print(f"Integrating ProbSevere data for {len(probsevere_features)} features with {len(storm_cells)} storm cells...")
-        print(f"ProbSevere timestamp: {probsevere_timestamp}")
 
         # Convert max distance from km to degrees (approximate, at mid-latitudes)
         max_distance_deg = max_distance_km / 111.0
@@ -175,11 +174,7 @@ class StormCellIntegrator:
             if 'storm_history' not in storm_cell or not storm_cell['storm_history']:
                 continue
 
-            closest_idx = self.find_closest_storm_history_entry(storm_cell['storm_history'], probsevere_timestamp)
-            if closest_idx is None:
-                continue
-
-            entry = storm_cell['storm_history'][closest_idx]
+            entry = storm_cell['storm_history'][-1]
 
             if 'centroid' not in entry or len(entry['centroid']) < 2:
                 continue
@@ -279,7 +274,6 @@ class StormCellIntegrator:
 
 
                 # Metadata
-                entry['probsevere_timestamp'] = probsevere_timestamp.isoformat() + 'Z'
                 entry['probsevere_distance_km'] = round(distance_km, 2)
 
                 print(f"  ✓ Matched cell {cell_id} with ProbSevere feature (distance: {distance_km:.2f} km)")
