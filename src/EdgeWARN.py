@@ -5,7 +5,6 @@ path = Path(__file__).parent
 sys.path.append(str(path))
 import util.core.file as fs
 import EdgeWARN.DataIngestion.main as ingest_main
-import EdgeWARN.PreProcess.CellDetection.main as detect_cells
 import EdgeWARN.PreProcess.CellIntegration.main as integration
 from datetime import datetime
 import time
