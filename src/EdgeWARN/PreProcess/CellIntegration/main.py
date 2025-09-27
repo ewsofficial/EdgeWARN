@@ -11,7 +11,8 @@ datasets = [
     ("VIL Density", fs.MRMS_VIL_DIR, "vil_density"),
     ("RotationTrack", fs.MRMS_ROTATIONT_DIR, "rotationtrack"),
     ("RhoHV", fs.MRMS_RHOHV_DIR, "rhohv")
-    ("Reflectivity at Lowest Altitude", fs.MRMS_LOWREFL_DIR, "rala")
+    ("Reflectivity at Lowest Altitude", fs.MRMS_LOWREFL_DIR, "rala"),
+    ("VII", fs.MRMS_VII_DIR, "vii")
 ]
 
 def main():
