@@ -1,4 +1,4 @@
-from PyQt6.Widgets import QApplication, QMainWindow, QPushButton
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton
 from PyQt6.QtCore import Qt
 from datetime import datetime
 
