@@ -1,10 +1,11 @@
 import sys
 from pathlib import Path
-from ..core.cellmask import StormCellDetector
-from ..core.utils import load_mrms_slice
-from ..core.visualize import Visualizer
+from EdgeWARN.PreProcess.core.cellmask import StormCellDetector
+from EdgeWARN.PreProcess.core.utils import load_mrms_slice
+from EdgeWARN.PreProcess.core.visualize import Visualizer
 
-def detect_cells(filepath, lat_limits, lon_limits, plot=False):
+# In detect.py - modify the detect_cells function
+def detect_cells(filepath, lat_limits, lon_limits, plot=False, existing_storm_data=None):
     print("Loading MRMS data slice...")
     refl, lat, lon = load_mrms_slice(filepath, lat_limits, lon_limits)
     
@@ -32,19 +33,32 @@ def detect_cells(filepath, lat_limits, lon_limits, plot=False):
     for cell in merged_cells:
         cell_id = cell["id"]
         entry = {
-            "scan_time": scan_time,
+            "timestamp": scan_time,  # Use consistent key name
             "max_reflectivity_dbz": cell["max_reflectivity_dbz"],
             "num_gates": cell["num_gates"],
             "centroid": cell["centroid"],
             "bbox": cell["bbox"],
         }
-        if cell_id not in storm_history:
-            storm_history[cell_id] = []
-        storm_history[cell_id].append(entry)
+        
+        # If we have existing storm data, update it instead of creating new
+        if existing_storm_data and cell_id in [c['id'] for c in existing_storm_data]:
+            # Find existing cell and append to its history
+            for existing_cell in existing_storm_data:
+                if existing_cell['id'] == cell_id:
+                    # Check if this timestamp already exists to avoid duplicates
+                    existing_timestamps = [entry['timestamp'] for entry in existing_cell.get('storm_history', [])]
+                    if scan_time not in existing_timestamps:
+                        existing_cell['storm_history'].append(entry)
+                    break
+        else:
+            # New cell - create fresh history
+            if cell_id not in storm_history:
+                storm_history[cell_id] = []
+            storm_history[cell_id].append(entry)
 
     if plot:
         print("Plotting final cells ... ")
-        Visualizer.plot_storm_cells(merged_cells, refl, lat, lon, title="Detected Storm Cells (Final Pass)")
+        Visualizer.plot_storm_cells(merged_cells, refl, lat, lon, title="Detected Storm Cells (Final Pass)", lat_limits=lat_limits, lon_limits=lon_limits)
 
     print(f"Storm history created for {len(storm_history)} cells.")
     return merged_cells, storm_history

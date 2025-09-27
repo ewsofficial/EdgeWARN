@@ -1,9 +1,9 @@
 import json
 from .detect import detect_cells
 from pathlib import Path
-from ..core.utils import load_mrms_slice
-from ..core.save import StormCellTracker, save_cells_to_json
-from ..core.visualize import Visualizer
+from EdgeWARN.PreProcess.core.utils import load_mrms_slice
+from EdgeWARN.PreProcess.core.save import StormCellTracker, save_cells_to_json
+from EdgeWARN.PreProcess.core.visualize import Visualizer
 
 class StormCellDataManager:
     def __init__(self, storm_json: Path):
@@ -65,8 +65,8 @@ class CellDetector:
         self.lat_limits = lat_limits
         self.lon_limits = lon_limits
 
-    def detect(self, filepath):
-        return detect_cells(filepath, self.lat_limits, self.lon_limits, plot=False)
+    def detect(self, filepath, existing_storm_data=None):
+        return detect_cells(filepath, self.lat_limits, self.lon_limits, plot=False, existing_storm_data=existing_storm_data)
 
 
 class RadarHandler:

@@ -2,7 +2,9 @@ from .utils import StormIntegrationUtils
 from datetime import datetime
 from shapely.geometry import shape
 import numpy as np
+import xarray as xr
 from matplotlib.path import Path
+import gc
 
 
 class StormCellIntegrator:
@@ -62,12 +64,12 @@ class StormCellIntegrator:
         
         return closest_index
     
-    def integrate_ds(self, dataset, storm_cells, timestamp, output_key):
+    def integrate_ds(self, dataset_path, storm_cells, output_key):
         """
-        Integrate dataset with storm cells.
-        Returns maximum value in the dataset for each cell and adds it to the closest temporal entry.
+        Integrate dataset with storm cells using lazy loading.
+        Returns maximum value in the dataset for each cell and adds it to the latest entry.
         Args:
-            dataset: Loaded xarray Dataset containing data
+            dataset_path: Path to the dataset file (lazy loaded)
             storm_cells: List of storm cell dictionaries
             timestamp: Dataset timestamp
             output_key: Key to store data under in each cell
@@ -75,39 +77,51 @@ class StormCellIntegrator:
         Returns:
             List of storm cells with integrated dataset data
         """
-        # Get variable name
-        ds_var = 'unknown'
-        ds_data = dataset[ds_var].values
+        print(f"DEBUG: Integrating dataset for {len(storm_cells)} storm cells")
 
-        # Create coordinate grids
-        lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(dataset)
-
-        print(f"Integrating dataset variable: {ds_var} for {len(storm_cells)} storm cells")
-        print(f"Dataset timestamp {timestamp}")
-
-        for cell in storm_cells:
-            cell_id = cell.get('id', 'unknown')
+        # Lazy load the dataset only when needed
+        dataset_loaded = False
+        ds_data = None
+        lat_grid = None
+        lon_grid = None
+        
+        for i, cell in enumerate(storm_cells):
+            cell_id = cell.get('id', f'unknown_{i}')
             
-            # Find the closest storm history entry to the dataset timestamp
+            # Check if storm history exists and has entries
             if 'storm_history' not in cell or not cell['storm_history']:
-                print(f"Warning: Cell {cell_id} has no storm history")
                 continue
                 
-            closest_idx = self.find_closest_storm_history_entry(cell['storm_history'], timestamp)
+            # Use the latest storm history entry (last in the list)
+            latest_entry = cell['storm_history'][-1]
             
-            if closest_idx is None:
-                print(f"Warning: Could not find suitable storm history entry for cell {cell_id}")
-                continue
-            
-            # Create polygon and mask for this cell
+            # Create polygon for this cell
             polygon = StormIntegrationUtils.create_cell_polygon(cell)
             if polygon is None:
-                cell['storm_history'][closest_idx][output_key] = "N/A"
+                latest_entry[output_key] = "N/A"
                 continue
-                
+            
+            # Lazy load dataset only when we have a valid polygon to process
+            if not dataset_loaded:
+                try:
+                    dataset = xr.open_dataset(dataset_path, decode_timedelta=True)
+                    ds_var = list(dataset.data_vars.keys())[0]  # Get first variable
+                    ds_data = dataset[ds_var].values
+                    lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(dataset)
+                    dataset_loaded = True
+                    dataset.close()
+                except Exception as e:
+                    print(f"ERROR: Failed to load dataset {dataset_path}: {e}")
+                    # Mark all cells with error
+                    for temp_cell in storm_cells:
+                        if 'storm_history' in temp_cell and temp_cell['storm_history']:
+                            temp_cell['storm_history'][-1][output_key] = "DATASET_LOAD_ERROR"
+                    return storm_cells
+            
+            # Create mask for this cell
             mask = StormIntegrationUtils.create_polygon_mask(polygon, lat_grid, lon_grid)
             if mask is None or not np.any(mask):
-                cell['storm_history'][closest_idx][output_key] = "N/A"
+                latest_entry[output_key] = "N/A"
                 continue
             
             try:
@@ -118,21 +132,27 @@ class StormCellIntegrator:
                 valid_data = cell_data[(cell_data >= 0) & (~np.isnan(cell_data))]
                 
                 if valid_data.size == 0:
-                    cell['storm_history'][closest_idx][output_key] = "N/A"
+                    latest_entry[output_key] = "N/A"
                 else:
-                    max_flash_rate = float(np.max(valid_data))
-                    cell['storm_history'][closest_idx][output_key] = max_flash_rate
-                    
-                    # Also add timestamp of the data for reference
-                    cell['storm_history'][closest_idx]['nldn_timestamp'] = timestamp.isoformat() + 'Z'
+                    max_value = float(np.max(valid_data))
+                    latest_entry[output_key] = max_value
                     
             except Exception as e:
-                print(f"Error processing cell {cell_id}: {e}")
-                cell['storm_history'][closest_idx][output_key] = "N/A"
+                print(f"ERROR: Processing cell {cell_id}: {e}")
+                latest_entry[output_key] = "PROCESSING_ERROR"
         
+        # Memory cleanup
+        try:
+            del ds_data
+            del lat_grid
+            del lon_grid
+            gc.collect()
+        except NameError:
+            pass
+                    
         return storm_cells
 
-    def integrate_probsevere(self, probsevere_data, storm_cells, probsevere_timestamp, max_distance_km=25.0):
+    def integrate_probsevere(self, probsevere_data, storm_cells, max_distance_km=20.0):
         """
         Integrate ProbSevere probability data with storm cells by matching based on 
         spatial proximity to cell centroids at the time of each storm history entry.
@@ -143,7 +163,6 @@ class StormCellIntegrator:
         
         probsevere_features = probsevere_data['features']
         print(f"Integrating ProbSevere data for {len(probsevere_features)} features with {len(storm_cells)} storm cells...")
-        print(f"ProbSevere timestamp: {probsevere_timestamp}")
 
         # Convert max distance from km to degrees (approximate, at mid-latitudes)
         max_distance_deg = max_distance_km / 111.0
@@ -155,11 +174,7 @@ class StormCellIntegrator:
             if 'storm_history' not in storm_cell or not storm_cell['storm_history']:
                 continue
 
-            closest_idx = self.find_closest_storm_history_entry(storm_cell['storm_history'], probsevere_timestamp)
-            if closest_idx is None:
-                continue
-
-            entry = storm_cell['storm_history'][closest_idx]
+            entry = storm_cell['storm_history'][-1]
 
             if 'centroid' not in entry or len(entry['centroid']) < 2:
                 continue
@@ -259,7 +274,6 @@ class StormCellIntegrator:
 
 
                 # Metadata
-                entry['probsevere_timestamp'] = probsevere_timestamp.isoformat() + 'Z'
                 entry['probsevere_distance_km'] = round(distance_km, 2)
 
                 print(f"  ✓ Matched cell {cell_id} with ProbSevere feature (distance: {distance_km:.2f} km)")

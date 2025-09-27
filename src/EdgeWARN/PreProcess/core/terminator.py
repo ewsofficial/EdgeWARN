@@ -2,7 +2,7 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from typing import Tuple, List, Dict
 import numpy as np
-from .utils import GeoUtils
+from EdgeWARN.PreProcess.core.utils import GeoUtils
 
 
 class CellTerminator:
