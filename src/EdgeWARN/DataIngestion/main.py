@@ -15,7 +15,9 @@ import util.core.file as fs
 
 def main():
     # Clear Files
-    folders = [fs.MRMS_3D_DIR, fs.MRMS_ECHOTOP18_DIR, fs.MRMS_FLASH_DIR, fs.MRMS_NLDN_DIR, fs.MRMS_PRECIPRATE_DIR, fs.MRMS_QPE15_DIR, fs.MRMS_ROTATIONT_DIR, fs.MRMS_VIL_DIR, fs.MRMS_PROBSEVERE_DIR]
+    folders = [fs.MRMS_3D_DIR, fs.MRMS_ECHOTOP18_DIR, fs.MRMS_FLASH_DIR, fs.MRMS_NLDN_DIR, fs.MRMS_PRECIPRATE_DIR, fs.MRMS_QPE15_DIR, 
+               fs.MRMS_ROTATIONT_DIR, fs.MRMS_VIL_DIR, fs.MRMS_PROBSEVERE_DIR, fs.MRMS_ECHOTOP30_DIR, fs.MRMS_LOWREFL_DIR, fs.MRMS_VII_DIR
+               ]
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=20)
     fs.wipe_temp()
@@ -49,7 +51,7 @@ def main():
 
     for modifier, outdir in mrms_modifiers:
         print("=" * 80)
-        print(f"🔍 Checking MRMS source: {modifier}")
+        print(f"DEBUG: Checking MRMS source: {modifier}")
 
         # Create finder and downloader for this modifier
         finder = FileFinder(dt, base_dir, max_time, max_entries)
@@ -59,23 +61,23 @@ def main():
         try:
             files_with_timestamps = finder.lookup_files(modifier)
             if not files_with_timestamps:
-                print(f"⚠️ No files found for {modifier}")
+                print(f"ERROR: No files found for {modifier}")
                 continue
 
-            print(f"Found {len(files_with_timestamps)} candidate files for {modifier}")
+            print(f"DEBUG: Found {len(files_with_timestamps)} candidate files for {modifier}")
 
             # Download the latest file for this source
             downloaded = downloader.download_latest(files_with_timestamps, outdir)
             if downloaded:
                 print(outdir)
-                print(f"✅ Downloaded latest {modifier} file to {downloaded}")
-                print(f"Attempting to decompress {downloaded}")
+                print(f"DEBUG: Downloaded latest {modifier} file to {downloaded}")
+                print(f"DEBUG: Attempting to decompress {downloaded}")
                 downloader.decompress_file(downloaded)
             else:
-                print(f"❌ Failed to download latest {modifier} file")
+                print(f"ERROR: Failed to download latest {modifier} file")
 
         except Exception as e:
-            print(f"❌ Error processing {modifier}: {e}")
+            print(f"ERROR: Failed to process {modifier}: {e}")
 
     SynopticDownloader.download_latest_rtma(dt, fs.THREDDS_RTMA_DIR)
     SynopticDownloader.download_rap_awp(dt, fs.NOAA_RAP_DIR)

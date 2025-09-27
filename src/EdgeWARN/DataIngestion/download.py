@@ -309,36 +309,4 @@ class FileDownloader:
         except Exception as e:
             print(f"ERROR: Unable to decompress {gz_path}: {e}")
             return None
-        
-class AWSDownloader:
-    def __init__(self, dt, max_time, max_entries):
-        self.dt = dt
-        self.max_time = max_time
-        self.max_entries = max_entries
-
-    def fetch(self, bucket):
-        """
-        Fetches a list of files in a specified bucket
-        Inputs:
-        - bucket: s3 bucket you want to list
-        """
     
-    def download(self, files, start_time, end_time, outdir: Path):
-        """
-        Downloads s3 files from a list of candidate files
-        Inputs:
-        - files: list of s3 files
-        - start_time: start time of downloaded files
-        - end_time: end time of downloaded files
-        - outdir: download path
-        """
-    
-    def concat_glm(self, files, outdir: Path):
-        """
-        Concatenates GLM files and then deletes the old files
-        Inputs:
-        - files: list of GLM files
-        - outdir: output path
-        """
-        
-
