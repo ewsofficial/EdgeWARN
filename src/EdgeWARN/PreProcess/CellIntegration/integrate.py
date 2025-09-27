@@ -152,7 +152,7 @@ class StormCellIntegrator:
                     
         return storm_cells
 
-    def integrate_probsevere(self, probsevere_data, storm_cells, max_distance_km=25.0):
+    def integrate_probsevere(self, probsevere_data, storm_cells, max_distance_km=20.0):
         """
         Integrate ProbSevere probability data with storm cells by matching based on 
         spatial proximity to cell centroids at the time of each storm history entry.
