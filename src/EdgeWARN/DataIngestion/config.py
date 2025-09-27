@@ -16,6 +16,6 @@ mrms_modifiers = [
     ("2D/VIL_Density/", MRMS_VIL_DIR),
     ("ProbSevere/PROBSEVERE/", MRMS_PROBSEVERE_DIR),
     ("2D/MergedRhoHV/", MRMS_RHOHV_DIR),
-    ("2D/ReflectivityAtLowestAltitude/", MRMS_LOWREFL_DIR)
+    ("2D/ReflectivityAtLowestAltitude/", MRMS_LOWREFL_DIR),
     ("2D/VII/", MRMS_VII_DIR)
 ]

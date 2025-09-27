@@ -76,11 +76,11 @@ class MRMSDownloader:
                     # Use GET instead of HEAD with longer timeout
                     head_r = requests.head(url, timeout=5)
                     if head_r.status_code != 200:
-                        print(f"❌ Missing {height} for {ts}")
+                        print(f"ERROR: Missing {height} for {ts}")
                         all_exist = False
                         break
                 except Exception as e:
-                    print(f"❌ Error checking {height}: {e}")
+                    print(f"ERROR: Could not check {height}: {e}")
                     all_exist = False
                     break
             
@@ -106,7 +106,7 @@ class MRMSDownloader:
                 continue
                 
             try:
-                print(f"⬇️ Downloading {height}...")
+                print(f"DEBUG: Downloading {height}...")
                 # Use streaming download for large files
                 r = requests.get(url, stream=True, timeout=60)
                 if r.status_code != 200:
