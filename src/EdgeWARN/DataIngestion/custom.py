@@ -176,9 +176,6 @@ class MRMSDownloader:
         matching_files = sorted(matching_files)
 
         print(f"Found {len(matching_files)} sweep files:")
-        for f in matching_files:
-            print(f)
-
         return matching_files
 
     @staticmethod

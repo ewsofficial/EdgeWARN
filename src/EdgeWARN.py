@@ -1,33 +1,57 @@
 import sys
 from pathlib import Path
+# Append Path
+path = Path(__file__).parent
+sys.path.append(str(path))
 import util.core.file as fs
 import EdgeWARN.DataIngestion.main as ingest_main
 import EdgeWARN.PreProcess.CellDetection.main as detect_cells
 from datetime import datetime
 import time
+"""
+raw_lat_limits = input("Enter lat limits in the form: (lat_lower, lat_upper): ")
+raw_lon_limits = input("Enter lon limits in 0-360 form: (lon_lower, lon_upper): ")
 
-# Main Execution Script
+def _parse_limits(raw):
+    if not raw:
+        return None
+    nums = [float(x) for x in re.findall(r"-?\d+\.?\d*", raw)]
+    if len(nums) >= 2:
+        return (nums[0], nums[1])
+    return None
 
-# Append Path
-path = Path(__file__).parent
-sys.path.append(str(path))
+import re
 
+lat_limits = _parse_limits(raw_lat_limits)
+lon_limits = _parse_limits(raw_lon_limits)
+"""
 # Constants
 refresh_time = 240 # In seconds
 storm_json = Path("stormcell_test.json")
-lat_limits, lon_limits = (45.3, 47.3), (256.6, 260.2)
+lat_limits, lon_limits = (33.6, 34.8), (262.7, 264.6)
 
 while True:
-    current_time = datetime.now()
+    try:
+        current_time = datetime.now()
 
-    # Ingest data
-    print(f"Starting Data Ingestion at time: {current_time}")
-    ingest_main.main()
+        # Ingest data
+        print(f"Starting Data Ingestion at time: {current_time}")
+        ingest_main.main()
 
-    # Detect storm cells
-    print("Starting Storm Cell Detection")
-    filepath_old, filepath_new = fs.latest_mosaic(2)    
-    detect_cells.main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits)
-    time.sleep(170)
+        # Detect storm cells
+        print("Starting Storm Cell Detection")
+        try:
+            filepath_old, filepath_new = fs.latest_files(fs.MRMS_3D_DIR, 2)
+            detect_cells.main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits)
+            time.sleep(130)
+            print("Press CTRL + C to exit")
+        except Exception as e:
+            print(f"Error in file retrieval: {e}.")
+            time.sleep(180)
+            print("Press CTRL + C to exit")
+    
+    except KeyboardInterrupt:
+        print("CTRL + C Detected, exiting ...")
+        sys.exit(0)
 
 

@@ -41,23 +41,21 @@ class StormCellTracker:
         Process a matched cell: preserve the existing ID and history, 
         update all other properties with new data, and append new scan to history
         """
+        existing_cell_before = existing_cell.copy()
         # Store the existing ID and history before updating
         existing_id = existing_cell["id"]
-        existing_history = existing_cell.get("storm_history", [])
         
-        # Update ALL properties except ID and history with new data
-        existing_cell.update({
-            # DO NOT update the ID - keep the original tracking ID
-            "num_gates": new_cell_data["num_gates"],
-            "centroid": new_cell_data["centroid"],
-            "bbox": new_cell_data.get("bbox", {}),
-            "alpha_shape": new_cell_data.get("alpha_shape", []),
-            "max_reflectivity_dbz": new_cell_data["max_reflectivity_dbz"],
-            # Keep the existing storm_history intact
-            "storm_history": existing_history
-        })
+        # Update core properties but preserve any extra fields
+        core_properties = ["num_gates", "centroid", "bbox", "alpha_shape", "max_reflectivity_dbz"]
         
-        # Create the new snapshot for this scan
+        for prop in core_properties:
+            if prop in new_cell_data:
+                existing_cell[prop] = new_cell_data[prop]
+        
+        # Preserve any extra fields that might exist in existing_cell but not in new_cell_data
+        # Don't overwrite them with None/empty values from new_cell_data
+        
+        # Create the new snapshot for this scan - include ALL data from new_cell_data
         new_snapshot = {
             "timestamp": timestamp,
             "max_reflectivity_dbz": new_cell_data["max_reflectivity_dbz"],
@@ -65,12 +63,20 @@ class StormCellTracker:
             "centroid": new_cell_data["centroid"],
         }
         
+        # Include any extra fields from the new cell data in the history entry
+        for key, value in new_cell_data.items():
+            if key not in ["id", "storm_history"] and key not in new_snapshot:
+                new_snapshot[key] = value
+        
         # Check if this timestamp already exists in history
         timestamp_exists = False
+        existing_history = existing_cell.get("storm_history", [])
+        
         for hist_entry in existing_history:
             if hist_entry.get("timestamp") == timestamp:
-                # Update the existing entry with new data
-                hist_entry.update(new_snapshot)
+                # Update the existing entry with ALL new data (preserving any extra fields)
+                for key, value in new_snapshot.items():
+                    hist_entry[key] = value
                 timestamp_exists = True
                 break
         
@@ -82,7 +88,32 @@ class StormCellTracker:
         existing_history.sort(key=lambda h: h["timestamp"])
         
         print(f"DEBUG: Updated cell ID {existing_id} with data from new cell ID {new_cell_data['id']}")
+        StormCellTracker.compare_cell_data(existing_cell_before, existing_cell, existing_id)
         return True
+    
+    
+    @staticmethod
+    def compare_cell_data(before, after, cell_id):
+        """Helper to debug what data is being lost during updates"""
+        before_keys = set(before.keys())
+        after_keys = set(after.keys())
+        
+        lost_keys = before_keys - after_keys
+        gained_keys = after_keys - before_keys
+        
+        if lost_keys:
+            print(f"DEBUG: Cell {cell_id} LOST keys: {lost_keys}")
+        if gained_keys:
+            print(f"DEBUG: Cell {cell_id} GAINED keys: {gained_keys}")
+        
+        # Check history entries
+        if before.get('storm_history') and after.get('storm_history'):
+            before_hist = before['storm_history'][-1] if before['storm_history'] else {}
+            after_hist = after['storm_history'][-1] if after['storm_history'] else {}
+            
+            hist_lost_keys = set(before_hist.keys()) - set(after_hist.keys())
+            if hist_lost_keys:
+                print(f"DEBUG: Cell {cell_id} history LOST keys: {hist_lost_keys}")
     
 class StormVectorCalculator:
     """
@@ -337,33 +368,77 @@ def write_vectors():
 
 def save_cells_to_json(cells, filepath, float_precision=4):
     """
-    Save tracked storm cells to JSON (like detection.py).
+    Save tracked storm cells to JSON - PRESERVE ALL EXISTING FIELDS.
     """
+    print(f"DEBUG: Saving {len(cells)} cells to JSON")
+    
+    # Convert the cells to a JSON-serializable format while preserving ALL fields
     json_data = []
     for cell in cells:
-        cell_entry = {
-            "id": int(cell["id"]),
-            "num_gates": int(cell["num_gates"]),
-            "centroid": [round(float(v), float_precision) for v in cell["centroid"]],
-            "bbox": cell.get("bbox", {}),
-            "alpha_shape": [
-                [round(float(x), float_precision), round(float(y), float_precision)]
-                for x, y in cell.get("alpha_shape", [])
-            ],
-            "storm_history": []
-        }
-
-        for hist_entry in cell.get("storm_history", []):
-            cell_entry["storm_history"].append({
-                "timestamp": hist_entry.get("timestamp", ""),
-                "max_reflectivity_dbz": round(float(hist_entry.get("max_reflectivity_dbz", 0)), float_precision),
-                "num_gates": int(hist_entry.get("num_gates", 0)),
-                "centroid": [round(float(v), float_precision) for v in hist_entry.get("centroid", [0, 0])]
-            })
-
-        json_data.append(cell_entry)
-
-    with open(filepath, 'w') as f:
-        json.dump(json_data, f, indent=4)
-
-    print(f"Saved {len(cells)} tracked cells to {filepath}")
+        cell_data = {}
+        
+        # Copy ALL fields from the cell, handling different data types
+        for key, value in cell.items():
+            if key == "id":
+                cell_data[key] = int(value)
+            elif key == "num_gates":
+                cell_data[key] = int(value)
+            elif key == "centroid":
+                cell_data[key] = [round(float(v), float_precision) for v in value]
+            elif key == "bbox" and isinstance(value, dict):
+                cell_data[key] = value  # Keep as-is
+            elif key == "alpha_shape":
+                cell_data[key] = [
+                    [round(float(x), float_precision), round(float(y), float_precision)]
+                    for x, y in value
+                ]
+            elif key == "storm_history":
+                # Process history entries while preserving ALL fields
+                cell_data[key] = []
+                for hist_entry in value:
+                    hist_data = {}
+                    # Copy ALL fields from history entry
+                    for hist_key, hist_value in hist_entry.items():
+                        if hist_key == "timestamp":
+                            hist_data[hist_key] = hist_value
+                        elif hist_key == "max_reflectivity_dbz":
+                            hist_data[hist_key] = round(float(hist_value), float_precision)
+                        elif hist_key == "num_gates":
+                            hist_data[hist_key] = int(hist_value)
+                        elif hist_key == "centroid":
+                            hist_data[hist_key] = [round(float(v), float_precision) for v in hist_value]
+                        elif hist_key in ["dx", "dy", "dt"] and isinstance(hist_value, (int, float)):
+                            hist_data[hist_key] = round(float(hist_value), float_precision)
+                        elif hist_key == "max_flash_density":
+                            # Handle both numeric and "N/A" values
+                            if hist_value == "N/A":
+                                hist_data[hist_key] = "N/A"
+                            else:
+                                hist_data[hist_key] = round(float(hist_value), float_precision)
+                        elif hist_key == "bbox" and isinstance(hist_value, dict):
+                            hist_data[hist_key] = hist_value
+                        elif hist_key == "alpha_shape":
+                            continue # Skip alpha_shape for storm history
+                        elif hist_key == "area_km2" and isinstance(hist_value, (int, float)):
+                            hist_data[hist_key] = round(float(hist_value), float_precision)
+                        else:
+                            # Preserve any other field as-is
+                            hist_data[hist_key] = hist_value
+                    
+                    cell_data[key].append(hist_data)
+            else:
+                # Preserve any other top-level cell fields
+                cell_data[key] = value
+        
+        json_data.append(cell_data)
+    
+    # Save to file
+    try:
+        with open(filepath, 'w') as f:
+            json.dump(json_data, f, indent=4)
+        print(f"DEBUG: Successfully saved {len(cells)} cells with preserved fields")
+    except Exception as e:
+        print(f"ERROR: Failed to save JSON: {e}")
+        return False
+    
+    return True

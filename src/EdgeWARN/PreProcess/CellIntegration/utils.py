@@ -2,6 +2,7 @@ import numpy as np
 import xarray as xr
 from matplotlib.path import Path
 import json
+from shapely.geometry import Polygon, Point
 from datetime import datetime
 import re
 from pathlib import Path as PathLibPath
@@ -184,44 +185,52 @@ class StormIntegrationUtils:
         """
         Create a polygon from storm cell data.
         Prioritizes alpha_shape, falls back to bbox, then centroid.
+        Returns a Shapely Polygon object.
         """
+        
         # Try alpha_shape first (list of [lon, lat] pairs)
         if 'alpha_shape' in cell and cell['alpha_shape']:
-            return np.array([[point[0], point[1]] for point in cell['alpha_shape']])
+            coords = [[point[0], point[1]] for point in cell['alpha_shape']]
+            return Polygon(coords)
         
         # Fall back to bounding box
         if 'bbox' in cell:
             bbox = cell['bbox']
-            return np.array([
+            coords = [
                 [bbox['lon_min'], bbox['lat_min']],
                 [bbox['lon_min'], bbox['lat_max']],
                 [bbox['lon_max'], bbox['lat_max']],
                 [bbox['lon_max'], bbox['lat_min']]
-            ])
+            ]
+            return Polygon(coords)
         
         # Final fallback: small box around centroid
         if 'centroid' in cell and len(cell['centroid']) >= 2:
             lat, lon = cell['centroid'][0], cell['centroid'][1]
             d = 0.01  # ~1km box
-            return np.array([
+            coords = [
                 [lon - d, lat - d],
                 [lon - d, lat + d],
                 [lon + d, lat + d],
                 [lon + d, lat - d]
-            ])
+            ]
+            return Polygon(coords)
         
         return None
     
     @staticmethod
     def create_polygon_mask(polygon, lat_grid, lon_grid):
         """
-        Create a boolean mask for points inside the polygon.
+        Create a boolean mask using polygon bounds (min/max coordinates).
+        Fast and efficient for rectangular approximation.
         """
         if polygon is None:
             return None
             
-        # Flatten coordinate grids and check which points are inside polygon
-        points = np.column_stack((lon_grid.ravel(), lat_grid.ravel()))
-        path = Path(polygon)  # This now uses matplotlib.path.Path
-        mask_flat = path.contains_points(points)
-        return mask_flat.reshape(lat_grid.shape)
+        # Get the polygon bounds
+        minx, miny, maxx, maxy = polygon.bounds
+        
+        # Create mask based on bounding box
+        mask = (lon_grid >= minx) & (lon_grid <= maxx) & (lat_grid >= miny) & (lat_grid <= maxy)
+        
+        return mask

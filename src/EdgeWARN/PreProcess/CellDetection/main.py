@@ -1,9 +1,9 @@
 from pathlib import Path
-from ..core.terminator import CellTerminator
-from ..core.utils import CellProcessor
-from ..core.match import CellMatcher
-from .tracker import RadarHandler, CellDetector, CellTracker, StormCellDataManager
-from ..core.save import write_vectors
+from EdgeWARN.PreProcess.core.terminator import CellTerminator
+from EdgeWARN.PreProcess.core.utils import CellProcessor
+from EdgeWARN.PreProcess.core.match import CellMatcher
+from EdgeWARN.PreProcess.CellDetection.tracker import RadarHandler, CellDetector, CellTracker, StormCellDataManager
+from EdgeWARN.PreProcess.core.save import write_vectors
 import json
 
 print(f"EdgeWARN Storm Detection and Tracking Algorithm\nCurrent Build: 0.1.0a\nContributors: Yuchen Wei")
@@ -123,11 +123,12 @@ def main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits):
     print(f"Total cells in database: {len(storm_data)}")
 
     write_vectors()
-    radar.plot(refl, lat_crop, lon_crop, cells_old, cells_new, matches)
+    # radar.plot(refl, lat_crop, lon_crop, cells_old, cells_new, matches)
 
 if __name__ == "__main__":
-    filepath_old = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-004041.nc")
-    filepath_new = Path(r"C:\Users\weiyu\Downloads\THREAT_TEST\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-004442.nc")
+    import util.core.file as fs
+    filepath_old = fs.latest_files(fs.MRMS_3D_DIR, 6)[-4]
+    filepath_new = fs.latest_files(fs.MRMS_3D_DIR, 6)[-3]
     storm_json = Path("stormcell_test.json")
     lat_limits = (45.3, 47.3)
     lon_limits = (256.6, 260.2)

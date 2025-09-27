@@ -5,10 +5,9 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.patches as mpatches
 from matplotlib.patches import Polygon as MplPolygon
-from .cellmask import StormCellDetector
+from EdgeWARN.PreProcess.core.cellmask import StormCellDetector
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
-import pyart
 
 class Visualizer:
     def __init__():
@@ -26,7 +25,7 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(14, 12))
 
         # Plot reflectivity
-        pcm = ax.pcolormesh(lon_grid, lat_grid, refl, cmap='NWSRef', shading='auto', vmin=0, vmax=80, alpha=0.7)
+        pcm = ax.pcolormesh(lon_grid, lat_grid, refl, cmap='viridis', shading='auto', vmin=0, vmax=80, alpha=0.7)
         fig.colorbar(pcm, ax=ax, label='Reflectivity (dBZ)', pad=0.02)
 
         # Plot OLD cells (black outlines only)
@@ -210,8 +209,7 @@ class Visualizer:
     
         plt.show()
 
-    def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection",
-                     lat_limits=(45.3, 47.3), lon_limits=(256.6, 260.2)):
+    def plot_storm_cells(cells, reflectivity, lat, lon, title="Storm Cell Detection", lat_limits=None, lon_limits=None):
         """
         Plot MRMS reflectivity and storm cells, hardcoding the lat/lon limits.
         lon_limits assumed 0-360.
@@ -250,7 +248,7 @@ class Visualizer:
         ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', alpha=0.5)
 
         # Plot reflectivity
-        im = ax.pcolormesh(lon2d, lat2d, refl_masked, cmap='NWSRef', vmin=0, vmax=75, shading='auto')
+        im = ax.pcolormesh(lon2d, lat2d, refl_masked, cmap='viridis', vmin=0, vmax=75, shading='auto')
 
         # Cell colors
         cmap = cm.get_cmap('tab20')
