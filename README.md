@@ -18,17 +18,19 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.1.1a
+#### Build Version: 0.2.0
 
 #### Changes Associated With This Build
-- Fixed RAP and ProbSevere downloading issues
-- Cell matching algorithm is more robust
-- Condensed multiple integration functions into a universal one
-- Added termination handling to storm cells
+- Fixed Cell Integration data being erased after a new scan is added
+- Dataset integration now uses lazy loading
+- Fixed termination handling polygon error
+- Added new datasets: RhoHV, EchoTop30, RALA
 
 #### To Do
 - Integrate DBSCAN-like algorithm to cell detection
 - Fix GLM download
+- Work on analysis folder
+- Research GUI
 
 <h2 align="center">Credits</h2>
 
