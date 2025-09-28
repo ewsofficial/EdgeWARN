@@ -172,7 +172,7 @@ class GateMapper:
             contour = contour[::step]
 
             # Convert from array indices to lon/lat
-            coords = [(lons[int(c[1])], lats[int(c[0])]) for c in contour]
+            coords = [(lats[int(c[0])], lons[int(c[1])]) for c in contour]
             bboxes[poly_id] = coords
 
         return bboxes

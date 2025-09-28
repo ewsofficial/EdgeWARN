@@ -37,7 +37,7 @@ class StormCellIntegrator:
             try:
                 target_timestamp = datetime.fromisoformat(target_timestamp.replace('Z', '+00:00'))
             except ValueError:
-                print(f"Warning: Could not parse target timestamp: {target_timestamp}")
+                print(f"[CellIntegration] ERROR: Could not parse target timestamp: {target_timestamp}")
                 return None
         
         closest_index = None
@@ -59,7 +59,7 @@ class StormCellIntegrator:
                     closest_index = i
                     
             except ValueError as e:
-                print(f"Warning: Could not parse timestamp in storm history: {entry['timestamp']} - {e}")
+                print(f"[CellIntegration] ERROR: Could not parse timestamp in storm history: {entry['timestamp']} - {e}")
                 continue
         
         return closest_index
@@ -77,7 +77,7 @@ class StormCellIntegrator:
         Returns:
             List of storm cells with integrated dataset data
         """
-        print(f"DEBUG: Integrating dataset for {len(storm_cells)} storm cells")
+        print(f"[CellIntegration] DEBUG: Integrating dataset for {len(storm_cells)} storm cells")
 
         # Lazy load the dataset only when needed
         dataset_loaded = False
@@ -111,7 +111,7 @@ class StormCellIntegrator:
                     dataset_loaded = True
                     dataset.close()
                 except Exception as e:
-                    print(f"ERROR: Failed to load dataset {dataset_path}: {e}")
+                    print(f"[CellIntegration] ERROR: Failed to load dataset {dataset_path}: {e}")
                     # Mark all cells with error
                     for temp_cell in storm_cells:
                         if 'storm_history' in temp_cell and temp_cell['storm_history']:
@@ -138,7 +138,7 @@ class StormCellIntegrator:
                     latest_entry[output_key] = max_value
                     
             except Exception as e:
-                print(f"ERROR: Processing cell {cell_id}: {e}")
+                print(f"[CellIntegration] ERROR: Could not process cell {cell_id}: {e}")
                 latest_entry[output_key] = "PROCESSING_ERROR"
         
         # Memory cleanup
@@ -158,11 +158,11 @@ class StormCellIntegrator:
         spatial proximity to cell centroids at the time of each storm history entry.
         """
         if not isinstance(probsevere_data, dict) or 'features' not in probsevere_data:
-            print("Error: Invalid ProbSevere data format")
+            print("[CellIntegration] ERROR: Invalid ProbSevere data format")
             return storm_cells
         
         probsevere_features = probsevere_data['features']
-        print(f"Integrating ProbSevere data for {len(probsevere_features)} features with {len(storm_cells)} storm cells...")
+        print(f"[CellIntegration] DEBUG: Integrating ProbSevere data for {len(probsevere_features)} features with {len(storm_cells)} storm cells...")
 
         # Convert max distance from km to degrees (approximate, at mid-latitudes)
         max_distance_deg = max_distance_km / 111.0
@@ -182,32 +182,16 @@ class StormCellIntegrator:
             storm_lat, storm_lon = entry['centroid'][0], entry['centroid'][1]
             storm_lon_converted = storm_lon - 360 if storm_lon > 180 else storm_lon
 
+            # Match by ID instead of distance
             closest_probsevere = None
-            min_distance = float('inf')
-
             for feature in probsevere_features:
-                props = feature.get('properties', {})
-                try:
-                    geom = feature.get('geometry')
-                    if geom:
-                        polygon = shape(geom)
-                        ps_lon, ps_lat = polygon.centroid.x, polygon.centroid.y
-                    else:
-                        continue
-                except (ValueError, TypeError):
-                    continue
-
-                if np.isnan(ps_lat) or np.isnan(ps_lon):
-                    continue
-
-                distance = np.sqrt((storm_lat - ps_lat) ** 2 + (storm_lon_converted - ps_lon) ** 2)
-
-                if distance < min_distance and distance <= max_distance_deg:
-                    min_distance = distance
-                    closest_probsevere = props
+                feature_id = feature.get('id') or feature.get('properties', {}).get('ID')
+                if feature_id == cell_id:
+                    closest_probsevere = feature.get('properties', {})
+                    break
 
             if closest_probsevere:
-                distance_km = min_distance * 111.0
+                distance_km = 0.0  # ID match, distance not used
 
                 # Core probabilities (flat at top level)
                 entry['prob_severe'] = float(closest_probsevere.get('ProbSevere', 0))
@@ -276,8 +260,8 @@ class StormCellIntegrator:
                 # Metadata
                 entry['probsevere_distance_km'] = round(distance_km, 2)
 
-                print(f"  ✓ Matched cell {cell_id} with ProbSevere feature (distance: {distance_km:.2f} km)")
+                print(f"[CellIntegration] DEBUG: Matched cell {cell_id} with ProbSevere feature (distance: {distance_km:.2f} km)")
                 matches_found += 1
 
-        print(f"ProbSevere integration completed: {matches_found} matches found")
+        print(f"[CellIntegration] DEBUG: ProbSevere integration completed: {matches_found} matches found")
         return storm_cells

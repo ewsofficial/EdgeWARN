@@ -16,23 +16,23 @@ def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tu
             # Load existing data
             with open(json_output, 'r') as f:
                 entries_old = js.load(f)
-                print(f"DEBUG: Loaded {len(entries_old)} cells from {json_output}")
+                print(f"[CellDetection] DEBUG:  Loaded {len(entries_old)} cells from {json_output}")
         
         except (js.JSONDecodeError, KeyError, IndexError) as e:
-            print(f"DEBUG: Failed to load existing storm cell data: {e}. Creating new data from old scan ...")
+            print(f"[CellDetection] ERROR:  Failed to load existing storm cell data: {e}. Creating new data from old scan ...")
             entries_old = detect_cells(radar_old, ps_old, lat_min, lat_max, lon_min, lon_max)
-            print(f"DEBUG: Detected {len(entries_old)} cells in old scan.")
+            print(f"[CellDetection] DEBUG:  Detected {len(entries_old)} cells in old scan.")
     
     else:
-        print(f"DEBUG: JSON output doesn't exist, detecting from old scan ...")
+        print(f"[CellDetection] DEBUG:  JSON output doesn't exist, detecting from old scan ...")
         entries_old = detect_cells(radar_old, ps_old, lat_min, lat_max, lon_min, lon_max)
         print(f"Detected {len(entries_old)} cells in old scan.")
 
-    print("DEBUG: Detecting cells in new scan ...")
+    print("[CellDetection] DEBUG:  Detecting cells in new scan ...")
     entries_new = detect_cells(radar_new, ps_new, lat_min, lat_max, lon_min, lon_max)
-    print(f"DEBUG: Detected {len(entries_new)} cells in new scan")
+    print(f"[CellDetection] DEBUG:  Detected {len(entries_new)} cells in new scan")
 
-    print("DEBUG: Matching and updating cell data")
+    print("[CellDetection] DEBUG:  Matching and updating cell data")
     ps_old = DetectionDataHandler(radar_old, ps_old, lat_min, lat_max, lon_min, lon_max).load_probsevere()
     ps_new = DetectionDataHandler(radar_new, ps_new, lat_min, lat_max, lon_min, lon_max).load_probsevere()
     
@@ -50,10 +50,12 @@ def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tu
 
 if __name__ == "__main__":
     from pathlib import Path
+    num_old = -6
+    num_new = num_old + 1
     radar_files = fs.latest_files(fs.MRMS_3D_DIR, 6)
-    radar_old, radar_new = radar_files[-2], radar_files[-1]
+    radar_old, radar_new = radar_files[num_old], radar_files[num_new]
     ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 6)
-    ps_old, ps_new = ps_files[-2], ps_files[-1]
+    ps_old, ps_new = ps_files[num_old], ps_files[num_new]
     lat_bounds = (35.0, 38.0)
     lon_bounds = (283.0, 285.0)
     main(radar_old, radar_new, ps_old, ps_new, lat_bounds, lon_bounds, Path("stormcell_test_ps.json"))
