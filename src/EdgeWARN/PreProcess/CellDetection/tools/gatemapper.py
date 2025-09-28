@@ -123,7 +123,7 @@ class GateMapper:
         polygon_grid = new_grid
         """
 
-        print(f"DEBUG: Completed expansion after {iteration} iterations")
+        print(f"[CellDetection] DEBUG: Completed expansion after {iteration} iterations")
         return xr.Dataset(
             {
                 'PolygonID': (('latitude', 'longitude'), polygon_grid)
