@@ -40,7 +40,6 @@ class GateMapper:
         # Loop over each polygon in ProbSevere data
         for feature in self.ps_ds.get('features', []):
             poly_id = int(feature['properties'].get('ID', 0))
-            print(f"ID:{poly_id}")
             polygon = shape(feature['geometry'])
 
             # Assign polygon ID to all gates inside this polygon
