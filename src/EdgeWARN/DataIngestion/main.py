@@ -4,12 +4,12 @@ from pathlib import Path
 from EdgeWARN.DataIngestion.config import base_dir, mrms_modifiers
 from EdgeWARN.DataIngestion.download import FileFinder, FileDownloader
 from EdgeWARN.DataIngestion.custom import MRMSDownloader, SynopticDownloader
-from EdgeWARN.PreProcess.core.utils import extract_timestamp_from_filename
+from EdgeWARN.PreProcess.CellDetection.tools.utils import DetectionDataHandler
 import util.core.file as fs
 
 #################################
 ### EWS Data Ingestion Module ###
-### Build Version: v1.0.0     ###
+### Build Version: v1.0.1     ###
 ### Contributors: Yuchen Wei  ###
 #################################
 
@@ -33,17 +33,17 @@ def main():
             reverse=True
         )
     if not refl_files:
-        print("No MRMS reflectivity files found! Using current UTC time.")
+        print("[DataIngestion] ERROR: No MRMS reflectivity files found! Using current UTC time.")
         dt = datetime.datetime.now(datetime.timezone.utc)
     else:
         refl_file = refl_files[0]
-        ts_str = extract_timestamp_from_filename(str(refl_file))
+        ts_str = DetectionDataHandler(None, None, None, None, None, None).find_timestamp(str(refl_file))
         try:
             dt = datetime.datetime.fromisoformat(ts_str)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=datetime.timezone.utc)
         except Exception:
-            print(f"Could not parse timestamp '{ts_str}', using current UTC time.")
+            print(f"[DataIngestion] ERROR: Could not parse timestamp '{ts_str}', using current UTC time.")
             dt = datetime.datetime.now(datetime.timezone.utc)
 
     max_time = datetime.timedelta(hours=6)   # Look back 6 hours
@@ -51,7 +51,7 @@ def main():
 
     for modifier, outdir in mrms_modifiers:
         print("=" * 80)
-        print(f"DEBUG: Checking MRMS source: {modifier}")
+        print(f"[DataIngestion] DEBUG: Checking MRMS source: {modifier}")
 
         # Create finder and downloader for this modifier
         finder = FileFinder(dt, base_dir, max_time, max_entries)
@@ -61,23 +61,23 @@ def main():
         try:
             files_with_timestamps = finder.lookup_files(modifier)
             if not files_with_timestamps:
-                print(f"ERROR: No files found for {modifier}")
+                print(f"[DataIngestion] ERROR: No files found for {modifier}")
                 continue
 
-            print(f"DEBUG: Found {len(files_with_timestamps)} candidate files for {modifier}")
+            print(f"[DataIngestion] DEBUG: Found {len(files_with_timestamps)} candidate files for {modifier}")
 
             # Download the latest file for this source
             downloaded = downloader.download_latest(files_with_timestamps, outdir)
             if downloaded:
                 print(outdir)
-                print(f"DEBUG: Downloaded latest {modifier} file to {downloaded}")
-                print(f"DEBUG: Attempting to decompress {downloaded}")
+                print(f"[DataIngestion] DEBUG: Downloaded latest {modifier} file to {downloaded}")
+                print(f"[DataIngestion] DEBUG: Attempting to decompress {downloaded}")
                 downloader.decompress_file(downloaded)
             else:
-                print(f"ERROR: Failed to download latest {modifier} file")
+                print(f"[DataIngestion] ERROR: Failed to download latest {modifier} file")
 
         except Exception as e:
-            print(f"ERROR: Failed to process {modifier}: {e}")
+            print(f"[DataIngestion] ERROR: Failed to process {modifier}: {e}")
 
     SynopticDownloader.download_latest_rtma(dt, fs.THREDDS_RTMA_DIR)
     SynopticDownloader.download_rap_awp(dt, fs.NOAA_RAP_DIR)

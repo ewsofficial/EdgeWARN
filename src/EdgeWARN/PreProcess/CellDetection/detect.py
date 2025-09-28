@@ -1,81 +1,40 @@
-import sys
-from pathlib import Path
-from EdgeWARN.PreProcess.core.cellmask import StormCellDetector
-from EdgeWARN.PreProcess.core.utils import load_mrms_slice
-from EdgeWARN.PreProcess.core.visualize import Visualizer
+from EdgeWARN.PreProcess.CellDetection.tools.utils import DetectionDataHandler
+from EdgeWARN.PreProcess.CellDetection.tools.gatemapper import GateMapper
+from EdgeWARN.PreProcess.CellDetection.tools.save import CellDataSaver
+import util.core.file as fs
 
-# In detect.py - modify the detect_cells function
-def detect_cells(filepath, lat_limits, lon_limits, plot=False, existing_storm_data=None):
-    print("Loading MRMS data slice...")
-    refl, lat, lon = load_mrms_slice(filepath, lat_limits, lon_limits)
-    
-    # Extract scan timestamp from file if available
-    import datetime
-    try:
-        import xarray as xr
-        ds = xr.open_dataset(filepath)
-        scan_time = str(ds.attrs.get('start_date', datetime.datetime.now()))
-        ds.close()
-    except:
-        scan_time = str(datetime.datetime.now())
+def detect_cells(radar_path, ps_path, lat_min, lat_max, lon_min, lon_max):
+    handler = DetectionDataHandler(
+        radar_path,
+        ps_path,
+        lat_min, lat_max,
+        lon_min, lon_max
+    )
 
-    print("Running cell propagation...")
-    cells = StormCellDetector.propagate_cells(refl, lat, lon, alpha=0.1, filepath=filepath)
+    radar_ds = handler.load_subset()
+    ps_ds = handler.load_probsevere()
 
-    if len(cells) == 0:
-        print("Error: No seed cells detected in propagate_cells function")
-        return []
-    print("Merging small cells...")
-    merged_cells = StormCellDetector.merge_connected_small_cells(cells)
+    mapper = GateMapper(radar_ds, ps_ds, refl_threshold=40.0)
+    mapped_ds = mapper.map_gates_to_polygons()
+    expanded_ds = mapper.expand_gates(mapped_ds)
+    bboxes = mapper.draw_bbox(expanded_ds, step=5)
 
-    # --- Build storm history per cell ---
-    storm_history = {}
-    for cell in merged_cells:
-        cell_id = cell["id"]
-        entry = {
-            "timestamp": scan_time,  # Use consistent key name
-            "max_reflectivity_dbz": cell["max_reflectivity_dbz"],
-            "num_gates": cell["num_gates"],
-            "centroid": cell["centroid"],
-            "bbox": cell["bbox"],
-        }
-        
-        # If we have existing storm data, update it instead of creating new
-        if existing_storm_data and cell_id in [c['id'] for c in existing_storm_data]:
-            # Find existing cell and append to its history
-            for existing_cell in existing_storm_data:
-                if existing_cell['id'] == cell_id:
-                    # Check if this timestamp already exists to avoid duplicates
-                    existing_timestamps = [entry['timestamp'] for entry in existing_cell.get('storm_history', [])]
-                    if scan_time not in existing_timestamps:
-                        existing_cell['storm_history'].append(entry)
-                    break
-        else:
-            # New cell - create fresh history
-            if cell_id not in storm_history:
-                storm_history[cell_id] = []
-            storm_history[cell_id].append(entry)
+    saver = CellDataSaver(
+        bboxes,
+        radar_path, radar_ds, mapped_ds,
+        ps_path, ps_ds
+    )
 
-    if plot:
-        print("Plotting final cells ... ")
-        Visualizer.plot_storm_cells(merged_cells, refl, lat, lon, title="Detected Storm Cells (Final Pass)", lat_limits=lat_limits, lon_limits=lon_limits)
+    saver.create_entry()
+    entries = saver.create_entry()
+    entries = saver.append_storm_history(entries, radar_path)
 
-    print(f"Storm history created for {len(storm_history)} cells.")
-    return merged_cells, storm_history
+    return entries
 
-from pathlib import Path
 if __name__ == "__main__":
-    try:
-        filepath = Path(r"C:\input_data\nexrad_merged\MRMS_MergedReflectivityQC_max_20250913-002439.nc")
-    except Exception as e:
-        print(f"Error finding latest MRMS mosaic: {e}")
-        sys.exit(1)
-    print(filepath)
-    lat_limits = (45.3, 47.3)
-    lon_limits = (256.6, 260.2)  # MRMS longitude is 0-360
-
-    if filepath.exists():
-        print("Running detection!")
-        detect_cells(filepath, lat_limits, lon_limits, plot=True)
-    else:
-        print(f"Filepath: {filepath} does not exist")
+    radar_path = fs.latest_files(fs.MRMS_3D_DIR, 1)[-1]
+    ps_path = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1]
+    lat_min, lat_max = 35.0, 38.0
+    lon_min, lon_max = 283.0, 285.0
+    
+    detect_cells(radar_path, ps_path, lat_min, lat_max, lon_min, lon_max)
