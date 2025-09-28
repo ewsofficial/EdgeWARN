@@ -9,7 +9,7 @@ import util.core.file as fs
 
 #################################
 ### EWS Data Ingestion Module ###
-### Build Version: v1.0.0     ###
+### Build Version: v1.0.1     ###
 ### Contributors: Yuchen Wei  ###
 #################################
 
