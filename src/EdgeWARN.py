@@ -41,7 +41,6 @@ while True:
         print("Starting Storm Cell Detection")
         try:
             filepath_old, filepath_new = fs.latest_files(fs.MRMS_3D_DIR, 2)
-            detect_cells.main(filepath_old, filepath_new, storm_json, lat_limits, lon_limits)
             integration.main()
             print("Press CTRL + C to exit")
             time.sleep(120)
