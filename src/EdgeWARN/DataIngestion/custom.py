@@ -38,12 +38,12 @@ class MRMSDownloader:
         tempdir.mkdir(parents=True, exist_ok=True)
         outdir.mkdir(parents=True, exist_ok=True)
 
-        print("DEBUG: Fetching available timestamps...")
+        print("[DataIngestion] DEBUG: Fetching available timestamps...")
         try:
             r = requests.get(base_dir_url, timeout=30)
             r.raise_for_status()
         except Exception as e:
-            print(f"ERROR: Failed to get directory listing: {e}")
+            print(f"[DataIngestion] ERROR: Failed to get directory listing: {e}")
             return None
 
         soup = BeautifulSoup(r.text, "html.parser")
@@ -55,7 +55,7 @@ class MRMSDownloader:
         )
 
         if not timestamps:
-            print("ERROR: No timestamped GRIB2 files found.")
+            print("[DataIngestion] ERROR: No timestamped GRIB2 files found.")
             return None
 
         def build_url(height: str, timestamp: str) -> str:
@@ -67,7 +67,7 @@ class MRMSDownloader:
         # Find latest timestamp where all sweeps exist (with better timeout)
         valid_timestamp = None
         for ts in timestamps[:5]:  # Only check most recent 5 timestamps
-            print(f"DEBUG: Checking timestamp {ts}...")
+            print(f"[DataIngestion] DEBUG: Checking timestamp {ts}...")
             all_exist = True
             
             for height in sweep_heights:
@@ -80,7 +80,7 @@ class MRMSDownloader:
                         all_exist = False
                         break
                 except Exception as e:
-                    print(f"ERROR: Could not check {height}: {e}")
+                    print(f"[DataIngestion] ERROR: Could not check {height}: {e}")
                     all_exist = False
                     break
             
@@ -89,10 +89,10 @@ class MRMSDownloader:
                 break
 
         if not valid_timestamp:
-            print("ERROR: No timestamp found with all sweep levels.")
+            print("[DataIngestion] ERROR: No timestamp found with all sweep levels.")
             return None
 
-        print(f"DEBUG: Using timestamp {valid_timestamp}")
+        print(f"[DataIngestion] DEBUG: Using timestamp {valid_timestamp}")
 
         downloaded = {}
         for height in sweep_heights:
@@ -101,16 +101,16 @@ class MRMSDownloader:
 
             # Skip if already exists
             if gz_path.exists():
-                print(f"DEBUG: File already exists: {gz_path.name}")
+                print(f"[DataIngestion] DEBUG: File already exists: {gz_path.name}")
                 downloaded[height] = gz_path
                 continue
                 
             try:
-                print(f"DEBUG: Downloading {height}...")
+                print(f"[DataIngestion] DEBUG: Downloading {height}...")
                 # Use streaming download for large files
                 r = requests.get(url, stream=True, timeout=60)
                 if r.status_code != 200:
-                    print(f"ERROR: Failed to download {height}: HTTP {r.status_code}")
+                    print(f"[DataIngestion] ERROR: Failed to download {height}: HTTP {r.status_code}")
                     continue
                     
                 with open(gz_path, "wb") as f:
@@ -118,14 +118,14 @@ class MRMSDownloader:
                         if chunk:
                             f.write(chunk)
                 downloaded[height] = gz_path
-                print(f"DEBUG: Downloaded {height}")
+                print(f"[DataIngestion] DEBUG: Downloaded {height}")
                 
             except Exception as e:
-                print(f"ERROR: Could not download {height}: {e}")
+                print(f"[DataIngestion] ERROR: Could not download {height}: {e}")
                 continue
 
         if len(downloaded) < len(sweep_heights) * 0.8:  # Allow 20% missing files
-            print("ERROR: Too many missing files even for validated timestamp.")
+            print("[DataIngestion] ERROR: Too many missing files even for validated timestamp.")
             return None
 
         # Decompress .gz files
@@ -137,12 +137,12 @@ class MRMSDownloader:
                     shutil.copyfileobj(f_in, f_out)
                 os.remove(gz_path)
                 grib_paths[height] = grib_path
-                print(f"DEBUG: Decompressed {height}")
+                print(f"[DataIngestion] DEBUG: Decompressed {height}")
             except Exception as e:
-                print(f"ERROR: Failed to decompress {height}: {e}")
+                print(f"[DataIngestion] ERROR: Failed to decompress {height}: {e}")
 
         if not grib_paths:
-            print("ERROR: No GRIB files decompressed.")
+            print("[DataIngestion] ERROR: No GRIB files decompressed.")
             return None
             
         return grib_paths  # RETURN THE PATHS!
@@ -169,13 +169,13 @@ class MRMSDownloader:
                     matching_files.append(f.as_posix())
 
         if not matching_files:
-            print("ERROR: No sweep files found.")
+            print("[DataIngestion] ERROR: No sweep files found.")
             return None
 
         # Optional: sort alphabetically
         matching_files = sorted(matching_files)
 
-        print(f"DEBUG: Found {len(matching_files)} sweep files:")
+        print(f"[DataIngestion] DEBUG: Found {len(matching_files)} sweep files:")
         return matching_files
 
     @staticmethod
@@ -216,12 +216,12 @@ class MRMSDownloader:
         for ds in datasets:
             ds.close()
 
-        print(f"DEBUG: Maximum reflectivity (lazy) file saved to {output_path}")
+        print(f"[DataIngestion] DEBUG: Maximum reflectivity (lazy) file saved to {output_path}")
     
     def find_and_concat_refl():
         files = MRMSDownloader.find_all_refl_files()
         if not files:
-            print("No files found!")
+            print("[DataIngestion] ERROR: No files found!")
             return
         MRMSDownloader.concat_refl(files)
 
@@ -241,24 +241,24 @@ class SynopticDownloader:
             outpath = outdir / filename
 
             if outpath.exists():
-                print(f"DEBUG: Already downloaded RTMA file: {filename}")
+                print(f"[DataIngestion] DEBUG: Already downloaded RTMA file: {filename}")
                 LATEST_RTMA_FILE = str(outpath)
                 return outpath
 
-            print(f"DEBUG: Attempting RTMA download: {filename}")
+            print(f"[DataIngestion] DEBUG: Attempting RTMA download: {filename}")
             try:
                 r = requests.get(f"{base_url}/{filename}", stream=True, timeout=30)
                 r.raise_for_status()
                 with open(outpath, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
-                print(f"DEBUG: Downloaded RTMA: {filename}")
+                print(f"[DataIngestion] DEBUG: Downloaded RTMA: {filename}")
                 LATEST_RTMA_FILE = str(outpath)
                 return outpath
             except Exception as e:
-                print(f"ERROR: Failed to download RTMA {filename}: {e}")
+                print(f"[DataIngestion] ERROR: Failed to download RTMA {filename}: {e}")
 
-        print("ERROR: Could not find any valid RTMA file within fallback window.")
+        print("[DataIngestion] ERROR: Could not find any valid RTMA file within fallback window.")
         return None
     
     @staticmethod
@@ -285,10 +285,10 @@ class SynopticDownloader:
         
         # Check if file already exists
         if outpath.exists():
-            print(f"DEBUG: Already downloaded RAP: {filename}")
+            print(f"[DataIngestion] DEBUG: Already downloaded RAP: {filename}")
             return outpath
         
-        print(f"DEBUG: Attempting RAP download: {filename}")
+        print(f"[DataIngestion] DEBUG: Attempting RAP download: {filename}")
         try:
             r = requests.get(url, stream=True, timeout=30)
             r.raise_for_status()
@@ -297,11 +297,11 @@ class SynopticDownloader:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
             
-            print(f"DEBUG: Downloaded RAP: {filename}")
+            print(f"[DataIngestion] DEBUG: Downloaded RAP: {filename}")
             return outpath
             
         except Exception as e:
-            print(f"DEBUG: Failed to download RAP {filename}: {e}")
+            print(f"[DataIngestion] ERROR: Failed to download RAP {filename}: {e}")
             # Clean up partial download if it exists
             if outpath.exists():
                 outpath.unlink()
