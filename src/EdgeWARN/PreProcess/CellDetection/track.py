@@ -35,14 +35,14 @@ class StormCellTracker:
                 cell['bbox'] = updated.get('bbox', cell['bbox'])
 
                 used_ids.add(cell_id)
-                print(f"DEBUG: Updated cell {cell_id}")
+                print(f"[CellDetection] DEBUG: Updated cell {cell_id}")
 
         # Add NEW cells
         for cell in updated_data:
             cell_id = int(cell['id'])
             if cell_id not in used_ids:
                 entries.append(cell)
-                print(f"DEBUG: Added new cell {cell_id}")
+                print(f"[CellDetection] DEBUG: Added new cell {cell_id}")
         
         return entries
 

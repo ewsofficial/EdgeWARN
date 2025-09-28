@@ -53,24 +53,24 @@ class StatFileHandler:
         
         try:
             self.dataset = xr.open_dataset(file_path, cache=False)
-            print(f"Successfully loaded dataset from {file_path}")
+            print(f"[CellIntegration] DEBUG: Successfully loaded dataset from {file_path}")
             return self.dataset
         except Exception as e:
-            print(f"Error loading file {file_path}: {e}")
+            print(f"[CellIntegration] ERROR: Could not load file {file_path}: {e}")
             return None
         
     def load_json(self, filepath):
-        print(f"DEBUG: Loading JSON file {filepath}")
+        print(f"[CellIntegration] DEBUG: Loading JSON file {filepath}")
         with open(filepath, 'r') as f:
             data = json.load(f)
         if not data:
-            print(f"ERROR: {filepath} did not have any data")
+            print(f"[CellIntegration] ERROR: {filepath} did not have any data")
             return None
         else:
             return data
     
     def write_json(self, data, filepath):
-        print(f"DEBUG: Writing to JSON file {filepath}")
+        print(f"[CellIntegration] DEBUG: Writing to JSON file {filepath}")
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=4)
         print(f"Successfully wrote to JSON file {filepath}")
@@ -131,7 +131,7 @@ class StatFileHandler:
                         return datetime.fromtimestamp(int(timestamp_str[:10]))
                         
                 except (ValueError, TypeError) as e:
-                    print(f"Warning: Could not parse timestamp '{timestamp_str}' from {filename}: {e}")
+                    print(f"[CellIntegration] ERROR: Could not parse timestamp '{timestamp_str}' from {filename}: {e}")
                     continue
         
         # If no pattern matched, try to extract from dataset if it's loaded
@@ -148,9 +148,9 @@ class StatFileHandler:
                             else:
                                 return datetime.utcfromtimestamp(time_data[0] / 1e9)
             except Exception as e:
-                print(f"Warning: Could not extract time from dataset: {e}")
+                print(f"[CellIntegration] ERROR: Could not extract time from dataset: {e}")
         
-        print(f"Warning: Could not find timestamp in filename: {filename}")
+        print(f"[CellIntegration] ERROR: Could not find timestamp in filename: {filename}")
         return None
 
 class StormIntegrationUtils:
@@ -170,7 +170,7 @@ class StormIntegrationUtils:
                 lon_coord = dataset[coord_name].values
         
         if lat_coord is None or lon_coord is None:
-            raise ValueError("Could not find latitude and longitude coordinates in dataset")
+            raise ValueError("[CellIntegration] ERROR: Could not find latitude and longitude coordinates in dataset")
         
         # Create 2D grids if coordinates are 1D
         if lat_coord.ndim == 1 and lon_coord.ndim == 1:
@@ -184,39 +184,30 @@ class StormIntegrationUtils:
     def create_cell_polygon(cell):
         """
         Create a polygon from storm cell data.
-        Prioritizes alpha_shape, falls back to bbox, then centroid.
+        Prioritizes bbox, then falls back to centroid.
         Returns a Shapely Polygon object.
         """
         
-        # Try alpha_shape first (list of [lon, lat] pairs)
-        if 'alpha_shape' in cell and cell['alpha_shape']:
-            coords = [[point[0], point[1]] for point in cell['alpha_shape']]
+        # Try bbox first (list of [lon, lat] pairs)
+        if 'bbox' in cell and cell['bbox']:
+            # If you want (lat, lon) order:
+            coords = [(point[1], point[0]) for point in cell['bbox']]
             return Polygon(coords)
         
-        # Fall back to bounding box
-        if 'bbox' in cell:
-            bbox = cell['bbox']
-            coords = [
-                [bbox['lon_min'], bbox['lat_min']],
-                [bbox['lon_min'], bbox['lat_max']],
-                [bbox['lon_max'], bbox['lat_max']],
-                [bbox['lon_max'], bbox['lat_min']]
-            ]
-            return Polygon(coords)
-        
-        # Final fallback: small box around centroid
+        # Fallback: small box around centroid
         if 'centroid' in cell and len(cell['centroid']) >= 2:
             lat, lon = cell['centroid'][0], cell['centroid'][1]
-            d = 0.01  # ~1km box
+            d = 0.01  # ~1 km box
             coords = [
-                [lon - d, lat - d],
-                [lon - d, lat + d],
-                [lon + d, lat + d],
-                [lon + d, lat - d]
+                (lat - d, lon - d),
+                (lat - d, lon + d),
+                (lat + d, lon + d),
+                (lat + d, lon - d)
             ]
             return Polygon(coords)
         
         return None
+
     
     @staticmethod
     def create_polygon_mask(polygon, lat_grid, lon_grid):
