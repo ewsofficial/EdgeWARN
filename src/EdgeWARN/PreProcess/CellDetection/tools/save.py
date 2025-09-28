@@ -48,7 +48,6 @@ class CellDataSaver:
                     centroid = (mlat, mlon)
                     break
 
-
             # Count number of gates
             num_gates = np.count_nonzero(mask)
 
@@ -63,33 +62,30 @@ class CellDataSaver:
 
         return results
     
-    def append_storm_history(self, entries):
-        """
-        Appends storm history to each cell entry based on radar timestamp.
-        Only adds a new entry if the timestamp does not already exist.
-        Returns the updated list of dictionaries.
-        """
-        timestamp_new = DetectionDataHandler.find_timestamp(self.radar_path)
-
+    def append_storm_history(self, entries, radar_path):
+        timestamp_new = DetectionDataHandler.find_timestamp(radar_path)
         for cell in entries:
-            storm_history = cell.get('storm_history', [])
-
-            # Skip if this timestamp already exists
-            if any(entry['timestamp'] == timestamp_new for entry in storm_history):
-                print(f"DEBUG: Skipping adding entry to {cell['id']}: timestamp already exists")
+            storm_history = cell['storm_history']
+            # check for duplicate timestamp
+            if storm_history and storm_history[-1]['timestamp'] == timestamp_new:
                 continue
-
-            # Append new storm history entry
+            # Build new storm history
             latest_storm_history = {
+                "id": cell['id'],
                 "timestamp": timestamp_new,
                 "max_refl": cell['max_refl'],
                 "num_gates": cell['num_gates'],
-                "centroid": cell['centroid'],
-                "data": [],
-                "analysis": []
+                "centroid": cell['centroid']
             }
+
+            if storm_history:
+                last_entry = storm_history[-1]
+                if (last_entry['max_refl'] == cell['max_refl'] and
+                    last_entry['num_gates'] == cell['num_gates'] and
+                    last_entry['centroid'] == cell['centroid']):
+                    continue
+
             storm_history.append(latest_storm_history)
-            cell['storm_history'] = storm_history  # update in case 'storm_history' key was missing
 
         return entries
 

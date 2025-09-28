@@ -7,11 +7,12 @@ from shapely.geometry import MultiPoint, MultiLineString
 from shapely.ops import unary_union, polygonize
 from scipy.spatial import Delaunay
 from scipy.ndimage import binary_dilation, binary_closing
+from skimage import measure
 import math
-
+import alphashape
 
 class GateMapper:
-    def __init__(self, radar_ds, ps_ds, refl_threshold=None):
+    def __init__(self, radar_ds, ps_ds, refl_threshold=35.0):
         self.radar_ds = radar_ds
         self.ps_ds = ps_ds
         self.refl_threshold = refl_threshold  # ignore for now
@@ -79,9 +80,8 @@ class GateMapper:
         polygon_grid = mapped_ds['PolygonID'].values.copy()
         refl_grid = self.radar_ds['unknown'].values  # assume reflectivity variable is named 'reflectivity'
 
-        # Step 1: Mask gates below threshold
+        # Step 1: create mask for gates above threshold (gates eligible for expansion)
         mask = refl_grid >= self.refl_threshold
-        polygon_grid = polygon_grid * mask  # zero-out gates below threshold
 
         iteration = 0
         changed = True
@@ -95,18 +95,20 @@ class GateMapper:
                 if poly_id == 0:
                     continue
 
-                # Create mask for current polygon
                 poly_mask = polygon_grid == poly_id
 
-                # Expand by one gate in each direction
-                expanded = binary_dilation(poly_mask, structure=np.array([[0,1,0],[1,1,1],[0,1,0]])) & mask
-
-                # Only assign gates not yet claimed by any polygon
-                new_pixels = expanded & (polygon_grid == 0)
+                # Expand one gate in each direction
+                expanded = binary_dilation(poly_mask, structure=np.array([[0,1,0],
+                                                                        [1,1,1],
+                                                                        [0,1,0]]))
+                # Only assign gates not yet claimed and that meet threshold
+                new_pixels = expanded & (polygon_grid == 0) & mask
                 if np.any(new_pixels):
                     new_grid[new_pixels] = poly_id
                     changed = True
-                
+
+            polygon_grid = new_grid
+        """
         # --- After expansion loop, fill small concavities (morphological closing) ---
         new_grid = polygon_grid.copy()
         for poly_id in np.unique(polygon_grid):
@@ -119,7 +121,9 @@ class GateMapper:
                                                                 [0,1,0]]))
             new_grid[closed] = poly_id
         polygon_grid = new_grid
+        """
 
+        print(f"DEBUG: Completed expansion after {iteration} iterations")
         return xr.Dataset(
             {
                 'PolygonID': (('latitude', 'longitude'), polygon_grid)
@@ -130,16 +134,17 @@ class GateMapper:
             }
         )
     
-    def draw_bbox(self, expanded_ds, tolerance=0.01):
+    def draw_bbox(self, expanded_ds, step=5):
         """
-        Return a dictionary of simplified bounding polygons for each polygon ID.
-        
+        Return a dictionary of polygons for each polygon ID by tracing the exterior points
+        and downsampling every 'step' points to reduce complexity.
+
         Parameters:
             expanded_ds (xarray.Dataset): Dataset from expand_gates()
-            tolerance (float): simplification tolerance (higher = more simplified)
-        
+            step (int): take every N-th point along the contour
+
         Returns:
-            dict: {polygon_id: list of (lon, lat) tuples forming the simplified polygon}
+            dict: {polygon_id: list of (lon, lat) tuples forming the polygon}
         """
         polygon_grid = expanded_ds['PolygonID'].values
         lats = expanded_ds['latitude'].values
@@ -155,24 +160,20 @@ class GateMapper:
             if not np.any(mask):
                 continue
 
-            lat_idx, lon_idx = np.where(mask)
-            coords = list(zip(lons[lon_idx], lats[lat_idx]))
-            if len(coords) < 3:
+            # Find contours at the 0.5 level (between 0 and 1)
+            contours = measure.find_contours(mask.astype(float), 0.5)
+            if not contours:
                 continue
 
-            # Create convex hull from the gate points
-            points = MultiPoint(coords)
-            hull = points.convex_hull
-            
-            # Simplify the polygon
-            simplified = hull.simplify(tolerance, preserve_topology=True)
-            
-            # Convert to list of points
-            if simplified.geom_type == 'Polygon':
-                bboxes[poly_id] = list(simplified.exterior.coords)
-            else:
-                # Fallback to original hull if simplification fails
-                bboxes[poly_id] = list(hull.exterior.coords)
+            # Take the longest contour (usually the exterior)
+            contour = max(contours, key=len)
+
+            # Downsample every 'step' points
+            contour = contour[::step]
+
+            # Convert from array indices to lon/lat
+            coords = [(lons[int(c[1])], lats[int(c[0])]) for c in contour]
+            bboxes[poly_id] = coords
 
         return bboxes
     
@@ -182,20 +183,5 @@ handler = DetectionDataHandler(
     lat_min=35.0, lat_max=38.0,
     lon_min=283.0, lon_max=285.0
 )
-
-radar_ds = handler.load_subset()
-ps_ds = handler.load_probsevere()
-
-mapper = GateMapper(radar_ds, ps_ds, refl_threshold=37.0)
-mapped_ds = mapper.map_gates_to_polygons()
-expanded_ds = mapper.expand_gates(mapped_ds)
-bboxes = mapper.draw_bbox(expanded_ds, tolerance=0.01)
-
-entry = CellDataSaver(bboxes, r"C:\input_data\nexrad_merged\MRMS_MergedReflectivityQC_max_20250927-210640.nc", radar_ds, expanded_ds, r"C:\input_data\mrms_probsevere\MRMS_PROBSEVERE_20250927_210640.json", ps_ds)
-
-data = entry.create_entry()
-data = entry.append_storm_history(data)
-
-print(data)
 
     

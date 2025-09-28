@@ -27,7 +27,7 @@ class DetectionDataHandler:
         """
         # Open the dataset
         try:
-            ds = xr.open_dataset(self.radar_path)
+            ds = xr.open_dataset(self.radar_path, decode_timedelta=True)
 
             # Handle descending latitude coordinates
             if ds.latitude[0] > ds.latitude[-1]:
