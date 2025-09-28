@@ -31,7 +31,7 @@ def main():
         print(f"[CellIntegration] DEBUG: Integrating {dataset[0]} with {len(cells)} storm cells")
         if dataset[1].exists():
             try:
-                latest_file = fs.latest_files(dataset[1], 6)[-5]
+                latest_file = fs.latest_files(dataset[1], 1)[-1]
                 if latest_file:
                     print(f"[CellIntegration] DEBUG: Using {dataset[0]} file {latest_file}")
                     result_cells = integrator.integrate_ds(latest_file, result_cells, dataset[2])
@@ -49,7 +49,7 @@ def main():
     # Integrate ProbSevere Data
     print(f"[CellIntegration] DEBUG: Integrating ProbSevere data with {len(cells)} storm cells")
     try:
-        latest_file = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 6)[-5]
+        latest_file = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1]
         if latest_file:
             print(f"[CellIntegration] DEBUG: Using ProbSevere file {latest_file}")
             probsevere_data = handler.load_json(latest_file)
