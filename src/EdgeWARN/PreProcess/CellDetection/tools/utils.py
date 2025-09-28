@@ -40,11 +40,11 @@ class DetectionDataHandler:
             
             # Subset the dataset
             dataset = ds.sel(latitude=lat_slice, longitude=lon_slice)
-            print(f"DEBUG: Loaded Dataset for lat: {self.lat_grid}, lon: {self.lon_grid}")
+            print(f"[CellDetection] DEBUG: Loaded Dataset for lat: {self.lat_grid}, lon: {self.lon_grid}")
             return dataset
         
         except Exception as e:
-            print(f"ERROR: Failed to load {self.path}: {e}")
+            print(f"[CellDetection] ERROR: Failed to load {self.path}: {e}")
     
     def load_probsevere(self):
         """
@@ -54,7 +54,7 @@ class DetectionDataHandler:
         try:
             with open(self.ps_path, 'r') as f:
                 data = json.load(f)
-            print(f"DEBUG: Loaded ProbSevere JSON: {self.ps_path}")
+            print(f"[CellDetection] DEBUG: Loaded ProbSevere JSON: {self.ps_path}")
 
             lat_min, lat_max = self.lat_grid
             lon_min, lon_max = self.lon_grid
@@ -79,7 +79,7 @@ class DetectionDataHandler:
             return data
 
         except Exception as e:
-            print(f"ERROR: Failed to load ProbSevere JSON from {self.ps_path}: {e}")
+            print(f"[CellDetection] ERROR: Failed to load ProbSevere JSON from {self.ps_path}: {e}")
             return []
     
     @staticmethod
@@ -88,7 +88,7 @@ class DetectionDataHandler:
         Finds timestamps in a file based on predetermined patterns
         """
         filename = Path(filepath).name
-        print(f"DEBUG: Extracting timestamp from filename: {filename}")
+        print(f"[CellDetection] DEBUG: Extracting timestamp from filename: {filename}")
         
         patterns = [
             r'MRMS_MergedReflectivityQC_3D_(\d{8})-(\d{6})',
@@ -102,7 +102,7 @@ class DetectionDataHandler:
             match = re.search(pattern, filename)
             if match:
                 groups = match.groups()
-                print(f"DEBUG: Pattern {pattern_idx+1} matched: {groups}")
+                print(f"[CellDetection] DEBUG: Pattern {pattern_idx+1} matched: {groups}")
                 
                 if len(groups) == 2:
                     date_str, time_str = groups
@@ -111,18 +111,18 @@ class DetectionDataHandler:
                     date_str, time_str = combined[:8], combined[9:15]
                 else:
                     # fallback to next pattern
-                    print(f"DEBUG: Unexpected group format: {groups}")
+                    print(f"[CellDetection] DEBUG: Unexpected group format: {groups}")
                     continue
 
                 try:
                     formatted_time = (f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}T"
                                     f"{time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}")
-                    print(f"DEBUG: Extracted timestamp: {formatted_time}")
+                    print(f"[CellDetection] DEBUG: Extracted timestamp: {formatted_time}")
                     return formatted_time
                 except (IndexError, ValueError) as e:
-                    print(f"DEBUG: Error formatting timestamp: {e}")
+                    print(f"[CellDetection] DEBUG: Error formatting timestamp: {e}")
                     continue
         
         fallback = datetime.utcnow().isoformat()
-        print(f"DEBUG: Using fallback timestamp: {fallback}")
+        print(f"[CellDetection] DEBUG: Using fallback timestamp: {fallback}")
         return fallback
