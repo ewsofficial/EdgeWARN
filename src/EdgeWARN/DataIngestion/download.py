@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 from pathlib import Path
 import gzip
 import shutil
+import boto3
 import os
 
 
@@ -108,7 +109,7 @@ class FileFinder:
             return files
             
         except requests.RequestException as e:
-            print(f"Error accessing {url}: {e}")
+            print(f"[DataIngestion] ERROR: Could not access {url}: {e}")
             return []
 
     def lookup_files(self, modifier):
@@ -139,11 +140,11 @@ class FileFinder:
         if not full_url.endswith('/'):
             full_url += '/'
         
-        print(f"Searching URL: {full_url}")
+        print(f"[DataIngestion] DEBUG: Searching URL: {full_url}")
         
         # List files in the HTTP directory
         files = self.list_http_directory(full_url)
-        print(f"Found {len(files)} potential files to process")
+        print(f"[DataIngestion] DEBUG: Found {len(files)} potential files to process")
         
         for filename in files:
             # Skip any files with "latest" (double safety check)
@@ -177,12 +178,12 @@ class FileDownloader:
 
     def download_latest(self, files, outdir: Path):
         if not files:
-            raise ValueError("No files provided")
+            raise ValueError("ERROR: No files provided")
 
         # Pick the file closest to self.dt
         latest, ts = min(files, key=lambda x: abs(x[1] - self.dt))
 
-        print(f"Latest file: {latest}")
+        print(f"[DataIngestion] DEBUG: Latest file: {latest}")
 
         # Ensure output directory exists
         outdir.mkdir(parents=True, exist_ok=True)
@@ -193,21 +194,21 @@ class FileDownloader:
 
         # Skip download if it already exists
         if outfile.exists():
-            print(f"{outfile} already exists locally")
+            print(f"[DataIngestion] DEBUG: {outfile} already exists locally")
             return outfile
 
         # Download the file
         try:
-            print(f"Downloading file: {filename}")
+            print(f"[DataIngestion] DEBUG: Downloading file: {filename}")
             response = requests.get(latest, stream=True)
             response.raise_for_status()
             with open(outfile, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-            print(f"Downloaded file: {filename}")
+            print(f"[DataIngestion] DEBUG: Downloaded file: {filename}")
             return outfile
         except Exception as e:
-            print(f"Failed to download {filename}: {e}")
+            print(f"[DataIngestion] ERROR: Failed to download {filename}: {e}")
             return
     
     def download_specific(self, files, n: int, outdir: Path):
@@ -226,10 +227,10 @@ class FileDownloader:
             ValueError: If no files provided or invalid index
         """
         if not files:
-            raise ValueError("No files provided")
+            raise ValueError("[DataIngestion] ERROR: No files provided")
         
         if n < 0 or n >= len(files):
-            raise ValueError(f"Invalid index {n}. Must be between 0 and {len(files) - 1}")
+            raise ValueError(f"[DataIngestion] ERROR: Invalid index {n}. Must be between 0 and {len(files) - 1}")
         
         # Get the nth file
         file_url, timestamp = files[n]
@@ -260,11 +261,11 @@ class FileDownloader:
         - If the file is directly inside the dataset dir, just decompress in place.
         """
         if not gz_path.exists():
-            print(f"❌ File does not exist: {gz_path}")
+            print(f"[DataIngestion] DEBUG: File does not exist: {gz_path}")
             return None
 
         if gz_path.suffix != ".gz":
-            print(f"⚠️ Not a .gz file: {gz_path}")
+            print(f"[DataIngestion] DEBUG: Not a .gz file: {gz_path}")
             return None
 
         try:
@@ -273,7 +274,7 @@ class FileDownloader:
             with gzip.open(gz_path, "rb") as f_in, open(grib_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
-            print(f"✅ Decompressed: {grib_path}")
+            print(f"[DataIngestion] DEBUG: Decompressed: {grib_path}")
 
             # Determine paths
             parent_dir = gz_path.parent           # where .gz lived
@@ -287,18 +288,18 @@ class FileDownloader:
                 # Move decompressed file into dataset dir
                 target_path = dataset_dir / grib_path.name
                 shutil.move(str(grib_path), target_path)
-                print(f"📂 Moved file to: {target_path}")
+                print(f"[DataIngestion] DEBUG: Moved file to: {target_path}")
 
                 # Delete timestamp folder if empty
                 try:
                     os.rmdir(parent_dir)
-                    print(f"🗑️ Deleted folder: {parent_dir}")
+                    print(f"[DataIngestion] DEBUG: Deleted folder: {parent_dir}")
                 except OSError:
-                    print(f"⚠️ Could not delete {parent_dir} (not empty)")
+                    print(f"[DataIngestion] ERROR: Could not delete {parent_dir} (not empty)")
             else:
                 # File is already in dataset directory, keep it there
                 target_path = grib_path
-                print(f"📂 File is already in dataset dir: {target_path}")
+                print(f"[DataIngestion] DEBUG: File is already in dataset dir: {target_path}")
 
             # Delete original .gz
             gz_path.unlink(missing_ok=True)
@@ -306,31 +307,6 @@ class FileDownloader:
             return target_path
 
         except Exception as e:
-            print(f"❌ Error decompressing {gz_path}: {e}")
+            print(f"[DataIngestion] ERROR: Unable to decompress {gz_path}: {e}")
             return None
-        
-import util.core.file as fs
-
-if __name__ == "__main__":
-    # Set up the parameters with timezone-aware datetime
-    base_url = "https://mrms.ncep.noaa.gov/"
-    modifier = "2D/NLDN_CG_001min_AvgDensity/"
-    dt = datetime.datetime.now(datetime.timezone.utc)  # Current UTC time (timezone-aware)
-    max_time = datetime.timedelta(hours=6)  # Look back 6 hours
-    max_entries = 7 # Return top 10 most recent files
-
-    # Create FileFinder instance
-    file_finder = FileFinder(dt, base_url, max_time, max_entries)
-    downloader = FileDownloader(dt)
-
-    # Search for files
-    try:
-        files_with_timestamps = file_finder.lookup_files(modifier)
-        
-        print(f"Found {len(files_with_timestamps)} files:")
-        print("-" * 80)
-
-        print(files_with_timestamps)
-            
-    except Exception as e:
-        print(f"Error searching directory: {e}")
+    
