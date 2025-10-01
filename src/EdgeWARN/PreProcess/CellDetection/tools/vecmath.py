@@ -29,8 +29,8 @@ class StormVectorCalculator:
 
             # Convert longitudinal difference to km accounting for latitude
             # Approximation: 1 degree lat ~ 111 km, 1 degree lon ~ 111*cos(lat) km
-            dx = (lon2 - lon1) * 111 * cos(radians((lat1 + lat2) / 2))  # East-West
-            dy = (lat2 - lat1) * 111  # North-South
+            dx = (lon2 - lon1) * 111 * cos(radians((lat1 + lat2) / 2)) * 1000  # East-West
+            dy = (lat2 - lat1) * 111 * 1000 # North-South
 
             # Compute time difference in seconds
             t1 = datetime.fromisoformat(prev_entry['timestamp'])
