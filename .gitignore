@@ -33,5 +33,5 @@ dist/
 *.swp
 *.swo
 
-# Stormcell JSONs
-stormcell_test.json
+# Unfinished Works
+GUI/
