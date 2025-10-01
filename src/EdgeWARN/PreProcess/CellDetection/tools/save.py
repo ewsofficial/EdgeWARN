@@ -38,15 +38,40 @@ class CellDataSaver:
             else:
                 max_refl = np.nan
 
-            # Get MLAT and MLON from ProbSevere data
-            for feature in self.ps_ds.get("features", []):
-                if int(feature["properties"].get("ID", 0)) == poly_id:
-                    mlat = float(feature["properties"].get("MLAT"))
-                    mlon = float(feature["properties"].get("MLON"))
-                    if mlon < 0:
-                        mlon += 360
-                    centroid = (mlat, mlon)
-                    break
+            # Calculate Reflectivity Weighted Centroid
+            # Example inside your loop for each polygon
+            mask = polygon_grid == poly_id
+            refl_vals = refl_grid[mask]
+
+            # Assuming lat_grid and lon_grid are same shape as refl_grid
+            lat_grid = self.radar_ds['latitude'].values
+            lon_grid = self.radar_ds['longitude'].values
+
+            lat_vals = lat_grid[mask]
+            lon_vals = lon_grid[mask]
+
+            if refl_vals.size > 0:
+                # Handle NaNs
+                valid_mask = ~np.isnan(refl_vals)
+                refl_vals = refl_vals[valid_mask]
+                lat_vals = lat_vals[valid_mask]
+                lon_vals = lon_vals[valid_mask]
+
+                if refl_vals.size > 0:
+                    # Compute weighted centroid
+                    weighted_lat = np.sum(lat_vals * refl_vals) / np.sum(refl_vals)
+                    weighted_lon = np.sum(lon_vals * refl_vals) / np.sum(refl_vals)
+
+                    # Convert longitude to 0-360 if needed
+                    if weighted_lon < 0:
+                        weighted_lon += 360
+
+                    centroid = (weighted_lat, weighted_lon)
+                else:
+                    centroid = (np.nan, np.nan)
+            else:
+                centroid = (np.nan, np.nan)
+
 
             # Count number of gates
             num_gates = np.count_nonzero(mask)

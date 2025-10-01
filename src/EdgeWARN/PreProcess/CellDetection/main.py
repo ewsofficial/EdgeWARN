@@ -50,7 +50,7 @@ def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tu
 
 if __name__ == "__main__":
     from pathlib import Path
-    num_old = -6
+    num_old = -5
     num_new = num_old + 1
     radar_files = fs.latest_files(fs.MRMS_3D_DIR, 6)
     radar_old, radar_new = radar_files[num_old], radar_files[num_new]
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     ps_old, ps_new = ps_files[num_old], ps_files[num_new]
     lat_bounds = (35.0, 38.0)
     lon_bounds = (283.0, 285.0)
-    main(radar_old, radar_new, ps_old, ps_new, lat_bounds, lon_bounds, Path("stormcell_test_ps.json"))
+    main(radar_old, radar_new, ps_old, ps_new, lat_bounds, lon_bounds, Path("stormcell_test.json"))
          
 
     
