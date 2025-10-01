@@ -5,14 +5,14 @@ from EdgeWARN.PreProcess.CellIntegration.utils import StatFileHandler
 
 
 datasets = [
-    ("NLDN", fs.MRMS_NLDN_DIR, "max_flash_rate"), # Format: (Debug Name, Data Folder, Key)
-    ("EchoTop18", fs.MRMS_ECHOTOP18_DIR, "echotop18_km"),
-    ("EchoTop30", fs.MRMS_ECHOTOP30_DIR, "echotop30_km"),
-    ("PrecipRate", fs.MRMS_PRECIPRATE_DIR, "preciprate"),
-    ("VIL Density", fs.MRMS_VIL_DIR, "vil_density"),
-    ("RotationTrack", fs.MRMS_ROTATIONT_DIR, "rotationtrack"),
-    ("Reflectivity at Lowest Altitude", fs.MRMS_LOWREFL_DIR, "rala"),
-    ("VII", fs.MRMS_VII_DIR, "vii")
+    ("NLDN", fs.MRMS_NLDN_DIR, "CGFlashRate"), # Format: (Debug Name, Data Folder, Key)
+    ("EchoTop18", fs.MRMS_ECHOTOP18_DIR, "EchoTop18"),
+    ("EchoTop30", fs.MRMS_ECHOTOP30_DIR, "EchoTop30"),
+    ("PrecipRate", fs.MRMS_PRECIPRATE_DIR, "PrecipRate"),
+    ("VIL Density", fs.MRMS_VIL_DIR, "VILDensity"),
+    ("RotationTrack", fs.MRMS_ROTATIONT_DIR, "RotationTrack"),
+    ("Reflectivity at Lowest Altitude", fs.MRMS_LOWREFL_DIR, "RALA"),
+    ("VII", fs.MRMS_VII_DIR, "VII")
 ]
 
 def main():

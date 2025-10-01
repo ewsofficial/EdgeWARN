@@ -202,57 +202,51 @@ class StormCellIntegrator:
                 # Nested supporting fields
                 entry['probsevere_details'] = {
                     # --- Atmospheric Instability ---
-                    'mlcape': float(closest_probsevere.get('MLCAPE', 0)),
-                    'mucape': float(closest_probsevere.get('MUCAPE', 0)),
-                    'mlcin': float(closest_probsevere.get('MLCIN', 0)),
-                    'dcape': float(closest_probsevere.get('DCAPE', 0)),
-                    'cape_m10m30': float(closest_probsevere.get('CAPE_M10M30', 0)),
-                    'lcl': float(closest_probsevere.get('LCL', 0)),
-                    'wetbulb_0c_hgt': float(closest_probsevere.get('WETBULB_0C_HGT', 0)),
-                    'lllr': float(closest_probsevere.get('LLLR', 0)),
-                    'mllr': float(closest_probsevere.get('MLLR', 0)),
+                    'MLCAPE': float(closest_probsevere.get('MLCAPE', 0)),
+                    'MUCAPE': float(closest_probsevere.get('MUCAPE', 0)),
+                    'MLCIN': float(closest_probsevere.get('MLCIN', 0)),
+                    'DCAPE': float(closest_probsevere.get('DCAPE', 0)),
+                    'CAPE_M10M30': float(closest_probsevere.get('CAPE_M10M30', 0)),
+                    'LCL': float(closest_probsevere.get('LCL', 0)),
+                    'Wetbulb_0C_Hgt': float(closest_probsevere.get('WETBULB_0C_HGT', 0)),
+                    'LLLR': float(closest_probsevere.get('LLLR', 0)),
+                    'MLLR': float(closest_probsevere.get('MLLR', 0)),
 
-                    # --- Wind / Shear / Rotation ---
-                    'ebshear': float(closest_probsevere.get('EBSHEAR', 0)),
-                    'srh01km': float(closest_probsevere.get('SRH01KM', 0)),
-                    'srw02km': float(closest_probsevere.get('SRW02KM', 0)),
-                    'srw46km': float(closest_probsevere.get('SRW46KM', 0)),
-                    'meanwind_1_3kmagl': float(closest_probsevere.get('MEANWIND_1-3kmAGL', 0)),
-                    'lja': float(closest_probsevere.get('LJA', 0)),
+                    # --- Kinematics ---
+                    'EBShear': float(closest_probsevere.get('EBSHEAR', 0)),
+                    'SRH01km': float(closest_probsevere.get('SRH01KM', 0)),
+                    'SRH02km': float(closest_probsevere.get('SRW02KM', 0)),
+                    'SRW46km': float(closest_probsevere.get('SRW46KM', 0)),
+                    'MeanWind_1-3kmAGL': float(closest_probsevere.get('MEANWIND_1-3kmAGL', 0)),
+                    'LJA': float(closest_probsevere.get('LJA', 0)),
 
                     # --- Radar / Reflectivity ---
-                    'compref': float(closest_probsevere.get('COMPREF', 0)),
-                    'ref10': float(closest_probsevere.get('REF10', 0)),
-                    'ref20': float(closest_probsevere.get('REF20', 0)),
-                    'mesh': float(closest_probsevere.get('MESH', 0)),
-                    'h50_above_0c': float(closest_probsevere.get('H50_Above_0C', 0)),
-                    'echo_top_50': float(closest_probsevere.get('EchoTop_50', 0)),
-                    'vil': float(closest_probsevere.get('VIL', 0)),
+                    'CompRef': float(closest_probsevere.get('COMPREF', 0)),
+                    'Ref10': float(closest_probsevere.get('REF10', 0)),
+                    'Ref20': float(closest_probsevere.get('REF20', 0)),
+                    'MESH': float(closest_probsevere.get('MESH', 0)),
+                    'H50_Above_0C': float(closest_probsevere.get('H50_Above_0C', 0)),
+                    'EchoTop50': float(closest_probsevere.get('EchoTop_50', 0)),
+                    'VIL': float(closest_probsevere.get('VIL', 0)),
 
                     # --- Lightning / Electrical ---
-                    'maxfed': float(closest_probsevere.get('MaxFED', 0)),
-                    'maxfcd': float(closest_probsevere.get('MaxFCD', 0)),
-                    'accumfcd': float(closest_probsevere.get('AccumFCD', 0)),
-                    'minflasharea': float(closest_probsevere.get('MinFlashArea', 0)),
-                    'te_at_maxfcd': float(closest_probsevere.get('TE@MaxFCD', 0)),
-                    'flash_rate': float(closest_probsevere.get('FLASH_RATE', 0)),
-                    'flash_density': float(closest_probsevere.get('FLASH_DENSITY', 0)),
-                    'maxllaz': float(closest_probsevere.get('MAXLLAZ', 0)),
-                    'p98llaz': float(closest_probsevere.get('P98LLAZ', 0)),
-                    'p98mlaz': float(closest_probsevere.get('P98MLAZ', 0)),
-                    'maxrc_emiss': float(closest_probsevere.get('MAXRC_EMISS', 0)),
-                    'icp': float(closest_probsevere.get('ICP', 0)),
+                    'MaxFED': float(closest_probsevere.get('MaxFED', 0)),
+                    'MaxFCD': float(closest_probsevere.get('MaxFCD', 0)),
+                    'AccumFCD': float(closest_probsevere.get('AccumFCD', 0)),
+                    'MinFlashArea': float(closest_probsevere.get('MinFlashArea', 0)),
+                    'TE@MaxFCD': float(closest_probsevere.get('TE@MaxFCD', 0)),
+                    'FlashRate': float(closest_probsevere.get('FLASH_RATE', 0)),
+                    'FlashDensity': float(closest_probsevere.get('FLASH_DENSITY', 0)),
+                    'MaxLLAz': float(closest_probsevere.get('MAXLLAZ', 0)),
+                    'p98LLAz': float(closest_probsevere.get('P98LLAZ', 0)),
+                    'p98MLAz': float(closest_probsevere.get('P98MLAZ', 0)),
+                    'MaxRC_Emiss': float(closest_probsevere.get('MAXRC_EMISS', 0)),
+                    'ICP': float(closest_probsevere.get('ICP', 0)),
 
                     # --- Precipitable Water ---
-                    'pwat': float(closest_probsevere.get('PWAT', 0)),
+                    'PWAT': float(closest_probsevere.get('PWAT', 0)),
 
-                    # --- Probabilities / Hazards ---
-                    'probsevere': float(closest_probsevere.get('ProbSevere', 0)),
-                    'probhail': float(closest_probsevere.get('ProbHail', 0)),
-                    'probwind': float(closest_probsevere.get('ProbWind', 0)),
-                    'probtorn': float(closest_probsevere.get('ProbTor', 0)),
-                    # --- Storm Size / Geometry ---
-                    'size': float(closest_probsevere.get('SIZE', 0)),
+                    # --- Beam Height ---
                     'avg_beam_hgt': float(closest_probsevere.get('AVG_BEAM_HGT', 0)),
                 }
 
