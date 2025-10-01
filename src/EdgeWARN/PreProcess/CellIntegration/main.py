@@ -5,19 +5,19 @@ from EdgeWARN.PreProcess.CellIntegration.utils import StatFileHandler
 
 
 datasets = [
-    ("NLDN", fs.MRMS_NLDN_DIR, "max_flash_rate"), # Format: (Debug Name, Data Folder, Key)
-    ("EchoTop18", fs.MRMS_ECHOTOP18_DIR, "echotop18_km"),
-    ("EchoTop30", fs.MRMS_ECHOTOP30_DIR, "echotop30_km"),
-    ("PrecipRate", fs.MRMS_PRECIPRATE_DIR, "preciprate"),
-    ("VIL Density", fs.MRMS_VIL_DIR, "vil_density"),
-    ("RotationTrack", fs.MRMS_ROTATIONT_DIR, "rotationtrack"),
-    ("Reflectivity at Lowest Altitude", fs.MRMS_LOWREFL_DIR, "rala"),
-    ("VII", fs.MRMS_VII_DIR, "vii")
+    ("NLDN", fs.MRMS_NLDN_DIR, "CGFlashRate"), # Format: (Debug Name, Data Folder, Key)
+    ("EchoTop18", fs.MRMS_ECHOTOP18_DIR, "EchoTop18"),
+    ("EchoTop30", fs.MRMS_ECHOTOP30_DIR, "EchoTop30"),
+    ("PrecipRate", fs.MRMS_PRECIPRATE_DIR, "PrecipRate"),
+    ("VIL Density", fs.MRMS_VIL_DIR, "VILDensity"),
+    ("RotationTrack", fs.MRMS_ROTATIONT_DIR, "RotationTrack"),
+    ("Reflectivity at Lowest Altitude", fs.MRMS_LOWREFL_DIR, "RALA"),
+    ("VII", fs.MRMS_VII_DIR, "VII")
 ]
 
 def main():
     handler = StatFileHandler()
-    json_path = "stormcell_test_ps.json"
+    json_path = "stormcell_test.json"
     cells = handler.load_json(json_path)
     if cells is None:
         print("[CellIntegration] DEBUG: No storm cells loaded; aborting.")
@@ -30,7 +30,6 @@ def main():
     for dataset in datasets:
         print(f"[CellIntegration] DEBUG: Integrating {dataset[0]} with {len(cells)} storm cells")
         if dataset[1].exists():
-            try:
                 latest_file = fs.latest_files(dataset[1], 1)[-1]
                 if latest_file:
                     print(f"[CellIntegration] DEBUG: Using {dataset[0]} file {latest_file}")

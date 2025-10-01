@@ -18,11 +18,10 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.3.0
+#### Build Version: 0.3.1
 
 #### Changes Associated With This Build
-- Storm cells now detected based on ProbSevere cell proxy
-- Updated debug prints to show origin
+- Updated storm cell centroid calculation to weighted-centroid method
 
 #### To Do
 - Fix GLM download
