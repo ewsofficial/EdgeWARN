@@ -28,23 +28,24 @@ def main():
 
     # Integrate Data
     for dataset in datasets:
-        print(f"[CellIntegration] DEBUG: Integrating {dataset[0]} with {len(cells)} storm cells")
-        if dataset[1].exists():
-                latest_file = fs.latest_files(dataset[1], 1)[-1]
-                if latest_file:
-                    print(f"[CellIntegration] DEBUG: Using {dataset[0]} file {latest_file}")
-                    result_cells = integrator.integrate_ds(latest_file, result_cells, dataset[2])
-                    print(f"[CellIntegration] DEBUG: Successfully integrated {dataset[0]} data for {len(result_cells)} storm cells")
+        try:
+            print(f"[CellIntegration] DEBUG: Integrating {dataset[0]} with {len(cells)} storm cells")
+            if dataset[1].exists():
+                    latest_file = fs.latest_files(dataset[1], 1)[-1]
+                    if latest_file:
+                        print(f"[CellIntegration] DEBUG: Using {dataset[0]} file {latest_file}")
+                        result_cells = integrator.integrate_ds(latest_file, result_cells, dataset[2])
+                        print(f"[CellIntegration] DEBUG: Successfully integrated {dataset[0]} data for {len(result_cells)} storm cells")
 
-                else:
-                    print(f"[CellIntegration] ERROR: Could not find {dataset[0]} files")
+                    else:
+                        print(f"[CellIntegration] ERROR: Could not find {dataset[0]} files")
 
-            except Exception as e:
-                print(f"[CellIntegration] ERROR: Failed to integrate {dataset[0]} data: {e}")
-        
-        else:
-            print(f"[CellIntegration] ERROR: {dataset[1]} does not exist!")
-    
+            else:
+                print(f"[CellIntegration] ERROR: {dataset[1]} does not exist!")
+
+        except Exception as e:
+            print(f"[CellIntegration] ERROR: Failed to integrate {dataset[0]} data: {e}")
+
     # Integrate ProbSevere Data
     print(f"[CellIntegration] DEBUG: Integrating ProbSevere data with {len(cells)} storm cells")
     try:
