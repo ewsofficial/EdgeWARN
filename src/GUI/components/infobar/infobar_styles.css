@@ -1,0 +1,86 @@
+/* --- General Reset --- */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: sans-serif;
+    background-color: #eee;
+}
+
+/* --- Top Bar Container --- */
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 60px;          /* adjust as needed */
+    background-color: #8fb3e3;
+    color: white;
+    padding: 0;            /* remove all padding */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    position: relative;
+    width: 100%;           /* full viewport width */
+}
+
+/* --- Top Left Logo --- */
+.top-left-logo {
+    display: flex;
+    align-items: center;
+    height: 100%;
+}
+
+.logo-image {
+    height: 100%;          /* fill the height of the bar */
+    width: auto;           /* maintain aspect ratio */
+    object-fit: contain;
+    display: block;
+}
+
+/* --- Top Center (Time) Section --- */
+.top-center-time {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: absolute;
+    left: 50%;
+    top: 50%;                   /* vertical centering */
+    transform: translate(-50%, -50%);
+    color: white;
+    text-align: center;
+}
+
+.time-utc {
+    font-size: 24px; /* Large time display */
+    font-weight: bold;
+    line-height: 1;
+}
+
+.date-display {
+    font-size: 12px;
+    margin-top: 5px;
+}
+
+/* --- Top Right (Hamburger Icon) Section --- */
+.top-right-bar {
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.hamburger-icon {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    width: 30px;
+    height: 25px;
+    cursor: pointer;
+    margin-right: 10px;
+}
+
+.hamburger-icon div {
+    width: 100%;
+    height: 3px;
+    background-color: white;
+}

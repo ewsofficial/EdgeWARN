@@ -1,0 +1,66 @@
+/* --- Color Variables --- */
+:root {
+    --dark-blue: #2a73cc; /* Primary color */
+    --light-blue: #3b82f6; /* Hover color */
+    --border-color: black;
+    --border-width: 2px;
+    --button-height: 20px;  /* smaller height */
+}
+
+/* --- Layout & Centering --- */
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100%;        /* fill parent widget */
+    font-family: 'Inter', sans-serif;
+}
+
+/* --- Menu container --- */
+.menu-container {
+    width: 100%;
+    height: 100%;
+    box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* --- Button Styling --- */
+.menu-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    /* Visuals */
+    background-color: var(--dark-blue);
+    color: white;
+    font-size: 0.9rem;     /* smaller font */
+    font-weight: 600;
+
+    /* Spacing and Dimensions */
+    padding: 0.5rem 1rem;  /* reduce vertical padding */
+    height: var(--button-height);
+
+    /* Border and Click Behavior */
+    border: var(--border-width) solid var(--border-color);
+    cursor: pointer;
+    transition: background-color 150ms ease-in-out;
+}
+
+.menu-button:hover {
+    background-color: var(--light-blue);
+}
+
+/* --- Border Fix for Seamless Stacking --- */
+.menu-button:nth-child(n+2) {
+    margin-top: calc(0px - var(--border-width)); /* -2px */
+}
