@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EdgeWARN Menu</title>
+    
+    <!-- Link to the external CSS file -->
+    <link rel="stylesheet" href="overlay_styles.css">
+
+    <script>
+        // JavaScript functions (empty as requested)
+        function changeMapOverlay() {
+            console.log("Change Map Overlay clicked. Time to change the map view!");
+            // This is where code would go to switch the map overlay type.
+        }
+        function settingsClicked() {
+            console.log("Settings clicked. Opening the settings panel!");
+            // This is where code would go to open app settings.
+        }
+        function outputTerminalClicked() {
+            console.log("Open Output Terminal clicked. Displaying system messages!");
+            // This is where code would go to show a terminal output window.
+        }
+    </script>
+</head>
+<body>
+
+    <!-- Main Container for the Menu -->
+    <div class="menu-container">
+        
+        <!-- Button 1: Change Map Overlay -->
+        <div onclick="changeMapOverlay()" class="menu-button">
+            <span class="truncate">Change Map Overlay</span>
+        </div>
+
+        <!-- Button 2: Settings -->
+        <div onclick="settingsClicked()" class="menu-button">
+            <span class="truncate">Settings</span>
+        </div>
+
+        <!-- Button 3: Open Output Terminal (Standard Button) -->
+        <div onclick="outputTerminalClicked()" class="menu-button">
+            <span class="truncate">Open Output Terminal</span>
+        </div>
+
+    </div>
+
+</body>
+</html>

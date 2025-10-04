@@ -32,6 +32,3 @@ dist/
 *.bak
 *.swp
 *.swo
-
-# Unfinished Works
-GUI/
