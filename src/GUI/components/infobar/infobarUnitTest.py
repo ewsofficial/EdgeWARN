@@ -34,7 +34,6 @@ class HtmlGui(QMainWindow):
         )
 
         self.overlay_widget = SettingsOverlayWidget(
-            html_path=overlay_html_path,
             width=300,
             height=114,
             parent=self
@@ -52,23 +51,7 @@ class HtmlGui(QMainWindow):
         if self.overlay_widget.isVisible():
             self.overlay_widget.hide()
         else:
-            # Detect topbar size dynamically
-            def on_topbar_rect(result):
-                if not result:
-                    return
-                # result should be a dict with .bottom and .right from JS
-                page_bottom = result['bottom']
-                page_right = result['right']
-
-                # Map page coordinates to the widget coordinates
-                overlay_x = int(page_right - self.overlay_widget.width())
-                overlay_y = int(page_bottom)  # top edge flush with bottom of topbar
-
-                self.overlay_widget.move(overlay_x, overlay_y)
-                self.overlay_widget.show()
-                self.overlay_widget.raise_()
-
-            # JS to get the topbar's bounding rect
+            # JS to get topbar bounding rect relative to page
             js_code = """
                 (function() {
                     const topbar = document.querySelector('.top-bar');
@@ -77,6 +60,25 @@ class HtmlGui(QMainWindow):
                     return {bottom: rect.bottom, right: rect.right};
                 })();
             """
+
+            def on_topbar_rect(rect):
+                if not rect:
+                    return
+
+                # rect is in page coordinates, map to widget coordinates
+                page_bottom = rect['bottom']
+                page_right = rect['right']
+
+                # Get the position of the QWebEngineView in main window coordinates
+                view_pos = self.browser.mapToGlobal(self.browser.rect().topLeft())
+
+                # Compute overlay position
+                overlay_x = int(view_pos.x() + page_right - self.overlay_widget.width())
+                overlay_y = int(view_pos.y() + page_bottom)
+
+                self.overlay_widget.move(overlay_x, overlay_y)
+                self.overlay_widget.show()
+                self.overlay_widget.raise_()
 
             self.browser.page().runJavaScript(js_code, on_topbar_rect)
 
