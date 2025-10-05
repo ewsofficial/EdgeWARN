@@ -6,7 +6,7 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWebChannel import QWebChannel
 
-from GUI.components.infobar.actions.optionsClicked import Bridge
+from GUI.components.infobar.actions.optionsClicked import HamburgerBridge
 from GUI.components.infobar.widgets.overlayOptions.overlay import SettingsOverlayWidget
 
 class HtmlGui(QMainWindow):
@@ -23,7 +23,7 @@ class HtmlGui(QMainWindow):
         self.browser.setUrl(QUrl.fromLocalFile(os.path.abspath(html_file)))
 
         # WebChannel Bridge
-        self.bridge = Bridge()
+        self.bridge = HamburgerBridge()
         self.channel = QWebChannel()
         self.channel.registerObject("bridge", self.bridge)
         self.browser.page().setWebChannel(self.channel)
