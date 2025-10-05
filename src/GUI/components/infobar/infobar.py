@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtCore import QUrl
-from GUI.components.infobar.actions.optionsClicked import Bridge  # import your bridge
+from GUI.components.infobar.actions.optionsClicked import HamburgerBridge  # import your bridge
 
 class InfoBar(QWidget):
     HTML_FILE = "GUI/components/infobar/infobar.html"
@@ -22,7 +22,7 @@ class InfoBar(QWidget):
         self.browser.setUrl(QUrl.fromLocalFile(file_path))
 
         # Setup WebChannel bridge
-        self.bridge = Bridge()
+        self.bridge = HamburgerBridge()
         self.channel = QWebChannel()
         self.channel.registerObject("bridge", self.bridge)
         self.browser.page().setWebChannel(self.channel)

@@ -2,6 +2,7 @@ import os
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl, Qt
+from PyQt6.QtWebChannel import QWebChannel
 
 class SettingsOverlayWidget(QWidget):
     """Floating HTML overlay widget with no whitespace."""

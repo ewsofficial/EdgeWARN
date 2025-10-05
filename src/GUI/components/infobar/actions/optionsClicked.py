@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal
 from GUI.components.infobar.widgets.overlayOptions.overlay import SettingsOverlayWidget
 
-class Bridge(QObject):
+class HamburgerBridge(QObject):
     """Bridge object for JavaScript communication."""
     hamburgerClickedSignal = pyqtSignal()
 
@@ -10,4 +10,4 @@ class Bridge(QObject):
         """Called from JS when the hamburger icon is clicked."""
         print("[GUI] DEBUG: Hamburger clicked!")
         self.hamburgerClickedSignal.emit()
-        
+
