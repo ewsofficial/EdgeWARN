@@ -1,105 +1,117 @@
 import sys
-import os
-from PyQt6.QtWidgets import QApplication, QMainWindow
-from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWebChannel import QWebChannel
+from PyQt6.QtWidgets import QMainWindow, QApplication, QWidget, QLabel, QHBoxLayout, QVBoxLayout
+from PyQt6.QtCore import Qt, QTimer, QTime, QDate
+from PyQt6.QtGui import QPixmap
 
 from GUI.components.infobar.actions.optionsClicked import HamburgerBridge
 from GUI.components.infobar.widgets.overlayOptions.overlay import SettingsOverlayWidget
 
-class HtmlGui(QMainWindow):
-    def __init__(self, html_file, icon_path):
+
+class MainWindow(QMainWindow):
+    def __init__(self):
         super().__init__()
-        self.setWindowTitle("EdgeWARN GUI Test")
+        self.setWindowTitle("EdgeWARN GUI")
         self.setGeometry(200, 100, 1000, 700)
-        self.setWindowIcon(QIcon(icon_path))
 
-        # Main browser
-        self.browser = QWebEngineView()
-        self.setCentralWidget(self.browser)
-        self.browser.loadFinished.connect(self.on_page_load)
-        self.browser.setUrl(QUrl.fromLocalFile(os.path.abspath(html_file)))
+        central = QWidget()
+        self.setCentralWidget(central)
+        self.main_layout = QVBoxLayout(central)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
 
-        # WebChannel Bridge
+        # Top bar
+        self.top_bar_height = 60
+        self.top_bar = QWidget(self)
+        self.top_bar.setFixedHeight(self.top_bar_height)
+        self.top_bar.setStyleSheet("background-color: #8fb3e3; color: white;")
+        self.top_layout = QHBoxLayout(self.top_bar)
+        self.top_layout.setContentsMargins(0, 0, 10, 0)
+        self.top_layout.setSpacing(10)
+
+        # Left: logo
+        self.logo_label = QLabel()
+        pixmap = QPixmap("GUI/assets/EdgeWARN_logo.png")
+        pixmap = pixmap.scaledToHeight(self.top_bar_height, Qt.TransformationMode.SmoothTransformation)
+        self.logo_label.setPixmap(pixmap)
+        self.top_layout.addWidget(self.logo_label, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Center: time/date
+        self.time_label = QLabel("--:-- UTC")
+        self.time_label.setStyleSheet("font-size: 24px; font-weight: bold;")
+        self.date_label = QLabel("YYYY/MM/DD")
+        self.date_label.setStyleSheet("font-size: 12px;")
+        center_layout = QVBoxLayout()
+        center_layout.addWidget(self.time_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        center_layout.addWidget(self.date_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        center_widget = QWidget()
+        center_widget.setLayout(center_layout)
+        self.top_layout.addWidget(center_widget, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        # Right: hamburger using HamburgerBridge
         self.bridge = HamburgerBridge()
-        self.channel = QWebChannel()
-        self.channel.registerObject("bridge", self.bridge)
-        self.browser.page().setWebChannel(self.channel)
+        self.hamburger_btn = QLabel("☰", self.top_bar)  # simple clickable label
+        self.hamburger_btn.setStyleSheet("font-size: 18px;")
+        self.hamburger_btn.setFixedSize(30, 25)
+        self.hamburger_btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.top_layout.addWidget(self.hamburger_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        # Call the bridge method so its debug print runs, then it emits the signal
+        self.hamburger_btn.mousePressEvent = lambda event: self.bridge.hamburgerClicked()
 
-        # Overlay widget (initially hidden)
-        overlay_html_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "widgets", "overlayOptions", "overlay.html")
-        )
-
-        self.overlay_widget = SettingsOverlayWidget(
-            width=300,
-            height=114,
-            parent=self
-        )
-        self.overlay_widget.hide()
-
-        # Connect the bridge signal to toggle overlay
+        # Overlay
+        self.overlay = SettingsOverlayWidget(parent=self)
+        self.overlay.hide()
         self.bridge.hamburgerClickedSignal.connect(self.toggle_overlay)
 
-    def on_page_load(self, ok):
-        if not ok:
-            print("Failed to load infobar HTML page.")
+        # Timer for time/date
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_time)
+        self.timer.start(1000)
+        self.update_time()
 
-    def toggle_overlay(self):
-        if self.overlay_widget.isVisible():
-            self.overlay_widget.hide()
-        else:
-            # JS to get topbar bounding rect relative to page
-            js_code = """
-                (function() {
-                    const topbar = document.querySelector('.top-bar');
-                    if (!topbar) return null;
-                    const rect = topbar.getBoundingClientRect();
-                    return {bottom: rect.bottom, right: rect.right};
-                })();
-            """
+        # Dummy central content
+        self.main_content = QLabel("Main Application Content Goes Here")
+        self.main_content.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.main_layout.addWidget(self.main_content)
 
-            def on_topbar_rect(rect):
-                if not rect:
-                    return
-
-                # rect is in page coordinates, map to widget coordinates
-                page_bottom = rect['bottom']
-                page_right = rect['right']
-
-                # Get the position of the QWebEngineView in main window coordinates
-                view_pos = self.browser.mapToGlobal(self.browser.rect().topLeft())
-
-                # Compute overlay position
-                overlay_x = int(view_pos.x() + page_right - self.overlay_widget.width())
-                overlay_y = int(view_pos.y() + page_bottom)
-
-                self.overlay_widget.move(overlay_x, overlay_y)
-                self.overlay_widget.show()
-                self.overlay_widget.raise_()
-
-            self.browser.page().runJavaScript(js_code, on_topbar_rect)
+        # Initial positioning
+        self.update_top_bar_geometry()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self.overlay_widget.isVisible():
-            self.overlay_widget.hide()  # retract overlay on resize
+        self.update_top_bar_geometry()
+        if self.overlay.isVisible():
+            self.overlay.hide()
 
     def moveEvent(self, event):
         super().moveEvent(event)
-        if self.overlay_widget.isVisible():
-            self.overlay_widget.hide()  # retract overlay on move
+        if self.overlay.isVisible():
+            self.overlay.hide()
+
+    def update_top_bar_geometry(self):
+        # 71% of window width, flush to left
+        width = int(self.width() * 0.71)
+        self.top_bar.setGeometry(0, 0, width, self.top_bar_height)
+
+    def update_time(self):
+        current_time = QTime.currentTime().toString("HH:mm")
+        current_date = QDate.currentDate().toString("yyyy/MM/dd")
+        self.time_label.setText(f"{current_time} UTC")
+        self.date_label.setText(current_date)
+
+    def toggle_overlay(self):
+        if self.overlay.isVisible():
+            self.overlay.hide()
+        else:
+            top_bar_pos = self.top_bar.mapToGlobal(self.top_bar.rect().topLeft())
+            overlay_x = top_bar_pos.x() + self.top_bar.width() - self.overlay.width()
+            overlay_y = top_bar_pos.y() + self.top_bar.height()
+            self.overlay.move(overlay_x, overlay_y)
+            self.overlay.show()
+            self.overlay.raise_()
+
 
 if __name__ == "__main__":
-    icon_path = os.path.abspath("GUI/assets/EdgeWARN_logo.png")
-    html_file = os.path.abspath("GUI/components/infobar/infobar.html")
-
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon(icon_path))
-
-    window = HtmlGui(html_file, icon_path)
+    window = MainWindow()
     window.show()
-
     sys.exit(app.exec())
