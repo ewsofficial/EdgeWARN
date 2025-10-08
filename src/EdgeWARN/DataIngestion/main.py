@@ -1,5 +1,6 @@
 import datetime
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from EdgeWARN.DataIngestion.config import base_dir, mrms_modifiers
 from EdgeWARN.DataIngestion.download import FileFinder, FileDownloader
@@ -9,15 +10,45 @@ import util.core.file as fs
 
 #################################
 ### EWS Data Ingestion Module ###
-### Build Version: v1.0.1     ###
+### Build Version: v1.0.2     ###
 ### Contributors: Yuchen Wei  ###
 #################################
 
+def process_modifier(modifier, outdir, dt, max_time, max_entries):
+    print("=" * 80)
+    print(f"[DataIngestion] DEBUG: Checking MRMS source: {modifier}")
+
+    finder = FileFinder(dt, base_dir, max_time, max_entries)
+    downloader = FileDownloader(dt)
+
+    try:
+        files_with_timestamps = finder.lookup_files(modifier)
+        if not files_with_timestamps:
+            print(f"[DataIngestion] ERROR: No files found for {modifier}")
+            return
+
+        print(f"[DataIngestion] DEBUG: Found {len(files_with_timestamps)} candidate files for {modifier}")
+
+        downloaded = downloader.download_latest(files_with_timestamps, outdir)
+        if downloaded:
+            print(outdir)
+            print(f"[DataIngestion] DEBUG: Downloaded latest {modifier} file to {downloaded}")
+            print(f"[DataIngestion] DEBUG: Attempting to decompress {downloaded}")
+            downloader.decompress_file(downloaded)
+        else:
+            print(f"[DataIngestion] ERROR: Failed to download latest {modifier} file")
+
+    except Exception as e:
+        print(f"[DataIngestion] ERROR: Failed to process {modifier}: {e}")
+
+
 def main():
     # Clear Files
-    folders = [fs.MRMS_3D_DIR, fs.MRMS_ECHOTOP18_DIR, fs.MRMS_FLASH_DIR, fs.MRMS_NLDN_DIR, fs.MRMS_PRECIPRATE_DIR, fs.MRMS_QPE15_DIR, 
-               fs.MRMS_ROTATIONT_DIR, fs.MRMS_VIL_DIR, fs.MRMS_PROBSEVERE_DIR, fs.MRMS_ECHOTOP30_DIR, fs.MRMS_LOWREFL_DIR, fs.MRMS_VII_DIR
-               ]
+    folders = [
+        fs.MRMS_3D_DIR, fs.MRMS_ECHOTOP18_DIR, fs.MRMS_FLASH_DIR, fs.MRMS_NLDN_DIR,
+        fs.MRMS_PRECIPRATE_DIR, fs.MRMS_QPE15_DIR, fs.MRMS_ROTATIONT_DIR, fs.MRMS_VIL_DIR,
+        fs.MRMS_PROBSEVERE_DIR, fs.MRMS_ECHOTOP30_DIR, fs.MRMS_LOWREFL_DIR, fs.MRMS_VII_DIR
+    ]
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=20)
     fs.wipe_temp()
@@ -28,10 +59,10 @@ def main():
 
     # Find the most recent MRMS reflectivity file and extract its timestamp
     refl_files = sorted(
-            fs.MRMS_RADAR_DIR.glob("MRMS_MergedReflectivityQC_max_*.nc"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True
-        )
+        fs.MRMS_RADAR_DIR.glob("MRMS_MergedReflectivityQC_max_*.nc"),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True
+    )
     if not refl_files:
         print("[DataIngestion] ERROR: No MRMS reflectivity files found! Using current UTC time.")
         dt = datetime.datetime.now(datetime.timezone.utc)
@@ -49,38 +80,17 @@ def main():
     max_time = datetime.timedelta(hours=6)   # Look back 6 hours
     max_entries = 10                         # How many files to check per source
 
-    for modifier, outdir in mrms_modifiers:
-        print("=" * 80)
-        print(f"[DataIngestion] DEBUG: Checking MRMS source: {modifier}")
+    # Multithread MRMS downloads
+    with ThreadPoolExecutor(max_workers=len(mrms_modifiers)) as executor:
+        futures = [executor.submit(process_modifier, modifier, outdir, dt, max_time, max_entries)
+                   for modifier, outdir in mrms_modifiers]
+        for future in as_completed(futures):
+            future.result()  # Will raise exceptions if any occurred
 
-        # Create finder and downloader for this modifier
-        finder = FileFinder(dt, base_dir, max_time, max_entries)
-        downloader = FileDownloader(dt)
-
-        # Search for files
-        try:
-            files_with_timestamps = finder.lookup_files(modifier)
-            if not files_with_timestamps:
-                print(f"[DataIngestion] ERROR: No files found for {modifier}")
-                continue
-
-            print(f"[DataIngestion] DEBUG: Found {len(files_with_timestamps)} candidate files for {modifier}")
-
-            # Download the latest file for this source
-            downloaded = downloader.download_latest(files_with_timestamps, outdir)
-            if downloaded:
-                print(outdir)
-                print(f"[DataIngestion] DEBUG: Downloaded latest {modifier} file to {downloaded}")
-                print(f"[DataIngestion] DEBUG: Attempting to decompress {downloaded}")
-                downloader.decompress_file(downloaded)
-            else:
-                print(f"[DataIngestion] ERROR: Failed to download latest {modifier} file")
-
-        except Exception as e:
-            print(f"[DataIngestion] ERROR: Failed to process {modifier}: {e}")
-
+    # Download Synoptic feeds (can also be threaded if desired)
     SynopticDownloader.download_latest_rtma(dt, fs.THREDDS_RTMA_DIR)
     SynopticDownloader.download_rap_awp(dt, fs.NOAA_RAP_DIR)
+
 
 if __name__ == "__main__":
     main()
