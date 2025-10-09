@@ -42,7 +42,7 @@ def process_modifier(modifier, outdir, dt, max_time, max_entries):
         print(f"[DataIngestion] ERROR: Failed to process {modifier}: {e}")
 
 
-def main():
+def download_all_files(dt):
     # Clear Files
     folders = [
         fs.MRMS_3D_DIR, fs.MRMS_ECHOTOP18_DIR, fs.MRMS_FLASH_DIR, fs.MRMS_NLDN_DIR,
@@ -52,30 +52,6 @@ def main():
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=20)
     fs.wipe_temp()
-
-    # Download MRMS Files
-    MRMSDownloader.download_mrms_composite_reflectivity(outdir=fs.MRMS_3D_DIR, tempdir=fs.TEMP_DIR)
-    MRMSDownloader.find_and_concat_refl()
-
-    # Find the most recent MRMS reflectivity file and extract its timestamp
-    refl_files = sorted(
-        fs.MRMS_RADAR_DIR.glob("MRMS_MergedReflectivityQC_max_*.nc"),
-        key=lambda f: f.stat().st_mtime,
-        reverse=True
-    )
-    if not refl_files:
-        print("[DataIngestion] ERROR: No MRMS reflectivity files found! Using current UTC time.")
-        dt = datetime.datetime.now(datetime.timezone.utc)
-    else:
-        refl_file = refl_files[0]
-        ts_str = DetectionDataHandler(None, None, None, None, None, None).find_timestamp(str(refl_file))
-        try:
-            dt = datetime.datetime.fromisoformat(ts_str)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=datetime.timezone.utc)
-        except Exception:
-            print(f"[DataIngestion] ERROR: Could not parse timestamp '{ts_str}', using current UTC time.")
-            dt = datetime.datetime.now(datetime.timezone.utc)
 
     max_time = datetime.timedelta(hours=6)   # Look back 6 hours
     max_entries = 10                         # How many files to check per source
@@ -93,4 +69,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    dt = datetime.datetime.now(datetime.timezone.utc)
+    download_all_files(dt)
