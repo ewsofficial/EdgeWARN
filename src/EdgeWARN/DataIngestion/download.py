@@ -5,7 +5,6 @@ from urllib.parse import urljoin
 from pathlib import Path
 import gzip
 import shutil
-import boto3
 import os
 
 

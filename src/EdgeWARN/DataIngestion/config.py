@@ -18,5 +18,6 @@ mrms_modifiers = [
     ("2D/MergedRhoHV/", MRMS_RHOHV_DIR),
     ("2D/PrecipFlag/", MRMS_PRECIPTYP_DIR),
     ("2D/ReflectivityAtLowestAltitude/", MRMS_LOWREFL_DIR),
+    ("2D/MergedReflectivityQCComposite/", MRMS_COMPOSITE_DIR)
     ("2D/VII/", MRMS_VII_DIR)
 ]
