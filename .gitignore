@@ -32,3 +32,6 @@ dist/
 *.bak
 *.swp
 *.swo
+
+# Storm cell JSONs
+stormcell_test.json
