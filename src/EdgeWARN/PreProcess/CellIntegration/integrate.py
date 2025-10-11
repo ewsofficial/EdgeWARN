@@ -1,9 +1,6 @@
 from .utils import StormIntegrationUtils
-from datetime import datetime
-from shapely.geometry import shape
 import numpy as np
 import xarray as xr
-from matplotlib.path import Path
 import gc
 
 
@@ -17,52 +14,6 @@ class StormCellIntegrator:
         Initialize the integrator.
         """
         pass
-    
-    def find_closest_storm_history_entry(self, storm_history, target_timestamp):
-        """
-        Find the storm history entry closest to the target timestamp.
-        
-        Args:
-            storm_history: List of storm history entries
-            target_timestamp: datetime object to compare against
-            
-        Returns:
-            Index of the closest entry, or None if no entries found
-        """
-        if not storm_history:
-            return None
-            
-        # Convert target timestamp to datetime object if it's a string
-        if isinstance(target_timestamp, str):
-            try:
-                target_timestamp = datetime.fromisoformat(target_timestamp.replace('Z', '+00:00'))
-            except ValueError:
-                print(f"[CellIntegration] ERROR: Could not parse target timestamp: {target_timestamp}")
-                return None
-        
-        closest_index = None
-        min_time_diff = float('inf')
-        
-        for i, entry in enumerate(storm_history):
-            if 'timestamp' not in entry:
-                continue
-                
-            try:
-                # Parse entry timestamp
-                entry_time = datetime.fromisoformat(entry['timestamp'].replace('Z', '+00:00'))
-                
-                # Calculate time difference
-                time_diff = abs((entry_time - target_timestamp).total_seconds())
-                
-                if time_diff < min_time_diff:
-                    min_time_diff = time_diff
-                    closest_index = i
-                    
-            except ValueError as e:
-                print(f"[CellIntegration] ERROR: Could not parse timestamp in storm history: {entry['timestamp']} - {e}")
-                continue
-        
-        return closest_index
     
     def integrate_ds(self, dataset_path, storm_cells, output_key):
         """
@@ -164,8 +115,6 @@ class StormCellIntegrator:
         probsevere_features = probsevere_data['features']
         print(f"[CellIntegration] DEBUG: Integrating ProbSevere data for {len(probsevere_features)} features with {len(storm_cells)} storm cells...")
 
-        # Convert max distance from km to degrees (approximate, at mid-latitudes)
-        max_distance_deg = max_distance_km / 111.0
         matches_found = 0
 
         for storm_cell in storm_cells:
@@ -178,9 +127,6 @@ class StormCellIntegrator:
 
             if 'centroid' not in entry or len(entry['centroid']) < 2:
                 continue
-
-            storm_lat, storm_lon = entry['centroid'][0], entry['centroid'][1]
-            storm_lon_converted = storm_lon - 360 if storm_lon > 180 else storm_lon
 
             # Match by ID instead of distance
             closest_probsevere = None
@@ -249,10 +195,6 @@ class StormCellIntegrator:
                     # --- Beam Height ---
                     'avg_beam_hgt': float(closest_probsevere.get('AVG_BEAM_HGT', 0)),
                 }
-
-
-                # Metadata
-                entry['probsevere_distance_km'] = round(distance_km, 2)
 
                 print(f"[CellIntegration] DEBUG: Matched cell {cell_id} with ProbSevere feature (distance: {distance_km:.2f} km)")
                 matches_found += 1

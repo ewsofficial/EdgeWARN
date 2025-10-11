@@ -3,25 +3,24 @@ import platform
 from datetime import datetime
 
 # ---------- PATH CONFIG ----------
-BASE_DIR = Path("C:/input_data") if platform.system() == "Windows" else Path("data_ingest")
-MRMS_3D_DIR = BASE_DIR / "nexrad_merged"
-MRMS_LOWREFL_DIR = BASE_DIR / "refl_at_lowest"
-MRMS_LTNG_DIR = BASE_DIR / "mrms_lightning"
-MRMS_NLDN_DIR = BASE_DIR / "mrms_nldn"
-MRMS_ECHOTOP18_DIR = BASE_DIR / "mrms_echotop18"
-MRMS_ECHOTOP30_DIR = BASE_DIR / "mrms_echotop30"
-MRMS_QPE15_DIR = BASE_DIR / "mrms_qpe15"
-MRMS_PRECIPRATE_DIR = BASE_DIR / "mrms_preciprate"
-MRMS_PROBSEVERE_DIR = BASE_DIR / "mrms_probsevere"
-MRMS_RADAR_DIR = BASE_DIR / "nexrad_merged"
-MRMS_FLASH_DIR = BASE_DIR / "mrms_flash"
-MRMS_VIL_DIR = BASE_DIR / "mrms_vil_density"
-MRMS_VII_DIR = BASE_DIR / "mrms_vii"
-MRMS_ROTATIONT_DIR = BASE_DIR / "mrms_rotationtrack"
-MRMS_RHOHV_DIR = BASE_DIR / "mrms_rhohv"
-THREDDS_RTMA_DIR = BASE_DIR / "rtma"
-NOAA_RAP_DIR = BASE_DIR / "rap"
-TEMP_DIR = BASE_DIR / "temp"
+BASE_DIR = Path("C:/EdgeWARN_input") if platform.system() == "Windows" else Path("EdgeWARN_input")
+MRMS_RALA_DIR = BASE_DIR / "RALA"
+MRMS_NLDN_DIR = BASE_DIR / "NLDN"
+MRMS_ECHOTOP18_DIR = BASE_DIR / "EchoTop18"
+MRMS_ECHOTOP30_DIR = BASE_DIR / "EchoTop30"
+MRMS_QPE_DIR = BASE_DIR / "QPE_01H"
+MRMS_PRECIPRATE_DIR = BASE_DIR / "PrecipRate"
+MRMS_PROBSEVERE_DIR = BASE_DIR / "ProbSevere"
+MRMS_FLASH_DIR = BASE_DIR / "FLASH"
+MRMS_VIL_DIR = BASE_DIR / "VILDensity"
+MRMS_VII_DIR = BASE_DIR / "VII"
+MRMS_ROTATIONT_DIR = BASE_DIR / "RotationTrack30min"
+MRMS_COMPOSITE_DIR = BASE_DIR / "CompRefQC"
+MRMS_RHOHV_DIR = BASE_DIR / "RhoHV"
+MRMS_PRECIPTYP_DIR = BASE_DIR / "PrecipRate"
+THREDDS_RTMA_DIR = BASE_DIR / "RTMA"
+NOAA_RAP_DIR = BASE_DIR / "RAP"
+TEMP_DIR = BASE_DIR / "tmp"
 
 # NEW LATEST FILES FUNCTION
 def latest_files(dir, n):
