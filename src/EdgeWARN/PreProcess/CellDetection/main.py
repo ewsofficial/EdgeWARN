@@ -42,22 +42,18 @@ def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tu
     entries = saver.append_storm_history(entries, radar_new)
     entries = StormVectorCalculator.calculate_vectors(entries)
 
-    import json
-
     with open(json_output, 'w') as f:
-        json.dump(entries, f, indent=2, default=str)
+        js.dump(entries, f, indent=2, default=str)
 
 
 if __name__ == "__main__":
     from pathlib import Path
-    num_old = -5
-    num_new = num_old + 1
-    radar_files = fs.latest_files(fs.MRMS_3D_DIR, 6)
-    radar_old, radar_new = radar_files[num_old], radar_files[num_new]
-    ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 6)
-    ps_old, ps_new = ps_files[num_old], ps_files[num_new]
-    lat_bounds = (35.0, 38.0)
-    lon_bounds = (283.0, 285.0)
+    radar_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
+    radar_old, radar_new = radar_files[-2], radar_files[-1]
+    ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
+    ps_old, ps_new = ps_files[-2], ps_files[-1]
+    lat_bounds = (32, 35)
+    lon_bounds = (278, 281)
     main(radar_old, radar_new, ps_old, ps_new, lat_bounds, lon_bounds, Path("stormcell_test.json"))
          
 

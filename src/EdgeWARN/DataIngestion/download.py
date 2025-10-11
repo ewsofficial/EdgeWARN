@@ -16,7 +16,7 @@ class FileFinder:
         self.max_entries = max_entries
 
     @staticmethod
-    def _extract_timestamp_from_filename(filename):
+    def extract_timestamp_from_filename(filename):
         """
         Extract timestamp from MRMS filename with multiple pattern support.
         Returns timezone-aware datetime object.
@@ -77,99 +77,82 @@ class FileFinder:
         # DEBUG: print(f"DEBUG: Using fallback timestamp: {fallback}")
         return fallback
 
-    def list_http_directory(self, url):
+    def list_http_directory(self, url, verbose=True):
         """List files in an HTTP directory by parsing HTML response."""
         try:
             response = requests.get(url)
             response.raise_for_status()
             
-            # Simple HTML parsing to extract links with better filtering
             files = []
             for line in response.text.split('\n'):
                 if 'href="' in line:
                     match = re.search(r'href="([^"]+)"', line)
                     if match:
                         filename = match.group(1)
-                        # Skip directories, query parameters, navigation links, and "latest" files
                         if (filename.endswith('/') or 
                             '?' in filename or 
                             '=' in filename or 
-                            'latest' in filename.lower() or  # Exclude files with "latest"
+                            'latest' in filename.lower() or
                             filename in ['../', 'Parent Directory/'] or
                             filename.startswith('?')):
                             continue
-                        # Only include files that look like actual data files
                         if (filename.endswith('.gz') or 
                             filename.endswith('.grib2') or 
                             filename.endswith('.nc') or
                             filename.endswith('.json') or
                             re.search(r'\d{8}-\d{6}', filename)):
                             files.append(filename)
+            if verbose:
+                print(f"[DataIngestion] DEBUG: Found {len(files)} potential files to process in {url}")
             return files
             
         except requests.RequestException as e:
             print(f"[DataIngestion] ERROR: Could not access {url}: {e}")
             return []
 
-    def lookup_files(self, modifier):
+    def lookup_files(self, modifier, verbose=True):
         """
         Attempts file lookup for files matching the modifier pattern in HTTP directory.
         Returns list of (file_url, timestamp) tuples.
         """
         matching_files = []
         
-        # Ensure self.dt is timezone-aware
         if self.dt.tzinfo is None:
             self.dt = self.dt.replace(tzinfo=datetime.timezone.utc)
         
-        # Convert max_time to datetime if it's a timedelta
         if isinstance(self.max_time, datetime.timedelta):
             max_time_cutoff = self.dt - self.max_time
-            # Ensure max_time_cutoff is timezone-aware
             if max_time_cutoff.tzinfo is None:
                 max_time_cutoff = max_time_cutoff.replace(tzinfo=datetime.timezone.utc)
         else:
-            # Ensure max_time is also timezone-aware if it's a datetime
             max_time_cutoff = self.max_time
             if max_time_cutoff.tzinfo is None:
                 max_time_cutoff = max_time_cutoff.replace(tzinfo=datetime.timezone.utc)
         
-        # Build the full URL
         full_url = urljoin(self.base_url, modifier)
         if not full_url.endswith('/'):
             full_url += '/'
         
-        print(f"[DataIngestion] DEBUG: Searching URL: {full_url}")
+        if verbose:
+            print(f"[DataIngestion] DEBUG: Searching URL: {full_url}")
         
-        # List files in the HTTP directory
-        files = self.list_http_directory(full_url)
-        print(f"[DataIngestion] DEBUG: Found {len(files)} potential files to process")
+        files = self.list_http_directory(full_url, verbose=verbose)
         
         for filename in files:
-            # Skip any files with "latest" (double safety check)
             if 'latest' in filename.lower():
-                # DEBUG: print(f"Skipping file with 'latest': {filename}")
                 continue
-                
-            # DEBUG: print(f"Processing file: {filename}")
-            # Process each file
-            timestamp = self._extract_timestamp_from_filename(filename)
-            
-            # Ensure timestamp is timezone-aware for comparison
+            timestamp = self.extract_timestamp_from_filename(filename)
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
-            
-            # DEBUG: print(f"File timestamp: {timestamp}")
-            # DEBUG: print(f"Time range: {max_time_cutoff} to {self.dt}")
-            
             if timestamp >= max_time_cutoff and timestamp <= self.dt:
                 file_url = urljoin(full_url, filename)
                 matching_files.append((file_url, timestamp))
-                # DEBUG: print(f"Added file: {filename} with timestamp: {timestamp}")
         
-        # Sort by timestamp (newest first) and apply max_entries limit
         matching_files.sort(key=lambda x: x[1], reverse=True)
-        return matching_files[:self.max_entries]
+        
+        if self.max_entries:
+            return matching_files[:self.max_entries]
+        return matching_files
     
 class FileDownloader:
     def __init__(self, dt):

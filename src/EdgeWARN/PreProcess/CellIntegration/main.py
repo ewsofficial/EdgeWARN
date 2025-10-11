@@ -11,7 +11,7 @@ datasets = [
     ("PrecipRate", fs.MRMS_PRECIPRATE_DIR, "PrecipRate"),
     ("VIL Density", fs.MRMS_VIL_DIR, "VILDensity"),
     ("RotationTrack", fs.MRMS_ROTATIONT_DIR, "RotationTrack"),
-    ("Reflectivity at Lowest Altitude", fs.MRMS_LOWREFL_DIR, "RALA"),
+    ("Reflectivity at Lowest Altitude", fs.MRMS_RALA_DIR, "RALA"),
     ("VII", fs.MRMS_VII_DIR, "VII")
 ]
 
