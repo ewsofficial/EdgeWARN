@@ -18,11 +18,10 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.4.0
+#### Build Version: 0.4.1
 
 #### Changes Associated With This Build
-- Multithreaded data ingestion with scheduler (Now 2-min refresh)
-- Scheduler checks for last common minute
+- Fixed data desynchronization errors with ingestion module
 
 #### To Do
 - Fix GLM download
