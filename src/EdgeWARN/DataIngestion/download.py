@@ -155,13 +155,17 @@ class FileDownloader:
         if not files:
             raise ValueError("ERROR: No files provided")
             return
-        
-        print(f"Latest file: {files[-1][-1]}")
 
-        # Pick the file closest to self.dt
-        latest, ts = min(files, key=lambda x: abs(x[1] - self.dt))
+        # Find file with exact matching timestamp
+        matched = [(url, ts) for url, ts in files if ts == self.dt]
 
-        print(f"[DataIngestion] DEBUG: Latest file: {latest}")
+        if not matched:
+            print(f"[DataIngestion] WARN: No file found matching exact timestamp {self.dt:%Y-%m-%d %H:%M:%S %Z}")
+            return None
+
+        # Only one expected — but take the first if multiple
+        latest, ts = matched[0]
+        print(f"[DataIngestion] DEBUG: Found exact match: {latest}")
 
         # Ensure output directory exists
         outdir.mkdir(parents=True, exist_ok=True)
@@ -170,12 +174,12 @@ class FileDownloader:
         filename = Path(latest).name
         outfile = outdir / filename
 
-        # Skip download if it already exists
+        # Skip if already downloaded
         if outfile.exists():
             print(f"[DataIngestion] DEBUG: {outfile} already exists locally")
             return outfile
 
-        # Download the file
+        # Download file
         try:
             print(f"[DataIngestion] DEBUG: Downloading file: {filename}")
             response = requests.get(latest, stream=True)
@@ -187,7 +191,7 @@ class FileDownloader:
             return outfile
         except Exception as e:
             print(f"[DataIngestion] ERROR: Failed to download {filename}: {e}")
-            return
+            return None
     
     def download_specific(self, files, n: int, outdir: Path):
         """
