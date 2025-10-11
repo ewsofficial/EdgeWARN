@@ -29,7 +29,7 @@ sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
 
 # Constants
-lat_limits, lon_limits = (32, 35), (278, 281)
+lat_limits, lon_limits = (33.5, 35.7), (280.7, 284.6)
 
 def pipeline(log_queue, dt):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""
