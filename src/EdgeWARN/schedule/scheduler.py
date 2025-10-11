@@ -2,7 +2,7 @@ import datetime
 import time
 from pathlib import Path
 from EdgeWARN.DataIngestion.download import FileFinder
-from EdgeWARN.DataIngestion.config import base_dir, mrms_modifiers
+from EdgeWARN.DataIngestion.config import base_dir, check_modifiers
 
 
 class MRMSUpdateChecker:
@@ -25,7 +25,7 @@ class MRMSUpdateChecker:
             files_with_timestamps = finder.lookup_files(modifier, verbose=False)
             if not files_with_timestamps:
                 if self.verbose:
-                    print(f"[{modifier}] ❌ No remote files found")
+                    print(f"[{modifier}] No remote files found")
                 return False
 
             _, latest_source_time = max(files_with_timestamps, key=lambda x: x[1])
@@ -33,7 +33,7 @@ class MRMSUpdateChecker:
 
             if not local_files:
                 if self.verbose:
-                    print(f"[{modifier}] ⚠️ No local files found")
+                    print(f"[{modifier}] No local files found")
                 return True
 
             local_times = []
@@ -44,7 +44,7 @@ class MRMSUpdateChecker:
 
             if not local_times:
                 if self.verbose:
-                    print(f"[{modifier}] ⚠️ Could not extract timestamps from local files")
+                    print(f"[{modifier}] Could not extract timestamps from local files")
                 return True
 
             latest_local_time = max(local_times)
@@ -61,9 +61,9 @@ class MRMSUpdateChecker:
         all_new = True
         for modifier in modifiers:
             if self.has_update(modifier):
-                print(f"[{modifier[0]}] ✅ New file available")
+                print(f"[{modifier[0]}] New file available")
             else:
-                print(f"[{modifier[0]}] ⏸ No new file")
+                print(f"[{modifier[0]}] No new file")
                 all_new = False
         return all_new
 
@@ -82,7 +82,7 @@ class MRMSUpdateChecker:
             files_with_timestamps = finder.lookup_files(modifier, verbose=False)
             if not files_with_timestamps:
                 if self.verbose:
-                    print(f"[{modifier}] ❌ No remote files found in the last hour")
+                    print(f"[{modifier}] No remote files found in the last hour")
                 continue
 
             ts_rounded = [ts.replace(second=0, microsecond=0) for _, ts in files_with_timestamps]
@@ -90,33 +90,29 @@ class MRMSUpdateChecker:
 
         if not modifier_times:
             if self.verbose:
-                print("❌ No files found in any modifier within the last hour")
+                print("[Scheduler] No files found in any modifier within the last hour")
             return None
 
         common_minutes = set.intersection(*modifier_times)
         if not common_minutes:
             if self.verbose:
-                print("⚠️ No common timestamps across all modifiers in the last hour")
+                print("[Scheduler] No common timestamps across all modifiers in the last hour")
             return None
 
         latest_common = max(common_minutes)
         if self.verbose:
-            print(f"[Result] Latest common timestamp within 1h: {latest_common}")
+            print(f"[Scheduler] Latest common timestamp within 1h: {latest_common}")
         return latest_common
 
 
 if __name__ == "__main__":
     checker = MRMSUpdateChecker(verbose=True)
 
-    print("\n=== MRMS Update Checker ===")
-    all_new = checker.all_sources_available(mrms_modifiers)
-    print(f"[Result] {'✅ All sources have new data' if all_new else '❌ Not all sources have new data'}")
-
     print("\n=== MRMS Common Timestamp Monitor ===")
     while True:
         now = datetime.datetime.now(datetime.timezone.utc)
         print(f"\nCurrent time: {now}")
-        common_ts = checker.latest_common_minute_1h(mrms_modifiers)
+        common_ts = checker.latest_common_minute_1h(check_modifiers)
         if common_ts:
             print(f"[Result] Latest common timestamp: {common_ts}")
         else:
