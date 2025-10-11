@@ -19,14 +19,12 @@ class FileFinder:
     def extract_timestamp_from_filename(filename):
         """
         Extract timestamp from MRMS filename with multiple pattern support.
-        Returns timezone-aware datetime object.
+        Returns timezone-aware datetime object rounded DOWN to minute precision.
         """
-        # DEBUG: print(f"DEBUG: Extracting timestamp from filename: {filename}")
-        
         patterns = [
             r'MRMS_MergedReflectivityQC_3D_(\d{8})-(\d{6})',
             r'(\d{8})-(\d{6})_renamed',
-            r'(\d{8})-(\d{6})',  # Pattern for timestamps like 20250915-230042
+            r'(\d{8})-(\d{6})',
             r'(\d{8})_(\d{6})',
             r'.*(\d{8})-(\d{6}).*',
             r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)"
@@ -36,19 +34,15 @@ class FileFinder:
             match = re.search(pattern, filename)
             if match:
                 groups = match.groups()
-                # DEBUG: print(f"DEBUG: Pattern {pattern_idx+1} matched: {groups}")
                 
                 if len(groups) == 2:
                     date_str, time_str = groups
                 elif len(groups) == 6:
-                    # Handle the 6-group pattern: sYYYYDDDHHMMSS
                     year, doy, hour, minute, second, _ = groups
-                    # Convert DOY to month and day (simplified)
                     date_obj = datetime.datetime(int(year), 1, 1) + datetime.timedelta(days=int(doy) - 1)
                     date_str = date_obj.strftime('%Y%m%d')
                     time_str = hour + minute + second
                 else:
-                    # Handle single group pattern like ('20250915-230042',)
                     combined = groups[0]
                     if '-' in combined and len(combined) == 15:
                         date_str, time_str = combined[:8], combined[9:]
@@ -56,7 +50,7 @@ class FileFinder:
                         continue
                 
                 try:
-                    # Create timezone-aware datetime object
+                    # Create timezone-aware datetime object with full precision
                     dt_obj = datetime.datetime(
                         year=int(date_str[:4]),
                         month=int(date_str[4:6]),
@@ -66,15 +60,14 @@ class FileFinder:
                         second=int(time_str[4:6]),
                         tzinfo=datetime.timezone.utc
                     )
-                    # DEBUG: print(f"DEBUG: Extracted timestamp: {dt_obj}")
+                    # ROUND DOWN TO MINUTE PRECISION (truncate seconds/microseconds)
+                    dt_obj = dt_obj.replace(second=0, microsecond=0)
                     return dt_obj
                 except (IndexError, ValueError) as e:
-                    # DEBUG: print(f"DEBUG: Error formatting timestamp: {e}")
                     continue
         
-        # Return timezone-aware fallback
-        fallback = datetime.datetime.now(datetime.timezone.utc)
-        # DEBUG: print(f"DEBUG: Using fallback timestamp: {fallback}")
+        # Return timezone-aware fallback rounded down to minute
+        fallback = datetime.datetime.now(datetime.timezone.utc).replace(second=0, microsecond=0)
         return fallback
 
     def list_http_directory(self, url, verbose=True):
@@ -161,6 +154,9 @@ class FileDownloader:
     def download_latest(self, files, outdir: Path):
         if not files:
             raise ValueError("ERROR: No files provided")
+            return
+        
+        print(f"Latest file: {files[-1][-1]}")
 
         # Pick the file closest to self.dt
         latest, ts = min(files, key=lambda x: abs(x[1] - self.dt))
