@@ -18,10 +18,11 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.3.1
+#### Build Version: 0.4.0
 
 #### Changes Associated With This Build
-- Updated storm cell centroid calculation to weighted-centroid method
+- Multithreaded data ingestion with scheduler (Now 2-min refresh)
+- Scheduler checks for last common minute
 
 #### To Do
 - Fix GLM download

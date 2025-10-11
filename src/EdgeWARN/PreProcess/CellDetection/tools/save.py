@@ -12,11 +12,19 @@ class CellDataSaver:
     
     def create_entry(self):
         """
-        Appends maximum reflectivity, num_gates, empty storm_history to each ProbSevere cell entry
+        Appends maximum reflectivity, num_gates, empty storm_history to each ProbSevere cell entry.
         Returns a list of dictionaries with properties.
         """
-        polygon_grid = self.mapped_ds['PolygonID'].values
-        refl_grid = self.radar_ds['unknown'].values  # TODO: change to actual reflectivity variable name
+        # Build 2D gate grids and flatten to 1D so indexing aligns with polygon_grid
+        polygon_grid = self.mapped_ds['PolygonID'].values.flatten()
+        refl_grid = self.radar_ds['unknown'].values.flatten()  # TODO: replace 'unknown' with actual reflectivity var
+
+        # radar_ds latitude/longitude coords are 1D arrays; create meshgrid matching radar gates
+        lats = self.radar_ds['latitude'].values
+        lons = self.radar_ds['longitude'].values
+        lat_grid_2d, lon_grid_2d = np.meshgrid(lats, lons, indexing='ij')
+        lat_grid = lat_grid_2d.flatten()
+        lon_grid = lon_grid_2d.flatten()
 
         results = []
 
@@ -31,47 +39,27 @@ class CellDataSaver:
 
             # Extract reflectivity values inside polygon gates
             refl_vals = refl_grid[mask]
-
-            # Get maximum reflectivity (NaN-safe)
-            if refl_vals.size > 0:
-                max_refl = np.nanmax(refl_vals)
-            else:
-                max_refl = np.nan
-
-            # Calculate Reflectivity Weighted Centroid
-            # Example inside your loop for each polygon
-            mask = polygon_grid == poly_id
-            refl_vals = refl_grid[mask]
-
-            # Assuming lat_grid and lon_grid are same shape as refl_grid
-            lat_grid = self.radar_ds['latitude'].values
-            lon_grid = self.radar_ds['longitude'].values
-
             lat_vals = lat_grid[mask]
             lon_vals = lon_grid[mask]
 
+            # Filter out NaNs
+            valid_mask = ~np.isnan(refl_vals)
+            refl_vals = refl_vals[valid_mask]
+            lat_vals = lat_vals[valid_mask]
+            lon_vals = lon_vals[valid_mask]
+
+            # Max reflectivity
+            max_refl = float(np.nanmax(refl_vals)) if refl_vals.size > 0 else float('nan')
+
+            # Weighted centroid
             if refl_vals.size > 0:
-                # Handle NaNs
-                valid_mask = ~np.isnan(refl_vals)
-                refl_vals = refl_vals[valid_mask]
-                lat_vals = lat_vals[valid_mask]
-                lon_vals = lon_vals[valid_mask]
-
-                if refl_vals.size > 0:
-                    # Compute weighted centroid
-                    weighted_lat = np.sum(lat_vals * refl_vals) / np.sum(refl_vals)
-                    weighted_lon = np.sum(lon_vals * refl_vals) / np.sum(refl_vals)
-
-                    # Convert longitude to 0-360 if needed
-                    if weighted_lon < 0:
-                        weighted_lon += 360
-
-                    centroid = (weighted_lat, weighted_lon)
-                else:
-                    centroid = (np.nan, np.nan)
+                weighted_lat = np.sum(lat_vals * refl_vals) / np.sum(refl_vals)
+                weighted_lon = np.sum(lon_vals * refl_vals) / np.sum(refl_vals)
+                if weighted_lon < 0:
+                    weighted_lon += 360
+                centroid = (weighted_lat, weighted_lon)
             else:
                 centroid = (np.nan, np.nan)
-
 
             # Count number of gates
             num_gates = np.count_nonzero(mask)
@@ -81,7 +69,7 @@ class CellDataSaver:
                 "num_gates": num_gates,
                 "centroid": centroid,
                 "bbox": bbox,
-                "max_refl": float(max_refl),
+                "max_refl": max_refl,
                 "storm_history": []
             })
 
