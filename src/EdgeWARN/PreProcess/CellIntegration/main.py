@@ -16,6 +16,9 @@ datasets = [
 ]
 
 def main():
+    folders = [dataset[1] for dataset in datasets]
+    fs.clean_idx_files(folders)
+    del folders
     handler = StatFileHandler()
     json_path = "stormcell_test.json"
     cells = handler.load_json(json_path)

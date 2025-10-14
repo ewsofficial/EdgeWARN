@@ -17,7 +17,7 @@ def detect_cells(radar_path, ps_path, lat_min, lat_max, lon_min, lon_max):
     mapper = GateMapper(radar_ds, ps_ds, refl_threshold=40.0)
     mapped_ds = mapper.map_gates_to_polygons()
     expanded_ds = mapper.expand_gates(mapped_ds)
-    bboxes = mapper.draw_bbox(expanded_ds, step=5)
+    bboxes = mapper.draw_bbox(expanded_ds, step=8)
 
     saver = CellDataSaver(
         bboxes,
