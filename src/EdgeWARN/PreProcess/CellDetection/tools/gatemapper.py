@@ -133,7 +133,7 @@ class GateMapper:
             }
         )
     
-    def draw_bbox(self, expanded_ds, step=5):
+    def draw_bbox(self, expanded_ds, step=8):
         """
         Return a dictionary of polygons for each polygon ID by tracing the exterior points
         and downsampling every 'step' points to reduce complexity.
@@ -175,12 +175,3 @@ class GateMapper:
             bboxes[poly_id] = coords
 
         return bboxes
-    
-handler = DetectionDataHandler(
-    radar_path=r"C:\input_data\nexrad_merged\MRMS_MergedReflectivityQC_max_20250927-210640.nc",
-    ps_path=r"C:\input_data\mrms_probsevere\MRMS_PROBSEVERE_20250927_210640.json",
-    lat_min=35.0, lat_max=38.0,
-    lon_min=283.0, lon_max=285.0
-)
-
-    
