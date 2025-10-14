@@ -1,106 +1,66 @@
 from .utils import StormIntegrationUtils
-import numpy as np
 import xarray as xr
 import gc
-
+import numpy as np
 
 class StormCellIntegrator:
-    """
-    Integrates various datasets with storm cells.
-    """
-    
     def __init__(self):
-        """
-        Initialize the integrator.
-        """
         pass
-    
-    def integrate_ds(self, dataset_path, storm_cells, output_key):
-        """
-        Integrate dataset with storm cells using lazy loading.
-        Returns maximum value in the dataset for each cell and adds it to the latest entry.
-        Args:
-            dataset_path: Path to the dataset file (lazy loaded)
-            storm_cells: List of storm cell dictionaries
-            timestamp: Dataset timestamp
-            output_key: Key to store data under in each cell
 
-        Returns:
-            List of storm cells with integrated dataset data
-        """
+    def integrate_ds(self, dataset_path, storm_cells, output_key):
         print(f"[CellIntegration] DEBUG: Integrating dataset for {len(storm_cells)} storm cells")
 
-        # Lazy load the dataset only when needed
-        dataset_loaded = False
-        ds_data = None
-        lat_grid = None
-        lon_grid = None
-        
-        for i, cell in enumerate(storm_cells):
-            cell_id = cell.get('id', f'unknown_{i}')
-            
-            # Check if storm history exists and has entries
-            if 'storm_history' not in cell or not cell['storm_history']:
-                continue
-                
-            # Use the latest storm history entry (last in the list)
-            latest_entry = cell['storm_history'][-1]
-            
-            # Create polygon for this cell
-            polygon = StormIntegrationUtils.create_cell_polygon(cell)
-            if polygon is None:
-                latest_entry[output_key] = "N/A"
-                continue
-            
-            # Lazy load dataset only when we have a valid polygon to process
-            if not dataset_loaded:
-                try:
-                    dataset = xr.open_dataset(dataset_path, decode_timedelta=True)
-                    ds_var = list(dataset.data_vars.keys())[0]  # Get first variable
-                    ds_data = dataset[ds_var].values
-                    lat_grid, lon_grid = StormIntegrationUtils.create_coordinate_grids(dataset)
-                    dataset_loaded = True
-                    dataset.close()
-                except Exception as e:
-                    print(f"[CellIntegration] ERROR: Failed to load dataset {dataset_path}: {e}")
-                    # Mark all cells with error
-                    for temp_cell in storm_cells:
-                        if 'storm_history' in temp_cell and temp_cell['storm_history']:
-                            temp_cell['storm_history'][-1][output_key] = "DATASET_LOAD_ERROR"
-                    return storm_cells
-            
-            # Create mask for this cell
-            mask = StormIntegrationUtils.create_polygon_mask(polygon, lat_grid, lon_grid)
-            if mask is None or not np.any(mask):
-                latest_entry[output_key] = "N/A"
-                continue
-            
-            try:
-                # Extract values within the cell polygon
-                cell_data = ds_data[mask]
-                
-                # Filter out negative values (no data) and NaN
-                valid_data = cell_data[(cell_data >= 0) & (~np.isnan(cell_data))]
-                
-                if valid_data.size == 0:
-                    latest_entry[output_key] = "N/A"
-                else:
-                    max_value = float(np.max(valid_data))
-                    latest_entry[output_key] = max_value
-                    
-            except Exception as e:
-                print(f"[CellIntegration] ERROR: Could not process cell {cell_id}: {e}")
-                latest_entry[output_key] = "PROCESSING_ERROR"
-        
-        # Memory cleanup
         try:
-            del ds_data
-            del lat_grid
-            del lon_grid
-            gc.collect()
-        except NameError:
-            pass
-                    
+            ds = xr.open_dataset(dataset_path, chunks={"lat": 50, "lon": 50}, decode_timedelta=True)
+            var = ds.get("unknown")
+            if var is None:
+                for cell in storm_cells:
+                    if cell.get("storm_history"):
+                        cell["storm_history"][-1][output_key] = "MISSING_UNKNOWN_VAR"
+                ds.close()
+                return storm_cells
+        except Exception as e:
+            for cell in storm_cells:
+                if cell.get("storm_history"):
+                    cell["storm_history"][-1][output_key] = "DATASET_LOAD_ERROR"
+            return storm_cells
+
+        lat_name = "latitude" if "latitude" in ds.coords else "lat"
+        lon_name = "longitude" if "longitude" in ds.coords else "lon"
+
+        for cell in storm_cells:
+            if not cell.get("storm_history"):
+                continue
+
+            latest = cell["storm_history"][-1]
+            poly = StormIntegrationUtils.create_cell_polygon(cell)
+            if poly is None:
+                latest[output_key] = "N/A"
+                continue
+
+            min_lat, min_lon, max_lat, max_lon = poly.bounds
+
+            try:
+                # Slice lazily to bounding box
+                subset = var.sel(**{lat_name: slice(min_lat, max_lat),
+                                    lon_name: slice(min_lon, max_lon)})
+                
+                # Apply bounding-box mask only
+                mask = ((subset[lon_name] >= min_lon) & (subset[lon_name] <= max_lon))
+                max_val = subset.where(mask & (subset >= 0)).max().compute()
+
+                latest[output_key] = float(max_val) if not np.isnan(max_val) else "N/A"
+
+            except Exception:
+                latest[output_key] = "PROCESSING_ERROR"
+
+            finally:
+                del subset, mask, poly
+                gc.collect()
+
+        ds.close()
+        del var, ds
+        gc.collect()
         return storm_cells
 
     def integrate_probsevere(self, probsevere_data, storm_cells, max_distance_km=20.0):

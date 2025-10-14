@@ -1,8 +1,7 @@
 import numpy as np
 import xarray as xr
-from matplotlib.path import Path
 import json
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon
 from datetime import datetime
 import re
 from pathlib import Path as PathLibPath
@@ -181,7 +180,7 @@ class StormIntegrationUtils:
         return lat_grid, lon_grid
     
     @staticmethod
-    def create_cell_polygon(cell, min_size=0.01):
+    def create_cell_polygon(cell, min_size=0.0):
         """
         Return a valid Polygon for the storm cell.
         Ensures at least 4 coordinates for LinearRing.
