@@ -8,6 +8,8 @@ class StormCellIntegrator:
         pass
 
     def integrate_ds(self, dataset_path, storm_cells, output_key):
+        # Mem usage ~ 400 - 450 MB per dataset
+        # Rule of thumb for mem usage in MB: 150 MB + 450x, x = number of datasets simultaneously integrated
         print(f"[CellIntegration] DEBUG: Integrating dataset for {len(storm_cells)} storm cells")
 
         try:
@@ -63,7 +65,7 @@ class StormCellIntegrator:
         gc.collect()
         return storm_cells
 
-    def integrate_probsevere(self, probsevere_data, storm_cells, max_distance_km=20.0):
+    def integrate_probsevere(self, probsevere_data, storm_cells):
         """
         Integrate ProbSevere probability data with storm cells by matching based on 
         spatial proximity to cell centroids at the time of each storm history entry.
@@ -97,14 +99,6 @@ class StormCellIntegrator:
                     break
 
             if closest_probsevere:
-                distance_km = 0.0  # ID match, distance not used
-
-                # Core probabilities (flat at top level)
-                entry['prob_severe'] = float(closest_probsevere.get('ProbSevere', 0))
-                entry['prob_hail']   = float(closest_probsevere.get('ProbHail', 0))
-                entry['prob_wind']   = float(closest_probsevere.get('ProbWind', 0))
-                entry['prob_tor']    = float(closest_probsevere.get('ProbTor', 0))
-
                 # Nested supporting fields
                 entry['probsevere_details'] = {
                     # --- Atmospheric Instability ---
@@ -156,7 +150,7 @@ class StormCellIntegrator:
                     'avg_beam_hgt': float(closest_probsevere.get('AVG_BEAM_HGT', 0)),
                 }
 
-                print(f"[CellIntegration] DEBUG: Matched cell {cell_id} with ProbSevere feature (distance: {distance_km:.2f} km)")
+                print(f"[CellIntegration] DEBUG: Matched cell {cell_id}")
                 matches_found += 1
 
         print(f"[CellIntegration] DEBUG: ProbSevere integration completed: {matches_found} matches found")
