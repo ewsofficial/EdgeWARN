@@ -56,12 +56,14 @@ def clean_idx_files(folders):
                 print(f"No IDX files in folder: {folder}")
                 return
             else:
+                deleted_files = 0
                 for f in idx_files:
                     try:
                         f.unlink()
-                        print(f"Deleted IDX file: {f}")
+                        deleted_files += 1
                     except Exception as e:
                         print(f"Failed to delete IDX file {f}: {e}")
+                print(f"Deleted {deleted_files} files in {folder}")
         else:
             print(f"Folder not found: {folder}")
 

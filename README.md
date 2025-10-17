@@ -13,18 +13,22 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 1. Clone the repository
 2. Run `pip install -r requirements.txt` to install dependencies
-3. Navigate to EdgeWARN/src to run scripts
-4. Run scripts as `python -B -m path.to.script`
+3. Navigate to EdgeWARN/src
+4. Run `python run.py -max_processes 4 --lat_limits lat_min lat_max --lon_limits lon_min lon_max`
+
+- lat_min, lat_max - latitude bounds
+- lon_min, lon_max - longitude bounds (0-360 format)
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.4.1
+#### Build Version: 0.4.2
 
 #### Changes Associated With This Build
 - Fixed data desynchronization errors with ingestion module
+- Multithreaded dataset integration with configurable number of parallel processes
 
 #### To Do
-- Fix GLM download
+- Reduce memory footprint of dataset integration
 - Build GUI for initial render
 
 <h2 align="center">Credits</h2>

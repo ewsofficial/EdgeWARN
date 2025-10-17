@@ -53,8 +53,18 @@ class CellDataSaver:
 
             # Weighted centroid
             if refl_vals.size > 0:
-                weighted_lat = np.sum(lat_vals * refl_vals) / np.sum(refl_vals)
-                weighted_lon = np.sum(lon_vals * refl_vals) / np.sum(refl_vals)
+                # Use the indices of the original 2D arrays for weighting
+                indices = np.where(mask.reshape(lat_grid_2d.shape))
+                refl_2d = self.radar_ds['unknown'].values  # original 2D array
+                refl_subset = refl_2d[indices]
+                
+                lat_subset = lat_grid_2d[indices]
+                lon_subset = lon_grid_2d[indices]
+                
+                weighted_lat = np.sum(lat_subset * refl_subset) / np.sum(refl_subset)
+                weighted_lon = np.sum(lon_subset * refl_subset) / np.sum(refl_subset)
+                
+                # Convert lon to 0-360 if needed
                 if weighted_lon < 0:
                     weighted_lon += 360
                 centroid = (weighted_lat, weighted_lon)
