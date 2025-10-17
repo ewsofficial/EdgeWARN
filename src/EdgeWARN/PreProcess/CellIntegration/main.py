@@ -44,7 +44,7 @@ def integrate_dataset(dataset, cells):
 
     return name, result
 
-def main():
+def main(max_processes=4):
     fs.clean_idx_files([d[1] for d in datasets])
     handler = StatFileHandler()
 
@@ -57,7 +57,7 @@ def main():
     result_cells = copy.deepcopy(cells)
 
     # Run up to 4 datasets at once
-    with ProcessPoolExecutor(max_workers=4) as executor:
+    with ProcessPoolExecutor(max_workers=max_processes) as executor:
         futures = {executor.submit(integrate_dataset, ds, cells): ds for ds in datasets}
 
         for future in as_completed(futures):
