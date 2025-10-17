@@ -14,7 +14,7 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 1. Clone the repository
 2. Run `pip install -r requirements.txt` to install dependencies
 3. Navigate to EdgeWARN/src
-4. Run `python run.py -max_processes 4 -lat_limits lat_min lat_max -lon_limits lon_min lon_max`
+4. Run `python run.py -max_processes 4 --lat_limits lat_min lat_max --lon_limits lon_min lon_max`
 
 - lat_min, lat_max - latitude bounds
 - lon_min, lon_max - longitude bounds (0-360 format)
