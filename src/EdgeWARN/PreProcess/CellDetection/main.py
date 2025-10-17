@@ -4,7 +4,7 @@ from EdgeWARN.PreProcess.CellDetection.tools.save import CellDataSaver
 from EdgeWARN.PreProcess.CellDetection.tools.vecmath import StormVectorCalculator
 from EdgeWARN.PreProcess.CellDetection.track import StormCellTracker
 from EdgeWARN.PreProcess.CellDetection.detect import detect_cells
-import util.core.file as fs
+import util.file as fs
 import json as js
 
 def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tuple, json_output):

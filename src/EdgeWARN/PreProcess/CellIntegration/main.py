@@ -1,5 +1,5 @@
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import util.core.file as fs
+import util.file as fs
 from EdgeWARN.PreProcess.CellIntegration.integrate import StormCellIntegrator
 from EdgeWARN.PreProcess.CellIntegration.utils import StatFileHandler
 import copy
@@ -21,7 +21,7 @@ def integrate_dataset(dataset, cells):
     """Run in a separate process to isolate eccodes context."""
     import os                              # ✅ Fix: add this
     from EdgeWARN.PreProcess.CellIntegration.integrate import StormCellIntegrator
-    from util.core import file as fs
+    from util import file as fs
     import copy
 
     name, folder, key = dataset
