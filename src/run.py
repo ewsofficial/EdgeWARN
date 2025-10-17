@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import time
 import multiprocessing
 import util.core.file as fs
@@ -9,27 +9,49 @@ import EdgeWARN.PreProcess.CellDetection.main as detect
 import EdgeWARN.PreProcess.CellIntegration.main as integration
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from EdgeWARN.DataIngestion.config import check_modifiers
-
-# ===== Wrap stdout/stderr to add timestamps to all prints =====
-class TimestampedOutput:
-    def __init__(self, stream):
-        self.stream = stream
-
-    def write(self, message):
-        if message.strip():  # skip empty lines
-            timestamp = datetime.now(timezone.utc).isoformat()
-            self.stream.write(f"[{timestamp}] {message}")
-        else:
-            self.stream.write(message)
-
-    def flush(self):
-        self.stream.flush()
+from util.core.io import TimestampedOutput
+import argparse
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
 
-# Constants
-lat_limits, lon_limits = (32, 35), (278, 281)
+# ===== Process modifiers =====
+parser = argparse.ArgumentParser(description="EdgeWARN modifier specification")
+parser.add_argument(
+    "-max_processes",
+    type=int,
+    default=4,
+    help="Max number of processes dataset integration uses"
+)
+parser.add_argument(
+    "--lat_limits",
+    type=float,
+    nargs=2,
+    metavar=("LAT_MIN", "LAT_MAX"),
+    default=[33.5, 35.7],
+    help="Latitude limits for processing (default: 33.5 35.7)"
+)
+parser.add_argument(
+    "--lon_limits",
+    type=float,
+    nargs=2,
+    metavar=("LON_MIN", "LON_MAX"),
+    default=[280.7, 284.6],
+    help="Longitude limits for processing (default: 280.7 284.6)"
+)
+args = parser.parse_args()
+
+# ===== Validation =====
+if not args.lat_limits or not args.lon_limits or len(args.lat_limits) != 2 or len(args.lon_limits) != 2:
+    print("ERROR: Latitude and longitude limits must both be provided as two numeric values each.")
+    print("Example: --lat_limits 33.5 35.7 --lon_limits 280.7 284.6")
+    sys.exit(1)
+
+print(f"Running EdgeWARN v0.4.2 with {args.max_processes} threads for dataset integration")
+print(f"Latitude limits: {tuple(args.lat_limits)}, Longitude limits: {tuple(args.lon_limits)}")
+
+lat_limits = tuple(args.lat_limits)
+lon_limits = tuple(args.lon_limits)
 
 def pipeline(log_queue, dt):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""
@@ -43,7 +65,7 @@ def pipeline(log_queue, dt):
         filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
         ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
         detect.main(filepath_old, filepath_new, ps_old, ps_new, lat_limits, lon_limits, Path("stormcell_test.json"))
-        integration.main()
+        integration.main(max_processes=args.max_processes)
         log("Pipeline completed successfully")
     except Exception as e:
         log(f"Error in pipeline: {e}")
@@ -60,7 +82,7 @@ def main():
             latest_common = checker.latest_common_minute_1h(check_modifiers)
 
             if latest_common and latest_common != last_processed:
-                print(f"[Scheduler] ✅ New latest common timestamp: {latest_common}")
+                print(f"[Scheduler] DEBUG: New latest common timestamp: {latest_common}")
                 dt = latest_common
                 last_processed = latest_common
 
@@ -76,15 +98,15 @@ def main():
                 while proc.is_alive() or not log_queue.empty():
                     while not log_queue.empty():
                         print(log_queue.get())
-                    time.sleep(0.1)
+                    time.sleep(1)
 
                 proc.join()
                 print(f"Pipeline process PID={proc.pid} finished")
             else:
                 if not latest_common:
-                    print("[Scheduler] ⚠️ No common timestamp available yet. Waiting ...")
+                    print("[Scheduler] WARN: No common timestamp available yet. Waiting ...")
                 else:
-                    print(f"[Scheduler] ⏸ Timestamp {latest_common} already processed. Waiting ...")
+                    print(f"[Scheduler] DEBUG: Timestamp {latest_common} already processed. Waiting ...")
 
             time.sleep(15)  # Check every 15 seconds
 

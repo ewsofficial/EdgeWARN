@@ -1,8 +1,7 @@
 import numpy as np
 import xarray as xr
-from matplotlib.path import Path
 import json
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon
 from datetime import datetime
 import re
 from pathlib import Path as PathLibPath
@@ -181,34 +180,44 @@ class StormIntegrationUtils:
         return lat_grid, lon_grid
     
     @staticmethod
-    def create_cell_polygon(cell):
+    def create_cell_polygon(cell, min_size=0.0):
         """
-        Create a polygon from storm cell data.
-        Prioritizes bbox, then falls back to centroid.
-        Returns a Shapely Polygon object.
+        Return a valid Polygon for the storm cell.
+        Ensures at least 4 coordinates for LinearRing.
+        Fallbacks:
+            - bbox if available and has >= 3 points
+            - small box around centroid
+            - None if both fail
         """
+        polygon = None
         
-        # Try bbox first (list of [lon, lat] pairs)
-        if 'bbox' in cell and cell['bbox']:
-            # If you want (lat, lon) order:
-            coords = [(point[1], point[0]) for point in cell['bbox']]
-            return Polygon(coords)
+        # Use bbox if available and has enough points
+        if 'bbox' in cell and cell['bbox'] and len(cell['bbox']) >= 3:
+            # Convert (lat, lon) -> (lon, lat) for shapely
+            coords = [(pt[1], pt[0]) for pt in cell['bbox']]
+            polygon = Polygon(coords)
         
-        # Fallback: small box around centroid
-        if 'centroid' in cell and len(cell['centroid']) >= 2:
-            lat, lon = cell['centroid'][0], cell['centroid'][1]
-            d = 0.01  # ~1 km box
-            coords = [
-                (lat - d, lon - d),
-                (lat - d, lon + d),
-                (lat + d, lon + d),
-                (lat + d, lon - d)
-            ]
-            return Polygon(coords)
+        # Fallback: create small box around centroid
+        if polygon is None or not polygon.is_valid or polygon.is_empty:
+            if 'centroid' in cell and len(cell['centroid']) >= 2:
+                lat, lon = cell['centroid'][0], cell['centroid'][1]
+                d = max(min_size, 0.01)
+                coords = [
+                    (lon - d, lat - d),
+                    (lon - d, lat + d),
+                    (lon + d, lat + d),
+                    (lon + d, lat - d),
+                    (lon - d, lat - d)  # close LinearRing
+                ]
+                polygon = Polygon(coords)
         
+        # Final check
+        if polygon is not None and polygon.is_valid and not polygon.is_empty:
+            return polygon
+        
+        print(f"[CellIntegration] WARNING: Cell {cell.get('id')} has invalid geometry, skipping")
         return None
 
-    
     @staticmethod
     def create_polygon_mask(polygon, lat_grid, lon_grid):
         """
