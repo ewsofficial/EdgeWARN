@@ -34,4 +34,4 @@ dist/
 *.swo
 
 # Storm cell JSONs
-src\stormcell_test.json
+*stormcell_test.json
