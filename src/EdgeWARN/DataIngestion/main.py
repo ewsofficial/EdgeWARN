@@ -87,7 +87,7 @@ if __name__ == "__main__":
         print(f"[Scheduler] DEBUG: Latest common minute found: {latest_common_minute}")
         
         if latest_common_minute != last_processed:
-            print(f"[Scheduler] ✅ New latest common timestamp found: {latest_common_minute}")
+            print(f"[Scheduler] DEBUG: New latest common timestamp found: {latest_common_minute}")
             
             # Verify that ALL modifiers have files at this exact minute
             all_have_files = True
