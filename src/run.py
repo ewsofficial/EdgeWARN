@@ -51,7 +51,7 @@ if args.lat_limits == [0, 0] or args.lon_limits == [0, 0]:
     print("ERROR: lat_limits or lon_limits not specified! They must be two numeric values each.")
     sys.exit(1)
 
-print(f"Running EdgeWARN v0.4.2 with {args.max_processes} threads for dataset integration")
+print(f"Running EdgeWARN v0.4.3 with {args.max_processes} threads for dataset integration")
 print(f"Latitude limits: {tuple(args.lat_limits)}, Longitude limits: {tuple(args.lon_limits)}")
 
 lat_limits = tuple(args.lat_limits)
@@ -69,7 +69,7 @@ def pipeline(log_queue, dt):
         filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
         ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
         detect.main(filepath_old, filepath_new, ps_old, ps_new, lat_limits, lon_limits, Path("stormcell_test.json"))
-        integration.main(max_processes=args.max_processes)
+        integration.main(lat_limits, lon_limits)
         log("Pipeline completed successfully")
     except Exception as e:
         log(f"Error in pipeline: {e}")
