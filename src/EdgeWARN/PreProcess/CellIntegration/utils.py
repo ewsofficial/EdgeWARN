@@ -51,7 +51,7 @@ class StatFileHandler:
         self.file_path = file_path
         
         try:
-            self.dataset = xr.open_dataset(file_path, cache=False)
+            self.dataset = xr.open_dataset(file_path, cache=False, decode_timedelta=True)
             print(f"[CellIntegration] DEBUG: Successfully loaded dataset from {file_path}")
             return self.dataset
         except Exception as e:

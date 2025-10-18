@@ -7,7 +7,7 @@ import os
 import re
 from bs4 import BeautifulSoup
 import datetime
-from util.core import file as fs
+from util import file as fs
 
 # NEEDS OPTIMIZATION WORK
 

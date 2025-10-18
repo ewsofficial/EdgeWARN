@@ -3,13 +3,13 @@ from pathlib import Path
 from datetime import datetime, timezone
 import time
 import multiprocessing
-import util.core.file as fs
+import util.file as fs
 import EdgeWARN.DataIngestion.main as ingest_main
 import EdgeWARN.PreProcess.CellDetection.main as detect
 import EdgeWARN.PreProcess.CellIntegration.main as integration
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from EdgeWARN.DataIngestion.config import check_modifiers
-from util.core.io import TimestampedOutput
+from util.io import TimestampedOutput
 import argparse
 
 sys.stdout = TimestampedOutput(sys.stdout)
@@ -28,16 +28,16 @@ parser.add_argument(
     type=float,
     nargs=2,
     metavar=("LAT_MIN", "LAT_MAX"),
-    default=[33.5, 35.7],
-    help="Latitude limits for processing (default: 33.5 35.7)"
+    default=[0, 0],
+    help="Latitude limits for processing"
 )
 parser.add_argument(
     "--lon_limits",
     type=float,
     nargs=2,
     metavar=("LON_MIN", "LON_MAX"),
-    default=[280.7, 284.6],
-    help="Longitude limits for processing (default: 280.7 284.6)"
+    default=[0, 0],
+    help="Longitude limits for processing"
 )
 args = parser.parse_args()
 
@@ -45,6 +45,10 @@ args = parser.parse_args()
 if not args.lat_limits or not args.lon_limits or len(args.lat_limits) != 2 or len(args.lon_limits) != 2:
     print("ERROR: Latitude and longitude limits must both be provided as two numeric values each.")
     print("Example: --lat_limits 33.5 35.7 --lon_limits 280.7 284.6")
+    sys.exit(1)
+
+if args.lat_limits == [0, 0] or args.lon_limits == [0, 0]:
+    print("ERROR: lat_limits or lon_limits not specified! They must be two numeric values each.")
     sys.exit(1)
 
 print(f"Running EdgeWARN v0.4.2 with {args.max_processes} threads for dataset integration")

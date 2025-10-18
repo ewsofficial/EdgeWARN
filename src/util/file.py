@@ -76,7 +76,7 @@ def wipe_temp():
             print(f"Could not delete temporary file {f.name}: {e}")
 
 # ---------- CLEANUP ----------
-def clean_old_files(directory: Path, max_age_minutes=20):
+def clean_old_files(directory: Path, max_age_minutes=60):
     now = datetime.now().timestamp()
     cutoff = now - (max_age_minutes * 60)
     for f in directory.glob("*"):
