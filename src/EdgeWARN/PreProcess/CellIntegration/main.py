@@ -62,4 +62,5 @@ def main(lat_limits, lon_limits):
     handler.write_json(result_cells, json_path)
 
 if __name__ == "__main__":
-    main(lat_limits=(32, 35), lon_limits=(278, 281))
+    main(lat_limits=(30.4, 34.0), lon_limits=(264.2, 268.6))
+    # lat is 32 to 35, lon is 278 to 281
