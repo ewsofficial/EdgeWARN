@@ -1,5 +1,5 @@
 # Config file for Data Ingestion
-from util.core.file import *
+from util.file import *
 
 # Downloader Configs
 

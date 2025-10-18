@@ -4,7 +4,7 @@ from EdgeWARN.PreProcess.CellDetection.tools.save import CellDataSaver
 from EdgeWARN.PreProcess.CellDetection.tools.vecmath import StormVectorCalculator
 from EdgeWARN.PreProcess.CellDetection.track import StormCellTracker
 from EdgeWARN.PreProcess.CellDetection.detect import detect_cells
-import util.core.file as fs
+import util.file as fs
 import json as js
 
 def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tuple, json_output):
@@ -20,16 +20,16 @@ def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tu
         
         except (js.JSONDecodeError, KeyError, IndexError) as e:
             print(f"[CellDetection] ERROR:  Failed to load existing storm cell data: {e}. Creating new data from old scan ...")
-            entries_old = detect_cells(radar_old, ps_old, lat_min, lat_max, lon_min, lon_max)
+            entries_old = detect_cells(radar_old, ps_old, None, lat_min, lat_max, lon_min, lon_max)
             print(f"[CellDetection] DEBUG:  Detected {len(entries_old)} cells in old scan.")
     
     else:
         print(f"[CellDetection] DEBUG:  JSON output doesn't exist, detecting from old scan ...")
-        entries_old = detect_cells(radar_old, ps_old, lat_min, lat_max, lon_min, lon_max)
+        entries_old = detect_cells(radar_old, ps_old, None, lat_min, lat_max, lon_min, lon_max)
         print(f"Detected {len(entries_old)} cells in old scan.")
 
     print("[CellDetection] DEBUG:  Detecting cells in new scan ...")
-    entries_new = detect_cells(radar_new, ps_new, lat_min, lat_max, lon_min, lon_max)
+    entries_new = detect_cells(radar_new, ps_new, None, lat_min, lat_max, lon_min, lon_max)
     print(f"[CellDetection] DEBUG:  Detected {len(entries_new)} cells in new scan")
 
     print("[CellDetection] DEBUG:  Matching and updating cell data")

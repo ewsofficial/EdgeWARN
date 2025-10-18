@@ -1,10 +1,16 @@
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import util.core.file as fs
+import util.file as fs
 from EdgeWARN.PreProcess.CellIntegration.integrate import StormCellIntegrator
 from EdgeWARN.PreProcess.CellIntegration.utils import StatFileHandler
 import copy
 import gc
+import json
+import numpy as np
+import os
+import shutil
 
+# ------------------------------
+# MRMS dataset list
+# ------------------------------
 datasets = [
     ("NLDN", fs.MRMS_NLDN_DIR, "CGFlashRate"),
     ("EchoTop18", fs.MRMS_ECHOTOP18_DIR, "EchoTop18"),
@@ -16,83 +22,45 @@ datasets = [
     ("VII", fs.MRMS_VII_DIR, "VII"),
 ]
 
-
-def integrate_dataset(dataset, cells):
-    """Run in a separate process to isolate eccodes context."""
-    import os                              # ✅ Fix: add this
-    from EdgeWARN.PreProcess.CellIntegration.integrate import StormCellIntegrator
-    from util.core import file as fs
-    import copy
-
-    name, folder, key = dataset
-    result = None
-    integrator = StormCellIntegrator()
-
-    try:
-        print(f"[CellIntegration] DEBUG: (PID={os.getpid()}) Integrating {name}")
-        if folder.exists():
-            latest_file = fs.latest_files(folder, 1)[-1]
-            if latest_file:
-                result = integrator.integrate_ds(latest_file, copy.deepcopy(cells), key)
-                print(f"[CellIntegration] DEBUG: {name} integration done.")
-            else:
-                print(f"[CellIntegration] ERROR: No files for {name}.")
-        else:
-            print(f"[CellIntegration] ERROR: Folder {folder} not found.")
-    except Exception as e:
-        print(f"[CellIntegration] ERROR: {name} integration failed: {e}")
-
-    return name, result
-
-def main(max_processes=4):
-    fs.clean_idx_files([d[1] for d in datasets])
+def main():
+    fs.clean_idx_files([d[1] for d in datasets]) # Clean IDX files!
+    
     handler = StatFileHandler()
-
+    integrator = StormCellIntegrator()
     json_path = "stormcell_test.json"
     cells = handler.load_json(json_path)
-    if not cells:
-        print("[CellIntegration] DEBUG: No storm cells loaded; aborting.")
-        return
 
-    result_cells = copy.deepcopy(cells)
+    result_cells = cells
 
-    # Run up to 4 datasets at once
-    with ProcessPoolExecutor(max_workers=max_processes) as executor:
-        futures = {executor.submit(integrate_dataset, ds, cells): ds for ds in datasets}
+    # Integrate datasets
+    for name, outdir, key in datasets:
+        try:
+            print(f"[CellIntegration] DEBUG: Integrating {name} data for {len(cells)} cells")
+            latest_file = fs.latest_files(outdir, 1)[-1]
+            print(f"[CellIntegration] DEBUG: Using latest {name} file: {latest_file}")
 
-        for future in as_completed(futures):
-            dataset = futures[future]
-            name, ds_result = future.result()
-            if ds_result:
-                print(f"[CellIntegration] DEBUG: Merging {name} results...")
-                for i, cell in enumerate(result_cells):
-                    for key, val in ds_result[i].items():
-                        if key not in ["id", "centroid", "bbox", "storm_history"]:
-                            cell[key] = val
-                print(f"[CellIntegration] DEBUG: {name} merged successfully.")
+            result_cells = integrator.integrate_ds(latest_file, result_cells, key)
+            print(f"[CellIntegration] DEBUG: {name} integration completed successfully!")
+        
+        except Exception as e:
+            print(f"[CellIntegration] ERROR: Failed to integrate {name} data: {e}")
 
-            gc.collect()
-
-    # Integrate ProbSevere sequentially
+    # Integrate ProbSevere
     try:
+        print(f"[CellIntegration] DEBUG: Integrating ProbSevere data for {len(cells)} cells")
         latest_file = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1]
-        if latest_file:
-            print(f"[CellIntegration] DEBUG: Integrating ProbSevere from {latest_file}")
-            probsevere_data = handler.load_json(latest_file)
-            integrator = StormCellIntegrator()
-            result_cells = integrator.integrate_probsevere(probsevere_data, result_cells)
-        else:
-            print(f"[CellIntegration] ERROR: Could not find ProbSevere files")
-    except Exception as e:
-        print(f"[CellIntegration] ERROR: ProbSevere integration failed: {e}")
+        probsevere_data = handler.load_json(latest_file)
+        print(f"[CellIntegration] DEBUG: Using latest ProbSevere file: {latest_file}")
 
-    print(f"Saving integrated cells to {json_path}")
+        result_cells = integrator.integrate_probsevere(probsevere_data, result_cells)
+        print(f"[CellIntegration] DEBUG: Successfully integrated ProbSevere data")
+    
+    except Exception as e:
+        print(f"[CellIntegration] ERROR: Failed to integrate ProbSevere data: {e}")
+    
+    # Save data
+    print(f"[CellIntegration] DEBUG: Saving final data to {json_path}")
     handler.write_json(result_cells, json_path)
 
-    del result_cells, cells
-    gc.collect()
-
-
 if __name__ == "__main__":
-    import os
     main()

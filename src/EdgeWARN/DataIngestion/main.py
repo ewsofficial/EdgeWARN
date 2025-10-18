@@ -7,7 +7,7 @@ from EdgeWARN.DataIngestion.download import FileFinder, FileDownloader
 from EdgeWARN.DataIngestion.custom import MRMSDownloader, SynopticDownloader
 from EdgeWARN.PreProcess.CellDetection.tools.utils import DetectionDataHandler
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
-import util.core.file as fs
+import util.file as fs
 
 #################################
 ### EWS Data Ingestion Module ###
@@ -46,11 +46,7 @@ def process_modifier(modifier, outdir, dt, max_time, max_entries):
     
 def download_all_files(dt):
     # Clear Files
-    folders = [
-        fs.MRMS_ECHOTOP18_DIR, fs.MRMS_FLASH_DIR, fs.MRMS_NLDN_DIR, fs.MRMS_COMPOSITE_DIR, 
-        fs.MRMS_PRECIPRATE_DIR, fs.MRMS_QPE_DIR, fs.MRMS_ROTATIONT_DIR, fs.MRMS_VIL_DIR,
-        fs.MRMS_PROBSEVERE_DIR, fs.MRMS_ECHOTOP30_DIR, fs.MRMS_RALA_DIR, fs.MRMS_VII_DIR
-    ]
+    folders = [modifier[1] for modifier in mrms_modifiers]
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=20)
     fs.wipe_temp()
@@ -59,15 +55,16 @@ def download_all_files(dt):
     max_entries = 10                         # How many files to check per source
 
     # Multithread MRMS downloads
-    with ThreadPoolExecutor(max_workers=len(mrms_modifiers)) as executor:
-        futures = [executor.submit(process_modifier, modifier, outdir, dt, max_time, max_entries)
-                   for modifier, outdir in mrms_modifiers]
-        for future in as_completed(futures):
-            future.result()  # Will raise exceptions if any occurred
+    with ThreadPoolExecutor(max_workers=len(mrms_modifiers) + 2) as executor:
+        futures = [
+            executor.submit(process_modifier, modifier, outdir, dt, max_time, max_entries)
+            for modifier, outdir in mrms_modifiers
+        ]
+        futures.append(executor.submit(SynopticDownloader.download_latest_rtma, dt, fs.THREDDS_RTMA_DIR))
+        futures.append(executor.submit(SynopticDownloader.download_rap_awp, dt, fs.NOAA_RAP_DIR))
 
-    # Download Synoptic feeds (can also be threaded if desired)
-    SynopticDownloader.download_latest_rtma(dt, fs.THREDDS_RTMA_DIR)
-    SynopticDownloader.download_rap_awp(dt, fs.NOAA_RAP_DIR)
+        for future in as_completed(futures):
+            future.result()
 
 if __name__ == "__main__":
     import time
