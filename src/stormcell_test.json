@@ -95,14 +95,14 @@
                     34.205210870993,
                     279.7569160635496
                 ],
-                "CGFlashRate": "N/A",
-                "EchoTop18": 10.0,
-                "EchoTop30": 6.5,
-                "PrecipRate": 14.399999618530273,
-                "VILDensity": 0.6000000238418579,
-                "RotationTrack": 0.0,
-                "RALA": 42.0,
-                "VII": 0.699999988079071
+                "CGFlashRate": "MISSING_VAR",
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     },
@@ -191,7 +191,7 @@
                 "dx": -594.1898357484033,
                 "dy": 969.251046664823,
                 "dt": 122.0,
-                "CGFlashRate": "N/A",
+                "CGFlashRate": "MISSING_VAR",
                 "probsevere_details": {
                     "MLCAPE": 9.0,
                     "MUCAPE": 78.0,
@@ -230,13 +230,13 @@
                     "PWAT": 1.7,
                     "avg_beam_hgt": 5.99
                 },
-                "EchoTop18": 12.0,
-                "EchoTop30": 5.938000202178955,
-                "PrecipRate": 13.100000381469727,
-                "VILDensity": 0.5,
-                "RotationTrack": 3.0,
-                "RALA": 40.5,
-                "VII": 0.699999988079071
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     },
@@ -365,7 +365,7 @@
                 "dx": 394.46889376361054,
                 "dy": 293.2586970997164,
                 "dt": 122.0,
-                "CGFlashRate": "N/A",
+                "CGFlashRate": "MISSING_VAR",
                 "probsevere_details": {
                     "MLCAPE": 9.0,
                     "MUCAPE": 64.0,
@@ -404,13 +404,13 @@
                     "PWAT": 1.7,
                     "avg_beam_hgt": 6.05
                 },
-                "EchoTop18": 11.0,
-                "EchoTop30": 6.0,
-                "PrecipRate": 15.699999809265137,
-                "VILDensity": 0.6000000238418579,
-                "RotationTrack": 0.0,
-                "RALA": 44.0,
-                "VII": 0.6000000238418579
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     },
@@ -467,7 +467,7 @@
                 "dx": 14.719459370164829,
                 "dy": 239.59460198689442,
                 "dt": 122.0,
-                "CGFlashRate": "N/A",
+                "CGFlashRate": "MISSING_VAR",
                 "probsevere_details": {
                     "MLCAPE": 0.0,
                     "MUCAPE": 20.0,
@@ -506,13 +506,13 @@
                     "PWAT": 1.6,
                     "avg_beam_hgt": 8.05
                 },
-                "EchoTop18": 7.75,
-                "EchoTop30": 5.75,
-                "PrecipRate": 11.399999618530273,
-                "VILDensity": 0.4000000059604645,
-                "RotationTrack": 0.0,
-                "RALA": 41.5,
-                "VII": "N/A"
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     },
@@ -544,7 +544,7 @@
                     34.99058404558802,
                     280.9500341567254
                 ],
-                "CGFlashRate": "N/A",
+                "CGFlashRate": "MISSING_VAR",
                 "probsevere_details": {
                     "MLCAPE": 4.0,
                     "MUCAPE": 15.0,
@@ -583,13 +583,13 @@
                     "PWAT": 1.8,
                     "avg_beam_hgt": 3.41
                 },
-                "EchoTop18": 8.0,
-                "EchoTop30": 5.5,
-                "PrecipRate": 4.900000095367432,
-                "VILDensity": 0.30000001192092896,
-                "RotationTrack": 0.0,
-                "RALA": 33.0,
-                "VII": "N/A"
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     },
@@ -650,7 +650,7 @@
                 "dx": 151.23379962135223,
                 "dy": 253.2619326946275,
                 "dt": 122.0,
-                "CGFlashRate": "N/A",
+                "CGFlashRate": "MISSING_VAR",
                 "probsevere_details": {
                     "MLCAPE": 1.0,
                     "MUCAPE": 6.0,
@@ -689,13 +689,13 @@
                     "PWAT": 1.7,
                     "avg_beam_hgt": 6.71
                 },
-                "EchoTop18": 8.166999816894531,
-                "EchoTop30": 5.785999774932861,
-                "PrecipRate": 7.800000190734863,
-                "VILDensity": 0.4000000059604645,
-                "RotationTrack": 0.0,
-                "RALA": 37.5,
-                "VII": "N/A"
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     },
@@ -756,7 +756,7 @@
                 "dx": -645.5008890130149,
                 "dy": 168.58178643308008,
                 "dt": 122.0,
-                "CGFlashRate": "N/A",
+                "CGFlashRate": "MISSING_VAR",
                 "probsevere_details": {
                     "MLCAPE": 0.0,
                     "MUCAPE": 11.0,
@@ -795,13 +795,13 @@
                     "PWAT": 1.6,
                     "avg_beam_hgt": 6.79
                 },
-                "EchoTop18": 9.0,
-                "EchoTop30": 5.416999816894531,
-                "PrecipRate": 6.599999904632568,
-                "VILDensity": 0.4000000059604645,
-                "RotationTrack": 0.0,
-                "RALA": 41.5,
-                "VII": "N/A"
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     },
@@ -874,7 +874,7 @@
                 "dx": -74.47187049608672,
                 "dy": -147.73603727294216,
                 "dt": 122.0,
-                "CGFlashRate": "N/A",
+                "CGFlashRate": "MISSING_VAR",
                 "probsevere_details": {
                     "MLCAPE": 2.0,
                     "MUCAPE": 11.0,
@@ -913,13 +913,13 @@
                     "PWAT": 1.7,
                     "avg_beam_hgt": 8.33
                 },
-                "EchoTop18": 10.0,
-                "EchoTop30": 6.083000183105469,
-                "PrecipRate": 11.399999618530273,
-                "VILDensity": 0.4000000059604645,
-                "RotationTrack": 0.0,
-                "RALA": 41.0,
-                "VII": 0.6000000238418579
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     },
@@ -959,7 +959,7 @@
                     34.9448653779812,
                     280.78023154869686
                 ],
-                "CGFlashRate": "N/A",
+                "CGFlashRate": "MISSING_VAR",
                 "probsevere_details": {
                     "MLCAPE": 3.0,
                     "MUCAPE": 5.0,
@@ -998,13 +998,13 @@
                     "PWAT": 1.8,
                     "avg_beam_hgt": 4.84
                 },
-                "EchoTop18": 8.75,
-                "EchoTop30": 6.0,
-                "PrecipRate": 7.400000095367432,
-                "VILDensity": 0.30000001192092896,
-                "RotationTrack": 0.0,
-                "RALA": 35.5,
-                "VII": 0.5
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     },
@@ -1145,7 +1145,7 @@
                 "dx": -552.1555641337607,
                 "dy": 1571.6832811942609,
                 "dt": 122.0,
-                "CGFlashRate": "N/A",
+                "CGFlashRate": "MISSING_VAR",
                 "probsevere_details": {
                     "MLCAPE": 9.0,
                     "MUCAPE": 49.0,
@@ -1184,13 +1184,13 @@
                     "PWAT": 1.7,
                     "avg_beam_hgt": 3.84
                 },
-                "EchoTop18": 10.875,
-                "EchoTop30": 6.561999797821045,
-                "PrecipRate": 15.699999809265137,
-                "VILDensity": 0.6000000238418579,
-                "RotationTrack": 0.0,
-                "RALA": 42.0,
-                "VII": 0.699999988079071
+                "EchoTop18": "MISSING_VAR",
+                "EchoTop30": "MISSING_VAR",
+                "PrecipRate": "MISSING_VAR",
+                "VILDensity": "MISSING_VAR",
+                "RotationTrack": "MISSING_VAR",
+                "RALA": "MISSING_VAR",
+                "VII": "MISSING_VAR"
             }
         ]
     }
