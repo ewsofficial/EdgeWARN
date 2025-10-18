@@ -17,12 +17,11 @@ datasets = [
     ("EchoTop30", fs.MRMS_ECHOTOP30_DIR, "EchoTop30"),
     ("PrecipRate", fs.MRMS_PRECIPRATE_DIR, "PrecipRate"),
     ("VIL Density", fs.MRMS_VIL_DIR, "VILDensity"),
-    ("RotationTrack", fs.MRMS_ROTATIONT_DIR, "RotationTrack"),
     ("Reflectivity at Lowest Altitude", fs.MRMS_RALA_DIR, "RALA"),
-    ("VII", fs.MRMS_VII_DIR, "VII"),
+    ("VII", fs.MRMS_VII_DIR, "VII")
 ]
 
-def main():
+def main(lat_limits, lon_limits):
     fs.clean_idx_files([d[1] for d in datasets]) # Clean IDX files!
     
     handler = StatFileHandler()
@@ -39,7 +38,7 @@ def main():
             latest_file = fs.latest_files(outdir, 1)[-1]
             print(f"[CellIntegration] DEBUG: Using latest {name} file: {latest_file}")
 
-            result_cells = integrator.integrate_ds(latest_file, result_cells, key)
+            result_cells = integrator.integrate_ds(latest_file, result_cells, key, lat_limits=lat_limits, lon_limits=lon_limits)
             print(f"[CellIntegration] DEBUG: {name} integration completed successfully!")
         
         except Exception as e:
@@ -63,4 +62,5 @@ def main():
     handler.write_json(result_cells, json_path)
 
 if __name__ == "__main__":
-    main()
+    main(lat_limits=(30.4, 34.0), lon_limits=(264.2, 268.6))
+    # lat is 32 to 35, lon is 278 to 281

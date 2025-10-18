@@ -7,23 +7,58 @@ class StormCellIntegrator:
     def __init__(self):
         pass
 
-    def integrate_ds(self, dataset_path, storm_cells, output_key):
+    def integrate_ds(self, dataset_path, storm_cells, output_key, lat_limits=None, lon_limits=None):
         """
         Integrate a dataset over storm cells, storing the result in each cell's storm_history.
         Handles both 1D and 2D lat/lon coordinates.
+        Applies lat/lon subsetting immediately to minimize memory use.
         """
         from shapely.geometry import Polygon
 
         print(f"[CellIntegration] DEBUG: Integrating dataset for {len(storm_cells)} storm cells")
 
-        # Step 1: Load dataset
+        # Step 1: Load dataset (subset immediately if limits are provided)
         try:
-            # Use cfgrib for GRIB2, fallback for NetCDF
             if dataset_path.endswith(".grib2"):
                 ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
             else:
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
-            ds.load()
+
+            # Identify coordinate names
+            lat_name = "latitude" if "latitude" in ds.coords else "lat"
+            lon_name = "longitude" if "longitude" in ds.coords else "lon"
+
+            # Subset before loading into memory
+            if lat_limits or lon_limits:
+                lat_min, lat_max = lat_limits if lat_limits else (ds[lat_name].min().item(), ds[lat_name].max().item())
+                lon_min, lon_max = lon_limits if lon_limits else (ds[lon_name].min().item(), ds[lon_name].max().item())
+
+                # Handle descending coordinates
+                lat_slice = slice(lat_max, lat_min) if ds[lat_name][0] > ds[lat_name][-1] else slice(lat_min, lat_max)
+                lon_slice = slice(lon_max, lon_min) if ds[lon_name][0] > ds[lon_name][-1] else slice(lon_min, lon_max)
+
+                print(f"[CellIntegration] DEBUG: Applying spatial subset before load: "
+                      f"lat=({lat_min},{lat_max}), lon=({lon_min},{lon_max})")
+
+                try:
+                    ds = ds.sel({lat_name: lat_slice, lon_name: lon_slice})
+                except Exception as e:
+                    print(f"[CellIntegration] WARNING: Subset selection failed, continuing with full dataset: {e}")
+            else:
+                print(f"[CellIntegration] WARN: No subset coordinates given. Please specify to reduce memory usage")
+
+            ds.load()  # Load now (after subset)
+            print(f"[CellIntegration] DEBUG: Dataset loaded successfully with shape {list(ds.sizes.values())}")
+
+            # Check if dataset is empty
+            if ds.sizes[lat_name] == 0 or ds.sizes[lon_name] == 0:
+                print("[CellIntegration] WARN: Dataset empty after subsetting")
+                for cell in storm_cells:
+                    if cell.get("storm_history"):
+                        cell["storm_history"][-1][output_key] = "EMPTY_DATASET"
+                ds.close()
+                return storm_cells
+
         except MemoryError:
             print("[CellIntegration] ERROR: Dataset too large to load into memory")
             for cell in storm_cells:
@@ -37,17 +72,21 @@ class StormCellIntegrator:
                     cell["storm_history"][-1][output_key] = "DATASET_LOAD_ERROR"
             return storm_cells
 
+        # Step 2: Select variable
         var = ds.get("unknown")
+        if var is None:
+            print("[CellIntegration] ERROR: Variable 'unknown' not found in dataset")
+            for cell in storm_cells:
+                if cell.get("storm_history"):
+                    cell["storm_history"][-1][output_key] = "VAR_NOT_FOUND"
+            ds.close()
+            return storm_cells
 
-        # Step 3: Identify lat/lon coordinate names
-        lat_name = "latitude" if "latitude" in ds.coords else "lat"
-        lon_name = "longitude" if "longitude" in ds.coords else "lon"
-
-        # Extract coordinate arrays (may be 1D or 2D)
+        # Step 3: Get coordinates (can be 1D or 2D)
         lat_vals = ds[lat_name].values
         lon_vals = ds[lon_name].values
 
-        # Step 4: Loop over storm cells
+        # Step 4: Process storm cells
         for cell in storm_cells:
             if not cell.get("storm_history"):
                 continue
@@ -59,26 +98,22 @@ class StormCellIntegrator:
                 continue
 
             try:
-                # Handle 1D or 2D coordinates
                 if lat_vals.ndim == 1 and lon_vals.ndim == 1:
-                    # 1D lat/lon
                     mask = np.logical_and.outer(
                         (lat_vals >= poly.bounds[1]) & (lat_vals <= poly.bounds[3]),
                         (lon_vals >= poly.bounds[0]) & (lon_vals <= poly.bounds[2])
                     )
                 else:
-                    # 2D lat/lon
                     mask = (
                         (lat_vals >= poly.bounds[1]) & (lat_vals <= poly.bounds[3]) &
                         (lon_vals >= poly.bounds[0]) & (lon_vals <= poly.bounds[2])
                     )
 
-                # Apply mask and ignore negative values
-                subset = var.where(mask & (var >= 0))
-
-                # Compute max
-                max_val = subset.max().item()
-                latest[output_key] = float(max_val) if not np.isnan(max_val) else "N/A"
+                subset_vals = var.where(mask & (var >= 0))
+                if subset_vals.size == 0 or np.all(np.isnan(subset_vals)):
+                    latest[output_key] = "N/A"
+                else:
+                    latest[output_key] = float(np.nanmax(subset_vals))
 
             except Exception as e:
                 print(f"[CellIntegration] ERROR: Processing cell {cell.get('id', 'unknown')}: {e}")
@@ -86,7 +121,7 @@ class StormCellIntegrator:
 
             finally:
                 try:
-                    del subset, mask, poly
+                    del subset_vals, mask, poly
                 except Exception:
                     pass
                 gc.collect()
