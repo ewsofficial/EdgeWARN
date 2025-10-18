@@ -1,20 +1,15 @@
 from shapely.geometry import Point, shape
 import numpy as np
 import xarray as xr
-from .utils import DetectionDataHandler
-from .save import CellDataSaver
-from shapely.geometry import MultiPoint, MultiLineString
 from shapely.ops import unary_union, polygonize
-from scipy.spatial import Delaunay
-from scipy.ndimage import binary_dilation, binary_closing
+from scipy.ndimage import binary_dilation
 from skimage import measure
-import math
-import alphashape
 
 class GateMapper:
-    def __init__(self, radar_ds, ps_ds, refl_threshold=35.0):
+    def __init__(self, radar_ds, ps_ds, precipflag_ds, refl_threshold=35.0):
         self.radar_ds = radar_ds
         self.ps_ds = ps_ds
+        self.precipflag_ds = precipflag_ds
         self.refl_threshold = refl_threshold  # ignore for now
 
     def map_gates_to_polygons(self):

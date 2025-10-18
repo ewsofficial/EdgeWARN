@@ -21,11 +21,10 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.4.2
+#### Build Version: 0.4.3 Hotfix
 
 #### Changes Associated With This Build
-- Fixed data desynchronization errors with ingestion module
-- Multithreaded dataset integration with configurable number of parallel processes
+- Reverted parallel dataset integration due to fatal errors
 
 #### To Do
 - Reduce memory footprint of dataset integration

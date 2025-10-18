@@ -1,35 +1,53 @@
 from .utils import StormIntegrationUtils
 import xarray as xr
-import gc
 import numpy as np
+import gc
 
 class StormCellIntegrator:
     def __init__(self):
         pass
 
     def integrate_ds(self, dataset_path, storm_cells, output_key):
-        # Mem usage ~ 400 - 450 MB per dataset
-        # Rule of thumb for mem usage in MB: 150 MB + 450x, x = number of datasets simultaneously integrated
+        """
+        Integrate a dataset over storm cells, storing the result in each cell's storm_history.
+        Handles both 1D and 2D lat/lon coordinates.
+        """
+        from shapely.geometry import Polygon
+
         print(f"[CellIntegration] DEBUG: Integrating dataset for {len(storm_cells)} storm cells")
 
+        # Step 1: Load dataset
         try:
-            ds = xr.open_dataset(dataset_path, chunks={"lat": 50, "lon": 50}, decode_timedelta=True)
-            var = ds.get("unknown")
-            if var is None:
-                for cell in storm_cells:
-                    if cell.get("storm_history"):
-                        cell["storm_history"][-1][output_key] = "MISSING_UNKNOWN_VAR"
-                ds.close()
-                return storm_cells
+            # Use cfgrib for GRIB2, fallback for NetCDF
+            if dataset_path.endswith(".grib2"):
+                ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
+            else:
+                ds = xr.open_dataset(dataset_path, decode_timedelta=True)
+            ds.load()
+        except MemoryError:
+            print("[CellIntegration] ERROR: Dataset too large to load into memory")
+            for cell in storm_cells:
+                if cell.get("storm_history"):
+                    cell["storm_history"][-1][output_key] = "MEMORY_ERROR"
+            return storm_cells
         except Exception as e:
+            print(f"[CellIntegration] ERROR: Failed to load dataset: {e}")
             for cell in storm_cells:
                 if cell.get("storm_history"):
                     cell["storm_history"][-1][output_key] = "DATASET_LOAD_ERROR"
             return storm_cells
 
+        var = ds.get("unknown")
+
+        # Step 3: Identify lat/lon coordinate names
         lat_name = "latitude" if "latitude" in ds.coords else "lat"
         lon_name = "longitude" if "longitude" in ds.coords else "lon"
 
+        # Extract coordinate arrays (may be 1D or 2D)
+        lat_vals = ds[lat_name].values
+        lon_vals = ds[lon_name].values
+
+        # Step 4: Loop over storm cells
         for cell in storm_cells:
             if not cell.get("storm_history"):
                 continue
@@ -40,29 +58,44 @@ class StormCellIntegrator:
                 latest[output_key] = "N/A"
                 continue
 
-            min_lat, min_lon, max_lat, max_lon = poly.bounds
-
             try:
-                # Slice lazily to bounding box
-                subset = var.sel(**{lat_name: slice(min_lat, max_lat),
-                                    lon_name: slice(min_lon, max_lon)})
-                
-                # Apply bounding-box mask only
-                mask = ((subset[lon_name] >= min_lon) & (subset[lon_name] <= max_lon))
-                max_val = subset.where(mask & (subset >= 0)).max().compute()
+                # Handle 1D or 2D coordinates
+                if lat_vals.ndim == 1 and lon_vals.ndim == 1:
+                    # 1D lat/lon
+                    mask = np.logical_and.outer(
+                        (lat_vals >= poly.bounds[1]) & (lat_vals <= poly.bounds[3]),
+                        (lon_vals >= poly.bounds[0]) & (lon_vals <= poly.bounds[2])
+                    )
+                else:
+                    # 2D lat/lon
+                    mask = (
+                        (lat_vals >= poly.bounds[1]) & (lat_vals <= poly.bounds[3]) &
+                        (lon_vals >= poly.bounds[0]) & (lon_vals <= poly.bounds[2])
+                    )
 
+                # Apply mask and ignore negative values
+                subset = var.where(mask & (var >= 0))
+
+                # Compute max
+                max_val = subset.max().item()
                 latest[output_key] = float(max_val) if not np.isnan(max_val) else "N/A"
 
-            except Exception:
+            except Exception as e:
+                print(f"[CellIntegration] ERROR: Processing cell {cell.get('id', 'unknown')}: {e}")
                 latest[output_key] = "PROCESSING_ERROR"
 
             finally:
-                del subset, mask, poly
+                try:
+                    del subset, mask, poly
+                except Exception:
+                    pass
                 gc.collect()
 
+        # Step 5: Cleanup
         ds.close()
         del var, ds
         gc.collect()
+
         return storm_cells
 
     def integrate_probsevere(self, probsevere_data, storm_cells):
