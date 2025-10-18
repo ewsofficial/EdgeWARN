@@ -21,10 +21,10 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.4.3 Hotfix
+#### Build Version: 0.4.3 Hotfix # 2
 
 #### Changes Associated With This Build
-- Reverted parallel dataset integration due to fatal errors
+- Fixed dataset integration lat and lon limits being reversed when subsetting data
 
 #### To Do
 - Reduce memory footprint of dataset integration
