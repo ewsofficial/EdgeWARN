@@ -1,12 +1,13 @@
 class StormCellTracker:
     def __init__(self, ps_old, ps_new):
-        self.ps_old=  ps_old
+        self.ps_old = ps_old
         self.ps_new = ps_new
 
     @staticmethod
     def update_cells(entries, updated_data):
         """
         Updates main fields in entries from updated_data without modifying storm_history.
+        Removes cells that are not present in updated_data.
         
         entries: list of cell dicts
         updated_data: list of dicts with updated 'num_gates', 'centroid', 'max_refl', etc.
@@ -15,6 +16,7 @@ class StormCellTracker:
         updated_map = {int(cell['id']): cell for cell in updated_data}
 
         used_ids = set()
+        updated_entries = []
 
         for cell in entries:
             cell_id = int(cell['id'])
@@ -29,16 +31,18 @@ class StormCellTracker:
                 cell['bbox'] = updated.get('bbox', cell['bbox'])
 
                 used_ids.add(cell_id)
+                updated_entries.append(cell)
                 print(f"[CellDetection] DEBUG: Updated cell {cell_id}")
+            else:
+                # Cell not found in updated_data - mark for deletion
+                print(f"[CellDetection] DEBUG: Removing cell {cell_id} (not found in new scan)")
 
         # Add NEW cells
         for cell in updated_data:
             cell_id = int(cell['id'])
             if cell_id not in used_ids:
-                entries.append(cell)
+                updated_entries.append(cell)
                 print(f"[CellDetection] DEBUG: Added new cell {cell_id}")
         
-        return entries
-
-
-
+        # Return the filtered list (only cells that exist in updated_data)
+        return updated_entries
