@@ -21,10 +21,11 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.4.3 Hotfix # 2
+#### Build Version: 0.4.3
 
 #### Changes Associated With This Build
-- Fixed dataset integration lat and lon limits being reversed when subsetting data
+- Subsetted dataset integration loading to specified lat/lon limits
+- Modified centroid calculation to be exponential reflectivity-weighted
 
 #### To Do
 - Reduce memory footprint of dataset integration

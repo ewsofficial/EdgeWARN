@@ -1,3 +1,7 @@
+import os
+
+os.environ["ECCODES_SILENT"] = "1"
+
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -51,11 +55,14 @@ if args.lat_limits == [0, 0] or args.lon_limits == [0, 0]:
     print("ERROR: lat_limits or lon_limits not specified! They must be two numeric values each.")
     sys.exit(1)
 
+# ===== Convert longitude from -180:180 to 0:360 if needed =====
+lon_limits = [lon % 360 for lon in args.lon_limits]
+
 print(f"Running EdgeWARN v0.4.3 with {args.max_processes} threads for dataset integration")
-print(f"Latitude limits: {tuple(args.lat_limits)}, Longitude limits: {tuple(args.lon_limits)}")
+print(f"Latitude limits: {tuple(args.lat_limits)}, Longitude limits: {tuple(lon_limits)}")
 
 lat_limits = tuple(args.lat_limits)
-lon_limits = tuple(args.lon_limits)
+lon_limits = tuple(lon_limits)
 
 def pipeline(log_queue, dt):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""
