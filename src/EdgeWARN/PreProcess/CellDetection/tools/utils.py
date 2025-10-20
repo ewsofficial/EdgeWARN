@@ -24,27 +24,29 @@ class DetectionDataHandler:
     def load_subset(self):
         """
         Load the MRMS dataset from file and return a lat/lon subset as xarray.Dataset.
+        Only the requested subset is loaded.
         """
-        # Open the dataset
         try:
+            # Open dataset lazily (do not load full arrays)
             ds = xr.open_dataset(self.radar_path, decode_timedelta=True)
 
-            # Handle descending latitude coordinates
+            # Handle descending latitude
             if ds.latitude[0] > ds.latitude[-1]:
                 lat_slice = slice(self.lat_grid[1], self.lat_grid[0])
             else:
                 lat_slice = slice(self.lat_grid[0], self.lat_grid[1])
-            
+
             # Longitude slice
             lon_slice = slice(self.lon_grid[0], self.lon_grid[1])
-            
-            # Subset the dataset
+
+            # Subset dataset (lazy; data not fully loaded yet)
             dataset = ds.sel(latitude=lat_slice, longitude=lon_slice)
-            print(f"[CellDetection] DEBUG: Loaded Dataset for lat: {self.lat_grid}, lon: {self.lon_grid}")
+            print(f"[CellDetection] DEBUG: Subset prepared for lat: {self.lat_grid}, lon: {self.lon_grid}")
+
             return dataset
-        
+
         except Exception as e:
-            print(f"[CellDetection] ERROR: Failed to load {self.path}: {e}")
+            print(f"[CellDetection] ERROR: Failed to load {self.radar_path}: {e}")
     
     def load_probsevere(self):
         """

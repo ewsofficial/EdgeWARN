@@ -60,8 +60,9 @@ def download_all_files(dt):
             executor.submit(process_modifier, modifier, outdir, dt, max_time, max_entries)
             for modifier, outdir in mrms_modifiers
         ]
-        futures.append(executor.submit(SynopticDownloader.download_latest_rtma, dt, fs.THREDDS_RTMA_DIR))
-        futures.append(executor.submit(SynopticDownloader.download_rap_awp, dt, fs.NOAA_RAP_DIR))
+        # Removed because I need to fix :(
+        # futures.append(executor.submit(SynopticDownloader.download_latest_rtma, dt, fs.THREDDS_RTMA_DIR))
+        # futures.append(executor.submit(SynopticDownloader.download_rap_awp, dt, fs.NOAA_RAP_DIR))
 
         for future in as_completed(futures):
             future.result()
