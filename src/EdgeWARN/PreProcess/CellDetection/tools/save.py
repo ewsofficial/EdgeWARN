@@ -12,14 +12,15 @@ class CellDataSaver:
     
     def create_entry(self):
         """
-        Appends maximum reflectivity, num_gates, empty storm_history to each ProbSevere cell entry.
+        Appends maximum reflectivity, num_gates, and reflectivity-weighted centroid
+        to each ProbSevere cell entry using exponential weighting.
         Returns a list of dictionaries with properties.
         """
-        # Build 2D gate grids and flatten to 1D so indexing aligns with polygon_grid
+        # Flatten polygon and reflectivity grids
         polygon_grid = self.mapped_ds['PolygonID'].values.flatten()
-        refl_grid = self.radar_ds['unknown'].values.flatten()  # TODO: replace 'unknown' with actual reflectivity var
+        refl_grid = self.radar_ds['unknown'].values.flatten()
 
-        # radar_ds latitude/longitude coords are 1D arrays; create meshgrid matching radar gates
+        # Build 2D grid coordinates
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
         lat_grid_2d, lon_grid_2d = np.meshgrid(lats, lons, indexing='ij')
@@ -42,7 +43,6 @@ class CellDataSaver:
             lat_vals = lat_grid[mask]
             lon_vals = lon_grid[mask]
 
-            # Filter out NaNs
             valid_mask = ~np.isnan(refl_vals)
             refl_vals = refl_vals[valid_mask]
             lat_vals = lat_vals[valid_mask]
@@ -51,23 +51,13 @@ class CellDataSaver:
             # Max reflectivity
             max_refl = float(np.nanmax(refl_vals)) if refl_vals.size > 0 else float('nan')
 
-            # Weighted centroid
+            # Exponential reflectivity weights
             if refl_vals.size > 0:
-                # Use the indices of the original 2D arrays for weighting
-                indices = np.where(mask.reshape(lat_grid_2d.shape))
-                refl_2d = self.radar_ds['unknown'].values  # original 2D array
-                refl_subset = refl_2d[indices]
-                
-                lat_subset = lat_grid_2d[indices]
-                lon_subset = lon_grid_2d[indices]
-                
-                weighted_lat = np.sum(lat_subset * refl_subset) / np.sum(refl_subset)
-                weighted_lon = np.sum(lon_subset * refl_subset) / np.sum(refl_subset)
-                
-                # Convert lon to 0-360 if needed
-                if weighted_lon < 0:
-                    weighted_lon += 360
-                centroid = (weighted_lat, weighted_lon)
+                weights = np.exp(refl_vals)  # exponential weighting
+                lat_centroid = float(np.sum(lat_vals * weights) / np.sum(weights))
+                lon_centroid = float(np.sum(lon_vals * weights) / np.sum(weights))
+                lon_centroid = lon_centroid % 360  # convert from -180:180 to 0:360
+                centroid = (lat_centroid, lon_centroid)
             else:
                 centroid = (np.nan, np.nan)
 
@@ -84,7 +74,7 @@ class CellDataSaver:
             })
 
         return results
-    
+
     def append_storm_history(self, entries, radar_path):
         timestamp_new = DetectionDataHandler.find_timestamp(radar_path)
         for cell in entries:
