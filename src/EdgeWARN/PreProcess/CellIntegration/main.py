@@ -1,12 +1,6 @@
 import util.file as fs
 from EdgeWARN.PreProcess.CellIntegration.integrate import StormCellIntegrator
 from EdgeWARN.PreProcess.CellIntegration.utils import StatFileHandler
-import copy
-import gc
-import json
-import numpy as np
-import os
-import shutil
 
 # ------------------------------
 # MRMS dataset list
@@ -21,7 +15,7 @@ datasets = [
     ("VII", fs.MRMS_VII_DIR, "VII")
 ]
 
-def main(lat_limits, lon_limits):
+def main():
     fs.clean_idx_files([d[1] for d in datasets]) # Clean IDX files!
     
     handler = StatFileHandler()
@@ -38,7 +32,7 @@ def main(lat_limits, lon_limits):
             latest_file = fs.latest_files(outdir, 1)[-1]
             print(f"[CellIntegration] DEBUG: Using latest {name} file: {latest_file}")
 
-            result_cells = integrator.integrate_ds(latest_file, result_cells, key, lat_limits=lat_limits, lon_limits=lon_limits)
+            result_cells = integrator.integrate_ds(latest_file, result_cells, key)
             print(f"[CellIntegration] DEBUG: {name} integration completed successfully!")
         
         except Exception as e:
@@ -62,5 +56,5 @@ def main(lat_limits, lon_limits):
     handler.write_json(result_cells, json_path)
 
 if __name__ == "__main__":
-    main(lat_limits=(30.4, 34.0), lon_limits=(264.2, 268.6))
+    main(lat_limits=(42, 46), lon_limits=(287, 293))
     # lat is 32 to 35, lon is 278 to 281

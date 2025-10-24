@@ -6,29 +6,39 @@
 
 <h2 align="center">An Edgemont Weather Service Project</h2>
 
-EdgeWARN is a program developed by the Edgemont Weather Service to accurately nowcast severe weather, provide a user friendly GUI, and the capability to be run on any modern PC. As a high school organization, our goals are to provide accurate and timely weather forecasts and to raise weather awareness across the community. EdgeWARN utilizes storm cell detection and tracking, threat analysis, and an interactive GUI (Under development!) to deliver an accurate but easily readable interface to the public.
+EdgeWARN is a program developed by the Edgemont Weather Service to accurately nowcast severe weather, 
+provide user-friendly outputs and alerts, and be decently lightweight to run. 
+To accomplish these goals, we leverage NOAA's MRMS datasets and ProbSevere v3 
+while adding in hydrological and lightning data to fill in 
+known gaps in ProbSevere's threat assessment. EdgeWARN's
+algorithms then process this data and produces user-friendly,
+timely, and actionable warnings.
 
 <h2 align="center">Installation Instructions</h2>
-EdgeWARN is NOT ready for deployment. Use code at own risk.
 
+#### Current builds are Command Line Interface (CLI) only! We plan to add a GUI later
+
+#### Requirements
+1. Python 3.13+ or Conda/Miniconda
+
+#### Installation Instructions
 1. Clone the repository
-2. Run `pip install -r requirements.txt` to install dependencies
-3. Navigate to EdgeWARN/src
-4. Run `python run.py -max_processes 4 --lat_limits lat_min lat_max --lon_limits lon_min lon_max`
+2. Run `conda env create -f environment.yml` at the repository's root
+3. Navigate to the src directory
+4. Run `python run.py --lat_limits lat_min lat_max --lon_limits lon_min lon_max`
 
 - lat_min, lat_max - latitude bounds
 - lon_min, lon_max - longitude bounds (0-360 format)
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.4.3
+#### Build Version: 0.4.4
 
 #### Changes Associated With This Build
-- Subsetted dataset integration loading to specified lat/lon limits
-- Modified centroid calculation to be exponential reflectivity-weighted
+- Reverted subsetting datasets (ecCodes doesn't support this)
+- Removed redundant distance finding code from ProbSevere integration
 
 #### To Do
-- Reduce memory footprint of dataset integration
 - Build GUI for initial render
 
 <h2 align="center">Credits</h2>
@@ -39,7 +49,6 @@ EdgeWARN is NOT ready for deployment. Use code at own risk.
 #### Coders
 - Yuchen Wei (Project Lead)
 - Asher Kadet (Server Hosting)
-- Sammy Reifel (GUI Design)
 
 #### Contact Info
 - Please message us for our contact info (We don't share contact info here due to the risk of bots/spam mail)

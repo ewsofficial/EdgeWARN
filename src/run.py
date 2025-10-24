@@ -22,12 +22,6 @@ sys.stderr = TimestampedOutput(sys.stderr)
 # ===== Process modifiers =====
 parser = argparse.ArgumentParser(description="EdgeWARN modifier specification")
 parser.add_argument(
-    "-max_processes",
-    type=int,
-    default=4,
-    help="Max number of processes dataset integration uses"
-)
-parser.add_argument(
     "--lat_limits",
     type=float,
     nargs=2,
@@ -58,7 +52,7 @@ if args.lat_limits == [0, 0] or args.lon_limits == [0, 0]:
 # ===== Convert longitude from -180:180 to 0:360 if needed =====
 lon_limits = [lon % 360 for lon in args.lon_limits]
 
-print(f"Running EdgeWARN v0.4.3 with {args.max_processes} threads for dataset integration")
+print(f"Running EdgeWARN v0.4.3")
 print(f"Latitude limits: {tuple(args.lat_limits)}, Longitude limits: {tuple(lon_limits)}")
 
 lat_limits = tuple(args.lat_limits)
@@ -76,7 +70,7 @@ def pipeline(log_queue, dt):
         filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
         ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
         detect.main(filepath_old, filepath_new, ps_old, ps_new, lat_limits, lon_limits, Path("stormcell_test.json"))
-        integration.main(lat_limits, lon_limits)
+        integration.main()
         log("Pipeline completed successfully")
     except Exception as e:
         log(f"Error in pipeline: {e}")
