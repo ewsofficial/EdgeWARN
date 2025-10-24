@@ -1,7 +1,6 @@
 from shapely.geometry import Point, shape
 import numpy as np
 import xarray as xr
-from shapely.ops import unary_union, polygonize
 from scipy.ndimage import binary_dilation
 from skimage import measure
 
@@ -58,12 +57,15 @@ class GateMapper:
 
     def expand_gates(self, mapped_ds, max_iterations=100):
         """
-        Iteratively expand ProbSevere polygons one gate at a time, constrained by reflectivity threshold.
-        A gate can belong to only one polygon.
+        Vectorized expansion of ProbSevere polygons, preserving the rule that
+        once a gate is assigned to a polygon, it cannot be claimed by another.
+
+        Each iteration expands all polygons simultaneously into neighboring
+        reflectivity-qualified gates (4-connected neighborhood).
 
         Parameters:
             mapped_ds (xarray.Dataset): Dataset from map_gates_to_polygons()
-            max_iterations (int): Maximum number of iterations (safety limit)
+            max_iterations (int): Maximum iterations (safety limit)
 
         Returns:
             xarray.Dataset: Expanded PolygonID dataset
@@ -71,57 +73,50 @@ class GateMapper:
         if self.refl_threshold is None:
             raise ValueError("self.refl_threshold must be set to expand polygons.")
 
+        # Base data
         polygon_grid = mapped_ds['PolygonID'].values.copy()
-        refl_grid = self.radar_ds['unknown'].values  # assume reflectivity variable is named 'reflectivity'
-
-        # Step 1: create mask for gates above threshold (gates eligible for expansion)
+        refl_grid = self.radar_ds['unknown'].values  # <-- replace 'unknown' with actual variable name
         mask = refl_grid >= self.refl_threshold
 
-        iteration = 0
-        changed = True
+        # 4-connected structure for expansion
+        structure = np.array([[0,1,0],
+                            [1,1,1],
+                            [0,1,0]], dtype=bool)
 
-        while changed and iteration < max_iterations:
-            iteration += 1
-            changed = False
-            new_grid = polygon_grid.copy()
+        for iteration in range(max_iterations):
+            # Identify which cells belong to any polygon
+            occupied = polygon_grid > 0
 
-            for poly_id in np.unique(polygon_grid):
-                if poly_id == 0:
-                    continue
+            # Binary dilation of the occupied mask (potential expansion front)
+            expanded = binary_dilation(occupied, structure=structure)
 
+            # Candidates: cells that are unassigned, above threshold, and adjacent to polygons
+            candidates = expanded & (~occupied) & mask
+
+            if not np.any(candidates):
+                print(f"[CellDetection] Completed expansion in {iteration} iterations (vectorized, non-overwriting)")
+                break
+
+            # Find all polygon IDs to expand
+            unique_ids = np.unique(polygon_grid[occupied])
+            new_assignments = np.zeros_like(polygon_grid)
+
+            # For each polygon, expand only into its own adjacent area (vectorized per ID)
+            for poly_id in unique_ids:
                 poly_mask = polygon_grid == poly_id
+                expanded_poly = binary_dilation(poly_mask, structure=structure)
+                new_pixels = expanded_poly & candidates & (polygon_grid == 0)
+                new_assignments[new_pixels] = poly_id
 
-                # Expand one gate in each direction
-                expanded = binary_dilation(poly_mask, structure=np.array([[0,1,0],
-                                                                        [1,1,1],
-                                                                        [0,1,0]]))
-                # Only assign gates not yet claimed and that meet threshold
-                new_pixels = expanded & (polygon_grid == 0) & mask
-                if np.any(new_pixels):
-                    new_grid[new_pixels] = poly_id
-                    changed = True
+            # Apply new assignments — once a cell is filled, it never changes
+            polygon_grid[new_assignments > 0] = new_assignments[new_assignments > 0]
 
-            polygon_grid = new_grid
-        """
-        # --- After expansion loop, fill small concavities (morphological closing) ---
-        new_grid = polygon_grid.copy()
-        for poly_id in np.unique(polygon_grid):
-            if poly_id == 0:
-                continue
-            poly_mask = polygon_grid == poly_id
-            # Use 4-connected structure to avoid over-closing
-            closed = binary_closing(poly_mask, structure=np.array([[0,1,0],
-                                                                [1,1,1],
-                                                                [0,1,0]]))
-            new_grid[closed] = poly_id
-        polygon_grid = new_grid
-        """
+        else:
+            print(f"[CellDetection] Reached max_iterations ({max_iterations}) without convergence")
 
-        print(f"[CellDetection] DEBUG: Completed expansion after {iteration} iterations")
+        # Return as xarray dataset
         return xr.Dataset(
-            {
-                'PolygonID': (('latitude', 'longitude'), polygon_grid)
-            },
+            {'PolygonID': (('latitude', 'longitude'), polygon_grid)},
             coords={
                 'latitude': mapped_ds['latitude'].values,
                 'longitude': mapped_ds['longitude'].values

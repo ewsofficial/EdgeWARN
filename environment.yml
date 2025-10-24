@@ -1,0 +1,14 @@
+name: EdgeWARN
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.13
+  - cfgrib
+  - beautifulsoup4
+  - numpy
+  - requests
+  - scikit-image
+  - scipy
+  - shapely
+  - xarray

@@ -5,3 +5,4 @@ requests==2.32.5
 beautifulsoup4==4.9.3
 scipy==1.16.2
 scikit-image==0.25.2
+cfgrib==0.9.4.1

@@ -53,8 +53,8 @@ if __name__ == "__main__":
     radar_old, radar_new = radar_files[-2], radar_files[-1]
     ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
     ps_old, ps_new = ps_files[-2], ps_files[-1]
-    lat_bounds = (37.8, 40.2)
-    lon_bounds = (276.2, 279.6)
+    lat_bounds = (42, 46)
+    lon_bounds = (287, 293)
     main(radar_old, radar_new, ps_old, ps_new, lat_bounds, lon_bounds, Path("stormcell_test.json"))
          
 

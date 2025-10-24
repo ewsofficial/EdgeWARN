@@ -7,52 +7,32 @@ class StormCellIntegrator:
     def __init__(self):
         pass
 
-    def integrate_ds(self, dataset_path, storm_cells, output_key, lat_limits=None, lon_limits=None):
+    def integrate_ds(self, dataset_path, storm_cells, output_key):
         """
         Integrate a dataset over storm cells, storing the result in each cell's storm_history.
         Handles both 1D and 2D lat/lon coordinates.
-        Applies lat/lon subsetting immediately to minimize memory use.
+        Fully loads dataset into memory, no subsetting.
         """
-        from shapely.geometry import Polygon
 
         print(f"[CellIntegration] DEBUG: Integrating dataset for {len(storm_cells)} storm cells")
 
-        # Step 1: Load dataset (subset immediately if limits are provided)
+        # Step 1: Load dataset directly (no subsetting)
         try:
             if dataset_path.endswith(".grib2"):
                 ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
             else:
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
 
+            ds.load()  # load entire dataset
+            print(f"[CellIntegration] DEBUG: Dataset loaded successfully with shape {list(ds.sizes.values())}")
+
             # Identify coordinate names
             lat_name = "latitude" if "latitude" in ds.coords else "lat"
             lon_name = "longitude" if "longitude" in ds.coords else "lon"
 
-            # Subset before loading into memory
-            if lat_limits or lon_limits:
-                lat_min, lat_max = lat_limits if lat_limits else (ds[lat_name].min().item(), ds[lat_name].max().item())
-                lon_min, lon_max = lon_limits if lon_limits else (ds[lon_name].min().item(), ds[lon_name].max().item())
-
-                # Handle descending coordinates
-                lat_slice = slice(lat_max, lat_min) if ds[lat_name][0] > ds[lat_name][-1] else slice(lat_min, lat_max)
-                lon_slice = slice(lon_max, lon_min) if ds[lon_name][0] > ds[lon_name][-1] else slice(lon_min, lon_max)
-
-                print(f"[CellIntegration] DEBUG: Applying spatial subset before load: "
-                      f"lat=({lat_min},{lat_max}), lon=({lon_min},{lon_max})")
-
-                try:
-                    ds = ds.sel({lat_name: lat_slice, lon_name: lon_slice})
-                except Exception as e:
-                    print(f"[CellIntegration] WARNING: Subset selection failed, continuing with full dataset: {e}")
-            else:
-                print(f"[CellIntegration] WARN: No subset coordinates given. Please specify to reduce memory usage")
-
-            ds.load()  # Load now (after subset)
-            print(f"[CellIntegration] DEBUG: Dataset loaded successfully with shape {list(ds.sizes.values())}")
-
             # Check if dataset is empty
             if ds.sizes[lat_name] == 0 or ds.sizes[lon_name] == 0:
-                print("[CellIntegration] WARN: Dataset empty after subsetting")
+                print("[CellIntegration] WARN: Dataset empty")
                 for cell in storm_cells:
                     if cell.get("storm_history"):
                         cell["storm_history"][-1][output_key] = "EMPTY_DATASET"
@@ -135,91 +115,68 @@ class StormCellIntegrator:
 
     def integrate_probsevere(self, probsevere_data, storm_cells):
         """
-        Integrate ProbSevere probability data with storm cells by matching based on 
-        spatial proximity to cell centroids at the time of each storm history entry.
+        Integrate ProbSevere probability data with storm cells by matching IDs.
         """
         if not isinstance(probsevere_data, dict) or 'features' not in probsevere_data:
-            print("[CellIntegration] ERROR: Invalid ProbSevere data format")
             return storm_cells
-        
-        probsevere_features = probsevere_data['features']
-        print(f"[CellIntegration] DEBUG: Integrating ProbSevere data for {len(probsevere_features)} features with {len(storm_cells)} storm cells...")
 
-        matches_found = 0
+        features = probsevere_data['features']
 
-        for storm_cell in storm_cells:
-            cell_id = storm_cell.get('id', 'unknown')
-
-            if 'storm_history' not in storm_cell or not storm_cell['storm_history']:
+        for cell in storm_cells:
+            if not cell.get("storm_history"):
                 continue
 
-            entry = storm_cell['storm_history'][-1]
-
+            entry = cell["storm_history"][-1]
+            cell_id = cell.get('id')
             if 'centroid' not in entry or len(entry['centroid']) < 2:
                 continue
 
-            # Match by ID instead of distance
-            closest_probsevere = None
-            for feature in probsevere_features:
+            # Match by ID
+            match = None
+            for feature in features:
                 feature_id = feature.get('id') or feature.get('properties', {}).get('ID')
                 if feature_id == cell_id:
-                    closest_probsevere = feature.get('properties', {})
+                    match = feature.get('properties', {})
                     break
 
-            if closest_probsevere:
-                # Nested supporting fields
+            if match:
                 entry['probsevere_details'] = {
-                    # --- Atmospheric Instability ---
-                    'MLCAPE': float(closest_probsevere.get('MLCAPE', 0)),
-                    'MUCAPE': float(closest_probsevere.get('MUCAPE', 0)),
-                    'MLCIN': float(closest_probsevere.get('MLCIN', 0)),
-                    'DCAPE': float(closest_probsevere.get('DCAPE', 0)),
-                    'CAPE_M10M30': float(closest_probsevere.get('CAPE_M10M30', 0)),
-                    'LCL': float(closest_probsevere.get('LCL', 0)),
-                    'Wetbulb_0C_Hgt': float(closest_probsevere.get('WETBULB_0C_HGT', 0)),
-                    'LLLR': float(closest_probsevere.get('LLLR', 0)),
-                    'MLLR': float(closest_probsevere.get('MLLR', 0)),
-
-                    # --- Kinematics ---
-                    'EBShear': float(closest_probsevere.get('EBSHEAR', 0)),
-                    'SRH01km': float(closest_probsevere.get('SRH01KM', 0)),
-                    'SRH02km': float(closest_probsevere.get('SRW02KM', 0)),
-                    'SRW46km': float(closest_probsevere.get('SRW46KM', 0)),
-                    'MeanWind_1-3kmAGL': float(closest_probsevere.get('MEANWIND_1-3kmAGL', 0)),
-                    'LJA': float(closest_probsevere.get('LJA', 0)),
-
-                    # --- Radar / Reflectivity ---
-                    'CompRef': float(closest_probsevere.get('COMPREF', 0)),
-                    'Ref10': float(closest_probsevere.get('REF10', 0)),
-                    'Ref20': float(closest_probsevere.get('REF20', 0)),
-                    'MESH': float(closest_probsevere.get('MESH', 0)),
-                    'H50_Above_0C': float(closest_probsevere.get('H50_Above_0C', 0)),
-                    'EchoTop50': float(closest_probsevere.get('EchoTop_50', 0)),
-                    'VIL': float(closest_probsevere.get('VIL', 0)),
-
-                    # --- Lightning / Electrical ---
-                    'MaxFED': float(closest_probsevere.get('MaxFED', 0)),
-                    'MaxFCD': float(closest_probsevere.get('MaxFCD', 0)),
-                    'AccumFCD': float(closest_probsevere.get('AccumFCD', 0)),
-                    'MinFlashArea': float(closest_probsevere.get('MinFlashArea', 0)),
-                    'TE@MaxFCD': float(closest_probsevere.get('TE@MaxFCD', 0)),
-                    'FlashRate': float(closest_probsevere.get('FLASH_RATE', 0)),
-                    'FlashDensity': float(closest_probsevere.get('FLASH_DENSITY', 0)),
-                    'MaxLLAz': float(closest_probsevere.get('MAXLLAZ', 0)),
-                    'p98LLAz': float(closest_probsevere.get('P98LLAZ', 0)),
-                    'p98MLAz': float(closest_probsevere.get('P98MLAZ', 0)),
-                    'MaxRC_Emiss': float(closest_probsevere.get('MAXRC_EMISS', 0)),
-                    'ICP': float(closest_probsevere.get('ICP', 0)),
-
-                    # --- Precipitable Water ---
-                    'PWAT': float(closest_probsevere.get('PWAT', 0)),
-
-                    # --- Beam Height ---
-                    'avg_beam_hgt': float(closest_probsevere.get('AVG_BEAM_HGT', 0)),
+                    'MLCAPE': float(match.get('MLCAPE', 0)),
+                    'MUCAPE': float(match.get('MUCAPE', 0)),
+                    'MLCIN': float(match.get('MLCIN', 0)),
+                    'DCAPE': float(match.get('DCAPE', 0)),
+                    'CAPE_M10M30': float(match.get('CAPE_M10M30', 0)),
+                    'LCL': float(match.get('LCL', 0)),
+                    'Wetbulb_0C_Hgt': float(match.get('WETBULB_0C_HGT', 0)),
+                    'LLLR': float(match.get('LLLR', 0)),
+                    'MLLR': float(match.get('MLLR', 0)),
+                    'EBShear': float(match.get('EBSHEAR', 0)),
+                    'SRH01km': float(match.get('SRH01KM', 0)),
+                    'SRH02km': float(match.get('SRW02KM', 0)),
+                    'SRW46km': float(match.get('SRW46KM', 0)),
+                    'MeanWind_1-3kmAGL': float(match.get('MEANWIND_1-3kmAGL', 0)),
+                    'LJA': float(match.get('LJA', 0)),
+                    'CompRef': float(match.get('COMPREF', 0)),
+                    'Ref10': float(match.get('REF10', 0)),
+                    'Ref20': float(match.get('REF20', 0)),
+                    'MESH': float(match.get('MESH', 0)),
+                    'H50_Above_0C': float(match.get('H50_Above_0C', 0)),
+                    'EchoTop50': float(match.get('EchoTop_50', 0)),
+                    'VIL': float(match.get('VIL', 0)),
+                    'MaxFED': float(match.get('MaxFED', 0)),
+                    'MaxFCD': float(match.get('MaxFCD', 0)),
+                    'AccumFCD': float(match.get('AccumFCD', 0)),
+                    'MinFlashArea': float(match.get('MinFlashArea', 0)),
+                    'TE@MaxFCD': float(match.get('TE@MaxFCD', 0)),
+                    'FlashRate': float(match.get('FLASH_RATE', 0)),
+                    'FlashDensity': float(match.get('FLASH_DENSITY', 0)),
+                    'MaxLLAz': float(match.get('MAXLLAZ', 0)),
+                    'p98LLAz': float(match.get('P98LLAZ', 0)),
+                    'p98MLAz': float(match.get('P98MLAZ', 0)),
+                    'MaxRC_Emiss': float(match.get('MAXRC_EMISS', 0)),
+                    'ICP': float(match.get('ICP', 0)),
+                    'PWAT': float(match.get('PWAT', 0)),
+                    'avg_beam_hgt': float(match.get('AVG_BEAM_HGT', 0))
                 }
 
-                print(f"[CellIntegration] DEBUG: Matched cell {cell_id}")
-                matches_found += 1
-
-        print(f"[CellIntegration] DEBUG: ProbSevere integration completed: {matches_found} matches found")
         return storm_cells
