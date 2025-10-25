@@ -19,7 +19,7 @@ timely, and actionable warnings.
 #### Current builds are Command Line Interface (CLI) only! We plan to add a GUI later
 
 #### Requirements
-1. Python 3.13+ or Conda/Miniconda
+1. Conda/Miniconda with Python 3.13+
 
 #### Installation Instructions
 1. Clone the repository
