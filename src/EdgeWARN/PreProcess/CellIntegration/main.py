@@ -32,7 +32,7 @@ def main():
             latest_file = fs.latest_files(outdir, 1)[-1]
             print(f"[CellIntegration] DEBUG: Using latest {name} file: {latest_file}")
 
-            result_cells = integrator.integrate_ds(latest_file, result_cells, key)
+            result_cells = integrator.integrate_ds_via_max(latest_file, result_cells, key)
             print(f"[CellIntegration] DEBUG: {name} integration completed successfully!")
         
         except Exception as e:
@@ -56,5 +56,5 @@ def main():
     handler.write_json(result_cells, json_path)
 
 if __name__ == "__main__":
-    main(lat_limits=(42, 46), lon_limits=(287, 293))
-    # lat is 32 to 35, lon is 278 to 281
+    main()
+
