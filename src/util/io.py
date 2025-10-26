@@ -14,3 +14,19 @@ class TimestampedOutput:
 
     def flush(self):
         self.stream.flush()
+
+class IOManager:
+    def __init__(self, header):
+        self.header = header
+    
+    def write_debug(self, msg):
+        print(f"{self.header} DEBUG: {msg}")
+        return
+
+    def write_warning(self, msg):
+        print(f"{self.header} WARN: {msg}")
+        return
+
+    def write_error(self, msg):
+        print(f"{self.header} ERROR: {msg}")
+        return

@@ -152,25 +152,38 @@ class FileDownloader:
         self.dt = dt
 
     def download_latest(self, files, outdir: Path):
+        """
+        Download the dataset matching the exact timestamp (self.dt),
+        or fallback to the most recent available file if an exact match isn't found.
+
+        Args:
+            files (list[tuple[str, datetime]]): List of (url, timestamp) pairs.
+            outdir (Path): Directory to save the downloaded file.
+        """
         if not files:
             raise ValueError("ERROR: No files provided")
-            return
 
-        # Find file with exact matching timestamp
+        # Find exact timestamp match
         matched = [(url, ts) for url, ts in files if ts == self.dt]
 
+        # If no exact match, fallback to the most recent available timestamp
         if not matched:
-            print(f"[DataIngestion] WARN: No file found matching exact timestamp {self.dt:%Y-%m-%d %H:%M:%S %Z}")
-            return None
+            latest_file = max(files, key=lambda x: x[1], default=None)
+            if not latest_file:
+                print("[DataIngestion] ERROR: No files available for fallback")
+                return None
+            print(f"[DataIngestion] WARN: No exact match for {self.dt:%Y-%m-%d %H:%M:%S %Z}. "
+                f"Using latest available dataset instead ({latest_file[1]:%Y-%m-%d %H:%M:%S %Z})")
+            matched = [latest_file]
 
-        # Only one expected — but take the first if multiple
+        # Take first match
         latest, ts = matched[0]
-        print(f"[DataIngestion] DEBUG: Found exact match: {latest}")
+        print(f"[DataIngestion] DEBUG: Selected file: {latest}")
 
         # Ensure output directory exists
         outdir.mkdir(parents=True, exist_ok=True)
 
-        # Extract just the filename from the URL
+        # Extract just the filename
         filename = Path(latest).name
         outfile = outdir / filename
 
@@ -182,12 +195,13 @@ class FileDownloader:
         # Download file
         try:
             print(f"[DataIngestion] DEBUG: Downloading file: {filename}")
-            response = requests.get(latest, stream=True)
+            response = requests.get(latest, stream=True, timeout=30)
             response.raise_for_status()
             with open(outfile, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            print(f"[DataIngestion] DEBUG: Downloaded file: {filename}")
+                    if chunk:
+                        f.write(chunk)
+            print(f"[DataIngestion] DEBUG: Downloaded file successfully -> {outfile}")
             return outfile
         except Exception as e:
             print(f"[DataIngestion] ERROR: Failed to download {filename}: {e}")
