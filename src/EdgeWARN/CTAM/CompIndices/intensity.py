@@ -4,7 +4,7 @@ from math import tanh
 
 io_manager = IOManager("[CTAM]")
 
-class RadarGrowthIndiceCalculator:
+class RadarIntensityIndiceCalculator:
     def __init__(self, stormcells):
         self.stormcells = stormcells
         self.data_handler = DataHandler(self.stormcells)
@@ -91,7 +91,7 @@ class RadarGrowthIndiceCalculator:
         """
         return self.stormcells
 
-class SatelliteGrowthIndiceCalculator:
+class SatelliteIntensityIndiceCalculator:
     def __init__(self, stormcells):
         self.stormcells = stormcells
         self.data_handler = DataHandler(self.stormcells)
