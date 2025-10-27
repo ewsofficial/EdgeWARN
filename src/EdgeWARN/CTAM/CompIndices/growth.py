@@ -1,5 +1,6 @@
 from EdgeWARN.CTAM.utils import DataHandler, DataLoader
 from util.io import IOManager
+from math import tanh
 
 io_manager = IOManager("[CTAM]")
 
@@ -54,7 +55,6 @@ class RadarGrowthIndiceCalculator:
             vil = latest_entry.get('VIL')
             vii = latest_entry.get('VII')
             et18 = latest_entry.get('EchoTop18')
-            # Convert num_gates to area in m^2 since each gate is 0.01 x 0.01 deg lat
 
             if not all(isinstance(v, (int, float)) for v in [vil, vii, et18]):
                 latest_entry[thl_key], latest_entry[thld_key] = None, None
@@ -63,17 +63,62 @@ class RadarGrowthIndiceCalculator:
             latest_entry[thl_key] = vil + vii
             latest_entry[thld_key] = (vil + vii) / et18
 
-    def calculate_storm_structure_indices(self, llint_key='LLInt', mlint_key='MLInt'):
+    def calculate_pii(self, key='PrecipInt'):
         """
-        Calculates low-level and mid-level reflectivity intensity indices for storm cells
-        WARNING: Not ready yet
-        Formulae TBD
+        Calculates Precipitation Intensity Index (PII)
+        Formula:
+            PII = [0.5 * tanh(0.05293 * RALA) + 0.5 * tanh(0.06617 * PrecipRate)] * tanh(MESH / 25)
         """
-        io_manager.write_warning("Function not written yet. Please check back later")
+        for cell in self.stormcells:
+            latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
+            if not latest_entry:
+                continue
+
+            rala = latest_entry.get('RALA')
+            preciprate = latest_entry.get('PrecipRate')
+            mesh = latest_entry.get('MESH')
+
+            if not all(isinstance(v, (int, float)) for v in [rala, preciprate, mesh]):
+                continue
+        
+            # Calculate and append PII
+            latest_entry[key] = (0.5 * tanh(0.05293 * rala) + 0.5 * tanh(0.06617 * preciprate)) * tanh(mesh/25)
 
     def return_results(self):
         """
-        Returns results of composite indice calculations
+        Returns results of composite indice calculations in this class
+        Only call after all indices are computed
+        """
+        return self.stormcells
+
+class SatelliteGrowthIndiceCalculator:
+    def __init__(self, stormcells):
+        self.stormcells = stormcells
+        self.data_handler = DataHandler(self.stormcells)
+    
+    def calculate_flash_area_ratio(self, key='FlashAreaRatio'):
+        """
+        Calculates flash area ratio (FAR)
+        Formula:
+            FAR = MinFlashArea / StormArea
+        """
+        for cell in self.stormcells:
+            latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
+            if not latest_entry:
+                continue
+
+            area = cell.get('num_gates') * (1.11 ** 2)
+            mfa = cell.get('MinFlashArea')
+
+            if not all(isinstance(v, (int, float)) for v in [area, mfa]):
+                continue
+
+            # Calculate and append FAR
+            latest_entry[key] = mfa / area
+    
+    def return_results(self):
+        """
+        Returns results of all composite indice calculations in this class
         Only call after all indices are computed
         """
         return self.stormcells
