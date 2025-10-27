@@ -103,7 +103,7 @@ class DataHandler:
         except Exception as e:
             io_manager.write_error(f"Failed to obtain {key} - {e}")
     
-    def find_hist_key(self, cell_id, key):
+    def find_latest_hist_key(self, cell_id, key):
         """
         Finds a key in a cell ID's storm_history entries
 
