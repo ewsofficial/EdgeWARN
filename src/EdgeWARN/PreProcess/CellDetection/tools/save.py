@@ -16,16 +16,17 @@ class CellDataSaver:
         to each ProbSevere cell entry using exponential weighting.
         Returns a list of dictionaries with properties.
         """
-        # Flatten polygon and reflectivity grids
-        polygon_grid = self.mapped_ds['PolygonID'].values.flatten()
-        refl_grid = self.radar_ds['unknown'].values.flatten()
+        # Polygon and reflectivity grids (aligned 2D arrays)
+        polygon_grid = self.mapped_ds['PolygonID'].values
+        refl_grid = self.radar_ds['unknown'].values
 
-        # Build 2D grid coordinates
-        lats = self.radar_ds['latitude'].values
-        lons = self.radar_ds['longitude'].values
-        lat_grid_2d, lon_grid_2d = np.meshgrid(lats, lons, indexing='ij')
-        lat_grid = lat_grid_2d.flatten()
-        lon_grid = lon_grid_2d.flatten()
+        # Get matching latitude and longitude grids
+        lat_grid = self.radar_ds['latitude'].values
+        lon_grid = self.radar_ds['longitude'].values
+
+        # Ensure lat/lon are 2D
+        if lat_grid.ndim == 1 and lon_grid.ndim == 1:
+            lat_grid, lon_grid = np.meshgrid(lat_grid, lon_grid, indexing='ij')
 
         results = []
 
@@ -53,12 +54,14 @@ class CellDataSaver:
 
             # Exponential reflectivity weights
             if refl_vals.size > 0:
-                weights = np.exp(refl_vals)  # exponential weighting
+                max_refl = float(np.nanmax(refl_vals))
+                weights = np.exp(refl_vals)
                 lat_centroid = float(np.sum(lat_vals * weights) / np.sum(weights))
                 lon_centroid = float(np.sum(lon_vals * weights) / np.sum(weights))
-                lon_centroid = lon_centroid % 360  # convert from -180:180 to 0:360
+                lon_centroid = lon_centroid % 360  # wrap longitude to 0–360
                 centroid = (lat_centroid, lon_centroid)
             else:
+                max_refl = float('nan')
                 centroid = (np.nan, np.nan)
 
             # Count number of gates
@@ -88,7 +91,8 @@ class CellDataSaver:
                 "timestamp": timestamp_new,
                 "max_refl": cell['max_refl'],
                 "num_gates": cell['num_gates'],
-                "centroid": cell['centroid']
+                "centroid": cell['centroid'],
+                "analysis": {},
             }
 
             if storm_history:
