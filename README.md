@@ -32,14 +32,14 @@ timely, and actionable warnings.
 
 <h2 align="center">Current Build Info</h2>
 
-#### Build Version: 0.4.4
+#### Build Version: 0.4.5
 
 #### Changes Associated With This Build
-- Reverted subsetting datasets (ecCodes doesn't support this)
-- Removed redundant distance finding code from ProbSevere integration
+- Modified storm cell detection and tracking to work with only one scan
+- This helps to create a stormcell JSON on the first cycle
 
 #### To Do
-- Build GUI for initial render
+- Continue to build CTAM module
 
 <h2 align="center">Credits</h2>
 

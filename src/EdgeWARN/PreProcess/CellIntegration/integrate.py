@@ -7,9 +7,10 @@ class StormCellIntegrator:
     def __init__(self):
         pass
 
-    def integrate_ds(self, dataset_path, storm_cells, output_key):
+    def integrate_ds_via_max(self, dataset_path, storm_cells, output_key):
         """
         Integrate a dataset over storm cells, storing the result in each cell's storm_history.
+        Saves maximum value of the dataset in each storm cell.
         Handles both 1D and 2D lat/lon coordinates.
         Fully loads dataset into memory, no subsetting.
         """
@@ -116,67 +117,78 @@ class StormCellIntegrator:
     def integrate_probsevere(self, probsevere_data, storm_cells):
         """
         Integrate ProbSevere probability data with storm cells by matching IDs.
+        Flattens all ProbSevere variables directly into each storm history entry.
         """
         if not isinstance(probsevere_data, dict) or 'features' not in probsevere_data:
+            print(f"[CellIntegration] ERROR: Failed to integrate ProbSevere data - Invalid Data Format")
             return storm_cells
 
         features = probsevere_data['features']
+
+        # Pre-index features by their ID for O(1) lookups
+        feature_lookup = {
+            str(f.get('id') or f.get('properties', {}).get('ID')): f.get('properties', {})
+            for f in features
+        }
+
+        # Variable mappings (key: target name, value: source property)
+        field_map = {
+            'MLCAPE': 'MLCAPE',
+            'MUCAPE': 'MUCAPE',
+            'MLCIN': 'MLCIN',
+            'DCAPE': 'DCAPE',
+            'CAPE_M10M30': 'CAPE_M10M30',
+            'LCL': 'LCL',
+            'Wetbulb_0C_Hgt': 'WETBULB_0C_HGT',
+            'LLLR': 'LLLR',
+            'MLLR': 'MLLR',
+            'EBShear': 'EBSHEAR',
+            'SRH01km': 'SRH01KM',
+            'SRH02km': 'SRW02KM',
+            'SRW46km': 'SRW46KM',
+            'MeanWind_1-3kmAGL': 'MEANWIND_1-3kmAGL',
+            'LJA': 'LJA',
+            'CompRef': 'COMPREF',
+            'Ref10': 'REF10',
+            'Ref20': 'REF20',
+            'MESH': 'MESH',
+            'H50_Above_0C': 'H50_Above_0C',
+            'EchoTop50': 'EchoTop_50',
+            'VIL': 'VIL',
+            'MaxFED': 'MaxFED',
+            'MaxFCD': 'MaxFCD',
+            'AccumFCD': 'AccumFCD',
+            'MinFlashArea': 'MinFlashArea',
+            'TE@MaxFCD': 'TE@MaxFCD',
+            'FlashRate': 'FLASH_RATE',
+            'FlashDensity': 'FLASH_DENSITY',
+            'MaxLLAz': 'MAXLLAZ',
+            'p98LLAz': 'P98LLAZ',
+            'p98MLAz': 'P98MLAZ',
+            'MaxRC_Emiss': 'MAXRC_EMISS',
+            'ICP': 'ICP',
+            'PWAT': 'PWAT',
+            'avg_beam_hgt': 'AVG_BEAM_HGT'
+        }
 
         for cell in storm_cells:
             if not cell.get("storm_history"):
                 continue
 
             entry = cell["storm_history"][-1]
-            cell_id = cell.get('id')
+            cell_id = str(cell.get('id'))
             if 'centroid' not in entry or len(entry['centroid']) < 2:
                 continue
 
-            # Match by ID
-            match = None
-            for feature in features:
-                feature_id = feature.get('id') or feature.get('properties', {}).get('ID')
-                if feature_id == cell_id:
-                    match = feature.get('properties', {})
-                    break
+            match = feature_lookup.get(cell_id)
+            if not match:
+                continue
 
-            if match:
-                entry['probsevere_details'] = {
-                    'MLCAPE': float(match.get('MLCAPE', 0)),
-                    'MUCAPE': float(match.get('MUCAPE', 0)),
-                    'MLCIN': float(match.get('MLCIN', 0)),
-                    'DCAPE': float(match.get('DCAPE', 0)),
-                    'CAPE_M10M30': float(match.get('CAPE_M10M30', 0)),
-                    'LCL': float(match.get('LCL', 0)),
-                    'Wetbulb_0C_Hgt': float(match.get('WETBULB_0C_HGT', 0)),
-                    'LLLR': float(match.get('LLLR', 0)),
-                    'MLLR': float(match.get('MLLR', 0)),
-                    'EBShear': float(match.get('EBSHEAR', 0)),
-                    'SRH01km': float(match.get('SRH01KM', 0)),
-                    'SRH02km': float(match.get('SRW02KM', 0)),
-                    'SRW46km': float(match.get('SRW46KM', 0)),
-                    'MeanWind_1-3kmAGL': float(match.get('MEANWIND_1-3kmAGL', 0)),
-                    'LJA': float(match.get('LJA', 0)),
-                    'CompRef': float(match.get('COMPREF', 0)),
-                    'Ref10': float(match.get('REF10', 0)),
-                    'Ref20': float(match.get('REF20', 0)),
-                    'MESH': float(match.get('MESH', 0)),
-                    'H50_Above_0C': float(match.get('H50_Above_0C', 0)),
-                    'EchoTop50': float(match.get('EchoTop_50', 0)),
-                    'VIL': float(match.get('VIL', 0)),
-                    'MaxFED': float(match.get('MaxFED', 0)),
-                    'MaxFCD': float(match.get('MaxFCD', 0)),
-                    'AccumFCD': float(match.get('AccumFCD', 0)),
-                    'MinFlashArea': float(match.get('MinFlashArea', 0)),
-                    'TE@MaxFCD': float(match.get('TE@MaxFCD', 0)),
-                    'FlashRate': float(match.get('FLASH_RATE', 0)),
-                    'FlashDensity': float(match.get('FLASH_DENSITY', 0)),
-                    'MaxLLAz': float(match.get('MAXLLAZ', 0)),
-                    'p98LLAz': float(match.get('P98LLAZ', 0)),
-                    'p98MLAz': float(match.get('P98MLAZ', 0)),
-                    'MaxRC_Emiss': float(match.get('MAXRC_EMISS', 0)),
-                    'ICP': float(match.get('ICP', 0)),
-                    'PWAT': float(match.get('PWAT', 0)),
-                    'avg_beam_hgt': float(match.get('AVG_BEAM_HGT', 0))
-                }
+            # Flatten values directly into the entry
+            for target_key, source_key in field_map.items():
+                try:
+                    entry[target_key] = float(match.get(source_key, 0))
+                except (TypeError, ValueError):
+                    entry[target_key] = "MATCH_ERROR"
 
         return storm_cells

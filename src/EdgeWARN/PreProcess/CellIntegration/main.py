@@ -6,7 +6,7 @@ from EdgeWARN.PreProcess.CellIntegration.utils import StatFileHandler
 # MRMS dataset list
 # ------------------------------
 datasets = [
-    ("NLDN", fs.MRMS_NLDN_DIR, "CGFlashRate"),
+    ("NLDN", fs.MRMS_NLDN_DIR, "CGFlashDensity"),
     ("EchoTop18", fs.MRMS_ECHOTOP18_DIR, "EchoTop18"),
     ("EchoTop30", fs.MRMS_ECHOTOP30_DIR, "EchoTop30"),
     ("PrecipRate", fs.MRMS_PRECIPRATE_DIR, "PrecipRate"),
@@ -16,8 +16,6 @@ datasets = [
 ]
 
 def main():
-    fs.clean_idx_files([d[1] for d in datasets]) # Clean IDX files!
-    
     handler = StatFileHandler()
     integrator = StormCellIntegrator()
     json_path = "stormcell_test.json"
@@ -32,7 +30,7 @@ def main():
             latest_file = fs.latest_files(outdir, 1)[-1]
             print(f"[CellIntegration] DEBUG: Using latest {name} file: {latest_file}")
 
-            result_cells = integrator.integrate_ds(latest_file, result_cells, key)
+            result_cells = integrator.integrate_ds_via_max(latest_file, result_cells, key)
             print(f"[CellIntegration] DEBUG: {name} integration completed successfully!")
         
         except Exception as e:
@@ -56,5 +54,5 @@ def main():
     handler.write_json(result_cells, json_path)
 
 if __name__ == "__main__":
-    main(lat_limits=(42, 46), lon_limits=(287, 293))
-    # lat is 32 to 35, lon is 278 to 281
+    main()
+
