@@ -39,7 +39,7 @@ timely, and actionable warnings.
 - This helps to create a stormcell JSON on the first cycle
 
 #### To Do
-- Build GUI for initial render
+- Continue to build CTAM module
 
 <h2 align="center">Credits</h2>
 
