@@ -116,6 +116,27 @@ class SatelliteIntensityIndiceCalculator:
             # Calculate and append FAR
             latest_entry[key] = mfa / area
     
+    def calculate_cg_flash_ratio(self, key='CGFlashRatio'):
+        """
+        Calculates CG to IC Flash Ratio
+        Formula
+            CGFlashRatio = CGFlashDensity / (FlashDensity + 1e-5)
+        """
+        for cell in self.stormcells:
+            latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
+            if not latest_entry:
+                continue
+
+            cgflash = latest_entry.get('CGFlashDensity')
+            flash = latest_entry.get('FlashDensity')
+
+            if not all(isinstance(v, (int, float)) for v in [cgflash, flash]) or flash == 0:
+                latest_entry[key] = 0
+                continue
+
+            # Calculate and append CGFlashRatio
+            latest_entry[key] = cgflash / flash
+
     def return_results(self):
         """
         Returns results of all composite indice calculations in this class

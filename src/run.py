@@ -1,7 +1,4 @@
 import os
-
-os.environ["ECCODES_SILENT"] = "1"
-
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -67,8 +64,14 @@ def pipeline(log_queue, dt):
         log(f"Starting Data Ingestion for timestamp {dt}")
         ingest_main.download_all_files(dt)
         log("Starting Storm Cell Detection")
-        filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
-        ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
+        try:
+            filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
+            ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
+
+        except RuntimeError:
+            filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)[-1], None
+            ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1], None
+        
         detect.main(filepath_old, filepath_new, ps_old, ps_new, lat_limits, lon_limits, Path("stormcell_test.json"))
         integration.main()
         log("Pipeline completed successfully")
