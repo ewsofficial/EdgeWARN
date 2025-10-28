@@ -6,7 +6,7 @@ from EdgeWARN.PreProcess.CellIntegration.utils import StatFileHandler
 # MRMS dataset list
 # ------------------------------
 datasets = [
-    ("NLDN", fs.MRMS_NLDN_DIR, "CGFlashRate"),
+    ("NLDN", fs.MRMS_NLDN_DIR, "CGFlashDensity"),
     ("EchoTop18", fs.MRMS_ECHOTOP18_DIR, "EchoTop18"),
     ("EchoTop30", fs.MRMS_ECHOTOP30_DIR, "EchoTop30"),
     ("PrecipRate", fs.MRMS_PRECIPRATE_DIR, "PrecipRate"),
@@ -16,8 +16,6 @@ datasets = [
 ]
 
 def main():
-    fs.clean_idx_files([d[1] for d in datasets]) # Clean IDX files!
-    
     handler = StatFileHandler()
     integrator = StormCellIntegrator()
     json_path = "stormcell_test.json"

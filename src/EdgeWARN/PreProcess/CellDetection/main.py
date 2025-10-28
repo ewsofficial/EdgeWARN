@@ -8,31 +8,45 @@ import util.file as fs
 import json as js
 
 def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tuple, json_output):
-    lat_min, lat_max = lat_bounds[0], lat_bounds[1]
-    lon_min, lon_max = lon_bounds[0], lon_bounds[1]
+    lat_min, lat_max = lat_bounds
+    lon_min, lon_max = lon_bounds
 
+    # === Single-frame fallback ===
+    single_frame = radar_new is None or ps_new is None
+    if single_frame:
+        print("[CellDetection] DEBUG: No new scan specified — running single-frame detection mode")
+
+    # === Load or create previous entries ===
     if json_output.exists() and json_output.stat().st_size > 0:
         try:
-            # Load existing data
             with open(json_output, 'r') as f:
                 entries_old = js.load(f)
-                print(f"[CellDetection] DEBUG:  Loaded {len(entries_old)} cells from {json_output}")
-        
+            print(f"[CellDetection] DEBUG: Loaded {len(entries_old)} cells from {json_output}")
         except (js.JSONDecodeError, KeyError, IndexError) as e:
-            print(f"[CellDetection] ERROR:  Failed to load existing storm cell data: {e}. Creating new data from old scan ...")
+            print(f"[CellDetection] ERROR: Failed to load existing data: {e}. Redetecting from old scan ...")
             entries_old = detect_cells(radar_old, ps_old, None, lat_min, lat_max, lon_min, lon_max)
-            print(f"[CellDetection] DEBUG:  Detected {len(entries_old)} cells in old scan.")
-    
+            print(f"[CellDetection] DEBUG: Detected {len(entries_old)} cells in old scan.")
     else:
-        print(f"[CellDetection] DEBUG:  JSON output doesn't exist, detecting from old scan ...")
+        print("[CellDetection] DEBUG: JSON output doesn't exist, detecting from old scan ...")
         entries_old = detect_cells(radar_old, ps_old, None, lat_min, lat_max, lon_min, lon_max)
-        print(f"Detected {len(entries_old)} cells in old scan.")
+        print(f"[CellDetection] DEBUG: Detected {len(entries_old)} cells in old scan.")
 
-    print("[CellDetection] DEBUG:  Detecting cells in new scan ...")
+    # === If single-frame mode, just update/save ===
+    if single_frame:
+        print("[CellDetection] DEBUG: Saving single-frame detection results (no tracking possible).")
+        saver = CellDataSaver(None, radar_old, None, None, ps_old, None)
+        entries = saver.append_storm_history(entries_old, radar_old)
+        entries = StormVectorCalculator.calculate_vectors(entries)
+        with open(json_output, 'w') as f:
+            js.dump(entries, f, indent=2, default=str)
+        return
+
+    # === Dual-frame mode ===
+    print("[CellDetection] DEBUG: Detecting cells in new scan ...")
     entries_new = detect_cells(radar_new, ps_new, None, lat_min, lat_max, lon_min, lon_max)
-    print(f"[CellDetection] DEBUG:  Detected {len(entries_new)} cells in new scan")
+    print(f"[CellDetection] DEBUG: Detected {len(entries_new)} cells in new scan")
 
-    print("[CellDetection] DEBUG:  Matching and updating cell data")
+    print("[CellDetection] DEBUG: Matching and updating cell data")
     ps_old = DetectionDataHandler(radar_old, ps_old, lat_min, lat_max, lon_min, lon_max).load_probsevere()
     ps_new = DetectionDataHandler(radar_new, ps_new, lat_min, lat_max, lon_min, lon_max).load_probsevere()
     
@@ -45,7 +59,6 @@ def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tu
     with open(json_output, 'w') as f:
         js.dump(entries, f, indent=2, default=str)
 
-
 if __name__ == "__main__":
     from pathlib import Path
     fs.clean_idx_files([fs.MRMS_COMPOSITE_DIR])
@@ -56,8 +69,3 @@ if __name__ == "__main__":
     lat_bounds = (42, 46)
     lon_bounds = (287, 293)
     main(radar_old, radar_new, ps_old, ps_new, lat_bounds, lon_bounds, Path("stormcell_test.json"))
-         
-
-    
-    
-
