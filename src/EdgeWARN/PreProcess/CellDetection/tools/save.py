@@ -91,8 +91,7 @@ class CellDataSaver:
                 "timestamp": timestamp_new,
                 "max_refl": cell['max_refl'],
                 "num_gates": cell['num_gates'],
-                "centroid": cell['centroid'],
-                "analysis": {},
+                "centroid": cell['centroid']
             }
 
             if storm_history:
