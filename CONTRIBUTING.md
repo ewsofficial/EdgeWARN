@@ -11,7 +11,7 @@ still contribute as EdgeWARN is an open source project. We welcome bug reports,
 feature requests, and pull requests.
 
 # Code of Conduct
-Please read our code of conduct at [CODE_OF_CONDUCT.md]
+Please read our code of conduct at CODE_OF_CONDUCT.md
 
 # How to Contribute
 
@@ -36,7 +36,7 @@ Use the following prefixes at the start of your commit messages:
 - `HOT` – Hotfix / urgent fix
 
 ## Refactor / Cleanup
-- `RFX` – Refactor
+- `REF` – Refactor
 - `CLN` – Cleanup / remove dead code
 - `OPT` – Optimize / performance improvement
 
