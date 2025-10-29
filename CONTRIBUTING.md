@@ -10,6 +10,9 @@ Edgemont Weather Service! Even if you are not part of this club, you can
 still contribute as EdgeWARN is an open source project. We welcome bug reports,
 feature requests, and pull requests.
 
+# Code of Conduct
+Please read our code of conduct at [CODE_OF_CONDUCT.md]
+
 # How to Contribute
 
 1. Fork the repository
@@ -76,6 +79,17 @@ naming conventions:
 
 - `<yourname>/feat/<feature-name>`: new features
 - `<yourname>/fix/<bug-name>`: bug fixes
+
+# Security and Safety
+
+When contributing code to this project, you must follow the [CODE_OF_CONDUCT.md] and these rules:
+
+1. **No malicious code** – Do not include malware, viruses, backdoors, or any code intended to harm users, systems, or data.
+2. **No sensitive data** – Do not commit passwords, API keys, or personally identifiable information.
+3. **Respect licensing** – Only contribute code that you have the right to submit.
+4. **Test responsibly** – Ensure your contributions do not negatively affect project functionality.
+
+**Failure to follow these rules may lead to consequences outlined in our code of conduct**
 
 # Code Style
 - Follow the existing code style
