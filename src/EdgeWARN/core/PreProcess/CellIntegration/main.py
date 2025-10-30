@@ -1,6 +1,6 @@
 import util.file as fs
-from EdgeWARN.PreProcess.CellIntegration.integrate import StormCellIntegrator
-from EdgeWARN.PreProcess.CellIntegration.utils import StatFileHandler
+from EdgeWARN.core.PreProcess.CellIntegration.integrate import StormCellIntegrator
+from EdgeWARN.core.PreProcess.CellIntegration.utils import StatFileHandler
 
 # ------------------------------
 # MRMS dataset list
