@@ -2,10 +2,10 @@ import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from EdgeWARN.core.DataIngestion.config import base_dir, mrms_modifiers, check_modifiers
-from EdgeWARN.core.DataIngestion.download import FileFinder, FileDownloader
-from EdgeWARN.core.DataIngestion.custom import MRMSDownloader, SynopticDownloader
-from EdgeWARN.core.PreProcess.CellDetection.tools.utils import DetectionDataHandler
+from EdgeWARN.core.ingest.config import base_dir, mrms_modifiers, check_modifiers
+from EdgeWARN.core.ingest.download import FileFinder, FileDownloader
+from EdgeWARN.core.ingest.custom import MRMSDownloader, SynopticDownloader
+from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
 import util.file as fs
 
