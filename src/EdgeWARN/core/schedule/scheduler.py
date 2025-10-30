@@ -1,8 +1,8 @@
 import datetime
 import time
 from pathlib import Path
-from EdgeWARN.DataIngestion.download import FileFinder
-from EdgeWARN.DataIngestion.config import base_dir, check_modifiers
+from EdgeWARN.core.DataIngestion.download import FileFinder
+from EdgeWARN.core.DataIngestion.config import base_dir, check_modifiers
 
 
 class MRMSUpdateChecker:

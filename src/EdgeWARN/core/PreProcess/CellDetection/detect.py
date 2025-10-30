@@ -1,6 +1,6 @@
-from EdgeWARN.PreProcess.CellDetection.tools.utils import DetectionDataHandler
-from EdgeWARN.PreProcess.CellDetection.tools.gatemapper import GateMapper
-from EdgeWARN.PreProcess.CellDetection.tools.save import CellDataSaver
+from EdgeWARN.core.PreProcess.CellDetection.tools.utils import DetectionDataHandler
+from EdgeWARN.core.PreProcess.CellDetection.tools.gatemapper import GateMapper
+from EdgeWARN.core.PreProcess.CellDetection.tools.save import CellDataSaver
 import util.file as fs
 
 def detect_cells(radar_path, ps_path, precipflag_path, lat_min, lat_max, lon_min, lon_max):
