@@ -5,11 +5,11 @@ from datetime import datetime, timezone
 import time
 import multiprocessing
 import util.file as fs
-import EdgeWARN.core.ingest.main as ingest_main
-import EdgeWARN.core.process.detect.main as detect
-import EdgeWARN.core.process.integrate.main as integration
-from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
-from EdgeWARN.core.ingest.config import check_modifiers
+import EdgeWARN.DataIngestion.main as ingest_main
+import EdgeWARN.PreProcess.CellDetection.main as detect
+import EdgeWARN.PreProcess.CellIntegration.main as integration
+from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
+from EdgeWARN.DataIngestion.config import check_modifiers
 from util.io import TimestampedOutput
 import argparse
 
