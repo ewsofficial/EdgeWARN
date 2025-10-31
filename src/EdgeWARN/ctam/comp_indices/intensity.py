@@ -28,7 +28,7 @@ class RadarIntensityIndiceCalculator:
 
             # Skip if any EchoTop value is missing or not numeric
             if not all(isinstance(v, (int, float)) for v in [et18, et30, et50]):
-                latest_entry[key] = "N/A"
+                latest_entry[key] = 0
 
             # Compute CompET with logic for zero EchoTop50
             if et50 == 0:
@@ -37,8 +37,6 @@ class RadarIntensityIndiceCalculator:
                 comp_et = 0.1 * et18 + 0.3 * et30 + 0.6 * et50
 
             latest_entry[key] = comp_et
-        
-        return
     
     def calculate_thl(self, thl_key='THL', thld_key='THLDensity'):
         """
@@ -60,16 +58,14 @@ class RadarIntensityIndiceCalculator:
             # Skip if any EchoTop value is missing or not numeric
             if not all(isinstance(v, (int, float)) for v in [vil, vii, et18]):
                 print(f"Skipped THL, THLD for {cell['id']}")
-                latest_entry[thl_key] = "N/A"
-                latest_entry[thld_key] = "N/A"
+                latest_entry[thl_key] = 0
+                latest_entry[thld_key] = 0
                 continue
             
             # Calculate and append THL, THLD
             latest_entry[thl_key] = vil + vii
             latest_entry[thld_key] = (vil + vii) / et18
             print(f"Integrated THL, THLD for {cell['id']}")
-
-        return
     
     def return_results(self):
         """
