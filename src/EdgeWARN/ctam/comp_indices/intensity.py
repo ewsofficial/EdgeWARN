@@ -1,6 +1,5 @@
-from EdgeWARN.CTAM.utils import DataHandler, DataLoader
+from EdgeWARN.ctam.utils import DataHandler
 from util.io import IOManager
-from math import tanh
 
 io_manager = IOManager("[CTAM]")
 
@@ -20,6 +19,7 @@ class RadarIntensityIndiceCalculator:
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
+                io_manager.write_warning(f"Skipping CompET for cell {cell['id']}: No history")
                 continue  # skip if no history available
 
             et18 = latest_entry.get('EchoTop18')
@@ -37,109 +37,56 @@ class RadarIntensityIndiceCalculator:
                 comp_et = 0.1 * et18 + 0.3 * et30 + 0.6 * et50
 
             latest_entry[key] = comp_et
-            return
-
-    def calculate_total_hydrometer_load(self, thl_key='THL', thld_key='THLD'):
+        
+        return
+    
+    def calculate_thl(self, thl_key='THL', thld_key='THLDensity'):
         """
-        Calculates total hydrometer load (THL) and its density (THLD)
+        Calculates Total Hydrometer Load (THL) and Density (THLD)
         Formula:
             THL = VIL + VII
             THLD = THL / EchoTop18
-        Skips entries with non-numeric values
         """
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
-                continue
+                io_manager.write_warning(f"Skipping THL, THLD for cell {cell['id']}: No history")
+                continue  # skip if no history available
 
             vil = latest_entry.get('VIL')
             vii = latest_entry.get('VII')
             et18 = latest_entry.get('EchoTop18')
 
+            # Skip if any EchoTop value is missing or not numeric
             if not all(isinstance(v, (int, float)) for v in [vil, vii, et18]):
-                latest_entry[thl_key], latest_entry[thld_key] = None, None
+                print(f"Skipped THL, THLD for {cell['id']}")
+                latest_entry[thl_key] = "N/A"
+                latest_entry[thld_key] = "N/A"
+                continue
             
-            # Append THL and THLD to data
+            # Calculate and append THL, THLD
             latest_entry[thl_key] = vil + vii
             latest_entry[thld_key] = (vil + vii) / et18
+            print(f"Integrated THL, THLD for {cell['id']}")
 
-    def calculate_pii(self, key='PrecipInt'):
-        """
-        Calculates Precipitation Intensity Index (PII)
-        Formula:
-            PII = [0.5 * tanh(0.05293 * RALA) + 0.5 * tanh(0.06617 * PrecipRate)] * tanh(MESH / 25)
-        """
-        for cell in self.stormcells:
-            latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
-            if not latest_entry:
-                continue
-
-            rala = latest_entry.get('RALA')
-            preciprate = latest_entry.get('PrecipRate')
-            mesh = latest_entry.get('MESH')
-
-            if not all(isinstance(v, (int, float)) for v in [rala, preciprate, mesh]):
-                continue
-        
-            # Calculate and append PII
-            latest_entry[key] = (0.5 * tanh(0.05293 * rala) + 0.5 * tanh(0.06617 * preciprate)) * tanh(mesh/25)
-
+        return
+    
     def return_results(self):
         """
-        Returns results of composite indice calculations in this class
-        Only call after all indices are computed
+        Returns results of stormcell comp indice calculation for RadarIntensityIndiceCalculator
+        ONLY RUN AFTER RUNNING ALL CALCULATIONS
         """
         return self.stormcells
 
-class SatelliteIntensityIndiceCalculator:
-    def __init__(self, stormcells):
-        self.stormcells = stormcells
-        self.data_handler = DataHandler(self.stormcells)
+if __name__ == "__main__":
+    import json
+    with open("stormcell_test.json", 'r') as f:
+        stormcells = json.load(f)
     
-    def calculate_flash_area_ratio(self, key='FlashAreaRatio'):
-        """
-        Calculates flash area ratio (FAR)
-        Formula:
-            FAR = MinFlashArea / StormArea
-        """
-        for cell in self.stormcells:
-            latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
-            if not latest_entry:
-                continue
+    calculator = RadarIntensityIndiceCalculator(stormcells)
+    calculator.calculate_composite_et()
+    calculator.calculate_thl()
+    stormcells = calculator.return_results()
+    with open("stormcell_test.json", 'w') as f:
+        json.dump(stormcells, f, indent=2)
 
-            area = cell.get('num_gates') * (1.11 ** 2)
-            mfa = cell.get('MinFlashArea')
-
-            if not all(isinstance(v, (int, float)) for v in [area, mfa]):
-                continue
-
-            # Calculate and append FAR
-            latest_entry[key] = mfa / area
-    
-    def calculate_cg_flash_ratio(self, key='CGFlashRatio'):
-        """
-        Calculates CG to IC Flash Ratio
-        Formula
-            CGFlashRatio = CGFlashDensity / (FlashDensity + 1e-5)
-        """
-        for cell in self.stormcells:
-            latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
-            if not latest_entry:
-                continue
-
-            cgflash = latest_entry.get('CGFlashDensity')
-            flash = latest_entry.get('FlashDensity')
-
-            if not all(isinstance(v, (int, float)) for v in [cgflash, flash]) or flash == 0:
-                latest_entry[key] = 0
-                continue
-
-            # Calculate and append CGFlashRatio
-            latest_entry[key] = cgflash / flash
-
-    def return_results(self):
-        """
-        Returns results of all composite indice calculations in this class
-        Only call after all indices are computed
-        """
-        return self.stormcells
