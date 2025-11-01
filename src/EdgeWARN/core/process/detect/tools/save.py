@@ -1,5 +1,5 @@
 import numpy as np
-from EdgeWARN.PreProcess.CellDetection.tools.utils import DetectionDataHandler
+from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 
 class CellDataSaver:
     def __init__(self, bboxes, radar_path, radar_ds, mapped_ds, ps_path, ps_ds):
