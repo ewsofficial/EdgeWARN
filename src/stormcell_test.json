@@ -221,8 +221,17 @@
         "PWAT": 2.2,
         "avg_beam_hgt": 4.38,
         "CompET": 10.86,
-        "THL": 31.899999618530273,
-        "THLDensity": 1.7722222010294597
+        "THL": 31.9,
+        "THLDensity": 1.77,
+        "PII": 6.2,
+        "VIIDensity": 0.49,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.92,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0.17
       }
     ]
   },
@@ -399,9 +408,18 @@
         "ICP": 0.0,
         "PWAT": 2.2,
         "avg_beam_hgt": 5.45,
-        "CompET": 9.319999885559081,
-        "THL": 27.59999990463257,
-        "THLDensity": 1.6235294061548569
+        "CompET": 9.32,
+        "THL": 27.6,
+        "THLDensity": 1.62,
+        "PII": 5.4,
+        "VIIDensity": 0.39,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.92,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0.17
       }
     ]
   },
@@ -555,8 +573,17 @@
         "PWAT": 2.1,
         "avg_beam_hgt": 6.16,
         "CompET": 6.6,
-        "THL": 15.900000095367432,
-        "THLDensity": 1.325000007947286
+        "THL": 15.9,
+        "THLDensity": 1.33,
+        "PII": 3.3,
+        "VIIDensity": 0.24,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.83,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0.2
       }
     ]
   },
@@ -761,9 +788,18 @@
         "ICP": 0.0,
         "PWAT": 2.2,
         "avg_beam_hgt": 8.02,
-        "CompET": 8.099900054931641,
-        "THL": 26.59999990463257,
-        "THLDensity": 1.8999999931880407
+        "CompET": 8.1,
+        "THL": 26.6,
+        "THLDensity": 1.9,
+        "PII": 4.6,
+        "VIIDensity": 0.54,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.92,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0.13
       }
     ]
   },
@@ -804,7 +840,7 @@
           279.1879981795472
         ],
         "analysis": {},
-        "CGFlashDensity": "N/A",
+        "CGFlashDensity": 0,
         "EchoTop18": 13.0,
         "EchoTop30": 10.333000183105469,
         "PrecipRate": 79.5999984741211,
@@ -861,7 +897,7 @@
         "dx": -6683.996413040665,
         "dy": -10761.270304793694,
         "dt": 123.0,
-        "CGFlashDensity": "N/A",
+        "CGFlashDensity": 0,
         "EchoTop18": 10.78600025177002,
         "EchoTop30": 8.0,
         "PrecipRate": 25.5,
@@ -904,9 +940,18 @@
         "ICP": 0.0,
         "PWAT": 2.1,
         "avg_beam_hgt": 2.3,
-        "CompET": 8.835800075531004,
-        "THL": 11.699999988079071,
-        "THLDensity": 1.084739450674411
+        "CompET": 8.84,
+        "THL": 11.7,
+        "THLDensity": 1.08,
+        "PII": 1.9,
+        "VIIDensity": 0.06,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.88,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0
       }
     ]
   },
@@ -1075,9 +1120,18 @@
         "ICP": 1.0,
         "PWAT": 2.1,
         "avg_beam_hgt": 7.66,
-        "CompET": 4.859999942779541,
+        "CompET": 4.86,
         "THL": 11.5,
-        "THLDensity": 0.9583333333333334
+        "THLDensity": 0.96,
+        "PII": 3.4,
+        "VIIDensity": 0.12,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.85,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0.06
       }
     ]
   },
@@ -1122,7 +1176,7 @@
           280.077631571497
         ],
         "analysis": {},
-        "CGFlashDensity": "N/A",
+        "CGFlashDensity": 0,
         "EchoTop18": 15.0,
         "EchoTop30": 6.0,
         "PrecipRate": 59.20000076293945,
@@ -1179,7 +1233,7 @@
         "dx": 2706.1990067175398,
         "dy": 595.5952294955509,
         "dt": 123.0,
-        "CGFlashDensity": "N/A",
+        "CGFlashDensity": 0,
         "EchoTop18": 15.0,
         "EchoTop30": 6.166999816894531,
         "PrecipRate": 59.20000076293945,
@@ -1222,9 +1276,18 @@
         "ICP": 0.0,
         "PWAT": 2.2,
         "avg_beam_hgt": 3.22,
-        "CompET": 8.816899871826172,
-        "THL": 5.600000023841858,
-        "THLDensity": 0.3733333349227905
+        "CompET": 8.82,
+        "THL": 5.6,
+        "THLDensity": 0.37,
+        "PII": 3.1,
+        "VIIDensity": 0.04,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.87,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0.0
       }
     ]
   },
@@ -1297,7 +1360,7 @@
           277.99831388094583
         ],
         "analysis": {},
-        "CGFlashDensity": "N/A",
+        "CGFlashDensity": 0,
         "EchoTop18": 11.0,
         "EchoTop30": 7.0,
         "PrecipRate": 13.5,
@@ -1354,7 +1417,7 @@
         "dx": 3170.841965483388,
         "dy": 601.2469786101598,
         "dt": 123.0,
-        "CGFlashDensity": "N/A",
+        "CGFlashDensity": 0,
         "EchoTop18": 11.0,
         "EchoTop30": 6.571000099182129,
         "PrecipRate": 11.699999809265137,
@@ -1397,9 +1460,18 @@
         "ICP": 0.0,
         "PWAT": 2.3,
         "avg_beam_hgt": 5.89,
-        "CompET": 7.89970006942749,
-        "THL": 4.699999988079071,
-        "THLDensity": 0.42727272618900647
+        "CompET": 7.9,
+        "THL": 4.7,
+        "THLDensity": 0.43,
+        "PII": 1.3,
+        "VIIDensity": 0.06,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.81,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0
       }
     ]
   },
@@ -1496,8 +1568,17 @@
         "PWAT": 2.1,
         "avg_beam_hgt": 4.58,
         "CompET": 10.75,
-        "THL": 8.299999952316284,
-        "THLDensity": 0.5187499970197678
+        "THL": 8.3,
+        "THLDensity": 0.52,
+        "PII": 1.9,
+        "VIIDensity": 0.08,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.91,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0.04
       }
     ]
   },
@@ -1546,13 +1627,13 @@
           278.4526897333102
         ],
         "analysis": {},
-        "CGFlashDensity": "N/A",
+        "CGFlashDensity": 0,
         "EchoTop18": 10.166999816894531,
         "EchoTop30": 6.099999904632568,
         "PrecipRate": 8.800000190734863,
         "VILDensity": 0.4000000059604645,
         "RALA": 41.5,
-        "VII": "N/A",
+        "VII": 0,
         "MLCAPE": 975.0,
         "MUCAPE": 1857.0,
         "MLCIN": -32.0,
@@ -1589,9 +1670,18 @@
         "ICP": 0.0,
         "PWAT": 2.1,
         "avg_beam_hgt": 6.02,
-        "CompET": 7.320099878311156,
-        "THL": "N/A",
-        "THLDensity": "N/A"
+        "CompET": 7.32,
+        "THL": 3.0,
+        "THLDensity": 0.3,
+        "PII": 1.2,
+        "VIIDensity": 0.0,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.8,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0.0
       }
     ]
   },
@@ -1644,7 +1734,7 @@
           279.25527469735636
         ],
         "analysis": {},
-        "CGFlashDensity": "N/A",
+        "CGFlashDensity": 0,
         "EchoTop18": 13.0,
         "EchoTop30": 10.800000190734863,
         "PrecipRate": 79.5999984741211,
@@ -1687,9 +1777,18 @@
         "ICP": 0.0,
         "PWAT": 2.2,
         "avg_beam_hgt": 2.51,
-        "CompET": 5.3800000572204585,
-        "THL": 11.099999904632568,
-        "THLDensity": 0.8538461465101975
+        "CompET": 5.38,
+        "THL": 11.1,
+        "THLDensity": 0.85,
+        "PII": 3.8,
+        "VIIDensity": 0.16,
+        "TRL": 0,
+        "DCS": 0,
+        "UpperLevelRefRatio": 0.92,
+        "FlashAreaRatio": 0,
+        "FlashRatio": 9999,
+        "NLI": 0,
+        "FlashCompactIndex": 0.33
       }
     ]
   }
