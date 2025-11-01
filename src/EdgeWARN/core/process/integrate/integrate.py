@@ -75,7 +75,7 @@ class StormCellIntegrator:
             latest = cell["storm_history"][-1]
             poly = StormIntegrationUtils.create_cell_polygon(cell)
             if poly is None:
-                latest[output_key] = "N/A"
+                latest[output_key] = 0
                 continue
 
             try:
@@ -92,7 +92,7 @@ class StormCellIntegrator:
 
                 subset_vals = var.where(mask & (var >= 0))
                 if subset_vals.size == 0 or np.all(np.isnan(subset_vals)):
-                    latest[output_key] = "N/A"
+                    latest[output_key] = 0
                 else:
                     latest[output_key] = float(np.nanmax(subset_vals))
 
