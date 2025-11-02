@@ -164,3 +164,4 @@ class GateMapper:
             bboxes[poly_id] = coords
 
         return bboxes
+
