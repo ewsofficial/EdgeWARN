@@ -36,6 +36,7 @@ timely, and actionable warnings.
 
 ### 0.5.1 (Current)
 - Flattened ProbSevere keys to be top-level in storm history entries
+- Added hail core detection. This is saved under `hail_core` in each cell ID. Hail core is `None` if no valid points exist.
 
 <h2 align="center">Credits</h2>
 
