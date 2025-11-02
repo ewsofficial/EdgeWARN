@@ -7,7 +7,7 @@ from EdgeWARN.core.process.detect.detect import detect_cells
 import util.file as fs
 import json as js
 
-def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tuple, json_output):
+def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple, lon_bounds: tuple, json_output):
     lat_min, lat_max = lat_bounds
     lon_min, lon_max = lon_bounds
 
@@ -24,11 +24,11 @@ def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tu
             print(f"[CellDetection] DEBUG: Loaded {len(entries_old)} cells from {json_output}")
         except (js.JSONDecodeError, KeyError, IndexError) as e:
             print(f"[CellDetection] ERROR: Failed to load existing data: {e}. Redetecting from old scan ...")
-            entries_old = detect_cells(radar_old, ps_old, None, lat_min, lat_max, lon_min, lon_max)
+            entries_old = detect_cells(radar_old, ps_old, pt_old, lat_min, lat_max, lon_min, lon_max)
             print(f"[CellDetection] DEBUG: Detected {len(entries_old)} cells in old scan.")
     else:
         print("[CellDetection] DEBUG: JSON output doesn't exist, detecting from old scan ...")
-        entries_old = detect_cells(radar_old, ps_old, None, lat_min, lat_max, lon_min, lon_max)
+        entries_old = detect_cells(radar_old, ps_old, pt_new, lat_min, lat_max, lon_min, lon_max)
         print(f"[CellDetection] DEBUG: Detected {len(entries_old)} cells in old scan.")
 
     # === If single-frame mode, just update/save ===
@@ -43,12 +43,12 @@ def main(radar_old, radar_new, ps_old, ps_new, lat_bounds: tuple, lon_bounds: tu
 
     # === Dual-frame mode ===
     print("[CellDetection] DEBUG: Detecting cells in new scan ...")
-    entries_new = detect_cells(radar_new, ps_new, None, lat_min, lat_max, lon_min, lon_max)
+    entries_new = detect_cells(radar_new, ps_new, pt_new, lat_min, lat_max, lon_min, lon_max)
     print(f"[CellDetection] DEBUG: Detected {len(entries_new)} cells in new scan")
 
     print("[CellDetection] DEBUG: Matching and updating cell data")
-    ps_old = DetectionDataHandler(radar_old, ps_old, lat_min, lat_max, lon_min, lon_max).load_probsevere()
-    ps_new = DetectionDataHandler(radar_new, ps_new, lat_min, lat_max, lon_min, lon_max).load_probsevere()
+    ps_old = DetectionDataHandler(radar_old, ps_old, pt_old, lat_min, lat_max, lon_min, lon_max).load_probsevere()
+    ps_new = DetectionDataHandler(radar_new, ps_new, pt_new, lat_min, lat_max, lon_min, lon_max).load_probsevere()
     
     tracker = StormCellTracker(ps_old, ps_new)
     saver = CellDataSaver(None, radar_new, None, None, ps_new, None)
@@ -66,6 +66,8 @@ if __name__ == "__main__":
     radar_old, radar_new = radar_files[-2], radar_files[-1]
     ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
     ps_old, ps_new = ps_files[-2], ps_files[-1]
+    pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
+    pt_old, pt_new = pt_files[-2], pt_files[-1]
     lat_bounds = (42, 46)
     lon_bounds = (287, 293)
-    main(radar_old, radar_new, ps_old, ps_new, lat_bounds, lon_bounds, Path("stormcell_test.json"))
+    main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds, lon_bounds, Path("stormcell_test.json"))

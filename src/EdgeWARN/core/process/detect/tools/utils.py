@@ -4,9 +4,10 @@ import re
 import datetime
 from datetime import datetime
 from pathlib import Path
+import cfgrib
 
 class DetectionDataHandler:
-    def __init__(self, radar_path, ps_path, lat_min, lat_max, lon_min, lon_max):
+    def __init__(self, radar_path, ps_path, preciptype_path, lat_min, lat_max, lon_min, lon_max):
         """
         Initialize the RadarDataHandler.
 
@@ -17,6 +18,7 @@ class DetectionDataHandler:
         """
         self.radar_path = radar_path
         self.ps_path = ps_path
+        self.preciptype_path = preciptype_path
         self.lat_grid = (lat_min, lat_max)
         self.lon_grid = (lon_min, lon_max)
         self.dataset = None
@@ -47,6 +49,29 @@ class DetectionDataHandler:
 
         except Exception as e:
             print(f"[CellDetection] ERROR: Failed to load {self.radar_path}: {e}")
+    
+    def load_preciptype(self):
+        try:
+            # Open dataset lazily (do not load full arrays)
+            ds = xr.open_dataset(self.preciptype_path, decode_timedelta=True)
+
+            # Handle descending latitude
+            if ds.latitude[0] > ds.latitude[-1]:
+                lat_slice = slice(self.lat_grid[1], self.lat_grid[0])
+            else:
+                lat_slice = slice(self.lat_grid[0], self.lat_grid[1])
+
+            # Longitude slice
+            lon_slice = slice(self.lon_grid[0], self.lon_grid[1])
+
+            # Subset dataset (lazy; data not fully loaded yet)
+            dataset = ds.sel(latitude=lat_slice, longitude=lon_slice)
+            print(f"[CellDetection] DEBUG: Subset prepared for lat: {self.lat_grid}, lon: {self.lon_grid}")
+
+            return dataset
+
+        except Exception as e:
+            print(f"[CellDetection] ERROR: Failed to load {self.preciptype_path}: {e}")
     
     def load_probsevere(self):
         """
