@@ -165,13 +165,13 @@ class IntensityIndiceCalculator:
                 continue
 
             vil = latest_entry.get('VIL')
-            maxref = latest_entry.get('MaxRef')
+            maxref = latest_entry.get('max_refl')
 
             if not all(isinstance(v, (int, float)) for v in [vil, maxref]):
                 latest_entry[key] = 0
                 continue
 
-            latest_entry[key] = round(vil * maxref, precision)
+            latest_entry[key] = round((vil / 15) * (maxref / 40), precision)
 
     def calculate_dcs(self, key='DCS', precision=2):
         """
@@ -190,14 +190,14 @@ class IntensityIndiceCalculator:
                 io_manager.write_warning(f"Skipping DCS for {cell.get('id')} - No history")
                 continue
 
-            maxref = latest_entry.get('MaxRef')
+            maxref = latest_entry.get('max_refl')
             et50 = latest_entry.get('EchoTop50')
 
             if not all(isinstance(v, (int, float)) for v in [maxref, et50]):
                 latest_entry[key] = 0
                 continue
 
-            latest_entry[key] = round(maxref * et50, precision)
+            latest_entry[key] = round((maxref / 40) * (et50 / 4), precision)
 
     def calculate_upper_ref_ratio(self, key='UpperLevelRefRatio', precision=2):
         """
