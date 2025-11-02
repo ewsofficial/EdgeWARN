@@ -224,6 +224,33 @@ class IntensityIndiceCalculator:
                 continue
 
             latest_entry[key] = round(ref20 / ref10, precision)
+    
+    def calculate_llint(self, key='LLInt', precision=2):
+        """
+        Calculates Low-Level Intensity for each storm cell
+
+        Formula:
+            LLInt = (RALA / MaxRef) * EchoTop30
+        
+        Args:
+            key (str): Key to store Low-Level Intensity value
+            precision (int): Number of decimal places for the result
+        """
+        for cell in self.stormcells:
+            latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
+            if not latest_entry:
+                io_manager.write_warning(f"Skipping LLInt for {cell.get('id')} - No history")
+                continue
+
+            rala = latest_entry.get('RALA')
+            maxref = latest_entry.get('max_refl')
+            et30 = latest_entry.get('EchoTop30')
+
+            if not all(isinstance(v, (float, int)) for v in [rala, maxref, et30]):
+                latest_entry[key] = 0
+                continue
+
+            latest_entry[key] = round((rala / maxref) * et30, precision)
 
     def calculate_flash_area_ratio(self, key='FlashAreaRatio', precision=2):
         """
@@ -355,6 +382,7 @@ if __name__ == "__main__":
     calculator.calculate_trl()
     calculator.calculate_dcs()
     calculator.calculate_upper_ref_ratio()
+    calculator.calculate_llint()
     calculator.calculate_flash_area_ratio()
     calculator.calculate_flash_ratio()
     calculator.calculate_nli()
