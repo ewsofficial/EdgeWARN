@@ -1,5 +1,4 @@
 from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
-from EdgeWARN.core.process.detect.tools.gatemapper import GateMapper
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from EdgeWARN.core.process.detect.tools.vecmath import StormVectorCalculator
 from EdgeWARN.core.process.detect.track import StormCellTracker
