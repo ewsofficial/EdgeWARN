@@ -3,7 +3,7 @@ from EdgeWARN.core.process.detect.tools.gatemapper import GateMapper
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 import util.file as fs
 
-def detect_cells(radar_path, ps_path, precipflag_path, lat_min, lat_max, lon_min, lon_max):
+def detect_cells(radar_path, ps_path, lat_min, lat_max, lon_min, lon_max):
     handler = DetectionDataHandler(
         radar_path,
         ps_path,
@@ -21,8 +21,8 @@ def detect_cells(radar_path, ps_path, precipflag_path, lat_min, lat_max, lon_min
 
     saver = CellDataSaver(
         bboxes,
-        radar_path, radar_ds, mapped_ds,
-        ps_path, ps_ds
+        radar_ds, mapped_ds,
+        ps_ds
     )
 
     saver.create_entry()
@@ -37,4 +37,4 @@ if __name__ == "__main__":
     lat_min, lat_max = 35.0, 38.0
     lon_min, lon_max = 283.0, 285.0
     
-    detect_cells(radar_path, ps_path, None, lat_min, lat_max, lon_min, lon_max)
+    detect_cells(radar_path, ps_path, lat_min, lat_max, lon_min, lon_max)

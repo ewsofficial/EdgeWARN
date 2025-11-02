@@ -2,13 +2,11 @@ import numpy as np
 from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 
 class CellDataSaver:
-    def __init__(self, bboxes, radar_path, radar_ds, mapped_ds, ps_path, ps_ds):
+    def __init__(self, bboxes, radar_ds, mapped_ds, ps_ds):
         self.bboxes = bboxes
         self.radar_ds = radar_ds
-        self.radar_path = radar_path
         self.mapped_ds = mapped_ds
         self.ps_ds = ps_ds
-        self.ps_path = ps_path
     
     def create_entry(self):
         """
