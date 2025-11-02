@@ -32,9 +32,9 @@ timely, and actionable warnings.
 
 <h2 align="center">Build Info</h2>
 
-## Version History for 0.5.x
+## Version History for 0.5.x-alpha
 
-### 0.5.1 (Current)
+### 0.5.1-alpha (Current)
 - Flattened ProbSevere keys to be top-level in storm history entries
 - Added hail core detection. This is saved under `hail_core` in each cell ID. Hail core is `None` if no valid points exist.
 
