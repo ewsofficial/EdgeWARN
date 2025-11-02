@@ -32,7 +32,7 @@ def detect_cells(radar_path, ps_path, lat_min, lat_max, lon_min, lon_max):
     return entries
 
 if __name__ == "__main__":
-    radar_path = fs.latest_files(fs.MRMS_3D_DIR, 1)[-1]
+    radar_path = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)[-1]
     ps_path = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1]
     lat_min, lat_max = 35.0, 38.0
     lon_min, lon_max = 283.0, 285.0
