@@ -145,7 +145,7 @@ class IntensityIndiceCalculator:
                 latest_entry[key] = 0
                 continue
             
-            latest_entry[key] = round((rala / 45) + (preciprate / 30) + (mesh / 20), precision)
+            latest_entry[key] = round((rala / 40) + (preciprate / 30) + (mesh / 20), precision)
 
     def calculate_trl(self, key='TRL', precision=2):
         """
@@ -171,7 +171,7 @@ class IntensityIndiceCalculator:
                 latest_entry[key] = 0
                 continue
 
-            latest_entry[key] = round((vil / 15) * (maxref / 40), precision)
+            latest_entry[key] = round((vil / 15) * (maxref / 45), precision)
 
     def calculate_dcs(self, key='DCS', precision=2):
         """
@@ -197,7 +197,7 @@ class IntensityIndiceCalculator:
                 latest_entry[key] = 0
                 continue
 
-            latest_entry[key] = round((maxref / 40) * (et50 / 4), precision)
+            latest_entry[key] = round((maxref / 45) * (et50 / 4), precision)
 
     def calculate_upper_ref_ratio(self, key='UpperLevelRefRatio', precision=2):
         """
@@ -224,7 +224,7 @@ class IntensityIndiceCalculator:
                 continue
 
             latest_entry[key] = round(ref20 / ref10, precision)
-    
+
     def calculate_llint(self, key='LLInt', precision=2):
         """
         Calculates Low-Level Intensity for each storm cell
@@ -382,6 +382,7 @@ if __name__ == "__main__":
     calculator.calculate_trl()
     calculator.calculate_dcs()
     calculator.calculate_upper_ref_ratio()
+    calculator.calculate_ulint()
     calculator.calculate_llint()
     calculator.calculate_flash_area_ratio()
     calculator.calculate_flash_ratio()
