@@ -252,6 +252,33 @@ class IntensityIndiceCalculator:
 
             latest_entry[key] = round((rala / maxref) * et30, precision)
 
+    def calculate_ulint(self, key='ULInt', precision=2):
+        """
+        Calculates Uper-Level Intensity for each storm cell
+
+        Formula:
+            ULInt = (max(Ref10, Ref20) / 30) * H50_Above_0C
+        
+        Args:
+            key (str): Key to store Upper-Level Intensity value
+            precision (int): Number of decimal places for the result
+        """
+        for cell in self.stormcells:
+            latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
+            if not latest_entry:
+                io_manager.write_warning(f"Skipping LLInt for {cell.get('id')} - No history")
+                continue
+
+            ref10 = latest_entry.get('Ref10')
+            ref20 = latest_entry.get('Ref20')
+            h50 = latest_entry.get('H50_Above_0C')
+
+            if not all(isinstance(v, (int, float)) for v in [ref10, ref20, h50]):
+                latest_entry[key] = 0
+                continue
+
+            latest_entry[key] = round((max(ref10, ref20) / 35) * (1 + h50), precision)
+
     def calculate_flash_area_ratio(self, key='FlashAreaRatio', precision=2):
         """
         Calculates Flash Area Ratio for each storm cell.
