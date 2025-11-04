@@ -1,13 +1,6 @@
 from pathlib import Path
-import xarray as xr
-import shutil
-import gzip
 import requests
-import os
-import re
-from bs4 import BeautifulSoup
 import datetime
-from util import file as fs
 
 class SynopticDownloader:
     @staticmethod

@@ -1,11 +1,9 @@
 import datetime
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from EdgeWARN.core.ingest.config import base_dir, mrms_modifiers, check_modifiers
 from EdgeWARN.core.ingest.download import FileFinder, FileDownloader
-from EdgeWARN.core.ingest.custom import MRMSDownloader, SynopticDownloader
-from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
+from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandlers
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
 import util.file as fs
 
@@ -60,9 +58,6 @@ def download_all_files(dt):
             executor.submit(process_modifier, modifier, outdir, dt, max_time, max_entries)
             for modifier, outdir in mrms_modifiers
         ]
-        # Removed because I need to fix :(
-        # futures.append(executor.submit(SynopticDownloader.download_latest_rtma, dt, fs.THREDDS_RTMA_DIR))
-        # futures.append(executor.submit(SynopticDownloader.download_rap_awp, dt, fs.NOAA_RAP_DIR))
 
         for future in as_completed(futures):
             future.result()
