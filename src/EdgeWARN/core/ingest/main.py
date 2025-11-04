@@ -3,44 +3,41 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from EdgeWARN.core.ingest.config import base_dir, mrms_modifiers, check_modifiers
 from EdgeWARN.core.ingest.download import FileFinder, FileDownloader
-from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandlers
+from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
+from util.io import IOManager
 import util.file as fs
 
-#################################
-### EWS Data Ingestion Module ###
-### Build Version: v1.1.0     ###
-### Contributors: Yuchen Wei  ###
-#################################
+io_manager = IOManager("[DataIngestion]")
 
 def process_modifier(modifier, outdir, dt, max_time, max_entries):
-    print(f"[DataIngestion] DEBUG: Checking MRMS source: {modifier}")
+    io_manager.write_debug(f"Checking MRMS source: {modifier}")
     
     # Ensure dt has minute precision (ignore seconds)
     dt_minute_precision = dt.replace(second=0, microsecond=0)
     
-    finder = FileFinder(dt_minute_precision, base_dir, max_time, max_entries)
-    downloader = FileDownloader(dt_minute_precision)
+    finder = FileFinder(dt_minute_precision, base_dir, max_time, max_entries, io_manager)
+    downloader = FileDownloader(dt_minute_precision, io_manager)
 
     try:
         files_with_timestamps = finder.lookup_files(modifier)
         if not files_with_timestamps:
-            print(f"[DataIngestion] WARNING: No files found for {modifier} at exact minute {dt_minute_precision}")
+            io_manager.write_warning(f"No files found for {modifier} at exact minute {dt_minute_precision}")
             return
 
-        print(f"[DataIngestion] DEBUG: Found {len(files_with_timestamps)} candidate files for {modifier} at minute {dt_minute_precision}")
+        io_manager.write_debug(f"Found {len(files_with_timestamps)} candidate files for {modifier} at minute {dt_minute_precision}")
 
         # Download the most recent file that matches our target minute
         downloaded = downloader.download_latest(files_with_timestamps, outdir)
         if downloaded:
-            print(f"[DataIngestion] DEBUG: Downloaded {modifier} file to {downloaded}")
-            print(f"[DataIngestion] DEBUG: Attempting to decompress {downloaded}")
+            io_manager.write_debug(f"Downloaded {modifier} file to {downloaded}")
+            io_manager.write_debug(f"Attempting to decompress {downloaded}")
             downloader.decompress_file(downloaded)
         else:
-            print(f"[DataIngestion] ERROR: Failed to download {modifier} file")
+            io_manager.write_error(f"Failed to download {modifier} file")
 
     except Exception as e:
-        print(f"[DataIngestion] ERROR: Failed to process {modifier}: {e}")
+        io_manager.write_error(f"Failed to process {modifier} - {e}")
     
 def download_all_files(dt):
     # Clear Files
@@ -86,7 +83,7 @@ if __name__ == "__main__":
             all_have_files = True
             for modifier, outdir in check_modifiers:
                 dt_minute_precision = latest_common_minute.replace(second=0, microsecond=0)
-                finder = FileFinder(dt_minute_precision, base_dir, datetime.timedelta(hours=6), 10)
+                finder = FileFinder(dt_minute_precision, base_dir, datetime.timedelta(hours=6), 10, io_manager)
                 files = finder.lookup_files(modifier, verbose=False)
                 if not files:
                     print(f"[Scheduler] WARNING: {modifier} has no files at {latest_common_minute}")
@@ -97,10 +94,10 @@ if __name__ == "__main__":
                 download_all_files(dt)
                 last_processed = latest_common_minute
             else:
-                print(f"[Scheduler] ⚠️ Not all products have files at {latest_common_minute}. Skipping...")
+                print(f"[Scheduler] Not all products have files at {latest_common_minute}. Skipping...")
         else:
             print(f"[Scheduler] ⏸ Latest common timestamp {latest_common_minute} already processed. Waiting ...")
     else:
-        print("[Scheduler] ⚠️ No common timestamp in last hour. Waiting ...")
+        print("[Scheduler] No common timestamp in last hour. Waiting ...")
 
     time.sleep(10)
