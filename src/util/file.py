@@ -1,6 +1,9 @@
 from pathlib import Path
 import platform
 from datetime import datetime
+from util.io import IOManager
+
+io_manager = IOManager("[Util]")
 
 # ---------- PATH CONFIG ----------
 BASE_DIR = Path("C:/EdgeWARN_input") if platform.system() == "Windows" else Path("EdgeWARN_input")
@@ -32,7 +35,7 @@ def latest_files(dir, n):
     - List of files (oldest to newest) in the directory
     """
     if not dir.exists():
-        print(f"WARNING: {dir} doesn't exist!")
+        io_manager.write_warning(f"{dir} doesn't exist!")
         return
     files = sorted(
         [f for f in dir.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
@@ -52,7 +55,7 @@ def clean_idx_files(folders):
         if folder.exists():
             idx_files = list(folder.rglob("*.idx"))
             if len(idx_files) == 0:
-                print(f"No IDX files in folder: {folder}")
+                io_manager.write_debug(f"No IDX files in folder: {folder}")
                 return
             else:
                 deleted_files = 0
@@ -61,18 +64,18 @@ def clean_idx_files(folders):
                         f.unlink()
                         deleted_files += 1
                     except Exception as e:
-                        print(f"Failed to delete IDX file {f}: {e}")
-                print(f"Deleted {deleted_files} files in {folder}")
+                        io_manager.write_error(f"Failed to delete IDX file {f}: {e}")
+                io_manager.write_debug(f"Deleted {deleted_files} files in {folder}")
         else:
-            print(f"Folder not found: {folder}")
+            io_manager.write_error(f"Folder not found: {folder}")
 
 def wipe_temp():
     for f in TEMP_DIR.glob("*"):
         try:
             f.unlink()
-            print(f"Deleted temporary file: {f.name}")
+            io_manager.write_debug(f"Deleted temporary file: {f.name}")
         except Exception as e:
-            print(f"Could not delete temporary file {f.name}: {e}")
+            io_manager.write_error(f"Could not delete temporary file {f.name}: {e}")
 
 # ---------- CLEANUP ----------
 def clean_old_files(directory: Path, max_age_minutes=60):
@@ -82,6 +85,6 @@ def clean_old_files(directory: Path, max_age_minutes=60):
         if f.is_file() and f.stat().st_mtime < cutoff:
             try:
                 f.unlink()
-                print(f"Deleted old file: {f.name}")
+                io_manager.write_debug(f"Deleted old file: {f.name}")
             except Exception as e:
-                print(f"Could not delete {f.name}: {e}")
+                io_manager.write_error(f"Could not delete {f.name}: {e}")
