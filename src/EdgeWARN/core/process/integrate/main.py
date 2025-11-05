@@ -1,6 +1,7 @@
 import util.file as fs
 from EdgeWARN.core.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.core.process.integrate.utils import StatFileHandler
+from util.io import IOManager
 
 # ------------------------------
 # MRMS dataset list
@@ -15,9 +16,11 @@ datasets = [
     ("VII", fs.MRMS_VII_DIR, "VII")
 ]
 
+io_manager = IOManager("[CellIntegration]")
+
 def main():
     handler = StatFileHandler()
-    integrator = StormCellIntegrator()
+    integrator = StormCellIntegrator(io_manager)
     json_path = "stormcell_test.json"
     cells = handler.load_json(json_path)
 
