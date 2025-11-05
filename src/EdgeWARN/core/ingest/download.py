@@ -2,18 +2,19 @@ import requests
 import re
 import datetime
 from urllib.parse import urljoin
+from util.io import IOManager
 from pathlib import Path
 import gzip
 import shutil
 import os
 
-
 class FileFinder:
-    def __init__(self, dt, base_url, max_time, max_entries):
+    def __init__(self, dt, base_url, max_time, max_entries, io_manager):
         self.dt = dt
         self.base_url = base_url.rstrip('/') + '/'  # Store as string
         self.max_time = max_time
         self.max_entries = max_entries
+        self.io_manager = io_manager
 
     @staticmethod
     def extract_timestamp_from_filename(filename):
@@ -96,7 +97,7 @@ class FileFinder:
                             re.search(r'\d{8}-\d{6}', filename)):
                             files.append(filename)
             if verbose:
-                print(f"[DataIngestion] DEBUG: Found {len(files)} potential files to process in {url}")
+                self.io_manager.write_debug(f"Found {len(files)} potential files to process in {url}")
             return files
             
         except requests.RequestException as e:
@@ -127,7 +128,7 @@ class FileFinder:
             full_url += '/'
         
         if verbose:
-            print(f"[DataIngestion] DEBUG: Searching URL: {full_url}")
+            self.io_manager.write_debug(f"Searching URL: {full_url}")
         
         files = self.list_http_directory(full_url, verbose=verbose)
         
@@ -148,8 +149,9 @@ class FileFinder:
         return matching_files
     
 class FileDownloader:
-    def __init__(self, dt):
+    def __init__(self, dt, io_manager):
         self.dt = dt
+        self.io_manager = io_manager
 
     def download_latest(self, files, outdir: Path):
         """
@@ -170,15 +172,15 @@ class FileDownloader:
         if not matched:
             latest_file = max(files, key=lambda x: x[1], default=None)
             if not latest_file:
-                print("[DataIngestion] ERROR: No files available for fallback")
+                self.io_manager.write_error(f"No files available for fallback")
                 return None
-            print(f"[DataIngestion] WARN: No exact match for {self.dt:%Y-%m-%d %H:%M:%S %Z}. "
+            self.io_manager.write_warning(f"No exact match for {self.dt:%Y-%m-%d %H:%M:%S %Z}. "
                 f"Using latest available dataset instead ({latest_file[1]:%Y-%m-%d %H:%M:%S %Z})")
             matched = [latest_file]
 
         # Take first match
         latest, ts = matched[0]
-        print(f"[DataIngestion] DEBUG: Selected file: {latest}")
+        self.io_manager.write_debug(f"Selected file: {latest}")
 
         # Ensure output directory exists
         outdir.mkdir(parents=True, exist_ok=True)
@@ -189,22 +191,22 @@ class FileDownloader:
 
         # Skip if already downloaded
         if outfile.exists():
-            print(f"[DataIngestion] DEBUG: {outfile} already exists locally")
+            self.io_manager.write_debug(f"{outfile} already exists locally")
             return outfile
 
         # Download file
         try:
-            print(f"[DataIngestion] DEBUG: Downloading file: {filename}")
+            self.io_manager.write_debug(f"Downloading file: {filename}")
             response = requests.get(latest, stream=True, timeout=30)
             response.raise_for_status()
             with open(outfile, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-            print(f"[DataIngestion] DEBUG: Downloaded file successfully -> {outfile}")
+            self.io_manager.write_debug(f"Downloaded file successfully -> {outfile}")
             return outfile
         except Exception as e:
-            print(f"[DataIngestion] ERROR: Failed to download {filename}: {e}")
+            self.io_manager.write_error(f"Failed to download {filename}: {e}")
             return None
     
     def download_specific(self, files, n: int, outdir: Path):
@@ -247,8 +249,7 @@ class FileDownloader:
 
         return outfile
     
-    @staticmethod
-    def decompress_file(gz_path: Path) -> Path | None:
+    def decompress_file(self, gz_path: Path) -> Path | None:
         """
         Decompress a .grib2.gz file.
         
@@ -257,11 +258,11 @@ class FileDownloader:
         - If the file is directly inside the dataset dir, just decompress in place.
         """
         if not gz_path.exists():
-            print(f"[DataIngestion] DEBUG: File does not exist: {gz_path}")
+            self.io_manager.write_error(f"File does not exist: {gz_path}")
             return None
 
         if gz_path.suffix != ".gz":
-            print(f"[DataIngestion] DEBUG: Not a .gz file: {gz_path}")
+            self.io_manager.write_warning(f"Not a .gz file: {gz_path}")
             return None
 
         try:
@@ -270,7 +271,7 @@ class FileDownloader:
             with gzip.open(gz_path, "rb") as f_in, open(grib_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
-            print(f"[DataIngestion] DEBUG: Decompressed: {grib_path}")
+            self.io_manager.write_debug(f"Decompressed: {grib_path}")
 
             # Determine paths
             parent_dir = gz_path.parent           # where .gz lived
@@ -284,18 +285,18 @@ class FileDownloader:
                 # Move decompressed file into dataset dir
                 target_path = dataset_dir / grib_path.name
                 shutil.move(str(grib_path), target_path)
-                print(f"[DataIngestion] DEBUG: Moved file to: {target_path}")
+                self.io_manager.write_debug(f"Moved file to: {target_path}")
 
                 # Delete timestamp folder if empty
                 try:
                     os.rmdir(parent_dir)
-                    print(f"[DataIngestion] DEBUG: Deleted folder: {parent_dir}")
+                    self.io_manager.write_debug(f"Deleted folder: {parent_dir}")
                 except OSError:
-                    print(f"[DataIngestion] ERROR: Could not delete {parent_dir} (not empty)")
+                    self.io_manager.write_error(f"Could not delete {parent_dir} (not empty)")
             else:
                 # File is already in dataset directory, keep it there
                 target_path = grib_path
-                print(f"[DataIngestion] DEBUG: File is already in dataset dir: {target_path}")
+                self.io_manager.write_debug(f"File is already in dataset dir: {target_path}")
 
             # Delete original .gz
             gz_path.unlink(missing_ok=True)
@@ -303,6 +304,6 @@ class FileDownloader:
             return target_path
 
         except Exception as e:
-            print(f"[DataIngestion] ERROR: Unable to decompress {gz_path}: {e}")
+            self.io_manager.write_error(f"Unable to decompress {gz_path}: {e}")
             return None
     

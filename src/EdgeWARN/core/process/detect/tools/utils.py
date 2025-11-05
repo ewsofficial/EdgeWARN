@@ -4,9 +4,11 @@ import re
 import datetime
 from datetime import datetime
 from pathlib import Path
+from util.io import IOManager
+import cfgrib
 
 class DetectionDataHandler:
-    def __init__(self, radar_path, ps_path, lat_min, lat_max, lon_min, lon_max):
+    def __init__(self, radar_path, ps_path, preciptype_path, io_manager, lat_min, lat_max, lon_min, lon_max):
         """
         Initialize the RadarDataHandler.
 
@@ -17,9 +19,11 @@ class DetectionDataHandler:
         """
         self.radar_path = radar_path
         self.ps_path = ps_path
+        self.preciptype_path = preciptype_path
         self.lat_grid = (lat_min, lat_max)
         self.lon_grid = (lon_min, lon_max)
         self.dataset = None
+        self.io_manager = io_manager
 
     def load_subset(self):
         """
@@ -41,12 +45,35 @@ class DetectionDataHandler:
 
             # Subset dataset (lazy; data not fully loaded yet)
             dataset = ds.sel(latitude=lat_slice, longitude=lon_slice)
-            print(f"[CellDetection] DEBUG: Subset prepared for lat: {self.lat_grid}, lon: {self.lon_grid}")
+            self.io_manager.write_debug(f"Subset prepared for lat: {self.lat_grid}, lon: {self.lon_grid}")
 
             return dataset
 
         except Exception as e:
-            print(f"[CellDetection] ERROR: Failed to load {self.radar_path}: {e}")
+            self.io_manager.write_error(f"Failed to load {self.radar_path}: {e}")
+    
+    def load_preciptype(self):
+        try:
+            # Open dataset lazily (do not load full arrays)
+            ds = xr.open_dataset(self.preciptype_path, decode_timedelta=True)
+
+            # Handle descending latitude
+            if ds.latitude[0] > ds.latitude[-1]:
+                lat_slice = slice(self.lat_grid[1], self.lat_grid[0])
+            else:
+                lat_slice = slice(self.lat_grid[0], self.lat_grid[1])
+
+            # Longitude slice
+            lon_slice = slice(self.lon_grid[0], self.lon_grid[1])
+
+            # Subset dataset (lazy; data not fully loaded yet)
+            dataset = ds.sel(latitude=lat_slice, longitude=lon_slice)
+            self.io_manager.write_debug(f"Subset prepared for lat: {self.lat_grid}, lon: {self.lon_grid}")
+
+            return dataset
+
+        except Exception as e:
+            self.io_manager.write_error(f"Failed to load {self.preciptype_path}: {e}")
     
     def load_probsevere(self):
         """
@@ -56,7 +83,7 @@ class DetectionDataHandler:
         try:
             with open(self.ps_path, 'r') as f:
                 data = json.load(f)
-            print(f"[CellDetection] DEBUG: Loaded ProbSevere JSON: {self.ps_path}")
+            self.io_manager.write_debug(f"Loaded ProbSevere JSON: {self.ps_path}")
 
             lat_min, lat_max = self.lat_grid
             lon_min, lon_max = self.lon_grid
@@ -81,7 +108,7 @@ class DetectionDataHandler:
             return data
 
         except Exception as e:
-            print(f"[CellDetection] ERROR: Failed to load ProbSevere JSON from {self.ps_path}: {e}")
+            self.io_manager.write_error(f"Failed to load ProbSevere JSON from {self.ps_path}: {e}")
             return []
     
     @staticmethod
@@ -90,7 +117,8 @@ class DetectionDataHandler:
         Finds timestamps in a file based on predetermined patterns
         """
         filename = Path(filepath).name
-        print(f"[CellDetection] DEBUG: Extracting timestamp from filename: {filename}")
+        io_manager = IOManager("[CellDetection]")
+        io_manager.write_debug(f"Extracting timestamp from filename: {filename}")
         
         patterns = [
             r'MRMS_MergedReflectivityQC_3D_(\d{8})-(\d{6})',
@@ -104,7 +132,7 @@ class DetectionDataHandler:
             match = re.search(pattern, filename)
             if match:
                 groups = match.groups()
-                print(f"[CellDetection] DEBUG: Pattern {pattern_idx+1} matched: {groups}")
+                io_manager.write_debug(f"Pattern {pattern_idx+1} matched: {groups}")
                 
                 if len(groups) == 2:
                     date_str, time_str = groups
@@ -113,18 +141,18 @@ class DetectionDataHandler:
                     date_str, time_str = combined[:8], combined[9:15]
                 else:
                     # fallback to next pattern
-                    print(f"[CellDetection] DEBUG: Unexpected group format: {groups}")
+                    io_manager.write_debug(f"Unexpected group format: {groups}")
                     continue
 
                 try:
                     formatted_time = (f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}T"
                                     f"{time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}")
-                    print(f"[CellDetection] DEBUG: Extracted timestamp: {formatted_time}")
+                    io_manager.write_debug(f"Extracted timestamp: {formatted_time}")
                     return formatted_time
                 except (IndexError, ValueError) as e:
-                    print(f"[CellDetection] DEBUG: Error formatting timestamp: {e}")
+                    io_manager.write_debug(f"Error formatting timestamp: {e}")
                     continue
         
         fallback = datetime.utcnow().isoformat()
-        print(f"[CellDetection] DEBUG: Using fallback timestamp: {fallback}")
+        io_manager.write_debug(f"Using fallback timestamp: {fallback}")
         return fallback

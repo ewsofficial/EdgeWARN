@@ -30,16 +30,13 @@ timely, and actionable warnings.
 - lat_min, lat_max - latitude bounds
 - lon_min, lon_max - longitude bounds (0-360 format)
 
-<h2 align="center">Current Build Info</h2>
+<h2 align="center">Build Info</h2>
 
-#### Build Version: 0.4.5
+## Version History for 0.5.x-alpha
 
-#### Changes Associated With This Build
-- Modified storm cell detection and tracking to work with only one scan
-- This helps to create a stormcell JSON on the first cycle
-
-#### To Do
-- Continue to build CTAM module
+### 0.5.1-alpha (Current)
+- Flattened ProbSevere keys to be top-level in storm history entries
+- Added hail core detection. This is saved under `hail_core` in each cell ID. Hail core is `None` if no valid points exist.
 
 <h2 align="center">Credits</h2>
 

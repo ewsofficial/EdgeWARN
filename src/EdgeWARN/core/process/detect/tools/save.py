@@ -1,15 +1,62 @@
 import numpy as np
+<<<<<<< HEAD
+=======
+from skimage import measure
+>>>>>>> origin/version-test/0.5.1-alpha
 from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 
 class CellDataSaver:
-    def __init__(self, bboxes, radar_path, radar_ds, mapped_ds, ps_path, ps_ds):
+    def __init__(self, bboxes, radar_ds, mapped_ds, expanded_ds, ps_ds, preciptype_ds):
         self.bboxes = bboxes
         self.radar_ds = radar_ds
-        self.radar_path = radar_path
         self.mapped_ds = mapped_ds
+        self.expanded_ds = expanded_ds
         self.ps_ds = ps_ds
-        self.ps_path = ps_path
-    
+        self.preciptype_ds = preciptype_ds
+
+    def __create_hailcore_polygon(self, poly_id, step=5):
+        """
+        Creates a hail core polygon by tracing the exterior of hail-classified 
+        cells (preciptype == 7) within a ProbSevere polygon.
+        Returns a list of (lat, lon) points sampled every 'step' along the contour.
+        """
+        # Polygon mask
+        polygon_grid = self.expanded_ds['PolygonID'].values
+        poly_mask = polygon_grid == poly_id
+        if not np.any(poly_mask):
+            return []
+
+        # Hail mask (preciptype == 7) inside polygon
+        precip_grid = self.preciptype_ds['unknown'].values
+        hail_mask = (precip_grid == 7) & poly_mask
+        if not np.any(hail_mask):
+            return []
+
+        # Latitude and longitude grids
+        lat_grid = self.radar_ds['latitude'].values
+        lon_grid = self.radar_ds['longitude'].values
+        if lat_grid.ndim == 1 and lon_grid.ndim == 1:
+            lat_grid, lon_grid = np.meshgrid(lat_grid, lon_grid, indexing='ij')
+
+        # Find contours on the hail mask
+        contours = measure.find_contours(hail_mask.astype(float), 0.5)
+        if not contours:
+            return []
+
+        # Take the largest contour (most points)
+        contour = max(contours, key=lambda c: c.shape[0])
+
+        # Sample every 'step' points
+        sampled = contour[::step]
+
+        # Convert indices to lat/lon and return as list of tuples
+        polygon_points = [
+            (float(lat_grid[int(r), int(c)]), float(lon_grid[int(r), int(c)] % 360))
+            for r, c in sampled
+        ]
+
+        return polygon_points
+
     def create_entry(self):
         """
         Appends maximum reflectivity, num_gates, and reflectivity-weighted centroid
@@ -67,11 +114,15 @@ class CellDataSaver:
             # Count number of gates
             num_gates = np.count_nonzero(mask)
 
+            # Find hailcore
+            hail_core = self.__create_hailcore_polygon(poly_id)
+
             results.append({
                 "id": poly_id,
                 "num_gates": num_gates,
                 "centroid": centroid,
                 "bbox": bbox,
+                "hail_core": hail_core,
                 "max_refl": max_refl,
                 "storm_history": []
             })
