@@ -15,6 +15,8 @@ class IntensityIndiceCalculator:
         - Total Reflectivity Load (TRL)
         - Deep Convection Strength (DCS)
         - Upper Level Reflectivity Ratio (UpperLevelRefRatio)
+        - Upper Level Intensity (ULInt)
+        - Lower Level Intensity (LLInt)
         - Flash Area Ratio (FlashAreaRatio)
         - Flash Ratio (FlashRatio)
         - Normalized Lightning Intensity (NLI)
@@ -33,7 +35,7 @@ class IntensityIndiceCalculator:
         """
         self.stormcells = stormcells
         self.data_handler = DataHandler(self.stormcells)
-    
+
     def calculate_composite_et(self, key='CompET', precision=2):
         """
         Calculates the Composite Echo Tops (CompET) for each storm cell.
