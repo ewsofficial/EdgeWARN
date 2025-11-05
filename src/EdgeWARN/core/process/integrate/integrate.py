@@ -4,8 +4,8 @@ import numpy as np
 import gc
 
 class StormCellIntegrator:
-    def __init__(self):
-        pass
+    def __init__(self, io_manager):
+        self.io_manager = io_manager
 
     def integrate_ds_via_max(self, dataset_path, storm_cells, output_key):
         """
@@ -15,7 +15,7 @@ class StormCellIntegrator:
         Fully loads dataset into memory, no subsetting.
         """
 
-        print(f"[CellIntegration] DEBUG: Integrating dataset for {len(storm_cells)} storm cells")
+        self.io_manager.write_debug(f"Integrating dataset for {len(storm_cells)} storm cells")
 
         # Step 1: Load dataset directly (no subsetting)
         try:
@@ -25,7 +25,7 @@ class StormCellIntegrator:
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
 
             ds.load()  # load entire dataset
-            print(f"[CellIntegration] DEBUG: Dataset loaded successfully with shape {list(ds.sizes.values())}")
+            self.io_manager.write_debug(f"Dataset loaded successfully with shape {list(ds.sizes.values())}")
 
             # Identify coordinate names
             lat_name = "latitude" if "latitude" in ds.coords else "lat"
@@ -33,7 +33,7 @@ class StormCellIntegrator:
 
             # Check if dataset is empty
             if ds.sizes[lat_name] == 0 or ds.sizes[lon_name] == 0:
-                print("[CellIntegration] WARN: Dataset empty")
+                self.io_manager.write_warning("Dataset empty")
                 for cell in storm_cells:
                     if cell.get("storm_history"):
                         cell["storm_history"][-1][output_key] = "EMPTY_DATASET"
@@ -41,13 +41,13 @@ class StormCellIntegrator:
                 return storm_cells
 
         except MemoryError:
-            print("[CellIntegration] ERROR: Dataset too large to load into memory")
+            self.io_manager.write_error("Dataset too large to load into memory")
             for cell in storm_cells:
                 if cell.get("storm_history"):
                     cell["storm_history"][-1][output_key] = "MEMORY_ERROR"
             return storm_cells
         except Exception as e:
-            print(f"[CellIntegration] ERROR: Failed to load dataset: {e}")
+            self.io_manager.write_error(f"Failed to load dataset: {e}")
             for cell in storm_cells:
                 if cell.get("storm_history"):
                     cell["storm_history"][-1][output_key] = "DATASET_LOAD_ERROR"
@@ -56,7 +56,7 @@ class StormCellIntegrator:
         # Step 2: Select variable
         var = ds.get("unknown")
         if var is None:
-            print("[CellIntegration] ERROR: Variable 'unknown' not found in dataset")
+            self.io_manager.write_error("Variable 'unknown' not found in dataset")
             for cell in storm_cells:
                 if cell.get("storm_history"):
                     cell["storm_history"][-1][output_key] = "VAR_NOT_FOUND"
@@ -97,7 +97,7 @@ class StormCellIntegrator:
                     latest[output_key] = float(np.nanmax(subset_vals))
 
             except Exception as e:
-                print(f"[CellIntegration] ERROR: Processing cell {cell.get('id', 'unknown')}: {e}")
+                self.io_manager.write_error(f"Processing cell {cell.get('id', 'unknown')}: {e}")
                 latest[output_key] = "PROCESSING_ERROR"
 
             finally:
@@ -120,7 +120,7 @@ class StormCellIntegrator:
         Flattens all ProbSevere variables directly into each storm history entry.
         """
         if not isinstance(probsevere_data, dict) or 'features' not in probsevere_data:
-            print(f"[CellIntegration] ERROR: Failed to integrate ProbSevere data - Invalid Data Format")
+            self.io_manager.write_error(f"Failed to integrate ProbSevere data - Invalid Data Format")
             return storm_cells
 
         features = probsevere_data['features']
