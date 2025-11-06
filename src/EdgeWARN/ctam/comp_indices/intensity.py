@@ -1,12 +1,12 @@
-from EdgeWARN.ctam.utils import DataHandler
+from EdgeWARN.ctam.utils import DataHandler, default_norm
 from util.io import IOManager
 
 io_manager = IOManager("[CTAM]")
 
 class IntensityIndiceCalculator:
     """
-    Calculator for storm cell intensity indices.
-    
+    Calculator for storm cell intensity indices with normalization support.
+
     This class computes several meteorological indices for storm cells, including:
         - Composite Echo Tops (CompET)
         - Total Hydrometer Load (THL) and THL Density (THLD)
@@ -22,31 +22,25 @@ class IntensityIndiceCalculator:
         - Normalized Lightning Intensity (NLI)
         - Flash Compactness Index (FlashCompactIndex)
 
-    Each method appends the calculated value to the latest entry in each storm cell's
-    'storm_history'. Non-numeric or missing values are skipped or set to 0.
+    Normalization:
+        - Several indices use normalization values to scale them consistently.
+        - Default normalization values:
+            MaxRef: 45, RALA: 40, RefUpper: 35, PrecipRate: 30, MESH: 20, VIL: 15, EchoTop50: 40
+        - Custom normalization values can be passed via `norm_values`.
     """
 
-    def __init__(self, stormcells):
-        """
-        Initializes the calculator with a list of storm cells.
-        
-        Args:
-            stormcells (list[dict]): List of storm cell dictionaries, each containing a 'storm_history'.
-        """
+    def __init__(self, stormcells, norm_values=default_norm):
         self.stormcells = stormcells
         self.data_handler = DataHandler(self.stormcells)
 
+        # Break the class if norm_values is malformed
+        self.data_handler.verify_norm_values(norm_values)
+        self.norm_values = norm_values
+
     def calculate_composite_et(self, key='CompET', precision=2):
         """
-        Calculates the Composite Echo Tops (CompET) for each storm cell.
-        
-        Formula:
-            CompET = 0.1 * EchoTop18 + 0.3 * EchoTop30 + 0.6 * EchoTop50
-            or 0.3 * EchoTop18 + 0.7 * EchoTop30 if EchoTop50 == 0
-
-        Args:
-            key (str): Name of the key to store the calculated value.
-            precision (int): Number of decimal places for the result.
+        CompET = 0.1 * EchoTop18 + 0.3 * EchoTop30 + 0.6 * EchoTop50
+        or 0.3 * EchoTop18 + 0.7 * EchoTop30 if EchoTop50 == 0
         """
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
@@ -64,20 +58,9 @@ class IntensityIndiceCalculator:
 
             comp_et = 0.3 * et18 + 0.7 * et30 if et50 == 0 else 0.1 * et18 + 0.3 * et30 + 0.6 * et50
             latest_entry[key] = round(comp_et, precision)
-    
+
     def calculate_thl(self, thl_key='THL', thld_key='THLDensity', precision=2):
-        """
-        Calculates Total Hydrometer Load (THL) and THL Density (THLD) for each storm cell.
-
-        Formulas:
-            THL = VIL + VII
-            THLD = THL / EchoTop18
-
-        Args:
-            thl_key (str): Key to store THL value.
-            thld_key (str): Key to store THLD value.
-            precision (int): Number of decimal places for results.
-        """
+        """THL = VIL + VII; THLD = THL / EchoTop18"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
@@ -92,21 +75,12 @@ class IntensityIndiceCalculator:
                 latest_entry[thl_key] = 0
                 latest_entry[thld_key] = 0
                 continue
-            
+
             latest_entry[thl_key] = round(vil + vii, precision)
             latest_entry[thld_key] = round((vil + vii) / et18, precision)
 
     def calculate_vii_density(self, key='VIIDensity', precision=2):
-        """
-        Calculates Vertically Integrated Ice Density (VIIDensity) for each storm cell.
-
-        Formula:
-            VIIDensity = VII / EchoTop18
-
-        Args:
-            key (str): Key to store VIIDensity value.
-            precision (int): Number of decimal places for result.
-        """
+        """VIIDensity = VII / EchoTop18"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
@@ -122,44 +96,29 @@ class IntensityIndiceCalculator:
 
             latest_entry[key] = round(vii / et18, precision)
 
-    def calculate_pii(self, key='PII', precision=1):
-        """
-        Calculates Precipitation Intensity Index (PII) for each storm cell.
-
-        Formula:
-            PII = (RALA / 45) + (PrecipRate / 30) + (MESH / 20)
-
-        Args:
-            key (str): Key to store PII value.
-            precision (int): Number of decimal places for the result.
-        """
+    def calculate_pii(self, key='PII', precision=2):
+        """PII = (RALA / rala_norm) + (PrecipRate / preciprate_norm) + (MESH / mesh_norm)"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
                 io_manager.write_warning(f"Skipping PII for {cell.get('id')} - No history")
                 continue
-            
+
             rala = latest_entry.get('RALA')
+            rala_norm = self.norm_values.get('RALA')
             preciprate = latest_entry.get('PrecipRate')
+            preciprate_norm = self.norm_values.get('PrecipRate')
             mesh = latest_entry.get('MESH')
+            mesh_norm = self.norm_values.get('MESH')
 
             if not all(isinstance(v, (int, float)) for v in [rala, preciprate, mesh]):
                 latest_entry[key] = 0
                 continue
-            
-            latest_entry[key] = round((rala / 40) + (preciprate / 30) + (mesh / 20), precision)
+
+            latest_entry[key] = round((rala / rala_norm) + (preciprate / preciprate_norm) + (mesh / mesh_norm), precision)
 
     def calculate_trl(self, key='TRL', precision=2):
-        """
-        Calculates Total Reflectivity Load (TRL) for each storm cell.
-
-        Formula:
-            TRL = VIL * MaxRef
-
-        Args:
-            key (str): Key to store TRL value.
-            precision (int): Number of decimal places for the result.
-        """
+        """TRL = (VIL / vil_norm) * (max_refl / maxref_norm)"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
@@ -167,25 +126,18 @@ class IntensityIndiceCalculator:
                 continue
 
             vil = latest_entry.get('VIL')
+            vil_norm = self.norm_values.get('VIL')
             maxref = latest_entry.get('max_refl')
+            maxref_norm = self.norm_values.get('MaxRef')
 
             if not all(isinstance(v, (int, float)) for v in [vil, maxref]):
                 latest_entry[key] = 0
                 continue
 
-            latest_entry[key] = round((vil / 15) * (maxref / 45), precision)
+            latest_entry[key] = round((vil / vil_norm) * (maxref / maxref_norm), precision)
 
     def calculate_dcs(self, key='DCS', precision=2):
-        """
-        Calculates Deep Convection Strength (DCS) for each storm cell.
-
-        Formula:
-            DCS = MaxRef * EchoTop50
-
-        Args:
-            key (str): Key to store DCS value.
-            precision (int): Number of decimal places for the result.
-        """
+        """DCS = (maxref / maxref_norm) * (et50 / et50_norm)"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
@@ -193,25 +145,18 @@ class IntensityIndiceCalculator:
                 continue
 
             maxref = latest_entry.get('max_refl')
+            maxref_norm = self.norm_values.get('MaxRef')
             et50 = latest_entry.get('EchoTop50')
+            et50_norm = self.norm_values.get('EchoTop50')
 
             if not all(isinstance(v, (int, float)) for v in [maxref, et50]):
                 latest_entry[key] = 0
                 continue
 
-            latest_entry[key] = round((maxref / 45) * (et50 / 4), precision)
+            latest_entry[key] = round((maxref / maxref_norm) * (et50 / et50_norm), precision)
 
     def calculate_upper_ref_ratio(self, key='UpperLevelRefRatio', precision=2):
-        """
-        Calculates the Upper Level Reflectivity Ratio for each storm cell.
-
-        Formula:
-            UpperLevelRefRatio = Ref20 / Ref10
-
-        Args:
-            key (str): Key to store the calculated ratio.
-            precision (int): Number of decimal places for the result.
-        """
+        """UpperLevelRefRatio = Ref20 / Ref10"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
@@ -228,16 +173,7 @@ class IntensityIndiceCalculator:
             latest_entry[key] = round(ref20 / ref10, precision)
 
     def calculate_llint(self, key='LLInt', precision=2):
-        """
-        Calculates Low-Level Intensity for each storm cell
-
-        Formula:
-            LLInt = (RALA / MaxRef) * EchoTop30
-        
-        Args:
-            key (str): Key to store Low-Level Intensity value
-            precision (int): Number of decimal places for the result
-        """
+        """LLInt = (RALA / maxref) * EchoTop30"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
@@ -255,70 +191,44 @@ class IntensityIndiceCalculator:
             latest_entry[key] = round((rala / maxref) * et30, precision)
 
     def calculate_ulint(self, key='ULInt', precision=2):
-        """
-        Calculates Uper-Level Intensity for each storm cell
-
-        Formula:
-            ULInt = (max(Ref10, Ref20) / 30) * H50_Above_0C
-        
-        Args:
-            key (str): Key to store Upper-Level Intensity value
-            precision (int): Number of decimal places for the result
-        """
+        """ULInt = (max(ref10, ref20) / refupper_norm) * (1 + H50_Above_0C)"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
-                io_manager.write_warning(f"Skipping LLInt for {cell.get('id')} - No history")
+                io_manager.write_warning(f"Skipping ULInt for {cell.get('id')} - No history")
                 continue
 
             ref10 = latest_entry.get('Ref10')
             ref20 = latest_entry.get('Ref20')
+            refupper_norm = self.norm_values.get('RefUpper')
             h50 = latest_entry.get('H50_Above_0C')
 
             if not all(isinstance(v, (int, float)) for v in [ref10, ref20, h50]):
                 latest_entry[key] = 0
                 continue
 
-            latest_entry[key] = round((max(ref10, ref20) / 35) * (1 + h50), precision)
+            latest_entry[key] = round((max(ref10, ref20) / refupper_norm) * (1 + h50), precision)
 
     def calculate_flash_area_ratio(self, key='FlashAreaRatio', precision=2):
-        """
-        Calculates Flash Area Ratio for each storm cell.
-
-        Formula:
-            FlashAreaRatio = MinFlashArea / (num_gates * 1.11^2)
-
-        Args:
-            key (str): Key to store Flash Area Ratio value.
-            precision (int): Number of decimal places for the result.
-        """
+        """FlashAreaRatio = MinFlashArea / (num_gates * 1.11^2)"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
                 io_manager.write_warning(f"Skipping FlashAreaRatio for {cell.get('id')} - No history")
                 continue
-            
+
             num_gates = latest_entry.get('num_gates')
             minflasharea = latest_entry.get('MinFlashArea')
 
             if not all(isinstance(v, (int, float)) for v in [num_gates, minflasharea]):
                 latest_entry[key] = 0
                 continue
-            
+
             storm_area = num_gates * (1.11 ** 2)
             latest_entry[key] = round(minflasharea / storm_area, precision)
 
     def calculate_flash_ratio(self, key='FlashRatio', precision=2):
-        """
-        Calculates the Flash Ratio for each storm cell to indicate storm development stage.
-
-        Formula:
-            FlashRatio = CGFlashDensity / FlashDensity
-
-        Args:
-            key (str): Key to store FlashRatio value.
-            precision (int): Number of decimal places for the result.
-        """
+        """FlashRatio = CGFlashDensity / FlashDensity"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
@@ -335,17 +245,7 @@ class IntensityIndiceCalculator:
             latest_entry[key] = 9999 if flash == 0 else round(cg_flash / flash, precision)
 
     def calculate_nli(self, key='NLI', precision=2):
-        """
-        Calculates Normalized Lightning Intensity (NLI) for each storm cell.
-
-        Formula:
-            NLI = FlashRate / StormArea
-            where StormArea = num_gates * (1.11^2)
-
-        Args:
-            key (str): Key to store NLI value.
-            precision (int): Number of decimal places for the result.
-        """
+        """NLI = FlashRate / StormArea; StormArea = num_gates * 1.11^2"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
@@ -363,16 +263,7 @@ class IntensityIndiceCalculator:
             latest_entry[key] = round(flashrate / storm_area, precision)
 
     def calculate_flash_compact_index(self, key='FlashCompactIndex', precision=2):
-        """
-        Calculates Flash Compactness Index (FCI) for each storm cell.
-
-        Formula:
-            FlashCompactIndex = MaxFCD / MaxFED
-
-        Args:
-            key (str): Key to store FCI value.
-            precision (int): Number of decimal places for the result.
-        """
+        """FlashCompactIndex = MaxFCD / MaxFED"""
         for cell in self.stormcells:
             latest_entry = cell.get('storm_history', [])[-1] if cell.get('storm_history') else None
             if not latest_entry:
@@ -389,14 +280,8 @@ class IntensityIndiceCalculator:
             latest_entry[key] = round(maxfcd / maxfed, precision)
 
     def return_results(self):
-        """
-        Returns the storm cell list after all calculations.
-
-        Returns:
-            list[dict]: Updated storm cells with calculated indices.
-        """
+        """Returns the storm cells with all calculated indices."""
         return self.stormcells
-
 
 if __name__ == "__main__":
     import json
