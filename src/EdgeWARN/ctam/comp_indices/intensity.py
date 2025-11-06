@@ -21,12 +21,6 @@ class IntensityIndiceCalculator:
         - Flash Ratio (FlashRatio)
         - Normalized Lightning Intensity (NLI)
         - Flash Compactness Index (FlashCompactIndex)
-
-    Normalization:
-        - Several indices use normalization values to scale them consistently.
-        - Default normalization values:
-            MaxRef: 45, RALA: 40, RefUpper: 35, PrecipRate: 30, MESH: 20, VIL: 15, EchoTop50: 40
-        - Custom normalization values can be passed via `norm_values`.
     """
 
     def __init__(self, stormcells, norm_values=default_norm):
@@ -34,7 +28,7 @@ class IntensityIndiceCalculator:
         self.data_handler = DataHandler(self.stormcells)
 
         # Break the class if norm_values is malformed
-        self.data_handler.verify_norm_values(norm_values)
+        self.data_handler.verify_norm_values(norm_values, default_norm)
         self.norm_values = norm_values
 
     def calculate_composite_et(self, key='CompET', precision=2):

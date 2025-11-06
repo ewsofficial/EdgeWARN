@@ -7,13 +7,13 @@ from datetime import datetime
 io_manager = IOManager(f"[CTAM]")
 
 default_norm = { # 0 indicates that we haven't decided what value we use
-    "CGFlashDensity": 0.9110000133514404,
+    "CGFlashDensity": 0,
     "EchoTop18": 12.0,
     "EchoTop30": 10.0,
     "PrecipRate": 35,
     "VILDensity": 0,
     "RALA": 40,
-    "VII": 8.899999618530273,
+    "VII": 15.0,
     "MLCAPE": 0,
     "MUCAPE": 0,
     "MLCIN": 0,
@@ -29,7 +29,7 @@ default_norm = { # 0 indicates that we haven't decided what value we use
     "SRW46km": 0,
     "MeanWind_1-3kmAGL": 0,
     "LJA": 0.0,
-    "CompRef": 45,
+    "MaxRef": 45,
     "Ref10": 40,
     "Ref20": 35,
     "RefUpper": 35,
