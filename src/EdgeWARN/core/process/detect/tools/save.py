@@ -1,8 +1,5 @@
 import numpy as np
-<<<<<<< HEAD
-=======
 from skimage import measure
->>>>>>> origin/version-test/0.5.1-alpha
 from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 
 class CellDataSaver:
