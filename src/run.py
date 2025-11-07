@@ -10,50 +10,19 @@ import EdgeWARN.core.process.detect.main as detect
 import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
 from EdgeWARN.core.ingest.config import check_modifiers
-from util.io import TimestampedOutput
-import argparse
+from util.io import TimestampedOutput, IOManager
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
 
-# ===== Process modifiers =====
-parser = argparse.ArgumentParser(description="EdgeWARN modifier specification")
-parser.add_argument(
-    "--lat_limits",
-    type=float,
-    nargs=2,
-    metavar=("LAT_MIN", "LAT_MAX"),
-    default=[0, 0],
-    help="Latitude limits for processing"
-)
-parser.add_argument(
-    "--lon_limits",
-    type=float,
-    nargs=2,
-    metavar=("LON_MIN", "LON_MAX"),
-    default=[0, 0],
-    help="Longitude limits for processing"
-)
-args = parser.parse_args()
-
-# ===== Validation =====
-if not args.lat_limits or not args.lon_limits or len(args.lat_limits) != 2 or len(args.lon_limits) != 2:
-    print("ERROR: Latitude and longitude limits must both be provided as two numeric values each.")
-    print("Example: --lat_limits 33.5 35.7 --lon_limits 280.7 284.6")
-    sys.exit(1)
-
-if args.lat_limits == [0, 0] or args.lon_limits == [0, 0]:
-    print("ERROR: lat_limits or lon_limits not specified! They must be two numeric values each.")
-    sys.exit(1)
-
-# ===== Convert longitude from -180:180 to 0:360 if needed =====
-lon_limits = [lon % 360 for lon in args.lon_limits]
+io_manager = IOManager("[Main]")
+args = io_manager.get_args()
 
 print(f"Running EdgeWARN v0.4.3")
-print(f"Latitude limits: {tuple(args.lat_limits)}, Longitude limits: {tuple(lon_limits)}")
+print(f"Latitude limits: {tuple(args.lat_limits)}, Longitude limits: {tuple(args.lon_limits)}")
 
 lat_limits = tuple(args.lat_limits)
-lon_limits = tuple(lon_limits)
+lon_limits = tuple(args.lon_limits)
 
 def pipeline(log_queue, dt):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""

@@ -6,6 +6,52 @@ from datetime import datetime
 
 io_manager = IOManager(f"[CTAM]")
 
+default_norm = { # 0 indicates that we haven't decided what value we use
+    "CGFlashDensity": 0,
+    "EchoTop18": 12.0,
+    "EchoTop30": 10.0,
+    "PrecipRate": 35,
+    "VILDensity": 0,
+    "RALA": 40,
+    "VII": 15.0,
+    "MLCAPE": 0,
+    "MUCAPE": 0,
+    "MLCIN": 0,
+    "DCAPE": 0,
+    "CAPE_M10M30": 0,
+    "LCL": 0,
+    "Wetbulb_0C_Hgt": 0,
+    "LLLR": 0,
+    "MLLR": 0,
+    "EBShear": 0,
+    "SRH01km": 0,
+    "SRH02km": 0,
+    "SRW46km": 0,
+    "MeanWind_1-3kmAGL": 0,
+    "LJA": 0.0,
+    "MaxRef": 45,
+    "Ref10": 40,
+    "Ref20": 35,
+    "RefUpper": 35,
+    "MESH": 1,
+    "H50_Above_0C": 0,
+    "EchoTop50": 4,
+    "VIL": 25.0,
+    "MaxFED": 0,
+    "MaxFCD": 0,
+    "AccumFCD": 0,
+    "MinFlashArea": 0,
+    "TE@MaxFCD": 0,
+    "FlashRate": 0.0,
+    "FlashDensity": 0.0,
+    "MaxLLAz": 0,
+    "p98LLAz": 0,
+    "p98MLAz": 0,
+    "MaxRC_Emiss": 0.0,
+    "ICP": 0,
+    "PWAT": 1.5,
+}
+
 class DataLoader:
     
     @staticmethod
@@ -78,6 +124,26 @@ class DataHandler:
     def __init__(self, stormcells):
         # Pre-index by ID for constant-time lookup
         self.stormcells = {str(cell["id"]): cell for cell in stormcells}
+
+    @staticmethod
+    def verify_norm_values(norm_values, default_norm):
+        """
+        Ensures that `norm_values` has the exact same (case-sensitive) keys as `default_norm`.
+        Raises a ValueError if any keys are missing or extra.
+        """
+        default_keys = set(default_norm.keys())
+        given_keys = set(norm_values.keys())
+
+        missing = default_keys - given_keys
+        extra = given_keys - default_keys
+
+        if missing or extra:
+            msg = []
+            if missing:
+                msg.append(f"Missing keys: {', '.join(missing)}")
+            if extra:
+                msg.append(f"Unexpected keys: {', '.join(extra)}")
+            raise ValueError("Invalid normalization keys. " + " | ".join(msg))
 
     def find_top_level_key(self, cell_id, key):
         """
