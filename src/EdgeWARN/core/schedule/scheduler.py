@@ -3,6 +3,9 @@ import time
 from pathlib import Path
 from EdgeWARN.core.ingest.download import FileFinder
 from EdgeWARN.core.ingest.config import base_dir, check_modifiers
+from util.io import IOManager
+
+io_manager = IOManager("[DataIngestion]")
 
 
 class MRMSUpdateChecker:
@@ -19,7 +22,7 @@ class MRMSUpdateChecker:
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
 
-        finder = FileFinder(reference_dt, base_dir, self.max_time, self.max_entries)
+        finder = FileFinder(reference_dt, base_dir, self.max_time, self.max_entries, io_manager)
 
         try:
             files_with_timestamps = finder.lookup_files(modifier, verbose=False)
@@ -78,7 +81,7 @@ class MRMSUpdateChecker:
         modifier_times = []
 
         for modifier, _ in modifiers:
-            finder = FileFinder(reference_dt, base_dir, max_time=max_time, max_entries=None)
+            finder = FileFinder(reference_dt, base_dir, max_time, 10, io_manager)
             files_with_timestamps = finder.lookup_files(modifier, verbose=False)
             if not files_with_timestamps:
                 if self.verbose:
