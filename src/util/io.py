@@ -29,7 +29,7 @@ class IOManager:
             type=float,
             nargs=2,
             metavar=("LAT_MIN", "LAT_MAX"),
-            default=[0, 0],
+            default=[20, 55],
             help="Latitude limits for processing"
         )
         parser.add_argument(
@@ -37,7 +37,7 @@ class IOManager:
             type=float,
             nargs=2,
             metavar=("LON_MIN", "LON_MAX"),
-            default=[0, 0],
+            default=[-130, -70],
             help="Longitude limits for processing"
         )
 
