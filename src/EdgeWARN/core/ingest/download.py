@@ -104,7 +104,7 @@ class FileFinder:
             print(f"[DataIngestion] ERROR: Could not access {url}: {e}")
             return []
 
-    def lookup_files(self, modifier, verbose=True):
+    def lookup_files(self, modifier, verbose=False):
         """
         Attempts file lookup for files matching the modifier pattern in HTTP directory.
         Returns list of (file_url, timestamp) tuples.
@@ -130,7 +130,7 @@ class FileFinder:
         if verbose:
             self.io_manager.write_debug(f"Searching URL: {full_url}")
         
-        files = self.list_http_directory(full_url, verbose=verbose)
+        files = self.list_http_directory(full_url, verbose=False)
         
         for filename in files:
             if 'latest' in filename.lower():
@@ -180,7 +180,6 @@ class FileDownloader:
 
         # Take first match
         latest, ts = matched[0]
-        self.io_manager.write_debug(f"Selected file: {latest}")
 
         # Ensure output directory exists
         outdir.mkdir(parents=True, exist_ok=True)
