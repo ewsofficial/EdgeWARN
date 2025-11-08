@@ -14,7 +14,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     lon_min, lon_max = lon_bounds
 
     # === Single-frame fallback ===
-    single_frame = radar_new is None or ps_new is None
+    single_frame = radar_new is None or ps_new is None or pt_new is None
     if single_frame:
         io_manager.write_debug("No new scan specified — running single-frame detection mode")
 
@@ -30,7 +30,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             io_manager.write_debug(f"Detected {len(entries_old)} cells in old scan.")
     else:
         io_manager.write_debug("JSON output doesn't exist, detecting from old scan ...")
-        entries_old = detect_cells(radar_old, ps_old, pt_new, io_manager, lat_min, lat_max, lon_min, lon_max)
+        entries_old = detect_cells(radar_old, ps_old, pt_old, io_manager, lat_min, lat_max, lon_min, lon_max)
         io_manager.write_debug(f"Detected {len(entries_old)} cells in old scan.")
 
     # === If single-frame mode, just update/save ===
