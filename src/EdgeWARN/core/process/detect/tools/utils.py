@@ -55,7 +55,7 @@ class DetectionDataHandler:
     def load_preciptype(self):
         try:
             # Open dataset lazily (do not load full arrays)
-            ds = xr.open_dataset(self.preciptype_path, decode_timedelta=True)
+            ds = xr.open_dataset(self.preciptype_path, engine="cfgrib", decode_timedelta=True)
 
             # Handle descending latitude
             if ds.latitude[0] > ds.latitude[-1]:
