@@ -18,7 +18,7 @@ sys.stderr = TimestampedOutput(sys.stderr)
 io_manager = IOManager("[Main]")
 args = io_manager.get_args()
 
-print(f"Running EdgeWARN v0.4.3")
+print(f"Running EdgeWARN v0.5.1-alpha")
 print(f"Latitude limits: {tuple(args.lat_limits)}, Longitude limits: {tuple(args.lon_limits)}")
 
 lat_limits = tuple(args.lat_limits)
