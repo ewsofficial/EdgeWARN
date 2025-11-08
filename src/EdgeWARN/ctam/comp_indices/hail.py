@@ -1,1 +1,1 @@
-from EdgeWARN.CTAM.utils import DataHandler, DataLoader
+from EdgeWARN.ctam.utils import DataHandler, DataLoader
