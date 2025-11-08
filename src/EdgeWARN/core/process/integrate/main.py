@@ -19,7 +19,7 @@ datasets = [
 io_manager = IOManager("[CellIntegration]")
 
 def main():
-    handler = StatFileHandler()
+    handler = StatFileHandler(io_manager)
     integrator = StormCellIntegrator(io_manager)
     json_path = "stormcell_test.json"
     cells = handler.load_json(json_path)
