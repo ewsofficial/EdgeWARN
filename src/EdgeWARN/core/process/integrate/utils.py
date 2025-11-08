@@ -5,14 +5,18 @@ from shapely.geometry import Polygon
 from datetime import datetime
 import re
 from pathlib import Path as PathLibPath
+from util.io import IOManager
+
+io_manager = IOManager("[CellIntegration]")
 
 class StatFileHandler:
-    def __init__(self):
+    def __init__(self, io_manager):
         """
         Initialize the StatFileLoader for loading data files.
         """
         self.dataset = None
         self.file_path = None
+        self.io_manager = io_manager
 
     def convert_lon_to_360(self, lon):
         """
@@ -52,24 +56,24 @@ class StatFileHandler:
         
         try:
             self.dataset = xr.open_dataset(file_path, cache=False, decode_timedelta=True)
-            print(f"[CellIntegration] DEBUG: Successfully loaded dataset from {file_path}")
+            self.io_manager.write_debug(f"Successfully loaded dataset from {file_path}")
             return self.dataset
         except Exception as e:
-            print(f"[CellIntegration] ERROR: Could not load file {file_path}: {e}")
+            self.io_manager.write_error(f"Could not load file {file_path}: {e}")
             return None
         
     def load_json(self, filepath):
-        print(f"[CellIntegration] DEBUG: Loading JSON file {filepath}")
+        self.io_manager.write_debug(f"Loading JSON file {filepath}")
         with open(filepath, 'r') as f:
             data = json.load(f)
         if not data:
-            print(f"[CellIntegration] ERROR: {filepath} did not have any data")
+            self.io_manager.write_error(f"{filepath} did not have any data")
             return None
         else:
             return data
     
     def write_json(self, data, filepath):
-        print(f"[CellIntegration] DEBUG: Writing to JSON file {filepath}")
+        self.io_manager.write_debug(f"Writing to JSON file {filepath}")
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=4)
         print(f"Successfully wrote to JSON file {filepath}")
@@ -130,7 +134,7 @@ class StatFileHandler:
                         return datetime.fromtimestamp(int(timestamp_str[:10]))
                         
                 except (ValueError, TypeError) as e:
-                    print(f"[CellIntegration] ERROR: Could not parse timestamp '{timestamp_str}' from {filename}: {e}")
+                    self.io_manager.write_error(f"Could not parse timestamp '{timestamp_str}' from {filename}: {e}")
                     continue
         
         # If no pattern matched, try to extract from dataset if it's loaded
@@ -147,9 +151,9 @@ class StatFileHandler:
                             else:
                                 return datetime.utcfromtimestamp(time_data[0] / 1e9)
             except Exception as e:
-                print(f"[CellIntegration] ERROR: Could not extract time from dataset: {e}")
+                self.io_manager.write_error(f"Could not extract time from dataset: {e}")
         
-        print(f"[CellIntegration] ERROR: Could not find timestamp in filename: {filename}")
+        self.io_manager.write_error(f"Could not find timestamp in filename: {filename}")
         return None
 
 class StormIntegrationUtils:
@@ -215,7 +219,7 @@ class StormIntegrationUtils:
         if polygon is not None and polygon.is_valid and not polygon.is_empty:
             return polygon
         
-        print(f"[CellIntegration] WARNING: Cell {cell.get('id')} has invalid geometry, skipping")
+        io_manager.write_warning(f"Cell {cell.get('id')} has invalid geometry, skipping")
         return None
 
     @staticmethod

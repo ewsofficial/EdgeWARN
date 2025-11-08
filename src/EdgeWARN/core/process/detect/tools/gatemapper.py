@@ -5,11 +5,11 @@ from scipy.ndimage import binary_dilation
 from skimage import measure
 
 class GateMapper:
-    def __init__(self, radar_ds, ps_ds, precipflag_ds, refl_threshold=40.0):
+    def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=40.0):
         self.radar_ds = radar_ds
         self.ps_ds = ps_ds
-        self.precipflag_ds = precipflag_ds
         self.refl_threshold = refl_threshold
+        self.io_manager = io_manager
 
     def map_gates_to_polygons(self):
         """
@@ -165,3 +165,4 @@ class GateMapper:
             bboxes[poly_id] = coords
 
         return bboxes
+
