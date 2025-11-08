@@ -53,7 +53,6 @@ def main():
         io_manager.write_error(f"Failed to integrate ProbSevere data: {e}")
     
     # Save data
-    io_manager.write_debug(f"Saving final data to {json_path}")
     handler.write_json(result_cells, json_path)
 
 if __name__ == "__main__":

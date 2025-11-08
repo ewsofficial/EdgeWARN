@@ -27,7 +27,7 @@ lon_limits = tuple(args.lon_limits)
 def pipeline(log_queue, dt):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""
     def log(msg):
-        log_queue.put(f"[{datetime.now(timezone.utc).isoformat()}] {msg}")
+        log_queue.put(f"{msg}")
 
     try:
         log(f"Starting Data Ingestion for timestamp {dt}")
