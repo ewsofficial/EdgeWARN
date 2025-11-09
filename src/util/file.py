@@ -22,6 +22,7 @@ MRMS_COMPOSITE_DIR = BASE_DIR / "CompRefQC"
 MRMS_RHOHV_DIR = BASE_DIR / "RhoHV"
 MRMS_PRECIPTYP_DIR = BASE_DIR / "PrecipFlag"
 STORMCELL_JSON = Path("stormcell_test.json")
+GUI_MANIFEST_JSON = Path("overlay_manifest.json")
 TEMP_DIR = BASE_DIR / "tmp"
 
 # NEW LATEST FILES FUNCTION
