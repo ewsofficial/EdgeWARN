@@ -3,7 +3,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from EdgeWARN.core.ingest.config import base_dir, mrms_modifiers, check_modifiers
 from EdgeWARN.core.ingest.download import FileFinder, FileDownloader
-from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
 from util.io import IOManager
 import util.file as fs
@@ -11,7 +10,6 @@ import util.file as fs
 io_manager = IOManager("[DataIngestion]")
 
 def process_modifier(modifier, outdir, dt, max_time, max_entries):
-    io_manager.write_debug(f"Checking MRMS source: {modifier}")
     
     # Ensure dt has minute precision (ignore seconds)
     dt_minute_precision = dt.replace(second=0, microsecond=0)
@@ -25,13 +23,9 @@ def process_modifier(modifier, outdir, dt, max_time, max_entries):
             io_manager.write_warning(f"No files found for {modifier} at exact minute {dt_minute_precision}")
             return
 
-        io_manager.write_debug(f"Found {len(files_with_timestamps)} candidate files for {modifier} at minute {dt_minute_precision}")
-
         # Download the most recent file that matches our target minute
         downloaded = downloader.download_latest(files_with_timestamps, outdir)
         if downloaded:
-            io_manager.write_debug(f"Downloaded {modifier} file to {downloaded}")
-            io_manager.write_debug(f"Attempting to decompress {downloaded}")
             downloader.decompress_file(downloaded)
         else:
             io_manager.write_error(f"Failed to download {modifier} file")
@@ -96,7 +90,7 @@ if __name__ == "__main__":
             else:
                 print(f"[Scheduler] Not all products have files at {latest_common_minute}. Skipping...")
         else:
-            print(f"[Scheduler] ⏸ Latest common timestamp {latest_common_minute} already processed. Waiting ...")
+            print(f"[Scheduler] Latest common timestamp {latest_common_minute} already processed. Waiting ...")
     else:
         print("[Scheduler] No common timestamp in last hour. Waiting ...")
 
