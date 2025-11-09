@@ -24,7 +24,6 @@ MRMS_COMPOSITE_DIR = DATA_DIR / "CompRefQC"
 MRMS_RHOHV_DIR = DATA_DIR / "RhoHV"
 MRMS_PRECIPTYP_DIR = DATA_DIR / "PrecipFlag"
 STORMCELL_JSON = Path("stormcell_test.json")
-GUI_MANIFEST_JSON = Path("overlay_manifest.json")
 TEMP_DIR = DATA_DIR / "tmp"
 
 # ---------- GUI PATH CONFIG ----------
@@ -43,6 +42,7 @@ GUI_ROTATIONT_DIR = GUI_DIR / "RotationTrack30min"
 GUI_COMPOSITE_DIR = GUI_DIR / "CompRefQC"
 GUI_RHOHV_DIR = GUI_DIR / "RhoHV"
 GUI_PRECIPTYP_DIR = GUI_DIR / "PrecipFlag"
+GUI_MANIFEST_JSON = Path("overlay_manifest.json")
 
 # NEW LATEST FILES FUNCTION
 def latest_files(dir, n):
