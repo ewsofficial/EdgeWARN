@@ -1,4 +1,4 @@
-from EdgeWARN.CTAM.utils import DataHandler, DataLoader
+from EdgeWARN.ctam.utils import DataHandler, DataLoader
 
 class LtngIndiceCalculator:
     def __init__(self, stormcells):

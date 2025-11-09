@@ -45,17 +45,17 @@ class DetectionDataHandler:
 
             # Subset dataset (lazy; data not fully loaded yet)
             dataset = ds.sel(latitude=lat_slice, longitude=lon_slice)
-            self.io_manager.write_debug(f"Subset prepared for lat: {self.lat_grid}, lon: {self.lon_grid}")
+            self.io_manager.write_debug(f"Radar subset prepared for lat: {self.lat_grid}, lon: {self.lon_grid}")
 
             return dataset
 
         except Exception as e:
-            self.io_manager.write_error(f"Failed to load {self.radar_path}: {e}")
+            self.io_manager.write_error(f"Failed to load radar file {self.radar_path}: {e}")
     
     def load_preciptype(self):
         try:
             # Open dataset lazily (do not load full arrays)
-            ds = xr.open_dataset(self.preciptype_path, decode_timedelta=True)
+            ds = xr.open_dataset(self.preciptype_path, engine="cfgrib", decode_timedelta=True)
 
             # Handle descending latitude
             if ds.latitude[0] > ds.latitude[-1]:
@@ -68,12 +68,12 @@ class DetectionDataHandler:
 
             # Subset dataset (lazy; data not fully loaded yet)
             dataset = ds.sel(latitude=lat_slice, longitude=lon_slice)
-            self.io_manager.write_debug(f"Subset prepared for lat: {self.lat_grid}, lon: {self.lon_grid}")
+            self.io_manager.write_debug(f"PrecipType subset prepared for lat: {self.lat_grid}, lon: {self.lon_grid}")
 
             return dataset
 
         except Exception as e:
-            self.io_manager.write_error(f"Failed to load {self.preciptype_path}: {e}")
+            self.io_manager.write_error(f"Failed to load PrecipType file {self.preciptype_path}: {e}")
     
     def load_probsevere(self):
         """
