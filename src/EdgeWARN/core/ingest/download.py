@@ -250,11 +250,7 @@ class FileDownloader:
     
     def decompress_file(self, gz_path: Path) -> Path | None:
         """
-        Decompress a .grib2.gz file.
-        
-        - If the file is inside a timestamp folder, move the .grib2 to the dataset dir 
-        and delete the timestamp folder.
-        - If the file is directly inside the dataset dir, just decompress in place.
+        Decompress a .gz file into its parent directory and delete the original .gz.
         """
         if not gz_path.exists():
             self.io_manager.write_error(f"File does not exist: {gz_path}")
@@ -265,44 +261,20 @@ class FileDownloader:
             return None
 
         try:
-            # Decompress
-            grib_path = gz_path.with_suffix("")  # remove .gz
-            with gzip.open(gz_path, "rb") as f_in, open(grib_path, "wb") as f_out:
+            # Decompressed file path (remove .gz)
+            output_path = gz_path.with_suffix("")
+
+            # Decompress into the same parent directory
+            with gzip.open(gz_path, "rb") as f_in, open(output_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out)
 
-            self.io_manager.write_debug(f"Decompressed: {grib_path}")
+            self.io_manager.write_debug(f"Decompressed to: {output_path}")
 
-            # Determine paths
-            parent_dir = gz_path.parent           # where .gz lived
-            dataset_dir = parent_dir.parent       # one level up
-            
-            # Check if parent_dir is a timestamp directory (contains numbers and dashes)
-            # If it's a named directory like "mrms_preciprate", don't move the file
-            is_timestamp_dir = any(char.isdigit() for char in parent_dir.name) and '-' in parent_dir.name
-            
-            if is_timestamp_dir:
-                # Move decompressed file into dataset dir
-                target_path = dataset_dir / grib_path.name
-                shutil.move(str(grib_path), target_path)
-                self.io_manager.write_debug(f"Moved file to: {target_path}")
-
-                # Delete timestamp folder if empty
-                try:
-                    os.rmdir(parent_dir)
-                    self.io_manager.write_debug(f"Deleted folder: {parent_dir}")
-                except OSError:
-                    self.io_manager.write_error(f"Could not delete {parent_dir} (not empty)")
-            else:
-                # File is already in dataset directory, keep it there
-                target_path = grib_path
-                self.io_manager.write_debug(f"File is already in dataset dir: {target_path}")
-
-            # Delete original .gz
+            # Remove original gz file
             gz_path.unlink(missing_ok=True)
 
-            return target_path
+            return output_path
 
         except Exception as e:
             self.io_manager.write_error(f"Unable to decompress {gz_path}: {e}")
             return None
-    
