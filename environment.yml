@@ -12,3 +12,6 @@ dependencies:
   - scipy
   - shapely
   - xarray
+  - folium
+  - pyqt6
+  - pyqt6-webengine
