@@ -35,9 +35,26 @@
             "description": "Enhanced Echo Top color map",
             "type": "EchoTops",
             "units": "km",
-            "range": [0, 20],
+            "range": [1, 20],
             "thresholds": [
-                {"value": 0, "rgb": [0, 0, 0]}
+                {"value": 1, "rgb": [35, 150, 190]},
+                {"value": 2, "rgb": [26, 26, 117]},
+                {"value": 3, "rgb": [48, 48, 156]},
+                {"value": 4, "rgb": [101, 101, 211]},
+                {"value": 5, "rgb": [93, 251, 93]},
+                {"value": 6, "rgb": [63, 198, 63]},
+                {"value": 7, "rgb": [54, 155, 54]},
+                {"value": 8, "rgb": [16, 99, 16]},
+                {"value": 9, "rgb": [255, 255, 138]},
+                {"value": 10, "rgb": [255, 176, 48]},
+                {"value": 11, "rgb": [250, 0, 0]},
+                {"value": 12, "rgb": [189, 0, 0]},
+                {"value": 13, "rgb": [125, 0, 0]},
+                {"value": 14, "rgb": [250, 187, 252]},
+                {"value": 15, "rgb": [163, 86, 163]},
+                {"value": 16, "rgb": [255, 255, 255]},
+                {"value": 17, "rgb": [124, 124, 124]},
+                {"value": 18, "rgb": [49, 49, 49]}
             ]
         }
     ]
