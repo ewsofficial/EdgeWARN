@@ -29,6 +29,16 @@
                 {"value": 80, "rgb": [124, 124, 124]},
                 {"value": 85, "rgb": [49, 49, 49]}
             ]
+        },
+        {
+            "name": "EnhancedEchoTop",
+            "description": "Enhanced Echo Top color map",
+            "type": "EchoTops",
+            "units": "km",
+            "range": [0, 20],
+            "thresholds": [
+                {"value": 0, "rgb": [0, 0, 0]}
+            ]
         }
     ]
 }]

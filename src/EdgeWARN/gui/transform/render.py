@@ -2,12 +2,12 @@ from pathlib import Path
 import json
 import numpy as np
 from PIL import Image
-from EdgeWARN.gui.transform.tools import TransformUtils
+from .tools import TransformUtils
 import util.file as fs
 from util.io import IOManager
 from datetime import datetime
 
-io_manager = IOManager("[GUIBackend]")
+io_manager = IOManager("[Transform]")
 
 class GUILayerRenderer:
     def __init__(self, filepath: Path, outdir: Path, colormap_key, file_name):
@@ -82,12 +82,3 @@ class GUILayerRenderer:
         img.save(png_file, optimize=True)
 
         io_manager.write_debug(f"Saved {self.file_name} PNG file to {png_file}")
-
-
-
-
-
-
-
-        
-        

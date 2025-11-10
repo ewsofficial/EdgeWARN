@@ -5,7 +5,7 @@ from util.io import IOManager
 from pathlib import Path
 import re
 
-io_manager = IOManager("[GUI]")
+io_manager = IOManager("[Transform]")
 
 class TransformUtils:
     @staticmethod
@@ -58,7 +58,6 @@ class TransformUtils:
         Finds timestamps in a file based on predetermined patterns
         """
         filename = Path(filepath).name
-        io_manager = IOManager("[CellDetection]")
         io_manager.write_debug(f"Extracting timestamp from filename: {filename}")
         
         patterns = [
@@ -96,6 +95,3 @@ class TransformUtils:
         io_manager.write_debug(f"Using fallback timestamp: {fallback}")
         return fallback
 
-class GUIManifestSaver:
-    def __init__():
-        pass

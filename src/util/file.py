@@ -42,7 +42,6 @@ GUI_ROTATIONT_DIR = GUI_DIR / "RotationTrack30min"
 GUI_COMPOSITE_DIR = GUI_DIR / "CompRefQC"
 GUI_RHOHV_DIR = GUI_DIR / "RhoHV"
 GUI_PRECIPTYP_DIR = GUI_DIR / "PrecipFlag"
-GUI_MANIFEST_JSON = Path("overlay_manifest.json")
 
 # NEW LATEST FILES FUNCTION
 def latest_files(dir, n):
