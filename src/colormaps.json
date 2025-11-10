@@ -1,1 +1,28 @@
-[]
+[{
+    "source": "Edgemont Weather Service",
+    "product": "EdgeWARN GUI Colormaps",
+    "version": "2025.11.9",
+    "colormaps": [
+        {
+            "name": "NWS_Reflectivity",
+            "description": "Standard NWS dBZ reflectivity colormap",
+            "type": "reflectivity",
+            "units": "dBZ",
+            "alpha_threshold": "N/A",
+            "thresholds": [
+                {"dbz": 5, "rgb": [0, 252, 0]},
+                {"dbz": 10, "rgb": [0, 188, 0]},
+                {"dbz": 20, "rgb": [0, 124, 0]},
+                {"dbz": 30, "rgb": [252, 252, 0]},
+                {"dbz": 40, "rgb": [252, 188, 0]},
+                {"dbz": 50, "rgb": [252, 124, 0]},
+                {"dbz": 55, "rgb": [252, 0, 0]},
+                {"dbz": 60, "rgb": [188, 0, 0]},
+                {"dbz": 65, "rgb": [124, 0, 0]},
+                {"dbz": 70, "rgb": [188, 0, 188]},
+                {"dbz": 75, "rgb": [124, 0, 124]},
+                {"dbz": 80, "rgb": [0, 0, 252]}
+            ]
+        }
+    ]
+}]
