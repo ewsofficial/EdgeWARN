@@ -62,6 +62,7 @@ class TransformUtils:
         io_manager.write_debug(f"Extracting timestamp from filename: {filename}")
         
         patterns = [
+            r'MRMS_MergedReflectivityQC_(\d{8})-(\d{6})',
             r'(\d{8})-(\d{6})_renamed',
             r'(\d{8}-\d{6})',
             r'.*(\d{8})-(\d{6}).*',
@@ -95,6 +96,6 @@ class TransformUtils:
         io_manager.write_debug(f"Using fallback timestamp: {fallback}")
         return fallback
 
-class TransformManifestSaver:
+class GUIManifestSaver:
     def __init__():
         pass
