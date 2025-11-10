@@ -9,7 +9,6 @@
             "type": "reflectivity",
             "units": "dBZ",
             "range": [0, 85],
-            "alpha_threshold": "N/A",
             "thresholds": [
                 {"value": 0, "rgb": [35, 150, 190]},
                 {"value": 5, "rgb": [26, 26, 117]},
