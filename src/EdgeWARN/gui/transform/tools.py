@@ -72,7 +72,6 @@ class TransformUtils:
             match = re.search(pattern, filename)
             if match:
                 groups = match.groups()
-                io_manager.write_debug(f"Pattern {pattern_idx+1} matched: {groups}")
                 
                 if len(groups) == 2:
                     date_str, time_str = groups
@@ -81,7 +80,6 @@ class TransformUtils:
                     date_str, time_str = combined[:8], combined[9:15]
                 else:
                     # fallback to next pattern
-                    io_manager.write_debug(f"Unexpected group format: {groups}")
                     continue
 
                 try:
