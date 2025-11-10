@@ -82,3 +82,5 @@ class GUILayerRenderer:
         img.save(png_file, optimize=True)
 
         io_manager.write_debug(f"Saved {self.file_name} PNG file to {png_file}")
+
+        return png_file

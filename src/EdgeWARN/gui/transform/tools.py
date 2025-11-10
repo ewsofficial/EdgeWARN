@@ -95,3 +95,87 @@ class TransformUtils:
         io_manager.write_debug(f"Using fallback timestamp: {fallback}")
         return fallback
 
+
+class OverlayManifestUtils:
+    """
+    Utility class to manage overlay manifest information for render layers.
+    Stores details including name, colormap, latest image path, and fixed bounds.
+    """
+
+    def __init__(self):
+        self.layers = []
+        # Fixed bounds: 20 N to 55 N and -130 W to -60 W
+        self.bounds = {
+            'north': 55,
+            'south': 20,
+            'west': 230,
+            'east': 300
+        }
+
+    def validate_bounds(self, bounds):
+        """
+        Validates that the provided bounds dict matches the format of self.bounds.
+
+        Args:
+            bounds (dict): Bounds dict to validate
+
+        Raises:
+            ValueError: If bounds is not a dict, missing keys, or values are not numeric
+        """
+        if not isinstance(bounds, dict):
+            raise ValueError("Bounds must be a dictionary")
+        required_keys = set(self.bounds.keys())
+        if set(bounds.keys()) != required_keys:
+            raise ValueError(f"Bounds must have keys: {required_keys}")
+        for key, value in bounds.items():
+            if not isinstance(value, (int, float)):
+                raise ValueError(f"Bounds value for '{key}' must be numeric")
+
+    def add_layer(self, name: str, colormap: str, latest_image: str, bounds=None):
+        """
+        Adds a new layer to the manifest.
+
+        Args:
+            name (str): Name of the layer
+            colormap (str): Colormap key used for the layer
+            latest_image (str): Path to the latest image file for the layer
+            bounds (dict, optional): Custom bounds dict. If None, uses self.bounds
+        """
+        try:
+            if bounds is not None:
+                self.validate_bounds(bounds)
+        except Exception as e:
+            io_manager.write_warning(f"Error in validating bounds - {e}; defaulting to default bounds")
+        layer = {
+            'name': name,
+            'colormap': colormap,
+            'latest_image': latest_image,
+            'bounds': self.bounds if bounds is None else bounds
+        }
+        self.layers.append(layer)
+
+    def get_layers(self):
+        """
+        Returns the list of all stored layers.
+
+        Returns:
+            list: List of layer dictionaries
+        """
+        return self.layers
+
+    def clear_layers(self):
+        """
+        Clears all stored layers.
+        """
+        self.layers = []
+
+    def save_to_json(self, filepath: str):
+        """
+        Saves the layers to a JSON file.
+
+        Args:
+            filepath (str): Path to the JSON file to save
+        """
+        with open(filepath, 'w') as f:
+            json.dump(self.layers, f, indent=4)
+        io_manager.write_debug(f"Saved overlay manifest to {filepath}")
