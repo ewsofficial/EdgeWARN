@@ -25,7 +25,7 @@ class TransformUtils:
         try:
             if str(ds_path).endswith(".grib2") or str(ds_path).endswith(".grib"):
                 if lat_limits or lon_limits:
-                    IOManager.write_warning("lat/lon limits not supported with GRIB files, skipping ... ")
+                    io_manager.write_warning("lat/lon limits not supported with GRIB files, skipping ... ")
                 
                 ds = xr.open_dataset(ds_path, decode_timedelta=True)
                 io_manager.write_debug(f"Successfully loaded dataset: {ds_path}")
@@ -49,7 +49,7 @@ class TransformUtils:
                 return ds
         
         except Exception as e:
-            IOManager.write_error(f"Failed to load dataset - {e}")
+            io_manager.write_error(f"Failed to load dataset - {e}")
             return
     
     @staticmethod
@@ -94,3 +94,7 @@ class TransformUtils:
         fallback = datetime.utcnow().isoformat()
         io_manager.write_debug(f"Using fallback timestamp: {fallback}")
         return fallback
+
+class TransformManifestSaver:
+    def __init__():
+        pass
