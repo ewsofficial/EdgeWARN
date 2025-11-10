@@ -131,7 +131,7 @@ class OverlayManifestUtils:
             if not isinstance(value, (int, float)):
                 raise ValueError(f"Bounds value for '{key}' must be numeric")
 
-    def add_layer(self, name: str, colormap: str, latest_image: str, bounds=None):
+    def add_layer(self, name: str, colormap: str, latest_image: str, timestamp: str, bounds=None):
         """
         Adds a new layer to the manifest.
 
@@ -139,6 +139,7 @@ class OverlayManifestUtils:
             name (str): Name of the layer
             colormap (str): Colormap key used for the layer
             latest_image (str): Path to the latest image file for the layer
+            timestamp (str): Timestamp of the latest file
             bounds (dict, optional): Custom bounds dict. If None, uses self.bounds
         """
         try:
@@ -150,6 +151,7 @@ class OverlayManifestUtils:
             'name': name,
             'colormap': colormap,
             'latest_image': latest_image,
+            'timestamp': timestamp,
             'bounds': self.bounds if bounds is None else bounds
         }
         self.layers.append(layer)

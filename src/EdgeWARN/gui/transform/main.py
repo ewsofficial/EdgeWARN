@@ -11,6 +11,6 @@ if __name__ == "__main__":
         filepath = entry.get('filepath')
         outdir = entry.get('outdir')
         renderer = render.GUILayerRenderer(filepath, outdir, colormap_key, name)
-        png_file = renderer.convert_to_png()
-        manifest.add_layer(name, colormap_key, str(png_file))
+        png_file, timestamp = renderer.convert_to_png()
+        manifest.add_layer(name, colormap_key, str(png_file), timestamp)
     manifest.save_to_json(fs.GUI_MANIFEST_JSON)
