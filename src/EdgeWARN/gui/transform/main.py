@@ -13,4 +13,4 @@ if __name__ == "__main__":
         renderer = render.GUILayerRenderer(filepath, outdir, colormap_key, name)
         png_file = renderer.convert_to_png()
         manifest.add_layer(name, colormap_key, str(png_file))
-    manifest.save_to_json("overlay_manifest.json")
+    manifest.save_to_json(fs.GUI_MANIFEST_JSON)

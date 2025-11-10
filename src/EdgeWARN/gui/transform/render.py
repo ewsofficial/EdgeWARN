@@ -29,7 +29,7 @@ class GUILayerRenderer:
             thresholds (np.ndarray): array of dBZ or value thresholds
             colors (np.ndarray): array of RGB colors corresponding to thresholds
         """
-        with open("colormaps.json", 'r') as f:
+        with open(fs.GUI_COLORMAP_JSON, 'r') as f:
             cmaps_json = json.load(f)
 
         # Iterate through all colormaps to find the matching key
