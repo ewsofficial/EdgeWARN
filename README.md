@@ -27,16 +27,21 @@ timely, and actionable warnings.
 3. Navigate to the src directory
 4. Run `python run.py --lat_limits lat_min lat_max --lon_limits lon_min lon_max`
 
-- lat_min, lat_max - latitude bounds
-- lon_min, lon_max - longitude bounds (0-360 format)
+- lat_min, lat_max = latitude bounds (defaults are ``(36, 46)``)
+- lon_min, lon_max = longitude bounds (defaults are ``(-83, -73)``)
 
 <h2 align="center">Build Info</h2>
 
 ## Version History for 0.5.x-alpha
 
-### 0.5.1-alpha (Current)
+### 0.5.1-alpha
 - Flattened ProbSevere keys to be top-level in storm history entries
 - Added hail core detection. This is saved under `hail_core` in each cell ID. Hail core is `None` if no valid points exist.
+
+### 0.5.2-alpha
+- Removed redundant debug prints in `EdgeWARN.core.ingest`
+- Simplified `FileDownloader.decompress_file()` to be more concise
+- lat and lon limits will now use default values if none are specified (`lat = (36, 46)` and `lon = (-83, 73)`)
 
 <h2 align="center">Credits</h2>
 
