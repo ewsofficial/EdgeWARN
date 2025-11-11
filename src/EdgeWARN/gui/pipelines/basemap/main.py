@@ -10,7 +10,7 @@ from .map_utils import MapUtils
 from .output_utils import OutputUtils
 
 def main():
-    io_manager = IOManager("BASEMAP")
+    io_manager = IOManager("[BASEMAP]")
     data_loader = DataLoader(io_manager)
     stormcells = data_loader.load_stormcells()
     if stormcells is None:
