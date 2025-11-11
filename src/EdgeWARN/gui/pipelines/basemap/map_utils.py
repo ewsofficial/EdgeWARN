@@ -4,7 +4,7 @@ from util.io import IOManager
 
 class MapUtils:
     def __init__(self, io_manager=None):
-        self.io_manager = io_manager or IOManager("MapUtils")
+        self.io_manager = io_manager or IOManager("[MapUtils]")
 
     def create_map(self):
         return folium.Map(location=[39.5, -98.35], zoom_start=5, no_cdn=True)
