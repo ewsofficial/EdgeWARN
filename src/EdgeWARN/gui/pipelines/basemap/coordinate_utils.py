@@ -1,6 +1,8 @@
+from util.io import IOManager
+
 class CoordinateUtils:
-    def __init__(self):
-        pass
+    def __init__(self, io_manager=None):
+        self.io_manager = io_manager or IOManager("CoordinateUtils")
 
     @staticmethod
     def convert_lon(lon):
