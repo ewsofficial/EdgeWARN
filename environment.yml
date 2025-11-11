@@ -1,5 +1,6 @@
 name: EdgeWARN-dev
 channels:
+  - anaconda
   - conda-forge
   - defaults
 dependencies:
@@ -13,5 +14,3 @@ dependencies:
   - shapely
   - xarray
   - folium
-  - pyqt6
-  - pyqt6-webengine
