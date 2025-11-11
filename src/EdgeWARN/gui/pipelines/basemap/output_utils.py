@@ -2,6 +2,9 @@ import webbrowser
 from pathlib import Path
 
 class OutputUtils:
+    def __init__(self):
+        pass
+
     def save_and_open_map(self, m):
         output_path = Path(__file__).parent / 'basemap.html'
         m.save(str(output_path))
