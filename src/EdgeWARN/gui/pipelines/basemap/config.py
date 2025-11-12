@@ -30,7 +30,11 @@ TOOLTIP_CONTENT = [
             {"name": "EchoTop50", "label": "Echo Top 50 dBZ", "format": "number", "unit": "km"},
             {"name": "VIL", "label": "VIL", "format": "number", "unit": "kg/m²"},
             {"name": "VILDensity", "label": "VIL Density", "format": "number"},
-            {"name": "PrecipRate", "label": "Precip Rate", "format": "number", "unit": "mm/hr"}
+            {"name": "PrecipRate", "label": "Precip Rate", "format": "number", "unit": "mm/hr"},
+            {"name": "ProbSevere", "label": "ProbSevere", "format": "number",  "unit": "%"},
+            {"name": "ProbTor", "label": "ProbTornado", "format": "number",  "unit": "%"},
+            {"name": "ProbHail", "label": "ProbHail", "format": "number",  "unit": "%"},
+            {"name": "ProbWind", "label": "ProbWind", "format": "number",  "unit": "%"},
         ]
     },
     {
