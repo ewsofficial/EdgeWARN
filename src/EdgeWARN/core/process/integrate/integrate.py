@@ -133,6 +133,10 @@ class StormCellIntegrator:
 
         # Variable mappings (key: target name, value: source property)
         field_map = {
+            'ProbSevere': 'ProbSevere',
+            'ProbWind': 'ProbWind',
+            'ProbHail': 'ProbHail',
+            'ProbTor': 'ProbTor',
             'MLCAPE': 'MLCAPE',
             'MUCAPE': 'MUCAPE',
             'MLCIN': 'MLCIN',
