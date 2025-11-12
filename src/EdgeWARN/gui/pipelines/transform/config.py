@@ -18,5 +18,11 @@ file_list = [
         "colormap_key": "NWS_Reflectivity",
         "filepath": MRMS_RALA_DIR,
         "outdir": GUI_RALA_DIR
+    },
+    {
+        "name": "MRMS_PrecipRate",
+        "colormap_key": "PrecipRate",
+        "filepath": MRMS_PRECIPRATE_DIR,
+        "outdir": GUI_PRECIPRATE_DIR
     }
 ]
