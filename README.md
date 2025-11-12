@@ -42,6 +42,7 @@ timely, and actionable warnings.
 - Removed redundant debug prints in `EdgeWARN.core.ingest`
 - Simplified `FileDownloader.decompress_file()` to be more concise
 - lat and lon limits will now use default values if none are specified (`lat = (36, 46)` and `lon = (-83, 73)`)
+- Added missing keys in ProbSevere data (`ProbTor`, `ProbHail`, `ProbWind`, `ProbSevere`)
 
 <h2 align="center">Credits</h2>
 
