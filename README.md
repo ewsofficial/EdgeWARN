@@ -38,7 +38,7 @@ timely, and actionable warnings.
 - Flattened ProbSevere keys to be top-level in storm history entries
 - Added hail core detection. This is saved under `hail_core` in each cell ID. Hail core is `None` if no valid points exist.
 
-### 0.5.2-alpha
+### 0.5.2-alpha (Current)
 - Removed redundant debug prints in `EdgeWARN.core.ingest`
 - Simplified `FileDownloader.decompress_file()` to be more concise
 - lat and lon limits will now use default values if none are specified (`lat = (36, 46)` and `lon = (-83, 73)`)
