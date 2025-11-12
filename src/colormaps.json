@@ -1,0 +1,84 @@
+[{
+    "source": "Edgemont Weather Service",
+    "product": "EdgeWARN GUI Colormaps",
+    "version": "2025.11.9",
+    "colormaps": [
+        {
+            "name": "NWS_Reflectivity",
+            "description": "Standard NWS dBZ reflectivity colormap",
+            "type": "reflectivity",
+            "units": "dBZ",
+            "range": [0, 85],
+            "thresholds": [
+                {"value": 0, "rgb": [35, 150, 190]},
+                {"value": 5, "rgb": [26, 26, 117]},
+                {"value": 10, "rgb": [48, 48, 156]},
+                {"value": 15, "rgb": [101, 101, 211]},
+                {"value": 20, "rgb": [93, 251, 93]},
+                {"value": 25, "rgb": [63, 198, 63]},
+                {"value": 30, "rgb": [54, 155, 54]},
+                {"value": 35, "rgb": [16, 99, 16]},
+                {"value": 40, "rgb": [255, 255, 138]},
+                {"value": 45, "rgb": [255, 176, 48]},
+                {"value": 50, "rgb": [250, 0, 0]},
+                {"value": 55, "rgb": [189, 0, 0]},
+                {"value": 60, "rgb": [125, 0, 0]},
+                {"value": 65, "rgb": [250, 187, 252]},
+                {"value": 70, "rgb": [163, 86, 163]},
+                {"value": 75, "rgb": [255, 255, 255]},
+                {"value": 80, "rgb": [124, 124, 124]},
+                {"value": 85, "rgb": [49, 49, 49]}
+            ]
+        },
+        {
+            "name": "EnhancedEchoTop",
+            "description": "Enhanced Echo Top color map",
+            "type": "EchoTops",
+            "units": "km",
+            "range": [1, 20],
+            "thresholds": [
+                {"value": 1, "rgb": [35, 150, 190]},
+                {"value": 2, "rgb": [26, 26, 117]},
+                {"value": 3, "rgb": [48, 48, 156]},
+                {"value": 4, "rgb": [101, 101, 211]},
+                {"value": 5, "rgb": [93, 251, 93]},
+                {"value": 6, "rgb": [63, 198, 63]},
+                {"value": 7, "rgb": [54, 155, 54]},
+                {"value": 8, "rgb": [16, 99, 16]},
+                {"value": 9, "rgb": [255, 255, 138]},
+                {"value": 10, "rgb": [255, 176, 48]},
+                {"value": 11, "rgb": [250, 0, 0]},
+                {"value": 12, "rgb": [189, 0, 0]},
+                {"value": 13, "rgb": [125, 0, 0]},
+                {"value": 14, "rgb": [250, 187, 252]},
+                {"value": 15, "rgb": [163, 86, 163]},
+                {"value": 16, "rgb": [255, 255, 255]},
+                {"value": 17, "rgb": [124, 124, 124]},
+                {"value": 18, "rgb": [49, 49, 49]}
+            ]
+        },
+        {
+            "name": "PrecipRate",
+            "description": "PrecipRate color map",
+            "type": "PrecipitationRate",
+            "units": "mm",
+            "range": [0, 421],
+            "thresholds": [
+                {"value": 0, "rgb": [35, 150, 190]},
+                {"value": 0.07, "rgb": [26, 26, 117]},
+                {"value": 0.15, "rgb": [48, 48, 156]},
+                {"value": 0.3, "rgb": [101, 101, 211]},
+                {"value": 0.6, "rgb": [93, 251, 93]},
+                {"value": 1.3, "rgb": [63, 198, 63]},
+                {"value": 2.7, "rgb": [54, 155, 54]},
+                {"value": 5.6, "rgb": [16, 99, 16]},
+                {"value": 11.53, "rgb": [255, 255, 138]},
+                {"value": 23.7, "rgb": [255, 176, 48]},
+                {"value": 48.6, "rgb": [250, 0, 0]},
+                {"value": 100, "rgb": [189, 0, 0]},
+                {"value": 205, "rgb": [125, 0, 0]},
+                {"value": 421, "rgb": [250, 187, 252]}
+            ]
+        }
+    ]
+}]

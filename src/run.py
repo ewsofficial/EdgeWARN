@@ -18,11 +18,12 @@ sys.stderr = TimestampedOutput(sys.stderr)
 io_manager = IOManager("[Main]")
 args = io_manager.get_args()
 
-print(f"Running EdgeWARN v0.4.3")
-print(f"Latitude limits: {tuple(args.lat_limits)}, Longitude limits: {tuple(args.lon_limits)}")
-
 lat_limits = tuple(args.lat_limits)
 lon_limits = tuple(args.lon_limits)
+
+if __name__ == '__main__':
+    print(f"Running EdgeWARN v0.5.2-alpha")
+    print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
 
 def pipeline(log_queue, dt):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""
