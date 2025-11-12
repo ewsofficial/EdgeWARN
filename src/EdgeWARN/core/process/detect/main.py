@@ -23,8 +23,10 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         try:
             with open(json_output, 'r') as f:
                 entries_old = js.load(f)
+            if not isinstance(entries_old, list) or not entries_old:
+                raise ValueError("Invalid or empty JSON data")
             io_manager.write_debug(f"Loaded {len(entries_old)} cells from {json_output}")
-        except (js.JSONDecodeError, KeyError, IndexError) as e:
+        except (js.JSONDecodeError, KeyError, IndexError, ValueError) as e:
             io_manager.write_error(f"Failed to load existing data: {e}. Redetecting from old scan ...")
             entries_old = detect_cells(radar_old, ps_old, pt_old, io_manager, lat_min, lat_max, lon_min, lon_max)
             io_manager.write_debug(f"Detected {len(entries_old)} cells in old scan.")
