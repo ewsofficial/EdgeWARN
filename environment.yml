@@ -5,10 +5,9 @@ channels:
   - defaults
 dependencies:
   - python=3.13
+  - boto3
   - cfgrib
-  - beautifulsoup4
   - numpy
-  - requests
   - scikit-image
   - scipy
   - shapely
