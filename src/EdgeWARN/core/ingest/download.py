@@ -1,7 +1,6 @@
 import boto3
 import re
-from datetime import datetime, timedelta
-import pytz
+from datetime import datetime, timedelta, timezone
 
 class FileFinder:
     def __init__(self, dt, bucket, max_time, max_entries, io_manager):
@@ -32,16 +31,12 @@ class FileFinder:
         match = re.search(pattern, filepath)
         if not match:
             # Return current time in UTC as default
-            return datetime.now(pytz.UTC)
+            return datetime.now(timezone.utc).replace(second=0, microsecond=0)
         
         year, month, day, hour, minute, second = map(int, match.groups())
         
-        # Create datetime object
-        dt = datetime(year, month, day, hour, minute, second)
-        
-        # Make it timezone-aware (UTC)
-        tz = pytz.UTC
-        dt_aware = dt.replace(tzinfo=tz)
+        # Create timezone-aware datetime object directly (UTC)
+        dt_aware = datetime(year, month, day, hour, minute, 0, 0, tzinfo=timezone.utc)
         
         return dt_aware
     
@@ -60,7 +55,7 @@ class FileFinder:
         """
         try:
             # Calculate time cutoff (max_time seconds ago from current time)
-            current_time = datetime.now(pytz.UTC)
+            current_time = datetime.now(timezone.utc)
             if self.max_time is not None:
                 time_cutoff = current_time - timedelta(seconds=self.max_time)
             else:
@@ -106,4 +101,8 @@ class FileFinder:
             # Log error and return empty list
             print(f"Error looking up files: {e}")
             return []
-
+        
+if __name__ == "__main__":
+    # Test staging area (Currently for timestamp verification)
+    filename = rf"C:\EdgeWARN_input\data\CompRefQC\MRMS_MergedReflectivityQC_00.50_20251112-135644.grib2.gz"
+    ts = FileFinder.extract_timestamp(filename)
