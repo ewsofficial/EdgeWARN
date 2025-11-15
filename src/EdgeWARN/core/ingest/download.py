@@ -99,8 +99,17 @@ class FileFinder:
             
         except Exception as e:
             # Log error and return empty list
-            print(f"Error looking up files: {e}")
+            self.io_manager.write_error(f"Error looking up files: {e}")
             return []
+
+class FileDownloader:
+    def __init__(self, dt, io_manager):
+        self.dt = dt
+        self.io_manager = io_manager # IOManager class from util.io
+        self.client = boto3.client('s3')
+    
+    def download_latest(self, file_list):
+        pass
         
 if __name__ == "__main__":
     # Test staging area (Currently for timestamp verification)
