@@ -1,8 +1,10 @@
-from shapely.geometry import Point, shape
+from shapely.geometry import shape, mapping, Polygon, MultiPolygon
 import numpy as np
 import xarray as xr
 from scipy.ndimage import binary_dilation
 from skimage import measure
+import rasterio.features
+from affine import Affine
 
 class GateMapper:
     def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=40.0):
@@ -13,46 +15,49 @@ class GateMapper:
 
     def map_gates_to_polygons(self):
         """
-        Map radar gates to ProbSevere polygons, returning an xarray.Dataset
-        with each gate storing the polygon ID covering it (0 if none).
-        Longitudes are converted to 0-360 to match radar grid.
+        Map radar gates to ProbSevere polygons using rasterization (fastest approach),
+        handling negative longitudes and avoiding Shapely deprecation warnings.
         """
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
 
-        # Create meshgrid for radar gates
-        lat_grid, lon_grid = np.meshgrid(lats, lons, indexing='ij')
-        polygon_grid = np.zeros_like(lat_grid, dtype=int)
-
-        # Convert ProbSevere longitudes to 0-360
-        for feature in self.ps_ds.get('features', []):
-            for ring in feature['geometry']['coordinates']:
-                for i, (lon, lat) in enumerate(ring):
-                    if lon < 0:
-                        ring[i] = (lon + 360, lat)
-
-        # Loop over each polygon in ProbSevere data
+        raster_polygons = []
         for feature in self.ps_ds.get('features', []):
             poly_id = int(feature['properties'].get('ID', 0))
-            polygon = shape(feature['geometry'])
+            geom = shape(feature['geometry'])
 
-            # Assign polygon ID to all gates inside this polygon
-            for i in range(lat_grid.shape[0]):
-                for j in range(lat_grid.shape[1]):
-                    if polygon_grid[i, j] == 0:  # only assign if empty
-                        point = Point(lon_grid[i, j], lat_grid[i, j])
-                        if polygon.contains(point):
-                            polygon_grid[i, j] = poly_id
+            # Convert negative longitudes to 0-360
+            if geom.geom_type == 'Polygon':
+                coords = [(lon + 360 if lon < 0 else lon, lat) for lon, lat in geom.exterior.coords]
+                geom = Polygon(coords)
 
-        # Return as xarray.Dataset
+            elif geom.geom_type == 'MultiPolygon':
+                new_polys = []
+                for p in geom.geoms:
+                    coords = [(lon + 360 if lon < 0 else lon, lat) for lon, lat in p.exterior.coords]
+                    new_polys.append(Polygon(coords))
+                geom = MultiPolygon(new_polys)
+
+            raster_polygons.append((mapping(geom), poly_id))
+
+        # Define grid transform
+        lat_res = lats[1] - lats[0]
+        lon_res = lons[1] - lons[0]
+        transform = Affine.translation(lons[0] - lon_res / 2, lats[0] - lat_res / 2) * Affine.scale(lon_res, lat_res)
+
+        # Rasterize polygons
+        polygon_grid = rasterio.features.rasterize(
+            raster_polygons,
+            out_shape=(len(lats), len(lons)),
+            transform=transform,
+            fill=0,
+            all_touched=True,  # or False for strict "contains" behavior
+            dtype=np.int32
+        )
+
         return xr.Dataset(
-            {
-                'PolygonID': (('latitude', 'longitude'), polygon_grid)
-            },
-            coords={
-                'latitude': lats,
-                'longitude': lons
-            }
+            {'PolygonID': (('latitude', 'longitude'), polygon_grid)},
+            coords={'latitude': lats, 'longitude': lons}
         )
 
     def expand_gates(self, mapped_ds, max_iterations=100):
