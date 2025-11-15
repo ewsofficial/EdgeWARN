@@ -1,4 +1,6 @@
 import boto3
+from botocore import UNSIGNED
+from botocore.client import Config
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -9,7 +11,10 @@ class FileFinder:
         self.max_time = max_time  # Time delta (seconds) to go back from current time
         self.max_entries = max_entries  # Maximum number of entries to return
         self.io_manager = io_manager # Use the IOManager class in util.io
-        self.client = boto3.client('s3')
+        self.client = boto3.client(
+            's3',
+            config=Config(signature_version=UNSIGNED)
+        )
     
     @staticmethod
     def extract_timestamp(filepath):
