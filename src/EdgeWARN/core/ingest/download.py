@@ -3,6 +3,8 @@ from botocore import UNSIGNED
 from botocore.client import Config
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import os
 
 class FileFinder:
     def __init__(self, dt, bucket, max_time, max_entries, io_manager):
@@ -108,14 +110,58 @@ class FileFinder:
             return []
 
 class FileDownloader:
-    def __init__(self, dt, io_manager):
+    def __init__(self, dt, bucket, io_manager):
         self.dt = dt
+        self.bucket = bucket
         self.io_manager = io_manager # IOManager class from util.io
-        self.client = boto3.client('s3')
+        self.client = boto3.client(
+            's3',
+            config=Config(signature_version=UNSIGNED)
+        )
     
-    def download_latest(self, file_list):
-        pass
+    def download_latest(self, file_list, outdir: Path):
+        """
+        Download the latest file from the file list to the specified output directory.
         
+        Args:
+            file_list (list): List of tuples (s3_path, datetime_obj) from FileFinder.lookup_files()
+            outdir (Path): Output directory path where the file will be downloaded
+            
+        Returns:
+            str: Path to the downloaded file, or None if download failed
+        """
+        if not file_list:
+            self.io_manager.write_warning("No files to download from empty file_list")
+            return None
+        
+        try:
+            # Get the latest file (first item in sorted list)
+            latest_file_path, latest_timestamp = file_list[0]
+            
+            # Create output directory if it doesn't exist
+            outdir = Path(outdir)
+            outdir.mkdir(parents=True, exist_ok=True)
+            
+            # Extract filename from S3 path
+            filename = os.path.basename(latest_file_path)
+            local_path = outdir / filename
+            
+            # Log the download attempt
+            self.io_manager.write_debug(f"Downloading latest file: {latest_file_path}")
+            
+            # Use the bucket from constructor and the file path as S3 key
+            s3_key = latest_file_path
+            
+            # Download the file from S3
+            self.client.download_file(self.bucket, s3_key, str(local_path))
+            
+            self.io_manager.write_debug(f"Successfully downloaded: {filename}")
+            return str(local_path)
+            
+        except Exception as e:
+            self.io_manager.write_error(f"Error downloading latest file from {self.bucket}: {e}")
+            return None
+
 if __name__ == "__main__":
     # Test staging area (Currently for timestamp verification)
     filename = rf"C:\EdgeWARN_input\data\CompRefQC\MRMS_MergedReflectivityQC_00.50_20251112-135644.grib2.gz"
