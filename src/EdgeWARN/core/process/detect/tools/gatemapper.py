@@ -1,7 +1,7 @@
 from shapely.geometry import shape, mapping, Polygon, MultiPolygon
 import numpy as np
 import xarray as xr
-from scipy.ndimage import binary_dilation
+from scipy.ndimage import distance_transform_edt
 from skimage import measure
 import rasterio.features
 from affine import Affine
@@ -39,12 +39,12 @@ class GateMapper:
                 geom = MultiPolygon(new_polys)
 
             raster_polygons.append((mapping(geom), poly_id))
-
+        self.io_manager.write_debug("Finished adding polygons to raster list")
         # Define grid transform
         lat_res = lats[1] - lats[0]
         lon_res = lons[1] - lons[0]
         transform = Affine.translation(lons[0] - lon_res / 2, lats[0] - lat_res / 2) * Affine.scale(lon_res, lat_res)
-
+        self.io_manager.write_debug("Finished grid transformations")
         # Rasterize polygons
         polygon_grid = rasterio.features.rasterize(
             raster_polygons,
@@ -54,72 +54,45 @@ class GateMapper:
             all_touched=True,  # or False for strict "contains" behavior
             dtype=np.int32
         )
-
+        self.io_manager.write_debug("Finished polygon rasterization")
         return xr.Dataset(
             {'PolygonID': (('latitude', 'longitude'), polygon_grid)},
             coords={'latitude': lats, 'longitude': lons}
         )
 
-    def expand_gates(self, mapped_ds, max_iterations=100):
+    def expand_gates(self, mapped_ds):
         """
-        Vectorized expansion of ProbSevere polygons, preserving the rule that
-        once a gate is assigned to a polygon, it cannot be claimed by another.
-
-        Each iteration expands all polygons simultaneously into neighboring
-        reflectivity-qualified gates (4-connected neighborhood).
-
-        Parameters:
-            mapped_ds (xarray.Dataset): Dataset from map_gates_to_polygons()
-            max_iterations (int): Maximum iterations (safety limit)
-
-        Returns:
-            xarray.Dataset: Expanded PolygonID dataset
+        Fully vectorized expansion using distance transform.
+        Cells are assigned to the nearest polygon.
+        If multiple polygons are equidistant, assign to 0 (midline).
         """
-        if self.refl_threshold is None:
-            raise ValueError("self.refl_threshold must be set to expand polygons.")
-
-        # Base data
         polygon_grid = mapped_ds['PolygonID'].values.copy()
-        refl_grid = self.radar_ds['unknown'].values  # <-- replace 'unknown' with actual variable name
+        refl_grid = self.radar_ds['unknown'].values  # replace with actual variable
         mask = refl_grid >= self.refl_threshold
 
-        # 4-connected structure for expansion
-        structure = np.array([[0,1,0],
-                            [1,1,1],
-                            [0,1,0]], dtype=bool)
+        unique_ids = np.unique(polygon_grid[polygon_grid > 0])
+        H, W = polygon_grid.shape
 
-        for iteration in range(max_iterations):
-            # Identify which cells belong to any polygon
-            occupied = polygon_grid > 0
+        # Stack a boolean mask for each polygon
+        poly_stack = np.stack([polygon_grid == pid for pid in unique_ids], axis=0)  # (n_polygons, H, W)
 
-            # Binary dilation of the occupied mask (potential expansion front)
-            expanded = binary_dilation(occupied, structure=structure)
+        # Compute distance transform for each polygon
+        dist_stack = np.stack([distance_transform_edt(~layer) for layer in poly_stack], axis=0)
 
-            # Candidates: cells that are unassigned, above threshold, and adjacent to polygons
-            candidates = expanded & (~occupied) & mask
+        # For each cell, find the minimal distance(s)
+        min_dist = np.min(dist_stack, axis=0)
+        closest = dist_stack == min_dist  # boolean array (n_polygons, H, W)
 
-            if not np.any(candidates):
-                print(f"[CellDetection] Completed expansion in {iteration} iterations (vectorized, non-overwriting)")
-                break
+        # Assign unique closest polygon IDs
+        counts = closest.sum(axis=0)
+        assignment = np.zeros_like(polygon_grid)
+        unique_cells = (counts == 1) & mask
+        assignment[unique_cells] = unique_ids[np.argmax(closest[:, :, :], axis=0)][unique_cells]
 
-            # Find all polygon IDs to expand
-            unique_ids = np.unique(polygon_grid[occupied])
-            new_assignments = np.zeros_like(polygon_grid)
+        # Apply assignments
+        polygon_grid[assignment > 0] = assignment[assignment > 0]
 
-            # For each polygon, expand only into its own adjacent area (vectorized per ID)
-            for poly_id in unique_ids:
-                poly_mask = polygon_grid == poly_id
-                expanded_poly = binary_dilation(poly_mask, structure=structure)
-                new_pixels = expanded_poly & candidates & (polygon_grid == 0)
-                new_assignments[new_pixels] = poly_id
-
-            # Apply new assignments — once a cell is filled, it never changes
-            polygon_grid[new_assignments > 0] = new_assignments[new_assignments > 0]
-
-        else:
-            print(f"[CellDetection] Reached max_iterations ({max_iterations}) without convergence")
-
-        # Return as xarray dataset
+        # Return as xarray Dataset
         return xr.Dataset(
             {'PolygonID': (('latitude', 'longitude'), polygon_grid)},
             coords={
@@ -127,7 +100,7 @@ class GateMapper:
                 'longitude': mapped_ds['longitude'].values
             }
         )
-    
+
     def draw_bbox(self, expanded_ds, step=8):
         """
         Return a dictionary of polygons for each polygon ID by tracing the exterior points
