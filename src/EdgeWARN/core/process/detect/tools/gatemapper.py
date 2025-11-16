@@ -138,8 +138,11 @@ class GateMapper:
             # Downsample every 'step' points
             contour = contour[::step]
 
-            # Convert from array indices to lon/lat
-            coords = [(lats[int(c[0])], lons[int(c[1])]) for c in contour]
+            # Convert from array indices to lon/lat with 3-digit rounding
+            coords = [
+                (round(lats[int(c[0])], 3), round(lons[int(c[1])], 3))
+                for c in contour
+            ]
             bboxes[poly_id] = coords
 
         return bboxes
