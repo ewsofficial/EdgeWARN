@@ -34,5 +34,4 @@ dist/
 *.swo
 
 # Storm cell JSONs
-*stormcell_test.json
 *overlay_manifest.json

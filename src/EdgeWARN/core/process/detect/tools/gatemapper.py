@@ -1,8 +1,10 @@
-from shapely.geometry import Point, shape
+from shapely.geometry import shape, mapping, Polygon, MultiPolygon
 import numpy as np
 import xarray as xr
-from scipy.ndimage import binary_dilation
+from scipy.ndimage import distance_transform_edt
 from skimage import measure
+import rasterio.features
+from affine import Affine
 
 class GateMapper:
     def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=40.0):
@@ -13,108 +15,84 @@ class GateMapper:
 
     def map_gates_to_polygons(self):
         """
-        Map radar gates to ProbSevere polygons, returning an xarray.Dataset
-        with each gate storing the polygon ID covering it (0 if none).
-        Longitudes are converted to 0-360 to match radar grid.
+        Map radar gates to ProbSevere polygons using rasterization (fastest approach),
+        handling negative longitudes and avoiding Shapely deprecation warnings.
         """
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
 
-        # Create meshgrid for radar gates
-        lat_grid, lon_grid = np.meshgrid(lats, lons, indexing='ij')
-        polygon_grid = np.zeros_like(lat_grid, dtype=int)
-
-        # Convert ProbSevere longitudes to 0-360
-        for feature in self.ps_ds.get('features', []):
-            for ring in feature['geometry']['coordinates']:
-                for i, (lon, lat) in enumerate(ring):
-                    if lon < 0:
-                        ring[i] = (lon + 360, lat)
-
-        # Loop over each polygon in ProbSevere data
+        raster_polygons = []
         for feature in self.ps_ds.get('features', []):
             poly_id = int(feature['properties'].get('ID', 0))
-            polygon = shape(feature['geometry'])
+            geom = shape(feature['geometry'])
 
-            # Assign polygon ID to all gates inside this polygon
-            for i in range(lat_grid.shape[0]):
-                for j in range(lat_grid.shape[1]):
-                    if polygon_grid[i, j] == 0:  # only assign if empty
-                        point = Point(lon_grid[i, j], lat_grid[i, j])
-                        if polygon.contains(point):
-                            polygon_grid[i, j] = poly_id
+            # Convert negative longitudes to 0-360
+            if geom.geom_type == 'Polygon':
+                coords = [(lon + 360 if lon < 0 else lon, lat) for lon, lat in geom.exterior.coords]
+                geom = Polygon(coords)
 
-        # Return as xarray.Dataset
-        return xr.Dataset(
-            {
-                'PolygonID': (('latitude', 'longitude'), polygon_grid)
-            },
-            coords={
-                'latitude': lats,
-                'longitude': lons
-            }
+            elif geom.geom_type == 'MultiPolygon':
+                new_polys = []
+                for p in geom.geoms:
+                    coords = [(lon + 360 if lon < 0 else lon, lat) for lon, lat in p.exterior.coords]
+                    new_polys.append(Polygon(coords))
+                geom = MultiPolygon(new_polys)
+
+            raster_polygons.append((mapping(geom), poly_id))
+            
+        # Define grid transform
+        lat_res = lats[1] - lats[0]
+        lon_res = lons[1] - lons[0]
+        transform = Affine.translation(lons[0] - lon_res / 2, lats[0] - lat_res / 2) * Affine.scale(lon_res, lat_res)
+
+        # Rasterize polygons
+        polygon_grid = rasterio.features.rasterize(
+            raster_polygons,
+            out_shape=(len(lats), len(lons)),
+            transform=transform,
+            fill=0,
+            all_touched=True,  # or False for strict "contains" behavior
+            dtype=np.int32
         )
 
-    def expand_gates(self, mapped_ds, max_iterations=100):
+        return xr.Dataset(
+            {'PolygonID': (('latitude', 'longitude'), polygon_grid)},
+            coords={'latitude': lats, 'longitude': lons}
+        )
+
+    def expand_gates(self, mapped_ds):
         """
-        Vectorized expansion of ProbSevere polygons, preserving the rule that
-        once a gate is assigned to a polygon, it cannot be claimed by another.
-
-        Each iteration expands all polygons simultaneously into neighboring
-        reflectivity-qualified gates (4-connected neighborhood).
-
-        Parameters:
-            mapped_ds (xarray.Dataset): Dataset from map_gates_to_polygons()
-            max_iterations (int): Maximum iterations (safety limit)
-
-        Returns:
-            xarray.Dataset: Expanded PolygonID dataset
+        Fully vectorized expansion using distance transform.
+        Cells are assigned to the nearest polygon.
+        If multiple polygons are equidistant, assign to 0 (midline).
         """
-        if self.refl_threshold is None:
-            raise ValueError("self.refl_threshold must be set to expand polygons.")
-
-        # Base data
         polygon_grid = mapped_ds['PolygonID'].values.copy()
-        refl_grid = self.radar_ds['unknown'].values  # <-- replace 'unknown' with actual variable name
+        refl_grid = self.radar_ds['unknown'].values  # replace with actual variable
         mask = refl_grid >= self.refl_threshold
 
-        # 4-connected structure for expansion
-        structure = np.array([[0,1,0],
-                            [1,1,1],
-                            [0,1,0]], dtype=bool)
+        unique_ids = np.unique(polygon_grid[polygon_grid > 0])
+        H, W = polygon_grid.shape
 
-        for iteration in range(max_iterations):
-            # Identify which cells belong to any polygon
-            occupied = polygon_grid > 0
+        # Stack a boolean mask for each polygon
+        poly_stack = np.stack([polygon_grid == pid for pid in unique_ids], axis=0)  # (n_polygons, H, W)
 
-            # Binary dilation of the occupied mask (potential expansion front)
-            expanded = binary_dilation(occupied, structure=structure)
+        # Compute distance transform for each polygon
+        dist_stack = np.stack([distance_transform_edt(~layer) for layer in poly_stack], axis=0)
 
-            # Candidates: cells that are unassigned, above threshold, and adjacent to polygons
-            candidates = expanded & (~occupied) & mask
+        # For each cell, find the minimal distance(s)
+        min_dist = np.min(dist_stack, axis=0)
+        closest = dist_stack == min_dist  # boolean array (n_polygons, H, W)
 
-            if not np.any(candidates):
-                print(f"[CellDetection] Completed expansion in {iteration} iterations (vectorized, non-overwriting)")
-                break
+        # Assign unique closest polygon IDs
+        counts = closest.sum(axis=0)
+        assignment = np.zeros_like(polygon_grid)
+        unique_cells = (counts == 1) & mask
+        assignment[unique_cells] = unique_ids[np.argmax(closest[:, :, :], axis=0)][unique_cells]
 
-            # Find all polygon IDs to expand
-            unique_ids = np.unique(polygon_grid[occupied])
-            new_assignments = np.zeros_like(polygon_grid)
+        # Apply assignments
+        polygon_grid[assignment > 0] = assignment[assignment > 0]
 
-            # For each polygon, expand only into its own adjacent area (vectorized per ID)
-            for poly_id in unique_ids:
-                poly_mask = polygon_grid == poly_id
-                expanded_poly = binary_dilation(poly_mask, structure=structure)
-                new_pixels = expanded_poly & candidates & (polygon_grid == 0)
-                new_assignments[new_pixels] = poly_id
-
-            # Apply new assignments — once a cell is filled, it never changes
-            polygon_grid[new_assignments > 0] = new_assignments[new_assignments > 0]
-
-        else:
-            print(f"[CellDetection] Reached max_iterations ({max_iterations}) without convergence")
-
-        # Return as xarray dataset
+        # Return as xarray Dataset
         return xr.Dataset(
             {'PolygonID': (('latitude', 'longitude'), polygon_grid)},
             coords={
@@ -122,7 +100,7 @@ class GateMapper:
                 'longitude': mapped_ds['longitude'].values
             }
         )
-    
+
     def draw_bbox(self, expanded_ds, step=8):
         """
         Return a dictionary of polygons for each polygon ID by tracing the exterior points
@@ -160,8 +138,11 @@ class GateMapper:
             # Downsample every 'step' points
             contour = contour[::step]
 
-            # Convert from array indices to lon/lat
-            coords = [(lats[int(c[0])], lons[int(c[1])]) for c in contour]
+            # Convert from array indices to lon/lat with 3-digit rounding
+            coords = [
+                (round(lats[int(c[0])], 3), round(lons[int(c[1])], 3))
+                for c in contour
+            ]
             bboxes[poly_id] = coords
 
         return bboxes
