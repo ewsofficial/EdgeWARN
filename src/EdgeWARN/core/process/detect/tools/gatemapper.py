@@ -39,12 +39,12 @@ class GateMapper:
                 geom = MultiPolygon(new_polys)
 
             raster_polygons.append((mapping(geom), poly_id))
-        self.io_manager.write_debug("Finished adding polygons to raster list")
+            
         # Define grid transform
         lat_res = lats[1] - lats[0]
         lon_res = lons[1] - lons[0]
         transform = Affine.translation(lons[0] - lon_res / 2, lats[0] - lat_res / 2) * Affine.scale(lon_res, lat_res)
-        self.io_manager.write_debug("Finished grid transformations")
+
         # Rasterize polygons
         polygon_grid = rasterio.features.rasterize(
             raster_polygons,
@@ -54,7 +54,7 @@ class GateMapper:
             all_touched=True,  # or False for strict "contains" behavior
             dtype=np.int32
         )
-        self.io_manager.write_debug("Finished polygon rasterization")
+
         return xr.Dataset(
             {'PolygonID': (('latitude', 'longitude'), polygon_grid)},
             coords={'latitude': lats, 'longitude': lons}
