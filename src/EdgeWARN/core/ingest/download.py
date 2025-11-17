@@ -158,7 +158,7 @@ class FileDownloader:
             self.client.download_file(self.bucket, s3_key, str(local_path))
             
             self.io_manager.write_debug(f"Successfully downloaded: {filename}")
-            return str(local_path)
+            return Path(str(local_path))
             
         except Exception as e:
             self.io_manager.write_error(f"Error downloading latest file from {self.bucket}: {e}")
