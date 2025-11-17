@@ -4,19 +4,19 @@
 <img src="assets/EWS_logo_072025.png" alt="EWS-logo" width="15%"/>
 </p>
 
-<h2 align="center">An Edgemont Weather Service Project</h2>
+<h2 align="center">Severe Weather Nowcasting</h2>
 
 EdgeWARN is a program developed by the Edgemont Weather Service to accurately nowcast severe weather, 
 provide user-friendly outputs and alerts, and be decently lightweight to run. 
 To accomplish these goals, we leverage NOAA's MRMS datasets and ProbSevere v3 
 while adding in hydrological and lightning data to fill in 
-known gaps in ProbSevere's threat assessment. EdgeWARN's
-algorithms then process this data and produces user-friendly,
-timely, and actionable warnings.
+known gaps in ProbSevere's threat assessment. This repository serves as 
+EdgeWARN's core server that processes raw data and serves it to
+the GUI frontend.
 
 <h2 align="center">Installation Instructions</h2>
 
-#### Current builds are Command Line Interface (CLI) only! We plan to add a GUI later
+#### This is the EdgeWARN Core Server! GUIs will be developed separately for web and desktop applications
 
 #### Requirements
 1. Conda/Miniconda with Python 3.13+
