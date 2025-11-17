@@ -5,6 +5,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os
+import gzip
+import shutil
 
 class FileFinder:
     def __init__(self, dt, bucket, max_time, max_entries, io_manager):
@@ -160,6 +162,37 @@ class FileDownloader:
             
         except Exception as e:
             self.io_manager.write_error(f"Error downloading latest file from {self.bucket}: {e}")
+            return None
+
+    def decompress_file(self, gz_path: Path) -> Path | None:
+        """
+        Decompress a .gz file into its parent directory and delete the original .gz.
+        """
+        if not gz_path.exists():
+            self.io_manager.write_error(f"File does not exist: {gz_path}")
+            return None
+
+        if gz_path.suffix != ".gz":
+            self.io_manager.write_warning(f"Not a .gz file: {gz_path}")
+            return None
+
+        try:
+            # Decompressed file path (remove .gz)
+            output_path = gz_path.with_suffix("")
+
+            # Decompress into the same parent directory
+            with gzip.open(gz_path, "rb") as f_in, open(output_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+
+            self.io_manager.write_debug(f"Decompressed to: {output_path}")
+
+            # Remove original gz file
+            gz_path.unlink(missing_ok=True)
+
+            return output_path
+        
+        except Exception as e:
+            self.io_manager.write_error(f"Unable to decompress {gz_path}: {e}")
             return None
 
 if __name__ == "__main__":
