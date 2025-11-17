@@ -44,7 +44,7 @@ the GUI frontend.
 - lat and lon limits will now use default values if none are specified (`lat = (36, 46)` and `lon = (-83, 73)`)
 - Added missing keys in ProbSevere data (`ProbTor`, `ProbHail`, `ProbWind`, `ProbSevere`)
 
-### 0.5.3-alpha
+### 0.5.3-alpha (current)
 - Optimized polygon mapping and gate expansion code. This speeds up execution greatly
 - Added `vx` and `vy` keys, which are ProbSevere's `MOTION_EAST` and `MOTION_SOUTH`, respectively
 - Limited coordinate points to 3 decimal precision and integration data to 2 decimal precision
