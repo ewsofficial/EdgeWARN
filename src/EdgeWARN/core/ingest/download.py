@@ -148,6 +148,15 @@ class FileDownloader:
             filename = os.path.basename(latest_file_path)
             local_path = outdir / filename
             
+            # Check if file already exists (both zipped and unzipped versions)
+            zipped_path = local_path
+            unzipped_path = local_path.with_suffix("") if local_path.suffix == ".gz" else local_path
+            
+            if zipped_path.exists() or unzipped_path.exists():
+                existing_file = str(zipped_path) if zipped_path.exists() else str(unzipped_path)
+                self.io_manager.write_debug(f"File already exists, skipping download: {existing_file}")
+                return zipped_path if zipped_path.exists() else unzipped_path
+
             # Log the download attempt
             self.io_manager.write_debug(f"Downloading latest file: {latest_file_path}")
             
