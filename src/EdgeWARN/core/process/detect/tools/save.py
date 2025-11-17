@@ -137,6 +137,7 @@ class CellDataSaver:
             latest_storm_history = {
                 "id": cell['id'],
                 "timestamp": timestamp_new,
+                "bbox": cell['bbox'],
                 "max_refl": cell['max_refl'],
                 "num_gates": cell['num_gates'],
                 "centroid": cell['centroid']
