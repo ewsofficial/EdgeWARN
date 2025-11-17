@@ -1,5 +1,7 @@
 from util.file import *
 
+bucket = "noaa-mrms-pds"
+
 mrms_modifiers = [
     ("CONUS", "EchoTop_18_00.50", MRMS_ECHOTOP18_DIR), # Region / Product / Outdir
     ("CONUS", "EchoTop_30_00.50", MRMS_ECHOTOP30_DIR),
