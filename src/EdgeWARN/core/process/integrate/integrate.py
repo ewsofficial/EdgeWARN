@@ -94,7 +94,7 @@ class StormCellIntegrator:
                 if subset_vals.size == 0 or np.all(np.isnan(subset_vals)):
                     latest[output_key] = 0
                 else:
-                    latest[output_key] = float(np.nanmax(subset_vals))
+                    latest[output_key] = round(float(np.nanmax(subset_vals)), 2)
 
             except Exception as e:
                 self.io_manager.write_error(f"Processing cell {cell.get('id', 'unknown')}: {e}")
@@ -137,6 +137,8 @@ class StormCellIntegrator:
             'ProbWind': 'ProbWind',
             'ProbHail': 'ProbHail',
             'ProbTor': 'ProbTor',
+            'vx': 'MOTION_EAST',
+            'vy': 'MOTION_SOUTH',
             'MLCAPE': 'MLCAPE',
             'MUCAPE': 'MUCAPE',
             'MLCIN': 'MLCIN',
