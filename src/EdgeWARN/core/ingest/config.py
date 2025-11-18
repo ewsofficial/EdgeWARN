@@ -14,7 +14,7 @@ mrms_modifiers = [
     ("ProbSevere", None, MRMS_PROBSEVERE_DIR),
     ("CONUS", "MergedRhoHV_00.50", MRMS_RHOHV_DIR),
     ("CONUS", "PrecipFlag_00.00", MRMS_PRECIPTYP_DIR),
-    ("CONUS", "MergedReflectivityAtLowestAltitude_00.00", MRMS_RALA_DIR),
+    ("CONUS", "MergedReflectivityAtLowestAltitude_00.50", MRMS_RALA_DIR),
     ("CONUS", "MergedReflectivityQCComposite_00.50", MRMS_COMPOSITE_DIR),
     ("CONUS", "VII_00.50", MRMS_VII_DIR)
 ]
