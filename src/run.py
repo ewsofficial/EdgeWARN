@@ -22,7 +22,7 @@ lat_limits = tuple(args.lat_limits)
 lon_limits = tuple(args.lon_limits)
 
 if __name__ == '__main__':
-    print(f"Running EdgeWARN v0.5.2-alpha")
+    print(f"Running EdgeWARN v0.5.3-alpha")
     print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
 
 def pipeline(log_queue, dt):

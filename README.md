@@ -4,19 +4,19 @@
 <img src="assets/EWS_logo_072025.png" alt="EWS-logo" width="15%"/>
 </p>
 
-<h2 align="center">An Edgemont Weather Service Project</h2>
+<h2 align="center">Severe Weather Nowcasting</h2>
 
 EdgeWARN is a program developed by the Edgemont Weather Service to accurately nowcast severe weather, 
 provide user-friendly outputs and alerts, and be decently lightweight to run. 
 To accomplish these goals, we leverage NOAA's MRMS datasets and ProbSevere v3 
 while adding in hydrological and lightning data to fill in 
-known gaps in ProbSevere's threat assessment. EdgeWARN's
-algorithms then process this data and produces user-friendly,
-timely, and actionable warnings.
+known gaps in ProbSevere's threat assessment. This repository serves as 
+EdgeWARN's core server that processes raw data and serves it to
+the GUI frontend.
 
 <h2 align="center">Installation Instructions</h2>
 
-#### Current builds are Command Line Interface (CLI) only! We plan to add a GUI later
+#### This is the EdgeWARN Core Server! GUIs will be developed separately for web and desktop applications
 
 #### Requirements
 1. Conda/Miniconda with Python 3.13+
@@ -38,11 +38,16 @@ timely, and actionable warnings.
 - Flattened ProbSevere keys to be top-level in storm history entries
 - Added hail core detection. This is saved under `hail_core` in each cell ID. Hail core is `None` if no valid points exist.
 
-### 0.5.2-alpha (Current)
+### 0.5.2-alpha
 - Removed redundant debug prints in `EdgeWARN.core.ingest`
 - Simplified `FileDownloader.decompress_file()` to be more concise
 - lat and lon limits will now use default values if none are specified (`lat = (36, 46)` and `lon = (-83, 73)`)
 - Added missing keys in ProbSevere data (`ProbTor`, `ProbHail`, `ProbWind`, `ProbSevere`)
+
+### 0.5.3-alpha (current)
+- Optimized polygon mapping and gate expansion code. This speeds up execution greatly
+- Added `vx` and `vy` keys, which are ProbSevere's `MOTION_EAST` and `MOTION_SOUTH`, respectively
+- Limited coordinate points to 3 decimal precision and integration data to 2 decimal precision
 
 <h2 align="center">Credits</h2>
 
