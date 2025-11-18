@@ -2,7 +2,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 import os
 import gzip
