@@ -1,8 +1,10 @@
-from EdgeWARN.core.ingest.config import mrms_modifiers, check_modifiers, bucket
+from EdgeWARN.core.ingest.config import mrms_modifiers, check_modifiers, bucket, base_dir
 from EdgeWARN.core.ingest.download import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.parse import MRMSBucketParser
 from util.io import IOManager
+import util.file as fs
 from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 io_manager = IOManager("[Ingest]")
 
@@ -33,7 +35,24 @@ def download_modifier(region, modifier, outdir, dt, max_time, max_entries):
     except Exception as e:
         io_manager.write_error(f"Failed to process {bucket_path} - {e}")
 
-if __name__ == "__main__":
-    # Test downloading MRMS CompRef file for latest time
-    dt = datetime.now(timezone.utc)
-    download_modifier("CONUS", "MergedReflectivityQCComposite_00.50", "C:\\EdgeWARN_input\\", dt, 3600, 10)
+def download_all_files(dt):
+    # Clear Files
+    folders = [outdir for _, _, outdir in mrms_modifiers]
+    for f in folders:
+        fs.clean_old_files(f, max_age_minutes=60)
+    fs.wipe_temp()
+
+    max_time = datetime.timedelta(hours=6)   # Look back 6 hours
+    max_entries = 10                         # How many files to check per source
+
+    # Multithread MRMS downloads
+    with ThreadPoolExecutor(max_workers=len(mrms_modifiers) + 2) as executor:
+        futures = [
+            executor.submit(download_modifier, region, modifier, outdir, dt, max_time, max_entries)
+            for region, modifier, outdir in mrms_modifiers
+        ]
+
+        for future in as_completed(futures):
+            future.result()
+
+
