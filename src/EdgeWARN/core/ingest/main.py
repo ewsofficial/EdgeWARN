@@ -1,4 +1,4 @@
-from EdgeWARN.core.ingest.config import mrms_modifiers, check_modifiers, bucket, base_dir
+from EdgeWARN.core.ingest.config import mrms_modifiers, check_modifiers, bucket
 from EdgeWARN.core.ingest.download import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.parse import MRMSBucketParser
 from util.io import IOManager
@@ -42,7 +42,7 @@ def download_all_files(dt):
         fs.clean_old_files(f, max_age_minutes=60)
     fs.wipe_temp()
 
-    max_time = datetime.timedelta(hours=6)   # Look back 6 hours
+    max_time = timedelta(hours=6)   # Look back 6 hours
     max_entries = 10                         # How many files to check per source
 
     # Multithread MRMS downloads
@@ -54,5 +54,4 @@ def download_all_files(dt):
 
         for future in as_completed(futures):
             future.result()
-
 

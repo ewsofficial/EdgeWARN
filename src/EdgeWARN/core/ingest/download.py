@@ -12,7 +12,7 @@ class FileFinder:
     def __init__(self, dt, bucket, max_time, max_entries, io_manager):
         self.dt = dt
         self.bucket = bucket
-        self.max_time = max_time  # Time delta (seconds) to go back from current time
+        self.max_time = max_time  # Time delta to go back from current time
         self.max_entries = max_entries  # Maximum number of entries to return
         self.io_manager = io_manager # Use the IOManager class in util.io
         self.client = boto3.client(
@@ -49,12 +49,13 @@ class FileFinder:
         
         return dt_aware
     
-    def lookup_files(self, modifier):
+    def lookup_files(self, modifier, verbose=False):
         """
         Look up latest S3 files and return as list of (path, datetime_obj) tuples.
         
         Args:
             modifier (str): Specify which part of the bucket to search (e.g., folder prefix)
+            verbose (bool): Whether to print debug information
         
         Uses S3 client and instance variables to find and filter files.
         Returns files sorted by timestamp in descending order (latest first).
@@ -63,10 +64,10 @@ class FileFinder:
             list: List of tuples (s3_path, datetime_obj) sorted by latest timestamp first
         """
         try:
-            # Calculate time cutoff (max_time seconds ago from current time)
+            # Calculate time cutoff (max_time ago from current time)
             current_time = datetime.now(timezone.utc)
             if self.max_time is not None:
-                time_cutoff = current_time - timedelta(seconds=self.max_time)
+                time_cutoff = current_time - self.max_time
             else:
                 time_cutoff = None
             
