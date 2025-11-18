@@ -20,7 +20,7 @@ class MRMSBucketParser:
 
         # Handle if modifier is none
         if modifier is None:
-            path = f"{region}/{self.dt}/"
+            path = f"{region}/{date_str}/"
             return path
         
         # Construct the full path
