@@ -1,4 +1,4 @@
-from EdgeWARN.core.ingest.config import mrms_modifiers, check_modifiers, bucket
+from EdgeWARN.core.ingest.config import mrms_modifiers, bucket
 from EdgeWARN.core.ingest.download import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.parse import MRMSBucketParser
 from util.io import IOManager
