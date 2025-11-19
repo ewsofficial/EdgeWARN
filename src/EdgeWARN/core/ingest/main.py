@@ -42,8 +42,8 @@ def download_all_files(dt):
         fs.clean_old_files(f, max_age_minutes=60)
     fs.wipe_temp()
 
-    max_time = timedelta(hours=6)   # Look back 6 hours
-    max_entries = 10                         # How many files to check per source
+    max_time = timedelta(hours=2)   # Look back 2 hours
+    max_entries = 5                        # How many files to check per source
 
     # Multithread MRMS downloads
     with ThreadPoolExecutor(max_workers=len(mrms_modifiers) + 2) as executor:
