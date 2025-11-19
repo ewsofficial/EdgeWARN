@@ -5,6 +5,7 @@ channels:
   - defaults
 dependencies:
   - python=3.13
+  - aioboto3
   - boto3
   - cfgrib
   - numpy
