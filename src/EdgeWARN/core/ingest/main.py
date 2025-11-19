@@ -89,8 +89,17 @@ async def _download_modifier_async(region, modifier, outdir, dt, max_time, max_e
     except Exception as e:
         io_manager.write_error(f"Failed to process {bucket_path} - {e}")
 
-def _download_all_files_sync_fallback(dt, max_time, max_entries):
-    """Fallback synchronous implementation if async fails"""
+def download_all_files(dt):
+    # Clear Files
+    folders = [outdir for _, _, outdir in mrms_modifiers]
+    for f in folders:
+        fs.clean_old_files(f, max_age_minutes=60)
+    fs.wipe_temp()
+
+    max_time = timedelta(hours=2)   # Look back 2 hours
+    max_entries = 5                        # How many files to check per source
+
+    # Multithread MRMS downloads
     with ThreadPoolExecutor(max_workers=len(mrms_modifiers) + 2) as executor:
         futures = [
             executor.submit(_download_modifier_sync, region, modifier, outdir, dt, max_time, max_entries)
