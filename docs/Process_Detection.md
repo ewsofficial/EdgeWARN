@@ -1,0 +1,102 @@
+# Process Detection Module Documentation
+
+## Overview
+The Process Detection module is responsible for identifying and tracking storm cells using radar data (MRMS Composite Reflectivity), ProbSevere data, and Precipitation Type data. It detects cells in the current scan, matches them with cells from the previous scan to maintain continuity, and calculates storm motion vectors.
+
+## Core Components
+
+### 1. `detect.py`
+This module handles the core logic for detecting storm cells from a single time step.
+
+#### Functions:
+
+- **`detect_cells(radar_path, ps_path, preciptype_path, io_manager, lat_min, lat_max, lon_min, lon_max)`**
+    - **Functionality**: Orchestrates the detection process for a single timeframe.
+    - **Steps**:
+        1.  Initializes a `DetectionDataHandler` to load and subset radar, ProbSevere, and Precipitation Type data.
+        2.  Loads the data subsets.
+        3.  Initializes a `GateMapper` to identify storm cells based on reflectivity thresholds.
+        4.  Maps radar gates to polygons (`map_gates_to_polygons`).
+        5.  Expands the identified gates (`expand_gates`).
+        6.  Draws bounding boxes around the cells (`draw_bbox`).
+        7.  Initializes a `CellDataSaver` to format the detected cell data.
+        8.  Creates initial cell entries and appends storm history.
+    - **Returns**: A list of dictionaries, where each dictionary represents a detected storm cell with its properties and history.
+
+### 2. `track.py`
+This module manages the tracking of storm cells across consecutive time steps.
+
+#### Classes:
+
+- **`StormCellTracker`**
+    - **`__init__(self, ps_old, ps_new, io_manager)`**: Initializes the tracker with old and new ProbSevere data.
+    - **`update_cells(self, entries, updated_data)`**:
+        - **Functionality**: Updates the list of storm cells based on new detection data.
+        - **Logic**:
+            - Maps `updated_data` (new detections) by cell ID for O(1) lookup.
+            - Iterates through existing `entries` (previous cells):
+                - If a cell ID exists in the new data, it updates the cell's main fields (`num_gates`, `centroid`, `max_refl`, `bbox`) while preserving its `storm_history`.
+                - If a cell ID is missing in the new data, it marks the cell for removal (effectively dropping it from the returned list).
+            - Adds any **new** cells found in `updated_data` that were not in `entries`.
+        - **Returns**: A filtered and updated list of storm cell dictionaries.
+
+### 3. `main.py`
+This is the entry point for the detection pipeline. It coordinates the loading of data, detection, tracking, and saving of results.
+
+#### Functions:
+
+- **`main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds, lon_bounds, json_output)`**
+    - **Functionality**: Runs the full detection and tracking workflow.
+    - **Logic**:
+        1.  **Single-frame Fallback**: If new data is missing, it defaults to single-frame detection using only the old data.
+        2.  **Load Previous Data**: Attempts to load existing cell data from `json_output`. If it fails or doesn't exist, it runs `detect_cells` on the old data to establish a baseline.
+        3.  **Single-frame Mode**: If running in single-frame mode, it saves the results and exits.
+        4.  **Dual-frame Mode**:
+            - Runs `detect_cells` on the **new** data.
+            - Loads ProbSevere data for both old and new timestamps.
+            - Uses `StormCellTracker` to update the old entries with new detections.
+            - Appends the new storm history using `CellDataSaver`.
+            - Calculates storm motion vectors using `StormVectorCalculator`.
+            - Saves the final updated list of cells to `json_output`.
+
+## Tools (`tools/`)
+The `tools` directory contains helper classes and functions used by the core detection logic.
+
+-   **`utils.py`**: Contains `DetectionDataHandler` for loading and subsetting xarray datasets (Radar, ProbSevere, PrecipType).
+-   **`gatemapper.py`**: Contains `GateMapper` for image processing tasks like thresholding, contour finding, and polygon mapping to identify storm cells from radar reflectivity.
+-   **`save.py`**: Contains `CellDataSaver` for structuring the detected cell data into a standardized dictionary format and managing the `storm_history` list.
+-   **`vecmath.py`**: Contains `StormVectorCalculator` for computing motion vectors (speed and bearing) based on centroid displacement over time.
+
+## Usage Examples
+
+### Running the Detection Pipeline
+The `main.py` script can be run directly to execute the pipeline. It automatically finds the latest files and runs the detection.
+
+```python
+from EdgeWARN.core.process.detect.main import main
+from pathlib import Path
+import util.file as fs
+
+# Define bounds
+lat_bounds = (36, 46)
+lon_bounds = (277, 297)
+output_file = Path("storm_cells.json")
+
+# Get file paths (example using util.file helper)
+radar_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
+ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
+pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
+
+radar_old, radar_new = radar_files[-2], radar_files[-1]
+ps_old, ps_new = ps_files[-2], ps_files[-1]
+pt_old, pt_new = pt_files[-2], pt_files[-1]
+
+# Run pipeline
+main(
+    radar_old, radar_new,
+    ps_old, ps_new,
+    pt_old, pt_new,
+    lat_bounds, lon_bounds,
+    output_file
+)
+```
