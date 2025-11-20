@@ -109,8 +109,8 @@ def update(val):
                     ax.quiver(lon, lat, avg_vx, avg_vy, angles='xy', scale_units='xy', scale=80, color='green', width=0.003, label='avg dx/dt dy/dt' if cell_id == data[0]['id'] else "")
 
     if current_lons and current_lats:
-        ax.set_xlim(min(current_lons) - 0.01, max(current_lons) + 0.01)
-        ax.set_ylim(min(current_lats) - 0.01, max(current_lats) + 0.01)
+        ax.set_xlim(min(current_lons) - 0.1, max(current_lons) + 0.1)
+        ax.set_ylim(min(current_lats) - 0.1, max(current_lats) + 0.1)
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
     ax.set_title(f'Storm Cell Visualization at {ts}')
