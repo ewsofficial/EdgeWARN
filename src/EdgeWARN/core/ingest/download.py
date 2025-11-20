@@ -28,7 +28,10 @@ class FileFinder:
         """
         Extract timestamp from filepath and return timezone-aware datetime object.
         
-        Searches for YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS patterns in the input filepath.
+        Supports multiple formats:
+        - MRMS: YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS
+        - GOES: sYYYYDDDHHMMSSS (start time from GOES file naming convention)
+        
         Returns a default timestamp if no pattern is found.
         
         Args:
@@ -37,20 +40,36 @@ class FileFinder:
         Returns:
             datetime: A timezone-aware datetime object (UTC)
         """
-        # Pattern for YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS
-        pattern = r'(\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})'
+        # Pattern for GOES format: sYYYYDDDHHMMSSS (e.g., s20243241234567)
+        goes_pattern = r's(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d{1})'
+        goes_match = re.search(goes_pattern, filepath)
         
-        match = re.search(pattern, filepath)
-        if not match:
-            # Return current time in UTC as default
-            return datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        if goes_match:
+            year = int(goes_match.group(1))
+            day_of_year = int(goes_match.group(2))
+            hour = int(goes_match.group(3))
+            minute = int(goes_match.group(4))
+            second = int(goes_match.group(5))
+            
+            # Convert Julian day to datetime
+            dt_aware = datetime(year, 1, 1, hour, minute, second, 0, tzinfo=timezone.utc)
+            # Add the day of year offset (subtract 1 because Jan 1 is day 1)
+            from datetime import timedelta
+            dt_aware = dt_aware + timedelta(days=day_of_year - 1)
+            
+            return dt_aware
         
-        year, month, day, hour, minute, second = map(int, match.groups())
+        # Pattern for MRMS: YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS
+        mrms_pattern = r'(\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})'
+        mrms_match = re.search(mrms_pattern, filepath)
         
-        # Create timezone-aware datetime object directly (UTC)
-        dt_aware = datetime(year, month, day, hour, minute, 0, 0, tzinfo=timezone.utc)
+        if mrms_match:
+            year, month, day, hour, minute, second = map(int, mrms_match.groups())
+            dt_aware = datetime(year, month, day, hour, minute, 0, 0, tzinfo=timezone.utc)
+            return dt_aware
         
-        return dt_aware
+        # Return current time in UTC as default
+        return datetime.now(timezone.utc).replace(second=0, microsecond=0)
     
     def lookup_files(self, modifier, verbose=False):
         """
@@ -129,13 +148,32 @@ class AsyncFileFinder:
     @staticmethod
     def extract_timestamp(filepath):
         """Extract timestamp from filepath (same logic as sync version)"""
-        pattern = r'(\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})'
-        match = re.search(pattern, filepath)
-        if not match:
-            return datetime.now(timezone.utc).replace(second=0, microsecond=0)
-
-        year, month, day, hour, minute, second = map(int, match.groups())
-        return datetime(year, month, day, hour, minute, 0, 0, tzinfo=timezone.utc)
+        # Pattern for GOES format: sYYYYDDDHHMMSSS (e.g., s20243241234567)
+        goes_pattern = r's(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d{1})'
+        goes_match = re.search(goes_pattern, filepath)
+        
+        if goes_match:
+            year = int(goes_match.group(1))
+            day_of_year = int(goes_match.group(2))
+            hour = int(goes_match.group(3))
+            minute = int(goes_match.group(4))
+            second = int(goes_match.group(5))
+            
+            # Convert Julian day to datetime
+            from datetime import timedelta
+            dt_aware = datetime(year, 1, 1, hour, minute, second, 0, tzinfo=timezone.utc)
+            dt_aware = dt_aware + timedelta(days=day_of_year - 1)
+            return dt_aware
+        
+        # Pattern for MRMS: YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS
+        mrms_pattern = r'(\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})'
+        mrms_match = re.search(mrms_pattern, filepath)
+        
+        if mrms_match:
+            year, month, day, hour, minute, second = map(int, mrms_match.groups())
+            return datetime(year, month, day, hour, minute, 0, 0, tzinfo=timezone.utc)
+        
+        return datetime.now(timezone.utc).replace(second=0, microsecond=0)
 
     async def async_lookup_files(self, prefix):
         """Async version of file lookup with non-blocking S3 operations"""
