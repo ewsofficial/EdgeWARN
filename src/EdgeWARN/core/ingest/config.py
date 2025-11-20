@@ -31,7 +31,7 @@ check_modifiers = [
     ("CONUS", "VIL_Density_00.50", MRMS_VIL_DIR),
     ("ProbSevere", None, MRMS_PROBSEVERE_DIR),
     ("CONUS", "PrecipFlag_00.00", MRMS_PRECIPTYP_DIR),
-    ("CONUS", "MergedReflectivityAtLowestAltitude_00.00", MRMS_RALA_DIR),
+    ("CONUS", "MergedReflectivityAtLowestAltitude_00.50", MRMS_RALA_DIR),
     ("CONUS", "MergedReflectivityQCComposite_00.50", MRMS_COMPOSITE_DIR),
     ("CONUS", "VII_00.50", MRMS_VII_DIR)
 ]
