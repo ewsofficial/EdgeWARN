@@ -35,3 +35,7 @@ check_modifiers = [
     ("CONUS", "MergedReflectivityQCComposite_00.50", MRMS_COMPOSITE_DIR),
     ("CONUS", "VII_00.50", MRMS_VII_DIR)
 ]
+
+goes_modifiers = [
+    
+]
