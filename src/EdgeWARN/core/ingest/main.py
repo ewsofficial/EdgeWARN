@@ -1,6 +1,6 @@
-from EdgeWARN.core.ingest.config import mrms_modifiers, bucket
+from EdgeWARN.core.ingest.config import mrms_modifiers, bucket, goes_modifiers, goes_bucket
 from EdgeWARN.core.ingest.download import FileFinder, FileDownloader, AsyncFileFinder, AsyncFileDownloader
-from EdgeWARN.core.ingest.parse import MRMSBucketParser
+from EdgeWARN.core.ingest.parse import MRMSBucketParser, GOESBucketParser
 from util.io import IOManager
 import util.file as fs
 from datetime import timedelta
