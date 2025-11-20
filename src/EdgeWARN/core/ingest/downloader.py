@@ -1,6 +1,6 @@
 from EdgeWARN.core.ingest.config import mrms_modifiers, bucket
 from EdgeWARN.core.ingest.utils import FileFinder, FileDownloader, AsyncFileFinder, AsyncFileDownloader
-from EdgeWARN.core.ingest.parse import MRMSBucketParser
+from EdgeWARN.core.ingest.parse import parse_mrms_bucket_path
 from util.io import IOManager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
@@ -38,10 +38,10 @@ async def download_modifier_async(region, modifier, outdir, dt, max_time, max_en
 
     finder = AsyncFileFinder(dt, bucket, max_time, max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, bucket, io_manager, s3_client=s3_client)
-    parser = MRMSBucketParser(dt)
+    downloader = AsyncFileDownloader(dt, bucket, io_manager, s3_client=s3_client)
 
     try:
-        bucket_path = parser.parse_bucket_path(region, modifier)
+        bucket_path = parse_mrms_bucket_path(dt, region, modifier)
         
         # Async file lookup
         file_list = await finder.async_lookup_files(bucket_path)
@@ -80,10 +80,10 @@ def download_modifier_sync(region, modifier, outdir, dt, max_time, max_entries):
 
     finder = FileFinder(dt, bucket, max_time, max_entries, io_manager)
     downloader = FileDownloader(dt, bucket, io_manager)
-    parser = MRMSBucketParser(dt)
+    downloader = FileDownloader(dt, bucket, io_manager)
 
     try:
-        bucket_path = parser.parse_bucket_path(region, modifier)
+        bucket_path = parse_mrms_bucket_path(dt, region, modifier)
         file_list = finder.lookup_files(bucket_path)
 
         if not file_list:

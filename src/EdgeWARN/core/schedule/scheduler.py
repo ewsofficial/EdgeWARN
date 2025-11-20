@@ -1,8 +1,8 @@
 import datetime
 import time
 from pathlib import Path
-from EdgeWARN.core.ingest.download import FileFinder
-from EdgeWARN.core.ingest.parse import MRMSBucketParser
+from EdgeWARN.core.ingest.utils import FileFinder
+from EdgeWARN.core.ingest.parse import parse_mrms_bucket_path
 from EdgeWARN.core.ingest.config import bucket, check_modifiers
 from util.io import IOManager
 
@@ -24,10 +24,8 @@ class MRMSUpdateChecker:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
 
         finder = FileFinder(reference_dt, bucket, self.max_time, self.max_entries, io_manager)
-        parser = MRMSBucketParser(reference_dt)
-
         try:
-            bucket_path = parser.parse_bucket_path(region, modifier)
+            bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False)
             if not files_with_timestamps:
                 if self.verbose:
@@ -85,8 +83,7 @@ class MRMSUpdateChecker:
 
         for region, modifier, _ in modifiers:
             finder = FileFinder(reference_dt, bucket, max_time, 10, io_manager)
-            parser = MRMSBucketParser(reference_dt)
-            bucket_path = parser.parse_bucket_path(region, modifier)
+            bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False)
             if not files_with_timestamps:
                 if self.verbose:
