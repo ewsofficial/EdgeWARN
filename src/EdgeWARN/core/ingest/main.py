@@ -1,6 +1,6 @@
 from EdgeWARN.core.ingest.config import mrms_modifiers, bucket, goes_modifiers, goes_bucket
 from EdgeWARN.core.ingest.utils import FileFinder, FileDownloader, AsyncFileFinder, AsyncFileDownloader
-from EdgeWARN.core.ingest.parse import GOESBucketParser
+from EdgeWARN.core.ingest.parse import parse_goes_bucket_path
 from EdgeWARN.core.ingest.downloader import download_all_files_async_internal, download_all_files_sync_fallback
 from util.io import IOManager
 import util.file as fs
@@ -62,13 +62,13 @@ def download_goes_product(product, outdir, dt, max_time=None, max_entries=10, ho
     
     finder = FileFinder(dt, goes_bucket, max_time, max_entries, io_manager)
     downloader = FileDownloader(dt, goes_bucket, io_manager)
-    parser = GOESBucketParser(dt)
+    downloader = FileDownloader(dt, goes_bucket, io_manager)
     
     try:
         # Try multiple hours (current + lookback)
         all_files = []
         for hour_offset in range(hour_lookback):
-            bucket_path = parser.parse_bucket_path(product, hour_offset=hour_offset)
+            bucket_path = parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
             io_manager.write_debug(f"Checking GOES path: {bucket_path}")
             
             file_list = finder.lookup_files(bucket_path)
@@ -112,13 +112,13 @@ async def _download_goes_product_async(product, outdir, dt, max_time, max_entrie
     
     finder = AsyncFileFinder(dt, goes_bucket, max_time, max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
-    parser = GOESBucketParser(dt)
+    downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
     
     try:
         # Try multiple hours (current + lookback)
         all_files = []
         for hour_offset in range(hour_lookback):
-            bucket_path = parser.parse_bucket_path(product, hour_offset=hour_offset)
+            bucket_path = parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
             io_manager.write_debug(f"Checking GOES path: {bucket_path}")
             
             file_list = await finder.async_lookup_files(bucket_path)
