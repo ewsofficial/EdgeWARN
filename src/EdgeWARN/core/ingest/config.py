@@ -9,7 +9,6 @@ mrms_modifiers = [
     ("CONUS", "FLASH_QPE_FFG01H_00.00", MRMS_FLASH_DIR),
     ("CONUS", "MESH_00.50", MRMS_MESH_DIR),
     ("CONUS", "WarmRainProbability_00.50", MRMS_RAIN_DIR),
-    ("CONUS", "NLDN_CG_005min_00.00", MRMS_CGFLASH_DIR),
     ("CONUS", "NLDN_CG_005min_AvgDensity_00.00", MRMS_NLDN_DIR),
     ("CONUS", "PrecipRate_00.00", MRMS_PRECIPRATE_DIR),
     ("CONUS", "RadarOnly_QPE_01H_00.00", MRMS_QPE_DIR),
