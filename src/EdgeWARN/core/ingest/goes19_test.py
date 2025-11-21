@@ -15,6 +15,7 @@ import util.file as fs
 def test_single_product():
     """Download a single GOES-19 product (GLM-L2-LCFA)"""
     print("Testing single GOES product download...")
+    fs.clean_old_files(fs.GOES_GLM_DIR, max_age_minutes=20)
     
     dt = datetime.now(timezone.utc)
     
@@ -24,7 +25,7 @@ def test_single_product():
         dt=dt,
         max_time=timedelta(hours=1),
         max_entries=10,
-        hour_lookback=3
+        hour_lookback=1
     )
     
     if result:
@@ -43,8 +44,8 @@ def test_all_products():
     download_all_goes_files(
         dt=dt,
         max_time=timedelta(hours=1),
-        max_entries=10,
-        hour_lookback=3
+        max_entries=5,
+        hour_lookback=1
     )
     
     print("✓ All GOES downloads completed")
