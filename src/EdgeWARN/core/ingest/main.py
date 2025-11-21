@@ -10,6 +10,7 @@ import asyncio
 import aioboto3
 from botocore import UNSIGNED
 from botocore.client import Config
+import traceback
 
 io_manager = IOManager("[Ingest]")
 
@@ -27,22 +28,21 @@ def download_all_files(dt):
         fs.clean_old_files(f, max_age_minutes=60)
     fs.wipe_temp()
 
-    max_time = timedelta(hours=6)   # Look back 6 hours
     max_entries = 10                         # How many files to check per source
 
     # Use async operations internally for better performance
     # This maintains the same API but with improved performance
     try:
-        asyncio.run(download_all_files_async_internal(dt, max_time, max_entries))
+        asyncio.run(download_all_files_async_internal(dt, max_entries))
     except Exception as e:
         io_manager.write_error(f"Async downloads failed: {e}")
         io_manager.write_debug("Falling back to synchronous downloads...")
-        download_all_files_sync_fallback(dt, max_time, max_entries)
+        download_all_files_sync_fallback(dt, max_entries)
 
 
 # ==================== GOES-19 Download Functions ====================
 
-def download_goes_product(product, outdir, dt, max_time=None, max_entries=10, hour_lookback=3):
+def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
     """
     Download a specific GOES-19 product.
     
@@ -50,9 +50,8 @@ def download_goes_product(product, outdir, dt, max_time=None, max_entries=10, ho
         product (str): GOES product name (e.g., "GLM-L2-LCFA", "ABI-L2-ACHAC")
         outdir (Path): Output directory for downloaded files
         dt (datetime): Target datetime (UTC, timezone-aware)
-        max_time (timedelta): Maximum time to look back for files (default: None)
         max_entries (int): Maximum number of file entries to retrieve (default: 10)
-        hour_lookback (int): Number of hours to look back (default: 3). Overridden if max_time is set.
+        hour_lookback (int): Number of hours to look back (default: 3).
     
     Returns:
         Path: Path to downloaded file, or None if failed
@@ -60,47 +59,24 @@ def download_goes_product(product, outdir, dt, max_time=None, max_entries=10, ho
     # Enforce minute-precision dt
     dt = dt.replace(second=0, microsecond=0)
     
-    finder = FileFinder(dt, goes_bucket, max_time, max_entries, io_manager)
+    finder = FileFinder(dt, goes_bucket, max_entries, io_manager)
     downloader = FileDownloader(dt, goes_bucket, io_manager)
     
-    # Calculate dynamic lookback if max_time is set
-    if max_time:
-        start_dt = dt - max_time
-        # Calculate how many hours back we need to go to cover start_dt
-        calculated_lookback = 0
-        start_bucket_hour = start_dt.replace(minute=0, second=0, microsecond=0)
-        
-        while True:
-            check_time = dt - timedelta(hours=calculated_lookback)
-            current_bucket_hour = check_time.replace(minute=0, second=0, microsecond=0)
-            
-            if current_bucket_hour < start_bucket_hour:
-                break
-            calculated_lookback += 1
-            
-        hour_lookback = calculated_lookback
-    
     try:
-        # Try multiple hours (current + lookback)
-        all_files = []
+        # Generate list of paths to check
+        bucket_paths = []
         for hour_offset in range(hour_lookback):
             bucket_path = parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
-            io_manager.write_debug(f"Checking GOES path: {bucket_path}")
+            bucket_paths.append(bucket_path)
             
-            file_list = finder.lookup_files(bucket_path)
-            if file_list:
-                all_files.extend(file_list)
-            
-            # Stop if we have enough files
-            if len(all_files) >= max_entries:
-                break
+        io_manager.write_debug(f"Checking GOES paths: {bucket_paths}")
+        
+        # Lookup files across all paths (FileFinder handles the loop and max_entries check)
+        all_files = finder.lookup_files(bucket_paths)
         
         if not all_files:
             io_manager.write_warning(f"No files found for GOES product {product} at {dt}")
             return None
-        
-        # Sort by timestamp (latest first)
-        all_files.sort(key=lambda x: x[1], reverse=True)
         
         io_manager.write_debug(f"Found {len(all_files)} GOES {product} file(s). Downloading latest.")
         
@@ -121,7 +97,7 @@ def download_goes_product(product, outdir, dt, max_time=None, max_entries=10, ho
         return None
 
 
-async def _download_goes_product_async(product, outdir, dt, max_time, max_entries, hour_lookback, s3_client):
+async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lookback, s3_client):
     """
     Async version of download_goes_product.
     
@@ -130,46 +106,24 @@ async def _download_goes_product_async(product, outdir, dt, max_time, max_entrie
     # Enforce minute-precision dt
     dt = dt.replace(second=0, microsecond=0)
     
-    finder = AsyncFileFinder(dt, goes_bucket, max_time, max_entries, io_manager, s3_client=s3_client)
+    finder = AsyncFileFinder(dt, goes_bucket, max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
     
-    # Calculate dynamic lookback if max_time is set
-    if max_time:
-        start_dt = dt - max_time
-        calculated_lookback = 0
-        start_bucket_hour = start_dt.replace(minute=0, second=0, microsecond=0)
-        
-        while True:
-            check_time = dt - timedelta(hours=calculated_lookback)
-            current_bucket_hour = check_time.replace(minute=0, second=0, microsecond=0)
-            
-            if current_bucket_hour < start_bucket_hour:
-                break
-            calculated_lookback += 1
-            
-        hour_lookback = calculated_lookback
-    
     try:
-        # Try multiple hours (current + lookback)
-        all_files = []
+        # Generate list of paths to check
+        bucket_paths = []
         for hour_offset in range(hour_lookback):
             bucket_path = parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
-            io_manager.write_debug(f"Checking GOES path: {bucket_path}")
+            bucket_paths.append(bucket_path)
             
-            file_list = await finder.async_lookup_files(bucket_path)
-            if file_list:
-                all_files.extend(file_list)
-            
-            # Stop if we have enough files
-            if len(all_files) >= max_entries:
-                break
+        io_manager.write_debug(f"Checking GOES paths: {bucket_paths}")
+        
+        # Lookup files across all paths (AsyncFileFinder handles the loop and max_entries check)
+        all_files = await finder.async_lookup_files(bucket_paths)
         
         if not all_files:
             io_manager.write_warning(f"No files found for GOES product {product} at {dt}")
             return None
-        
-        # Sort by timestamp (latest first)
-        all_files.sort(key=lambda x: x[1], reverse=True)
         
         io_manager.write_debug(f"Found {len(all_files)} GOES {product} file(s). Downloading latest.")
         
@@ -190,13 +144,12 @@ async def _download_goes_product_async(product, outdir, dt, max_time, max_entrie
         return None
 
 
-def download_all_goes_files(dt, max_time=None, max_entries=10, hour_lookback=3):
+def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
     """
     Download all configured GOES-19 products.
     
     Args:
         dt (datetime): Target datetime (UTC, timezone-aware)
-        max_time (timedelta): Maximum time to look back for files (default: None)
         max_entries (int): Maximum number of file entries per product (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3)
     """
@@ -205,7 +158,7 @@ def download_all_goes_files(dt, max_time=None, max_entries=10, hour_lookback=3):
     # Use ThreadPoolExecutor for concurrent downloads
     with ThreadPoolExecutor(max_workers=len(goes_modifiers)) as executor:
         futures = [
-            executor.submit(download_goes_product, product, outdir, dt, max_time, max_entries, hour_lookback)
+            executor.submit(download_goes_product, product, outdir, dt, max_entries, hour_lookback)
             for product, outdir in goes_modifiers
         ]
         
@@ -220,13 +173,12 @@ def download_all_goes_files(dt, max_time=None, max_entries=10, hour_lookback=3):
     io_manager.write_debug("GOES-19 downloads completed")
 
 
-async def download_all_goes_files_async(dt, max_time=None, max_entries=10, hour_lookback=3):
+async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
     """
     Async version: Download all configured GOES-19 products concurrently.
     
     Args:
         dt (datetime): Target datetime (UTC, timezone-aware)
-        max_time (timedelta): Maximum time to look back for files (default: None)
         max_entries (int): Maximum number of file entries per product (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3)
     """
@@ -234,7 +186,7 @@ async def download_all_goes_files_async(dt, max_time=None, max_entries=10, hour_
         io_manager.write_debug("Starting async GOES-19 downloads...")
         
         tasks = [
-            _download_goes_product_async(product, outdir, dt, max_time, max_entries, hour_lookback, s3)
+            _download_goes_product_async(product, outdir, dt, max_entries, hour_lookback, s3)
             for product, outdir in goes_modifiers
         ]
         

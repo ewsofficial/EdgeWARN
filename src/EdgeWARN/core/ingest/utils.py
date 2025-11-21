@@ -12,10 +12,9 @@ import aiofiles
 import aiofiles.os
 
 class FileFinder:
-    def __init__(self, dt, bucket, max_time, max_entries, io_manager):
+    def __init__(self, dt, bucket, max_entries, io_manager):
         self.dt = dt
         self.bucket = bucket
-        self.max_time = max_time  # Time delta to go back from current time
         self.max_entries = max_entries  # Maximum number of entries to return
         self.io_manager = io_manager # Use the IOManager class in util.io
         self.client = boto3.client(
@@ -76,7 +75,8 @@ class FileFinder:
         Look up latest S3 files and return as list of (path, datetime_obj) tuples.
         
         Args:
-            modifier (str): Specify which part of the bucket to search (e.g., folder prefix)
+            modifier (str | list[str]): Specify which part(s) of the bucket to search (e.g., folder prefix).
+                                      Can be a single string or a list of strings to search sequentially.
             verbose (bool): Whether to print debug information
         
         Uses S3 client and instance variables to find and filter files.
@@ -86,42 +86,38 @@ class FileFinder:
             list: List of tuples (s3_path, datetime_obj) sorted by latest timestamp first
         """
         try:
-            # Calculate time cutoff (max_time ago from current time)
-            current_time = datetime.now(timezone.utc)
-            if self.max_time is not None:
-                time_cutoff = current_time - self.max_time
-            else:
-                time_cutoff = None
-            
-            # List objects in S3 bucket with pagination
-            paginator = self.client.get_paginator('list_objects_v2')
-            
-            # Set up prefix filter for bucket search
-            if modifier:
-                prefix = modifier
-            else:
-                prefix = ""
+            # Normalize modifier to list
+            modifiers = [modifier] if isinstance(modifier, str) else modifier
             
             files_data = []
             
-            # Iterate through all pages of results
-            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
-                if 'Contents' in page:
-                    for obj in page['Contents']:
-                        s3_path = obj['Key']
-                        
-                        try:
-                            # Extract timestamp from S3 path
-                            timestamp = self.extract_timestamp(s3_path)
+            for prefix in modifiers:
+                # List objects in S3 bucket with pagination
+                paginator = self.client.get_paginator('list_objects_v2')
+                
+                # Set up prefix filter for bucket search
+                search_prefix = prefix if prefix else ""
+                
+                # Iterate through all pages of results
+                for page in paginator.paginate(Bucket=self.bucket, Prefix=search_prefix):
+                    if 'Contents' in page:
+                        for obj in page['Contents']:
+                            s3_path = obj['Key']
                             
-                            # Apply time filter if max_time is set
-                            if time_cutoff is not None and timestamp < time_cutoff:
+                            try:
+                                # Extract timestamp from S3 path
+                                timestamp = self.extract_timestamp(s3_path)
+                                
+                                files_data.append((s3_path, timestamp))
+                            except Exception:
+                                # Skip files that don't have valid timestamps
                                 continue
-                            
-                            files_data.append((s3_path, timestamp))
-                        except Exception:
-                            # Skip files that don't have valid timestamps
-                            continue
+                
+                # Optimization: If we have enough files, stop searching subsequent modifiers
+                # We only check this after finishing a prefix to ensure we get all files from that prefix
+                # (e.g. all files from the current hour) before deciding if we need more.
+                if len(files_data) >= self.max_entries:
+                    break
             
             # Sort by timestamp (latest first)
             files_data.sort(key=lambda x: x[1], reverse=True)
@@ -137,10 +133,9 @@ class FileFinder:
 class AsyncFileFinder:
     """Async version of FileFinder using aioboto3 for non-blocking S3 operations"""
     
-    def __init__(self, dt, bucket, max_time, max_entries, io_manager, s3_client=None):
+    def __init__(self, dt, bucket, max_entries, io_manager, s3_client=None):
         self.dt = dt
         self.bucket = bucket
-        self.max_time = max_time
         self.max_entries = max_entries
         self.io_manager = io_manager
         self.s3 = s3_client  # Shared S3 client is injected for performance
@@ -178,24 +173,28 @@ class AsyncFileFinder:
     async def async_lookup_files(self, prefix):
         """Async version of file lookup with non-blocking S3 operations"""
         try:
-            current_time = datetime.now(timezone.utc)
-            time_cutoff = (
-                current_time - self.max_time if self.max_time else None
-            )
+            # Normalize prefix to list
+            prefixes = [prefix] if isinstance(prefix, str) else prefix
 
             paginator = self.s3.get_paginator("list_objects_v2")
 
             files = []
 
-            async for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
-                if "Contents" not in page:
-                    continue
-                for obj in page["Contents"]:
-                    s3_path = obj["Key"]
-                    ts = self.extract_timestamp(s3_path)
-                    if time_cutoff and ts < time_cutoff:
+            for search_prefix in prefixes:
+                # Handle None/empty prefix
+                p = search_prefix if search_prefix else ""
+                
+                async for page in paginator.paginate(Bucket=self.bucket, Prefix=p):
+                    if "Contents" not in page:
                         continue
-                    files.append((s3_path, ts))
+                    for obj in page["Contents"]:
+                        s3_path = obj["Key"]
+                        ts = self.extract_timestamp(s3_path)
+                        files.append((s3_path, ts))
+                
+                # Optimization: Stop if we have enough files
+                if len(files) >= self.max_entries:
+                    break
 
             files.sort(key=lambda x: x[1], reverse=True)
             return files[:self.max_entries]
