@@ -1,5 +1,6 @@
 from EdgeWARN.core.ingest.config import mrms_modifiers, bucket
-from EdgeWARN.core.ingest.utils import FileFinder, FileDownloader, AsyncFileFinder, AsyncFileDownloader
+from EdgeWARN.core.ingest.utils import FileFinder, FileDownloader
+from EdgeWARN.core.ingest.utils_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.parse import parse_mrms_bucket_path
 from util.io import IOManager
 from concurrent.futures import ThreadPoolExecutor, as_completed
