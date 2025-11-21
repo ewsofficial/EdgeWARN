@@ -52,7 +52,7 @@ def download_goes_product(product, outdir, dt, max_time=None, max_entries=10, ho
         dt (datetime): Target datetime (UTC, timezone-aware)
         max_time (timedelta): Maximum time to look back for files (default: None)
         max_entries (int): Maximum number of file entries to retrieve (default: 10)
-        hour_lookback (int): Number of hours to look back (default: 3)
+        hour_lookback (int): Number of hours to look back (default: 3). Overridden if max_time is set.
     
     Returns:
         Path: Path to downloaded file, or None if failed
@@ -62,7 +62,23 @@ def download_goes_product(product, outdir, dt, max_time=None, max_entries=10, ho
     
     finder = FileFinder(dt, goes_bucket, max_time, max_entries, io_manager)
     downloader = FileDownloader(dt, goes_bucket, io_manager)
-    downloader = FileDownloader(dt, goes_bucket, io_manager)
+    
+    # Calculate dynamic lookback if max_time is set
+    if max_time:
+        start_dt = dt - max_time
+        # Calculate how many hours back we need to go to cover start_dt
+        calculated_lookback = 0
+        start_bucket_hour = start_dt.replace(minute=0, second=0, microsecond=0)
+        
+        while True:
+            check_time = dt - timedelta(hours=calculated_lookback)
+            current_bucket_hour = check_time.replace(minute=0, second=0, microsecond=0)
+            
+            if current_bucket_hour < start_bucket_hour:
+                break
+            calculated_lookback += 1
+            
+        hour_lookback = calculated_lookback
     
     try:
         # Try multiple hours (current + lookback)
@@ -74,6 +90,10 @@ def download_goes_product(product, outdir, dt, max_time=None, max_entries=10, ho
             file_list = finder.lookup_files(bucket_path)
             if file_list:
                 all_files.extend(file_list)
+            
+            # Stop if we have enough files
+            if len(all_files) >= max_entries:
+                break
         
         if not all_files:
             io_manager.write_warning(f"No files found for GOES product {product} at {dt}")
@@ -112,7 +132,22 @@ async def _download_goes_product_async(product, outdir, dt, max_time, max_entrie
     
     finder = AsyncFileFinder(dt, goes_bucket, max_time, max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
-    downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
+    
+    # Calculate dynamic lookback if max_time is set
+    if max_time:
+        start_dt = dt - max_time
+        calculated_lookback = 0
+        start_bucket_hour = start_dt.replace(minute=0, second=0, microsecond=0)
+        
+        while True:
+            check_time = dt - timedelta(hours=calculated_lookback)
+            current_bucket_hour = check_time.replace(minute=0, second=0, microsecond=0)
+            
+            if current_bucket_hour < start_bucket_hour:
+                break
+            calculated_lookback += 1
+            
+        hour_lookback = calculated_lookback
     
     try:
         # Try multiple hours (current + lookback)
@@ -124,6 +159,10 @@ async def _download_goes_product_async(product, outdir, dt, max_time, max_entrie
             file_list = await finder.async_lookup_files(bucket_path)
             if file_list:
                 all_files.extend(file_list)
+            
+            # Stop if we have enough files
+            if len(all_files) >= max_entries:
+                break
         
         if not all_files:
             io_manager.write_warning(f"No files found for GOES product {product} at {dt}")
