@@ -10,7 +10,7 @@ from botocore.client import Config
 
 io_manager = IOManager("[Ingest]")
 
-async def download_all_files_async_internal(dt, max_time, max_entries):
+async def download_all_files_async_internal(dt, max_entries):
     """Internal async function that handles the actual download operations"""
     # Create shared async S3 client for all operations
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
@@ -20,7 +20,7 @@ async def download_all_files_async_internal(dt, max_time, max_entries):
         tasks = []
         for region, modifier, outdir in mrms_modifiers:
             task = download_modifier_async(
-                region, modifier, outdir, dt, max_time, max_entries, s3
+                region, modifier, outdir, dt, max_entries, s3
             )
             tasks.append(task)
         
@@ -31,13 +31,12 @@ async def download_all_files_async_internal(dt, max_time, max_entries):
         
         io_manager.write_debug("All async downloads completed")
 
-async def download_modifier_async(region, modifier, outdir, dt, max_time, max_entries, s3_client):
+async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_client):
     """Internal async version of download_modifier using aioboto3 for non-blocking S3 operations"""
     # Enforce minute-precision dt
     dt = dt.replace(second=0, microsecond=0)
 
-    finder = AsyncFileFinder(dt, bucket, max_time, max_entries, io_manager, s3_client=s3_client)
-    downloader = AsyncFileDownloader(dt, bucket, io_manager, s3_client=s3_client)
+    finder = AsyncFileFinder(dt, bucket, max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, bucket, io_manager, s3_client=s3_client)
 
     try:
@@ -61,25 +60,24 @@ async def download_modifier_async(region, modifier, outdir, dt, max_time, max_en
     except Exception as e:
         io_manager.write_error(f"Failed to process {bucket_path} - {e}")
 
-def download_all_files_sync_fallback(dt, max_time, max_entries):
+def download_all_files_sync_fallback(dt, max_entries):
     """Sync fallback for downloading all MRMS files"""
     # Multithread MRMS downloads
     with ThreadPoolExecutor(max_workers=len(mrms_modifiers) + 2) as executor:
         futures = [
-            executor.submit(download_modifier_sync, region, modifier, outdir, dt, max_time, max_entries)
+            executor.submit(download_modifier_sync, region, modifier, outdir, dt, max_entries)
             for region, modifier, outdir in mrms_modifiers
         ]
 
         for future in as_completed(futures):
             future.result()
 
-def download_modifier_sync(region, modifier, outdir, dt, max_time, max_entries):
+def download_modifier_sync(region, modifier, outdir, dt, max_entries):
     """Internal sync version of download_modifier for fallback"""
     # Enforce minute-precision dt
     dt = dt.replace(second=0, microsecond=0)
 
-    finder = FileFinder(dt, bucket, max_time, max_entries, io_manager)
-    downloader = FileDownloader(dt, bucket, io_manager)
+    finder = FileFinder(dt, bucket, max_entries, io_manager)
     downloader = FileDownloader(dt, bucket, io_manager)
 
     try:
