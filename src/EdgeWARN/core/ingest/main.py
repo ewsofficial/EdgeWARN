@@ -33,12 +33,20 @@ def download_all_files(dt):
 
     # Use async operations internally for better performance
     # This maintains the same API but with improved performance
+    async def _download_all():
+        await asyncio.gather(
+            download_all_files_async_internal(dt, max_entries),
+            download_all_goes_files_async(dt, max_entries)
+        )
+
     try:
-        asyncio.run(download_all_files_async_internal(dt, max_entries))
+        asyncio.run(_download_all())
     except Exception as e:
         io_manager.write_error(f"Async downloads failed: {e}")
         io_manager.write_debug("Falling back to synchronous downloads...")
         download_all_files_sync_fallback(dt, max_entries)
+        # Fallback for GOES as well (synchronous)
+        download_all_goes_files(dt, max_entries)
 
 
 # ==================== GOES-19 Download Functions ====================
