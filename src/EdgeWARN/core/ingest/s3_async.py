@@ -1,5 +1,4 @@
 import re
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import os
 import gzip
@@ -7,6 +6,7 @@ import shutil
 import asyncio
 import aiofiles
 import aiofiles.os
+from EdgeWARN.core.ingest.utils import extract_timestamp
 
 
 class AsyncFileFinder:
@@ -18,35 +18,6 @@ class AsyncFileFinder:
         self.max_entries = max_entries
         self.io_manager = io_manager
         self.s3 = s3_client  # Shared S3 client is injected for performance
-
-    @staticmethod
-    def extract_timestamp(filepath):
-        """Extract timestamp from filepath (same logic as sync version)"""
-        # Pattern for GOES format: sYYYYDDDHHMMSSS (e.g., s20243241234567)
-        goes_pattern = r's(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d{1})'
-        goes_match = re.search(goes_pattern, filepath)
-        
-        if goes_match:
-            year = int(goes_match.group(1))
-            day_of_year = int(goes_match.group(2))
-            hour = int(goes_match.group(3))
-            minute = int(goes_match.group(4))
-            second = int(goes_match.group(5))
-            
-            # Convert Julian day to datetime
-            dt_aware = datetime(year, 1, 1, hour, minute, second, 0, tzinfo=timezone.utc)
-            dt_aware = dt_aware + timedelta(days=day_of_year - 1)
-            return dt_aware
-        
-        # Pattern for MRMS: YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS
-        mrms_pattern = r'(\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})'
-        mrms_match = re.search(mrms_pattern, filepath)
-        
-        if mrms_match:
-            year, month, day, hour, minute, second = map(int, mrms_match.groups())
-            return datetime(year, month, day, hour, minute, 0, 0, tzinfo=timezone.utc)
-        
-        return datetime.now(timezone.utc).replace(second=0, microsecond=0)
 
     async def async_lookup_files(self, prefix):
         """Async version of file lookup with non-blocking S3 operations"""
@@ -67,7 +38,7 @@ class AsyncFileFinder:
                         continue
                     for obj in page["Contents"]:
                         s3_path = obj["Key"]
-                        ts = self.extract_timestamp(s3_path)
+                        ts = extract_timestamp(s3_path)
                         files.append((s3_path, ts))
                 
                 # Optimization: Stop if we have enough files

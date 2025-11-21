@@ -1,7 +1,8 @@
 import datetime
 import time
 from pathlib import Path
-from EdgeWARN.core.ingest.utils import FileFinder
+from EdgeWARN.core.ingest.s3_sync import FileFinder
+from EdgeWARN.core.ingest.utils import extract_timestamp
 from EdgeWARN.core.ingest.parse import parse_mrms_bucket_path
 from EdgeWARN.core.ingest.config import bucket, check_modifiers, mrms_modifiers
 from util.io import IOManager
@@ -41,7 +42,7 @@ class MRMSUpdateChecker:
 
             local_times = []
             for f in local_files:
-                ts = finder.extract_timestamp(f.name)
+                ts = extract_timestamp(f.name)
                 if ts:
                     local_times.append(ts)
 
