@@ -1,11 +1,10 @@
 from EdgeWARN.core.ingest.config import mrms_modifiers, bucket, goes_modifiers, goes_bucket
-from EdgeWARN.core.ingest.utils import FileFinder, FileDownloader
-from EdgeWARN.core.ingest.utils_async import AsyncFileFinder, AsyncFileDownloader
+from EdgeWARN.core.ingest.s3_sync import FileFinder, FileDownloader
+from EdgeWARN.core.ingest.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.parse import parse_goes_bucket_path
 from EdgeWARN.core.ingest.downloader import download_all_files_async_internal, download_all_files_sync_fallback
 from util.io import IOManager
 import util.file as fs
-from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
 import aioboto3
@@ -78,7 +77,7 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
             bucket_path = parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
             bucket_paths.append(bucket_path)
             
-        io_manager.write_debug(f"Checking GOES paths: {bucket_paths}")
+
         
         # Lookup files across all paths (FileFinder handles the loop and max_entries check)
         all_files = finder.lookup_files(bucket_paths)
@@ -87,7 +86,7 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
             io_manager.write_warning(f"No files found for GOES product {product} at {dt}")
             return None
         
-        io_manager.write_debug(f"Found {len(all_files)} GOES {product} file(s). Downloading latest.")
+
         
         # Download most recent file
         downloaded = downloader.download_latest(all_files, outdir)
@@ -125,7 +124,7 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
             bucket_path = parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
             bucket_paths.append(bucket_path)
             
-        io_manager.write_debug(f"Checking GOES paths: {bucket_paths}")
+
         
         # Lookup files across all paths (AsyncFileFinder handles the loop and max_entries check)
         all_files = await finder.async_lookup_files(bucket_paths)
@@ -134,7 +133,7 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
             io_manager.write_warning(f"No files found for GOES product {product} at {dt}")
             return None
         
-        io_manager.write_debug(f"Found {len(all_files)} GOES {product} file(s). Downloading latest.")
+
         
         # Download most recent file
         downloaded = await downloader.async_download_latest(all_files, outdir)
