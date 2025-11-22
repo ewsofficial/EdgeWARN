@@ -59,18 +59,23 @@ async def test_strict_matching():
     else:
         print("✗ Sync download failed for exact timestamp")
 
-    # 3. Test Sync Download with DIFFERENT timestamp (should fail now)
+    # 3. Test Sync Download with DIFFERENT timestamp (should FALLBACK now)
     # We'll use a timestamp 1 minute after the found file
     fake_ts = found_ts + timedelta(minutes=1)
     print(f"\nTesting Sync Download with DIFFERENT timestamp: {fake_ts}")
-    print("(This should fail/return None because we enforce strict matching)")
+    print("(This should now FALLBACK to the latest file instead of returning None)")
     
-    result_fail = download_goes_product(product, outdir, fake_ts, max_entries=10, hour_lookback=5)
+    result_fallback = download_goes_product(product, outdir, fake_ts, max_entries=10, hour_lookback=5)
     
-    if result_fail is None:
-        print("✓ Sync download correctly returned None for non-matching timestamp")
+    if result_fallback and result_fallback.exists():
+        print(f"✓ Sync download correctly fell back to a file: {result_fallback.name}")
+        # Verify it's the same file as the exact match (since it's the latest)
+        if result_fallback.name == result.name:
+             print("  (Confirmed it fell back to the expected latest file)")
+        else:
+             print(f"  (Warning: It fell back to {result_fallback.name}, expected {result.name})")
     else:
-        print(f"✗ Sync download incorrectly returned a file: {result_fail}")
+        print("✗ Sync download failed to fallback (returned None)")
 
     # 4. Test Async Download with EXACT timestamp
     print(f"\nTesting Async Download with EXACT timestamp: {found_ts}")
@@ -100,18 +105,17 @@ async def test_strict_matching():
         else:
             print("✗ Async download failed for exact timestamp")
             
-        # 5. Test Async Download with DIFFERENT timestamp
+        # 5. Test Async Download with DIFFERENT timestamp (should FALLBACK)
         print(f"\nTesting Async Download with DIFFERENT timestamp: {fake_ts}")
-        downloader_fail = AsyncFileDownloader(fake_ts, goes_bucket, io_manager, s3_client=s3)
+        downloader_fallback = AsyncFileDownloader(fake_ts, goes_bucket, io_manager, s3_client=s3)
         
-        # Even if the file list contains the file, the downloader should reject it
-        # because it doesn't match fake_ts
-        downloaded_fail = await downloader_fail.async_download_matching(file_list, outdir)
+        # Even if the file list contains the file, the downloader should use it as fallback
+        downloaded_fallback = await downloader_fallback.async_download_matching(file_list, outdir)
         
-        if downloaded_fail is None:
-            print("✓ Async download correctly returned None for non-matching timestamp")
+        if downloaded_fallback and downloaded_fallback.exists():
+            print(f"✓ Async download correctly fell back to a file: {downloaded_fallback.name}")
         else:
-            print(f"✗ Async download incorrectly returned a file: {downloaded_fail}")
+            print("✗ Async download failed to fallback (returned None)")
 
     # Cleanup
     # shutil.rmtree(outdir)

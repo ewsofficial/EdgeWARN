@@ -171,8 +171,9 @@ class FileDownloader:
                     break
             
             if not target_file_path:
-                self.io_manager.write_warning(f"No file found matching timestamp {target_minute}")
-                return None
+                self.io_manager.write_warning(f"No file found matching timestamp {target_minute}. Falling back to latest available.")
+                # Fallback to the latest file (first in the list)
+                target_file_path, _ = file_list[0]
             
             # Create output directory if it doesn't exist
             outdir = Path(outdir)
