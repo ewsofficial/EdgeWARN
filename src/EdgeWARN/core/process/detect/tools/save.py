@@ -10,6 +10,20 @@ class CellDataSaver:
         self.expanded_ds = expanded_ds
         self.ps_ds = ps_ds
         self.preciptype_ds = preciptype_ds
+    
+    def create_json_structure(self, latest_timestamp):
+        """
+        Creates the main structure for the output data
+        Dev Notes: Currently a placeholder
+        """
+        return {
+            "source": "Edgemont Weather Service",
+            "product": "EdgeWARN Storm Cells",
+            "version": "0.6.0-alpha",
+            "latest_timestamp": latest_timestamp,
+            "features": []
+        }
+
 
     def __create_hailcore_polygon(self, poly_id, step=5):
         """
