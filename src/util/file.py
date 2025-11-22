@@ -111,10 +111,12 @@ def wipe_temp():
 def clean_old_files(directory: Path, max_age_minutes=60):
     now = datetime.now().timestamp()
     cutoff = now - (max_age_minutes * 60)
+    files_deleted = 0
     for f in directory.glob("*"):
         if f.is_file() and f.stat().st_mtime < cutoff:
             try:
                 f.unlink()
-                io_manager.write_debug(f"Deleted old file: {f.name}")
+                files_deleted += 1
             except Exception as e:
                 io_manager.write_error(f"Could not delete {f.name}: {e}")
+    io_manager.write_debug(f"Deleted {files_deleted} files in {directory}")
