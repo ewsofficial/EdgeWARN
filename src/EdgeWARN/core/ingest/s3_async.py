@@ -62,42 +62,6 @@ class AsyncFileDownloader:
         self.io_manager = io_manager
         self.s3 = s3_client
 
-    async def async_download_latest(self, file_list, outdir: Path):
-        """Download the latest file asynchronously"""
-        if not file_list:
-            self.io_manager.write_warning("No files to download")
-            return None
-
-        try:
-            # Get the latest file (first item in sorted list)
-            latest_file_path, ts = file_list[0]
-
-            outdir.mkdir(parents=True, exist_ok=True)
-            filename = os.path.basename(latest_file_path)
-            local_path = outdir / filename
-
-            # Check if file already exists
-            if local_path.exists():
-                self.io_manager.write_debug(f"File already exists, skipping: {filename}")
-                return local_path
-
-            self.io_manager.write_debug(f"Downloading: {latest_file_path}")
-
-            # Download using async S3 client
-            resp = await self.s3.get_object(Bucket=self.bucket, Key=latest_file_path)
-            body = resp["Body"]
-
-            async with aiofiles.open(local_path, "wb") as f:
-                async for chunk in body.iter_chunks():
-                    await f.write(chunk)
-
-            self.io_manager.write_debug(f"Successfully downloaded: {filename}")
-            return local_path
-
-        except Exception as e:
-            self.io_manager.write_error(f"Async download error: {e}")
-            return None
-
     async def async_download_matching(self, file_list, outdir: Path):
         """
         Download the file that matches the target datetime.

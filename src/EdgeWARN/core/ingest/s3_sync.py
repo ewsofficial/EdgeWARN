@@ -87,58 +87,6 @@ class FileDownloader:
             's3',
             config=Config(signature_version=UNSIGNED)
         )
-    
-    def download_latest(self, file_list, outdir: Path):
-        """
-        Download the latest file from the file list to the specified output directory.
-        
-        Args:
-            file_list (list): List of tuples (s3_path, datetime_obj) from FileFinder.lookup_files()
-            outdir (Path): Output directory path where the file will be downloaded
-            
-        Returns:
-            Path: Path to the downloaded file, or None if download failed
-        """
-        if not file_list:
-            self.io_manager.write_warning("No files to download from empty file_list")
-            return None
-        
-        try:
-            # Get the latest file (first item in sorted list)
-            latest_file_path, latest_timestamp = file_list[0]
-            
-            # Create output directory if it doesn't exist
-            outdir = Path(outdir)
-            outdir.mkdir(parents=True, exist_ok=True)
-            
-            # Extract filename from S3 path
-            filename = os.path.basename(latest_file_path)
-            local_path = outdir / filename
-            
-            # Check if file already exists (both zipped and unzipped versions)
-            zipped_path = local_path
-            unzipped_path = local_path.with_suffix("") if local_path.suffix == ".gz" else local_path
-            
-            if zipped_path.exists() or unzipped_path.exists():
-                existing_file = str(zipped_path) if zipped_path.exists() else str(unzipped_path)
-                self.io_manager.write_debug(f"File already exists, skipping download: {existing_file}")
-                return zipped_path if zipped_path.exists() else unzipped_path
-
-            # Log the download attempt
-            self.io_manager.write_debug(f"Downloading latest file: {latest_file_path}")
-            
-            # Use the bucket from constructor and the file path as S3 key
-            s3_key = latest_file_path
-            
-            # Download the file from S3
-            self.client.download_file(self.bucket, s3_key, str(local_path))
-            
-            self.io_manager.write_debug(f"Successfully downloaded: {filename}")
-            return Path(str(local_path))
-            
-        except Exception as e:
-            self.io_manager.write_error(f"Error downloading latest file from {self.bucket}: {e}")
-            return None
 
     def download_matching(self, file_list, outdir: Path):
         """
