@@ -31,7 +31,6 @@ def download_all_files(dt):
     folders = [outdir for _, _, outdir in mrms_modifiers]
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=60)
-    fs.wipe_temp()
 
     max_entries = 10                         # How many files to check per source
 
