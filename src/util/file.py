@@ -32,7 +32,6 @@ ABI_CLOUDPHASE_DIR = DATA_DIR / "ABI-CloudPhase"
 GOES_GLM_DIR = DATA_DIR / "GLM"
 ABI_CLOUDPRES_DIR = DATA_DIR / "ABI-CloudPressure"
 STORMCELL_JSON = Path("stormcell_test.json")
-TEMP_DIR = DATA_DIR / "tmp"
 
 # ---------- GUI PATH CONFIG ----------
 GUI_DIR = BASE_DIR / "gui"
@@ -98,14 +97,6 @@ def clean_idx_files(folders):
                 io_manager.write_debug(f"Deleted {deleted_files} files in {folder}")
         else:
             io_manager.write_error(f"Folder not found: {folder}")
-
-def wipe_temp():
-    for f in TEMP_DIR.glob("*"):
-        try:
-            f.unlink()
-            io_manager.write_debug(f"Deleted temporary file: {f.name}")
-        except Exception as e:
-            io_manager.write_error(f"Could not delete temporary file {f.name}: {e}")
 
 # ---------- CLEANUP ----------
 def clean_old_files(directory: Path, max_age_minutes=60):
