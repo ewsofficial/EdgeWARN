@@ -140,6 +140,73 @@ class FileDownloader:
             self.io_manager.write_error(f"Error downloading latest file from {self.bucket}: {e}")
             return None
 
+    def download_matching(self, file_list, outdir: Path):
+        """
+        Download the file that matches the target datetime.
+        
+        Args:
+            file_list (list): List of tuples (s3_path, datetime_obj) from FileFinder.lookup_files()
+            outdir (Path): Output directory path where the file will be downloaded
+            
+        Returns:
+            Path: Path to the downloaded file, or None if download failed
+        """
+        if not file_list:
+            self.io_manager.write_warning("No files to download from empty file_list")
+            return None
+        
+        try:
+            # Find file with matching timestamp
+            target_file_path = None
+            
+            # Target minute (ignore seconds/microseconds for matching)
+            target_minute = self.dt.replace(second=0, microsecond=0)
+            
+            for s3_path, ts in file_list:
+                # Compare down to the minute
+                file_minute = ts.replace(second=0, microsecond=0)
+                
+                if file_minute == target_minute:
+                    target_file_path = s3_path
+                    break
+            
+            if not target_file_path:
+                self.io_manager.write_warning(f"No file found matching timestamp {target_minute}")
+                return None
+            
+            # Create output directory if it doesn't exist
+            outdir = Path(outdir)
+            outdir.mkdir(parents=True, exist_ok=True)
+            
+            # Extract filename from S3 path
+            filename = os.path.basename(target_file_path)
+            local_path = outdir / filename
+            
+            # Check if file already exists (both zipped and unzipped versions)
+            zipped_path = local_path
+            unzipped_path = local_path.with_suffix("") if local_path.suffix == ".gz" else local_path
+            
+            if zipped_path.exists() or unzipped_path.exists():
+                existing_file = str(zipped_path) if zipped_path.exists() else str(unzipped_path)
+                self.io_manager.write_debug(f"File already exists, skipping download: {existing_file}")
+                return zipped_path if zipped_path.exists() else unzipped_path
+
+            # Log the download attempt
+            self.io_manager.write_debug(f"Downloading matching file: {target_file_path}")
+            
+            # Use the bucket from constructor and the file path as S3 key
+            s3_key = target_file_path
+            
+            # Download the file from S3
+            self.client.download_file(self.bucket, s3_key, str(local_path))
+            
+            self.io_manager.write_debug(f"Successfully downloaded: {filename}")
+            return Path(str(local_path))
+            
+        except Exception as e:
+            self.io_manager.write_error(f"Error downloading matching file from {self.bucket}: {e}")
+            return None
+
     def decompress_file(self, gz_path: Path) -> Path | None:
         """
         Decompress a .gz file into its parent directory and delete the original .gz.

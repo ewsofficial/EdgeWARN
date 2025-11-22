@@ -98,6 +98,66 @@ class AsyncFileDownloader:
             self.io_manager.write_error(f"Async download error: {e}")
             return None
 
+    async def async_download_matching(self, file_list, outdir: Path):
+        """
+        Download the file that matches the target datetime.
+        
+        Args:
+            file_list: List of (s3_path, timestamp) tuples
+            outdir: Output directory
+            
+        Returns:
+            Path to downloaded file or None if no match found
+        """
+        if not file_list:
+            self.io_manager.write_warning("No files to download")
+            return None
+
+        try:
+            # Find file with matching timestamp
+            target_file_path = None
+            
+            # Target minute (ignore seconds/microseconds for matching)
+            target_minute = self.dt.replace(second=0, microsecond=0)
+            
+            for s3_path, ts in file_list:
+                # Compare down to the minute
+                file_minute = ts.replace(second=0, microsecond=0)
+                
+                if file_minute == target_minute:
+                    target_file_path = s3_path
+                    break
+            
+            if not target_file_path:
+                self.io_manager.write_warning(f"No file found matching timestamp {target_minute}")
+                return None
+
+            outdir.mkdir(parents=True, exist_ok=True)
+            filename = os.path.basename(target_file_path)
+            local_path = outdir / filename
+
+            # Check if file already exists
+            if local_path.exists():
+                self.io_manager.write_debug(f"File already exists, skipping: {filename}")
+                return local_path
+
+            self.io_manager.write_debug(f"Downloading matching file: {target_file_path}")
+
+            # Download using async S3 client
+            resp = await self.s3.get_object(Bucket=self.bucket, Key=target_file_path)
+            body = resp["Body"]
+
+            async with aiofiles.open(local_path, "wb") as f:
+                async for chunk in body.iter_chunks():
+                    await f.write(chunk)
+
+            self.io_manager.write_debug(f"Successfully downloaded: {filename}")
+            return local_path
+
+        except Exception as e:
+            self.io_manager.write_error(f"Async download error: {e}")
+            return None
+
     async def async_decompress_file(self, gz_path: Path):
         """Async decompression using thread pool for CPU-bound gzip operation"""
         if not gz_path.exists():

@@ -51,7 +51,7 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
             return
         
         # Download most recent file asynchronously
-        downloaded = await downloader.async_download_latest(file_list, outdir)
+        downloaded = await downloader.async_download_matching(file_list, outdir)
         if downloaded:
             if downloaded.suffix == ".gz":
                 await downloader.async_decompress_file(downloaded)
@@ -90,7 +90,7 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
             return
         
         # Download most recent file that matches the target minute
-        downloaded = downloader.download_latest(file_list, outdir)
+        downloaded = downloader.download_matching(file_list, outdir)
         if downloaded:
             downloader.decompress_file(downloaded)
         else:
@@ -138,7 +138,7 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
         
         
         # Download most recent file
-        downloaded = downloader.download_latest(all_files, outdir)
+        downloaded = downloader.download_matching(all_files, outdir)
         if downloaded:
             # Decompress if .gz
             if downloaded.suffix == ".gz":
@@ -183,7 +183,7 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
         
         
         # Download most recent file
-        downloaded = await downloader.async_download_latest(all_files, outdir)
+        downloaded = await downloader.async_download_matching(all_files, outdir)
         if downloaded:
             # Decompress if .gz
             if downloaded.suffix == ".gz":
