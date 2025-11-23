@@ -1,6 +1,7 @@
 from util.file import *
 
 bucket = "noaa-mrms-pds"
+goes_bucket = "noaa-goes19"
 
 mrms_modifiers = [
     ("CONUS", "EchoTop_18_00.50", MRMS_ECHOTOP18_DIR), # Region / Product / Outdir
@@ -8,7 +9,6 @@ mrms_modifiers = [
     ("CONUS", "FLASH_QPE_FFG01H_00.00", MRMS_FLASH_DIR),
     ("CONUS", "MESH_00.50", MRMS_MESH_DIR),
     ("CONUS", "WarmRainProbability_00.50", MRMS_RAIN_DIR),
-    ("CONUS", "NLDN_CG_005min_00.00", MRMS_CGFLASH_DIR),
     ("CONUS", "NLDN_CG_005min_AvgDensity_00.00", MRMS_NLDN_DIR),
     ("CONUS", "PrecipRate_00.00", MRMS_PRECIPRATE_DIR),
     ("CONUS", "RadarOnly_QPE_01H_00.00", MRMS_QPE_DIR),
@@ -34,4 +34,11 @@ check_modifiers = [
     ("CONUS", "MergedReflectivityAtLowestAltitude_00.50", MRMS_RALA_DIR),
     ("CONUS", "MergedReflectivityQCComposite_00.50", MRMS_COMPOSITE_DIR),
     ("CONUS", "VII_00.50", MRMS_VII_DIR)
+]
+
+goes_modifiers = [
+    ("GLM-L2-LCFA", GOES_GLM_DIR),
+    ("ABI-L2-ACHAC", ABI_CLOUDHEIGHT_DIR),
+    ("ABI-L2-ACHTF", ABI_CLOUDTEMP_DIR),
+    ("ABI-L2-ACTPC", ABI_CLOUDPHASE_DIR),
 ]

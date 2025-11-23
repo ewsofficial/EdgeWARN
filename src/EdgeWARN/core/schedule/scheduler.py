@@ -1,9 +1,10 @@
 import datetime
 import time
 from pathlib import Path
-from EdgeWARN.core.ingest.download import FileFinder
-from EdgeWARN.core.ingest.parse import MRMSBucketParser
-from EdgeWARN.core.ingest.config import bucket, check_modifiers
+from EdgeWARN.core.ingest.s3_sync import FileFinder
+from EdgeWARN.core.ingest.utils import extract_timestamp
+from EdgeWARN.core.ingest.parse import parse_mrms_bucket_path
+from EdgeWARN.core.ingest.config import bucket, check_modifiers, mrms_modifiers
 from util.io import IOManager
 
 io_manager = IOManager("[DataIngestion]")
@@ -12,8 +13,7 @@ io_manager = IOManager("[DataIngestion]")
 class MRMSUpdateChecker:
     """Checks MRMS sources for new files and finds the latest common timestamps."""
 
-    def __init__(self, max_time=datetime.timedelta(hours=6), max_entries=10, verbose=False):
-        self.max_time = max_time
+    def __init__(self, max_entries=10, verbose=False):
         self.max_entries = max_entries
         self.verbose = verbose
 
@@ -23,11 +23,9 @@ class MRMSUpdateChecker:
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
 
-        finder = FileFinder(reference_dt, bucket, self.max_time, self.max_entries, io_manager)
-        parser = MRMSBucketParser(reference_dt)
-
+        finder = FileFinder(reference_dt, bucket, self.max_entries, io_manager)
         try:
-            bucket_path = parser.parse_bucket_path(region, modifier)
+            bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False)
             if not files_with_timestamps:
                 if self.verbose:
@@ -44,7 +42,7 @@ class MRMSUpdateChecker:
 
             local_times = []
             for f in local_files:
-                ts = finder.extract_timestamp(f.name)
+                ts = extract_timestamp(f.name)
                 if ts:
                     local_times.append(ts)
 
@@ -80,13 +78,11 @@ class MRMSUpdateChecker:
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
 
-        max_time = datetime.timedelta(hours=1)
         modifier_times = []
 
         for region, modifier, _ in modifiers:
-            finder = FileFinder(reference_dt, bucket, max_time, 10, io_manager)
-            parser = MRMSBucketParser(reference_dt)
-            bucket_path = parser.parse_bucket_path(region, modifier)
+            finder = FileFinder(reference_dt, bucket, 10, io_manager)
+            bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False)
             if not files_with_timestamps:
                 if self.verbose:

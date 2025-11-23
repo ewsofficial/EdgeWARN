@@ -26,8 +26,12 @@ MRMS_COMPOSITE_DIR = DATA_DIR / "CompRefQC"
 MRMS_RHOHV_DIR = DATA_DIR / "RhoHV"
 MRMS_PRECIPTYP_DIR = DATA_DIR / "PrecipFlag"
 MRMS_MESH_DIR = DATA_DIR / "MESH"
+ABI_CLOUDHEIGHT_DIR = DATA_DIR / "ABI-CloudHeight"
+ABI_CLOUDTEMP_DIR = DATA_DIR / "ABI-CloudTemp"
+ABI_CLOUDPHASE_DIR = DATA_DIR / "ABI-CloudPhase"
+GOES_GLM_DIR = DATA_DIR / "GLM"
+ABI_CLOUDPRES_DIR = DATA_DIR / "ABI-CloudPressure"
 STORMCELL_JSON = Path("stormcell_test.json")
-TEMP_DIR = DATA_DIR / "tmp"
 
 # ---------- GUI PATH CONFIG ----------
 GUI_DIR = BASE_DIR / "gui"
@@ -94,22 +98,16 @@ def clean_idx_files(folders):
         else:
             io_manager.write_error(f"Folder not found: {folder}")
 
-def wipe_temp():
-    for f in TEMP_DIR.glob("*"):
-        try:
-            f.unlink()
-            io_manager.write_debug(f"Deleted temporary file: {f.name}")
-        except Exception as e:
-            io_manager.write_error(f"Could not delete temporary file {f.name}: {e}")
-
 # ---------- CLEANUP ----------
 def clean_old_files(directory: Path, max_age_minutes=60):
     now = datetime.now().timestamp()
     cutoff = now - (max_age_minutes * 60)
+    files_deleted = 0
     for f in directory.glob("*"):
         if f.is_file() and f.stat().st_mtime < cutoff:
             try:
                 f.unlink()
-                io_manager.write_debug(f"Deleted old file: {f.name}")
+                files_deleted += 1
             except Exception as e:
                 io_manager.write_error(f"Could not delete {f.name}: {e}")
+    io_manager.write_debug(f"Deleted {files_deleted} files in {directory}")
