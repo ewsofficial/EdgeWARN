@@ -70,7 +70,9 @@ class StatFileHandler:
             self.io_manager.write_error(f"{filepath} did not have any data")
             return None
         else:
-            return data
+            features = data['features']
+            latest_timestamp = data['latest_timestamp']
+            return features, latest_timestamp
     
     def write_json(self, data, filepath):
         self.io_manager.write_debug(f"Writing to JSON file {filepath}")
