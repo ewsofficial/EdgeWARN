@@ -1,6 +1,17 @@
 # EdgeWARN Data Keys
 
-## Primary Data Keys
+## Root JSON Structure
+
+The JSON output follows this structure:
+
+| Key              | Type           | Description                                      |
+|------------------|----------------|--------------------------------------------------|
+| source           | string         | Authors of the JSON                              |
+| product          | string         | Product ID                                       |
+| latest_timestamp | ISOFormat      | The latest timestamp of data included in this file |
+| features         | List[Object]   | List of storm cell objects (see Primary Data Keys below) |
+
+## Primary Data Keys (Feature Object)
 
 | Key          | Units          | Description                                      |
 |--------------|----------------|--------------------------------------------------|
