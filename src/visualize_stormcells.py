@@ -9,7 +9,7 @@ with open('stormcell_test.json', 'r') as f:
     data = json.load(f)
 
 # Collect all unique timestamps
-timestamps = sorted(set(h['timestamp'] for cell in data for h in cell['storm_history']))
+timestamps = sorted(set(h['timestamp'] for cell in data['features'] for h in cell['storm_history']))
 
 # No global limits, will set per timestamp
 
@@ -26,7 +26,7 @@ def update(val):
     current_lons = []
     current_lats = []
 
-    for cell in data:
+    for cell in data['features']:
         cell_id = cell['id']
         bbox = cell['bbox']
         if not bbox:
@@ -34,9 +34,7 @@ def update(val):
 
         # Prepare bbox points: [lon, lat], normalized lon
         bbox_points = np.array([[(p[1] + 360) % 360, p[0]] for p in bbox])
-        bbox_centroid_lon = np.mean(bbox_points[:, 0])
-        bbox_centroid_lat = np.mean(bbox_points[:, 1])
-
+        
         # Get all history up to this timestamp
         hist_list = [h for h in cell['storm_history'] if h['timestamp'] <= ts]
         hist_list.sort(key=lambda x: x['timestamp'])
@@ -94,7 +92,7 @@ def update(val):
                 # vx vy
                 vx = hist_entry.get('vx', 0)
                 vy = hist_entry.get('vy', 0)
-                ax.quiver(lon, lat, vx, vy, angles='xy', scale_units='xy', scale=80, color='red', width=0.003, label='vx vy' if cell_id == data[0]['id'] else "")
+                ax.quiver(lon, lat, vx, vy, angles='xy', scale_units='xy', scale=80, color='red', width=0.003, label='vx vy' if cell_id == data['features'][0]['id'] else "")
 
                 # Computed averaged dx/dt dy/dt over previous 4 entries
                 comp_vels = []
@@ -106,7 +104,7 @@ def update(val):
                     num_to_avg = min(4, len(comp_vels))
                     avg_vx = sum(v[0] for v in comp_vels[-num_to_avg:]) / num_to_avg
                     avg_vy = sum(v[1] for v in comp_vels[-num_to_avg:]) / num_to_avg
-                    ax.quiver(lon, lat, avg_vx, avg_vy, angles='xy', scale_units='xy', scale=80, color='green', width=0.003, label='avg dx/dt dy/dt' if cell_id == data[0]['id'] else "")
+                    ax.quiver(lon, lat, avg_vx, avg_vy, angles='xy', scale_units='xy', scale=80, color='green', width=0.003, label='avg dx/dt dy/dt' if cell_id == data['features'][0]['id'] else "")
 
     if current_lons and current_lats:
         ax.set_xlim(min(current_lons) - 0.01, max(current_lons) + 0.01)
