@@ -67,12 +67,25 @@ class StormCellIntegrator:
         lat_vals = ds[lat_name].values
         lon_vals = ds[lon_name].values
 
+        # Determine the latest timestamp among all cells
+        latest_ts = None
+        for cell in storm_cells:
+            if cell.get("storm_history"):
+                ts = cell["storm_history"][-1]["timestamp"]
+                if latest_ts is None or ts > latest_ts:
+                    latest_ts = ts
+        
         # Step 4: Process storm cells
         for cell in storm_cells:
             if not cell.get("storm_history"):
                 continue
 
             latest = cell["storm_history"][-1]
+            
+            # Filter by latest timestamp
+            if latest_ts and latest["timestamp"] != latest_ts:
+                continue
+
             poly = StormIntegrationUtils.create_cell_polygon(cell)
             if poly is None:
                 latest[output_key] = 0
