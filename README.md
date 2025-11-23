@@ -1,7 +1,7 @@
 <h1 align="center">EdgeWARN</h1>
 
 <p align="center">
-<img src="assets/EWS_logo_072025.png" alt="EWS-logo" width="15%"/>
+<img src="assets/EdgeWARN.png" alt="EWS-logo" width="15%"/>
 </p>
 
 <h2 align="center">Severe Weather Nowcasting</h2>
@@ -32,22 +32,13 @@ the GUI frontend.
 
 <h2 align="center">Build Info</h2>
 
-## Version History for 0.5.x-alpha
+## Version History for 0.6.x-alpha
 
-### 0.5.1-alpha
-- Flattened ProbSevere keys to be top-level in storm history entries
-- Added hail core detection. This is saved under `hail_core` in each cell ID. Hail core is `None` if no valid points exist.
-
-### 0.5.2-alpha
-- Removed redundant debug prints in `EdgeWARN.core.ingest`
-- Simplified `FileDownloader.decompress_file()` to be more concise
-- lat and lon limits will now use default values if none are specified (`lat = (36, 46)` and `lon = (-83, 73)`)
-- Added missing keys in ProbSevere data (`ProbTor`, `ProbHail`, `ProbWind`, `ProbSevere`)
-
-### 0.5.3-alpha (current)
-- Optimized polygon mapping and gate expansion code. This speeds up execution greatly
-- Added `vx` and `vy` keys, which are ProbSevere's `MOTION_EAST` and `MOTION_SOUTH`, respectively
-- Limited coordinate points to 3 decimal precision and integration data to 2 decimal precision
+### 0.6.0-alpha (current)
+- Changed `ingest` module to use AWS S3 Buckets
+- Added `GOES-19` data downloading
+- Added metadata tags `source`, `product`, `version`, `latest_timestamp` to storm cell JSON
+- Storm cell data is now moved into `features` key
 
 <h2 align="center">Credits</h2>
 
