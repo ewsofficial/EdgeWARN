@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from pathlib import Path
 from datetime import datetime, timezone
 import time
@@ -55,6 +56,20 @@ def main():
     print("Scheduler started. Press CTRL+C to exit.")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed = None  # Track last processed timestamp
+
+    # Check for existing JSON output to initialize last_processed
+    json_path = Path("stormcell_test.json")
+    if json_path.exists():
+        try:
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict) and "latest_timestamp" in data:
+                    ts_str = data["latest_timestamp"]
+                    # Parse ISO format timestamp
+                    last_processed = datetime.fromisoformat(ts_str)
+                    print(f"[Scheduler] Initialized last_processed from {json_path}: {last_processed}")
+        except Exception as e:
+            print(f"[Scheduler] Failed to load initial timestamp from {json_path}: {e}")
 
     try:
         while True:
