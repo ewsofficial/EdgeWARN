@@ -22,7 +22,7 @@ def main():
     handler = StatFileHandler(io_manager)
     integrator = StormCellIntegrator(io_manager)
     json_path = "stormcell_test.json"
-    cells = handler.load_json(json_path)
+    cells, _ = handler.load_json(json_path) # _ is latest_timestamp, we don't need this
 
     result_cells = cells
 
