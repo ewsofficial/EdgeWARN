@@ -9,6 +9,7 @@ dependencies:
   - boto3
   - cfgrib
   - numpy
+  - netcdf4
   - scikit-image
   - scipy
   - shapely
