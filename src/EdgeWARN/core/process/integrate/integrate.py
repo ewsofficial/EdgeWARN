@@ -1,6 +1,7 @@
 from .utils import StormIntegrationUtils
 import xarray as xr
 import numpy as np
+import shapely.vectorized as sv
 import gc
 
 class StormCellIntegrator:
@@ -8,82 +9,45 @@ class StormCellIntegrator:
         self.io_manager = io_manager
 
     def integrate_ds_via_max(self, dataset_path, storm_cells, output_key):
-        """
-        Integrate a dataset over storm cells, storing the result in each cell's storm_history.
-        Saves maximum value of the dataset in each storm cell.
-        Handles both 1D and 2D lat/lon coordinates.
-        Fully loads dataset into memory, no subsetting.
-        """
 
-        self.io_manager.write_debug(f"Integrating dataset for {len(storm_cells)} storm cells")
-
-        # Step 1: Load dataset directly (no subsetting)
+        # Load dataset
         try:
             if dataset_path.endswith(".grib2"):
                 ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
             else:
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
 
-            ds.load()  # load entire dataset
-            self.io_manager.write_debug(f"Dataset loaded successfully with shape {list(ds.sizes.values())}")
-
-            # Identify coordinate names
-            lat_name = "latitude" if "latitude" in ds.coords else "lat"
-            lon_name = "longitude" if "longitude" in ds.coords else "lon"
-
-            # Check if dataset is empty
-            if ds.sizes[lat_name] == 0 or ds.sizes[lon_name] == 0:
-                self.io_manager.write_warning("Dataset empty")
-                for cell in storm_cells:
-                    if cell.get("storm_history"):
-                        cell["storm_history"][-1][output_key] = "EMPTY_DATASET"
-                ds.close()
-                return storm_cells
-
-        except MemoryError:
-            self.io_manager.write_error("Dataset too large to load into memory")
-            for cell in storm_cells:
-                if cell.get("storm_history"):
-                    cell["storm_history"][-1][output_key] = "MEMORY_ERROR"
-            return storm_cells
+            ds.load()
         except Exception as e:
-            self.io_manager.write_error(f"Failed to load dataset: {e}")
-            for cell in storm_cells:
-                if cell.get("storm_history"):
-                    cell["storm_history"][-1][output_key] = "DATASET_LOAD_ERROR"
+            self.io_manager.write_error(f"Load error: {e}")
             return storm_cells
 
-        # Step 2: Select variable
-        var = ds.get("unknown")
-        if var is None:
-            self.io_manager.write_error("Variable 'unknown' not found in dataset")
-            for cell in storm_cells:
-                if cell.get("storm_history"):
-                    cell["storm_history"][-1][output_key] = "VAR_NOT_FOUND"
-            ds.close()
-            return storm_cells
-
-        # Step 3: Get coordinates (can be 1D or 2D)
+        # Coordinates
+        lat_name = "latitude" if "latitude" in ds.coords else "lat"
+        lon_name = "longitude" if "longitude" in ds.coords else "lon"
         lat_vals = ds[lat_name].values
         lon_vals = ds[lon_name].values
 
-        # Determine the latest timestamp among all cells
-        latest_ts = None
-        for cell in storm_cells:
-            if cell.get("storm_history"):
-                ts = cell["storm_history"][-1]["timestamp"]
-                if latest_ts is None or ts > latest_ts:
-                    latest_ts = ts
-        
-        # Step 4: Process storm cells
+        var = ds.get("unknown")
+        if var is None:
+            self.io_manager.write_error("Variable 'unknown' not found")
+            return storm_cells
+
+        latest_ts = max(
+            (cell["storm_history"][-1]["timestamp"]
+            for cell in storm_cells if cell.get("storm_history")),
+            default=None
+        )
+
+        # Precompute full grid lon/lat only once
+        LonGrid, LatGrid = np.meshgrid(lon_vals, lat_vals)
+
         for cell in storm_cells:
             if not cell.get("storm_history"):
                 continue
 
             latest = cell["storm_history"][-1]
-            
-            # Filter by latest timestamp
-            if latest_ts and latest["timestamp"] != latest_ts:
+            if latest["timestamp"] != latest_ts:
                 continue
 
             poly = StormIntegrationUtils.create_cell_polygon(cell)
@@ -92,39 +56,36 @@ class StormCellIntegrator:
                 continue
 
             try:
-                if lat_vals.ndim == 1 and lon_vals.ndim == 1:
-                    mask = np.logical_and.outer(
-                        (lat_vals >= poly.bounds[1]) & (lat_vals <= poly.bounds[3]),
-                        (lon_vals >= poly.bounds[0]) & (lon_vals <= poly.bounds[2])
-                    )
-                else:
-                    mask = (
-                        (lat_vals >= poly.bounds[1]) & (lat_vals <= poly.bounds[3]) &
-                        (lon_vals >= poly.bounds[0]) & (lon_vals <= poly.bounds[2])
-                    )
+                minx, miny, maxx, maxy = poly.bounds
 
-                subset_vals = var.where(mask & (var >= 0))
-                if subset_vals.size == 0 or np.all(np.isnan(subset_vals)):
+                # FAST slice (view) – reduces grid massively
+                lat_mask = (lat_vals >= miny) & (lat_vals <= maxy)
+                lon_mask = (lon_vals >= minx) & (lon_vals <= maxx)
+
+                sub_var = var.values[np.ix_(lat_mask, lon_mask)]
+                sub_lat = LatGrid[np.ix_(lat_mask, lon_mask)]
+                sub_lon = LonGrid[np.ix_(lat_mask, lon_mask)]
+
+                if sub_var.size == 0:
+                    latest[output_key] = 0
+                    continue
+
+                # Polygon mask using shapely.vectorized (C-speed)
+                inside = sv.contains(poly, sub_lon, sub_lat)
+
+                masked_vals = sub_var[inside]
+                masked_vals = masked_vals[masked_vals >= 0]
+
+                if masked_vals.size == 0:
                     latest[output_key] = 0
                 else:
-                    latest[output_key] = round(float(np.nanmax(subset_vals)), 2)
+                    latest[output_key] = float(np.nanmax(masked_vals))
 
             except Exception as e:
-                self.io_manager.write_error(f"Processing cell {cell.get('id', 'unknown')}: {e}")
+                self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
                 latest[output_key] = "PROCESSING_ERROR"
 
-            finally:
-                try:
-                    del subset_vals, mask, poly
-                except Exception:
-                    pass
-                gc.collect()
-
-        # Step 5: Cleanup
         ds.close()
-        del var, ds
-        gc.collect()
-
         return storm_cells
 
     def integrate_probsevere(self, probsevere_data, storm_cells):
