@@ -1,7 +1,9 @@
 import util.file as fs
 from EdgeWARN.core.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.core.process.integrate.utils import StatFileHandler
+from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
+import json
 
 # ------------------------------
 # MRMS dataset list
@@ -22,7 +24,7 @@ def main():
     handler = StatFileHandler(io_manager)
     integrator = StormCellIntegrator(io_manager)
     json_path = "stormcell_test.json"
-    cells, _ = handler.load_json(json_path) # _ is latest_timestamp, we don't need this
+    cells, timestamp = handler.load_json(json_path) # _ is latest_timestamp, we don't need this
 
     result_cells = cells
 
@@ -43,7 +45,8 @@ def main():
     try:
         io_manager.write_debug(f"Integrating ProbSevere data for {len(cells)} cells")
         latest_file = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1]
-        probsevere_data = handler.load_json(latest_file)
+        with open(latest_file, 'r') as f:
+            probsevere_data = json.load(f)
         io_manager.write_debug(f"Using latest ProbSevere file: {latest_file}")
 
         result_cells = integrator.integrate_probsevere(probsevere_data, result_cells)
@@ -53,7 +56,8 @@ def main():
         io_manager.write_error(f"Failed to integrate ProbSevere data: {e}")
     
     # Save data
-    handler.write_json(result_cells, json_path)
+    data = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, result_cells)
+    handler.write_json(data, json_path)
 
 if __name__ == "__main__":
     main()
