@@ -1,22 +1,34 @@
-import boto3
-from botocore import UNSIGNED
-from botocore.client import Config
-from pathlib import Path
+import heapq
 import os
 import gzip
 import shutil
+from functools import lru_cache
+from pathlib import Path
+
+import boto3
+from botocore import UNSIGNED
+from botocore.client import Config
+
 from EdgeWARN.core.ingest.utils import extract_timestamp
 
+
+@lru_cache(maxsize=1)
+def _get_unsigned_s3_client():
+    return boto3.client('s3', config=Config(signature_version=UNSIGNED))
+
+
+_DECOMPRESS_CHUNK_SIZE = 1024 * 1024  # 1MB chunks to reduce syscall overhead during gzip copy
+
 class FileFinder:
-    def __init__(self, dt, bucket, max_entries, io_manager):
+    __slots__ = ("dt", "bucket", "max_entries", "io_manager", "client", "paginator")
+
+    def __init__(self, dt, bucket, max_entries, io_manager, client=None):
         self.dt = dt
         self.bucket = bucket
         self.max_entries = max_entries  # Maximum number of entries to return
         self.io_manager = io_manager # Use the IOManager class in util.io
-        self.client = boto3.client(
-            's3',
-            config=Config(signature_version=UNSIGNED)
-        )
+        self.client = client if client is not None else _get_unsigned_s3_client()
+        self.paginator = self.client.get_paginator('list_objects_v2')
     
     def lookup_files(self, modifier, verbose=False):
         """
@@ -37,41 +49,46 @@ class FileFinder:
             # Normalize modifier to list
             modifiers = [modifier] if isinstance(modifier, str) else modifier
             
-            files_data = []
+            top_files = []
             
+            push = heapq.heappush
+            replace = heapq.heapreplace
+            max_entries = self.max_entries
+
             for prefix in modifiers:
-                # List objects in S3 bucket with pagination
-                paginator = self.client.get_paginator('list_objects_v2')
-                
                 # Set up prefix filter for bucket search
                 search_prefix = prefix if prefix else ""
-                
+
                 # Iterate through all pages of results
-                for page in paginator.paginate(Bucket=self.bucket, Prefix=search_prefix):
+                for page in self.paginator.paginate(Bucket=self.bucket, Prefix=search_prefix):
                     if 'Contents' in page:
                         for obj in page['Contents']:
                             s3_path = obj['Key']
-                            
+
                             try:
                                 # Extract timestamp from S3 path
                                 timestamp = extract_timestamp(s3_path)
-                                
-                                files_data.append((s3_path, timestamp))
+
+                                entry = (timestamp, s3_path)
+                                if len(top_files) < max_entries:
+                                    push(top_files, entry)
+                                elif entry[0] > top_files[0][0]:
+                                    replace(top_files, entry)
                             except Exception:
                                 # Skip files that don't have valid timestamps
                                 continue
-                
+
                 # Optimization: If we have enough files, stop searching subsequent modifiers
                 # We only check this after finishing a prefix to ensure we get all files from that prefix
                 # (e.g. all files from the current hour) before deciding if we need more.
-                if len(files_data) >= self.max_entries:
+                if len(top_files) >= self.max_entries:
                     break
-            
+
             # Sort by timestamp (latest first)
-            files_data.sort(key=lambda x: x[1], reverse=True)
-            
+            top_files.sort(key=lambda x: x[0], reverse=True)
+
             # Limit to max_entries
-            return files_data[:self.max_entries]
+            return [(path, ts) for ts, path in top_files[:self.max_entries]]
             
         except Exception as e:
             # Log error and return empty list
@@ -79,14 +96,27 @@ class FileFinder:
             return []
 
 class FileDownloader:
-    def __init__(self, dt, bucket, io_manager):
+    __slots__ = ("dt", "bucket", "io_manager", "target_minute", "target_key", "client")
+
+    def __init__(self, dt, bucket, io_manager, client=None):
         self.dt = dt
         self.bucket = bucket
         self.io_manager = io_manager # IOManager class from util.io
-        self.client = boto3.client(
-            's3',
-            config=Config(signature_version=UNSIGNED)
+        self.target_minute = dt.replace(second=0, microsecond=0)
+        self.target_key = (dt.year, dt.month, dt.day, dt.hour, dt.minute)
+        self.client = client if client is not None else _get_unsigned_s3_client()
+
+    def _select_target_file(self, file_list):
+        target_key = self.target_key
+        for s3_path, ts in file_list:
+            if (ts.year, ts.month, ts.day, ts.hour, ts.minute) == target_key:
+                return s3_path
+
+        self.io_manager.write_warning(
+            f"No file found matching timestamp {self.target_minute}. Falling back to latest available."
         )
+        # Fallback to the latest file (first in the list)
+        return file_list[0][0]
 
     def download_matching(self, file_list, outdir: Path):
         """
@@ -105,23 +135,7 @@ class FileDownloader:
         
         try:
             # Find file with matching timestamp
-            target_file_path = None
-            
-            # Target minute (ignore seconds/microseconds for matching)
-            target_minute = self.dt.replace(second=0, microsecond=0)
-            
-            for s3_path, ts in file_list:
-                # Compare down to the minute
-                file_minute = ts.replace(second=0, microsecond=0)
-                
-                if file_minute == target_minute:
-                    target_file_path = s3_path
-                    break
-            
-            if not target_file_path:
-                self.io_manager.write_warning(f"No file found matching timestamp {target_minute}. Falling back to latest available.")
-                # Fallback to the latest file (first in the list)
-                target_file_path, _ = file_list[0]
+            target_file_path = self._select_target_file(file_list)
             
             # Create output directory if it doesn't exist
             outdir = Path(outdir)
@@ -172,9 +186,13 @@ class FileDownloader:
             # Decompressed file path (remove .gz)
             output_path = gz_path.with_suffix("")
 
+            if output_path.exists():
+                self.io_manager.write_debug(f"Decompressed target already exists, skipping: {output_path}")
+                return output_path
+
             # Decompress into the same parent directory
             with gzip.open(gz_path, "rb") as f_in, open(output_path, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+                shutil.copyfileobj(f_in, f_out, length=_DECOMPRESS_CHUNK_SIZE)
 
             self.io_manager.write_debug(f"Decompressed to: {output_path}")
 
