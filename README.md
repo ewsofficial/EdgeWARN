@@ -39,6 +39,7 @@ the GUI frontend.
 - Added `GOES-19` data downloading
 - Added metadata tags `source`, `product`, `version`, `latest_timestamp` to storm cell JSON
 - Storm cell data is now moved into `features` key
+- Dataset integration now only integrates for cells that have a latest history timestamp
 
 <h2 align="center">Credits</h2>
 
