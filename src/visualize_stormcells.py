@@ -112,7 +112,7 @@ def update(val):
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
     ax.set_title(f'Storm Cell Visualization at {ts}')
-    ax.legend()
+
     ax.grid(True)
     fig.canvas.draw_idle()
 
