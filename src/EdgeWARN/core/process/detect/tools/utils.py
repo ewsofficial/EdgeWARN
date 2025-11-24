@@ -7,6 +7,17 @@ from pathlib import Path
 from util.io import IOManager
 import cfgrib
 
+
+_TIMESTAMP_PATTERNS = [
+    re.compile(r"MRMS_MergedReflectivityQC_3D_(\d{8})-(\d{6})"),
+    re.compile(r"(\d{8})-(\d{6})_renamed"),
+    re.compile(r"(\d{8}-\d{6})"),
+    re.compile(r".*(\d{8})-(\d{6}).*"),
+    re.compile(r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)"),
+]
+
+_DETECTION_IO = IOManager("[CellDetection]")
+
 class DetectionDataHandler:
     def __init__(self, radar_path, ps_path, preciptype_path, io_manager, lat_min, lat_max, lon_min, lon_max):
         """
@@ -88,20 +99,24 @@ class DetectionDataHandler:
             lat_min, lat_max = self.lat_grid
             lon_min, lon_max = self.lon_grid
 
-            lat_min = (lat_min + 180) % 360 - 180  # -> -77.6
-            lat_max = (lat_max + 180) % 360 - 180  # -> -75.2
+            lat_min = (lat_min + 180) % 360 - 180
+            lat_max = (lat_max + 180) % 360 - 180
 
-            lon_min = (lon_min + 180) % 360 - 180  # -> -77.6
-            lon_max = (lon_max + 180) % 360 - 180  # -> -75.2
+            lon_min = (lon_min + 180) % 360 - 180
+            lon_max = (lon_max + 180) % 360 - 180
 
             filtered_features = []
 
             for feature in data.get('features', []):
-                polygon_coords = feature['geometry']['coordinates'][0]  # assuming single polygon
+                coords = feature['geometry']['coordinates'][0]
+                lons, lats = zip(*coords)
 
-                # Keep feature if any point is within the lat/lon bounds
-                if any(lon_min <= lon <= lon_max and lat_min <= lat <= lat_max
-                    for lon, lat in polygon_coords):
+                if (
+                    min(lons) <= lon_max
+                    and max(lons) >= lon_min
+                    and min(lats) <= lat_max
+                    and max(lats) >= lat_min
+                ):
                     filtered_features.append(feature)
 
             data['features'] = filtered_features
@@ -117,23 +132,14 @@ class DetectionDataHandler:
         Finds timestamps in a file based on predetermined patterns
         """
         filename = Path(filepath).name
-        io_manager = IOManager("[CellDetection]")
-        io_manager.write_debug(f"Extracting timestamp from filename: {filename}")
-        
-        patterns = [
-            r'MRMS_MergedReflectivityQC_3D_(\d{8})-(\d{6})',
-            r'(\d{8})-(\d{6})_renamed',
-            r'(\d{8}-\d{6})',
-            r'.*(\d{8})-(\d{6}).*',
-            r's(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)'
-        ]
-        
-        for pattern_idx, pattern in enumerate(patterns):
-            match = re.search(pattern, filename)
+        _DETECTION_IO.write_debug(f"Extracting timestamp from filename: {filename}")
+
+        for pattern_idx, pattern in enumerate(_TIMESTAMP_PATTERNS):
+            match = pattern.search(filename)
             if match:
                 groups = match.groups()
-                io_manager.write_debug(f"Pattern {pattern_idx+1} matched: {groups}")
-                
+                _DETECTION_IO.write_debug(f"Pattern {pattern_idx+1} matched: {groups}")
+
                 if len(groups) == 2:
                     date_str, time_str = groups
                 elif len(groups) == 1 and len(groups[0]) >= 15:  # 'YYYYMMDD-HHMMSS' min length
@@ -141,18 +147,18 @@ class DetectionDataHandler:
                     date_str, time_str = combined[:8], combined[9:15]
                 else:
                     # fallback to next pattern
-                    io_manager.write_debug(f"Unexpected group format: {groups}")
+                    _DETECTION_IO.write_debug(f"Unexpected group format: {groups}")
                     continue
 
                 try:
                     formatted_time = (f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}T"
                                     f"{time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}")
-                    io_manager.write_debug(f"Extracted timestamp: {formatted_time}")
+                    _DETECTION_IO.write_debug(f"Extracted timestamp: {formatted_time}")
                     return formatted_time
                 except (IndexError, ValueError) as e:
-                    io_manager.write_debug(f"Error formatting timestamp: {e}")
+                    _DETECTION_IO.write_debug(f"Error formatting timestamp: {e}")
                     continue
-        
+
         fallback = datetime.utcnow().isoformat()
-        io_manager.write_debug(f"Using fallback timestamp: {fallback}")
+        _DETECTION_IO.write_debug(f"Using fallback timestamp: {fallback}")
         return fallback
