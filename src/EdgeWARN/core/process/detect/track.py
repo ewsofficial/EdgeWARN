@@ -35,7 +35,8 @@ class StormCellTracker:
                 self.io_manager.write_debug(f"Updated cell {cell_id}")
             else:
                 # Cell not found in updated_data - mark for deletion
-                self.io_manager.write_debug(f"Removing cell {cell_id} (not found in new scan)")
+                self.io_manager.write_debug(f"NOT Removing cell {cell_id} (not found in new scan)")
+                updated_entries.append(cell)
 
         # Add NEW cells
         for cell in updated_data:
