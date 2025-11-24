@@ -10,6 +10,42 @@ from datetime import datetime
 
 io_manager = IOManager("[CellDetection]")
 
+
+def _detect_with_optional_probsevere(
+    radar_path,
+    ps_path,
+    pt_path,
+    lat_min,
+    lat_max,
+    lon_min,
+    lon_max,
+    need_probsevere,
+):
+    if need_probsevere:
+        return detect_cells(
+            radar_path,
+            ps_path,
+            pt_path,
+            io_manager,
+            lat_min,
+            lat_max,
+            lon_min,
+            lon_max,
+            return_probsevere=True,
+        )
+
+    return detect_cells(
+        radar_path,
+        ps_path,
+        pt_path,
+        io_manager,
+        lat_min,
+        lat_max,
+        lon_min,
+        lon_max,
+    ), None
+
+
 def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple, lon_bounds: tuple, json_output):
     lat_min, lat_max = lat_bounds
     lon_min, lon_max = lon_bounds
@@ -19,12 +55,14 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     if single_frame:
         io_manager.write_debug("No new scan specified — running single-frame detection mode")
 
+    ps_old_data = None
+
     # === Load or create previous entries ===
     if json_output.exists() and json_output.stat().st_size > 0:
         try:
             with open(json_output, 'r') as f:
                 data_old = js.load(f)
-            
+
             if isinstance(data_old, dict) and "features" in data_old:
                 entries_old = data_old["features"]
             elif isinstance(data_old, list):
@@ -33,16 +71,34 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
                 raise ValueError("Invalid JSON structure")
 
             if not entries_old:
-                 raise ValueError("Empty features list")
+                raise ValueError("Empty features list")
 
             io_manager.write_debug(f"Loaded {len(entries_old)} cells from {json_output}")
         except (js.JSONDecodeError, KeyError, IndexError, ValueError) as e:
             io_manager.write_error(f"Failed to load existing data: {e}. Redetecting from old scan ...")
-            entries_old = detect_cells(radar_old, ps_old, pt_old, io_manager, lat_min, lat_max, lon_min, lon_max)
+            entries_old, ps_old_data = _detect_with_optional_probsevere(
+                radar_old,
+                ps_old,
+                pt_old,
+                lat_min,
+                lat_max,
+                lon_min,
+                lon_max,
+                need_probsevere=not single_frame,
+            )
             io_manager.write_debug(f"Detected {len(entries_old)} cells in old scan.")
     else:
         io_manager.write_debug("JSON output doesn't exist, detecting from old scan ...")
-        entries_old = detect_cells(radar_old, ps_old, pt_old, io_manager, lat_min, lat_max, lon_min, lon_max)
+        entries_old, ps_old_data = _detect_with_optional_probsevere(
+            radar_old,
+            ps_old,
+            pt_old,
+            lat_min,
+            lat_max,
+            lon_min,
+            lon_max,
+            need_probsevere=not single_frame,
+        )
         io_manager.write_debug(f"Detected {len(entries_old)} cells in old scan.")
 
     # === If single-frame mode, just update/save ===
@@ -51,7 +107,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         saver = CellDataSaver(None, radar_old, None, None, ps_old, None)
         entries = saver.append_storm_history(entries_old, radar_old)
         entries = StormVectorCalculator.calculate_vectors(entries)
-        
+
         ts_str = DetectionDataHandler.find_timestamp(radar_old)
         try:
             dt = datetime.fromisoformat(ts_str)
@@ -67,15 +123,33 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
 
     # === Dual-frame mode ===
     io_manager.write_debug("Detecting cells in new scan ...")
-    entries_new = detect_cells(radar_new, ps_new, pt_new, io_manager, lat_min, lat_max, lon_min, lon_max)
+    entries_new, ps_new_data = _detect_with_optional_probsevere(
+        radar_new,
+        ps_new,
+        pt_new,
+        lat_min,
+        lat_max,
+        lon_min,
+        lon_max,
+        need_probsevere=True,
+    )
     io_manager.write_debug(f"Detected {len(entries_new)} cells in new scan")
 
     io_manager.write_debug("Matching and updating cell data")
-    ps_old = DetectionDataHandler(radar_old, ps_old, pt_old, io_manager, lat_min, lat_max, lon_min, lon_max).load_probsevere()
-    ps_new = DetectionDataHandler(radar_new, ps_new, pt_new, io_manager, lat_min, lat_max, lon_min, lon_max).load_probsevere()
-    
-    tracker = StormCellTracker(ps_old, ps_new, io_manager)
-    saver = CellDataSaver(None, radar_new, None, None, ps_new, None)
+    if ps_old_data is None:
+        ps_old_data = DetectionDataHandler(
+            radar_old,
+            ps_old,
+            pt_old,
+            io_manager,
+            lat_min,
+            lat_max,
+            lon_min,
+            lon_max,
+        ).load_probsevere()
+
+    tracker = StormCellTracker(ps_old_data, ps_new_data, io_manager)
+    saver = CellDataSaver(None, radar_new, None, None, ps_new_data, None)
     entries = tracker.update_cells(entries_old, entries_new)
     entries = saver.append_storm_history(entries, radar_new)
     entries = StormVectorCalculator.calculate_vectors(entries)
@@ -92,9 +166,11 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     with open(json_output, 'w') as f:
         js.dump(output_data, f, indent=2, default=str)
 
+
 if __name__ == "__main__":
     import time
     from pathlib import Path
+
     fs.clean_idx_files([fs.MRMS_COMPOSITE_DIR])
     radar_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
     radar_old, radar_new = radar_files[-2], radar_files[-1]
