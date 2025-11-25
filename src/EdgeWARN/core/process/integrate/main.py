@@ -42,7 +42,7 @@ def main():
 
     # Integrate ProbSevere
     try:
-        io_manager.write_debug(f"Integrating ProbSevere data for {len(cells)} cells")
+        io_manager.write_info(f"Integrating ProbSevere data for {len(cells)} cells")
         latest_file = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1]
         with open(latest_file, 'r') as f:
             probsevere_data = json.load(f)

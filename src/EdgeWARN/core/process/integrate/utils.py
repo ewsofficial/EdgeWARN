@@ -82,7 +82,7 @@ class StatFileHandler:
             return features, latest_timestamp
     
     def write_json(self, data, filepath):
-        self.io_manager.write_debug(f"Writing to JSON file {filepath}")
+        self.io_manager.write_info(f"Writing to JSON file {filepath}")
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=4)
         print(f"Successfully wrote to JSON file {filepath}")
