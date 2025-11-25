@@ -34,12 +34,14 @@ the GUI frontend.
 
 ## Version History for 0.6.x-alpha
 
-### 0.6.0-alpha (current)
+### 0.6.0-alpha
 - Changed `ingest` module to use AWS S3 Buckets
 - Added `GOES-19` data downloading
 - Added metadata tags `source`, `product`, `version`, `latest_timestamp` to storm cell JSON
 - Storm cell data is now moved into `features` key
 - Dataset integration now only integrates for cells that have a latest history timestamp
+
+### 0.6.1-alpha (current)
 
 <h2 align="center">Credits</h2>
 
@@ -48,7 +50,7 @@ the GUI frontend.
 
 #### Coders
 - Yuchen Wei (Project Lead)
-- Asher Kadet (Server Hosting)
+- Sammy Reifel
 
 #### Contact Info
 - Please message us for our contact info (We don't share contact info here due to the risk of bots/spam mail)

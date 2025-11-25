@@ -1,15 +1,31 @@
 from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 from EdgeWARN.core.process.detect.tools.gatemapper import GateMapper
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
+from util.io import IOManager
 import util.file as fs
 
-def detect_cells(radar_path, ps_path, preciptype_path, io_manager, lat_min, lat_max, lon_min, lon_max):
+
+def detect_cells(
+    radar_path,
+    ps_path,
+    preciptype_path,
+    io_manager,
+    lat_min,
+    lat_max,
+    lon_min,
+    lon_max,
+    *,
+    return_probsevere=False,
+):
     handler = DetectionDataHandler(
         radar_path,
-        ps_path, preciptype_path,
-        io_manager, 
-        lat_min, lat_max,
-        lon_min, lon_max
+        ps_path,
+        preciptype_path,
+        io_manager,
+        lat_min,
+        lat_max,
+        lon_min,
+        lon_max,
     )
 
     radar_ds = handler.load_subset()
@@ -23,20 +39,28 @@ def detect_cells(radar_path, ps_path, preciptype_path, io_manager, lat_min, lat_
 
     saver = CellDataSaver(
         bboxes,
-        radar_ds, mapped_ds,
-        expanded_ds, ps_ds, preciptype_ds
+        radar_ds,
+        mapped_ds,
+        expanded_ds,
+        ps_ds,
+        preciptype_ds,
     )
 
-    saver.create_entry()
     entries = saver.create_entry()
     entries = saver.append_storm_history(entries, radar_path)
 
+    if return_probsevere:
+        return entries, ps_ds
+
     return entries
+
 
 if __name__ == "__main__":
     radar_path = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)[-1]
     ps_path = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1]
+    pt_path = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)[-1]
+    io_manager = IOManager("[CellDetection]")
     lat_min, lat_max = 35.0, 38.0
     lon_min, lon_max = 283.0, 285.0
-    
-    detect_cells(radar_path, ps_path, lat_min, lat_max, lon_min, lon_max)
+
+    detect_cells(radar_path, ps_path, pt_path, io_manager, lat_min, lat_max, lon_min, lon_max)

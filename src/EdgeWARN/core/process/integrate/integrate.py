@@ -34,21 +34,26 @@ class StormCellIntegrator:
             return storm_cells
 
         latest_ts = max(
-            (cell["storm_history"][-1]["timestamp"]
-            for cell in storm_cells if cell.get("storm_history")),
-            default=None
+            (
+                cell["storm_history"][-1]["timestamp"]
+                for cell in storm_cells
+                if cell.get("storm_history")
+            ),
+            default=None,
         )
 
-        # Precompute full grid lon/lat only once
-        LonGrid, LatGrid = np.meshgrid(lon_vals, lat_vals)
+        if latest_ts is None:
+            ds.close()
+            return storm_cells
 
-        for cell in storm_cells:
-            if not cell.get("storm_history"):
-                continue
+        active_cells = [
+            cell for cell in storm_cells if cell.get("storm_history") and cell["storm_history"][-1]["timestamp"] == latest_ts
+        ]
 
+        var_values = var.values
+
+        for cell in active_cells:
             latest = cell["storm_history"][-1]
-            if latest["timestamp"] != latest_ts:
-                continue
 
             poly = StormIntegrationUtils.create_cell_polygon(cell)
             if poly is None:
@@ -58,19 +63,23 @@ class StormCellIntegrator:
             try:
                 minx, miny, maxx, maxy = poly.bounds
 
-                # FAST slice (view) – reduces grid massively
                 lat_mask = (lat_vals >= miny) & (lat_vals <= maxy)
                 lon_mask = (lon_vals >= minx) & (lon_vals <= maxx)
 
-                sub_var = var.values[np.ix_(lat_mask, lon_mask)]
-                sub_lat = LatGrid[np.ix_(lat_mask, lon_mask)]
-                sub_lon = LonGrid[np.ix_(lat_mask, lon_mask)]
+                lat_subset = lat_vals[lat_mask]
+                lon_subset = lon_vals[lon_mask]
+
+                if lat_subset.size == 0 or lon_subset.size == 0:
+                    latest[output_key] = 0
+                    continue
+
+                sub_var = var_values[np.ix_(lat_mask, lon_mask)]
+                sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
 
                 if sub_var.size == 0:
                     latest[output_key] = 0
                     continue
 
-                # Polygon mask using shapely.vectorized (C-speed)
                 inside = sv.contains(poly, sub_lon, sub_lat)
 
                 masked_vals = sub_var[inside]
