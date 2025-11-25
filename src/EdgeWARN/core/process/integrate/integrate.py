@@ -49,6 +49,7 @@ class StormCellIntegrator:
         active_cells = [
             cell for cell in storm_cells if cell.get("storm_history") and cell["storm_history"][-1]["timestamp"] == latest_ts
         ]
+        self.io_manager.write_debug(f"Integrating {output_key} data for {len(active_cells)} cells")
 
         var_values = var.values
 

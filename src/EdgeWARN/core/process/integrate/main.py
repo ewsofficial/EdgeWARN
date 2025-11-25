@@ -31,7 +31,6 @@ def main():
     # Integrate datasets
     for name, outdir, key in datasets:
         try:
-            io_manager.write_debug(f"Integrating {name} data for {len(cells)} cells")
             latest_file = fs.latest_files(outdir, 1)[-1]
             io_manager.write_debug(f"Using latest {name} file: {latest_file}")
 
