@@ -107,18 +107,3 @@ class MRMSUpdateChecker:
         if self.verbose:
             print(f"[Scheduler] Latest common timestamp within 1h: {latest_common}")
         return latest_common
-
-
-if __name__ == "__main__":
-    checker = MRMSUpdateChecker(verbose=True)
-
-    print("\n=== MRMS Common Timestamp Monitor ===")
-    while True:
-        now = datetime.datetime.now(datetime.timezone.utc)
-        print(f"\nCurrent time: {now}")
-        common_ts = checker.latest_common_minute_1h(check_modifiers)
-        if common_ts:
-            print(f"[Result] Latest common timestamp: {common_ts}")
-        else:
-            print("[Result] Could not determine a common timestamp in last hour")
-        time.sleep(15)
