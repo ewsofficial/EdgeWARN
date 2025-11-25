@@ -38,7 +38,7 @@ class IOManager:
             nargs=2,
             metavar=("LON_MIN", "LON_MAX"),
             default=[-83, -63],
-            help="Longitude limits for processing (default: -83 -73)"
+            help="Longitude limits for processing (default: -83 -63)"
         )
 
         args = parser.parse_args()
