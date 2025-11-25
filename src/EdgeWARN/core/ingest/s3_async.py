@@ -132,7 +132,7 @@ class AsyncFileDownloader:
                 self.io_manager.write_debug(f"File already exists, skipping: {existing_file}")
                 return existing_file
 
-            self.io_manager.write_debug(f"Downloading matching file: {target_file_path}")
+            self.io_manager.write_info(f"Downloading matching file: {target_file_path}")
 
             # Download using async S3 client
             resp = await self.s3.get_object(Bucket=self.bucket, Key=target_file_path)
@@ -142,7 +142,7 @@ class AsyncFileDownloader:
                 async for chunk in body.iter_chunks():
                     await f.write(chunk)
 
-            self.io_manager.write_debug(f"Successfully downloaded: {filename}")
+            self.io_manager.write_info(f"Successfully downloaded: {filename}")
             return local_path
 
         except Exception as e:
@@ -172,7 +172,7 @@ class AsyncFileDownloader:
             await asyncio.to_thread(_sync_decompress)
 
             await aiofiles.os.remove(gz_path)
-            self.io_manager.write_debug(f"Decompressed to: {output_path}")
+            self.io_manager.write_info(f"Decompressed to: {output_path}")
             return output_path
 
         except Exception as e:

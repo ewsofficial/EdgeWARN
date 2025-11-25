@@ -155,7 +155,7 @@ class FileDownloader:
                 return zipped_path if zipped_path.exists() else unzipped_path
 
             # Log the download attempt
-            self.io_manager.write_debug(f"Downloading matching file: {target_file_path}")
+            self.io_manager.write_info(f"Downloading matching file: {target_file_path}")
             
             # Use the bucket from constructor and the file path as S3 key
             s3_key = target_file_path
@@ -163,7 +163,7 @@ class FileDownloader:
             # Download the file from S3
             self.client.download_file(self.bucket, s3_key, str(local_path))
             
-            self.io_manager.write_debug(f"Successfully downloaded: {filename}")
+            self.io_manager.write_info(f"Successfully downloaded: {filename}")
             return Path(str(local_path))
             
         except Exception as e:
@@ -194,7 +194,7 @@ class FileDownloader:
             with gzip.open(gz_path, "rb") as f_in, open(output_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out, length=_DECOMPRESS_CHUNK_SIZE)
 
-            self.io_manager.write_debug(f"Decompressed to: {output_path}")
+            self.io_manager.write_info(f"Decompressed to: {output_path}")
 
             # Remove original gz file
             gz_path.unlink(missing_ok=True)
