@@ -57,7 +57,3 @@ def main():
     # Save data
     data = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, result_cells)
     handler.write_json(data, json_path)
-
-if __name__ == "__main__":
-    main()
-

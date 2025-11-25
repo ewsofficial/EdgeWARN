@@ -165,22 +165,3 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     output_data = saver.create_json_structure(final_ts, entries)
     with open(json_output, 'w') as f:
         js.dump(output_data, f, indent=2, default=str)
-
-
-if __name__ == "__main__":
-    import time
-    from pathlib import Path
-
-    fs.clean_idx_files([fs.MRMS_COMPOSITE_DIR])
-    radar_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
-    radar_old, radar_new = radar_files[-2], radar_files[-1]
-    ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
-    ps_old, ps_new = ps_files[-2], ps_files[-1]
-    pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
-    pt_old, pt_new = pt_files[-2], pt_files[-1]
-    lat_bounds = (36, 46)
-    lon_bounds = (277, 297)
-    old = time.time()
-    main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds, lon_bounds, Path("stormcell_test.json"))
-    new = time.time()
-    print(f"Took {new - old} s")
