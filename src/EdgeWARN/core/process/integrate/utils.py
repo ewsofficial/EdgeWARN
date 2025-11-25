@@ -7,6 +7,13 @@ import re
 from pathlib import Path as PathLibPath
 from util.io import IOManager
 
+_TIMESTAMP_PATTERNS = [
+    re.compile(r'(\d{8}[_\.-]\d{6})'),
+    re.compile(r'(\d{8}[_\.-]\d{4})'),
+    re.compile(r'(\d{8})'),
+    re.compile(r'(\d{10,})'),
+]
+
 io_manager = IOManager("[CellIntegration]")
 
 class StatFileHandler:
@@ -92,20 +99,8 @@ class StatFileHandler:
         """
         filename = PathLibPath(filepath).name
         
-        # Common timestamp patterns in meteorological files
-        patterns = [
-            # YYYYMMDD_HHMMSS pattern
-            r'(\d{8}[_\.-]\d{6})',
-            # YYYYMMDD_HHMM pattern
-            r'(\d{8}[_\.-]\d{4})',
-            # YYYYMMDD pattern
-            r'(\d{8})',
-            # Unix timestamp pattern
-            r'(\d{10,})'
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, filename)
+        for pattern in _TIMESTAMP_PATTERNS:
+            match = pattern.search(filename)
             if match:
                 timestamp_str = match.group(1)
                 
