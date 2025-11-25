@@ -30,7 +30,7 @@ async def download_all_files_async_internal(dt, max_entries):
         io_manager.write_debug(f"Downloading from {len(tasks)} sources concurrently...")
         await asyncio.gather(*tasks, return_exceptions=True)
         
-        io_manager.write_debug("All async downloads completed")
+        io_manager.write_info("All async downloads completed")
 
 async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_client):
     """Internal async version of download_modifier using aioboto3 for non-blocking S3 operations"""
@@ -208,7 +208,7 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
         max_entries (int): Maximum number of file entries per product (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3)
     """
-    io_manager.write_debug("Starting GOES-19 downloads...")
+    io_manager.write_info("Starting GOES-19 downloads...")
     
     # Use ThreadPoolExecutor for concurrent downloads
     with ThreadPoolExecutor(max_workers=len(goes_modifiers)) as executor:
@@ -225,7 +225,7 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
             except Exception as e:
                 io_manager.write_error(f"GOES download error: {e}")
     
-    io_manager.write_debug("GOES-19 downloads completed")
+    io_manager.write_info("GOES-19 downloads completed")
 
 
 async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
@@ -238,7 +238,7 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
         hour_lookback (int): Number of hours to look back (default: 3)
     """
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
-        io_manager.write_debug("Starting async GOES-19 downloads...")
+        io_manager.write_info("Starting async GOES-19 downloads...")
         
         tasks = [
             _download_goes_product_async(product, outdir, dt, max_entries, hour_lookback, s3)
@@ -253,4 +253,4 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
             elif result:
                 io_manager.write_debug(f"Successfully downloaded: {result}")
         
-        io_manager.write_debug("Async GOES-19 downloads completed")
+        io_manager.write_info("Async GOES-19 downloads completed")
