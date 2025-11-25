@@ -56,7 +56,11 @@ class IOManager:
         args.lon_limits = [lon % 360 for lon in args.lon_limits]
 
         return args
-        
+    
+    def write_info(self, msg):
+        print(f"{self.header} INFO: {msg}")
+        return
+
     def write_debug(self, msg):
         print(f"{self.header} DEBUG: {msg}")
         return
