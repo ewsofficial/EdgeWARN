@@ -132,7 +132,7 @@ class DetectionDataHandler:
         Finds timestamps in a file based on predetermined patterns
         """
         filename = Path(filepath).name
-        _DETECTION_IO.write_debug(f"Extracting timestamp from filename: {filename}")
+        _DETECTION_IO.write_info(f"Extracting timestamp from filename: {filename}")
 
         for pattern_idx, pattern in enumerate(_TIMESTAMP_PATTERNS):
             match = pattern.search(filename)
@@ -156,9 +156,9 @@ class DetectionDataHandler:
                     _DETECTION_IO.write_debug(f"Extracted timestamp: {formatted_time}")
                     return formatted_time
                 except (IndexError, ValueError) as e:
-                    _DETECTION_IO.write_debug(f"Error formatting timestamp: {e}")
+                    _DETECTION_IO.write_warning(f"Error formatting timestamp: {e}")
                     continue
 
         fallback = datetime.utcnow().isoformat()
-        _DETECTION_IO.write_debug(f"Using fallback timestamp: {fallback}")
+        _DETECTION_IO.write_info(f"Using fallback timestamp: {fallback}")
         return fallback

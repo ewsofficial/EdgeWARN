@@ -32,9 +32,9 @@ def pipeline(log_queue, dt):
         log_queue.put(f"{msg}")
 
     try:
-        log(f"Starting Data Ingestion for timestamp {dt}")
+        log(f"INFO: Starting Data Ingestion for timestamp {dt}")
         ingest_main.download_all_files(dt)
-        log("Starting Storm Cell Detection")
+        log("INFO: Starting Storm Cell Detection")
         try:
             filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
             ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
