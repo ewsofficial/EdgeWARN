@@ -33,7 +33,7 @@ class FileHandler:
     def __init__(self, io_manager):
         self.io = io_manager
 
-    def load_dataset(filepath):
+    def load_dataset(filepath, lat_limits=None, lon_limits=None):
         """
         Loads a dataset from filepath, detecting if its a GRIB, netCDF, or JSON file
         Args:
