@@ -1,4 +1,5 @@
 from datetime import datetime, timezone, timedelta
+
 from pathlib import Path
 import xarray as xr
 import cfgrib
@@ -33,11 +34,13 @@ class FileHandler:
     def __init__(self, io_manager):
         self.io = io_manager
 
-    def load_dataset(filepath, lat_limits=None, lon_limits=None):
+    def load_dataset(self, filepath, lat_limits=None, lon_limits=None):
         """
         Loads a dataset from filepath, detecting if its a GRIB, netCDF, or JSON file
         Args:
             filepath (str): Filepath to be loaded
+            lat_limits (tuple): (min_lat, max_lat)
+            lon_limits (tuple): (min_lon, max_lon)
         
         Returns:
             xr.Dataset for GRIB and netCDF
@@ -56,28 +59,41 @@ class FileHandler:
                 self.io.write_error(f"Failed to load JSON file: {e}")
                 return
         
+        ds = None
         if filepath.endswith(".grib2"):
             self.io.write_info(f"Loading GRIB file from {filepath}")
             try:
                 ds = xr.open_dataset(filepath, engine="cfgrib", decode_timedelta=True)
                 self.io.write_debug(f"Loaded GRIB file from {filepath}")
-                return ds
-            
             except Exception as e:
                 self.io.write_error(f"Failed to load GRIB file: {e}")
                 return
         
-        if filepath.endswith(".nc"):
+        elif filepath.endswith(".nc"):
             self.io.write_info(f"Loading netCDF file from {filepath}")
             try:
                 ds = xr.open_dataset(filepath, engine="netcdf4", decode_timedelta=True)
                 self.io.write_debug(f"Loaded netCDF file from {filepath}")
-                return ds
-            
             except Exception as e:
-                self.io.write_error(f"Faile to load netCDF file: {e}")
+                self.io.write_error(f"Failed to load netCDF file: {e}")
                 return
 
-
-        
-
+        if ds is not None:
+            if lat_limits and lon_limits:
+                try:
+                    # Handle descending latitude
+                    lat_name = "latitude" if "latitude" in ds.coords else "lat"
+                    lon_name = "longitude" if "longitude" in ds.coords else "lon"
+                    
+                    if ds[lat_name][0] > ds[lat_name][-1]:
+                        lat_slice = slice(lat_limits[1], lat_limits[0])
+                    else:
+                        lat_slice = slice(lat_limits[0], lat_limits[1])
+                    
+                    lon_slice = slice(lon_limits[0], lon_limits[1])
+                    
+                    ds = ds.sel({lat_name: lat_slice, lon_name: lon_slice})
+                    self.io.write_debug(f"Subset dataset to lat: {lat_limits}, lon: {lon_limits}")
+                except Exception as e:
+                    self.io.write_warning(f"Failed to subset dataset: {e}")
+            return ds
