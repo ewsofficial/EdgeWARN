@@ -47,7 +47,7 @@ class AsyncFileFinder:
                     for obj in page["Contents"]:
                         s3_path = obj["Key"]
                         try:
-                            ts = extract_timestamp(s3_path)
+                            ts = extract_timestamp(s3_path, use_timezone_utc=True, round_to_minute=True, isoformat=False)
                         except Exception:
                             continue
 

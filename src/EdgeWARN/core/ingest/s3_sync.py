@@ -67,7 +67,7 @@ class FileFinder:
 
                             try:
                                 # Extract timestamp from S3 path
-                                timestamp = extract_timestamp(s3_path)
+                                timestamp = extract_timestamp(s3_path, use_timezone_utc=True, round_to_minute=True, isoformat=False)
 
                                 entry = (timestamp, s3_path)
                                 if len(top_files) < max_entries:
