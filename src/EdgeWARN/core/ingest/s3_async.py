@@ -7,7 +7,7 @@ import shutil
 import asyncio
 import aiofiles
 import aiofiles.os
-from EdgeWARN.core.ingest.utils import extract_timestamp
+from util.handler import extract_timestamp
 
 
 _DECOMPRESS_CHUNK_SIZE = 1024 * 1024  # 1MB chunks to reduce syscall overhead during gzip copy

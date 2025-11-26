@@ -9,7 +9,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from EdgeWARN.core.ingest.utils import extract_timestamp
+from util.handler import extract_timestamp
 
 
 @lru_cache(maxsize=1)
