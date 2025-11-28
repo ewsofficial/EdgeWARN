@@ -4,6 +4,8 @@ from datetime import datetime
 from util.io import IOManager
 from pathlib import Path
 import re
+import numpy as np
+from pyproj import Transformer
 
 io_manager = IOManager("[Transform]")
 
@@ -94,6 +96,59 @@ class TransformUtils:
         fallback = datetime.utcnow().isoformat()
         io_manager.write_debug(f"Using fallback timestamp: {fallback}")
         return fallback
+    
+    @staticmethod
+    def reproject_to_epsg3857(ds):
+        """
+        Reproject an xarray Dataset from EPSG:4326 (WGS84) to EPSG:3857 (Web Mercator).
+        
+        Args:
+            ds (xr.Dataset): Dataset with latitude/longitude coordinates
+            
+        Returns:
+            xr.Dataset: Reprojected dataset with x/y coordinates in EPSG:3857
+        """
+        # Create transformer from EPSG:4326 to EPSG:3857
+        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+        
+        # Get lat/lon coordinate names
+        lat_name = "latitude" if "latitude" in ds.coords else "lat"
+        lon_name = "longitude" if "longitude" in ds.coords else "lon"
+        
+        # Extract coordinate values
+        lats = ds[lat_name].values
+        lons = ds[lon_name].values
+        
+        # Convert longitude from 0-360 to -180-180 if needed
+        lons_converted = np.where(lons > 180, lons - 360, lons)
+        
+        # Create 2D meshgrids for transformation
+        lon_grid, lat_grid = np.meshgrid(lons_converted, lats)
+        
+        # Transform coordinates
+        x_grid, y_grid = transformer.transform(lon_grid, lat_grid)
+        
+        # Get the 1D x and y arrays (using the first row/column)
+        x = x_grid[0, :]  # First row (all x values)
+        y = y_grid[:, 0]  # First column (all y values)
+        
+        # Create new dataset with transformed coordinates
+        ds_reprojected = ds.copy()
+        
+        # Rename coordinates and update values
+        ds_reprojected = ds_reprojected.rename({lat_name: 'y', lon_name: 'x'})
+        ds_reprojected = ds_reprojected.assign_coords({
+            'x': ('x', x),
+            'y': ('y', y)
+        })
+        
+        # Add CRS information as attributes
+        ds_reprojected.attrs['crs'] = 'EPSG:3857'
+        ds_reprojected.attrs['crs_name'] = 'WGS 84 / Pseudo-Mercator'
+        
+        io_manager.write_debug("Reprojected dataset to EPSG:3857 (Web Mercator)")
+        
+        return ds_reprojected
 
 
 class OverlayManifestUtils:
@@ -104,12 +159,18 @@ class OverlayManifestUtils:
 
     def __init__(self):
         self.layers = []
-        # Fixed bounds: 20 N to 55 N and -130 W to -60 W
+        # Fixed bounds in EPSG:3857 (Web Mercator) - in meters
+        # Original bounds: 20-55 N, 230-300 E (or -130 to -60 W)
+        # Transformed to Web Mercator:
+        # West: -130° → ~-14,465,442 m
+        # East: -60° → ~-6,679,169 m
+        # South: 20° → ~2,273,031 m
+        # North: 55° → ~7,361,866 m
         self.bounds = {
-            'north': 55,
-            'south': 20,
-            'west': 230,
-            'east': 300
+            'north': 7361866,     # ~55°N in Web Mercator meters
+            'south': 2273031,     # ~20°N in Web Mercator meters
+            'west': -14465442,    # ~-130°W in Web Mercator meters
+            'east': -6679169      # ~-60°W in Web Mercator meters
         }
 
     def validate_bounds(self, bounds):
