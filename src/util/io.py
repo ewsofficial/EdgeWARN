@@ -16,6 +16,18 @@ class TimestampedOutput:
     def flush(self):
         self.stream.flush()
 
+class QueueWriter:
+    def __init__(self, queue):
+        self.queue = queue
+
+    def write(self, message):
+        if message.strip():
+            timestamp = datetime.now(timezone.utc).isoformat()
+            self.queue.put(f"[{timestamp}] {message}")
+
+    def flush(self):
+        pass
+
 class IOManager:
     def __init__(self, header):
         self.header = header
@@ -38,7 +50,7 @@ class IOManager:
             nargs=2,
             metavar=("LON_MIN", "LON_MAX"),
             default=[-83, -63],
-            help="Longitude limits for processing (default: -83 -73)"
+            help="Longitude limits for processing (default: -83 -63)"
         )
 
         args = parser.parse_args()
@@ -56,7 +68,11 @@ class IOManager:
         args.lon_limits = [lon % 360 for lon in args.lon_limits]
 
         return args
-        
+    
+    def write_info(self, msg):
+        print(f"{self.header} INFO: {msg}")
+        return
+
     def write_debug(self, msg):
         print(f"{self.header} DEBUG: {msg}")
         return

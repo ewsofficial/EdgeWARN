@@ -31,7 +31,6 @@ def main():
     # Integrate datasets
     for name, outdir, key in datasets:
         try:
-            io_manager.write_debug(f"Integrating {name} data for {len(cells)} cells")
             latest_file = fs.latest_files(outdir, 1)[-1]
             io_manager.write_debug(f"Using latest {name} file: {latest_file}")
 
@@ -43,7 +42,7 @@ def main():
 
     # Integrate ProbSevere
     try:
-        io_manager.write_debug(f"Integrating ProbSevere data for {len(cells)} cells")
+        io_manager.write_info(f"Integrating ProbSevere data for {len(cells)} cells")
         latest_file = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1]
         with open(latest_file, 'r') as f:
             probsevere_data = json.load(f)
@@ -58,7 +57,3 @@ def main():
     # Save data
     data = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, result_cells)
     handler.write_json(data, json_path)
-
-if __name__ == "__main__":
-    main()
-
