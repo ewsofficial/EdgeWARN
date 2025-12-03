@@ -127,7 +127,8 @@ if __name__ == "__main__":
         print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
         main()
     except KeyboardInterrupt:
-        pass
+        print("CTRL+C detected, exiting ...")
+        sys.exit(0)
     finally:
         ui_process.terminate()
         ui_process.join()
