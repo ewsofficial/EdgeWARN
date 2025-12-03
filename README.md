@@ -41,7 +41,14 @@ the GUI frontend.
 - Storm cell data is now moved into `features` key
 - Dataset integration now only integrates for cells that have a latest history timestamp
 
-### 0.6.1-alpha (current)
+### 0.6.1-alpha
+- Cache file lists to reduce lookup overhead
+- Reduce integration overhead by subsetting grids per cell and skipping irrelevant timestamps
+
+# 0.6.2-alpha (current)
+- Add ``INFO: `` prints to command-line output
+- Unify dataset loading and timestamp extraction
+- Add server monitor GUI, which displays server resource usage and status
 
 <h2 align="center">Credits</h2>
 
