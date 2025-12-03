@@ -5,8 +5,9 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import scrolledtext, ttk
 
-from .log_watcher import LogTailer
+from .log_watcher import LogTailer, QueueLogAdapter
 from .metrics import MetricSnapshot, MetricsSampler
+from typing import Any
 
 
 class MemoryGraph(tk.Canvas):
@@ -139,7 +140,7 @@ class StatsPanel(ttk.Frame):
 class LogPanel(ttk.Frame):
     """Scrollable text widget that streams server logs."""
 
-    def __init__(self, master: tk.Widget, tailer: LogTailer) -> None:
+    def __init__(self, master: tk.Widget, tailer: LogTailer | QueueLogAdapter) -> None:
         super().__init__(master)
         self.tailer = tailer
         self.configure(padding=10)
@@ -172,7 +173,7 @@ class LogPanel(ttk.Frame):
 class MonitorApp(tk.Tk):
     """Main application window."""
 
-    def __init__(self, log_file: Path | None = None, refresh_ms: int = 1000) -> None:
+    def __init__(self, log_file: Path | None = None, log_queue: Any | None = None, refresh_ms: int = 1000) -> None:
         super().__init__()
         self.title("EdgeWARN Server Monitor")
         self.geometry("1100x650")
@@ -181,12 +182,15 @@ class MonitorApp(tk.Tk):
         self.sampler = MetricsSampler()
         self.refresh_ms = refresh_ms
 
-        log_path = log_file or Path("server.log")
-        self.tailer = LogTailer(log_path)
-        self.tailer.seed([
-            "EdgeWARN server monitor initialized.\n",
-            "Watching resource usage for Python processes...\n",
-        ])
+        if log_queue:
+            self.tailer = QueueLogAdapter(log_queue)
+        else:
+            log_path = log_file or Path("server.log")
+            self.tailer = LogTailer(log_path)
+            self.tailer.seed([
+                "EdgeWARN server monitor initialized.\n",
+                "Watching resource usage for Python processes...\n",
+            ])
 
         self._build_layout()
         self.after(self.refresh_ms, self._update_loop)
@@ -220,8 +224,12 @@ class MonitorApp(tk.Tk):
         self.after(self.refresh_ms, self._update_loop)
 
 
-def run(log_file: str | None = None, refresh_ms: int = 1000) -> None:
-    app = MonitorApp(log_file=Path(log_file) if log_file else None, refresh_ms=refresh_ms)
+def run(log_file: str | None = None, log_queue: Any | None = None, refresh_ms: int = 1000) -> None:
+    app = MonitorApp(
+        log_file=Path(log_file) if log_file else None,
+        log_queue=log_queue,
+        refresh_ms=refresh_ms
+    )
     app.mainloop()
 
 

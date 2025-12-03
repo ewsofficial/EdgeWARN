@@ -16,6 +16,18 @@ class TimestampedOutput:
     def flush(self):
         self.stream.flush()
 
+class QueueWriter:
+    def __init__(self, queue):
+        self.queue = queue
+
+    def write(self, message):
+        if message.strip():
+            timestamp = datetime.now(timezone.utc).isoformat()
+            self.queue.put(f"[{timestamp}] {message}")
+
+    def flush(self):
+        pass
+
 class IOManager:
     def __init__(self, header):
         self.header = header
