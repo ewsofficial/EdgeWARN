@@ -88,7 +88,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             )
             io_manager.write_debug(f"Detected {len(entries_old)} cells in old scan.")
     else:
-        io_manager.write_debug("JSON output doesn't exist, detecting from old scan ...")
+        io_manager.write_info("JSON output doesn't exist, detecting from old scan ...")
         entries_old, ps_old_data = _detect_with_optional_probsevere(
             radar_old,
             ps_old,
@@ -103,7 +103,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
 
     # === If single-frame mode, just update/save ===
     if single_frame:
-        io_manager.write_debug("Saving single-frame detection results (no tracking possible).")
+        io_manager.write_info("Saving single-frame detection results (no tracking possible).")
         saver = CellDataSaver(None, radar_old, None, None, ps_old, None)
         entries = saver.append_storm_history(entries_old, radar_old)
         entries = StormVectorCalculator.calculate_vectors(entries)
@@ -135,7 +135,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     )
     io_manager.write_debug(f"Detected {len(entries_new)} cells in new scan")
 
-    io_manager.write_debug("Matching and updating cell data")
+    io_manager.write_info("Matching and updating cell data")
     if ps_old_data is None:
         ps_old_data = DetectionDataHandler(
             radar_old,
@@ -165,22 +165,3 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     output_data = saver.create_json_structure(final_ts, entries)
     with open(json_output, 'w') as f:
         js.dump(output_data, f, indent=2, default=str)
-
-
-if __name__ == "__main__":
-    import time
-    from pathlib import Path
-
-    fs.clean_idx_files([fs.MRMS_COMPOSITE_DIR])
-    radar_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
-    radar_old, radar_new = radar_files[-2], radar_files[-1]
-    ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
-    ps_old, ps_new = ps_files[-2], ps_files[-1]
-    pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
-    pt_old, pt_new = pt_files[-2], pt_files[-1]
-    lat_bounds = (36, 46)
-    lon_bounds = (277, 297)
-    old = time.time()
-    main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds, lon_bounds, Path("stormcell_test.json"))
-    new = time.time()
-    print(f"Took {new - old} s")
