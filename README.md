@@ -47,7 +47,8 @@ the GUI frontend.
 
 # 0.6.2-alpha (current)
 - Add ``INFO: `` prints to command-line output
-- Condense ``find_timestamp`` and dataset loading into singular file
+- Unify dataset loading and timestamp extraction
+- Add server monitor GUI, which displays server resource usage and status
 
 <h2 align="center">Credits</h2>
 
