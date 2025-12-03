@@ -35,10 +35,12 @@ class MemoryGraph(tk.Canvas):
         padding = 10
         usable_width = width - 2 * padding
         usable_height = height - 2 * padding
-        max_val = max(100.0, max(self.history))
+        max_val = 1000.0  # Fixed scale: 0 to 1000 MB
 
-        # Grid lines
-        for y_fraction in [0.25, 0.5, 0.75, 1.0]:
+        # Grid lines every 100 MB
+        for i in range(1, 11):
+            val = i * 100
+            y_fraction = 1.0 - (val / max_val)
             y = padding + usable_height * y_fraction
             self.create_line(
                 padding,
@@ -50,7 +52,7 @@ class MemoryGraph(tk.Canvas):
             self.create_text(
                 width - padding,
                 y - 2,
-                text=f"{int((1 - y_fraction) * max_val):d}%",
+                text=f"{val} MB",
                 anchor="ne",
                 fill="#6c6c7a",
                 font=("Arial", 8),
@@ -63,8 +65,9 @@ class MemoryGraph(tk.Canvas):
         coords: list[float] = []
         for idx, val in enumerate(self.history):
             x = padding + idx * step_x
-            scaled = min(val, max_val)
-            y = padding + usable_height * (1 - scaled / max_val)
+            # Clamp value to max_val for drawing
+            draw_val = min(val, max_val)
+            y = padding + usable_height * (1 - draw_val / max_val)
             coords.extend([x, y])
         self.create_line(*coords, fill="#7bd7ff", width=2, smooth=True)
 
@@ -72,7 +75,7 @@ class MemoryGraph(tk.Canvas):
         self.create_text(
             padding + 5,
             padding + 5,
-            text=f"Python memory: {latest:.1f}%",
+            text=f"Python memory: {latest:.1f} MB",
             anchor="nw",
             fill="#d8e9ff",
             font=("Arial", 10, "bold"),
@@ -215,7 +218,9 @@ class MonitorApp(tk.Tk):
 
     def _update_loop(self) -> None:
         snapshot = self.sampler.sample()
-        self.memory_graph.add_point(snapshot.python_mem_percent)
+        # Convert bytes to MB
+        mem_mb = snapshot.python_mem_bytes / (1024 * 1024)
+        self.memory_graph.add_point(mem_mb)
         self.stats_panel.update_stats(snapshot)
 
         lines = list(self.tailer.read_new_lines())
