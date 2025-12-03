@@ -19,6 +19,7 @@ class StormCellTracker:
         updated_entries = []
 
         for cell in entries:
+            unused_ids = 0
             cell_id = int(cell['id'])
             if cell_id in updated_map:
                 updated = updated_map[cell_id]
@@ -29,21 +30,25 @@ class StormCellTracker:
                 cell['centroid'] = updated.get('centroid', cell['centroid'])
                 cell['max_refl'] = updated.get('max_refl', cell['max_refl'])
                 cell['bbox'] = updated.get('bbox', cell['bbox'])
-
                 used_ids.add(cell_id)
                 updated_entries.append(cell)
-                self.io_manager.write_debug(f"Updated cell {cell_id}")
             else:
-                # Cell not found in updated_data - mark for deletion
-                self.io_manager.write_debug(f"NOT Removing cell {cell_id} (not found in new scan)")
+                # Cell not found in updated_data
+                unused_ids += 1
                 updated_entries.append(cell)
 
+        self.io_manager.write_info(f"Updated data for {len(updated_entries)} cells")
+        self.io_manager.write_info(f"{unused_ids} cells not matched to new cells")
+
         # Add NEW cells
+        new_cells = 0
         for cell in updated_data:
             cell_id = int(cell['id'])
             if cell_id not in used_ids:
                 updated_entries.append(cell)
-                self.io_manager.write_debug(f"Added new cell {cell_id}")
+                new_cells += 1
+
+        self.io_manager.write_info(f"Added {new_cells} new cells to data")
         
         # Return the filtered list (only cells that exist in updated_data)
         return updated_entries
