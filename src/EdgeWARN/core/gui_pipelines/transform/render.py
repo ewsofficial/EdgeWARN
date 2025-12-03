@@ -45,11 +45,15 @@ class GUILayerRenderer:
 
     def convert_to_png(self):
         """
-        Converts dataset to a png file and then saves it to outdir
+        Converts dataset to a png file and then saves it to outdir.
+        Reprojects data to EPSG:3857 (Web Mercator) projection.
         """
         # Step 1: Load the file
         latest_file = fs.latest_files(self.filepath, 1)[-1]
         ds = TransformUtils.load_ds(latest_file)
+        
+        # Step 1.5: Reproject to EPSG:3857 (Web Mercator)
+        ds = TransformUtils.reproject_to_epsg3857(ds)
         data = ds['unknown'].values
 
         # Step 2: Get colormap

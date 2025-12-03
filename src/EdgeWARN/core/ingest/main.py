@@ -46,7 +46,7 @@ def download_all_files(dt):
         asyncio.run(_download_all())
     except Exception as e:
         io_manager.write_error(f"Async downloads failed: {e}")
-        io_manager.write_debug("Falling back to synchronous downloads...")
+        io_manager.write_info("Falling back to synchronous downloads...")
         download_all_files_sync_fallback(dt, max_entries)
         # Fallback for GOES as well (synchronous)
         download_all_goes_files(dt, max_entries)
