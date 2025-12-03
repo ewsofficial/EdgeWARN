@@ -4,10 +4,10 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 from tkinter import scrolledtext, ttk
+from typing import Any
 
 from .log_watcher import LogTailer, QueueLogAdapter
 from .metrics import MetricSnapshot, MetricsSampler
-from typing import Any
 
 
 class MemoryGraph(tk.Canvas):
@@ -165,11 +165,13 @@ class LogPanel(ttk.Frame):
         self.text.configure(state="normal")
         for line in lines:
             self.text.insert(tk.END, line)
-        self.text.see(tk.END)
+        
         # Trim the log to avoid unbounded growth.
         current = self.text.get("1.0", tk.END).splitlines()[-self.tailer.max_lines :]
         self.text.delete("1.0", tk.END)
         self.text.insert(tk.END, "\n".join(current) + "\n")
+            
+        self.text.see(tk.END)
         self.text.configure(state="disabled")
 
 
