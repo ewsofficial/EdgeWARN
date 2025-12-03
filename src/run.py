@@ -11,7 +11,8 @@ import EdgeWARN.core.process.detect.main as detect
 import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
 from EdgeWARN.core.ingest.config import check_modifiers
-from util.io import TimestampedOutput, IOManager
+import EdgeWARN.ui.monitor_app as monitor_app
+from util.io import TimestampedOutput, IOManager, QueueWriter
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
@@ -22,12 +23,12 @@ args = io_manager.get_args()
 lat_limits = tuple(args.lat_limits)
 lon_limits = tuple(args.lon_limits)
 
-if __name__ == '__main__':
-    print(f"Running EdgeWARN v0.6.0-alpha")
-    print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
-
 def pipeline(log_queue, dt):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""
+    # Redirect stdout/stderr to the queue for this process
+    sys.stdout = QueueWriter(log_queue)
+    sys.stderr = QueueWriter(log_queue)
+
     def log(msg):
         log_queue.put(f"{msg}")
 
@@ -110,4 +111,23 @@ def main():
         sys.exit(0)
 
 if __name__ == "__main__":
-    main()
+    # Create a queue for the UI logs
+    ui_queue = multiprocessing.Queue()
+    
+    # Redirect stdout/stderr to the UI queue
+    sys.stdout = QueueWriter(ui_queue)
+    sys.stderr = QueueWriter(ui_queue)
+    
+    # Spawn the UI process
+    ui_process = multiprocessing.Process(target=monitor_app.run, args=(None, ui_queue))
+    ui_process.start()
+    
+    try:
+        print(f"Running EdgeWARN v0.6.0-alpha")
+        print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
+        main()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        ui_process.terminate()
+        ui_process.join()
