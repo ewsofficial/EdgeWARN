@@ -123,7 +123,7 @@ if __name__ == "__main__":
     ui_process.start()
     
     try:
-        print(f"Running EdgeWARN v0.6.0-alpha")
+        print(f"Running EdgeWARN v0.6.2-alpha")
         print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
         main()
     except KeyboardInterrupt:
