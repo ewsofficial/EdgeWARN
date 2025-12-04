@@ -112,4 +112,6 @@ def clean_old_files(directory: Path, max_age_minutes=60):
                 files_deleted += 1
             except Exception as e:
                 io_manager.write_error(f"Could not delete {f.name}: {e}")
-    io_manager.write_debug(f"Deleted {files_deleted} files in {directory}")
+
+    if files_deleted > 0:
+        io_manager.write_debug(f"Deleted {files_deleted} files in {directory}")
