@@ -94,7 +94,9 @@ def clean_idx_files(folders):
                         deleted_files += 1
                     except Exception as e:
                         io_manager.write_error(f"Failed to delete IDX file {f}: {e}")
-                io_manager.write_debug(f"Deleted {deleted_files} files in {folder}")
+                
+                if deleted_files > 0:
+                    io_manager.write_debug(f"Deleted {deleted_files} files in {folder}")
         else:
             io_manager.write_error(f"Folder not found: {folder}")
 
