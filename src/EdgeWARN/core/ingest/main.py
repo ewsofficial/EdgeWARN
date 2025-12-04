@@ -1,4 +1,4 @@
-from EdgeWARN.core.ingest.config import mrms_modifiers, bucket
+from EdgeWARN.core.ingest.config import mrms_modifiers, goes_modifiers, bucket
 from EdgeWARN.core.ingest.s3_sync import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.parse import parse_goes_bucket_path
