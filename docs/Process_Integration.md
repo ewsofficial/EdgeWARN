@@ -63,6 +63,7 @@ Contains utility classes for file handling and geometry operations.
     - **`write_json(self, data, filepath)`**: Writes data to a JSON file.
     - **`find_timestamp(self, filepath)`**: robustly extracts a datetime object from a filename using various common meteorological naming patterns (regex).
     - **`convert_lon_to_360` / `convert_lon_to_180`**: Helper methods for longitude conversion.
+    - **`convert_geos_to_latlon(x, y, ...)`**: Converts GOES fixed grid coordinates (scan angles in radians) to latitude/longitude. Supports normalization to 0.01° grid.
 
 - **`StormIntegrationUtils`**
     - **`create_coordinate_grids(dataset)`**: Extracts lat/lon coordinates from a dataset and ensures they are 2D grids (using `meshgrid` if necessary).
