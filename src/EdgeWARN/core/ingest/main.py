@@ -29,6 +29,8 @@ def download_all_files(dt):
     """
     # Clear files first
     folders = [outdir for _, _, outdir in mrms_modifiers]
+    # Add GOES folders
+    folders.extend([outdir for _, outdir in goes_modifiers])
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=60)
 
