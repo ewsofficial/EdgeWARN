@@ -111,24 +111,36 @@ def main():
         sys.exit(0)
 
 if __name__ == "__main__":
-    # Create a queue for the UI logs
-    ui_queue = multiprocessing.Queue()
-    
-    # Redirect stdout/stderr to the UI queue
-    sys.stdout = QueueWriter(ui_queue)
-    sys.stderr = QueueWriter(ui_queue)
-    
-    # Spawn the UI process
-    ui_process = multiprocessing.Process(target=monitor_app.run, args=(None, ui_queue))
-    ui_process.start()
-    
-    try:
-        print(f"Running EdgeWARN v0.6.2-alpha")
-        print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
-        main()
-    except KeyboardInterrupt:
-        print("CTRL+C detected, exiting ...")
-        sys.exit(0)
-    finally:
-        ui_process.terminate()
-        ui_process.join()
+    if args.nogui:
+        # No GUI mode: Print directly to console (already set up by default sys.stdout/stderr)
+        try:
+            print(f"Running EdgeWARN v0.6.2-alpha (No-GUI Mode)")
+            print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
+            main()
+        except KeyboardInterrupt:
+            print("CTRL+C detected, exiting ...")
+            sys.exit(0)
+    else:
+        # GUI mode: Redirect output to UI queue and spawn UI process
+        
+        # Create a queue for the UI logs
+        ui_queue = multiprocessing.Queue()
+        
+        # Redirect stdout/stderr to the UI queue
+        sys.stdout = QueueWriter(ui_queue)
+        sys.stderr = QueueWriter(ui_queue)
+        
+        # Spawn the UI process
+        ui_process = multiprocessing.Process(target=monitor_app.run, args=(None, ui_queue))
+        ui_process.start()
+        
+        try:
+            print(f"Running EdgeWARN v0.6.2-alpha")
+            print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
+            main()
+        except KeyboardInterrupt:
+            print("CTRL+C detected, exiting ...")
+            sys.exit(0)
+        finally:
+            ui_process.terminate()
+            ui_process.join()
