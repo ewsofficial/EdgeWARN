@@ -137,21 +137,29 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
             return None
         
         
-        # Download most recent file
-        downloaded = downloader.download_matching(all_files, outdir)
-        if downloaded:
-            # Decompress if .gz
-            if downloaded.suffix == ".gz":
-                decompressed = downloader.decompress_file(downloaded)
-                return decompressed if decompressed else downloaded
-            return downloaded
+        # Download all matching files
+        downloaded_files = downloader.download_all_matching(all_files, outdir)
+        
+        if downloaded_files:
+            processed_files = []
+            for downloaded in downloaded_files:
+                # Decompress if .gz
+                if downloaded.suffix == ".gz":
+                    decompressed = downloader.decompress_file(downloaded)
+                    if decompressed:
+                        processed_files.append(decompressed)
+                    else:
+                        processed_files.append(downloaded)
+                else:
+                    processed_files.append(downloaded)
+            return processed_files
         else:
             io_manager.write_error(f"Failed to download GOES {product} file")
-            return None
+            return []
     
     except Exception as e:
         io_manager.write_error(f"Failed to process GOES {product} - {e}")
-        return None
+        return []
 
 
 async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lookback, s3_client):
@@ -182,21 +190,29 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
             return None
         
         
-        # Download most recent file
-        downloaded = await downloader.async_download_matching(all_files, outdir)
-        if downloaded:
-            # Decompress if .gz
-            if downloaded.suffix == ".gz":
-                decompressed = await downloader.async_decompress_file(downloaded)
-                return decompressed if decompressed else downloaded
-            return downloaded
+        # Download all matching files
+        downloaded_files = await downloader.async_download_all_matching(all_files, outdir)
+        
+        if downloaded_files:
+            processed_files = []
+            for downloaded in downloaded_files:
+                # Decompress if .gz
+                if downloaded.suffix == ".gz":
+                    decompressed = await downloader.async_decompress_file(downloaded)
+                    if decompressed:
+                        processed_files.append(decompressed)
+                    else:
+                        processed_files.append(downloaded)
+                else:
+                    processed_files.append(downloaded)
+            return processed_files
         else:
             io_manager.write_error(f"Failed to download GOES {product} file")
-            return None
+            return []
     
     except Exception as e:
         io_manager.write_error(f"Failed to process GOES {product} - {e}")
-        return None
+        return []
 
 
 def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
@@ -221,7 +237,7 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
             try:
                 result = future.result()
                 if result:
-                    io_manager.write_debug(f"Successfully downloaded: {result}")
+                    io_manager.write_debug(f"Successfully downloaded {len(result)} files")
             except Exception as e:
                 io_manager.write_error(f"GOES download error: {e}")
     
@@ -251,6 +267,6 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
             if isinstance(result, Exception):
                 io_manager.write_error(f"GOES async download error: {result}")
             elif result:
-                io_manager.write_debug(f"Successfully downloaded: {result}")
+                io_manager.write_debug(f"Successfully downloaded {len(result)} files")
         
         io_manager.write_info("Async GOES-19 downloads completed")

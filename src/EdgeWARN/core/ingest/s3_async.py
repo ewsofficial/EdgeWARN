@@ -149,6 +149,69 @@ class AsyncFileDownloader:
             self.io_manager.write_error(f"Async download error: {e}")
             return None
 
+    async def async_download_all_matching(self, file_list, outdir: Path):
+        """
+        Async version: Download all files that match the target datetime minute.
+        
+        Args:
+            file_list: List of (s3_path, timestamp) tuples
+            outdir: Output directory
+            
+        Returns:
+            list[Path]: List of paths to downloaded files
+        """
+        if not file_list:
+            self.io_manager.write_warning("No files to download")
+            return []
+
+        downloaded_files = []
+
+        try:
+            # Filter files matching the target minute
+            target_key = self.target_key
+            matching_files = [
+                s3_path for s3_path, ts in file_list 
+                if (ts.year, ts.month, ts.day, ts.hour, ts.minute) == target_key
+            ]
+            
+            if not matching_files:
+                self.io_manager.write_warning(f"No files found matching timestamp {self.target_minute}.")
+                return []
+
+            outdir.mkdir(parents=True, exist_ok=True)
+            
+            for target_file_path in matching_files:
+                filename = os.path.basename(target_file_path)
+                local_path = outdir / filename
+
+                # Check if file already exists (both zipped and unzipped versions)
+                zipped_path = local_path
+                unzipped_path = local_path.with_suffix("") if local_path.suffix == ".gz" else local_path
+                if zipped_path.exists() or unzipped_path.exists():
+                    existing_file = zipped_path if zipped_path.exists() else unzipped_path
+                    self.io_manager.write_debug(f"File already exists, skipping: {existing_file}")
+                    downloaded_files.append(existing_file)
+                    continue
+
+                self.io_manager.write_info(f"Downloading matching file: {target_file_path}")
+
+                # Download using async S3 client
+                resp = await self.s3.get_object(Bucket=self.bucket, Key=target_file_path)
+                body = resp["Body"]
+
+                async with aiofiles.open(local_path, "wb") as f:
+                    async for chunk in body.iter_chunks():
+                        await f.write(chunk)
+
+                self.io_manager.write_info(f"Successfully downloaded: {filename}")
+                downloaded_files.append(local_path)
+            
+            return downloaded_files
+
+        except Exception as e:
+            self.io_manager.write_error(f"Async download error: {e}")
+            return downloaded_files
+
     async def async_decompress_file(self, gz_path: Path):
         """Async decompression using thread pool for CPU-bound gzip operation"""
         if not gz_path.exists():
