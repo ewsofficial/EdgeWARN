@@ -46,8 +46,10 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
         # Optimization: Append filename prefix to search only this hour
         # File format: MRMS_{modifier}_{YYYYMMDD}-{HH}MMSS
         # This significantly reduces the search space for historical downloads
-        filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
-        bucket_path = f"{bucket_path}{filename_prefix}"
+        # Skip for ProbSevere (modifier=None) which has different naming
+        if modifier is not None:
+            filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
+            bucket_path = f"{bucket_path}{filename_prefix}"
         
         # Async file lookup
         file_list = await finder.async_lookup_files(bucket_path)
