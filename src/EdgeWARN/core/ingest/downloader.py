@@ -2,7 +2,7 @@ from EdgeWARN.core.ingest.config import mrms_modifiers, bucket, goes_modifiers, 
 from EdgeWARN.core.ingest.s3_sync import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.parse import parse_mrms_bucket_path, parse_goes_bucket_path
-from EdgeWARN.core.ingest.utils import merge_glm_files
+from EdgeWARN.core.ingest.utils import merge_glm_files, extract_timestamp
 from util.io import IOManager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
@@ -164,11 +164,18 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
                 merged_ds = merge_glm_files(processed_files, io_manager)
                 
                 if merged_ds:
+                    # Find the newest timestamp among the files
+                    try:
+                        timestamps = [extract_timestamp(str(f)) for f in processed_files]
+                        newest_ts = max(timestamps)
+                        ts_str = newest_ts.strftime('%Y%m%d-%H%M%S')
+                    except Exception as e:
+                        io_manager.write_warning(f"Could not extract timestamps for naming, using target dt: {e}")
+                        ts_str = dt.strftime('%Y%m%d-%H%M%S')
+
                     # Create a merged filename
-                    # Format: OR_GLM-L2-LCFA_G16_sYYYYJJJHHMMSS_eYYYYJJJHHMMSS_cYYYYJJJHHMMSS.nc
-                    # We'll use the target dt for the start time in the filename for simplicity, 
-                    # or just append _merged
-                    merged_filename = f"OR_{product}_merged_{dt.strftime('%Y%m%d%H%M%S')}.nc"
+                    # Format: OR_{product}_merged_YYYYMMDD-HHMMSS.nc
+                    merged_filename = f"OR_{product}_merged_{ts_str}.nc"
                     merged_path = outdir / merged_filename
                     
                     try:
@@ -253,7 +260,16 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
                 merged_ds = merge_glm_files(processed_files, io_manager)
                 
                 if merged_ds:
-                    merged_filename = f"OR_{product}_merged_{dt.strftime('%Y%m%d%H%M%S')}.nc"
+                    # Find the newest timestamp among the files
+                    try:
+                        timestamps = [extract_timestamp(str(f)) for f in processed_files]
+                        newest_ts = max(timestamps)
+                        ts_str = newest_ts.strftime('%Y%m%d-%H%M%S')
+                    except Exception as e:
+                        io_manager.write_warning(f"Could not extract timestamps for naming, using target dt: {e}")
+                        ts_str = dt.strftime('%Y%m%d-%H%M%S')
+
+                    merged_filename = f"OR_{product}_merged_{ts_str}.nc"
                     merged_path = outdir / merged_filename
                     
                     try:
