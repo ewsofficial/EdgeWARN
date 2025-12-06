@@ -47,6 +47,10 @@ class FileHandler:
             JSON data for JSON
         """
         
+        if filepath is None:
+            self.io.write_warning("load_dataset called with None filepath")
+            return None
+
         if filepath.endswith(".json"):
             self.io.write_info(f"Loading JSON file from {filepath}")
             try:

@@ -19,7 +19,7 @@ import traceback
 
 io_manager = IOManager("[Ingest]")
 
-def download_all_files(dt):
+def download_all_files(dt, max_entries=10):
     """
     Main function for downloading all MRMS files.
 
@@ -33,8 +33,6 @@ def download_all_files(dt):
     folders.extend([outdir for _, outdir in goes_modifiers])
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=60)
-
-    max_entries = 10                         # How many files to check per source
 
     # Use async operations internally for better performance
     # This maintains the same API but with improved performance

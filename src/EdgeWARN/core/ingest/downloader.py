@@ -43,6 +43,12 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
     try:
         bucket_path = parse_mrms_bucket_path(dt, region, modifier)
         
+        # Optimization: Append filename prefix to search only this hour
+        # File format: MRMS_{modifier}_{YYYYMMDD}-{HH}MMSS
+        # This significantly reduces the search space for historical downloads
+        filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
+        bucket_path = f"{bucket_path}{filename_prefix}"
+        
         # Async file lookup
         file_list = await finder.async_lookup_files(bucket_path)
 
@@ -83,6 +89,10 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
 
     try:
         bucket_path = parse_mrms_bucket_path(dt, region, modifier)
+        
+        # Optimization: Append filename prefix to search only this hour
+        filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
+        bucket_path = f"{bucket_path}{filename_prefix}"
         file_list = finder.lookup_files(bucket_path)
 
         if not file_list:
