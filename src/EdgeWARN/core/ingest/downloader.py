@@ -116,9 +116,11 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
         Path: Path to downloaded file, or None if failed
     """
     # Enforce minute-precision dt
-    dt = dt.replace(second=0, microsecond=0)
+    # dt = dt.replace(second=0, microsecond=0) # Allow seconds for sliding window
     
-    finder = FileFinder(dt, goes_bucket, max_entries, io_manager)
+    # Increase max_entries to ensure we find files in the past (GLM has ~180 files/hour)
+    search_max_entries = max(max_entries, 300)
+    finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
     downloader = FileDownloader(dt, goes_bucket, io_manager)
     
     try:
@@ -169,9 +171,11 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
     Internal async function for downloading a single GOES product using aioboto3.
     """
     # Enforce minute-precision dt
-    dt = dt.replace(second=0, microsecond=0)
+    # dt = dt.replace(second=0, microsecond=0) # Allow seconds for sliding window
     
-    finder = AsyncFileFinder(dt, goes_bucket, max_entries, io_manager, s3_client=s3_client)
+    # Increase max_entries to ensure we find files in the past
+    search_max_entries = max(max_entries, 300)
+    finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
     
     try:

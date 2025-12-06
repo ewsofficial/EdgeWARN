@@ -7,6 +7,7 @@ import shutil
 import asyncio
 import aiofiles
 import aiofiles.os
+from datetime import timedelta
 from util.handler import extract_timestamp
 
 
@@ -47,7 +48,7 @@ class AsyncFileFinder:
                     for obj in page["Contents"]:
                         s3_path = obj["Key"]
                         try:
-                            ts = extract_timestamp(s3_path, use_timezone_utc=True, round_to_minute=True, isoformat=False)
+                            ts = extract_timestamp(s3_path, use_timezone_utc=True, round_to_minute=False, isoformat=False)
                         except Exception:
                             continue
 
@@ -151,7 +152,7 @@ class AsyncFileDownloader:
 
     async def async_download_all_matching(self, file_list, outdir: Path):
         """
-        Async version: Download all files that match the target datetime minute.
+        Async version: Download all files that match the target datetime minute (sliding window).
         
         Args:
             file_list: List of (s3_path, timestamp) tuples
@@ -167,15 +168,18 @@ class AsyncFileDownloader:
         downloaded_files = []
 
         try:
-            # Filter files matching the target minute
-            target_key = self.target_key
+            # Sliding window logic:
+            # Target window is (dt - 1 minute, dt]
+            window_end = self.dt
+            window_start = window_end - timedelta(minutes=1)
+            
             matching_files = [
                 s3_path for s3_path, ts in file_list 
-                if (ts.year, ts.month, ts.day, ts.hour, ts.minute) == target_key
+                if window_start < ts <= window_end
             ]
             
             if not matching_files:
-                self.io_manager.write_warning(f"No files found matching timestamp {self.target_minute}.")
+                self.io_manager.write_warning(f"No files found matching window {window_start} to {window_end}.")
                 return []
 
             outdir.mkdir(parents=True, exist_ok=True)
