@@ -2,6 +2,7 @@ from EdgeWARN.core.ingest.config import mrms_modifiers, bucket, goes_modifiers, 
 from EdgeWARN.core.ingest.s3_sync import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.parse import parse_mrms_bucket_path, parse_goes_bucket_path
+from EdgeWARN.core.ingest.utils import merge_glm_files
 from util.io import IOManager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
@@ -142,6 +143,8 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
         # Download all matching files
         downloaded_files = downloader.download_all_matching(all_files, outdir)
         
+
+        
         if downloaded_files:
             processed_files = []
             for downloaded in downloaded_files:
@@ -154,6 +157,37 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
                         processed_files.append(downloaded)
                 else:
                     processed_files.append(downloaded)
+            
+            # Check if we need to merge GLM files
+            if "GLM" in product and len(processed_files) > 1:
+                io_manager.write_info(f"Merging {len(processed_files)} GLM files...")
+                merged_ds = merge_glm_files(processed_files, io_manager)
+                
+                if merged_ds:
+                    # Create a merged filename
+                    # Format: OR_GLM-L2-LCFA_G16_sYYYYJJJHHMMSS_eYYYYJJJHHMMSS_cYYYYJJJHHMMSS.nc
+                    # We'll use the target dt for the start time in the filename for simplicity, 
+                    # or just append _merged
+                    merged_filename = f"OR_{product}_merged_{dt.strftime('%Y%m%d%H%M%S')}.nc"
+                    merged_path = outdir / merged_filename
+                    
+                    try:
+                        merged_ds.to_netcdf(merged_path)
+                        io_manager.write_info(f"Saved merged GLM file to: {merged_path}")
+                        merged_ds.close()
+                        
+                        # Return only the merged file path
+                        return [merged_path]
+                    except Exception as e:
+                        io_manager.write_error(f"Failed to save merged GLM file: {e}")
+                        merged_ds.close()
+                        # Fallback to returning individual files? Or fail?
+                        # Let's return individual files as fallback
+                        return processed_files
+                else:
+                    io_manager.write_error("GLM merge failed, returning individual files")
+                    return processed_files
+
             return processed_files
         else:
             io_manager.write_error(f"Failed to download GOES {product} file")
@@ -209,6 +243,34 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
                         processed_files.append(downloaded)
                 else:
                     processed_files.append(downloaded)
+            
+            # Check if we need to merge GLM files
+            if "GLM" in product and len(processed_files) > 1:
+                io_manager.write_info(f"Merging {len(processed_files)} GLM files (Async)...")
+                
+                # merge_glm_files is synchronous, but that's okay for now as it's the final step
+                # If it blocks too long, we could wrap it in run_in_executor
+                merged_ds = merge_glm_files(processed_files, io_manager)
+                
+                if merged_ds:
+                    merged_filename = f"OR_{product}_merged_{dt.strftime('%Y%m%d%H%M%S')}.nc"
+                    merged_path = outdir / merged_filename
+                    
+                    try:
+                        # to_netcdf is also synchronous
+                        merged_ds.to_netcdf(merged_path)
+                        io_manager.write_info(f"Saved merged GLM file to: {merged_path}")
+                        merged_ds.close()
+                        
+                        return [merged_path]
+                    except Exception as e:
+                        io_manager.write_error(f"Failed to save merged GLM file: {e}")
+                        merged_ds.close()
+                        return processed_files
+                else:
+                    io_manager.write_error("GLM merge failed, returning individual files")
+                    return processed_files
+
             return processed_files
         else:
             io_manager.write_error(f"Failed to download GOES {product} file")
