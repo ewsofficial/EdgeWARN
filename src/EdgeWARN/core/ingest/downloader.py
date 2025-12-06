@@ -183,6 +183,14 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
                         io_manager.write_info(f"Saved merged GLM file to: {merged_path}")
                         merged_ds.close()
                         
+                        # Delete individual files after successful merge
+                        for f in processed_files:
+                            try:
+                                f.unlink()
+                            except Exception as del_e:
+                                io_manager.write_warning(f"Failed to delete {f}: {del_e}")
+                        io_manager.write_debug(f"Deleted {len(processed_files)} individual GLM files")
+                        
                         # Return only the merged file path
                         return [merged_path]
                     except Exception as e:
@@ -277,6 +285,14 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
                         merged_ds.to_netcdf(merged_path)
                         io_manager.write_info(f"Saved merged GLM file to: {merged_path}")
                         merged_ds.close()
+                        
+                        # Delete individual files after successful merge
+                        for f in processed_files:
+                            try:
+                                f.unlink()
+                            except Exception as del_e:
+                                io_manager.write_warning(f"Failed to delete {f}: {del_e}")
+                        io_manager.write_debug(f"Deleted {len(processed_files)} individual GLM files")
                         
                         return [merged_path]
                     except Exception as e:
