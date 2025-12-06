@@ -4,6 +4,7 @@ import gzip
 import shutil
 from functools import lru_cache
 from pathlib import Path
+from datetime import timedelta
 
 import boto3
 from botocore import UNSIGNED
@@ -67,7 +68,7 @@ class FileFinder:
 
                             try:
                                 # Extract timestamp from S3 path
-                                timestamp = extract_timestamp(s3_path, use_timezone_utc=True, round_to_minute=True, isoformat=False)
+                                timestamp = extract_timestamp(s3_path, use_timezone_utc=True, round_to_minute=False, isoformat=False)
 
                                 entry = (timestamp, s3_path)
                                 if len(top_files) < max_entries:
@@ -172,7 +173,7 @@ class FileDownloader:
 
     def download_all_matching(self, file_list, outdir: Path):
         """
-        Download all files that match the target datetime minute.
+        Download all files that match the target datetime minute (sliding window).
         
         Args:
             file_list (list): List of tuples (s3_path, datetime_obj) from FileFinder.lookup_files()
@@ -188,15 +189,19 @@ class FileDownloader:
         downloaded_files = []
         
         try:
-            # Filter files matching the target minute
-            target_key = self.target_key
+            # Sliding window logic:
+            # Target window is (dt - 1 minute, dt]
+            # e.g. if dt is 3:39:30, we want files > 3:38:30 and <= 3:39:30
+            window_end = self.dt
+            window_start = window_end - timedelta(minutes=1)
+            
             matching_files = [
                 s3_path for s3_path, ts in file_list 
-                if (ts.year, ts.month, ts.day, ts.hour, ts.minute) == target_key
+                if window_start < ts <= window_end
             ]
             
             if not matching_files:
-                self.io_manager.write_warning(f"No files found matching timestamp {self.target_minute}.")
+                self.io_manager.write_warning(f"No files found matching window {window_start} to {window_end}.")
                 return []
 
             # Create output directory if it doesn't exist
