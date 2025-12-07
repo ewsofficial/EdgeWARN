@@ -79,9 +79,7 @@ class MRMSUpdateChecker:
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
 
-        # Convert timezone-aware UTC to naive UTC for consistent comparison with S3 timestamps
-        if reference_dt.tzinfo is not None:
-            reference_dt = reference_dt.replace(tzinfo=None)
+
 
         modifier_times = []
 

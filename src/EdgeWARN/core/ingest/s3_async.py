@@ -48,6 +48,8 @@ class AsyncFileFinder:
                         s3_path = obj["Key"]
                         try:
                             ts = extract_timestamp(s3_path, use_timezone_utc=True, round_to_minute=True, isoformat=False)
+                            if ts > self.dt:
+                                continue
                         except Exception:
                             continue
 
