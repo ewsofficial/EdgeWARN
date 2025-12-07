@@ -94,10 +94,30 @@ class FileHandler:
                     else:
                         lat_slice = slice(lat_limits[0], lat_limits[1])
                     
-                    lon_slice = slice(lon_limits[0], lon_limits[1])
+                    # Handle longitude wrapping (0-360 vs -180-180)
+                    ds_lon_min = float(ds[lon_name].min())
+                    ds_lon_max = float(ds[lon_name].max())
+                    
+                    l_min, l_max = lon_limits
+                    
+                    # If dataset is 0-360 and we request negative lons
+                    if ds_lon_max > 180 and l_min < 0:
+                        l_min = l_min % 360
+                        l_max = l_max % 360
+                    
+                    # If dataset is -180-180 and we request > 180
+                    elif ds_lon_min < 0 and l_min > 180:
+                        l_min = (l_min + 180) % 360 - 180
+                        l_max = (l_max + 180) % 360 - 180
+                        
+                    # Ensure min < max for slicing (assuming increasing longitude)
+                    if l_min > l_max:
+                        l_min, l_max = l_max, l_min
+
+                    lon_slice = slice(l_min, l_max)
                     
                     ds = ds.sel({lat_name: lat_slice, lon_name: lon_slice})
-                    self.io.write_debug(f"Subset dataset to lat: {lat_limits}, lon: {lon_limits}")
+                    self.io.write_debug(f"Subset dataset to lat: {lat_limits}, lon: {lon_limits} (adjusted to {l_min:.2f}, {l_max:.2f})")
                 except Exception as e:
                     self.io.write_warning(f"Failed to subset dataset: {e}")
             return ds
