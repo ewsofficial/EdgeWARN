@@ -21,6 +21,14 @@ class GateMapper:
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
 
+        if lats.size < 2 or lons.size < 2:
+            self.io_manager.write_warning("Radar dataset is too small or empty. Skipping mapping.")
+            # Return empty dataset with correct structure but empty
+            return xr.Dataset(
+                {'PolygonID': (('latitude', 'longitude'), np.zeros((lats.size, lons.size), dtype=np.int32))},
+                coords={'latitude': lats, 'longitude': lons}
+            )
+
         if self.ps_ds is None or not isinstance(self.ps_ds, dict):
              # Return empty grid if ProbSevere data is missing or invalid
              polygon_grid = np.zeros((len(lats), len(lons)), dtype=np.int32)
