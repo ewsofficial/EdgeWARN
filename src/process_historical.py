@@ -21,6 +21,17 @@ sys.stderr = TimestampedOutput(sys.stderr)
 
 io_manager = IOManager("[HistoricalProcess]")
 
+def get_utc_time(time_str):
+    """
+    Parse a timestamp string and ensure it is UTC-aware.
+    - If the input has timezone info, convert to UTC.
+    - If the input is naive, assume it is UTC.
+    """
+    dt = datetime.fromisoformat(time_str)
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc)
+    return dt.replace(tzinfo=timezone.utc)
+
 def pipeline(dt, lat_limits, lon_limits, json_output):
     """Run the full ingestion → detection → integration pipeline once (same as run.py)."""
     
@@ -65,8 +76,8 @@ def main():
     args = parser.parse_args()
 
     try:
-        start_time = datetime.fromisoformat(args.start).replace(tzinfo=timezone.utc)
-        end_time = datetime.fromisoformat(args.end).replace(tzinfo=timezone.utc)
+        start_time = get_utc_time(args.start)
+        end_time = get_utc_time(args.end)
     except ValueError as e:
         io_manager.write_error(f"Invalid timestamp format: {e}")
         return
@@ -79,7 +90,7 @@ def main():
     checker = MRMSUpdateChecker(verbose=True)
     
     current_time = start_time
-    last_processed = None
+    last_processed_timestamp = None  # Track the actual data timestamp that was processed
     
     io_manager.write_info(f"Starting historical processing from {start_time} to {end_time}")
     
@@ -95,11 +106,10 @@ def main():
             current_time += timedelta(minutes=1)
             continue
         
-        # Check if we've already processed this timestamp
-        if latest_common == last_processed:
+        # Check if this is the same timestamp we already processed
+        if latest_common == last_processed_timestamp:
             io_manager.write_info(f"Timestamp {latest_common} already processed, skipping")
-            # Jump ahead by 2 hours to avoid infinite loop
-            current_time = latest_common + timedelta(hours=2)
+            current_time += timedelta(minutes=1)
             continue
         
         io_manager.write_info(f"Processing timestamp: {latest_common.isoformat()}")
@@ -107,7 +117,7 @@ def main():
         # Run the pipeline
         try:
             pipeline(latest_common, lat_limits, lon_limits, json_output)
-            last_processed = latest_common
+            last_processed_timestamp = latest_common
             
             # Verify output
             if json_output.exists():
@@ -118,10 +128,10 @@ def main():
         except Exception as e:
             io_manager.write_error(f"Pipeline failed for {latest_common}: {e}")
             # Continue processing other timestamps even if this one failed
-            last_processed = latest_common
+            last_processed_timestamp = latest_common
         
-        # Move forward past this timestamp
-        current_time = latest_common + timedelta(minutes=1)
+        # Increment search time by 1 minute
+        current_time += timedelta(minutes=1)
         
         # Small delay between iterations
         time.sleep(1)
