@@ -82,10 +82,6 @@ class MRMSUpdateChecker:
         # Convert timezone-aware UTC to naive UTC for consistent comparison with S3 timestamps
         if reference_dt.tzinfo is not None:
             reference_dt = reference_dt.replace(tzinfo=None)
-        
-        if self.verbose:
-            print(f"[Scheduler] Reference time: {reference_dt} (tzinfo: {reference_dt.tzinfo})")
-            print(f"[Scheduler] Using modifiers: {[m[1] for m in modifiers if m[1] is not None]}")  # Show modifier names
 
         modifier_times = []
 
@@ -97,14 +93,6 @@ class MRMSUpdateChecker:
                 if self.verbose:
                     print(f"[{modifier}] No remote files found")
                 continue
-
-            # Debug timezone information for all files
-            if self.verbose:
-                print(f"[{modifier}] DEBUG: Found {len(files_with_timestamps)} files")
-                for i, (s3_path, ts) in enumerate(files_with_timestamps[:5]):  # Show first 5
-                    print(f"[{modifier}] DEBUG: File {i+1}: {ts} (tzinfo: {ts.tzinfo}) - {s3_path}")
-                if len(files_with_timestamps) > 5:
-                    print(f"[{modifier}] DEBUG: ... and {len(files_with_timestamps) - 5} more files")
 
             # Process timestamps: ensure all are timezone-aware UTC
             processed_timestamps = []
@@ -119,8 +107,7 @@ class MRMSUpdateChecker:
                 ts_rounded = ts.replace(second=0, microsecond=0)
                 processed_timestamps.append(ts_rounded)
                 
-                if self.verbose and i < 3:  # Show first 3 processed
-                    print(f"[{modifier}] PROCESSED: {ts_rounded} (from {ts})")
+
 
             modifier_times.append(set(processed_timestamps))
 
@@ -133,9 +120,7 @@ class MRMSUpdateChecker:
         if not common_minutes:
             if self.verbose:
                 print("[Scheduler] No common timestamps across all modifiers")
-                # Debug: show what's in each modifier
-                for i, times in enumerate(modifier_times):
-                    print(f"[Scheduler] Modifier {i} timestamps: {sorted(list(times))[-5:]}")  # Show last 5
+
                 return None
 
         latest_common = max(common_minutes)
