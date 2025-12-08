@@ -102,8 +102,26 @@ def clean_old_files(directory: Path, max_age_minutes=60):
     now = datetime.now().timestamp()
     cutoff = now - (max_age_minutes * 60)
     files_deleted = 0
+    kept_files = []
+
     for f in directory.glob("*"):
-        if f.is_file() and f.stat().st_mtime < cutoff:
+        if f.is_file():
+            try:
+                mtime = f.stat().st_mtime
+                if mtime < cutoff:
+                    f.unlink()
+                    files_deleted += 1
+                else:
+                    kept_files.append((f, mtime))
+            except Exception as e:
+                io_manager.write_error(f"Could not process/delete {f.name}: {e}")
+
+    # If more than 10 files remain, delete the oldest ones until only 10 are left
+    if len(kept_files) > 10:
+        kept_files.sort(key=lambda x: x[1]) # Sort by mtime (oldest first)
+        files_to_remove = len(kept_files) - 10
+        for i in range(files_to_remove):
+            f, _ = kept_files[i]
             try:
                 f.unlink()
                 files_deleted += 1
