@@ -52,7 +52,7 @@ def pipeline(log_queue, dt):
     except Exception as e:
         log(f"Error in pipeline: {e}")
 
-def main():
+def main(ui_process=None):
     """Scheduler: spawn pipeline() every 15 s if a new latest_common timestamp is available."""
     print("Scheduler started. Press CTRL+C to exit.")
     checker = MRMSUpdateChecker(verbose=True)
@@ -74,6 +74,10 @@ def main():
 
     try:
         while True:
+            if ui_process and not ui_process.is_alive():
+                print("GUI closed. Exiting.")
+                sys.exit(0)
+
             now = datetime.now(timezone.utc)
             latest_common = checker.latest_common_minute_1h(check_modifiers)
 
@@ -92,6 +96,11 @@ def main():
 
                 # Print logs in real-time
                 while proc.is_alive() or not log_queue.empty():
+                    if ui_process and not ui_process.is_alive():
+                        print("GUI closed. Terminating pipeline and exiting.")
+                        proc.terminate()
+                        sys.exit(0)
+
                     while not log_queue.empty():
                         print(log_queue.get())
                     time.sleep(1)
@@ -104,7 +113,12 @@ def main():
                 else:
                     print(f"[Scheduler] DEBUG: Timestamp {latest_common} already processed. Waiting ...")
 
-            time.sleep(15)  # Check every 15 seconds
+            # Wait/Check loop
+            for _ in range(30):
+                if ui_process and not ui_process.is_alive():
+                    print("GUI closed. Exiting.")
+                    sys.exit(0)
+                time.sleep(0.5)
 
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")
@@ -137,7 +151,7 @@ if __name__ == "__main__":
         try:
             print(f"Running EdgeWARN v0.6.2-alpha")
             print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
-            main()
+            main(ui_process)
         except KeyboardInterrupt:
             print("CTRL+C detected, exiting ...")
             sys.exit(0)
