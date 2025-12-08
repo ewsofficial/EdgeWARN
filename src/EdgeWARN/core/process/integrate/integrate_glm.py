@@ -38,6 +38,7 @@ def integrate_glm(storm_cells, glm_file_path=None):
 
         flash_lats = ds["flash_lat"].values
         flash_lons = ds["flash_lon"].values
+        flash_lons = (flash_lons + 360) % 360
         # flash_energy in Joules (J) - sometimes it's femtojoules (fJ) depending on product, 
         # but usually post-processed to J or similar unit. Taking raw values as requested.
         flash_energies = ds["flash_energy"].values
