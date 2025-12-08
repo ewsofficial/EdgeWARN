@@ -18,6 +18,4 @@ dependencies:
   - folium
   - psutil
   - pip:
-    - PyQt6
-    - PyQt6-WebEngine
     - gputil
