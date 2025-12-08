@@ -99,6 +99,18 @@ def clean_idx_files(folders):
 
 # ---------- CLEANUP ----------
 def clean_old_files(directory: Path, max_age_minutes=60):
+    # Safety Check: Ensure directory is within BASE_DIR
+    try:
+        # resolve() handles symlinks and . and .. components
+        # is_relative_to (Python 3.9+) checks if BASE_DIR is a parent of directory
+        if not directory.resolve().is_relative_to(BASE_DIR.resolve()):
+             io_manager.write_error(f"SAFETY ERROR: Attempting to clean {directory} which is not inside {BASE_DIR}")
+             return
+    except Exception as e:
+        # Fallback/Safety catch
+        io_manager.write_error(f"Safety check failed for path {directory}: {e}")
+        return
+
     now = datetime.now().timestamp()
     cutoff = now - (max_age_minutes * 60)
     files_deleted = 0
