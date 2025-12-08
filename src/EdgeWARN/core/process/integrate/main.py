@@ -1,5 +1,6 @@
 import util.file as fs
 from EdgeWARN.core.process.integrate.integrate import StormCellIntegrator
+from EdgeWARN.core.process.integrate.integrate_glm import integrate_glm
 from EdgeWARN.core.process.integrate.utils import StatFileHandler
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
@@ -53,6 +54,21 @@ def main():
     
     except Exception as e:
         io_manager.write_error(f"Failed to integrate ProbSevere data: {e}")
+    
+    # Integrate GLM
+    try:
+        io_manager.write_info(f"Integrating GLM data for {len(result_cells)} cells")
+        latest_glm_files = fs.latest_files(fs.GOES_GLM_DIR, 1)
+        if latest_glm_files:
+            latest_file = latest_glm_files[-1]
+            io_manager.write_debug(f"Using latest GLM file: {latest_file}")
+            result_cells = integrate_glm(result_cells, latest_file)
+            io_manager.write_debug(f"Successfully integrated GLM data")
+        else:
+            io_manager.write_warning("No GLM files found, skipping GLM integration")
+
+    except Exception as e:
+        io_manager.write_error(f"Failed to integrate GLM data: {e}")
     
     # Save data
     data = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, result_cells)
