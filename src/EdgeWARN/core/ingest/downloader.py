@@ -2,6 +2,7 @@ from EdgeWARN.core.ingest.config import mrms_modifiers, bucket, goes_modifiers, 
 from EdgeWARN.core.ingest.s3_sync import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.parse import parse_mrms_bucket_path, parse_goes_bucket_path
+from EdgeWARN.core.ingest.utils import merge_glm_files, extract_timestamp
 from util.io import IOManager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
@@ -128,9 +129,11 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
         Path: Path to downloaded file, or None if failed
     """
     # Enforce minute-precision dt
-    dt = dt.replace(second=0, microsecond=0)
+    # dt = dt.replace(second=0, microsecond=0) # Allow seconds for sliding window
     
-    finder = FileFinder(dt, goes_bucket, max_entries, io_manager)
+    # Increase max_entries to ensure we find files in the past (GLM has ~180 files/hour)
+    search_max_entries = max(max_entries, 300)
+    finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
     downloader = FileDownloader(dt, goes_bucket, io_manager)
     
     try:
@@ -149,21 +152,77 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
             return None
         
         
-        # Download most recent file
-        downloaded = downloader.download_matching(all_files, outdir)
-        if downloaded:
-            # Decompress if .gz
-            if downloaded.suffix == ".gz":
-                decompressed = downloader.decompress_file(downloaded)
-                return decompressed if decompressed else downloaded
-            return downloaded
+        # Download all matching files
+        downloaded_files = downloader.download_all_matching(all_files, outdir)
+        
+
+        
+        if downloaded_files:
+            processed_files = []
+            for downloaded in downloaded_files:
+                # Decompress if .gz
+                if downloaded.suffix == ".gz":
+                    decompressed = downloader.decompress_file(downloaded)
+                    if decompressed:
+                        processed_files.append(decompressed)
+                    else:
+                        processed_files.append(downloaded)
+                else:
+                    processed_files.append(downloaded)
+            
+            # Check if we need to merge GLM files
+            if "GLM" in product and len(processed_files) > 1:
+                io_manager.write_info(f"Merging {len(processed_files)} GLM files...")
+                merged_ds = merge_glm_files(processed_files, io_manager)
+                
+                if merged_ds:
+                    # Find the newest timestamp among the files
+                    try:
+                        timestamps = [extract_timestamp(str(f)) for f in processed_files]
+                        newest_ts = max(timestamps)
+                        ts_str = newest_ts.strftime('%Y%m%d-%H%M%S')
+                    except Exception as e:
+                        io_manager.write_warning(f"Could not extract timestamps for naming, using target dt: {e}")
+                        ts_str = dt.strftime('%Y%m%d-%H%M%S')
+
+                    # Create a merged filename
+                    # Format: OR_{product}_merged_YYYYMMDD-HHMMSS.nc
+                    merged_filename = f"OR_{product}_merged_{ts_str}.nc"
+                    merged_path = outdir / merged_filename
+                    
+                    try:
+                        merged_ds.to_netcdf(merged_path)
+                        io_manager.write_info(f"Saved merged GLM file to: {merged_path}")
+                        merged_ds.close()
+                        
+                        # Delete individual files after successful merge
+                        for f in processed_files:
+                            try:
+                                f.unlink()
+                            except Exception as del_e:
+                                io_manager.write_warning(f"Failed to delete {f}: {del_e}")
+                        io_manager.write_debug(f"Deleted {len(processed_files)} individual GLM files")
+                        
+                        # Return only the merged file path
+                        return [merged_path]
+                    except Exception as e:
+                        io_manager.write_error(f"Failed to save merged GLM file: {e}")
+                        merged_ds.close()
+                        # Fallback to returning individual files? Or fail?
+                        # Let's return individual files as fallback
+                        return processed_files
+                else:
+                    io_manager.write_error("GLM merge failed, returning individual files")
+                    return processed_files
+
+            return processed_files
         else:
             io_manager.write_error(f"Failed to download GOES {product} file")
-            return None
+            return []
     
     except Exception as e:
         io_manager.write_error(f"Failed to process GOES {product} - {e}")
-        return None
+        return []
 
 
 async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lookback, s3_client):
@@ -173,9 +232,11 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
     Internal async function for downloading a single GOES product using aioboto3.
     """
     # Enforce minute-precision dt
-    dt = dt.replace(second=0, microsecond=0)
+    # dt = dt.replace(second=0, microsecond=0) # Allow seconds for sliding window
     
-    finder = AsyncFileFinder(dt, goes_bucket, max_entries, io_manager, s3_client=s3_client)
+    # Increase max_entries to ensure we find files in the past
+    search_max_entries = max(max_entries, 300)
+    finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
     
     try:
@@ -194,21 +255,74 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
             return None
         
         
-        # Download most recent file
-        downloaded = await downloader.async_download_matching(all_files, outdir)
-        if downloaded:
-            # Decompress if .gz
-            if downloaded.suffix == ".gz":
-                decompressed = await downloader.async_decompress_file(downloaded)
-                return decompressed if decompressed else downloaded
-            return downloaded
+        # Download all matching files
+        downloaded_files = await downloader.async_download_all_matching(all_files, outdir)
+        
+        if downloaded_files:
+            processed_files = []
+            for downloaded in downloaded_files:
+                # Decompress if .gz
+                if downloaded.suffix == ".gz":
+                    decompressed = await downloader.async_decompress_file(downloaded)
+                    if decompressed:
+                        processed_files.append(decompressed)
+                    else:
+                        processed_files.append(downloaded)
+                else:
+                    processed_files.append(downloaded)
+            
+            # Check if we need to merge GLM files
+            if "GLM" in product and len(processed_files) > 1:
+                io_manager.write_info(f"Merging {len(processed_files)} GLM files (Async)...")
+                
+                # merge_glm_files is synchronous, but that's okay for now as it's the final step
+                # If it blocks too long, we could wrap it in run_in_executor
+                merged_ds = merge_glm_files(processed_files, io_manager)
+                
+                if merged_ds:
+                    # Find the newest timestamp among the files
+                    try:
+                        timestamps = [extract_timestamp(str(f)) for f in processed_files]
+                        newest_ts = max(timestamps)
+                        ts_str = newest_ts.strftime('%Y%m%d-%H%M%S')
+                    except Exception as e:
+                        io_manager.write_warning(f"Could not extract timestamps for naming, using target dt: {e}")
+                        ts_str = dt.strftime('%Y%m%d-%H%M%S')
+
+                    merged_filename = f"OR_{product}_merged_{ts_str}.nc"
+                    merged_path = outdir / merged_filename
+                    
+                    try:
+                        # to_netcdf is also synchronous
+                        merged_ds.to_netcdf(merged_path)
+                        io_manager.write_info(f"Saved merged GLM file to: {merged_path}")
+                        merged_ds.close()
+                        
+                        # Delete individual files after successful merge
+                        for f in processed_files:
+                            try:
+                                f.unlink()
+                            except Exception as del_e:
+                                io_manager.write_warning(f"Failed to delete {f}: {del_e}")
+                        io_manager.write_debug(f"Deleted {len(processed_files)} individual GLM files")
+                        
+                        return [merged_path]
+                    except Exception as e:
+                        io_manager.write_error(f"Failed to save merged GLM file: {e}")
+                        merged_ds.close()
+                        return processed_files
+                else:
+                    io_manager.write_error("GLM merge failed, returning individual files")
+                    return processed_files
+
+            return processed_files
         else:
             io_manager.write_error(f"Failed to download GOES {product} file")
-            return None
+            return []
     
     except Exception as e:
         io_manager.write_error(f"Failed to process GOES {product} - {e}")
-        return None
+        return []
 
 
 def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
@@ -233,7 +347,7 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
             try:
                 result = future.result()
                 if result:
-                    io_manager.write_debug(f"Successfully downloaded: {result}")
+                    io_manager.write_debug(f"Successfully downloaded {len(result)} files")
             except Exception as e:
                 io_manager.write_error(f"GOES download error: {e}")
     
@@ -263,6 +377,6 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
             if isinstance(result, Exception):
                 io_manager.write_error(f"GOES async download error: {result}")
             elif result:
-                io_manager.write_debug(f"Successfully downloaded: {result}")
+                io_manager.write_debug(f"Successfully downloaded {len(result)} files")
         
         io_manager.write_info("Async GOES-19 downloads completed")
