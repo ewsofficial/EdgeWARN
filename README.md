@@ -45,10 +45,16 @@ the GUI frontend.
 - Cache file lists to reduce lookup overhead
 - Reduce integration overhead by subsetting grids per cell and skipping irrelevant timestamps
 
-### 0.6.2-alpha (current)
+### 0.6.2-alpha
 - Add ``INFO: `` prints to command-line output
 - Unify dataset loading and timestamp extraction
 - Add server monitor GUI, which displays server resource usage and status
+
+### 0.6.3-alpha (current)
+- Add ``--nogui`` option to disable the server monitor GUI
+- Add historical processing capabilities
+- Remove Cloud Top Height, Cloud Top Pressure, and Cloud Top Temperature datasets
+- Added GLM integration for flashes and total energy
 
 <h2 align="center">Credits</h2>
 
