@@ -13,6 +13,7 @@ dependencies:
   - scikit-image
   - scipy
   - shapely
+  - rasterio
   - xarray
   - folium
   - psutil
