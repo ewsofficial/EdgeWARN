@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rendersRouter from './routes/renders.js';
+import path from 'path';
 
 dotenv.config();
 
@@ -23,6 +24,17 @@ app.get('/health', (req, res) => {
 
 // Renders subtab (placeholder)
 app.use('/renders', rendersRouter);
+
+// Serve robots.txt
+app.get('/robots.txt', (req, res) => {
+  const robotsPath = path.resolve(process.cwd(), 'src/EdgeWARN/backend/robots.txt');
+  res.sendFile(robotsPath, (err) => {
+    if (err) {
+      console.error('Error sending robots.txt:', err);
+      res.status(404).end();
+    }
+  });
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {

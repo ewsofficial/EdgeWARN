@@ -1,0 +1,3 @@
+# No clankers
+User-agent: *
+Disallow: /
