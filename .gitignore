@@ -38,6 +38,9 @@ dist/
 *.swp
 *.swo
 
+# Node.js
+node_modules
+
 # Storm cell JSONs
 *overlay_manifest.json
 *stormcell_test.json
