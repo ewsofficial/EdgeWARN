@@ -52,6 +52,11 @@ class IOManager:
             default=[-83, -63],
             help="Longitude limits for processing (default: -83 -63)"
         )
+        parser.add_argument(
+            "--nogui",
+            action="store_true",
+            help="Disable the GUI and print output to console"
+        )
 
         args = parser.parse_args()
 

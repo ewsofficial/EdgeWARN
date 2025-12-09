@@ -1,4 +1,4 @@
-from EdgeWARN.core.ingest.config import mrms_modifiers, bucket
+from EdgeWARN.core.ingest.config import mrms_modifiers, bucket, goes_modifiers
 from EdgeWARN.core.ingest.s3_sync import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.parse import parse_goes_bucket_path
@@ -19,7 +19,7 @@ import traceback
 
 io_manager = IOManager("[Ingest]")
 
-def download_all_files(dt):
+def download_all_files(dt, max_entries=10):
     """
     Main function for downloading all MRMS files.
 
@@ -29,10 +29,10 @@ def download_all_files(dt):
     """
     # Clear files first
     folders = [outdir for _, _, outdir in mrms_modifiers]
+    # Add GOES folders
+    folders.extend([outdir for _, outdir in goes_modifiers])
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=60)
-
-    max_entries = 10                         # How many files to check per source
 
     # Use async operations internally for better performance
     # This maintains the same API but with improved performance
