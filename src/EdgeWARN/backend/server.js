@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import rendersRouter from './routes/renders.js';
 
 dotenv.config();
 
@@ -19,6 +20,9 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ status: 'OK' });
 });
+
+// Renders subtab (placeholder)
+app.use('/renders', rendersRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
