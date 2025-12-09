@@ -5,7 +5,17 @@ from util.io import IOManager
 
 io_manager = IOManager("[Util]")
 
-BASE_DIR = Path("C:/EdgeWARN_input") if platform.system() == "Windows" else Path("EdgeWARN_input")
+if platform.system() == "Windows":
+    BASE_DIR = Path(r"C:\EdgeWARN_input")
+
+else:
+    try:
+        BASE_DIR = Path(r"/home/EdgeWARN_input")
+
+    except Exception as e:
+        io_manager.write_error(f"Failed to create EdgeWARN input path: {e}")
+        io_manager.write_debug(f"Attempting to retry with new path")
+        BASE_DIR = Path(r"EdgeWARN_input") 
 
 # ---------- PATH CONFIG ----------
 DATA_DIR = BASE_DIR / "data"
