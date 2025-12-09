@@ -37,8 +37,5 @@ check_modifiers = [
 ]
 
 goes_modifiers = [
-    ("GLM-L2-LCFA", GOES_GLM_DIR),
-    ("ABI-L2-ACHAC", ABI_CLOUDHEIGHT_DIR),
-    ("ABI-L2-ACHTF", ABI_CLOUDTEMP_DIR),
-    ("ABI-L2-ACTPC", ABI_CLOUDPHASE_DIR),
+    ("GLM-L2-LCFA", GOES_GLM_DIR)
 ]

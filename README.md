@@ -22,13 +22,8 @@ the GUI frontend.
 1. Conda/Miniconda with Python 3.13+
 
 #### Installation Instructions
-1. Clone the repository
-2. Run `conda env create -f environment.yml` at the repository's root
-3. Navigate to the src directory
-4. Run `python run.py --lat_limits lat_min lat_max --lon_limits lon_min lon_max`
 
-- lat_min, lat_max = latitude bounds (defaults are ``(36, 46)``)
-- lon_min, lon_max = longitude bounds (defaults are ``(-83, -73)``)
+Check INSTALLATION.md for installation and run instructions
 
 <h2 align="center">Build Info</h2>
 
@@ -45,10 +40,16 @@ the GUI frontend.
 - Cache file lists to reduce lookup overhead
 - Reduce integration overhead by subsetting grids per cell and skipping irrelevant timestamps
 
-### 0.6.2-alpha (current)
+### 0.6.2-alpha
 - Add ``INFO: `` prints to command-line output
 - Unify dataset loading and timestamp extraction
 - Add server monitor GUI, which displays server resource usage and status
+
+### 0.6.3-alpha (current)
+- Add ``--nogui`` option to disable the server monitor GUI
+- Add historical processing capabilities
+- Remove Cloud Top Height, Cloud Top Pressure, and Cloud Top Temperature datasets
+- Added GLM integration for flashes and total energy
 
 <h2 align="center">Credits</h2>
 
