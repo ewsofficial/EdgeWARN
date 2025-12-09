@@ -22,13 +22,8 @@ the GUI frontend.
 1. Conda/Miniconda with Python 3.13+
 
 #### Installation Instructions
-1. Clone the repository
-2. Run `conda env create -f environment.yml` at the repository's root
-3. Navigate to the src directory
-4. Run `python run.py --lat_limits lat_min lat_max --lon_limits lon_min lon_max`
 
-- lat_min, lat_max = latitude bounds (defaults are ``(36, 46)``)
-- lon_min, lon_max = longitude bounds (defaults are ``(-83, -73)``)
+Check INSTALLATION.md for installation and run instructions
 
 <h2 align="center">Build Info</h2>
 
