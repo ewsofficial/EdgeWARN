@@ -84,3 +84,5 @@ The JSON output follows this structure:
 | ICP             | N/A           | Intense Convection Probability                  |
 | PWAT            | in            | Precipitable Water                              |
 | avg_beam_hgt    | km AGL        | Average Beam Height over storm cell             |
+| GLM_FLASH_COUNT | fl/min        | GLM Flash Count within storm cell               |
+| GLM_TOTAL_ENERGY| J             | Total GLM Flash Energy within storm cell        |
