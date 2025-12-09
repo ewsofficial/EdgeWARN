@@ -20,7 +20,7 @@ The module provides both synchronous and asynchronous interfaces for downloading
 
 The primary interface for external calls.
 
-*   `download_all_files(dt)`: Main entry point used by the scheduler. Orchestrates downloads for all configured MRMS and GOES products for the given datetime `dt`.
+*   `download_all_files(dt)`: Main entry point used by the scheduler. Orchestrates downloads for all configured MRMS and GOES products for the given datetime `dt`. **Also performs cleanup of old files (both MRMS and GOES) older than 60 minutes.**
 *   `download_goes_product(...)`: Helper for downloading a single GOES product synchronously.
 *   `download_all_goes_files(...)`: Helper for downloading all GOES products.
 

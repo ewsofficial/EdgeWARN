@@ -73,37 +73,55 @@ class MRMSUpdateChecker:
 
     def latest_common_minute_1h(self, modifiers, reference_dt=None):
         """
-        Find the latest common timestamp (to the minute) across all modifiers in the past hour.
+        Find the latest common timestamp (to the minute) across all modifiers.
+        FIXED: Now properly handles timezone-aware vs UTC conflicts.
         """
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
 
+
+
         modifier_times = []
 
         for region, modifier, _ in modifiers:
-            finder = FileFinder(reference_dt, bucket, 10, io_manager)
+            finder = FileFinder(reference_dt, bucket, 20, io_manager)
             bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False)
             if not files_with_timestamps:
                 if self.verbose:
-                    print(f"[{modifier}] No remote files found in the last hour")
+                    print(f"[{modifier}] No remote files found")
                 continue
 
-            ts_rounded = [ts.replace(second=0, microsecond=0) for _, ts in files_with_timestamps]
-            modifier_times.append(set(ts_rounded))
+            # Process timestamps: ensure all are timezone-aware UTC
+            processed_timestamps = []
+            for s3_path, ts in files_with_timestamps:
+                # Ensure timestamp is timezone-aware UTC
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=datetime.timezone.utc)
+                elif ts.tzinfo != datetime.timezone.utc:
+                    # Convert to UTC if in different timezone
+                    ts = ts.astimezone(datetime.timezone.utc)
+                
+                ts_rounded = ts.replace(second=0, microsecond=0)
+                processed_timestamps.append(ts_rounded)
+                
+
+
+            modifier_times.append(set(processed_timestamps))
 
         if not modifier_times:
             if self.verbose:
-                print("[Scheduler] No files found in any modifier within the last hour")
+                print("[Scheduler] No files found in any modifier")
             return None
 
         common_minutes = set.intersection(*modifier_times)
         if not common_minutes:
             if self.verbose:
-                print("[Scheduler] No common timestamps across all modifiers in the last hour")
-            return None
+                print("[Scheduler] No common timestamps across all modifiers")
+
+                return None
 
         latest_common = max(common_minutes)
         if self.verbose:
-            print(f"[Scheduler] Latest common timestamp within 1h: {latest_common}")
+            print(f"[Scheduler] Latest common timestamp: {latest_common}")
         return latest_common

@@ -37,7 +37,25 @@ This module contains the `StormCellIntegrator` class, which performs the heavy l
                 - If a match is found, it iterates through the field map and copies the values from the ProbSevere feature to the cell's latest `storm_history` entry.
         - **Returns**: The updated list of storm cells.
 
-### 2. `main.py`
+### 2. `integrate_glm.py`
+This module handles the integration of Geostationary Lightning Mapper (GLM) data.
+
+#### Functions:
+
+- **`integrate_glm(storm_cells, glm_file_path=None)`**
+    - **Functionality**: Integrates GLM flash count and total energy into storm cells.
+    - **Steps**:
+        1. **Load Dataset**: Opens the GLM L2 LCFA NetCDF file.
+        2. **Filter Active Cells**: Selects only cells active at the latest timestamp.
+        3. **Spatial Query**:
+            - Uses a bounding box check for speed.
+            - Performs a precise point-in-polygon check for flashes within the cell boundaries.
+        4. **Aggregation**:
+            - Counts the number of flashes (`GLM_FLASH_COUNT`).
+            - Sums the flash energy (`GLM_TOTAL_ENERGY`).
+    - **Returns**: Updated storm cells with GLM data appended to the latest history entry.
+
+### 3. `main.py`
 This script defines the integration workflow, specifying which datasets to process and running the integration.
 
 #### Functions:
@@ -52,7 +70,7 @@ This script defines the integration workflow, specifying which datasets to proce
         3.  **Integrate ProbSevere**: Finds the latest ProbSevere JSON file and calls `integrator.integrate_probsevere`.
         4.  **Save**: Writes the fully enriched storm cell data back to `stormcell_test.json`.
 
-### 3. `utils.py`
+### 4. `utils.py`
 Contains utility classes for file handling and geometry operations.
 
 #### Classes:

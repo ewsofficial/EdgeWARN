@@ -21,6 +21,22 @@ class GateMapper:
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
 
+        if lats.size < 2 or lons.size < 2:
+            self.io_manager.write_warning("Radar dataset is too small or empty. Skipping mapping.")
+            # Return empty dataset with correct structure but empty
+            return xr.Dataset(
+                {'PolygonID': (('latitude', 'longitude'), np.zeros((lats.size, lons.size), dtype=np.int32))},
+                coords={'latitude': lats, 'longitude': lons}
+            )
+
+        if self.ps_ds is None or not isinstance(self.ps_ds, dict):
+             # Return empty grid if ProbSevere data is missing or invalid
+             polygon_grid = np.zeros((len(lats), len(lons)), dtype=np.int32)
+             return xr.Dataset(
+                 {'PolygonID': (('latitude', 'longitude'), polygon_grid)},
+                 coords={'latitude': lats, 'longitude': lons}
+             )
+
         raster_polygons = []
         for feature in self.ps_ds.get('features', []):
             poly_id = int(feature['properties'].get('ID', 0))
@@ -71,6 +87,11 @@ class GateMapper:
         mask = refl_grid >= self.refl_threshold
 
         unique_ids = np.unique(polygon_grid[polygon_grid > 0])
+        
+        if unique_ids.size == 0:
+            # No polygons to expand
+            return mapped_ds
+
         H, W = polygon_grid.shape
 
         # Stack a boolean mask for each polygon
