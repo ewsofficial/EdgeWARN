@@ -5,7 +5,17 @@ from util.io import IOManager
 
 io_manager = IOManager("[Util]")
 
-BASE_DIR = Path("C:/EdgeWARN_input") if platform.system() == "Windows" else Path("EdgeWARN_input")
+if platform.system() == "Windows":
+    BASE_DIR = Path(r"C:\EdgeWARN_input")
+
+else:
+    try:
+        BASE_DIR = Path(r"/home/EdgeWARN_input")
+
+    except Exception as e:
+        io_manager.write_error(f"Failed to create EdgeWARN input path: {e}")
+        io_manager.write_debug(f"Attempting to retry with new path")
+        BASE_DIR = Path(r"EdgeWARN_input") 
 
 # ---------- PATH CONFIG ----------
 DATA_DIR = BASE_DIR / "data"
@@ -26,9 +36,6 @@ MRMS_COMPOSITE_DIR = DATA_DIR / "CompRefQC"
 MRMS_RHOHV_DIR = DATA_DIR / "RhoHV"
 MRMS_PRECIPTYP_DIR = DATA_DIR / "PrecipFlag"
 MRMS_MESH_DIR = DATA_DIR / "MESH"
-ABI_CLOUDHEIGHT_DIR = DATA_DIR / "ABI-CloudHeight"
-ABI_CLOUDTEMP_DIR = DATA_DIR / "ABI-CloudTemp"
-ABI_CLOUDPHASE_DIR = DATA_DIR / "ABI-CloudPhase"
 GOES_GLM_DIR = DATA_DIR / "GLM"
 ABI_CLOUDPRES_DIR = DATA_DIR / "ABI-CloudPressure"
 STORMCELL_JSON = Path("stormcell_test.json")
@@ -94,20 +101,54 @@ def clean_idx_files(folders):
                         deleted_files += 1
                     except Exception as e:
                         io_manager.write_error(f"Failed to delete IDX file {f}: {e}")
-                io_manager.write_debug(f"Deleted {deleted_files} files in {folder}")
+                
+                if deleted_files > 0:
+                    io_manager.write_debug(f"Deleted {deleted_files} files in {folder}")
         else:
             io_manager.write_error(f"Folder not found: {folder}")
 
 # ---------- CLEANUP ----------
 def clean_old_files(directory: Path, max_age_minutes=60):
+    # Safety Check: Ensure directory is within BASE_DIR
+    try:
+        # resolve() handles symlinks and . and .. components
+        # is_relative_to (Python 3.9+) checks if BASE_DIR is a parent of directory
+        if not directory.resolve().is_relative_to(BASE_DIR.resolve()):
+             io_manager.write_error(f"SAFETY ERROR: Attempting to clean {directory} which is not inside {BASE_DIR}")
+             return
+    except Exception as e:
+        # Fallback/Safety catch
+        io_manager.write_error(f"Safety check failed for path {directory}: {e}")
+        return
+
     now = datetime.now().timestamp()
     cutoff = now - (max_age_minutes * 60)
     files_deleted = 0
+    kept_files = []
+
     for f in directory.glob("*"):
-        if f.is_file() and f.stat().st_mtime < cutoff:
+        if f.is_file():
+            try:
+                mtime = f.stat().st_mtime
+                if mtime < cutoff:
+                    f.unlink()
+                    files_deleted += 1
+                else:
+                    kept_files.append((f, mtime))
+            except Exception as e:
+                io_manager.write_error(f"Could not process/delete {f.name}: {e}")
+
+    # If more than 10 files remain, delete the oldest ones until only 10 are left
+    if len(kept_files) > 10:
+        kept_files.sort(key=lambda x: x[1]) # Sort by mtime (oldest first)
+        files_to_remove = len(kept_files) - 10
+        for i in range(files_to_remove):
+            f, _ = kept_files[i]
             try:
                 f.unlink()
                 files_deleted += 1
             except Exception as e:
                 io_manager.write_error(f"Could not delete {f.name}: {e}")
-    io_manager.write_debug(f"Deleted {files_deleted} files in {directory}")
+
+    if files_deleted > 0:
+        io_manager.write_debug(f"Deleted {files_deleted} files in {directory}")
