@@ -2,8 +2,10 @@ from . import config
 from . import render
 from .tools import OverlayManifestUtils
 import util.file as fs
+import time
 
 if __name__ == "__main__":
+    start = time.time()
     manifest = OverlayManifestUtils()
     for entry in config.file_list:
         name = entry.get('name')
@@ -14,3 +16,5 @@ if __name__ == "__main__":
         png_file, timestamp = renderer.convert_to_png()
         manifest.add_layer(name, colormap_key, str(png_file), timestamp)
     manifest.save_to_json(fs.GUI_MANIFEST_JSON)
+    end = time.time()
+    print(f"Total time: {end - start}")
