@@ -5,20 +5,7 @@ from EdgeWARN.core.process.integrate.utils import StatFileHandler
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
 import json
-
-# ------------------------------
-# MRMS dataset list
-# ------------------------------
-datasets = [
-    ("NLDN", fs.MRMS_NLDN_DIR, "CGFlashDensity"),
-    ("EchoTop18", fs.MRMS_ECHOTOP18_DIR, "EchoTop18"),
-    ("EchoTop30", fs.MRMS_ECHOTOP30_DIR, "EchoTop30"),
-    ("PrecipRate", fs.MRMS_PRECIPRATE_DIR, "PrecipRate"),
-    ("VIL Density", fs.MRMS_VIL_DIR, "VILDensity"),
-    ("Reflectivity at Lowest Altitude", fs.MRMS_RALA_DIR, "RALA"),
-    ("VII", fs.MRMS_VII_DIR, "VII")
-]
-
+from EdgeWARN.core.process.integrate.config import datasets
 io_manager = IOManager("[CellIntegration]")
 
 def main():
