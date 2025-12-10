@@ -8,7 +8,7 @@
             "description": "Standard NWS dBZ reflectivity colormap",
             "type": "reflectivity",
             "units": "dBZ",
-            "interpolate": "False", 
+            "interpolate": true, 
             "range": [0, 85],
             "thresholds": [
                 {"value": 0, "rgb": [35, 150, 190]},
@@ -36,8 +36,8 @@
             "description": "Enhanced Echo Top color map",
             "type": "EchoTops",
             "units": "km",
-            "interpolate": "False",
-            "range": [1, 20],
+            "interpolate": false,
+            "range": [0, 19],
             "thresholds": [
                 {"value": 0, "rgb": [0, 236, 236]},
                 {"value": 1, "rgb": [0, 200, 240]},
@@ -65,9 +65,9 @@
             "name": "PrecipRate",
             "description": "PrecipRate color map",
             "type": "PrecipitationRate",
-            "interpolate": "False", 
+            "interpolate": false, 
             "units": "mm",
-            "range": [0, 421],
+            "range": [0, 177.8],
             "thresholds": [
                 {"value": 0.25, "rgb": [0, 236, 236]},
                 {"value": 1.27, "rgb": [0, 200, 240]},
@@ -92,6 +92,39 @@
                 {"value": 152.4, "rgb": [217, 0, 217]},
                 {"value": 165.1, "rgb": [174, 0, 174]},
                 {"value": 177.8, "rgb": [120, 0, 120]}
+            ]
+        },
+        {
+            "name": "QPE_01H",
+            "description": "Radar-Only QPE estimates for the past 1 hour",
+            "type": "QPE",
+            "units": "mm",
+            "interpolate": false,
+            "range": [0, 177.8],
+            "thresholds": [
+                {"value": 0.25, "rgb": [0, 236, 236]},
+                {"value": 1.27, "rgb": [0, 200, 240]},
+                {"value": 2.54, "rgb": [0, 160, 255]},
+                {"value": 3.81, "rgb": [0, 60, 255]},
+                {"value": 5.08, "rgb": [0, 255, 0]},
+                {"value": 10.16, "rgb": [0, 220, 0]},
+                {"value": 15.24, "rgb": [0, 190, 0]},
+                {"value": 20.32, "rgb": [0, 141, 0]},
+                {"value": 25.4, "rgb": [255, 255, 0]},
+                {"value": 31.75, "rgb": [240, 210, 0]},
+                {"value": 38.1, "rgb": [231, 180, 0]},
+                {"value": 44.45, "rgb": [200, 120, 0]},
+                {"value": 50.8, "rgb": [255, 160, 160]},
+                {"value": 63.5, "rgb": [255, 60, 60]},
+                {"value": 76.2, "rgb": [230, 0, 0]},
+                {"value": 88.9, "rgb": [180, 0, 0]},
+                {"value": 101.6, "rgb": [255, 0, 255]},
+                {"value": 114.5, "rgb": [217, 0, 217]},
+                {"value": 127, "rgb": [164, 0, 164]},
+                {"value": 139.7, "rgb": [120, 0, 120]},
+                {"value": 152.4, "rgb": [255, 255, 255]},
+                {"value": 165.1, "rgb": [192, 192, 255]},
+                {"value": 177.8, "rgb": [192, 255, 255]}
             ]
         }
     ]
