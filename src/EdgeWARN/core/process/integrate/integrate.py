@@ -8,7 +8,7 @@ class StormCellIntegrator:
     def __init__(self, io_manager):
         self.io_manager = io_manager
 
-    def integrate_ds_via_max(self, dataset_path, storm_cells, output_key):
+    def integrate_ds_via_max(self, dataset_path, storm_cells, output_key, create_render=False):
 
         # Load dataset
         try:
