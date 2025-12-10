@@ -1,4 +1,5 @@
 from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
+from EdgeWARN.core.gui_pipelines.transform.render import GUILayerRenderer
 from EdgeWARN.core.process.detect.tools.gatemapper import GateMapper
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
@@ -48,6 +49,14 @@ def detect_cells(
 
     entries = saver.create_entry()
     entries = saver.append_storm_history(entries, radar_path)
+
+    # Render Composite Reflectivity
+    try:
+        renderer = GUILayerRenderer(radar_ds, fs.GUI_COMPOSITE_DIR, "NWS_Reflectivity", "MRMS_MergedReflectivityQC")
+        renderer.convert_to_png()
+        io_manager.write_debug("Rendered MRMS_MergedReflectivityQC successfully")
+    except Exception as e:
+        io_manager.write_error(f"Failed to render MRMS_MergedReflectivityQC: {e}")
 
     if return_probsevere:
         return entries, ps_ds
