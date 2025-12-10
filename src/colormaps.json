@@ -126,6 +126,35 @@
                 {"value": 165.1, "rgb": [192, 192, 255]},
                 {"value": 177.8, "rgb": [192, 255, 255]}
             ]
+        },
+        {
+            "name": "VILDensity",
+            "description": "Vertically integrated liquid density",
+            "type": "VILDensity",
+            "units": "g/m^3",
+            "interpolate": false,
+            "range": [0, 70],
+            "thresholds": [
+                {"value": 0, "rgb": [0, 236, 236]},
+                {"value": 1, "rgb": [0, 160, 246]},
+                {"value": 2, "rgb": [0, 0, 246]},
+                {"value": 3, "rgb": [0, 255, 0]},
+                {"value": 4, "rgb": [0, 200, 0]},
+                {"value": 5, "rgb": [0, 144, 0]},
+                {"value": 6, "rgb": [255, 255, 0]},
+                {"value": 7, "rgb": [231, 192, 0]},
+                {"value": 8, "rgb": [255, 144, 0]},
+                {"value": 10, "rgb": [255, 0, 0]},
+                {"value": 12, "rgb": [192, 0, 0]},
+                {"value": 15, "rgb": [255, 0, 255]},
+                {"value": 18, "rgb": [190, 85, 220]},
+                {"value": 25, "rgb": [126, 50, 167]},
+                {"value": 30, "rgb": [255, 255, 255]},
+                {"value": 40, "rgb": [200, 200, 200]},
+                {"value": 50, "rgb": [160, 160, 160]},
+                {"value": 60, "rgb": [128, 128, 128]},
+                {"value": 70, "rgb": [64, 64, 64]}
+            ]
         }
     ]
 }]
