@@ -38,7 +38,8 @@ class GUILayerRenderer:
                 if cmap.get("name") == self.colormap_key:
                     thresholds = [t["value"] for t in cmap["thresholds"]]
                     colors = [t["rgb"] for t in cmap["thresholds"]]
-                    return np.array(thresholds), np.array(colors, dtype=np.float32)
+                    interpolate = cmap.get("interpolate", True)
+                    return np.array(thresholds), np.array(colors, dtype=np.float32), interpolate
         
         # If key not found, raise an error
         raise ValueError(f"Colormap '{self.colormap_key}' not found in colormaps.json")
@@ -57,13 +58,28 @@ class GUILayerRenderer:
         data = ds['unknown'].values
 
         # Step 2: Get colormap
-        thresholds, colors = self._get_cmap()
+        thresholds, colors, interpolate = self._get_cmap()
 
-        # Step 2.5: Interpolate colors
+        # Step 2.5: Apply colormap
         flat_data = data.flatten()
-        r = np.interp(flat_data, thresholds, colors[:, 0])
-        g = np.interp(flat_data, thresholds, colors[:, 1])
-        b = np.interp(flat_data, thresholds, colors[:, 2])
+
+        if interpolate:
+            r = np.interp(flat_data, thresholds, colors[:, 0])
+            g = np.interp(flat_data, thresholds, colors[:, 1])
+            b = np.interp(flat_data, thresholds, colors[:, 2])
+        else:
+            # Discrete color mapping
+            indices = np.digitize(flat_data, thresholds) - 1
+            indices = np.clip(indices, 0, len(colors) - 1)
+            
+            # Use gathered indices to fetch colors
+            # indices is an array of shape (N,)
+            # colors is (M, 3)
+            # colors[indices] is (N, 3)
+            mapped_colors = colors[indices]
+            r = mapped_colors[:, 0]
+            g = mapped_colors[:, 1]
+            b = mapped_colors[:, 2]
         a = np.where(flat_data < 0, 0, 255)  # transparent for values < 0
 
         # Reshape to original grid for 1:1 pixel correspondence
