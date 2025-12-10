@@ -4,21 +4,22 @@ import numpy as np
 from PIL import Image
 from .tools import TransformUtils
 import util.file as fs
+from xarray import Dataset
 from util.io import IOManager
 from datetime import datetime
 
 io_manager = IOManager("[Transform]")
 
 class GUILayerRenderer:
-    def __init__(self, filepath: Path, outdir: Path, colormap_key, file_name):
+    def __init__(self, dataset: Dataset, outdir: Path, colormap_key, file_name):
         """
         Args:
-            filepath (Path): Path of the dataset being converted to GUI png
+            filepath (xr.Dataset): Dataset being converted to GUI png
             outdir (Path): Output directory of the converted png file
             colormap_key (str): Key of the color map as stored under colormaps.json
             file_name (str): Key of .png file name
         """
-        self.filepath = filepath
+        self.ds = dataset
         self.outdir = outdir
         self.colormap_key = colormap_key
         self.file_name = file_name
@@ -49,12 +50,9 @@ class GUILayerRenderer:
         Converts dataset to a png file and then saves it to outdir.
         Reprojects data to EPSG:3857 (Web Mercator) projection.
         """
-        # Step 1: Load the file
-        latest_file = fs.latest_files(self.filepath, 1)[-1]
-        ds = TransformUtils.load_ds(latest_file)
-        
-        # Step 1.5: Reproject to EPSG:3857 (Web Mercator)
-        ds = TransformUtils.reproject_to_epsg3857(ds)
+
+        # Step 1: Reproject to EPSG:3857 (Web Mercator)
+        ds = TransformUtils.reproject_to_epsg3857(self.ds)
         data = ds['unknown'].values
 
         # Step 2: Get colormap
