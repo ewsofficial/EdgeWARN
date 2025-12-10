@@ -52,8 +52,8 @@ class GUILayerRenderer:
         """
 
         # Step 1: Reproject to EPSG:3857 (Web Mercator)
-        ds = TransformUtils.reproject_to_epsg3857(self.ds)
-        data = ds['unknown'].values
+        self.ds = TransformUtils.reproject_to_epsg3857(self.ds)
+        data = self.ds['unknown'].values
 
         # Step 2: Get colormap
         thresholds, colors, interpolate = self._get_cmap()
@@ -100,5 +100,7 @@ class GUILayerRenderer:
         img.save(png_file, optimize=True)
 
         io_manager.write_debug(f"Saved {self.file_name} PNG file to {png_file}")
+
+        self.ds.close() # Cleanup
 
         return png_file, timestamp
