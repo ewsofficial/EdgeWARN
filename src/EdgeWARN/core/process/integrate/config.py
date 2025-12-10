@@ -75,16 +75,5 @@ datasets = [
             "outdir": fs.GUI_QPE_DIR,
             "file_name": "MRMS_QPE"
         }
-    },
-    # Adding Composite Reflectivity which was in transform config
-    {
-        "name": "Composite Reflectivity",
-        "filepath": fs.MRMS_COMPOSITE_DIR,
-        "key": "CompositeReflectivity", # Assuming key name
-        "render": {
-            "colormap_key": "NWS_Reflectivity",
-            "outdir": fs.GUI_COMPOSITE_DIR,
-            "file_name": "MRMS_MergedReflectivityQC"
-        }
     }
 ]
