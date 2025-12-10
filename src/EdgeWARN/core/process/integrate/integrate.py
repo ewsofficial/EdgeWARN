@@ -1,4 +1,5 @@
 from .utils import StormIntegrationUtils
+from EdgeWARN.core.gui_pipelines.transform.render import GUILayerRenderer
 import xarray as xr
 import numpy as np
 import shapely.vectorized as sv
@@ -8,7 +9,7 @@ class StormCellIntegrator:
     def __init__(self, io_manager):
         self.io_manager = io_manager
 
-    def integrate_ds_via_max(self, dataset_path, storm_cells, output_key, create_render=False):
+    def integrate_ds_via_max(self, dataset_path, storm_cells, output_key, render_config=None):
 
         # Load dataset
         try:
@@ -94,6 +95,15 @@ class StormCellIntegrator:
             except Exception as e:
                 self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
                 latest[output_key] = "PROCESSING_ERROR"
+
+        if render_config:
+            try:
+                # ds is already open
+                renderer = GUILayerRenderer(ds, render_config['outdir'], render_config['colormap_key'], render_config['file_name'])
+                renderer.convert_to_png()
+                self.io_manager.write_debug(f"Rendered {render_config['file_name']} successfully")
+            except Exception as e:
+                self.io_manager.write_error(f"Failed to render {render_config['file_name']}: {e}")
 
         ds.close()
         return storm_cells

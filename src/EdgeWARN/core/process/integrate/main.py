@@ -17,12 +17,17 @@ def main():
     result_cells = cells
 
     # Integrate datasets
-    for name, outdir, key in datasets:
+    for dataset_config in datasets:
+        name = dataset_config["name"]
+        outdir = dataset_config["filepath"]
+        key = dataset_config["key"]
+        render_config = dataset_config.get("render")
+
         try:
             latest_file = fs.latest_files(outdir, 1)[-1]
             io_manager.write_debug(f"Using latest {name} file: {latest_file}")
 
-            result_cells = integrator.integrate_ds_via_max(latest_file, result_cells, key)
+            result_cells = integrator.integrate_ds_via_max(latest_file, result_cells, key, render_config)
             io_manager.write_debug(f"{name} integration completed successfully!")
         
         except Exception as e:
