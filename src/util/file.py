@@ -1,6 +1,20 @@
 from pathlib import Path
+import sys
+import os
 import platform
 from datetime import datetime
+
+# Ensure the repository `src` directory is on sys.path so top-level imports
+# like `from util.io import IOManager` work when files are executed directly.
+try:
+    _SRC_DIR = Path(__file__).resolve().parents[1]
+    _src_str = str(_SRC_DIR)
+    if _src_str not in sys.path:
+        sys.path.insert(0, _src_str)
+except Exception:
+    # Best-effort only; fall back to normal import errors if this fails
+    pass
+
 from util.io import IOManager
 
 io_manager = IOManager("[Util]")
@@ -9,13 +23,7 @@ if platform.system() == "Windows":
     BASE_DIR = Path(r"C:\EdgeWARN_input")
 
 else:
-    try:
-        BASE_DIR = Path(r"/home/EdgeWARN_input")
-
-    except Exception as e:
-        io_manager.write_error(f"Failed to create EdgeWARN input path: {e}")
-        io_manager.write_debug(f"Attempting to retry with new path")
-        BASE_DIR = Path(r"EdgeWARN_input") 
+    BASE_DIR = Path(r"/workspaces/EdgeWARN_input")
 
 # ---------- PATH CONFIG ----------
 DATA_DIR = BASE_DIR / "data"
@@ -38,7 +46,7 @@ MRMS_PRECIPTYP_DIR = DATA_DIR / "PrecipFlag"
 MRMS_MESH_DIR = DATA_DIR / "MESH"
 GOES_GLM_DIR = DATA_DIR / "GLM"
 ABI_CLOUDPRES_DIR = DATA_DIR / "ABI-CloudPressure"
-STORMCELL_JSON = Path("stormcell_test.json")
+STORMCELL_JSON = DATA_DIR / "stormcells.json"
 
 # ---------- GUI PATH CONFIG ----------
 GUI_DIR = BASE_DIR / "gui"
@@ -57,7 +65,7 @@ GUI_COMPOSITE_DIR = GUI_DIR / "CompRefQC"
 GUI_RHOHV_DIR = GUI_DIR / "RhoHV"
 GUI_PRECIPTYP_DIR = GUI_DIR / "PrecipFlag"
 GUI_MAP_DIR = GUI_DIR / "maps"
-GUI_MANIFEST_JSON = Path("overlay_manifest.json")
+GUI_MANIFEST_JSON = GUI_DIR / "overlay_manifest.json"
 GUI_COLORMAP_JSON = Path("colormaps.json")
 
 # NEW LATEST FILES FUNCTION
