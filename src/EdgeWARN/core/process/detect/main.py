@@ -20,6 +20,7 @@ def _detect_with_optional_probsevere(
     lon_min,
     lon_max,
     need_probsevere,
+    render_files=True,
 ):
     if need_probsevere:
         return detect_cells(
@@ -32,6 +33,7 @@ def _detect_with_optional_probsevere(
             lon_min,
             lon_max,
             return_probsevere=True,
+            render=render_files,
         )
 
     return detect_cells(
@@ -43,10 +45,11 @@ def _detect_with_optional_probsevere(
         lat_max,
         lon_min,
         lon_max,
+        render=render_files,
     ), None
 
 
-def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple, lon_bounds: tuple, json_output):
+def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple, lon_bounds: tuple, json_output, render_files=True):
     lat_min, lat_max = lat_bounds
     lon_min, lon_max = lon_bounds
 
@@ -85,6 +88,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
                 lon_min,
                 lon_max,
                 need_probsevere=not single_frame,
+                render_files=render_files,
             )
             io_manager.write_debug(f"Detected {len(entries_old)} cells in old scan.")
     else:
@@ -98,6 +102,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             lon_min,
             lon_max,
             need_probsevere=not single_frame,
+            render_files=render_files,
         )
         io_manager.write_debug(f"Detected {len(entries_old)} cells in old scan.")
 
@@ -132,6 +137,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         lon_min,
         lon_max,
         need_probsevere=True,
+        render_files=render_files,
     )
     io_manager.write_debug(f"Detected {len(entries_new)} cells in new scan")
 

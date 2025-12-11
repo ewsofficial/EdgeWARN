@@ -1,5 +1,6 @@
 from .utils import StormIntegrationUtils
 from EdgeWARN.core.gui_pipelines.transform.render import GUILayerRenderer
+from EdgeWARN.core.gui_pipelines.transform.tools import TransformUtils
 import xarray as xr
 import numpy as np
 import shapely.vectorized as sv
@@ -99,7 +100,8 @@ class StormCellIntegrator:
         if render_config:
             try:
                 # ds is already open
-                renderer = GUILayerRenderer(ds, render_config['outdir'], render_config['colormap_key'], render_config['file_name'])
+                ts_str = TransformUtils.find_timestamp(dataset_path)
+                renderer = GUILayerRenderer(ds, render_config['outdir'], render_config['colormap_key'], render_config['file_name'], ts_str)
                 renderer.convert_to_png()
                 self.io_manager.write_debug(f"Rendered {render_config['file_name']} successfully")
             except Exception as e:

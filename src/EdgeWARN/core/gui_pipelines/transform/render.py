@@ -11,18 +11,20 @@ from datetime import datetime
 io_manager = IOManager("[Transform]")
 
 class GUILayerRenderer:
-    def __init__(self, dataset: Dataset, outdir: Path, colormap_key, file_name):
+    def __init__(self, dataset: Dataset, outdir: Path, colormap_key, file_name, timestamp):
         """
         Args:
             filepath (xr.Dataset): Dataset being converted to GUI png
             outdir (Path): Output directory of the converted png file
             colormap_key (str): Key of the color map as stored under colormaps.json
             file_name (str): Key of .png file name
+            timestamp (str): ISO formatted timestamp string or string to parse
         """
         self.ds = dataset
         self.outdir = outdir
         self.colormap_key = colormap_key
         self.file_name = file_name
+        self.timestamp = timestamp
 
     def _get_cmap(self):
         """
@@ -85,8 +87,14 @@ class GUILayerRenderer:
 
         # Step 3: Generate and save
         # Find timestamp
-        timestamp = TransformUtils.find_timestamp(latest_file)
-        dt = datetime.fromisoformat(timestamp)
+        try:
+            dt = datetime.fromisoformat(self.timestamp)
+        except ValueError:
+            # Fallback if timestamp is a filename or path?
+            # Assuming callers pass a valid ISO timestamp or we use TransformUtils if it looks like a path
+            cleaned_ts = TransformUtils.find_timestamp(self.timestamp)
+            dt = datetime.fromisoformat(cleaned_ts)
+        
         timestamp = dt.strftime(r"%Y%m%d-%H%M%S")
 
         # Ensure the output directory exists
