@@ -52,10 +52,10 @@ def pipeline(dt, lat_limits, lon_limits, json_output):
             ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1] if fs.MRMS_PROBSEVERE_DIR.exists() else None, None
             pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)[-1], None
         
-        detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, json_output)
+        detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, json_output, render_files=False)
         
         io_manager.write_info("Starting Integration")
-        integration.main()
+        integration.main(render_files=False)
         
         io_manager.write_info("Pipeline completed successfully")
         

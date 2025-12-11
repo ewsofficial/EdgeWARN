@@ -17,6 +17,7 @@ def detect_cells(
     lon_max,
     *,
     return_probsevere=False,
+    render=True,
 ):
     handler = DetectionDataHandler(
         radar_path,
@@ -51,12 +52,14 @@ def detect_cells(
     entries = saver.append_storm_history(entries, radar_path)
 
     # Render Composite Reflectivity
-    try:
-        renderer = GUILayerRenderer(radar_ds, fs.GUI_COMPOSITE_DIR, "NWS_Reflectivity", "MRMS_MergedReflectivityQC")
-        renderer.convert_to_png()
-        io_manager.write_debug("Rendered MRMS_MergedReflectivityQC successfully")
-    except Exception as e:
-        io_manager.write_error(f"Failed to render MRMS_MergedReflectivityQC: {e}")
+    if render:
+        try:
+            ts_str = DetectionDataHandler.find_timestamp(radar_path)
+            renderer = GUILayerRenderer(radar_ds, fs.GUI_COMPOSITE_DIR, "NWS_Reflectivity", "MRMS_MergedReflectivityQC", ts_str)
+            renderer.convert_to_png()
+            io_manager.write_debug("Rendered MRMS_MergedReflectivityQC successfully")
+        except Exception as e:
+            io_manager.write_error(f"Failed to render MRMS_MergedReflectivityQC: {e}")
 
     if return_probsevere:
         return entries, ps_ds
