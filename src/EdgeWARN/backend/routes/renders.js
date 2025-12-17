@@ -33,7 +33,7 @@ async function getFilesRecursively(dir) {
 }
 
 // GET /renders/
-// Returns an HTML list of products (subdirectories)
+// Returns an HTML list of products (subdirectories) or JSON if requested
 router.get('/', async (req, res) => {
   try {
     const guiDir = config.GUI_DIR;
@@ -42,6 +42,10 @@ router.get('/', async (req, res) => {
     try {
       await fs.access(guiDir);
     } catch {
+      // Prioritize HTML by listing it first in accepts
+      if (req.query.format === 'json' || req.accepts(['html', 'json']) === 'json') {
+        return res.json({ products: [] });
+      }
       return res.send('<h1>No Renders Found</h1><p>GUI directory does not exist.</p>');
     }
 
@@ -53,6 +57,14 @@ router.get('/', async (req, res) => {
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name)
       .sort();
+
+    // Check for JSON request
+    // req.accepts(['html', 'json']) returns the best match. 
+    // If Accept is */*, it returns the first one ('html').
+    // If Accept is application/json, it returns 'json'.
+    if (req.query.format === 'json' || req.accepts(['html', 'json']) === 'json') {
+      return res.json({ products: productNames });
+    }
 
     const html = `
       <!DOCTYPE html>
@@ -79,12 +91,16 @@ router.get('/', async (req, res) => {
     res.send(html);
   } catch (err) {
     console.error('Error listing products:', err);
-    res.status(500).send('<h1>Internal Server Error</h1>');
+    if (req.query.format === 'json' || req.accepts(['html', 'json']) === 'json') {
+      res.status(500).json({ error: 'Internal Server Error' });
+    } else {
+      res.status(500).send('<h1>Internal Server Error</h1>');
+    }
   }
 });
 
 // GET /renders/:product
-// Returns an HTML list of files for a specific product
+// Returns an HTML list of files for a specific product or JSON if requested
 router.get('/:product', async (req, res) => {
   try {
     const productName = req.params.product;
@@ -93,12 +109,18 @@ router.get('/:product', async (req, res) => {
 
     // Security check to prevent directory traversal
     if (!productPath.startsWith(guiDir)) {
+      if (req.query.format === 'json' || req.accepts(['html', 'json']) === 'json') {
+        return res.status(403).json({ error: 'Access Denied' });
+      }
       return res.status(403).send('<h1>Access Denied</h1>');
     }
 
     try {
       await fs.access(productPath);
     } catch {
+      if (req.query.format === 'json' || req.accepts(['html', 'json']) === 'json') {
+        return res.status(404).json({ error: `Product "${productName}" not found` });
+      }
       return res.status(404).send(`<h1>Product "${productName}" not found</h1>`);
     }
 
@@ -115,6 +137,14 @@ router.get('/:product', async (req, res) => {
         return rel;
       })
       .sort();
+
+    // Check for JSON request
+    if (req.query.format === 'json' || req.accepts(['html', 'json']) === 'json') {
+      return res.json({ 
+        product: productName,
+        files: imageFiles.map(f => `renders/${productName}/${f}`) 
+      });
+    }
 
     const html = `
       <!DOCTYPE html>
@@ -152,7 +182,11 @@ router.get('/:product', async (req, res) => {
 
   } catch (err) {
     console.error(`Error listing files for ${req.params.product}:`, err);
-    res.status(500).send('<h1>Internal Server Error</h1>');
+    if (req.query.format === 'json' || req.accepts(['html', 'json']) === 'json') {
+      res.status(500).json({ error: 'Internal Server Error' });
+    } else {
+      res.status(500).send('<h1>Internal Server Error</h1>');
+    }
   }
 });
 
