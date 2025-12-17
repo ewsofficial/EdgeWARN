@@ -5,8 +5,8 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node src/EdgeWARN/backend/server.js",
-    "dev": "node --watch src/EdgeWARN/backend/server.js",
+    "start": "node src/EdgeWARN/api/server.js",
+    "dev": "node --watch src/EdgeWARN/api/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
