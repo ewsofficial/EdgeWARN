@@ -170,7 +170,7 @@ router.get('/:product', async (req, res) => {
               // Link format: /renders/Product/file.png
               // We need to encode the file path components for URL safety
               const encodedFile = file.split('/').map(encodeURIComponent).join('/');
-              return `<li><a href="/renders/${encodeURIComponent(productName)}/${file}" target="_blank">${file}</a></li>`;
+              return `<li><a href="/renders/${encodeURIComponent(productName)}/${file}" download="${file.split('/').pop()}">${file}</a></li>`;
             }).join('')}
           </ul>
           ${imageFiles.length === 0 ? '<p>No images found.</p>' : ''}
