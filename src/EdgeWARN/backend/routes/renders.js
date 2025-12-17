@@ -33,66 +33,126 @@ async function getFilesRecursively(dir) {
 }
 
 // GET /renders/
-// Returns a list of products and their rendered files (recursively)
+// Returns an HTML list of products (subdirectories)
 router.get('/', async (req, res) => {
   try {
     const guiDir = config.GUI_DIR;
-    
+
     // Check if GUI directory exists
     try {
       await fs.access(guiDir);
     } catch {
-      return res.json({ products: [] });
+      return res.send('<h1>No Renders Found</h1><p>GUI directory does not exist.</p>');
     }
 
     // Read top-level directories (Products)
-    // We only care about directories here
-    const productEntries = await fs.readdir(guiDir, { withFileTypes: true });
+    const entries = await fs.readdir(guiDir, { withFileTypes: true });
     
-    const products = [];
+    // Sort directories alphabetically
+    const productNames = entries
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort();
 
-    for (const entry of productEntries) {
-      if (entry.isDirectory()) {
-        const productName = entry.name;
-        const productPath = path.join(guiDir, productName);
-        
-        try {
-          // Get all files recursively in this product directory
-          const allFiles = await getFilesRecursively(productPath);
-          
-          // Filter for likely image files (ends with .png)
-          const imageFiles = allFiles
-            .filter(f => f.endsWith('.png'))
-            .map(f => {
-              // Convert absolute path to relative path from product directory
-              // e.g., "C:\...\gui\Product\subdir\img.png" -> "subdir/img.png"
-              // Ensure we use forward slashes for URLs if on Windows
-              let rel = path.relative(productPath, f);
-              if (path.sep === '\\') {
-                rel = rel.split(path.sep).join('/');
-              }
-              // Return path relative to the renders mount point
-              // e.g. "renders/Product/subdir/img.png"
-              return `renders/${productName}/${rel}`;
-            });
-          
-          if (imageFiles.length > 0) {
-            products.push({
-              name: productName,
-              files: imageFiles
-            });
-          }
-        } catch (err) {
-          console.error(`Error reading directory ${productName}:`, err);
-          // Skip this directory if unreadable
-        }
-      }
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>EdgeWARN Renders</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; }
+            ul { list-style-type: none; padding: 0; }
+            li { margin: 10px 0; }
+            a { text-decoration: none; color: #007bff; font-size: 1.2em; }
+            a:hover { text-decoration: underline; }
+          </style>
+        </head>
+        <body>
+          <h1>Available Products</h1>
+          <ul>
+            ${productNames.map(name => `<li><a href="/renders/${name}">${name}</a></li>`).join('')}
+          </ul>
+        </body>
+      </html>
+    `;
+
+    res.send(html);
+  } catch (err) {
+    console.error('Error listing products:', err);
+    res.status(500).send('<h1>Internal Server Error</h1>');
+  }
+});
+
+// GET /renders/:product
+// Returns an HTML list of files for a specific product
+router.get('/:product', async (req, res) => {
+  try {
+    const productName = req.params.product;
+    const guiDir = config.GUI_DIR;
+    const productPath = path.join(guiDir, productName);
+
+    // Security check to prevent directory traversal
+    if (!productPath.startsWith(guiDir)) {
+      return res.status(403).send('<h1>Access Denied</h1>');
     }
 
-    res.json({ products });
+    try {
+      await fs.access(productPath);
+    } catch {
+      return res.status(404).send(`<h1>Product "${productName}" not found</h1>`);
+    }
+
+    const allFiles = await getFilesRecursively(productPath);
+    
+    // Filter for images (can expand extensions if needed)
+    const imageFiles = allFiles
+      .filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f))
+      .map(f => {
+        let rel = path.relative(productPath, f);
+        if (path.sep === '\\') {
+          rel = rel.split(path.sep).join('/');
+        }
+        return rel;
+      })
+      .sort();
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${productName} - Renders</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; }
+            h1 { margin-bottom: 20px; }
+            .back-link { display: inline-block; margin-bottom: 20px; color: #666; }
+            ul { list-style-type: none; padding: 0; }
+            li { margin: 5px 0; }
+            a { text-decoration: none; color: #007bff; }
+            a:hover { text-decoration: underline; }
+          </style>
+        </head>
+        <body>
+          <a href="/renders" class="back-link">&larr; Back to Products</a>
+          <h1>${productName}</h1>
+          <ul>
+            ${imageFiles.map(file => {
+              // file path relative to product dir
+              // Link format: /renders/Product/file.png
+              // We need to encode the file path components for URL safety
+              const encodedFile = file.split('/').map(encodeURIComponent).join('/');
+              return `<li><a href="/renders/${encodeURIComponent(productName)}/${file}" target="_blank">${file}</a></li>`;
+            }).join('')}
+          </ul>
+          ${imageFiles.length === 0 ? '<p>No images found.</p>' : ''}
+        </body>
+      </html>
+    `;
+
+    res.send(html);
+
   } catch (err) {
-    console.error('Error listing renders:', err);
-    res.status(500).json({ error: 'Failed to list renders' });
+    console.error(`Error listing files for ${req.params.product}:`, err);
+    res.status(500).send('<h1>Internal Server Error</h1>');
   }
 });
 
