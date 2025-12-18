@@ -38,6 +38,23 @@ class DetectionDataHandler:
         self.io_manager = io_manager
         self.file_handler = FileHandler(io_manager)
 
+    def load_radar_full(self):
+        """
+        Load the full MRMS radar dataset from file without subsetting.
+        Uses the centralized FileHandler.load_dataset method.
+        """
+        return self.file_handler.load_dataset(self.radar_path)
+
+    def subset_radar(self, ds):
+        """
+        Subset the given radar dataset using the stored lat/lon grid limits.
+        """
+        return self.file_handler.subset_dataset(
+            ds, 
+            lat_limits=self.lat_grid,
+            lon_limits=self.lon_grid
+        )
+
     def load_subset(self):
         """
         Load the MRMS radar dataset from file and return a lat/lon subset as xarray.Dataset.
