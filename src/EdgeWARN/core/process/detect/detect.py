@@ -30,7 +30,8 @@ def detect_cells(
         lon_max,
     )
 
-    radar_ds = handler.load_radar_full()
+    radar_ds_full = handler.load_radar_full()
+    radar_ds = handler.subset_radar(radar_ds_full)
     ps_ds = handler.load_probsevere()
     preciptype_ds = handler.load_preciptype()
 
@@ -51,7 +52,7 @@ def detect_cells(
     entries = saver.create_entry()
     entries = saver.append_storm_history(entries, radar_path)
 
-    # Render Composite Reflectivity
+    # Render Composite Reflectivity (Post-Detection)
     if render:
         try:
             ts_str = DetectionDataHandler.find_timestamp(radar_path)
@@ -60,8 +61,6 @@ def detect_cells(
             io_manager.write_debug("Rendered MRMS_MergedReflectivityQC successfully")
         except Exception as e:
             io_manager.write_error(f"Failed to render MRMS_MergedReflectivityQC: {e}")
-
-    radar_ds = handler.subset_radar(radar_ds)
 
     if return_probsevere:
         return entries, ps_ds

@@ -24,6 +24,7 @@ class StormCellIntegrator:
             self.io_manager.write_error(f"Load error: {e}")
             return storm_cells
 
+
         # Coordinates
         lat_name = "latitude" if "latitude" in ds.coords else "lat"
         lon_name = "longitude" if "longitude" in ds.coords else "lon"
@@ -97,9 +98,10 @@ class StormCellIntegrator:
                 self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
                 latest[output_key] = "PROCESSING_ERROR"
 
+
+
         if render_config:
             try:
-                # ds is already open
                 ts_str = TransformUtils.find_timestamp(dataset_path)
                 renderer = GUILayerRenderer(ds, render_config['outdir'], render_config['colormap_key'], render_config['file_name'], ts_str)
                 renderer.convert_to_png()

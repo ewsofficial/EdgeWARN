@@ -18,8 +18,8 @@ class StormCellTracker:
         used_ids = set()
         updated_entries = []
 
+        unused_ids = 0
         for cell in entries:
-            unused_ids = 0
             cell_id = int(cell['id'])
             if cell_id in updated_map:
                 updated = updated_map[cell_id]
