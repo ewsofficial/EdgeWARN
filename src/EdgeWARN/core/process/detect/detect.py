@@ -30,7 +30,7 @@ def detect_cells(
         lon_max,
     )
 
-    radar_ds = handler.load_subset()
+    radar_ds = handler.load_radar_full()
     ps_ds = handler.load_probsevere()
     preciptype_ds = handler.load_preciptype()
 
@@ -55,11 +55,13 @@ def detect_cells(
     if render:
         try:
             ts_str = DetectionDataHandler.find_timestamp(radar_path)
-            renderer = GUILayerRenderer(radar_ds, fs.GUI_COMPOSITE_DIR, "NWS_Reflectivity", "MRMS_MergedReflectivityQC", ts_str)
+            renderer = GUILayerRenderer(radar_ds_full, fs.GUI_COMPOSITE_DIR, "NWS_Reflectivity", "MRMS_MergedReflectivityQC", ts_str)
             renderer.convert_to_png()
             io_manager.write_debug("Rendered MRMS_MergedReflectivityQC successfully")
         except Exception as e:
             io_manager.write_error(f"Failed to render MRMS_MergedReflectivityQC: {e}")
+
+    radar_ds = handler.subset_radar(radar_ds)
 
     if return_probsevere:
         return entries, ps_ds
