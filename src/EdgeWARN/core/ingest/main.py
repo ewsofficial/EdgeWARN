@@ -1,4 +1,4 @@
-from EdgeWARN.core.ingest.config import mrms_modifiers, goes_modifiers, gui_modifiers, bucket
+from EdgeWARN.core.ingest.config import mrms_modifiers, goes_modifiers, bucket
 from EdgeWARN.core.ingest.s3_sync import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.parse import parse_goes_bucket_path
@@ -31,7 +31,6 @@ def download_all_files(dt, max_entries=10):
     folders = [outdir for _, _, outdir in mrms_modifiers]
     # Add GOES folders
     folders.extend([outdir for _, outdir in goes_modifiers])
-    folders.extend(gui_modifiers)
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=60)
 

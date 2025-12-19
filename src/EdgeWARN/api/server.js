@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import rendersRouter from './routes/renders.js';
 import path from 'path';
 import os from 'os';
 
@@ -56,9 +55,6 @@ app.get('/health', (req, res) => {
 
   res.json({ status: 'OK', uptimeSeconds: Math.round(uptimeSeconds), cpu, memory });
 });
-
-// Renders subtab (placeholder)
-app.use('/renders', rendersRouter);
 
 // Serve robots.txt
 app.get('/robots.txt', (req, res) => {

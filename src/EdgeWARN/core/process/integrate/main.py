@@ -8,7 +8,7 @@ import json
 from EdgeWARN.core.process.integrate.config import datasets
 io_manager = IOManager("[CellIntegration]")
 
-def main(render_files=True):
+def main():
     handler = StatFileHandler(io_manager)
     integrator = StormCellIntegrator(io_manager)
     json_path = "stormcell_test.json"
@@ -21,13 +21,12 @@ def main(render_files=True):
         name = dataset_config["name"]
         outdir = dataset_config["filepath"]
         key = dataset_config["key"]
-        render_config = dataset_config.get("render") if render_files else None
         
         try:
             latest_file = fs.latest_files(outdir, 1)[-1]
             io_manager.write_debug(f"Using latest {name} file: {latest_file}")
 
-            result_cells = integrator.integrate_ds_via_max(latest_file, result_cells, key, render_config)
+            result_cells = integrator.integrate_ds_via_max(latest_file, result_cells, key)
             io_manager.write_debug(f"{name} integration completed successfully!")
         
         except Exception as e:

@@ -37,17 +37,5 @@ check_modifiers = [
 ]
 
 goes_modifiers = [
-    ("GLM-L2-LCFA", GOES_GLM_DIR)
-]
-
-gui_modifiers = [
-    GUI_RALA_DIR,
-    GUI_NLDN_DIR,
-    GUI_ECHOTOP18_DIR,
-    GUI_ECHOTOP30_DIR,
-    GUI_QPE_DIR,
-    GUI_PRECIPRATE_DIR,
-    GUI_PROBSEVERE_DIR,
-    GUI_FLASH_DIR,
-    GUI_VIL_DIR
+   ("GLM-L2-LCFA", GOES_GLM_DIR)
 ]
