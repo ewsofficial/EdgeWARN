@@ -50,23 +50,6 @@ STORMCELL_JSON = DATA_DIR / "stormcells.json"
 
 # ---------- GUI PATH CONFIG ----------
 GUI_DIR = BASE_DIR / "gui"
-GUI_RALA_DIR = GUI_DIR / "RALA"
-GUI_NLDN_DIR = GUI_DIR / "NLDN"
-GUI_ECHOTOP18_DIR = GUI_DIR / "EchoTop18"
-GUI_ECHOTOP30_DIR = GUI_DIR / "EchoTop30"
-GUI_QPE_DIR = GUI_DIR / "QPE_01H"
-GUI_PRECIPRATE_DIR = GUI_DIR / "PrecipRate"
-GUI_PROBSEVERE_DIR = GUI_DIR / "ProbSevere"
-GUI_FLASH_DIR = GUI_DIR / "FLASH"
-GUI_VIL_DIR = GUI_DIR / "VILDensity"
-GUI_VII_DIR = GUI_DIR / "VII"
-GUI_ROTATIONT_DIR = GUI_DIR / "RotationTrack30min"
-GUI_COMPOSITE_DIR = GUI_DIR / "CompRefQC"
-GUI_RHOHV_DIR = GUI_DIR / "RhoHV"
-GUI_PRECIPTYP_DIR = GUI_DIR / "PrecipFlag"
-GUI_MAP_DIR = GUI_DIR / "maps"
-GUI_MANIFEST_JSON = GUI_DIR / "overlay_manifest.json"
-GUI_COLORMAP_JSON = Path("colormaps.json")
 
 # NEW LATEST FILES FUNCTION
 def latest_files(dir, n):
