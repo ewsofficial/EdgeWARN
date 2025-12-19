@@ -15,7 +15,7 @@ dependencies:
   - shapely
   - rasterio
   - xarray
-  - folium
+  - pyproj
   - psutil
   - pip:
     - gputil
