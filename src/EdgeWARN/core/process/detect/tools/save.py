@@ -138,37 +138,11 @@ class CellDataSaver:
                 "bbox": bbox,
                 "hail_core": hail_core,
                 "max_refl": max_refl,
-                "storm_history": []
+                "properties": {}
             })
 
         return results
 
-    def append_storm_history(self, entries, radar_path):
-        timestamp_new = DetectionDataHandler.find_timestamp(radar_path)
-        for cell in entries:
-            storm_history = cell['storm_history']
-            # check for duplicate timestamp
-            if storm_history and storm_history[-1]['timestamp'] == timestamp_new:
-                continue
-            # Build new storm history
-            latest_storm_history = {
-                "id": cell['id'],
-                "timestamp": timestamp_new,
-                "bbox": cell['bbox'],
-                "max_refl": cell['max_refl'],
-                "num_gates": cell['num_gates'],
-                "centroid": cell['centroid']
-            }
 
-            if storm_history:
-                last_entry = storm_history[-1]
-                if (last_entry['max_refl'] == cell['max_refl'] and
-                    last_entry['num_gates'] == cell['num_gates'] and
-                    last_entry['centroid'] == cell['centroid']):
-                    continue
-
-            storm_history.append(latest_storm_history)
-
-        return entries
 
         

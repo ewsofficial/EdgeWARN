@@ -84,7 +84,7 @@ class StatFileHandler:
     def write_json(self, data, filepath):
         self.io_manager.write_info(f"Writing to JSON file {filepath}")
         with open(filepath, 'w') as f:
-            json.dump(data, f, indent=4)
+            json.dump(data, f, indent=4, default=str)
         print(f"Successfully wrote to JSON file {filepath}")
     
     def find_timestamp(self, filepath):

@@ -48,7 +48,7 @@ def detect_cells(
     )
 
     entries = saver.create_entry()
-    entries = saver.append_storm_history(entries, radar_path)
+
 
     if return_probsevere:
         return entries, ps_ds
