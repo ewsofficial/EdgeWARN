@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import re
 from pathlib import Path
 from datetime import datetime, timezone
 import time
@@ -59,18 +60,29 @@ def main(ui_process=None):
     last_processed = None  # Track last processed timestamp
 
     # Check for existing JSON output to initialize last_processed
-    json_path = Path("stormcell_test.json")
-    if json_path.exists():
-        try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-                if isinstance(data, dict) and "latest_timestamp" in data:
-                    ts_str = data["latest_timestamp"]
-                    # Parse ISO format timestamp
-                    last_processed = datetime.fromisoformat(ts_str)
-                    print(f"[Scheduler] Initialized last_processed from {json_path}: {last_processed}")
-        except Exception as e:
-            print(f"[Scheduler] Failed to load initial timestamp from {json_path}: {e}")
+    # Check for existing JSON output to initialize last_processed
+    try:
+        if fs.STORMCELL_DIR.exists():
+            files = sorted(fs.STORMCELL_DIR.glob("stormcells_*.json"))
+            if files:
+                latest_file = files[-1]
+                # Format: stormcells_YYYYMMDD-HHMM00.json
+                # Extract YYYYMMDD-HHMM00
+                match = re.search(r"stormcells_(\d{8}-\d{6})\.json", latest_file.name)
+                if match:
+                    ts_str = match.group(1) # YYYYMMDD-HHMM00
+                    # Parse assuming UTC
+                    last_processed = datetime.strptime(ts_str, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+                    print(f"[Scheduler] Initialized last_processed from {latest_file}: {last_processed}")
+                else:
+                    print(f"[Scheduler] Could not parse timestamp from {latest_file}")
+            else:
+                 print(f"[Scheduler] No previous stormcell data found in {fs.STORMCELL_DIR}. Starting fresh.")
+        else:
+             print(f"[Scheduler] {fs.STORMCELL_DIR} does not exist. Starting fresh.")
+
+    except Exception as e:
+        print(f"[Scheduler] Failed to initialize last_processed: {e}")
 
     try:
         while True:
