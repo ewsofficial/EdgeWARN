@@ -46,7 +46,8 @@ MRMS_PRECIPTYP_DIR = DATA_DIR / "PrecipFlag"
 MRMS_MESH_DIR = DATA_DIR / "MESH"
 GOES_GLM_DIR = DATA_DIR / "GLM"
 ABI_CLOUDPRES_DIR = DATA_DIR / "ABI-CloudPressure"
-STORMCELL_JSON = DATA_DIR / "stormcells.json"
+STORMCELL_DIR = DATA_DIR / "stormcells"
+CELL_DIR = DATA_DIR / "cells"
 
 # ---------- GUI PATH CONFIG ----------
 GUI_DIR = BASE_DIR / "gui"
