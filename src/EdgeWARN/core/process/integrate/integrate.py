@@ -34,32 +34,22 @@ class StormCellIntegrator:
             self.io_manager.write_error("Variable 'unknown' not found")
             return storm_cells
 
-        latest_ts = max(
-            (
-                cell["storm_history"][-1]["timestamp"]
-                for cell in storm_cells
-                if cell.get("storm_history")
-            ),
-            default=None,
-        )
-
-        if latest_ts is None:
-            ds.close()
-            return storm_cells
-
-        active_cells = [
-            cell for cell in storm_cells if cell.get("storm_history") and cell["storm_history"][-1]["timestamp"] == latest_ts
-        ]
+        # No need to filter by timestamp or history anymore. Use all cells.
+        active_cells = storm_cells
         self.io_manager.write_info(f"Integrating {output_key} data for {len(active_cells)} cells")
 
         var_values = var.values
 
         for cell in active_cells:
-            latest = cell["storm_history"][-1]
+            # Create properties dict if not exists
+            if "properties" not in cell:
+                cell["properties"] = {}
+            
+            target = cell["properties"]
 
             poly = StormIntegrationUtils.create_cell_polygon(cell)
             if poly is None:
-                latest[output_key] = 0
+                target[output_key] = 0
                 continue
 
             try:
@@ -72,14 +62,14 @@ class StormCellIntegrator:
                 lon_subset = lon_vals[lon_mask]
 
                 if lat_subset.size == 0 or lon_subset.size == 0:
-                    latest[output_key] = 0
+                    target[output_key] = 0
                     continue
 
                 sub_var = var_values[np.ix_(lat_mask, lon_mask)]
                 sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
 
                 if sub_var.size == 0:
-                    latest[output_key] = 0
+                    target[output_key] = 0
                     continue
 
                 inside = sv.contains(poly, sub_lon, sub_lat)
@@ -88,13 +78,13 @@ class StormCellIntegrator:
                 masked_vals = masked_vals[masked_vals >= 0]
 
                 if masked_vals.size == 0:
-                    latest[output_key] = 0
+                    target[output_key] = 0
                 else:
-                    latest[output_key] = float(np.nanmax(masked_vals))
+                    target[output_key] = float(np.nanmax(masked_vals))
 
             except Exception as e:
                 self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
-                latest[output_key] = "PROCESSING_ERROR"
+                target[output_key] = "PROCESSING_ERROR"
 
         ds.close()
         return storm_cells
@@ -163,23 +153,21 @@ class StormCellIntegrator:
         }
 
         for cell in storm_cells:
-            if not cell.get("storm_history"):
-                continue
-
-            entry = cell["storm_history"][-1]
             cell_id = str(cell.get('id'))
-            if 'centroid' not in entry or len(entry['centroid']) < 2:
-                continue
-
+            
+            # Create properties dict if not exists
+            if "properties" not in cell:
+                cell["properties"] = {}
+                
             match = feature_lookup.get(cell_id)
             if not match:
                 continue
 
-            # Flatten values directly into the entry
+            # Flatten values directly into the properties
             for target_key, source_key in field_map.items():
                 try:
-                    entry[target_key] = float(match.get(source_key, 0))
+                    cell["properties"][target_key] = float(match.get(source_key, 0))
                 except (TypeError, ValueError):
-                    entry[target_key] = "MATCH_ERROR"
+                    cell["properties"][target_key] = "MATCH_ERROR"
 
         return storm_cells
