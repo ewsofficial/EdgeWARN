@@ -70,3 +70,12 @@ def main(json_path=None):
     # Save data
     data = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, result_cells)
     handler.write_json(data, json_path)
+
+    # Update per-cell history
+    try:
+        from .history import CellHistoryManager
+        history_manager = CellHistoryManager(io_manager)
+        history_manager.update_cell_histories(result_cells, timestamp)
+        history_manager.cleanup_inactive_cells()
+    except Exception as e:
+        io_manager.write_error(f"Failed to update cell history: {e}")
