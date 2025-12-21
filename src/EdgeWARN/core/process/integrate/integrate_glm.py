@@ -43,34 +43,22 @@ def integrate_glm(storm_cells, glm_file_path=None):
         # but usually post-processed to J or similar unit. Taking raw values as requested.
         flash_energies = ds["flash_energy"].values
 
-        # Filter active cells
-        latest_ts = max(
-            (
-                cell["storm_history"][-1]["timestamp"]
-                for cell in storm_cells
-                if cell.get("storm_history")
-            ),
-            default=None,
-        )
-
-        if latest_ts is None:
-            ds.close()
-            return storm_cells
-            
-        active_cells = [
-            cell for cell in storm_cells 
-            if cell.get("storm_history") and cell["storm_history"][-1]["timestamp"] == latest_ts
-        ]
+        # No timestamp filtering needed
+        active_cells = storm_cells
 
         io_manager.write_info(f"Integrating GLM data for {len(active_cells)} cells")
 
         for cell in active_cells:
-            latest = cell["storm_history"][-1]
+            # Ensure properties exist
+            if "properties" not in cell:
+                cell["properties"] = {}
+            target = cell["properties"]
+            
             poly = StormIntegrationUtils.create_cell_polygon(cell)
             
             if poly is None:
-                latest["GLM_FLASH_COUNT"] = 0
-                latest["GLM_TOTAL_ENERGY"] = 0.0
+                target["GLM_FLASH_COUNT"] = 0
+                target["GLM_TOTAL_ENERGY"] = 0.0
                 continue
                 
             try:
@@ -87,8 +75,8 @@ def integrate_glm(storm_cells, glm_file_path=None):
                 )
                 
                 if not np.any(bbox_mask):
-                    latest["GLM_FLASH_COUNT"] = 0
-                    latest["GLM_TOTAL_ENERGY"] = 0.0
+                    target["GLM_FLASH_COUNT"] = 0
+                    target["GLM_TOTAL_ENERGY"] = 0.0
                     continue
 
                 subset_lats = flash_lats[bbox_mask]
@@ -99,19 +87,19 @@ def integrate_glm(storm_cells, glm_file_path=None):
                 inside = sv.contains(poly, subset_lons, subset_lats)
                 
                 if not np.any(inside):
-                     latest["GLM_FLASH_COUNT"] = 0
-                     latest["GLM_TOTAL_ENERGY"] = 0.0
+                     target["GLM_FLASH_COUNT"] = 0
+                     target["GLM_TOTAL_ENERGY"] = 0.0
                 else:
                     # Filter energies
                     final_energies = subset_energies[inside]
                     
-                    latest["GLM_FLASH_COUNT"] = int(len(final_energies))
-                    latest["GLM_TOTAL_ENERGY"] = float(np.nansum(final_energies))
+                    target["GLM_FLASH_COUNT"] = int(len(final_energies))
+                    target["GLM_TOTAL_ENERGY"] = float(np.nansum(final_energies))
                     
             except Exception as e:
                 io_manager.write_error(f"Process cell {cell.get('id')} for GLM: {e}")
-                latest["GLM_FLASH_COUNT"] = "PROCESSING_ERROR"
-                latest["GLM_TOTAL_ENERGY"] = "PROCESSING_ERROR"
+                target["GLM_FLASH_COUNT"] = "PROCESSING_ERROR"
+                target["GLM_TOTAL_ENERGY"] = "PROCESSING_ERROR"
 
     except Exception as e:
         io_manager.write_error(f"Error during GLM integration: {e}")
