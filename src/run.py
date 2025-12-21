@@ -46,8 +46,8 @@ def pipeline(log_queue, dt):
             ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1], None
             pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)[-1], None
         
-        detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
-        integration.main()
+        generated_file = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
+        integration.main(generated_file)
         log("Pipeline completed successfully")
     except Exception as e:
         log(f"Error in pipeline: {e}")

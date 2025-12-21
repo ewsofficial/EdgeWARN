@@ -8,10 +8,16 @@ import json
 from EdgeWARN.core.process.integrate.config import datasets
 io_manager = IOManager("[CellIntegration]")
 
-def main():
+def main(json_path=None):
     handler = StatFileHandler(io_manager)
     integrator = StormCellIntegrator(io_manager)
-    json_path = "stormcell_test.json"
+    
+    if json_path is None:
+        raise ValueError("json_path must be provided to integration.main")
+    
+    # Check if json_path is a file or just a string, handle strictly as requested
+    # The new pipeline passes a Path object.
+    
     cells, timestamp = handler.load_json(json_path) # _ is latest_timestamp, we don't need this
 
     result_cells = cells
