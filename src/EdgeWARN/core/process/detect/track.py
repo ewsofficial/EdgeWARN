@@ -4,13 +4,14 @@ class StormCellTracker:
         self.ps_new = ps_new
         self.io_manager = io_manager
 
-    def update_cells(self, entries, updated_data):
+    def update_cells(self, entries, updated_data, timestamp=None):
         """
         Updates main fields in entries from updated_data without modifying storm_history.
         Removes cells that are not present in updated_data.
         
         entries: list of cell dicts
         updated_data: list of dicts with updated 'num_gates', 'centroid', 'max_refl', etc.
+        timestamp: current scan timestamp (optional, if provided, updates matched cells)
         """
         # Map updated_data by cell id for faster lookup
         updated_map = {int(cell['id']): cell for cell in updated_data}
@@ -30,10 +31,16 @@ class StormCellTracker:
                 cell['centroid'] = updated.get('centroid', cell['centroid'])
                 cell['max_refl'] = updated.get('max_refl', cell['max_refl'])
                 cell['bbox'] = updated.get('bbox', cell['bbox'])
+                
+                # Update timestamp if provided (mark as active/current)
+                if timestamp:
+                    cell['timestamp'] = timestamp
+
                 used_ids.add(cell_id)
                 updated_entries.append(cell)
             else:
                 # Cell not found in updated_data
+                # Do NOT update timestamp (remains old/missing)
                 unused_ids += 1
                 updated_entries.append(cell)
 
@@ -45,6 +52,8 @@ class StormCellTracker:
         for cell in updated_data:
             cell_id = int(cell['id'])
             if cell_id not in used_ids:
+                if timestamp:
+                    cell['timestamp'] = timestamp
                 updated_entries.append(cell)
                 new_cells += 1
 
