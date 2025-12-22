@@ -144,3 +144,34 @@ def clean_old_files(directory: Path, max_age_minutes=60):
 
     if files_deleted > 0:
         io_manager.write_debug(f"Deleted {files_deleted} files in {directory}")
+
+def clean_files_by_age(directory: Path, max_age_minutes=60):
+    """
+    Delete files in a directory older than max_age_minutes.
+    Does NOT enforce a maximum file count limit (unlike clean_old_files).
+    """
+    # Safety Check: Ensure directory is within BASE_DIR
+    try:
+        if not directory.resolve().is_relative_to(BASE_DIR.resolve()):
+             io_manager.write_error(f"SAFETY ERROR: Attempting to clean {directory} which is not inside {BASE_DIR}")
+             return
+    except Exception as e:
+        io_manager.write_error(f"Safety check failed for path {directory}: {e}")
+        return
+
+    now = datetime.now().timestamp()
+    cutoff = now - (max_age_minutes * 60)
+    files_deleted = 0
+
+    for f in directory.glob("*"):
+        if f.is_file():
+            try:
+                mtime = f.stat().st_mtime
+                if mtime < cutoff:
+                    f.unlink()
+                    files_deleted += 1
+            except Exception as e:
+                io_manager.write_error(f"Could not process/delete {f.name}: {e}")
+
+    if files_deleted > 0:
+        io_manager.write_debug(f"Deleted {files_deleted} old files in {directory}")

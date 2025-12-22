@@ -92,4 +92,4 @@ class CellHistoryManager:
         Uses util.file.clean_old_files.
         """
         # User requested 1hr (60 mins) inactivity
-        fs.clean_old_files(fs.CELL_DIR, max_age_minutes=60)
+        fs.clean_files_by_age(fs.CELL_DIR, max_age_minutes=60)
