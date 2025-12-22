@@ -16,8 +16,32 @@ if (process.platform === 'win32') {
   }
 }
 
+const DATA_DIR = path.join(BASE_DIR, 'data');
+
 const config = {
   BASE_DIR,
+  DATA_DIR,
+  MRMS_RALA_DIR: path.join(DATA_DIR, 'RALA'),
+  MRMS_CGFLASH_DIR: path.join(DATA_DIR, 'NLDN'),
+  MRMS_NLDN_DIR: path.join(DATA_DIR, 'NLDN_Density'),
+  MRMS_ECHOTOP18_DIR: path.join(DATA_DIR, 'EchoTop18'),
+  MRMS_ECHOTOP30_DIR: path.join(DATA_DIR, 'EchoTop30'),
+  MRMS_QPE_DIR: path.join(DATA_DIR, 'QPE_01H'),
+  MRMS_RAIN_DIR: path.join(DATA_DIR, 'WarmRainProbability'),
+  MRMS_PRECIPRATE_DIR: path.join(DATA_DIR, 'PrecipRate'),
+  MRMS_PROBSEVERE_DIR: path.join(DATA_DIR, 'ProbSevere'),
+  MRMS_FLASH_DIR: path.join(DATA_DIR, 'FLASH'),
+  MRMS_VIL_DIR: path.join(DATA_DIR, 'VILDensity'),
+  MRMS_VII_DIR: path.join(DATA_DIR, 'VII'),
+  MRMS_ROTATIONT_DIR: path.join(DATA_DIR, 'RotationTrack30min'),
+  MRMS_COMPOSITE_DIR: path.join(DATA_DIR, 'CompRefQC'),
+  MRMS_RHOHV_DIR: path.join(DATA_DIR, 'RhoHV'),
+  MRMS_PRECIPTYP_DIR: path.join(DATA_DIR, 'PrecipFlag'),
+  MRMS_MESH_DIR: path.join(DATA_DIR, 'MESH'),
+  GOES_GLM_DIR: path.join(DATA_DIR, 'GLM'),
+  ABI_CLOUDPRES_DIR: path.join(DATA_DIR, 'ABI-CloudPressure'),
+  STORMCELL_DIR: path.join(DATA_DIR, 'stormcells'),
+  CELL_DIR: path.join(DATA_DIR, 'cells'),
 
   // Filenames used by GUI
   STORMCELL_JSON: 'src/stormcell_test.json'
