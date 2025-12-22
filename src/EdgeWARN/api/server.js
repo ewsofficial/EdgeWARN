@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import os from 'os';
+import featuresRouter from './routes/features.js';
 
 dotenv.config();
 
@@ -55,6 +56,9 @@ app.get('/health', (req, res) => {
 
   res.json({ status: 'OK', uptimeSeconds: Math.round(uptimeSeconds), cpu, memory });
 });
+
+// Mount feature routes
+app.use('/features', featuresRouter);
 
 // Serve robots.txt
 app.get('/robots.txt', (req, res) => {
