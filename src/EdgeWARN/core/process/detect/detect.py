@@ -3,6 +3,7 @@ from EdgeWARN.core.process.detect.tools.gatemapper import GateMapper
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
 import util.file as fs
+import gc
 
 
 def detect_cells(
@@ -34,11 +35,27 @@ def detect_cells(
         return [], None if return_probsevere else []
 
     radar_ds = handler.subset_radar(radar_ds_full)
+    
+    # === Memory Optimization: Release full radar dataset immediately ===
+    del radar_ds_full
+    gc.collect()
+
     if radar_ds is None:
         io_manager.write_error("Failed to subset radar data")
         return [], None if return_probsevere else []
 
     ps_ds = handler.load_probsevere()
+    
+    # Delayed loading of preciptype_ds to save memory during mapping
+    # preciptype_ds = handler.load_preciptype()
+    # if preciptype_ds is None: ...
+
+    mapper = GateMapper(radar_ds, ps_ds, io_manager, refl_threshold=40.0)
+    mapped_ds = mapper.map_gates_to_polygons()
+    expanded_ds = mapper.expand_gates(mapped_ds)
+    bboxes = mapper.draw_bbox(expanded_ds, step=8)
+
+    # === Load PrecipType now, just before saving ===
     preciptype_ds = handler.load_preciptype()
     if preciptype_ds is None:
          io_manager.write_warning("Failed to load precipitation type data, hail core detection will be disabled")
@@ -47,11 +64,6 @@ def detect_cells(
          # The original code might rely on it. Let's return empty to be safe if strictly required, 
          # or we can mock/skip. Given the crash was on 'NoneType', returning empty results is safer for the pipeline.
          return [], None if return_probsevere else []
-
-    mapper = GateMapper(radar_ds, ps_ds, io_manager, refl_threshold=40.0)
-    mapped_ds = mapper.map_gates_to_polygons()
-    expanded_ds = mapper.expand_gates(mapped_ds)
-    bboxes = mapper.draw_bbox(expanded_ds, step=8)
 
     saver = CellDataSaver(
         bboxes,
