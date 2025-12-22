@@ -27,16 +27,24 @@ class CellHistoryManager:
                 continue
 
             # Ensure we have a timestamp
-            # Prioritize passed timestamp, then top-level, then properties
-            ts = timestamp or cell.get("timestamp") or cell.get("properties", {}).get("timestamp")
-            
-            if not ts:
-                self.io_manager.write_warning(f"Cell {cell_id} missing timestamp, skipping history update.")
+            # Check if this cell is active (has a timestamp assigned by detection)
+            if "timestamp" not in cell:
+                # Unmatched (inactive) cells do not get a timestamp update in detect/track.py
+                # Use this to skip history update entirely, preserving file mtime.
                 continue
 
-            # Move timestamp to top level
-            cell["timestamp"] = ts
-            # Remove from properties if present (as requested usually "move" implies removal from old place)
+            # Prioritize cell timestamp (which is now guaranteed to be current if present)
+            ts = cell.get("timestamp") or cell.get("properties", {}).get("timestamp")
+            
+            if not ts:
+                self.io_manager.write_warning(f"Cell {cell_id} missing timestamp value, skipping history update.")
+                continue
+
+            # Move timestamp to top level (sanity check, usually redundant due to main.py logic now)
+            if cell.get("timestamp") != ts:
+                 cell["timestamp"] = ts
+
+            # Remove from properties if present (legacy cleanup)
             if "properties" in cell and "timestamp" in cell["properties"]:
                 cell["properties"].pop("timestamp")
 

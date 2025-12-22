@@ -56,9 +56,20 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     if single_frame:
         io_manager.write_debug("No new scan specified — running single-frame detection mode")
 
+    # === Calculate Timestamp Early ===
+    current_radar = radar_old if single_frame else radar_new
+    ts_str = DetectionDataHandler.find_timestamp(current_radar)
+    try:
+        dt = datetime.fromisoformat(ts_str)
+        dt = dt.replace(second=0, microsecond=0)
+        final_ts = dt.strftime("%Y%m%d-%H%M00") # Format for filename
+        json_ts = dt.isoformat() # Format for JSON content
+    except ValueError:
+        final_ts = ts_str
+        json_ts = ts_str
+
     ps_old_data = None
 
-    # === Load or create previous entries ===
     # === Load or create previous entries ===
     data_old = None
     try:
@@ -112,15 +123,9 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         entries = entries_old
         entries = StormVectorCalculator.calculate_vectors(entries)
 
-        ts_str = DetectionDataHandler.find_timestamp(radar_old)
-        try:
-            dt = datetime.fromisoformat(ts_str)
-            dt = dt.replace(second=0, microsecond=0)
-            final_ts = dt.strftime("%Y%m%d-%H%M00") # Format for filename
-            json_ts = dt.isoformat() # Format for JSON content
-        except ValueError:
-            final_ts = ts_str
-            json_ts = ts_str
+        # Apply timestamp (all cells are "current" in single frame)
+        for cell in entries:
+            cell["timestamp"] = json_ts
 
         output_data = saver.create_json_structure(json_ts, entries)
         
@@ -164,20 +169,9 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
 
     tracker = StormCellTracker(ps_old_data, ps_new_data, io_manager)
     saver = CellDataSaver(None, radar_new, None, None, ps_new_data, None)
-    entries = tracker.update_cells(entries_old, entries_new)
-    entries = tracker.update_cells(entries_old, entries_new)
-    # entries = saver.append_storm_history(entries, radar_new) # Removed
+    # Pass timestamp to tracker
+    entries = tracker.update_cells(entries_old, entries_new, timestamp=json_ts)
     entries = StormVectorCalculator.calculate_vectors(entries)
-
-    ts_str = DetectionDataHandler.find_timestamp(radar_new)
-    try:
-        dt = datetime.fromisoformat(ts_str)
-        dt = dt.replace(second=0, microsecond=0)
-        final_ts = dt.strftime("%Y%m%d-%H%M00")
-        json_ts = dt.isoformat()
-    except ValueError:
-        final_ts = ts_str
-        json_ts = ts_str
 
     output_data = saver.create_json_structure(json_ts, entries)
     
