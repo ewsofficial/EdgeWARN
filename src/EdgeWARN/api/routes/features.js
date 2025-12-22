@@ -104,7 +104,7 @@ router.get('/list', async (req, res) => {
       const html = `<!doctype html><html><head><meta charset="utf-8"><title>Stormcells</title></head><body><h1>Stormcell files</h1><table border="1" cellpadding="4"><thead><tr><th>name</th><th>size</th><th>lastModified</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
       res.type('html').send(html);
     } else {
-      res.json(files);
+      res.json(files.map((f) => f.name));
     }
   } catch (err) {
     console.error('Error listing stormcell files', err);
@@ -126,7 +126,7 @@ router.get('/cells', async (req, res) => {
       const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cells</title></head><body><h1>Cell files</h1><table border="1" cellpadding="4"><thead><tr><th>name</th><th>size</th><th>lastModified</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
       res.type('html').send(html);
     } else {
-      res.json(files);
+      res.json(files.map((f) => f.name));
     }
   } catch (err) {
     console.error('Error listing cell files', err);
@@ -149,7 +149,7 @@ router.get('/', async (req, res) => {
       const html = `<!doctype html><html><head><meta charset="utf-8"><title>Features</title></head><body><h1>Features</h1><h2>Stormcells</h2><table border="1" cellpadding="4"><thead><tr><th>name</th><th>size</th><th>lastModified</th></tr></thead><tbody>${stormRows}</tbody></table><h2>Cells</h2><table border="1" cellpadding="4"><thead><tr><th>name</th><th>size</th><th>lastModified</th></tr></thead><tbody>${cellRows}</tbody></table></body></html>`;
       res.type('html').send(html);
     } else {
-      res.json({ stormcells: stormFiles, cells: cellFiles });
+      res.json({ stormcells: stormFiles.map((f) => f.name), cells: cellFiles.map((f) => f.name) });
     }
   } catch (err) {
     console.error('Error building features index', err);
