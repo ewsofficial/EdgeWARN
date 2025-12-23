@@ -1,243 +1,286 @@
-"""Tkinter server monitor for Python processes and system resources."""
+"""Textual-based terminal monitor for EdgeWARN processes and system resources."""
 from __future__ import annotations
 
-import tkinter as tk
+from collections import deque
 from pathlib import Path
-from tkinter import scrolledtext, ttk
-from typing import Any
+from typing import Any, Iterable
+
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.text import Text
+from textual.app import App, ComposeResult
+from textual.containers import Container, Horizontal, Vertical
+from textual.reactive import reactive
+from textual.widgets import Footer, Header, Log, Static
 
 from .log_watcher import LogTailer, QueueLogAdapter
 from .metrics import MetricSnapshot, MetricsSampler
 
+# Characters for high resolution sparklines.
+SPARKLINE_CHARS = "▁▂▃▄▅▆▇█"
 
-class MemoryGraph(tk.Canvas):
-    """Simple line chart for visualizing memory usage history."""
 
-    def __init__(self, master: tk.Widget, max_points: int = 120, **kwargs) -> None:
-        super().__init__(master, **kwargs)
-        self.max_points = max_points
-        self.history: list[float] = []
-        self.configure(background="#101014", highlightthickness=0)
+def _compress_series(values: Iterable[float], width: int) -> list[float]:
+    """Down-sample a series to fit the available width."""
+    series = list(values)
+    if len(series) <= width:
+        return series
+    stride = len(series) / width
+    windowed: list[float] = []
+    for idx in range(width):
+        start = int(idx * stride)
+        end = int((idx + 1) * stride)
+        bucket = series[start:end] or [series[-1]]
+        windowed.append(max(bucket))
+    return windowed
 
-    def add_point(self, value: float) -> None:
-        self.history.append(value)
-        if len(self.history) > self.max_points:
-            self.history.pop(0)
-        self._redraw()
 
-    def _redraw(self) -> None:
-        self.delete("all")
-        width = self.winfo_width() or int(self.cget("width"))
-        height = self.winfo_height() or int(self.cget("height"))
+def _sparkline(values: Iterable[float], max_value: float, width: int) -> Text:
+    """Render a neon-style sparkline from numeric values."""
+    line = Text()
+    scaled = _compress_series(values, width)
+    ceiling = max(max_value, 1e-6)
+    for idx, value in enumerate(scaled):
+        level = int((value / ceiling) * (len(SPARKLINE_CHARS) - 1))
+        level = max(0, min(level, len(SPARKLINE_CHARS) - 1))
+        # Gradient: magenta -> cyan -> blue for that "wow" vibe.
+        hue = 200 + int(60 * (idx / max(1, len(scaled) - 1)))
+        color = f"hsl({hue} 80% 60%)"
+        line.append(SPARKLINE_CHARS[level], style=color)
+    return line
+
+
+class MemoryGraph(Static):
+    """Top-left widget: live memory history rendered as a sparkline."""
+
+    def __init__(self, max_points: int = 240, target_max_mb: float = 1600.0) -> None:
+        super().__init__()
+        self.history: deque[float] = deque(maxlen=max_points)
+        self.target_max_mb = target_max_mb
+
+    def push(self, value_mb: float) -> None:
+        """Append a new memory reading and request a re-render."""
+        self.history.append(value_mb)
+        self.refresh()
+
+    def render(self) -> Panel:
+        width = max(self.size.width - 8, 24)
         if not self.history:
-            return
-
-        padding = 10
-        usable_width = width - 2 * padding
-        usable_height = height - 2 * padding
-        max_val = 1000.0  # Fixed scale: 0 to 1000 MB
-
-        # Grid lines every 100 MB
-        for i in range(1, 11):
-            val = i * 100
-            y_fraction = 1.0 - (val / max_val)
-            y = padding + usable_height * y_fraction
-            self.create_line(
-                padding,
-                y,
-                width - padding,
-                y,
-                fill="#2a2a38",
+            return Panel(
+                Text("Awaiting metrics ...", style="italic #7bd7ff"),
+                title="Memory Flow",
+                border_style="bold magenta",
+                padding=(1, 2),
             )
-            self.create_text(
-                width - padding,
-                y - 2,
-                text=f"{val} MB",
-                anchor="ne",
-                fill="#6c6c7a",
-                font=("Arial", 8),
-            )
-
-        if len(self.history) < 2:
-            return
-
-        step_x = usable_width / (self.max_points - 1)
-        coords: list[float] = []
-        for idx, val in enumerate(self.history):
-            x = padding + idx * step_x
-            # Clamp value to max_val for drawing
-            draw_val = min(val, max_val)
-            y = padding + usable_height * (1 - draw_val / max_val)
-            coords.extend([x, y])
-        self.create_line(*coords, fill="#7bd7ff", width=2, smooth=True)
 
         latest = self.history[-1]
-        self.create_text(
-            padding + 5,
-            padding + 5,
-            text=f"Python memory: {latest:.1f} MB",
-            anchor="nw",
-            fill="#d8e9ff",
-            font=("Arial", 10, "bold"),
+        peak = max(self.history)
+        spark = _sparkline(self.history, max(self.target_max_mb, peak), width)
+
+        body = Text()
+        body.append(f" live: {latest:6.1f} MB  ", style="bold cyan")
+        body.append(f"peak: {peak:6.1f} MB\n", style="bold #ff79c6")
+        body.append(Rule(style="#1f2335"))
+        body.append("\n")
+        body.append(spark)
+
+        return Panel(
+            body,
+            title="Memory Flow (Python RSS)",
+            subtitle="glow = recent, trail = history",
+            border_style="bold magenta",
+            padding=(1, 2),
         )
 
 
-class StatsPanel(ttk.Frame):
-    """Displays CPU, GPU and network usage metrics."""
+class ResourceMeters(Static):
+    """Bottom-left widget: animated bars for CPU and network throughput."""
 
-    def __init__(self, master: tk.Widget) -> None:
-        super().__init__(master)
-        self.configure(padding=10)
-        self.columnconfigure(1, weight=1)
+    snapshot: reactive[MetricSnapshot | None] = reactive(None)
+    peak_net_mbps: reactive[float] = reactive(0.1)
 
-        self.cpu_var = tk.StringVar()
-        self.python_cpu_var = tk.StringVar()
-        self.mem_var = tk.StringVar()
-        self.net_var = tk.StringVar()
-        self.gpu_var = tk.StringVar()
+    def update_snapshot(self, snapshot: MetricSnapshot) -> None:
+        """Store a fresh snapshot and schedule a redraw."""
+        self.snapshot = snapshot
+        throughput_now = (snapshot.net_sent_per_s + snapshot.net_recv_per_s) * 8 / (1024 * 1024)
+        self.peak_net_mbps = max(self.peak_net_mbps, throughput_now, 0.1)
+        self.refresh()
 
-        self._add_labeled_bar("CPU (total)", self.cpu_var, 0)
-        self._add_labeled_bar("CPU (python)", self.python_cpu_var, 1)
-        self._add_labeled_bar("Memory (total)", self.mem_var, 2)
-        self._add_labeled_bar("Network", self.net_var, 3, maximum=100)
-        self._add_labeled_bar("GPU", self.gpu_var, 4, maximum=100)
+    def _bar_line(
+        self,
+        label: str,
+        value: float,
+        limit: float,
+        width: int,
+        color: str,
+        unit: str,
+        hint: str | None = None,
+    ) -> Text:
+        """Construct a single gradient meter line."""
+        effective_limit = max(limit, 1e-6)
+        ratio = min(value / effective_limit, 1.0)
+        filled = int(ratio * width)
+        bar = Text()
+        bar.append("█" * filled, style=color)
+        bar.append("░" * (width - filled), style="#2e2e48")
 
-    def _add_labeled_bar(self, label: str, text_var: tk.StringVar, row: int, maximum: int = 100) -> None:
-        ttk.Label(self, text=label).grid(row=row, column=0, sticky="w", pady=2)
-        bar = ttk.Progressbar(self, orient="horizontal", mode="determinate", maximum=maximum)
-        bar.grid(row=row, column=1, sticky="ew", pady=2, padx=(6, 0))
-        value_label = ttk.Label(self, textvariable=text_var, width=16)
-        value_label.grid(row=row, column=2, sticky="e", pady=2, padx=(6, 0))
-        setattr(self, f"_bar_{row}", bar)
+        line = Text()
+        line.append(f"{label:<12}", style="bold white")
+        line.append(bar)
+        line.append(f"  {value:6.2f}{unit}", style=f"bold {color}")
+        if hint:
+            line.append(f"   {hint}", style="#7e8aa0")
+        return line
 
-    def update_stats(self, snapshot: MetricSnapshot) -> None:
-        getattr(self, "_bar_0")['value'] = snapshot.total_cpu
-        self.cpu_var.set(f"{snapshot.total_cpu:5.1f}%")
-
-        getattr(self, "_bar_1")['value'] = snapshot.python_cpu
-        self.python_cpu_var.set(f"{snapshot.python_cpu:5.1f}%")
-
-        getattr(self, "_bar_2")['value'] = snapshot.total_mem_percent
-        mem_gb = snapshot.python_mem_bytes / (1024 ** 3)
-        self.mem_var.set(f"{snapshot.total_mem_percent:5.1f}% | Py {mem_gb:.2f} GB")
-
-        net_util = min(100.0, (snapshot.net_sent_per_s + snapshot.net_recv_per_s) / (1024 * 1024) * 10)
-        getattr(self, "_bar_3")['value'] = net_util
-        sent_mbps = snapshot.net_sent_per_s * 8 / (1024 * 1024)
-        recv_mbps = snapshot.net_recv_per_s * 8 / (1024 * 1024)
-        self.net_var.set(f"{sent_mbps:.2f}↑ / {recv_mbps:.2f}↓ Mbps")
-
-        if snapshot.gpu_util_percent is None:
-            getattr(self, "_bar_4")['value'] = 0
-            self.gpu_var.set("GPU: N/A")
-        else:
-            getattr(self, "_bar_4")['value'] = snapshot.gpu_util_percent
-            mem_text = (
-                f"{snapshot.gpu_util_percent:4.1f}%"
-                if snapshot.gpu_mem_percent is None
-                else f"{snapshot.gpu_util_percent:4.1f}% | {snapshot.gpu_mem_percent:4.1f}% mem"
+    def render(self) -> Panel:
+        if self.snapshot is None:
+            return Panel(
+                Text("Spooling up metrics ...", style="italic #7bd7ff"),
+                title="Resource Pulse",
+                border_style="bold blue",
+                padding=(1, 2),
             )
-            self.gpu_var.set(mem_text)
 
+        snap = self.snapshot
+        width = max(self.size.width - 16, 32)
 
-class LogPanel(ttk.Frame):
-    """Scrollable text widget that streams server logs."""
+        net_up = snap.net_sent_per_s * 8 / (1024 * 1024)
+        net_down = snap.net_recv_per_s * 8 / (1024 * 1024)
+        net_total = net_up + net_down
 
-    def __init__(self, master: tk.Widget, tailer: LogTailer | QueueLogAdapter) -> None:
-        super().__init__(master)
-        self.tailer = tailer
-        self.configure(padding=10)
-        self.text = scrolledtext.ScrolledText(
-            self,
-            wrap=tk.WORD,
-            height=30,
-            width=60,
-            background="#0f0f12",
-            foreground="#d8e9ff",
-            insertbackground="#d8e9ff",
+        lines = [
+            self._bar_line("CPU total", snap.total_cpu, 100.0, width, "violet", "%"),
+            self._bar_line("CPU python", snap.python_cpu, 100.0, width, "cyan", "%"),
+            self._bar_line(
+                "Net total",
+                net_total,
+                self.peak_net_mbps,
+                width,
+                "chartreuse3",
+                " Mbps",
+                hint=f"{net_up:.2f}↑ / {net_down:.2f}↓ Mbps (peak {self.peak_net_mbps:.2f})",
+            ),
+        ]
+
+        body = Text("\n").join(lines)
+        return Panel(
+            body,
+            title="Resource Pulse",
+            subtitle="auto-scales with your peaks",
+            border_style="bold blue",
+            padding=(1, 2),
         )
-        self.text.pack(fill="both", expand=True)
-        self.text.configure(state="disabled")
-
-    def append_lines(self, lines: list[str]) -> None:
-        if not lines:
-            return
-        self.text.configure(state="normal")
-        for line in lines:
-            self.text.insert(tk.END, line)
-        
-        # Trim the log to avoid unbounded growth.
-        current = self.text.get("1.0", tk.END).splitlines()[-self.tailer.max_lines :]
-        self.text.delete("1.0", tk.END)
-        self.text.insert(tk.END, "\n".join(current) + "\n")
-            
-        self.text.see(tk.END)
-        self.text.configure(state="disabled")
 
 
-class MonitorApp(tk.Tk):
-    """Main application window."""
+class MonitorApp(App[None]):
+    """Main terminal UI powered by Textual."""
+
+    CSS = """
+    Screen {
+        background: #06080f;
+        color: #e8f1ff;
+    }
+    #layout {
+        layout: horizontal;
+        height: 1fr;
+    }
+    #left-column {
+        layout: vertical;
+        width: 1fr;
+        gutter: 1 0;
+        padding: 1 1 0 1;
+    }
+    #memory {
+        height: 2fr;
+        background: transparent;
+    }
+    #meters {
+        height: 1fr;
+        background: transparent;
+    }
+    #log-container {
+        width: 1.15fr;
+        padding: 1 1 1 0;
+    }
+    Log {
+        background: #0a0d16;
+        color: #dbe8ff;
+        border: round #8be9fd;
+        padding: 1 1;
+    }
+    Header {
+        background: #0b1020;
+        color: #a0c4ff;
+    }
+    Footer {
+        background: #0b1020;
+        color: #a0c4ff;
+    }
+    """
+
+    BINDINGS = [("q", "quit", "Quit")]
 
     def __init__(self, log_file: Path | None = None, log_queue: Any | None = None, refresh_ms: int = 1000) -> None:
         super().__init__()
-        self.title("EdgeWARN Server Monitor")
-        self.geometry("1100x650")
-        self.configure(background="#06060a")
-
+        self.refresh_seconds = max(refresh_ms / 1000, 0.1)
         self.sampler = MetricsSampler()
-        self.refresh_ms = refresh_ms
-
-        if log_queue:
-            self.tailer = QueueLogAdapter(log_queue)
+        if log_queue is not None:
+            self.tailer: LogTailer | QueueLogAdapter = QueueLogAdapter(log_queue)
         else:
             log_path = log_file or Path("server.log")
             self.tailer = LogTailer(log_path)
-            self.tailer.seed([
-                "EdgeWARN server monitor initialized.\n",
-                "Watching resource usage for Python processes...\n",
-            ])
+            self.tailer.seed(
+                [
+                    "EdgeWARN terminal monitor initialized.\n",
+                    "Streaming resource usage for Python processes...\n",
+                ]
+            )
 
-        self._build_layout()
-        self.after(self.refresh_ms, self._update_loop)
+    def compose(self) -> ComposeResult:
+        """Build the UI tree."""
+        yield Header(show_clock=True)
+        with Container(id="layout"):
+            with Vertical(id="left-column"):
+                yield MemoryGraph(id="memory")
+                yield ResourceMeters(id="meters")
+            with Container(id="log-container"):
+                yield Log(id="log-view", auto_scroll=True, wrap=True, max_lines=1200)
+        yield Footer()
 
-    def _build_layout(self) -> None:
-        self.columnconfigure(0, weight=1, uniform="col")
-        self.columnconfigure(1, weight=1, uniform="col")
-        self.rowconfigure(0, weight=1)
-        self.rowconfigure(1, weight=0)
+    def on_mount(self) -> None:
+        """Kick off periodic sampling and logging."""
+        self.memory_graph = self.query_one("#memory", MemoryGraph)
+        self.meters = self.query_one("#meters", ResourceMeters)
+        self.log_view = self.query_one("#log-view", Log)
 
-        # Memory graph (top-left)
-        self.memory_graph = MemoryGraph(self, width=500, height=250)
-        self.memory_graph.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.set_interval(self.refresh_seconds, self._refresh_metrics)
+        self.set_interval(self.refresh_seconds / 2, self._drain_logs)
 
-        # Log panel (right)
-        self.log_panel = LogPanel(self, tailer=self.tailer)
-        self.log_panel.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=10, pady=10)
+        self.log_view.write("[magenta]EdgeWARN Terminal Monitor[/] · press [bold]Q[/] to exit")
+        self.log_view.write("Listening for process output...\n")
 
-        # Stats panel (bottom-left)
-        self.stats_panel = StatsPanel(self)
-        self.stats_panel.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
-
-    def _update_loop(self) -> None:
+    def _refresh_metrics(self) -> None:
+        """Sample metrics and push them into the widgets."""
         snapshot = self.sampler.sample()
-        # Convert bytes to MB
         mem_mb = snapshot.python_mem_bytes / (1024 * 1024)
-        self.memory_graph.add_point(mem_mb)
-        self.stats_panel.update_stats(snapshot)
+        self.memory_graph.push(mem_mb)
+        self.meters.update_snapshot(snapshot)
 
+    def _drain_logs(self) -> None:
+        """Read any newly available log lines and stream them to the right panel."""
         lines = list(self.tailer.read_new_lines())
-        self.log_panel.append_lines(lines)
-
-        self.after(self.refresh_ms, self._update_loop)
+        for line in lines:
+            self.log_view.write(line.rstrip("\n"))
 
 
 def run(log_file: str | None = None, log_queue: Any | None = None, refresh_ms: int = 1000) -> None:
+    """Entry point used by multiprocessing from the scheduler."""
     app = MonitorApp(
         log_file=Path(log_file) if log_file else None,
         log_queue=log_queue,
-        refresh_ms=refresh_ms
+        refresh_ms=refresh_ms,
     )
-    app.mainloop()
+    app.run()
 
 
 if __name__ == "__main__":

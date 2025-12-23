@@ -19,3 +19,4 @@ dependencies:
   - psutil
   - pip:
     - gputil
+    - textual
