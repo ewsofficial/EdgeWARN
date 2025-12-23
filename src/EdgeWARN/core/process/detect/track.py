@@ -40,12 +40,12 @@ class StormCellTracker:
                 updated_entries.append(cell)
             else:
                 # Cell not found in updated_data
-                # Do NOT update timestamp (remains old/missing)
+                # Remove from tracking
                 unused_ids += 1
-                updated_entries.append(cell)
+                # Do NOT append to updated_entries
 
         self.io_manager.write_info(f"Updated data for {len(updated_entries)} cells")
-        self.io_manager.write_info(f"{unused_ids} cells not matched to new cells")
+        self.io_manager.write_info(f"{unused_ids} cells not matched and removed from tracking")
 
         # Add NEW cells
         new_cells = 0
