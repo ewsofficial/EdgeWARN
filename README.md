@@ -27,29 +27,12 @@ Check INSTALLATION.md for installation and run instructions
 
 <h2 align="center">Build Info</h2>
 
-## Version History for 0.6.x-alpha
+## Version History for 1.0.x-alpha
 
-### 0.6.0-alpha
-- Changed `ingest` module to use AWS S3 Buckets
-- Added `GOES-19` data downloading
-- Added metadata tags `source`, `product`, `version`, `latest_timestamp` to storm cell JSON
-- Storm cell data is now moved into `features` key
-- Dataset integration now only integrates for cells that have a latest history timestamp
-
-### 0.6.1-alpha
-- Cache file lists to reduce lookup overhead
-- Reduce integration overhead by subsetting grids per cell and skipping irrelevant timestamps
-
-### 0.6.2-alpha
-- Add ``INFO: `` prints to command-line output
-- Unify dataset loading and timestamp extraction
-- Add server monitor GUI, which displays server resource usage and status
-
-### 0.6.3-alpha (current)
-- Add ``--nogui`` option to disable the server monitor GUI
-- Add historical processing capabilities
-- Remove Cloud Top Height, Cloud Top Pressure, and Cloud Top Temperature datasets
-- Added GLM integration for flashes and total energy
+### 1.0.0-alpha (current)
+- Added a server API
+- New JSON format, stormcells is a list of stormcells and their properties for a specific timestamp while cells is the history of a specific cell ID
+- Add support to run in GitHub Workspaces
 
 <h2 align="center">Credits</h2>
 
