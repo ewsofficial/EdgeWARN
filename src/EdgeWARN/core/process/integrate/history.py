@@ -101,3 +101,4 @@ class CellHistoryManager:
         """
         # User requested 1hr (60 mins) inactivity
         fs.clean_files_by_age(fs.CELL_DIR, max_age_minutes=60)
+        fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=60)
