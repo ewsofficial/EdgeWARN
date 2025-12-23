@@ -76,6 +76,5 @@ def main(json_path=None):
         from .history import CellHistoryManager
         history_manager = CellHistoryManager(io_manager)
         history_manager.update_cell_histories(result_cells, timestamp)
-        history_manager.cleanup_inactive_cells()
     except Exception as e:
         io_manager.write_error(f"Failed to update cell history: {e}")
