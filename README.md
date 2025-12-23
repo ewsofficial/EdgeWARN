@@ -20,6 +20,7 @@ the GUI frontend.
 
 #### Requirements
 1. Conda/Miniconda with Python 3.13+
+2. npm
 
 #### Installation Instructions
 
