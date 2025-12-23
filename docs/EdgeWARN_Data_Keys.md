@@ -16,14 +16,15 @@ The JSON output follows this structure:
 | Key          | Units          | Description                                      |
 |--------------|----------------|--------------------------------------------------|
 | id          | N/A           | ProbSevere Cell ID                              |
+| timestamp   | ISOFormat     | When the cell was last matched/updated (only present for active cells) |
 | num_gates   | N/A           | Number of gates in the storm cell               |
 | centroid    | Lat, Lon      | Latitude and Longitude of Cell Centroid (Lon is in 0-360 format) |
 | bbox        | List of [lat, lon] | Bounding Box of storm cell (Lon is in 0-360 format) |
 | hail_core   | List of [lat, lon] | Bounding box of storm's hail core (Lon is in 0-360 format) |
 | max_refl    | dBZ           | Maximum reflectivity in the storm cell          |
-| storm_history | N/A          | See Below                                       |
+| properties  | Object        | Integrated meteorological data |
 
-## Storm History Data Keys
+## Data Keys in ``properties``
 
 | Key              | Units          | Description                                      |
 |------------------|----------------|--------------------------------------------------|

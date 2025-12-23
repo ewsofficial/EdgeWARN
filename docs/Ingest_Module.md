@@ -52,11 +52,23 @@ Low-level classes for interacting with S3.
         2.  If found, downloads it.
         3.  If **not found**, logs a warning and falls back to the **latest** file in the list.
 
-### 5. Merging (`merge.py`)
+### 5. Merging (`utils.py`)
 
-Handles merging of NetCDF files (e.g., for GLM data).
+Handles merging of NetCDF files, specifically for GLM (Geostationary Lightning Mapper) data from GOES-19.
 
-*   `merge_netcdf_files(file_paths, output_path)`: Uses `xarray` to merge multiple NetCDF files into a single output file.
+#### Functions:
+
+*   **`merge_glm_files(file_list, io_manager)`**: Merges multiple GLM L2 LCFA NetCDF files into a single consolidated file.
+    *   **Purpose**: GLM data is produced in 20-second intervals. To provide better temporal coverage for lightning analysis, multiple consecutive files are downloaded and merged into a single dataset.
+    *   **Workflow**:
+        1.  **Load Files**: Opens all GLM NetCDF files in `file_list` using `xarray`.
+        2.  **Concatenate**: Combines the datasets along the `number_of_flashes` dimension, creating a unified dataset with all flash events from all files.
+        3.  **Timestamp Derivation**: Determines the merged file's timestamp from the **newest** (most recent) file in the list by extracting the timestamp from the filename.
+        4.  **Save Merged File**: Writes the consolidated dataset to `GOES_GLM_DIR` with the filename format `GLM_merged_YYYYMMDD-HHMMSS.nc`, where the timestamp represents the newest file's time.
+        5.  **Cleanup**: Deletes all original (unmerged) GLM files after successful merge to conserve disk space.
+    *   **Error Handling**: Logs warnings if files cannot be opened or merged, and skips problematic files.
+    *   **Returns**: Path to the merged output file, or `None` if merge failed.
+    *   **Note**: This function is called automatically by `download_goes_product()` when downloading GLM-L2-LCFA products.
 
 ## Usage
 
@@ -94,4 +106,9 @@ download_goes_product(
     *   If missing, it picks the latest one.
 5.  **FileDownloader** downloads the selected file to the output directory.
 6.  (Optional) If compression is detected (`.gz`), it is decompressed.
-7.  (Optional) For specific products, multiple files may be downloaded and merged via `merge.py`.
+7.  **GLM Merging** (GOES GLM-L2-LCFA only): 
+    *   Multiple consecutive GLM files are downloaded to provide temporal coverage.
+    *   `merge_glm_files()` combines them into a single NetCDF file.
+    *   Timestamp is derived from the newest file.
+    *   Original files are deleted after successful merge.
+8.  (Optional) For other products, single files may be processed without merging.

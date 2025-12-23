@@ -8,8 +8,8 @@
 
 EdgeWARN is a program developed by the Edgemont Weather Service to accurately nowcast severe weather, 
 provide user-friendly outputs and alerts, and be decently lightweight to run. 
-To accomplish these goals, we leverage NOAA's MRMS datasets and ProbSevere v3 
-while adding in hydrological and lightning data to fill in 
+To accomplish these goals, we leverage NOAA's MRMS datasets, ProbSevere v3, 
+and GOES-19 GLM lightning data while adding in hydrological information to fill in 
 known gaps in ProbSevere's threat assessment. This repository serves as 
 EdgeWARN's core server that processes raw data and serves it to
 the GUI frontend.
@@ -30,9 +30,14 @@ Check INSTALLATION.md for installation and run instructions
 ## Version History for 1.0.x-alpha
 
 ### 1.0.0-alpha (current)
-- Added a server API
-- New JSON format, stormcells is a list of stormcells and their properties for a specific timestamp while cells is the history of a specific cell ID
-- Add support to run in GitHub Workspaces
+- Added a server API for data access
+- New JSON format: `stormcells` is a list of storm cells and their properties for a specific timestamp, while `cells` is the per-cell history of a specific cell ID
+- Per-cell history tracking with individual JSON files in `CELL_DIR`
+- Timestamp-based cell tracking for efficient updates (unmatched cells don't receive timestamp updates)
+- GOES-19 GLM (Geostationary Lightning Mapper) lightning data integration
+- GUI rendering pipeline for visualization outputs
+- Enhanced file cleanup mechanisms for MRMS and GOES data
+- Support to run in GitHub Workspaces
 
 <h2 align="center">Credits</h2>
 

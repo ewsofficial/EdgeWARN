@@ -38,24 +38,42 @@ This module contains the `StormCellIntegrator` class, which performs the heavy l
         - **Returns**: The updated list of storm cells.
 
 ### 2. `integrate_glm.py`
-This module handles the integration of Geostationary Lightning Mapper (GLM) data.
+This module handles the integration of Geostationary Lightning Mapper (GLM) data from GOES-19.
 
 #### Functions:
 
 - **`integrate_glm(storm_cells, glm_file_path=None)`**
     - **Functionality**: Integrates GLM flash count and total energy into storm cells.
     - **Steps**:
-        1. **Load Dataset**: Opens the GLM L2 LCFA NetCDF file.
+        1. **Load Dataset**: Opens the GLM L2 LCFA NetCDF file from GOES-19.
         2. **Filter Active Cells**: Selects only cells active at the latest timestamp.
         3. **Spatial Query**:
-            - Uses a bounding box check for speed.
-            - Performs a precise point-in-polygon check for flashes within the cell boundaries.
+            - Uses a bounding box check for initial filtering (performance optimization).
+            - Performs a precise point-in-polygon check for flashes within the cell boundaries using `shapely`.
         4. **Aggregation**:
-            - Counts the number of flashes (`GLM_FLASH_COUNT`).
-            - Sums the flash energy (`GLM_TOTAL_ENERGY`).
-    - **Returns**: Updated storm cells with GLM data appended to the latest history entry.
+            - Counts the number of flashes within each cell polygon (`GLM_FLASH_COUNT`).
+            - Sums the flash energy values for all flashes in the cell (`GLM_TOTAL_ENERGY`).
+        5. **Data Storage**: Appends the computed values to the cell's `properties` dictionary.
+    - **Returns**: Updated storm cells with GLM data appended to the `properties` dictionary.
 
-### 3. `main.py`
+### 3. `history.py`
+This module manages persistent per-cell history tracking, storing each cell's state over time in individual JSON files.
+
+#### Classes:
+
+- **`CellHistoryManager`**
+    - **`__init__(self, io_manager)`**: Initializes the history manager and creates the cell history directory (`CELL_DIR`) if it doesn't exist.
+    - **`update_cell_histories(self, cells, timestamp=None)`**:
+        - **Functionality**: Updates the persistent history file for each active cell in the list.
+        - **Per-Cell Files**: Each cell ID gets its own JSON file at `CELL_DIR/{cell_id}.json` containing a list of historical states.
+        - **Active Cell Detection**: Only processes cells that have a `timestamp` field (set by the detection/tracking pipeline). Cells without timestamps are considered inactive/unmatched and are **skipped entirely**, preserving their file modification times.
+        - **Duplicate Prevention**: Checks if the last entry in the history has the same timestamp as the current entry. If so, skips appending to avoid duplicates.
+        - **History Structure**: Each history file is a JSON array where each element is a complete cell state snapshot including all fields (`id`, `timestamp`, `centroid`, `bbox`, `max_refl`, `properties`, etc.).
+        - **Timestamp Normalization**: Ensures the `timestamp` field is at the cell's top level and removes it from nested `properties` if present (legacy cleanup).
+        - **File Cleanup**: Inactive cell history files (not updated for more than 1 hour) are automatically deleted by a separate cleanup process in the main pipeline.
+        - **Returns**: Nothing (updates files on disk).
+
+### 4. `main.py`
 This script defines the integration workflow, specifying which datasets to process and running the integration.
 
 #### Functions:
@@ -63,14 +81,16 @@ This script defines the integration workflow, specifying which datasets to proce
 - **`main()`**
     - **Functionality**: Orchestrates the integration of multiple datasets into the storm cell JSON file.
     - **Steps**:
-        1.  **Setup**: Initializes `StatFileHandler` and `StormCellIntegrator`. Loads the initial storm cell data from `stormcell_test.json`.
+        1.  **Setup**: Initializes `StatFileHandler` and `StormCellIntegrator`. Loads the initial storm cell data from the provided JSON path (typically the output from detection).
         2.  **Integrate Gridded Data**: Iterates through a predefined list of datasets (NLDN, EchoTop, PrecipRate, VIL, RALA, VII).
             - Finds the latest file for each product.
-            - Calls `integrator.integrate_ds_via_max` to add the data to the cells.
-        3.  **Integrate ProbSevere**: Finds the latest ProbSevere JSON file and calls `integrator.integrate_probsevere`.
-        4.  **Save**: Writes the fully enriched storm cell data back to `stormcell_test.json`.
+            - Calls `integrator.integrate_ds_via_max` to add the maximum value within each cell polygon to the cell's `properties`.
+        3.  **Integrate ProbSevere**: Finds the latest ProbSevere JSON file and calls `integrator.integrate_probsevere` to merge ProbSevere variables into cell `properties`.
+        4.  **Integrate GLM**: Finds the latest GLM file and calls `integrate_glm` to add flash count and total energy to cell `properties`.
+        5.  **Save**: Writes the fully enriched storm cell data back to the input JSON file path.
+        6.  **Update History**: Calls `CellHistoryManager.update_cell_histories()` to append the current cell states to their respective per-cell history files in `CELL_DIR`. Only cells with a `timestamp` field (active cells) are processed.
 
-### 4. `utils.py`
+### 5. `utils.py`
 Contains utility classes for file handling and geometry operations.
 
 #### Classes:

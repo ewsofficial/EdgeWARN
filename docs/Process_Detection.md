@@ -30,15 +30,24 @@ This module manages the tracking of storm cells across consecutive time steps.
 
 - **`StormCellTracker`**
     - **`__init__(self, ps_old, ps_new, io_manager)`**: Initializes the tracker with old and new ProbSevere data.
-    - **`update_cells(self, entries, updated_data)`**:
+    - **`update_cells(self, entries, updated_data, timestamp=None)`**:
         - **Functionality**: Updates the list of storm cells based on new detection data.
+        - **Parameters**:
+            - `entries`: List of existing storm cells from the previous scan
+            - `updated_data`: List of newly detected cells from the current scan
+            - `timestamp`: Optional ISO-format timestamp string for the current scan
         - **Logic**:
             - Maps `updated_data` (new detections) by cell ID for O(1) lookup.
             - Iterates through existing `entries` (previous cells):
-                - If a cell ID exists in the new data, it updates the cell's main fields (`num_gates`, `centroid`, `max_refl`, `bbox`) while preserving its `storm_history`.
-                - If a cell ID is missing in the new data, it marks the cell for removal (effectively dropping it from the returned list).
-            - Adds any **new** cells found in `updated_data` that were not in `entries`.
-        - **Returns**: A filtered and updated list of storm cell dictionaries.
+                - **Matched cells**: If a cell ID exists in the new data, it updates the cell's main fields (`num_gates`, `centroid`, `max_refl`, `bbox`) while preserving its `storm_history`. If `timestamp` is provided, assigns it to the cell (marking it as active).
+                - **Unmatched cells**: If a cell ID is missing in the new data, it is **not** updated and **removed** from tracking (not returned in the output list).
+            - Adds any **new** cells found in `updated_data` that were not in `entries`. If `timestamp` is provided, it is assigned to new cells as well.
+        - **Timestamp Behavior**:
+            - **Matched cells**: Receive the current `timestamp`, indicating they are active/current.
+            - **New cells**: Receive the current `timestamp` upon creation.
+            - **Unmatched cells**: Do NOT receive a timestamp update and are removed from tracking.
+            - This timestamp-based approach enables downstream processes (like history tracking) to identify which cells were active in the current scan by checking for the presence of the `timestamp` field.
+        - **Returns**: A filtered and updated list of storm cell dictionaries containing only matched and new cells.
 
 ### 3. `main.py`
 This is the entry point for the detection pipeline. It coordinates the loading of data, detection, tracking, and saving of results.
@@ -49,15 +58,21 @@ This is the entry point for the detection pipeline. It coordinates the loading o
     - **Functionality**: Runs the full detection and tracking workflow.
     - **Logic**:
         1.  **Single-frame Fallback**: If new data is missing, it defaults to single-frame detection using only the old data.
-        2.  **Load Previous Data**: Attempts to load existing cell data from `json_output`. If it fails or doesn't exist, it runs `detect_cells` on the old data to establish a baseline.
-        3.  **Single-frame Mode**: If running in single-frame mode, it saves the results and exits.
-        4.  **Dual-frame Mode**:
+        2.  **Calculate Timestamp Early**: Extracts timestamp from the current radar file (old in single-frame, new in dual-frame), normalizes to minute precision, and creates two formats:
+            - `final_ts`: Filename format (YYYYMMDD-HHMM00) for output file naming
+            - `json_ts`: ISO format for JSON content and cell timestamps
+        3.  **Load Previous Data**: Attempts to load the most recent `stormcells_*.json` file from `STORMCELL_DIR`. If it fails or doesn't exist, it runs `detect_cells` on the old data to establish a baseline.
+        4.  **Single-frame Mode**: 
+            - Assigns `json_ts` to all cells (marking them as current).
+            - Calculates storm motion vectors.
+            - Saves results to `STORMCELL_DIR/stormcells_{final_ts}.json`.
+        5.  **Dual-frame Mode**:
             - Runs `detect_cells` on the **new** data.
             - Loads ProbSevere data for both old and new timestamps.
-            - Uses `StormCellTracker` to update the old entries with new detections.
-            - Appends the new storm history using `CellDataSaver`.
+            - Uses `StormCellTracker` to update the old entries with new detections, **passing `json_ts` as the timestamp parameter**.
             - Calculates storm motion vectors using `StormVectorCalculator`.
-            - Saves the final updated list of cells to `json_output`.
+            - Saves the final updated list of cells to `STORMCELL_DIR/stormcells_{final_ts}.json`.
+    - **Output**: Returns the path to the generated JSON file in `STORMCELL_DIR`.
 
 ## Tools (`tools/`)
 The `tools` directory contains helper classes and functions used by the core detection logic.
