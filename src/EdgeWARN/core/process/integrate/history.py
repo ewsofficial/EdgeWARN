@@ -93,12 +93,3 @@ class CellHistoryManager:
                 pass
 
         self.io_manager.write_debug(f"Updated history for {success_count} cells")
-
-    def cleanup_inactive_cells(self):
-        """
-        Remove history files for cells that haven't been updated recently.
-        Uses util.file.clean_old_files.
-        """
-        # User requested 1hr (60 mins) inactivity
-        fs.clean_files_by_age(fs.CELL_DIR, max_age_minutes=60)
-        fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=60)

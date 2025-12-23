@@ -34,6 +34,10 @@ def download_all_files(dt, max_entries=10):
     for f in folders:
         fs.clean_old_files(f, max_age_minutes=60)
 
+    # Use different function for stormcell dirs
+    fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=60)
+    fs.clean_files_by_age(fs.CELL_DIR, max_age_minutes=60)
+
     # Use async operations internally for better performance
     # This maintains the same API but with improved performance
     async def _download_all():
