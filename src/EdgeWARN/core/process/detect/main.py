@@ -183,4 +183,13 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         js.dump(output_data, f, indent=2, default=str)
         
     io_manager.write_info(f"Saved detection results to {output_file}")
+    
+    # Update API stormcell index
+    try:
+        from EdgeWARN.core.api_integration.index_manager import APIIndexManager
+        api_index = APIIndexManager(io_manager)
+        api_index.update_stormcell_index(final_ts)
+    except Exception as e:
+        io_manager.write_error(f"Failed to update API index: {e}")
+    
     return output_file

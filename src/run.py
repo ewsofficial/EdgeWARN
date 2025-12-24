@@ -14,6 +14,7 @@ from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
 from EdgeWARN.core.ingest.config import check_modifiers
 import EdgeWARN.ui.monitor_app as monitor_app
 from util.io import TimestampedOutput, IOManager, QueueWriter
+from EdgeWARN.core.api_integration.index_manager import APIIndexManager
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
@@ -23,6 +24,13 @@ args = io_manager.get_args()
 
 lat_limits = tuple(args.lat_limits)
 lon_limits = tuple(args.lon_limits)
+
+# Initialize API indexes at startup
+try:
+    index_manager = APIIndexManager(io_manager)
+    index_manager.initialize_indexes()
+except Exception as e:
+    io_manager.write_error(f"Failed to initialize API indexes: {e}")
 
 def pipeline(log_queue, dt):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""
