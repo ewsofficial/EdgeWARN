@@ -5,6 +5,7 @@ from scipy.ndimage import distance_transform_edt
 from skimage import measure
 import rasterio.features
 from affine import Affine
+import scipy.ndimage
 
 class GateMapper:
     def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=40.0):
@@ -78,44 +79,56 @@ class GateMapper:
 
     def expand_gates(self, mapped_ds):
         """
-        Fully vectorized expansion using distance transform.
+        Fully vectorized expansion using a single distance transform (EDT).
         Cells are assigned to the nearest polygon.
-        If multiple polygons are equidistant, assign to 0 (midline).
+        Complexity: O(H*W) instead of O(N*H*W).
         """
         polygon_grid = mapped_ds['PolygonID'].values.copy()
-        refl_grid = self.radar_ds['unknown'].values  # replace with actual variable
+        refl_grid = self.radar_ds['unknown'].values
         mask = refl_grid >= self.refl_threshold
 
-        unique_ids = np.unique(polygon_grid[polygon_grid > 0])
-        
-        if unique_ids.size == 0:
-            # No polygons to expand
+        # If we have no polygons, just return
+        if not np.any(polygon_grid > 0):
             return mapped_ds
 
-        H, W = polygon_grid.shape
-
-        # Stack a boolean mask for each polygon
-        poly_stack = np.stack([polygon_grid == pid for pid in unique_ids], axis=0)  # (n_polygons, H, W)
-
-        # Compute distance transform for each polygon
-        dist_stack = np.stack([distance_transform_edt(~layer) for layer in poly_stack], axis=0)
-
-        # For each cell, find the minimal distance(s)
-        min_dist = np.min(dist_stack, axis=0)
-        closest = dist_stack == min_dist  # boolean array (n_polygons, H, W)
-
-        # Assign unique closest polygon IDs
-        counts = closest.sum(axis=0)
-        assignment = np.zeros_like(polygon_grid)
-        unique_cells = (counts == 1) & mask
-        assignment[unique_cells] = unique_ids[np.argmax(closest[:, :, :], axis=0)][unique_cells]
-
-        # Apply assignments
-        polygon_grid[assignment > 0] = assignment[assignment > 0]
-
+        # Create a background mask (0 is background, 1 is foreground)
+        # We want distance from the nearest non-zero pixel.
+        # dt_indices returns the indices (row, col) of the nearest background pixel.
+        # So we invert the logic: we want distance FROM polygons TO empty space.
+        # But standard EDT gives distance from 0 to 1.
+        # We want to propagate the ID of the nearest non-zero pixel to all zero pixels.
+        
+        # scipy.ndimage.distance_transform_edt with return_indices=True
+        # calculates the index of the nearest BACKGROUND point for each FOREGROUND point.
+        # So if we treat "polygons" as background (0) and "empty space" as foreground (1),
+        # we can find the index of the nearest polygon pixel for every empty pixel.
+        
+        fg_mask = (polygon_grid == 0) # The "empty space" we want to fill
+        
+        # indices has shape (ndim, H, W). 
+        # indices[:, r, c] gives the (row, col) of the nearest pixel where fg_mask is False (i.e. polygon_grid > 0)
+        dist, indices = distance_transform_edt(fg_mask, return_distances=True, return_indices=True)
+        
+        # Now we map the pixels.
+        # For every pixel (r, c), correct_id is polygon_grid[indices[0, r, c], indices[1, r, c]]
+        
+        # Use advanced indexing to pull the IDs
+        nearest_poly_ids = polygon_grid[indices[0], indices[1]]
+        
+        # Apply the assignment only where we have reflectivity > threshold
+        # and where we originally had 0 (though nearest_poly_ids handles the original non-zeros correctly too, 
+        # as distance is 0 and index is itself)
+        
+        final_grid = np.where(mask, nearest_poly_ids, 0)
+        
+        # Restore the original polygon_grid indices where they existed? 
+        # Actually proper voronoi partition should just respect the nearest source.
+        # But we must ensure 0 stays 0 if refl < threshold.
+        # Done by np.where above.
+        
         # Return as xarray Dataset
         return xr.Dataset(
-            {'PolygonID': (('latitude', 'longitude'), polygon_grid)},
+            {'PolygonID': (('latitude', 'longitude'), final_grid.astype(np.int32))},
             coords={
                 'latitude': mapped_ds['latitude'].values,
                 'longitude': mapped_ds['longitude'].values
@@ -124,8 +137,8 @@ class GateMapper:
 
     def draw_bbox(self, expanded_ds, step=8):
         """
-        Return a dictionary of polygons for each polygon ID by tracing the exterior points
-        and downsampling every 'step' points to reduce complexity.
+        Return a dictionary of polygons for each polygon ID by tracing the exterior points.
+        Optimized to use find_objects for slice-based processing.
 
         Parameters:
             expanded_ds (xarray.Dataset): Dataset from expand_gates()
@@ -138,32 +151,70 @@ class GateMapper:
         lats = expanded_ds['latitude'].values
         lons = expanded_ds['longitude'].values
 
-        unique_ids = np.unique(polygon_grid)
-        unique_ids = unique_ids[unique_ids != 0]  # skip background
+        if lats.ndim == 1:
+            lats, lons = np.meshgrid(lats, lons, indexing='ij')
 
+        # Get unique IDs and their bounding box slices
+        # range(max_id + 1) to cover all possible IDs
+        max_id = np.max(polygon_grid)
+        if max_id == 0:
+            return {}
+            
+        # find_objects returns a list of slices, index i corresponds to value i+1
+        # so slices[0] is for ID 1, slices[1] is for ID 2, etc.
+        slices = scipy.ndimage.find_objects(polygon_grid, max_label=max_id)
+        
         bboxes = {}
-
-        for poly_id in unique_ids:
-            mask = polygon_grid == poly_id
-            if not np.any(mask):
+        
+        for idx, sl in enumerate(slices):
+            poly_id = idx + 1
+            if sl is None:
                 continue
-
-            # Find contours at the 0.5 level (between 0 and 1)
-            contours = measure.find_contours(mask.astype(float), 0.5)
+                
+            # Extract sub-grid
+            poly_mask = polygon_grid[sl] == poly_id
+            
+            # Since we sliced, we need to map back to global coordinates.
+            # But measure.find_contours returns coordinates relative to the slice.
+            # We can just add the slice offset!
+            
+            # Pad mask to ensure closed contours if touching border
+            padded_mask = np.pad(poly_mask, 1, mode='constant', constant_values=0)
+            
+            # Find contours
+            contours = measure.find_contours(padded_mask.astype(float), 0.5)
             if not contours:
                 continue
-
-            # Take the longest contour (usually the exterior)
+                
+            # Take the longest contour
             contour = max(contours, key=len)
-
-            # Downsample every 'step' points
+            
+            # Downsample
             contour = contour[::step]
-
-            # Convert from array indices to lon/lat with 3-digit rounding
-            coords = [
-                (round(lats[int(c[0])], 3), round(lons[int(c[1])], 3))
-                for c in contour
-            ]
+            
+            # Convert to global coordinates
+            # contour points are (row, col) in padded_mask
+            # -1 to correct for padding
+            # +sl[0].start to correct for row slice
+            # +sl[1].start to correct for col slice
+            
+            r_offset = sl[0].start - 1
+            c_offset = sl[1].start - 1
+            
+            coords = []
+            for c in contour:
+                r_global = int(c[0] + r_offset)
+                c_global = int(c[1] + c_offset)
+                
+                # Safety clamp
+                r_global = max(0, min(r_global, lats.shape[0] - 1))
+                c_global = max(0, min(c_global, lats.shape[1] - 1))
+                
+                coords.append((
+                    round(float(lats[r_global, c_global]), 3),
+                    round(float(lons[r_global, c_global]), 3)
+                ))
+                
             bboxes[poly_id] = coords
 
         return bboxes
