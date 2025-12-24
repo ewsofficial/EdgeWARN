@@ -93,7 +93,7 @@ class APIIndexManager:
     def update_stormcell_index(self, timestamp: str):
         """
         Add new timestamp to stormcell_index.json.
-        Remove timestamps older than 24 hours.
+        Remove timestamps older than 24 hours (relative to the newest timestamp in the index).
         
         Args:
             timestamp: Timestamp in YYYYMMDD-HHMMSS format
@@ -112,8 +112,17 @@ class APIIndexManager:
             timestamps.sort()
             self.io_manager.write_debug(f"Added timestamp {timestamp} to stormcell index")
         
-        # Remove old timestamps (older than 24 hours)
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        if not timestamps:
+            return
+
+        # Determine retention cutoff based on the LATEST timestamp in the index
+        try:
+            latest_str = timestamps[-1]
+            latest_dt = datetime.strptime(latest_str, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+            cutoff = latest_dt - timedelta(hours=24)
+        except ValueError:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+
         filtered_timestamps = []
         
         for ts in timestamps:

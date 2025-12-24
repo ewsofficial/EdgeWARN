@@ -37,7 +37,7 @@ def pipeline(dt, lat_limits, lon_limits, json_output):
     
     try:
         io_manager.write_info(f"Starting Data Ingestion for timestamp {dt}")
-        ingest_main.download_all_files(dt, max_entries=60)
+        ingest_main.download_all_files(dt)
         
         io_manager.write_info("Starting Storm Cell Detection")
         try:
@@ -58,6 +58,7 @@ def pipeline(dt, lat_limits, lon_limits, json_output):
         integration.main(generated_file)
         
         io_manager.write_info("Pipeline completed successfully")
+        return generated_file
         
     except Exception as e:
         io_manager.write_error(f"Error in pipeline: {e}")
