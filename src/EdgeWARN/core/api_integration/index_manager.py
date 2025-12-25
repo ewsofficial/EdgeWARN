@@ -8,10 +8,11 @@ import util.file as fs
 class APIIndexManager:
     """Manages index files for the API to track available resources."""
     
-    def __init__(self, io_manager: IOManager):
+    def __init__(self, io_manager: IOManager, remove_old_cells=True):
         self.io_manager = io_manager
         self.stormcell_index_path = fs.STORMCELL_DIR / "stormcell_index.json"
         self.cell_index_path = fs.CELL_DIR / "cell_index.json"
+        self.remove_old_cells = remove_old_cells
         
     def initialize_indexes(self):
         """
@@ -134,7 +135,7 @@ class APIIndexManager:
                 else:
                     # Delete old file
                     old_file = fs.STORMCELL_DIR / f"stormcells_{ts}.json"
-                    if old_file.exists():
+                    if self.remove_old_cells:
                         old_file.unlink()
                         self.io_manager.write_debug(f"Deleted old stormcell file: {old_file.name}")
             except ValueError:
@@ -206,9 +207,9 @@ class APIIndexManager:
                     valid_ids.add(cell_id)
                 else:
                     # Delete old file
-                    cell_file.unlink()
-                    self.io_manager.write_debug(f"Deleted inactive cell file: {cell_id}.json")
-        
+                    if self.remove_old_cells:
+                        cell_file.unlink()
+                        self.io_manager.write_debug(f"Deleted inactive cell file: {cell_id}.json")
         # Update index with valid IDs only
         index_data = {
             "cellIds": sorted(list(valid_ids)),

@@ -8,6 +8,8 @@
 ``MRMS_MergedAzShear_0-2kmAGL``
 
 ``MRMS_MergedAzShear_3-6kmAGL``
+- Added `remove_old_files` argument to `ingest.download_all_files` to control file cleanup.
+- Added `remove_old_cells` argument to `index_manager` and `integration` to control cell history cleanup.
 
 ### Changes
 
