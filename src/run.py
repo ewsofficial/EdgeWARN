@@ -78,9 +78,10 @@ def main(ui_process=None):
                 # Extract YYYYMMDD-HHMM00
                 match = re.search(r"stormcells_(\d{8}-\d{6})\.json", latest_file.name)
                 if match:
-                    ts_str = match.group(1) # YYYYMMDD-HHMM00
-                    # Parse assuming UTC
-                    last_processed = datetime.strptime(ts_str, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+                    ts_str = match.group(1) # YYYYMMDD-HHMMSS
+                    # Parse assuming UTC, but round to minute to match scheduler
+                    dt_exact = datetime.strptime(ts_str, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+                    last_processed = dt_exact.replace(second=0, microsecond=0)
                     print(f"[Scheduler] Initialized last_processed from {latest_file}: {last_processed}")
                 else:
                     print(f"[Scheduler] Could not parse timestamp from {latest_file}")

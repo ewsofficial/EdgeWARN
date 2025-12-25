@@ -61,8 +61,8 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     ts_str = DetectionDataHandler.find_timestamp(current_radar)
     try:
         dt = datetime.fromisoformat(ts_str)
-        dt = dt.replace(second=0, microsecond=0)
-        final_ts = dt.strftime("%Y%m%d-%H%M00") # Format for filename
+        # dt = dt.replace(second=0, microsecond=0) # Removed: Keep seconds
+        final_ts = dt.strftime("%Y%m%d-%H%M%S") # Format for filename with seconds
         json_ts = dt.isoformat() # Format for JSON content
     except ValueError:
         final_ts = ts_str
