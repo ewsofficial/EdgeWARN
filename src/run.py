@@ -137,7 +137,11 @@ def main(ui_process=None):
         sys.exit(0)
 
 if __name__ == "__main__":
-    if args.nogui:
+    # If nogui is forced, or if we're not in an interactive terminal, run without GUI.
+    # This check prevents a crash on Windows when running from a non-interactive shell.
+    if args.nogui or not sys.stdin.isatty():
+        if not args.nogui:
+            print("INFO: No interactive terminal detected. Falling back to No-GUI mode.")
         # No GUI mode: Print directly to console (already set up by default sys.stdout/stderr)
         try:
             print(f"Running EdgeWARN v0.6.3-alpha (No-GUI Mode)")
