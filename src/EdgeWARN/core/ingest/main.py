@@ -19,7 +19,7 @@ import traceback
 
 io_manager = IOManager("[Ingest]")
 
-def download_all_files(dt, max_entries=10):
+def download_all_files(dt, max_entries=10, remove_old_files=True):
     """
     Main function for downloading all MRMS files.
 
@@ -31,11 +31,11 @@ def download_all_files(dt, max_entries=10):
     folders = [outdir for _, _, outdir in mrms_modifiers]
     # Add GOES folders
     folders.extend([outdir for _, outdir in goes_modifiers])
-    for f in folders:
-        fs.clean_old_files(f, max_age_minutes=60)
+    if remove_old_files:
+        for f in folders:
+            fs.clean_old_files(f, max_age_minutes=60)
 
     # Use different function for stormcell dirs
-    fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=60)
 
     # Use async operations internally for better performance
     # This maintains the same API but with improved performance
