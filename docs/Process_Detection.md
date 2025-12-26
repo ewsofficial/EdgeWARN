@@ -50,14 +50,15 @@ This is the entry point for the detection pipeline. It coordinates the loading o
     - **Logic**:
         1.  **Single-frame Fallback**: If new data is missing, it defaults to single-frame detection using only the old data.
         2.  **Load Previous Data**: Attempts to load existing cell data from `json_output`. If it fails or doesn't exist, it runs `detect_cells` on the old data to establish a baseline.
-        3.  **Single-frame Mode**: If running in single-frame mode, it saves the results and exits.
-        4.  **Dual-frame Mode**:
+        3.  **Extract Exact Timestamp**: Uses `DetectionDataHandler.find_timestamp()` to extract the exact timestamp (including seconds) from the composite reflectivity file metadata.
+        4.  **Single-frame Mode**: If running in single-frame mode, applies the extracted timestamp to all cells and saves the stormcell list to `json_output`.
+        5.  **Dual-frame Mode**:
             - Runs `detect_cells` on the **new** data.
             - Loads ProbSevere data for both old and new timestamps.
             - Uses `StormCellTracker` to update the old entries with new detections.
-            - Appends the new storm history using `CellDataSaver`.
+            - Appends the new storm history using `CellDataSaver` with the exact timestamp.
             - Calculates storm motion vectors using `StormVectorCalculator`.
-            - Saves the final updated list of cells to `json_output`.
+            - Saves the stormcell list to `json_output` (filename includes exact timestamp in YYYYMMDD-HHMMSS format).
 
 ## Tools (`tools/`)
 The `tools` directory contains helper classes and functions used by the core detection logic.
