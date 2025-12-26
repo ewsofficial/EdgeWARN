@@ -58,21 +58,16 @@ This is the entry point for the detection pipeline. It coordinates the loading o
     - **Functionality**: Runs the full detection and tracking workflow.
     - **Logic**:
         1.  **Single-frame Fallback**: If new data is missing, it defaults to single-frame detection using only the old data.
-        2.  **Calculate Timestamp Early**: Extracts timestamp from the current radar file (old in single-frame, new in dual-frame), normalizes to minute precision, and creates two formats:
-            - `final_ts`: Filename format (YYYYMMDD-HHMM00) for output file naming
-            - `json_ts`: ISO format for JSON content and cell timestamps
-        3.  **Load Previous Data**: Attempts to load the most recent `stormcells_*.json` file from `STORMCELL_DIR`. If it fails or doesn't exist, it runs `detect_cells` on the old data to establish a baseline.
-        4.  **Single-frame Mode**: 
-            - Assigns `json_ts` to all cells (marking them as current).
-            - Calculates storm motion vectors.
-            - Saves results to `STORMCELL_DIR/stormcells_{final_ts}.json`.
+        2.  **Load Previous Data**: Attempts to load existing cell data from `json_output`. If it fails or doesn't exist, it runs `detect_cells` on the old data to establish a baseline.
+        3.  **Extract Exact Timestamp**: Uses `DetectionDataHandler.find_timestamp()` to extract the exact timestamp (including seconds) from the composite reflectivity file metadata.
+        4.  **Single-frame Mode**: If running in single-frame mode, applies the extracted timestamp to all cells and saves the stormcell list to `json_output`.
         5.  **Dual-frame Mode**:
             - Runs `detect_cells` on the **new** data.
             - Loads ProbSevere data for both old and new timestamps.
-            - Uses `StormCellTracker` to update the old entries with new detections, **passing `json_ts` as the timestamp parameter**.
+            - Uses `StormCellTracker` to update the old entries with new detections.
+            - Appends the new storm history using `CellDataSaver` with the exact timestamp.
             - Calculates storm motion vectors using `StormVectorCalculator`.
-            - Saves the final updated list of cells to `STORMCELL_DIR/stormcells_{final_ts}.json`.
-    - **Output**: Returns the path to the generated JSON file in `STORMCELL_DIR`.
+            - Saves the stormcell list to `json_output` (filename includes exact timestamp in YYYYMMDD-HHMMSS format).
 
 ## Tools (`tools/`)
 The `tools` directory contains helper classes and functions used by the core detection logic.
