@@ -60,15 +60,19 @@ This script defines the integration workflow, specifying which datasets to proce
 
 #### Functions:
 
-- **`main()`**
-    - **Functionality**: Orchestrates the integration of multiple datasets into the storm cell JSON file.
+- **`main(stormcells_json, remove_old_cells=True)`**
+    - **Functionality**: Orchestrates the integration of multiple datasets into storm cell files.
+    - **Parameters**:
+        - `stormcells_json`: Path to the stormcell list JSON file
+        - `remove_old_cells`: If `True` (default), cleans up old cell history files not updated for over 1 hour
     - **Steps**:
-        1.  **Setup**: Initializes `StatFileHandler` and `StormCellIntegrator`. Loads the initial storm cell data from `stormcell_test.json`.
-        2.  **Integrate Gridded Data**: Iterates through a predefined list of datasets (NLDN, EchoTop, PrecipRate, VIL, RALA, VII).
+        1.  **Setup**: Initializes `StatFileHandler`, `StormCellIntegrator`, and `CellHistory` manager. Loads the storm cell list from the provided JSON file.
+        2.  **Integrate Gridded Data**: Iterates through a predefined list of datasets (NLDN, EchoTop18, EchoTop30, PrecipRate, VIL, RALA, VII).
             - Finds the latest file for each product.
             - Calls `integrator.integrate_ds_via_max` to add the data to the cells.
         3.  **Integrate ProbSevere**: Finds the latest ProbSevere JSON file and calls `integrator.integrate_probsevere`.
-        4.  **Save**: Writes the fully enriched storm cell data back to `stormcell_test.json`.
+        4.  **Update Cell Histories**: Saves enriched data to individual cell history JSON files in `CELL_DIR`.
+        5.  **Cleanup**: If `remove_old_cells=True`, removes inactive cell history files (not updated for over 1 hour).
 
 ### 4. `utils.py`
 Contains utility classes for file handling and geometry operations.
@@ -94,11 +98,14 @@ The `main.py` script is designed to be run as a standalone process or imported.
 
 ```python
 from EdgeWARN.core.process.integrate.main import main
+from pathlib import Path
 
-# This will load 'stormcell_test.json', integrate all defined datasets, 
-# and save the result back to the same file.
+# This will load the stormcell list JSON, integrate all defined datasets,
+# and save cell histories to individual JSON files in CELL_DIR.
+# Set remove_old_cells=False to prevent cleanup of inactive cells.
 if __name__ == "__main__":
-    main()
+    stormcells_file = Path("path/to/stormcells_20231223-150000.json")
+    main(stormcells_file, remove_old_cells=True)
 ```
 
 ### Custom Integration Example
