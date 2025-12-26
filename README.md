@@ -28,17 +28,9 @@ Check INSTALLATION.md for installation and run instructions
 
 <h2 align="center">Build Info</h2>
 
-## Version History for 1.0.x-alpha
+## Current Version: 1.0.0
 
-### 1.0.0-alpha (current)
-- Added a server API for data access
-- New JSON format: `stormcells` is a list of storm cells and their properties for a specific timestamp, while `cells` is the per-cell history of a specific cell ID
-- Per-cell history tracking with individual JSON files in `CELL_DIR`
-- Timestamp-based cell tracking for efficient updates (unmatched cells don't receive timestamp updates)
-- GOES-19 GLM (Geostationary Lightning Mapper) lightning data integration
-- GUI rendering pipeline for visualization outputs
-- Enhanced file cleanup mechanisms for MRMS and GOES data
-- Support to run in GitHub Workspaces
+Check [CHANGELOG.md](CHANGELOG.md) for changes
 
 <h2 align="center">Credits</h2>
 
