@@ -35,11 +35,5 @@ datasets = [
         "name": "VII",
         "filepath": fs.MRMS_VII_DIR,
         "key": "VII"
-    },
-    # Adding QPE which was in transform config but not integration config
-    {
-        "name": "QPE",
-        "filepath": fs.MRMS_QPE_DIR,
-        "key": "QPE" # Assuming valid key, might need to check integrate.py allowed keys if strict
     }
 ]

@@ -14,6 +14,7 @@ from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
 from EdgeWARN.core.ingest.config import check_modifiers
 import EdgeWARN.ui.monitor_app as monitor_app
 from util.io import TimestampedOutput, IOManager, QueueWriter
+from EdgeWARN.core.api_integration.index_manager import APIIndexManager
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
@@ -23,6 +24,13 @@ args = io_manager.get_args()
 
 lat_limits = tuple(args.lat_limits)
 lon_limits = tuple(args.lon_limits)
+
+# Initialize API indexes at startup
+try:
+    index_manager = APIIndexManager(io_manager)
+    index_manager.initialize_indexes()
+except Exception as e:
+    io_manager.write_error(f"Failed to initialize API indexes: {e}")
 
 def pipeline(log_queue, dt):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""
@@ -70,9 +78,10 @@ def main(ui_process=None):
                 # Extract YYYYMMDD-HHMM00
                 match = re.search(r"stormcells_(\d{8}-\d{6})\.json", latest_file.name)
                 if match:
-                    ts_str = match.group(1) # YYYYMMDD-HHMM00
-                    # Parse assuming UTC
-                    last_processed = datetime.strptime(ts_str, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+                    ts_str = match.group(1) # YYYYMMDD-HHMMSS
+                    # Parse assuming UTC, but round to minute to match scheduler
+                    dt_exact = datetime.strptime(ts_str, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+                    last_processed = dt_exact.replace(second=0, microsecond=0)
                     print(f"[Scheduler] Initialized last_processed from {latest_file}: {last_processed}")
                 else:
                     print(f"[Scheduler] Could not parse timestamp from {latest_file}")
@@ -140,7 +149,7 @@ if __name__ == "__main__":
     if args.nogui:
         # No GUI mode: Print directly to console (already set up by default sys.stdout/stderr)
         try:
-            print(f"Running EdgeWARN v1.0.0-alpha (No-GUI Mode)")
+            print(f"Running EdgeWARN v1.0.0")
             print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
             main()
         except KeyboardInterrupt:
@@ -161,7 +170,7 @@ if __name__ == "__main__":
         ui_process.start()
         
         try:
-            print(f"Running EdgeWARN v1.0.0-alpha")
+            print(f"Running EdgeWARN v1.0.0")
             print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
             main(ui_process)
         except KeyboardInterrupt:

@@ -8,7 +8,7 @@ import json
 from EdgeWARN.core.process.integrate.config import datasets
 io_manager = IOManager("[CellIntegration]")
 
-def main(json_path=None):
+def main(json_path=None, remove_old_cells=True):
     handler = StatFileHandler(io_manager)
     integrator = StormCellIntegrator(io_manager)
     
@@ -78,3 +78,17 @@ def main(json_path=None):
         history_manager.update_cell_histories(result_cells, timestamp)
     except Exception as e:
         io_manager.write_error(f"Failed to update cell history: {e}")
+    
+    # Update API indexes
+    try:
+        from EdgeWARN.core.api_integration.index_manager import APIIndexManager
+        api_index = APIIndexManager(io_manager, remove_old_cells=remove_old_cells)
+        
+        # Update cell index with active cells (those that have timestamps)
+        active_cell_ids = [cell["id"] for cell in result_cells if "timestamp" in cell]
+        api_index.update_cell_index(active_cell_ids)
+        
+        # Cleanup inactive cells from index
+        api_index.cleanup_inactive_cells()
+    except Exception as e:
+        io_manager.write_error(f"Failed to update API indexes: {e}")

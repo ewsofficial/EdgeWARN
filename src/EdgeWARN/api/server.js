@@ -2,8 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import os from 'os';
-import featuresRouter from './routes/features.js';
+import featuresRouter from './routes/features/index.js';
+import healthRouter from './routes/health.js';
 
 dotenv.config();
 
@@ -19,50 +19,15 @@ app.get('/', (req, res) => {
   res.json({ message: 'EdgeWARN Backend API' });
 });
 
-app.get('/health', (req, res) => {
-  const uptimeSeconds = process.uptime();
-
-  // Memory usage (bytes) and percent of system memory
-  const mem = process.memoryUsage();
-  const totalSystemMem = os.totalmem();
-  const memory = {
-    rss: mem.rss,
-    heapTotal: mem.heapTotal,
-    heapUsed: mem.heapUsed,
-    external: mem.external,
-    systemTotal: totalSystemMem,
-    rssPercentOfSystem: Number(((mem.rss / totalSystemMem) * 100).toFixed(2))
-  };
-
-  // CPU usage: compute average busy percentage across cores (since boot)
-  const cpus = os.cpus();
-  let totalIdle = 0;
-  let totalTick = 0;
-  cpus.forEach((c) => {
-    for (const t in c.times) {
-      totalTick += c.times[t];
-    }
-    totalIdle += c.times.idle;
-  });
-  const avgIdle = totalIdle / cpus.length;
-  const avgTotal = totalTick / cpus.length;
-  const cpuUsagePercent = Number((100 * (1 - avgIdle / avgTotal)).toFixed(2));
-
-  const cpu = {
-    cores: cpus.length,
-    usagePercent: cpuUsagePercent,
-    loadAverage: os.loadavg()
-  };
-
-  res.json({ status: 'OK', uptimeSeconds: Math.round(uptimeSeconds), cpu, memory });
-});
-
 // Mount feature routes
 app.use('/features', featuresRouter);
 
+// Mount health route
+app.use('/health', healthRouter);
+
 // Serve robots.txt
 app.get('/robots.txt', (req, res) => {
-  const robotsPath = path.resolve(process.cwd(), 'src/EdgeWARN/backend/robots.txt');
+  const robotsPath = path.resolve(process.cwd(), 'src/EdgeWARN/api/robots.txt');
   res.sendFile(robotsPath, (err) => {
     if (err) {
       console.error('Error sending robots.txt:', err);
