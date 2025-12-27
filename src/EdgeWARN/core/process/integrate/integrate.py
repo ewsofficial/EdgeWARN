@@ -112,8 +112,6 @@ class StormCellIntegrator:
             'ProbWind': 'ProbWind',
             'ProbHail': 'ProbHail',
             'ProbTor': 'ProbTor',
-            'vx': 'MOTION_EAST',
-            'vy': 'MOTION_SOUTH',
             'MLCAPE': 'MLCAPE',
             'MUCAPE': 'MUCAPE',
             'MLCIN': 'MLCIN',
