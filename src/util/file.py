@@ -23,7 +23,12 @@ if platform.system() == "Windows":
     BASE_DIR = Path(r"C:\EdgeWARN_input")
 
 else:
-    BASE_DIR = Path(r"/workspaces/EdgeWARN_input")
+    try:
+        BASE_DIR = Path(r"/home/EdgeWARN_input")
+
+    except Exception as e:
+        BASE_DIR = Path(r"/workspaces/EdgeWARN_input")
+
 
 # ---------- PATH CONFIG ----------
 DATA_DIR = BASE_DIR / "data"
