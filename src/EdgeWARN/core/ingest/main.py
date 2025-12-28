@@ -1,16 +1,4 @@
 from EdgeWARN.core.ingest.config import mrms_modifiers, goes_modifiers, bucket
-import socket
-
-# Force IPv4 by monkey-patching socket.getaddrinfo
-_old_getaddrinfo = socket.getaddrinfo
-
-def _new_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    # If family is unspecified (0) or AF_INET6, force AF_INET
-    if family == 0 or family == socket.AF_INET6:
-        family = socket.AF_INET
-    return _old_getaddrinfo(host, port, family, type, proto, flags)
-
-socket.getaddrinfo = _new_getaddrinfo
 from EdgeWARN.core.ingest.s3_sync import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.parse import parse_goes_bucket_path
