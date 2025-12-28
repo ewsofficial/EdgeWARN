@@ -36,3 +36,10 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - Remove ``stormcell_test.json`` which contained all active cells and their histories
 - A list of active cell JSONs are stored in ``STORMCELL_DIR``
 - Individual cell JSONs are stored in ``CELL_DIR``
+
+## 1.0.1 (2025-12-27)
+
+### Fixes
+- Fix DNS resolution errors on some machines
+    - If you get this issue, remove ``aiodns`` from your environment
+- Fix permission errors on Linux with the ``EdgeWARN_input`` path
