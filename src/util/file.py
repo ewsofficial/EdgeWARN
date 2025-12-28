@@ -24,7 +24,7 @@ if platform.system() == "Windows":
 
 else:
     try:
-        BASE_DIR = Path(r"/var/tmp/EdgeWARN_input")
+        BASE_DIR = Path.home() / "EdgeWARN_input"
 
     except Exception as e:
         BASE_DIR = Path(r"/workspaces/EdgeWARN_input")
