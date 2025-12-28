@@ -13,6 +13,8 @@
 
 ## Running EdgeWARN
 
+**NOTE**: If data ingestion cannot reach URLs, try removing ``aiodns`` from your environment
+
 Navigate to the ``src`` folder and follow the instructions below
 
 ### Real-Time Analysis (``run.py``)
