@@ -16,6 +16,9 @@ import EdgeWARN.ui.monitor_app as monitor_app
 from util.io import TimestampedOutput, IOManager, QueueWriter
 from EdgeWARN.core.api_integration.index_manager import APIIndexManager
 
+# Remove aiodns - Some users report issues with DNS resolution with it
+sys.modules.pop("aiodns", None)
+
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
 
