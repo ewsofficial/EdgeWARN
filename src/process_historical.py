@@ -9,11 +9,11 @@ from datetime import datetime, timezone, timedelta
 import time
 import argparse
 import util.file as fs
-import EdgeWARN.core.ingest.main as ingest_main
+import EdgeWARN.core.ingest.mrms.main as ingest_main
 import EdgeWARN.core.process.detect.main as detect
 import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
-from EdgeWARN.core.ingest.config import check_modifiers
+from EdgeWARN.core.ingest.mrms.config import check_modifiers
 from util.io import TimestampedOutput, IOManager
 
 sys.stdout = TimestampedOutput(sys.stdout)
