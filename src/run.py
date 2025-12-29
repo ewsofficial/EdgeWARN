@@ -7,11 +7,11 @@ from datetime import datetime, timezone
 import time
 import multiprocessing
 import util.file as fs
-import EdgeWARN.core.ingest.main as ingest_main
+import EdgeWARN.core.ingest.mrms.main as ingest_main
 import EdgeWARN.core.process.detect.main as detect
 import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
-from EdgeWARN.core.ingest.config import check_modifiers
+from EdgeWARN.core.ingest.mrms.config import check_modifiers
 import EdgeWARN.ui.monitor_app as monitor_app
 from util.io import TimestampedOutput, IOManager, QueueWriter
 from EdgeWARN.core.api_integration.index_manager import APIIndexManager
