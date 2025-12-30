@@ -10,7 +10,6 @@ import time
 import argparse
 import util.file as fs
 import EdgeWARN.core.ingest.mrms.main as ingest_main
-import EdgeWARN.core.ingest.nws.downloader as nws_downloader
 import EdgeWARN.core.process.detect.main as detect
 import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
@@ -39,7 +38,6 @@ def pipeline(dt, lat_limits, lon_limits, json_output):
     try:
         io_manager.write_info(f"Starting Data Ingestion for timestamp {dt}")
         ingest_main.download_all_files(dt, remove_old_files=False)
-        nws_downloader.download_nws_alerts(dt)
         
         io_manager.write_info("Starting Storm Cell Detection")
         try:
