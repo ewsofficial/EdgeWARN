@@ -59,11 +59,6 @@ def detect_cells(
     preciptype_ds = handler.load_preciptype()
     if preciptype_ds is None:
          io_manager.write_warning("Failed to load precipitation type data, hail core detection will be disabled")
-         # Proceeding without preciptype might be possible if we handle it in GateMapper/Saver, 
-         # but for now let's ensure we don't crash. 
-         # The original code might rely on it. Let's return empty to be safe if strictly required, 
-         # or we can mock/skip. Given the crash was on 'NoneType', returning empty results is safer for the pipeline.
-         return [], None if return_probsevere else []
 
     saver = CellDataSaver(
         bboxes,

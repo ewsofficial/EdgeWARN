@@ -43,3 +43,12 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - Fix DNS resolution errors on some machines
     - If you get this issue, remove ``aiodns`` from your environment
 - Fix permission errors on Linux with the ``EdgeWARN_input`` path
+
+### 1.0.2 (2026-01-0x)
+
+### Additions
+- Added downloading of RAP files from the ``noaa-rap-pds`` S3 bucket
+
+### Fixes
+- Cell detection pipeline crashes when ``PrecipType`` dataset is not loaded, despite ``CompRef`` and ``ProbSevere`` successfully loading. The fix will return a empty list to the hail core dict if ``PrecipType`` fails to load.
+
