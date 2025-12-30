@@ -275,9 +275,9 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
             if "GLM" in product and len(processed_files) > 1:
                 io_manager.write_info(f"Merging {len(processed_files)} GLM files (Async)...")
                 
-                # merge_glm_files is synchronous, but that's okay for now as it's the final step
-                # If it blocks too long, we could wrap it in run_in_executor
-                merged_ds = merge_glm_files(processed_files, io_manager)
+                # merge_glm_files is synchronous, so we offload it to a thread pool
+                loop = asyncio.get_running_loop()
+                merged_ds = await loop.run_in_executor(None, merge_glm_files, processed_files, io_manager)
                 
                 if merged_ds:
                     # Find the newest timestamp among the files
