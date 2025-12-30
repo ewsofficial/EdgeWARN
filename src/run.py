@@ -8,7 +8,6 @@ import time
 import multiprocessing
 import util.file as fs
 import EdgeWARN.core.ingest.mrms.main as ingest_main
-import EdgeWARN.core.ingest.nws.downloader as nws_downloader
 import EdgeWARN.core.process.detect.main as detect
 import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
@@ -48,7 +47,6 @@ def pipeline(log_queue, dt):
     try:
         log(f"INFO: Starting Data Ingestion for timestamp {dt}")
         ingest_main.download_all_files(dt)
-        nws_downloader.download_nws_alerts(dt)
         log("INFO: Starting Storm Cell Detection")
         try:
             filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
