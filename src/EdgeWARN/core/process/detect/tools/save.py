@@ -34,6 +34,9 @@ class CellDataSaver:
         cells (preciptype == 7) within a ProbSevere polygon, using a slice to 
         avoid full-grid scans.
         """
+        if self.preciptype_ds is None:
+            return []
+
         # Slices are passed from create_entry
         poly_subgrid = self.expanded_ds['PolygonID'].values[slice_obj]
         precip_subgrid = self.preciptype_ds['unknown'].values[slice_obj]
