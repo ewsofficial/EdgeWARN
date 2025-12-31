@@ -16,6 +16,50 @@ _TIMESTAMP_PATTERNS = [
 
 io_manager = IOManager("[CellIntegration]")
 
+class RAPFileHandler:
+    """Handles RAP GRIB2 files specifically using cfgrib.open_datasets."""
+    def __init__(self, io_manager):
+        self.io_manager = io_manager
+
+    def get_isobaric_dataset(self, filepath):
+        """Finds the dataset containing isobaricInhPa levels with u and v."""
+        try:
+            import cfgrib
+            datasets = cfgrib.open_datasets(filepath)
+            
+            self.io_manager.write_debug(f"Opened RAP file {filepath}, found {len(datasets)} datasets")
+            
+            for i, ds in enumerate(datasets):
+                self.io_manager.write_debug(f"Dataset {i}: coords={list(ds.coords.keys())}, vars={list(ds.data_vars.keys())}")
+                
+                # Check for isobaric levels
+                if 'isobaricInhPa' not in ds.coords:
+                    continue
+                    
+                # Look for wind components with various naming conventions
+                wind_vars = []
+                u_candidates = ['u', 'UGRD', 'u-component_of_wind_isobaric', 'wind_u']
+                v_candidates = ['v', 'VGRD', 'v-component_of_wind_isobaric', 'wind_v']
+                
+                u_var = None
+                v_var = None
+                
+                for var in ds.data_vars:
+                    if var in u_candidates:
+                        u_var = var
+                    elif var in v_candidates:
+                        v_var = var
+                
+                if u_var is not None and v_var is not None:
+                    self.io_manager.write_debug(f"Found wind components: U='{u_var}', V='{v_var}' at pressure levels: {ds.isobaricInhPa.values}")
+                    return ds
+                    
+            self.io_manager.write_error(f"Could not find isobaric U/V data in {filepath}")
+            return None
+        except Exception as e:
+            self.io_manager.write_error(f"Error opening RAP file {filepath}: {e}")
+            return None
+
 class StatFileHandler:
     def __init__(self, io_manager):
         """

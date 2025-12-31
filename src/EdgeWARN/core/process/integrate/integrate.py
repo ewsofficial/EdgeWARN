@@ -4,6 +4,9 @@ import numpy as np
 import shapely.vectorized as sv
 import gc
 
+# Suppress cfgrib/xarray compatibility warnings
+xr.set_options(use_new_combine_kwarg_defaults=True)
+
 class StormCellIntegrator:
     def __init__(self, io_manager):
         self.io_manager = io_manager

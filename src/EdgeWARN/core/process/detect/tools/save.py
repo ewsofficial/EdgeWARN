@@ -64,7 +64,7 @@ class CellDataSaver:
         # Get global lat/lon grids (can be optimized to only extract subgrid if needed, 
         # but indexing is fast enough if we have the full array in memory)
         lat_grid = self.radar_ds['latitude'].values
-        lon_grid = self.radar_ds['longitude'].values
+        lon_grid = self.radar_ds['longitude'].values % 360
         
         if lat_grid.ndim == 1:
             lat_grid, lon_grid = np.meshgrid(lat_grid, lon_grid, indexing='ij')
@@ -97,7 +97,7 @@ class CellDataSaver:
         polygon_grid = self.mapped_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
         lat_grid = self.radar_ds['latitude'].values
-        lon_grid = self.radar_ds['longitude'].values
+        lon_grid = self.radar_ds['longitude'].values % 360
 
         if lat_grid.ndim == 1:
             lat_grid, lon_grid = np.meshgrid(lat_grid, lon_grid, indexing='ij')
@@ -170,7 +170,7 @@ class CellDataSaver:
                 "id": poly_id,
                 "num_gates": count,
                 "centroid": centroid,
-                "bbox": bbox,
+                "bbox": [[pt[0], pt[1] % 360] for pt in bbox],
                 "hail_core": hail_core,
                 "max_refl": max_refl,  # Fixed variable name
                 "properties": {}

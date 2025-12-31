@@ -1,6 +1,7 @@
 import util.file as fs
 from EdgeWARN.core.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.core.process.integrate.integrate_glm import integrate_glm
+from EdgeWARN.core.process.integrate.integrate_rap import integrate_rap_winds
 from EdgeWARN.core.process.integrate.utils import StatFileHandler
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
@@ -66,6 +67,20 @@ def main(json_path=None, remove_old_cells=True):
 
     except Exception as e:
         io_manager.write_error(f"Failed to integrate GLM data: {e}")
+    
+    # Integrate RAP Winds
+    try:
+        io_manager.write_info(f"Integrating RAP wind data for {len(result_cells)} cells")
+        latest_rap_files = fs.latest_files(fs.RAP_DIR, 1)
+        if latest_rap_files:
+            latest_file = latest_rap_files[-1]
+            io_manager.write_debug(f"Using latest RAP file: {latest_file}")
+            result_cells = integrate_rap_winds(result_cells, latest_file, io_manager)
+            io_manager.write_debug(f"Successfully integrated RAP wind data")
+        else:
+            io_manager.write_warning("No RAP files found, skipping RAP integration")
+    except Exception as e:
+        io_manager.write_error(f"Failed to integrate RAP data: {e}")
     
     # Save data
     data = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, result_cells)
