@@ -6,6 +6,10 @@ from pathlib import Path
 from datetime import datetime, timezone
 import time
 import multiprocessing
+import xarray as xr
+# Suppress cfgrib/xarray compatibility warnings
+xr.set_options(use_new_combine_kwarg_defaults=True)
+
 import util.file as fs
 import EdgeWARN.core.ingest.mrms.main as ingest_main
 from EdgeWARN.core.ingest.synoptic.main import download_rap

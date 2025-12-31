@@ -1,5 +1,6 @@
 import asyncio
 import aioboto3
+from datetime import datetime, timedelta
 from botocore import UNSIGNED
 from botocore.client import Config
 from util.io import IOManager
@@ -43,23 +44,39 @@ def download_synoptic_sync(dt, bucket, file_pattern, dir_pattern, out_dir):
 async def download_synoptic(dt, bucket, file_pattern, dir_pattern, out_dir, dataset_name="Synoptic"):
     """
     Main synoptic downloader function: async first, sync fallback.
+    Retries with previous hour if original timestamp fails.
     """
-    io_manager.write_info(f"Starting {dataset_name} download for {dt}")
+    for current_dt in [dt, dt - timedelta(hours=1)]:
+        if current_dt != dt:
+            io_manager.write_info(f"Attempting {dataset_name} fallback to previous hour: {current_dt}")
+        else:
+            io_manager.write_info(f"Starting {dataset_name} download for {dt}")
+        
+        result = None
+        try:
+            # Try async first
+            result = await download_synoptic_async(current_dt, bucket, file_pattern, dir_pattern, out_dir)
+            if result:
+                return result
+        except Exception as e:
+            # Do not log error on first attempt if we are going to fallback
+            if current_dt == dt:
+                io_manager.write_warning(f"Async {dataset_name} download for {current_dt} failed: {e}")
+            else:
+                io_manager.write_error(f"Async {dataset_name} download failed: {e}")
+        
+        # Fallback to sync
+        try:
+            result = download_synoptic_sync(current_dt, bucket, file_pattern, dir_pattern, out_dir)
+            if result:
+                return result
+        except Exception as e:
+            if current_dt == dt:
+                io_manager.write_warning(f"Sync {dataset_name} download for {current_dt} failed: {e}")
+            else:
+                io_manager.write_error(f"Sync {dataset_name} download also failed: {e}")
     
-    try:
-        # Try async first
-        result = await download_synoptic_async(dt, bucket, file_pattern, dir_pattern, out_dir)
-        if result:
-            return result
-    except Exception as e:
-        io_manager.write_warning(f"Async {dataset_name} download failed, falling back to sync: {e}")
-    
-    # Fallback to sync
-    try:
-        return download_synoptic_sync(dt, bucket, file_pattern, dir_pattern, out_dir)
-    except Exception as e:
-        io_manager.write_error(f"Sync {dataset_name} download also failed: {e}")
-        return None
+    return None
 
 async def download_rap(dt):
     """

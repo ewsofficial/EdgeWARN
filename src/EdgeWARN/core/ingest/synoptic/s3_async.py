@@ -49,5 +49,10 @@ class AsyncSynopticFileDownloader:
             return local_path
             
         except Exception as e:
-            self.io_manager.write_error(f"Async error downloading synoptic file from {self.bucket}: {e}")
+            # Check for 404 errors and log as info/warning
+            err_msg = str(e)
+            if "404" in err_msg or "NoSuchKey" in err_msg:
+                self.io_manager.write_warning(f"Synoptic file not found on S3 (404): s3://{self.bucket}/{s3_key}")
+            else:
+                self.io_manager.write_error(f"Async error downloading synoptic file from {self.bucket}: {e}")
             return None

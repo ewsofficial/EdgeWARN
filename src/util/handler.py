@@ -2,6 +2,9 @@ from datetime import datetime, timezone, timedelta
 
 from pathlib import Path
 import xarray as xr
+# Suppress cfgrib/xarray compatibility warnings
+xr.set_options(use_new_combine_kwarg_defaults=True)
+
 import cfgrib
 import netCDF4
 import json
