@@ -19,44 +19,66 @@ from util.io import IOManager
 
 io_manager = IOManager("[Util]")
 
-if platform.system() == "Windows":
-    BASE_DIR = Path(r"C:\EdgeWARN_input")
+def _define_paths(base_path):
+    global BASE_DIR, DATA_DIR, MRMS_RALA_DIR, MRMS_CGFLASH_DIR, MRMS_NLDN_DIR, \
+           MRMS_ECHOTOP18_DIR, MRMS_ECHOTOP30_DIR, MRMS_QPE_DIR, MRMS_RAIN_DIR, \
+           MRMS_PRECIPRATE_DIR, MRMS_PROBSEVERE_DIR, MRMS_FLASH_DIR, MRMS_VIL_DIR, \
+           MRMS_VII_DIR, MRMS_AZSHEARLOW_DIR, MRMS_AZSHEARMID_DIR, MRMS_COMPOSITE_DIR, \
+           MRMS_RHOHV_DIR, MRMS_PRECIPTYP_DIR, MRMS_MESH_DIR, GOES_GLM_DIR, \
+           ABI_CLOUDPRES_DIR, RAP_DIR, STORMCELL_DIR, CELL_DIR, GUI_DIR
 
+    BASE_DIR = base_path
+    
+    # ---------- PATH CONFIG ----------
+    DATA_DIR = BASE_DIR / "data"
+    MRMS_RALA_DIR = DATA_DIR / "RALA"
+    MRMS_CGFLASH_DIR = DATA_DIR / "NLDN"
+    MRMS_NLDN_DIR = DATA_DIR / "NLDN_Density"
+    MRMS_ECHOTOP18_DIR = DATA_DIR / "EchoTop18"
+    MRMS_ECHOTOP30_DIR = DATA_DIR / "EchoTop30"
+    MRMS_QPE_DIR = DATA_DIR / "QPE_01H"
+    MRMS_RAIN_DIR = DATA_DIR / "WarmRainProbability"
+    MRMS_PRECIPRATE_DIR = DATA_DIR / "PrecipRate"
+    MRMS_PROBSEVERE_DIR = DATA_DIR / "ProbSevere"
+    MRMS_FLASH_DIR = DATA_DIR / "FLASH"
+    MRMS_VIL_DIR = DATA_DIR / "VILDensity"
+    MRMS_VII_DIR = DATA_DIR / "VII"
+    MRMS_AZSHEARLOW_DIR = DATA_DIR / "AzShearLow"
+    MRMS_AZSHEARMID_DIR = DATA_DIR / "AzShearMid"
+    MRMS_COMPOSITE_DIR = DATA_DIR / "CompRefQC"
+    MRMS_RHOHV_DIR = DATA_DIR / "RhoHV"
+    MRMS_PRECIPTYP_DIR = DATA_DIR / "PrecipFlag"
+    MRMS_MESH_DIR = DATA_DIR / "MESH"
+    GOES_GLM_DIR = DATA_DIR / "GLM"
+    ABI_CLOUDPRES_DIR = DATA_DIR / "ABI-CloudPressure"
+    RAP_DIR = DATA_DIR / "RAP"
+    STORMCELL_DIR = DATA_DIR / "stormcells"
+    CELL_DIR = DATA_DIR / "cells"
+    
+    # ---------- GUI PATH CONFIG ----------
+    GUI_DIR = BASE_DIR / "gui"
+
+def initialize_filesystem(base_dir=None):
+    """
+    Initialize the filesystem paths. 
+    If base_dir is provided, it uses that as the root.
+    Otherwise, it defaults to the standard location.
+    """
+    if base_dir:
+        _define_paths(Path(base_dir))
+    else:
+        # Re-run default detection logic if explicit reset is needed, 
+        # basically doing what the module-level code below does.
+        pass
+
+# Default initialization
+if platform.system() == "Windows":
+    _define_paths(Path(r"C:\EdgeWARN_input"))
 else:
     try:
-        BASE_DIR = Path.home() / "EdgeWARN_input"
-
+        _define_paths(Path.home() / "EdgeWARN_input")
     except Exception as e:
-        BASE_DIR = Path(r"/workspaces/EdgeWARN_input")
-
-# ---------- PATH CONFIG ----------
-DATA_DIR = BASE_DIR / "data"
-MRMS_RALA_DIR = DATA_DIR / "RALA"
-MRMS_CGFLASH_DIR = DATA_DIR / "NLDN"
-MRMS_NLDN_DIR = DATA_DIR / "NLDN_Density"
-MRMS_ECHOTOP18_DIR = DATA_DIR / "EchoTop18"
-MRMS_ECHOTOP30_DIR = DATA_DIR / "EchoTop30"
-MRMS_QPE_DIR = DATA_DIR / "QPE_01H"
-MRMS_RAIN_DIR = DATA_DIR / "WarmRainProbability"
-MRMS_PRECIPRATE_DIR = DATA_DIR / "PrecipRate"
-MRMS_PROBSEVERE_DIR = DATA_DIR / "ProbSevere"
-MRMS_FLASH_DIR = DATA_DIR / "FLASH"
-MRMS_VIL_DIR = DATA_DIR / "VILDensity"
-MRMS_VII_DIR = DATA_DIR / "VII"
-MRMS_AZSHEARLOW_DIR = DATA_DIR / "AzShearLow"
-MRMS_AZSHEARMID_DIR = DATA_DIR / "AzShearMid"
-MRMS_COMPOSITE_DIR = DATA_DIR / "CompRefQC"
-MRMS_RHOHV_DIR = DATA_DIR / "RhoHV"
-MRMS_PRECIPTYP_DIR = DATA_DIR / "PrecipFlag"
-MRMS_MESH_DIR = DATA_DIR / "MESH"
-GOES_GLM_DIR = DATA_DIR / "GLM"
-ABI_CLOUDPRES_DIR = DATA_DIR / "ABI-CloudPressure"
-RAP_DIR = DATA_DIR / "RAP"
-STORMCELL_DIR = DATA_DIR / "stormcells"
-CELL_DIR = DATA_DIR / "cells"
-
-# ---------- GUI PATH CONFIG ----------
-GUI_DIR = BASE_DIR / "gui"
+        _define_paths(Path(r"/workspaces/EdgeWARN_input"))
 
 # NEW LATEST FILES FUNCTION
 def latest_files(dir, n):
