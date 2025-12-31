@@ -25,39 +25,85 @@ class RAPFileHandler:
         """Finds the dataset containing isobaricInhPa levels with u and v."""
         try:
             import cfgrib
-            datasets = cfgrib.open_datasets(filepath)
             
-            self.io_manager.write_debug(f"Opened RAP file {filepath}, found {len(datasets)} datasets")
+            # Use filter_by_keys to directly target isobaric level wind data
+            self.io_manager.write_debug(f"Opening RAP file {filepath} with isobaric filter")
+            
+            try:
+                # Filter specifically for isobaric level data with u and v components
+                datasets = cfgrib.open_datasets(
+                    filepath, 
+                    filter_by_keys={'typeOfLevel': 'isobaricInhPa'}
+                )
+                
+                self.io_manager.write_debug(f"Found {len(datasets)} datasets with isobaricInhPa type")
+                
+                for i, ds in enumerate(datasets):
+                    self.io_manager.write_debug(f"Dataset {i}: coords={list(ds.coords.keys())}, vars={list(ds.data_vars.keys())}")
+                    
+                    # Check for wind components
+                    if 'u' in ds.data_vars and 'v' in ds.data_vars and 'isobaricInhPa' in ds.coords:
+                        self.io_manager.write_debug(f"Found isobaric wind dataset with U='u', V='v' at levels: {ds.isobaricInhPa.values}")
+                        return ds
+                        
+                # Fallback: if filtered approach doesn't work, try the general approach
+                self.io_manager.write_debug("Filtered approach didn't find suitable dataset, trying general approach")
+                
+            except Exception as filter_error:
+                self.io_manager.write_debug(f"Filtered approach failed: {filter_error}, trying general approach")
+            
+            # Fallback: scan all datasets if filtered approach fails
+            datasets = cfgrib.open_datasets(filepath)
+            self.io_manager.write_debug(f"Scanning all {len(datasets)} datasets as fallback")
+            
+            best_dataset = None
+            best_score = 0
             
             for i, ds in enumerate(datasets):
-                self.io_manager.write_debug(f"Dataset {i}: coords={list(ds.coords.keys())}, vars={list(ds.data_vars.keys())}")
-                
-                # Check for isobaric levels
                 if 'isobaricInhPa' not in ds.coords:
                     continue
                     
-                # Look for wind components with various naming conventions
-                wind_vars = []
-                u_candidates = ['u', 'UGRD', 'u-component_of_wind_isobaric', 'wind_u']
-                v_candidates = ['v', 'VGRD', 'v-component_of_wind_isobaric', 'wind_v']
-                
                 u_var = None
                 v_var = None
                 
                 for var in ds.data_vars:
-                    if var in u_candidates:
+                    if u_var is None and var in ['u', 'UGRD', 'u-component_of_wind_isobaric', 'wind_u']:
                         u_var = var
-                    elif var in v_candidates:
+                    elif v_var is None and var in ['v', 'VGRD', 'v-component_of_wind_isobaric', 'wind_v']:
                         v_var = var
                 
-                if u_var is not None and v_var is not None:
-                    self.io_manager.write_debug(f"Found wind components: U='{u_var}', V='{v_var}' at pressure levels: {ds.isobaricInhPa.values}")
-                    return ds
+                # Calculate score
+                score = 0
+                if u_var is not None:
+                    score += 1
+                if v_var is not None:
+                    score += 1
+                
+                # Check pressure levels
+                try:
+                    levels = ds.isobaricInhPa.values
+                    target_levels = [850, 700, 500, 250]
+                    available_target_levels = [l for l in target_levels if l in levels]
+                    score += len(available_target_levels) / 4.0
+                    self.io_manager.write_debug(f"Dataset {i}: Found {len(available_target_levels)} target levels")
+                except Exception:
+                    pass
+                
+                if score > best_score and u_var is not None and v_var is not None:
+                    best_score = score
+                    best_dataset = ds
                     
-            self.io_manager.write_error(f"Could not find isobaric U/V data in {filepath}")
-            return None
+            if best_dataset is not None:
+                self.io_manager.write_debug(f"Selected fallback dataset with score {best_score}")
+                return best_dataset
+            else:
+                self.io_manager.write_error(f"Could not find suitable isobaric U/V dataset in {filepath}")
+                return None
+                
         except Exception as e:
             self.io_manager.write_error(f"Error opening RAP file {filepath}: {e}")
+            import traceback
+            self.io_manager.write_error(traceback.format_exc())
             return None
 
 class StatFileHandler:

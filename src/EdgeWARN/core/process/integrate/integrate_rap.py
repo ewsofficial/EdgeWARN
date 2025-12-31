@@ -47,7 +47,7 @@ def integrate_rap_winds(storm_cells, rap_file_path, io_manager):
         io_manager.write_debug("Converting longitude from 0-360 to -180-180 range")
         lon_vals = np.where(lon_vals > 180, lon_vals - 360, lon_vals)
         # Also update the dataset coordinates for consistency
-        ds = ds.assign_coords(longitude=lon_vals)
+        ds = ds.assign_coords(longitude=(ds.longitude.dims, lon_vals))
 
     # Check for available variables and their naming conventions
     available_vars = []
@@ -88,73 +88,27 @@ def integrate_rap_winds(storm_cells, rap_file_path, io_manager):
             cell["properties"] = {}
         target = cell["properties"]
 
-        poly = StormIntegrationUtils.create_cell_polygon(cell)
-        if poly is None:
-            io_manager.write_warning(f"Cell {cell.get('id')} has invalid geometry, setting wind values to 0")
-            # Set defaults if polygon is invalid
-            for level in levels:
-                for var in variables:
-                    target[f"{var}{level}"] = 0
-            continue
+        # Normalize storm cell centroid to -180 to 180 if data was converted
+        centroid_lat, centroid_lon = cell.get('centroid', [0, 0])
+        if lon_needs_conversion and centroid_lon > 180:
+            centroid_lon -= 360
 
         try:
-            minx, miny, maxx, maxy = poly.bounds
+            # Find the grid point that the centroid is closest to
+            dist_sq = (lat_vals - centroid_lat)**2 + (lon_vals - centroid_lon)**2
+            min_idx = np.unravel_index(np.argmin(dist_sq), dist_sq.shape)
             
-            # Create mask for bounding box to subset data (handles 2D coords)
-            bbox_mask = (lat_vals >= miny) & (lat_vals <= maxy) & (lon_vals >= minx) & (lon_vals <= maxx)
-
-            if not np.any(bbox_mask):
-                io_manager.write_debug(f"No data found in bounding box for cell {cell.get('id')}, bounds: ({minx:.2f}, {miny:.2f}, {maxx:.2f}, {maxy:.2f})")
-                io_manager.write_debug(f"Data bounds: lat({lat_vals.min():.2f}, {lat_vals.max():.2f}), lon({lon_vals.min():.2f}, {lon_vals.max():.2f})")
-                for level in levels:
-                    for var in variables:
-                        target[f"{var}{level}"] = 0
-                continue
-
-            # Flatten coordinates within the bbox for spatial check
-            sub_lat = lat_vals[bbox_mask]
-            sub_lon = lon_vals[bbox_mask]
-
-            # Use shapely for polygon containment check
-            inside = sv.contains(poly, sub_lon, sub_lat)
-            
-            if not np.any(inside):
-                io_manager.write_debug(f"No points found inside polygon for cell {cell.get('id')}")
-                for level in levels:
-                    for var in variables:
-                        target[f"{var}{level}"] = 0
-                continue
-
-            # Integrate each available level and variable
+            # Map values from the nearest grid point
             for level in available_levels:
                 for var_name in available_vars:
                     if (var_name, level) in data_cache:
                         var_array = data_cache[(var_name, level)]
+                        val = var_array[min_idx]
                         
-                        # Handle different data shapes properly
-                        if var_array.ndim == 2:
-                            # 2D data: subset using bbox_mask directly
-                            sub_var = var_array[bbox_mask]
-                        elif var_array.ndim == 3:
-                            # 3D data: already selected by level, treat as 2D
-                            sub_var = var_array[bbox_mask]
-                        else:
-                            io_manager.write_warning(f"Unexpected data shape for {var_name}: {var_array.shape}")
-                            sub_var = var_array.flatten()[bbox_mask] if var_array.size == bbox_mask.size else np.array([])
-                        
-                        masked_vals = sub_var[inside]
-                        
-                        if masked_vals.size == 0 or np.all(np.isnan(masked_vals)):
-                            io_manager.write_debug(f"No valid data for {var_name} at {level}mb for cell {cell.get('id')}")
-                            # Map back to original variable name for output
-                            output_var = 'u' if var_name in ['u', 'UGRD', 'u-component_of_wind_isobaric', 'wind_u'] else 'v'
-                            target[f"{output_var}{level}"] = 0
-                        else:
-                            # Use absolute max for wind components to capture strongest flow regardless of direction
-                            max_val = np.nanmax(np.abs(masked_vals))
-                            output_var = 'u' if var_name in ['u', 'UGRD', 'u-component_of_wind_isobaric', 'wind_u'] else 'v'
-                            target[f"{output_var}{level}"] = float(max_val)
-                            io_manager.write_debug(f"Cell {cell.get('id')}: {output_var}{level} = {max_val:.2f} (from {var_name}, {masked_vals.size} points)")
+                        # Capture absolute max of components as before
+                        max_val = float(np.abs(val))
+                        output_var = 'u' if var_name in ['u', 'UGRD', 'u-component_of_wind_isobaric', 'wind_u'] else 'v'
+                        target[f"{output_var}{level}"] = max_val
 
             # Set 0 for any missing levels that were requested but not in file
             missing_levels = set(levels) - set(available_levels)
