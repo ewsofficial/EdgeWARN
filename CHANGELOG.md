@@ -55,3 +55,15 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 ### Changes
 - Offloaded the synchronous ``merge_glm_files`` operation in the async ingest module to a thread pool using ``run_in_executor``, preventing the event loop from blocking during heavy I/O and CPU-bound operations.
 - Parallelized the MRMS update checks in the scheduler using ``ThreadPoolExecutor``, reducing latency when checking multiple data sources.
+
+### 1.1.0 (2026-01-07)
+
+### Additions
+- Implemented RAP meteorological data integration for storm cells, incorporating U and V wind components at 850, 700, 500, and 250mb levels using a nearest-neighbor grid point mapping.
+
+### Changes
+- Enhanced storm cell polygon fidelity by implementing an adaptive downsampling strategy that preserves more boundary detail for smaller and medium-sized cells.
+
+### Fixes
+- Resolved a coordinate mismatch issue in RAP integration by normalizing storm cell centroids to the -180 to 180 longitude range.
+- Fixed a crash in `xarray` dataset coordinate assignment by providing explicit dimension names for 2D coordinate data.
