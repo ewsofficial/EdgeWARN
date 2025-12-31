@@ -75,8 +75,13 @@ def main():
     parser.add_argument("--lat", nargs=2, type=float, default=[20, 55], help="Latitude limits (min max)")
     parser.add_argument("--lon", nargs=2, type=float, default=[-130, -60], help="Longitude limits (min max)")
     parser.add_argument("--output", type=str, default="stormcell_test.json", help="Output JSON file")
+    parser.add_argument("--base_dir", type=str, default=None, help="Custom base directory for input data")
     
     args = parser.parse_args()
+
+    # Initialize custom filesystem if provided
+    if args.base_dir:
+        fs.initialize_filesystem(args.base_dir)
 
     try:
         start_time = get_utc_time(args.start)
