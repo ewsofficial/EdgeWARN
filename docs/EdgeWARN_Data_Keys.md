@@ -22,6 +22,9 @@ The JSON output follows this structure:
 | bbox        | List of [lat, lon] | Bounding Box of storm cell (Lon is in 0-360 format) |
 | hail_core   | List of [lat, lon] | Bounding box of storm's hail core (Lon is in 0-360 format) |
 | max_refl    | dBZ           | Maximum reflectivity in the storm cell          |
+| dx          | m             | X-displacement from previous scan centroid       |
+| dy          | m             | Y-displacement from previous scan centroid       |
+| dt          | s             | Time difference from previous scan              |
 | properties  | Object        | Integrated meteorological data |
 
 ## Data Keys in ``properties``

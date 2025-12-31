@@ -1,6 +1,8 @@
 # Ingest Module Documentation
 
-The **Ingest Module** (`src/EdgeWARN/core/ingest`) is responsible for downloading meteorological data from NOAA S3 buckets. It supports both MRMS (Multi-Radar Multi-Sensor) and GOES-19 (Geostationary Operational Environmental Satellite) data products.
+The **Ingest Module** (`src/EdgeWARN/core/ingest`) is responsible for downloading meteorological data from NOAA S3 buckets. It is divided into two sub-modules:
+- **MRMS** (`src/EdgeWARN/core/ingest/mrms`): Handles radar, ProbSevere, and GOES data.
+- **Synoptic** (`src/EdgeWARN/core/ingest/synoptic`): Handles larger-scale atmospheric data (e.g., RAP).
 
 ## Overview
 
@@ -12,26 +14,26 @@ The module provides both synchronous and asynchronous interfaces for downloading
 *   **Strict Timestamp Matching**: Attempts to download files matching a specific minute-precision timestamp to ensure data consistency across products.
 *   **Fallback Mechanism**: If a file with the exact timestamp is not found, it automatically falls back to the latest available file within the search window.
 *   **Multi-File Merging**: (For NetCDF/GLM) Capable of downloading a sequence of files (target + previous) and merging them into a single dataset.
+*   **Thread Offloading**: Heavy synchronous operations (like GLM merging) are offloaded to a thread pool via `run_in_executor` to prevent blocking the event loop.
 *   **Automatic Decompression**: Handles `.gz` compression automatically.
 
 ## Core Components
 
-### 1. Entry Points (`main.py`)
-
-The primary interface for external calls.
-
-*   `download_all_files(dt, remove_old_files=True)`: Main entry point used by the scheduler. Orchestrates downloads for all configured MRMS and GOES products for the given datetime `dt`. **If `remove_old_files=True` (default), performs cleanup of old files (both MRMS and GOES) older than 60 minutes.**
+#### MRMS & GOES (`src/EdgeWARN/core/ingest/mrms/main.py`)
+*   `download_all_files(dt, remove_old_files=True)`: Main entry point used by the scheduler. Orchestrates downloads for all configured MRMS and GOES products for the given datetime `dt`.
 *   `download_goes_product(...)`: Helper for downloading a single GOES product synchronously.
 *   `download_all_goes_files(...)`: Helper for downloading all GOES products.
+
+#### Synoptic (`src/EdgeWARN/core/ingest/synoptic/main.py`)
+*   `download_rap(dt)`: Entry point for downloading RAP (Rapid Refresh) data for a specific timestamp.
 
 ### 2. Configuration (`config.py`)
 
 Defines the S3 buckets and product modifiers.
 
-*   `bucket`: MRMS S3 bucket (`noaa-mrms-pds`).
-*   `goes_bucket`: GOES-19 S3 bucket (`noaa-goes19`).
 *   `mrms_modifiers`: List of MRMS products to download (Region, Product, Output Directory).
 *   `goes_modifiers`: List of GOES products to download.
+*   `RAP_BUCKET`: `noaa-rap-pds`.
 
 ### 3. Downloader Logic (`downloader.py`)
 
@@ -59,7 +61,8 @@ Handles merging of NetCDF files, specifically for GLM (Geostationary Lightning M
 #### Functions:
 
 *   **`merge_glm_files(file_list, io_manager)`**: Merges multiple GLM L2 LCFA NetCDF files into a single consolidated file.
-    *   **Purpose**: GLM data is produced in 20-second intervals. To provide better temporal coverage for lightning analysis, multiple consecutive files are downloaded and merged into a single dataset.
+    *   **Performance Note**: In async mode, this is called via `loop.run_in_executor` to ensure that heavy I/O and concatenation do not freeze the pipeline.
+    *   **Purpose**: GLM data is produced in 20-second intervals.
     *   **Workflow**:
         1.  **Load Files**: Opens all GLM NetCDF files in `file_list` using `xarray`.
         2.  **Concatenate**: Combines the datasets along the `number_of_flashes` dimension, creating a unified dataset with all flash events from all files.

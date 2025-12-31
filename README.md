@@ -9,7 +9,7 @@
 EdgeWARN is a program developed by the Edgemont Weather Service to accurately nowcast severe weather, 
 provide user-friendly outputs and alerts, and be decently lightweight to run. 
 To accomplish these goals, we leverage NOAA's MRMS datasets, ProbSevere v3, 
-and GOES-19 GLM lightning data while adding in hydrological information to fill in 
+NOAA RAP synoptic data, and GOES-19 GLM lightning data while adding in hydrological information to fill in 
 known gaps in ProbSevere's threat assessment. This repository serves as 
 EdgeWARN's core server that processes raw data and serves it to
 the GUI frontend.
@@ -28,7 +28,7 @@ Check INSTALLATION.md for installation and run instructions
 
 <h2 align="center">Build Info</h2>
 
-## Current Version: 1.0.1
+## Current Version: 1.0.2
 
 Check [CHANGELOG.md](CHANGELOG.md) for changes
 

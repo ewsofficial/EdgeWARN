@@ -122,7 +122,7 @@ from pathlib import Path
 # and save cell histories to individual JSON files in CELL_DIR.
 # Set remove_old_cells=False to prevent cleanup of inactive cells.
 if __name__ == "__main__":
-    stormcells_file = Path("path/to/stormcells_20231223-150000.json")
+    stormcells_file = Path("path/to/stormcells_20251230-150000.json")
     main(stormcells_file, remove_old_cells=True)
 ```
 

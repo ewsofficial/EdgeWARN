@@ -12,6 +12,7 @@ This module handles the core logic for detecting storm cells from a single time 
 
 - **`detect_cells(radar_path, ps_path, preciptype_path, io_manager, lat_min, lat_max, lon_min, lon_max)`**
     - **Functionality**: Orchestrates the detection process for a single timeframe.
+    - **Robustness**: If `preciptype_path` is invalid or loading fails, the pipeline will log a warning and continue. In this case, the `hail_core` bounding box list for detected cells will be empty, but cell detection and tracking will otherwise function normally.
     - **Steps**:
         1.  Initializes a `DetectionDataHandler` to load and subset radar, ProbSevere, and Precipitation Type data.
         2.  Loads the data subsets.
