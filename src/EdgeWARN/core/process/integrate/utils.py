@@ -39,11 +39,9 @@ class RAPFileHandler:
                 self.io_manager.write_debug(f"Found {len(datasets)} datasets with isobaricInhPa type")
                 
                 for i, ds in enumerate(datasets):
-                    self.io_manager.write_debug(f"Dataset {i}: coords={list(ds.coords.keys())}, vars={list(ds.data_vars.keys())}")
                     
                     # Check for wind components
                     if 'u' in ds.data_vars and 'v' in ds.data_vars and 'isobaricInhPa' in ds.coords:
-                        self.io_manager.write_debug(f"Found isobaric wind dataset with U='u', V='v' at levels: {ds.isobaricInhPa.values}")
                         return ds
                         
                 # Fallback: if filtered approach doesn't work, try the general approach
@@ -85,7 +83,6 @@ class RAPFileHandler:
                     target_levels = [850, 700, 500, 250]
                     available_target_levels = [l for l in target_levels if l in levels]
                     score += len(available_target_levels) / 4.0
-                    self.io_manager.write_debug(f"Dataset {i}: Found {len(available_target_levels)} target levels")
                 except Exception:
                     pass
                 
