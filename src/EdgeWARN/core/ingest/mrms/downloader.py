@@ -1,4 +1,4 @@
-from EdgeWARN.core.ingest.mrms.config import mrms_modifiers, bucket, goes_modifiers, goes_bucket
+from EdgeWARN.core.ingest.mrms.config import get_mrms_modifiers, bucket, get_goes_modifiers, goes_bucket
 from EdgeWARN.core.ingest.mrms.s3_sync import FileFinder, FileDownloader
 from EdgeWARN.core.ingest.mrms.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EdgeWARN.core.ingest.mrms.parse import parse_mrms_bucket_path, parse_goes_bucket_path
@@ -20,7 +20,7 @@ async def download_all_files_async_internal(dt, max_entries):
         
         # Create async tasks for all modifiers
         tasks = []
-        for region, modifier, outdir in mrms_modifiers:
+        for region, modifier, outdir in get_mrms_modifiers():
             task = download_modifier_async(
                 region, modifier, outdir, dt, max_entries, s3
             )
@@ -73,10 +73,11 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
 def download_all_files_sync_fallback(dt, max_entries):
     """Sync fallback for downloading all MRMS files"""
     # Multithread MRMS downloads
-    with ThreadPoolExecutor(max_workers=len(mrms_modifiers) + 2) as executor:
+    mrms_modifiers_list = get_mrms_modifiers()
+    with ThreadPoolExecutor(max_workers=len(mrms_modifiers_list) + 2) as executor:
         futures = [
             executor.submit(download_modifier_sync, region, modifier, outdir, dt, max_entries)
-            for region, modifier, outdir in mrms_modifiers
+            for region, modifier, outdir in mrms_modifiers_list
         ]
 
         for future in as_completed(futures):
@@ -337,10 +338,11 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
     io_manager.write_info("Starting GOES-19 downloads...")
     
     # Use ThreadPoolExecutor for concurrent downloads
-    with ThreadPoolExecutor(max_workers=len(goes_modifiers)) as executor:
+    goes_modifiers_list = get_goes_modifiers()
+    with ThreadPoolExecutor(max_workers=len(goes_modifiers_list)) as executor:
         futures = [
             executor.submit(download_goes_product, product, outdir, dt, max_entries, hour_lookback)
-            for product, outdir in goes_modifiers
+            for product, outdir in goes_modifiers_list
         ]
         
         for future in as_completed(futures):
@@ -368,7 +370,7 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
         
         tasks = [
             _download_goes_product_async(product, outdir, dt, max_entries, hour_lookback, s3)
-            for product, outdir in goes_modifiers
+            for product, outdir in get_goes_modifiers()
         ]
         
         results = await asyncio.gather(*tasks, return_exceptions=True)

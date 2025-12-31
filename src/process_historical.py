@@ -14,7 +14,7 @@ from EdgeWARN.core.ingest.synoptic.main import download_rap
 import EdgeWARN.core.process.detect.main as detect
 import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
-from EdgeWARN.core.ingest.mrms.config import check_modifiers
+from EdgeWARN.core.ingest.mrms.config import get_check_modifiers
 from util.io import TimestampedOutput, IOManager
 
 sys.stdout = TimestampedOutput(sys.stdout)
@@ -43,16 +43,61 @@ def pipeline(dt, lat_limits, lon_limits, json_output):
         
         io_manager.write_info("Starting Storm Cell Detection")
         try:
-            filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
-            ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
-            pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
+            # Safely get latest files
+            comp_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
+            if not comp_files:
+                raise RuntimeError(f"No composite reflectivity files found in {fs.MRMS_COMPOSITE_DIR}")
+            filepath_old, filepath_new = comp_files
+            
+            # For other files, we can use None if missing (single scan mode logic handles None)
+            # But latest_files returns None if directory is missing, so we must check.
+            
+            ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
+            if ps_files:
+                ps_old, ps_new = ps_files
+            else:
+                ps_old, ps_new = None, None
+
+            pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
+            if pt_files:
+                pt_old, pt_new = pt_files
+            else:
+                pt_old, pt_new = None, None
+            
+            # If any are None where we need pairs, we might trigger single-scan fallback below implicitly 
+            # or we should just raise RuntimeError to force the except block.
+            # Actually, standard behavior is: if latest_files fails (not enough files), it raises RuntimeError.
+            # But if directory doesn't exist, it returns None.
+            # So we manually raise RuntimeError if None to trigger the fallback logic cleanly.
+            if not ps_files or not pt_files:
+                 raise RuntimeError("Missing pairs for tracking")
 
         except RuntimeError:
             # Not enough files - single scan mode
             io_manager.write_info("Not enough files for tracking, using single-scan mode")
-            filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)[-1], None
-            ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1] if fs.MRMS_PROBSEVERE_DIR.exists() else None, None
-            pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)[-1], None
+            
+            # Handle Composite
+            comp_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)
+            filepath_old = comp_files[-1] if comp_files else None
+            filepath_new = None
+            if not filepath_old:
+                 raise RuntimeError(f"Cannot run detection: No composite reflectivity files in {fs.MRMS_COMPOSITE_DIR}")
+
+            # Handle ProbSevere
+            if fs.MRMS_PROBSEVERE_DIR.exists():
+                ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
+                ps_old = ps_files[-1] if ps_files else None
+            else:
+                ps_old = None
+            ps_new = None
+            
+            # Handle PrecipType
+            if fs.MRMS_PRECIPTYP_DIR.exists():
+                pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)
+                pt_old = pt_files[-1] if pt_files else None
+            else:
+                pt_old = None
+            pt_new = None
         
         generated_file = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, json_output)
         
@@ -105,6 +150,9 @@ def main():
     while current_time <= end_time:
         io_manager.write_info(f"\n{'='*60}")
         io_manager.write_info(f"Checking for data near: {current_time.isoformat()}")
+        
+        # Check modifiers dynamically
+        check_modifiers = get_check_modifiers()
         
         # Find latest common timestamp on S3 within 1 hour of current_time
         latest_common = checker.latest_common_minute_1h(check_modifiers, reference_dt=current_time)

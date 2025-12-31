@@ -6,7 +6,7 @@ from EdgeWARN.core.process.integrate.utils import StatFileHandler
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
 import json
-from EdgeWARN.core.process.integrate.config import datasets
+from EdgeWARN.core.process.integrate.config import get_datasets_config
 io_manager = IOManager("[CellIntegration]")
 
 def main(json_path=None, remove_old_cells=True):
@@ -24,7 +24,7 @@ def main(json_path=None, remove_old_cells=True):
     result_cells = cells
 
     # Integrate datasets
-    for dataset_config in datasets:
+    for dataset_config in get_datasets_config():
         name = dataset_config["name"]
         outdir = dataset_config["filepath"]
         key = dataset_config["key"]

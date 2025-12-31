@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 from botocore import UNSIGNED
 from botocore.client import Config
 from util.io import IOManager
-from EdgeWARN.core.ingest.synoptic.config import RAP_BUCKET, RAP_FILE_PATTERN, RAP_DIR_PATTERN, RAP_DIR
+import util.file as fs
+from EdgeWARN.core.ingest.synoptic.config import RAP_BUCKET, RAP_FILE_PATTERN, RAP_DIR_PATTERN
 from EdgeWARN.core.ingest.synoptic.s3_sync import SynopticFileDownloader
 from EdgeWARN.core.ingest.synoptic.s3_async import AsyncSynopticFileDownloader
 
@@ -87,6 +88,6 @@ async def download_rap(dt):
         RAP_BUCKET, 
         RAP_FILE_PATTERN, 
         RAP_DIR_PATTERN, 
-        RAP_DIR, 
+        fs.RAP_DIR, 
         dataset_name="RAP"
     )

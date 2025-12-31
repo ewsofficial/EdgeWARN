@@ -77,10 +77,7 @@ def integrate_rap_winds(storm_cells, rap_file_path, io_manager):
         for var_name in available_vars:
             if var_name in ds_level.data_vars:
                 data_cache[(var_name, level)] = ds_level[var_name].values
-                # Debug: Check data range
-                var_data = ds_level[var_name].values
-                io_manager.write_debug(f"Variable {var_name} at {level}mb: shape={var_data.shape}, min={np.nanmin(var_data):.2f}, max={np.nanmax(var_data):.2f}, non-zero count={np.count_nonzero(var_data)}")
-                io_manager.write_debug(f"  Data coords: lat shape={lat_vals.shape}, lon shape={lon_vals.shape}")
+                data_cache[(var_name, level)] = ds_level[var_name].values
 
     # Process each storm cell
     for cell in storm_cells:
