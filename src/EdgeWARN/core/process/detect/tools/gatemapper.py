@@ -189,8 +189,16 @@ class GateMapper:
             # Take the longest contour
             contour = max(contours, key=len)
             
-            # Downsample
-            contour = contour[::step]
+            # Adaptive Downsample
+            n_points = len(contour)
+            if n_points < 8:
+                final_step = 1
+            elif n_points < 24:
+                final_step = 4
+            else:
+                final_step = step
+                
+            contour = contour[::final_step]
             
             # Convert to global coordinates
             # contour points are (row, col) in padded_mask
