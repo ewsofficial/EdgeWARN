@@ -50,5 +50,8 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - Added downloading of RAP files from the ``noaa-rap-pds`` S3 bucket
 
 ### Fixes
-- Cell detection pipeline crashes when ``PrecipType`` dataset is not loaded, despite ``CompRef`` and ``ProbSevere`` successfully loading. The fix will return a empty list to the hail core dict if ``PrecipType`` fails to load.
+- Cell detection pipeline crashes when ``PrecipType`` dataset is not loaded, despite ``CompRef`` and ``ProbSevere`` successfully loading. The fix will return an empty list to the hail core dict if ``PrecipType`` fails to load.
+
+### Changes
+- Offloaded the synchronous ``merge_glm_files`` operation in the async ingest module to a thread pool using ``run_in_executor``, preventing the event loop from blocking during heavy I/O and CPU-bound operations.
 
