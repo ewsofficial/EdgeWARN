@@ -54,4 +54,4 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 
 ### Changes
 - Offloaded the synchronous ``merge_glm_files`` operation in the async ingest module to a thread pool using ``run_in_executor``, preventing the event loop from blocking during heavy I/O and CPU-bound operations.
-
+- Parallelized the MRMS update checks in the scheduler using ``ThreadPoolExecutor``, reducing latency when checking multiple data sources.
