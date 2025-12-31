@@ -58,9 +58,9 @@ Returns array of available stormcell timestamps in YYYYMMDD-HHMMSS format.
 
 ```json
 [
-  "20231223-150000",
-  "20231223-151500",
-  "20231223-153000"
+  "20251230-150000",
+  "20251230-151500",
+  "20251230-153000"
 ]
 ```
 
@@ -117,11 +117,11 @@ Returns complete stormcell list JSON for the specified timestamp.
 {
   "source": "EdgeWARN",
   "product": "stormcells",
-  "latest_timestamp": "2023-12-23T15:00:00Z",
+  "latest_timestamp": "2025-12-30T15:00:00Z",
   "features": [
     {
       "id": 12345,
-      "timestamp": "2023-12-23T15:00:00Z",
+      "timestamp": "2025-12-30T15:00:00Z",
       "num_gates": 1500,
       "centroid": [40.7128, 285.9936],
       "bbox": [[40.5, 285.8], [40.9, 286.2]],
@@ -148,7 +148,7 @@ Returns cell history as an array of historical states.
 [
   {
     "id": 12345,
-    "timestamp": "2023-12-23T14:30:00Z",
+    "timestamp": "2025-12-30T14:30:00Z",
     "num_gates": 1200,
     "centroid": [40.7, 285.9],
     "bbox": [[40.5, 285.7], [40.9, 286.1]],
@@ -157,7 +157,7 @@ Returns cell history as an array of historical states.
   },
   {
     "id": 12345,
-    "timestamp": "2023-12-23T14:45:00Z",
+    "timestamp": "2025-12-30T14:45:00Z",
     "num_gates": 1500,
     "centroid": [40.7128, 285.9936],
     "bbox": [[40.5, 285.8], [40.9, 286.2]],
@@ -200,7 +200,7 @@ Returns cell history as an array of historical states.
 
 ```bash
 # Download stormcell list for specific timestamp
-curl "http://localhost:5000/features/download/resources?type=list&timestamp=20231223-150000"
+curl "http://localhost:5000/features/download/resources?type=list&timestamp=20251230-150000"
 
 # Download cell history for specific ID
 curl "http://localhost:5000/features/download/resources?type=cell&id=12345"
@@ -234,8 +234,8 @@ Returns information about available API endpoints.
 
 Timestamps are in **YYYYMMDD-HHMMSS** format for filenames and queries, and **ISO 8601** format within JSON content.
 
-- Filename format: `20231223-150000` (December 23, 2023, 15:00:00 UTC)
-- JSON format: `2023-12-23T15:00:00Z`
+- Filename format: `20251230-150000` (December 30, 2025, 15:00:00 UTC)
+- JSON format: `2025-12-30T15:00:00Z`
 
 ### Cell ID Format
 
@@ -311,7 +311,7 @@ fetch('http://localhost:5000/features/fetch/resources?type=list')
   .then(timestamps => console.log(timestamps));
 
 // Download specific stormcell list
-fetch('http://localhost:5000/features/download/resources?type=list&timestamp=20231223-150000')
+fetch('http://localhost:5000/features/download/resources?type=list&timestamp=20251230-150000')
   .then(res => res.json())
   .then(data => console.log(data));
 
@@ -332,7 +332,7 @@ timestamps = response.json()
 
 # Download specific stormcell list
 response = requests.get('http://localhost:5000/features/download/resources', 
-                       params={'type': 'list', 'timestamp': '20231223-150000'})
+                       params={'type': 'list', 'timestamp': '20251230-150000'})
 stormcell_data = response.json()
 
 # Download cell history
@@ -348,7 +348,7 @@ cell_history = response.json()
 curl "http://localhost:5000/features/fetch/resources?type=list"
 
 # Download stormcell list
-curl "http://localhost:5000/features/download/resources?type=list&timestamp=20231223-150000"
+curl "http://localhost:5000/features/download/resources?type=list&timestamp=20251230-150000"
 
 # Download cell history
 curl "http://localhost:5000/features/download/resources?type=cell&id=12345"
@@ -374,12 +374,12 @@ curl "http://localhost:5000/health"
 
 **Old:**
 ```javascript
-fetch('/features/list/stormcells_20231223-150000.json')
+fetch('/features/list/stormcells_20251230-150000.json')
 ```
 
 **New:**
 ```javascript
-fetch('/features/download/resources?type=list&timestamp=20231223-150000')
+fetch('/features/download/resources?type=list&timestamp=20251230-150000')
 ```
 
 ---
