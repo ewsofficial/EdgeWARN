@@ -9,7 +9,7 @@ xr.set_options(use_new_combine_kwarg_defaults=True)
 def integrate_rap_winds(storm_cells, rap_file_path, io_manager):
     """
     Integrates RAP wind components (U and V) for 850, 700, 500, and 250mb levels.
-    Finds the maximum value within each storm cell's boundary.
+    Finds the values at the grid point closest to each storm cell's centroid.
     """
     if not rap_file_path:
         io_manager.write_warning("No RAP file path provided for integration")
@@ -102,8 +102,8 @@ def integrate_rap_winds(storm_cells, rap_file_path, io_manager):
                         var_array = data_cache[(var_name, level)]
                         val = var_array[min_idx]
                         
-                        # Capture absolute max of components as before
-                        max_val = float(np.abs(val))
+                        # Capture value preserving sign
+                        max_val = float(val)
                         output_var = 'u' if var_name in ['u', 'UGRD', 'u-component_of_wind_isobaric', 'wind_u'] else 'v'
                         target[f"{output_var}{level}"] = max_val
 
