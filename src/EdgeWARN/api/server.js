@@ -4,15 +4,28 @@ import dotenv from 'dotenv';
 import path from 'path';
 import featuresRouter from './routes/features/index.js';
 import healthRouter from './routes/health.js';
+import rateLimit from 'express-rate-limit';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Rate Limiting
+const limiter = rateLimit({
+  windowMs: 1000, // 1 second
+  max: 10, // Limit each IP to 10 requests per `windowMs`
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+// Apply the rate limiting middleware to all requests
+app.use(limiter);
 
 // Routes
 app.get('/', (req, res) => {

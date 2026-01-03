@@ -82,7 +82,7 @@ naming conventions:
 
 # Security and Safety
 
-When contributing code to this project, you must follow the [CODE_OF_CONDUCT.md] and these rules:
+When contributing code to this project, you must follow the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and these rules:
 
 1. **No malicious code** – Do not include malware, viruses, backdoors, or any code intended to harm users, systems, or data.
 2. **No sensitive data** – Do not commit passwords, API keys, or personally identifiable information.
