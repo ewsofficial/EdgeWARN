@@ -35,6 +35,7 @@ Historical analysis capabilities all the way up to January 1, 2021 using the ``n
 - **``--end``**: End time in ISO 8601 (``YYYY-MM-DDTHH:MM:SS``)
 - **``--lat``** (``lat_min``, ``lat_max``): Latitude limits for data processing
 - **``--lon``** (``lon_min``, ``lon_max``): Longitude limits for data processing
+- **``--base_dir``**: Base directory to store data
 
 ### Start Data Server
 - ``npm start``
