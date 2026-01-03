@@ -10,6 +10,7 @@ from util.io import IOManager
 _TIMESTAMP_PATTERNS = [
     re.compile(r'(\d{8}[_\.-]\d{6})'),
     re.compile(r'(\d{8}[_\.-]\d{4})'),
+    re.compile(r'(\d{8}-\d{2})'),
     re.compile(r'(\d{8})'),
     re.compile(r'(\d{10,})'),
 ]
@@ -205,9 +206,12 @@ class StatFileHandler:
                         # YYYYMMDDHHMMSS format
                         return datetime.strptime(timestamp_str, "%Y%m%d%H%M%S")
                     
-                    elif len(timestamp_str) == 12:
                         # YYYYMMDDHHMM format
                         return datetime.strptime(timestamp_str + "00", "%Y%m%d%H%M%S")
+
+                    elif len(timestamp_str) == 11 and '-' in timestamp_str:
+                        # YYYYMMDD-HH format from RAP (e.g. 20230101-12)
+                        return datetime.strptime(timestamp_str + "0000", "%Y%m%d-%H%M%S")
                     
                     elif len(timestamp_str) == 8:
                         # YYYYMMDD format

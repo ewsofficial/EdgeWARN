@@ -16,7 +16,7 @@ from EdgeWARN.core.ingest.synoptic.main import download_rap
 import EdgeWARN.core.process.detect.main as detect
 import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
-from EdgeWARN.core.ingest.mrms.config import check_modifiers
+from EdgeWARN.core.ingest.mrms.config import get_check_modifiers
 import EdgeWARN.ui.monitor_app as monitor_app
 from util.io import TimestampedOutput, IOManager, QueueWriter
 from EdgeWARN.core.api_integration.index_manager import APIIndexManager
@@ -77,7 +77,6 @@ def main(ui_process=None):
     last_processed = None  # Track last processed timestamp
 
     # Check for existing JSON output to initialize last_processed
-    # Check for existing JSON output to initialize last_processed
     try:
         if fs.STORMCELL_DIR.exists():
             files = sorted(fs.STORMCELL_DIR.glob("stormcells_*.json"))
@@ -109,6 +108,7 @@ def main(ui_process=None):
                 sys.exit(0)
 
             now = datetime.now(timezone.utc)
+            check_modifiers = get_check_modifiers()
             latest_common = checker.latest_common_minute_1h(check_modifiers)
 
             if latest_common and latest_common != last_processed:

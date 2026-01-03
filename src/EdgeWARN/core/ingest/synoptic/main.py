@@ -1,12 +1,14 @@
 import asyncio
 from datetime import datetime
 from EdgeWARN.core.ingest.synoptic.downloader import download_rap as _download_rap
+import util.file as fs
 
 def download_rap(dt: datetime):
     """
     Public API to download a RAP file for a given datetime.
     Handles the async loop if necessary.
     """
+    fs.clean_files_by_age(fs.RAP_DIR, max_age_minutes=90) # 90 min to ensure that there is another RAP file
     try:
         # Check if there is a running event loop
         loop = asyncio.get_running_loop()

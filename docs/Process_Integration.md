@@ -43,7 +43,9 @@ This module handles the integration of Geostationary Lightning Mapper (GLM) data
 #### Functions:
 
 - **`integrate_glm(storm_cells, glm_file_path=None)`**
-    - **Functionality**: Integrates GLM flash count and total energy into storm cells.
+    - **Functionality**: Performs point-in-polygon checks for GLM lightning flashes.
+    - **Output**: Adds `GLM_FLASH_COUNT` and `GLM_TOTAL_ENERGY` to cell properties.
+    - **Returns**: Updated storm cells.
     - **Steps**:
         1. **Load Dataset**: Opens the GLM L2 LCFA NetCDF file from GOES-19.
         2. **Filter Active Cells**: Selects only cells active at the latest timestamp.
@@ -56,7 +58,18 @@ This module handles the integration of Geostationary Lightning Mapper (GLM) data
         5. **Data Storage**: Appends the computed values to the cell's `properties` dictionary.
     - **Returns**: Updated storm cells with GLM data appended to the `properties` dictionary.
 
-### 3. `history.py`
+### 3. `integrate_rap.py`
+This module integrates RAP (Rapid Refresh) meteorological data, specifically wind components.
+
+#### Functions:
+
+- **`integrate_rap_winds(storm_cells, rap_file_path, io_manager)`**
+    - **Functionality**: Extracts U and V wind components at four isobaric levels: 850, 700, 500, and 250mb.
+    - **Method**: Uses nearest-neighbor lookup to map wind vectors from the GRIB2 grid to the storm cell centroid.
+    - **Output**: Adds keys such as `u850`, `v850`, `u700`, `v700`, etc., to the cell's `properties` dictionary.
+    - **Returns**: Updated storm cells.
+
+### 4. `history.py`
 This module manages persistent per-cell history tracking, storing each cell's state over time in individual JSON files.
 
 #### Classes:
@@ -73,7 +86,7 @@ This module manages persistent per-cell history tracking, storing each cell's st
         - **File Cleanup**: Inactive cell history files (not updated for more than 1 hour) are automatically deleted by a separate cleanup process in the main pipeline.
         - **Returns**: Nothing (updates files on disk).
 
-### 4. `main.py`
+### 5. `main.py`
 This script defines the integration workflow, specifying which datasets to process and running the integration.
 
 #### Functions:
