@@ -63,6 +63,7 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 
 ### Changes
 - Enhanced storm cell polygon fidelity by implementing an adaptive downsampling strategy that preserves more boundary detail for smaller and medium-sized cells.
+- Add a 10 requests / second rate limit to the API to prevent abuse.
 
 ### Fixes
 - Resolved a coordinate mismatch issue in RAP integration by normalizing storm cell centroids to the -180 to 180 longitude range.
