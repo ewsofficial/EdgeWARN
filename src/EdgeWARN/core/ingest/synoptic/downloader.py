@@ -21,7 +21,10 @@ async def download_synoptic_async(dt, bucket, file_pattern, dir_pattern, out_dir
     dir_name = dir_pattern.format(date=date_str)
     file_name = file_pattern.format(hour=hour)
     s3_key = f"{dir_name}/{file_name}"
-    local_path = out_dir / file_name
+    
+    # Save as RAP.YYYYMMDD-HHz.awp130pgrbf00.grib2
+    local_filename = f"RAP.{date_str}-{hour:02d}z.awp130pgrbf00.grib2"
+    local_path = out_dir / local_filename
     
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         downloader = AsyncSynopticFileDownloader(bucket, io_manager, s3_client=s3)
@@ -37,7 +40,10 @@ def download_synoptic_sync(dt, bucket, file_pattern, dir_pattern, out_dir):
     dir_name = dir_pattern.format(date=date_str)
     file_name = file_pattern.format(hour=hour)
     s3_key = f"{dir_name}/{file_name}"
-    local_path = out_dir / file_name
+    
+    # Save as RAP.YYYYMMDD-HHz.awp130pgrbf00.grib2
+    local_filename = f"RAP.{date_str}-{hour:02d}z.awp130pgrbf00.grib2"
+    local_path = out_dir / local_filename
     
     downloader = SynopticFileDownloader(bucket, io_manager)
     return downloader.download_file(s3_key, local_path)
