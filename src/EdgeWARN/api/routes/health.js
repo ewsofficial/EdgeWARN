@@ -3,50 +3,46 @@ import os from 'os';
 
 const router = express.Router();
 
+// Initialize previous CPU times
+let lastCpus = os.cpus();
+
 /**
  * GET /health
- * Returns server health status, uptime, CPU, and memory usage
+ * Returns server health status, total CPU usage (100% = 1 core), and system memory usage in MB
  */
 router.get('/', (req, res) => {
-  const uptimeSeconds = process.uptime();
+  const currentCpus = os.cpus();
+  let totalUsage = 0;
 
-  // Memory usage (bytes) and percent of system memory
-  const mem = process.memoryUsage();
-  const totalSystemMem = os.totalmem();
-  const memory = {
-    rss: mem.rss,
-    heapTotal: mem.heapTotal,
-    heapUsed: mem.heapUsed,
-    external: mem.external,
-    systemTotal: totalSystemMem,
-    rssPercentOfSystem: Number(((mem.rss / totalSystemMem) * 100).toFixed(2))
-  };
+  for (let i = 0; i < currentCpus.length; i++) {
+    const prev = lastCpus[i];
+    const curr = currentCpus[i];
 
-  // CPU usage: compute average busy percentage across cores (since boot)
-  const cpus = os.cpus();
-  let totalIdle = 0;
-  let totalTick = 0;
-  cpus.forEach((c) => {
-    for (const t in c.times) {
-      totalTick += c.times[t];
+    let prevTotal = 0;
+    let currTotal = 0;
+
+    for (const type in prev.times) prevTotal += prev.times[type];
+    for (const type in curr.times) currTotal += curr.times[type];
+
+    const totalDiff = currTotal - prevTotal;
+    const idleDiff = curr.times.idle - prev.times.idle;
+
+    if (totalDiff > 0) {
+      totalUsage += 1 - idleDiff / totalDiff;
     }
-    totalIdle += c.times.idle;
-  });
-  const avgIdle = totalIdle / cpus.length;
-  const avgTotal = totalTick / cpus.length;
-  const cpuUsagePercent = Number((100 * (1 - avgIdle / avgTotal)).toFixed(2));
+  }
 
-  const cpu = {
-    cores: cpus.length,
-    usagePercent: cpuUsagePercent,
-    loadAverage: os.loadavg()
-  };
+  // Update lastCpus for the next request
+  lastCpus = currentCpus;
 
-  res.json({ 
-    status: 'OK', 
-    uptimeSeconds: Math.round(uptimeSeconds), 
-    cpu, 
-    memory 
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMemMB = Math.round((totalMem - freeMem) / (1024 * 1024));
+
+  res.json({
+    status: 'OK',
+    cpuUsage: Number((totalUsage * 100).toFixed(2)),
+    systemMemoryUsageMB: usedMemMB
   });
 });
 
