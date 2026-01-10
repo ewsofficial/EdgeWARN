@@ -25,6 +25,7 @@ The real-time analysis (``run.py``) pulls live data and analyses it in real-time
 - **``--lat_limits``** (``lat_min``, ``lat_max``): Latitude limits for data processing
 - **``--lon_limits``** (``lon_min``, ``lon_max``): Longitude limits for data processing
 - **``--nogui``**: Disable server monitor GUI
+- **``--base_dir``**: Base directory to store data (Default is ``EdgeWARN_input``)
 
 ### Historical Analysis (``process_historical.py``)
 
