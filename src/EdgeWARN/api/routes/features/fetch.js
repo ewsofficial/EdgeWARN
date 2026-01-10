@@ -26,6 +26,9 @@ router.get('/resources', async (req, res) => {
   }
 
   try {
+    // Set caching header (e.g. 5 seconds for index)
+    res.set('Cache-Control', 'public, max-age=5');
+
     if (type === 'list') {
       // Read stormcell index
       const indexPath = path.join(apiConfig.STORMCELL_DIR, 'stormcell_index.json');

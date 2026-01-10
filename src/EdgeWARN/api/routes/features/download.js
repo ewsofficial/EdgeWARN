@@ -35,6 +35,9 @@ router.get('/resources', async (req, res) => {
         });
       }
 
+      // Set caching header (e.g. 1 hour for immutable stormcells data)
+      res.set('Cache-Control', 'public, max-age=3600');
+
       // Build filename: stormcells_{timestamp}.json
       const filename = `stormcells_${timestamp}.json`;
       const content = await readJsonFileSafe(apiConfig.STORMCELL_DIR, filename);
@@ -47,6 +50,10 @@ router.get('/resources', async (req, res) => {
           error: 'Invalid or missing id parameter. Must be a positive integer' 
         });
       }
+
+      // Set caching header (e.g. 1 minute for cell data which might update?)
+      // Assuming cell ID data might be transient or update, but still safe for short cache
+      res.set('Cache-Control', 'public, max-age=60');
 
       // Build filename: {id}.json
       const filename = `${id}.json`;
