@@ -60,6 +60,9 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 
 ### Additions
 - Implemented RAP meteorological data integration for storm cells, incorporating U and V wind components at 850, 700, 500, and 250mb levels using a nearest-neighbor grid point mapping.
+- Added CTAM module registry and engine to allow for dynamic registration and execution of CTAM modules.
+- Added StormCast module to CTAM
+- Add custom filesystem initialization for ``run.py``
 
 ### Changes
 - Enhanced storm cell polygon fidelity by implementing an adaptive downsampling strategy that preserves more boundary detail for smaller and medium-sized cells.
