@@ -33,6 +33,10 @@ args = io_manager.get_args()
 lat_limits = tuple(args.lat_limits)
 lon_limits = tuple(args.lon_limits)
 
+# Initialize custom filesystem if provided
+if args.base_dir:
+    fs.initialize_filesystem(args.base_dir)
+
 # Initialize API indexes at startup
 try:
     index_manager = APIIndexManager(io_manager)

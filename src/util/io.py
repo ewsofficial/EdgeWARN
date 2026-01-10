@@ -57,6 +57,12 @@ class IOManager:
             action="store_true",
             help="Disable the GUI and print output to console"
         )
+        parser.add_argument(
+            "--base_dir",
+            type=str,
+            default=None,
+            help="Custom base directory for input/output data"
+        )
 
         args = parser.parse_args()
 
