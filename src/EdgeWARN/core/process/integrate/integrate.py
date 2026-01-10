@@ -20,8 +20,7 @@ class StormCellIntegrator:
             else:
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
 
-            # Optimization: REMOVED ds.load() to avoid reading full file into memory
-            # ds.load()
+            ds.load()
         except Exception as e:
             self.io_manager.write_error(f"Load error: {e}")
             return storm_cells
@@ -30,8 +29,6 @@ class StormCellIntegrator:
         # Coordinates
         lat_name = "latitude" if "latitude" in ds.coords else "lat"
         lon_name = "longitude" if "longitude" in ds.coords else "lon"
-
-        # Load coordinates (usually small)
         lat_vals = ds[lat_name].values
         lon_vals = ds[lon_name].values
 
@@ -44,10 +41,7 @@ class StormCellIntegrator:
         active_cells = storm_cells
         self.io_manager.write_info(f"Integrating {output_key} data for {len(active_cells)} cells")
 
-        # Optimization: Don't load full var_values
-        # var_values = var.values
-
-        is_1d_coords = (lat_vals.ndim == 1)
+        var_values = var.values
 
         for cell in active_cells:
             # Create properties dict if not exists
@@ -64,82 +58,24 @@ class StormCellIntegrator:
             try:
                 minx, miny, maxx, maxy = poly.bounds
 
-                if is_1d_coords:
-                    # Optimize index finding for 1D coordinates
-                    lat_mask = (lat_vals >= miny) & (lat_vals <= maxy)
-                    lon_mask = (lon_vals >= minx) & (lon_vals <= maxx)
+                lat_mask = (lat_vals >= miny) & (lat_vals <= maxy)
+                lon_mask = (lon_vals >= minx) & (lon_vals <= maxx)
 
-                    if not np.any(lat_mask) or not np.any(lon_mask):
-                        target[output_key] = 0
-                        continue
-
-                    # Get indices to slice the dataset
-                    lat_indices = np.where(lat_mask)[0]
-                    lon_indices = np.where(lon_mask)[0]
-
-                    lat_start, lat_end = lat_indices.min(), lat_indices.max() + 1
-                    lon_start, lon_end = lon_indices.min(), lon_indices.max() + 1
-
-                    # Slice the variable (lazy load only this chunk)
-                    # Assuming dimensions match lat/lon order. usually (latitude, longitude)
-                    sub_var = var[lat_start:lat_end, lon_start:lon_end].values
-
-                    lat_subset = lat_vals[lat_start:lat_end]
-                    lon_subset = lon_vals[lon_start:lon_end]
-
-                else:
-                    # Fallback for 2D coordinates (slower, requires masking)
-                    lat_mask = (lat_vals >= miny) & (lat_vals <= maxy)
-                    lon_mask = (lon_vals >= minx) & (lon_vals <= maxx)
-
-                    # Use a bounding box approach on 2D arrays if possible, but simpler to mask
-                    # Using xarray selection might be slow if repeated.
-                    # Loading the whole variable for a single cell is bad.
-                    # But loading it once for all cells is what we removed.
-
-                    # Since we are optimizing for 1D GRIB files (standard MRMS),
-                    # we accept a potential performance hit on 2D files if they exist,
-                    # or better: we use xarray's .values with boolean mask which will trigger load.
-                    # Note: We must ensure we don't load the whole array into memory if possible.
-                    # xarray `where` returns a lazy object. `.values` on it loads it.
-
-                    # Correct logic for 2D extraction:
-                    mask = lat_mask & lon_mask
-                    if not np.any(mask):
-                        target[output_key] = 0
-                        continue
-
-                    # Extract values directly
-                    # If we can't slice, we have to index.
-                    # var.values[mask] will load the full array first then index.
-                    # To avoid loading full array, we should use xarray's `isel` if we could determine bounds.
-                    # Determining bounds in 2D irregular grid is hard.
-                    # So we fallback to loading the subset via full mask, accepting I/O hit.
-                    # However, since we loop over cells, this repeats I/O.
-
-                    # Recommendation: If using 2D grids, this code path is not optimized for I/O per cell.
-                    # But for now, we implement correctness.
-
-                    # Flatten and extract
-                    sub_var = var.values[mask] # Triggers load of full array!
-
-                    # We also need lat/lon subsets corresponding to sub_var
-                    lat_subset = lat_vals[mask]
-                    lon_subset = lon_vals[mask]
+                lat_subset = lat_vals[lat_mask]
+                lon_subset = lon_vals[lon_mask]
 
                 if lat_subset.size == 0 or lon_subset.size == 0:
                     target[output_key] = 0
                     continue
 
-                # Prepare meshgrid for vector containment check
+                sub_var = var_values[np.ix_(lat_mask, lon_mask)]
                 sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
 
-                inside = sv.contains(poly, sub_lon, sub_lat)
+                if sub_var.size == 0:
+                    target[output_key] = 0
+                    continue
 
-                # Check if any point is inside before masking
-                if not np.any(inside):
-                     target[output_key] = 0
-                     continue
+                inside = sv.contains(poly, sub_lon, sub_lat)
 
                 masked_vals = sub_var[inside]
                 masked_vals = masked_vals[masked_vals >= 0]
