@@ -1,4 +1,4 @@
-# Changelog for Version ``1.0.x``
+# Changelog for Version ``1.x.x``
 
 ## ``1.0.0`` (2025-12-26)
 
@@ -63,6 +63,8 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 
 ### Changes
 - Enhanced storm cell polygon fidelity by implementing an adaptive downsampling strategy that preserves more boundary detail for smaller and medium-sized cells.
+- Use ``distance_transform_edt`` for gate expansion to improve performance.
+- Cell data saving now loads coordinates lazily
 - Add a 10 requests / second rate limit to the API to prevent abuse.
 
 ### Fixes
