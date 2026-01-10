@@ -48,7 +48,7 @@ def _detect_with_optional_probsevere(
 
 
 def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple, lon_bounds: tuple, json_output):
-    fs.clean_old_files(fs.STORMCELL_DIR, max_age_minutes=120)
+    fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=120)
     lat_min, lat_max = lat_bounds
     lon_min, lon_max = lon_bounds
 
