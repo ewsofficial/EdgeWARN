@@ -82,6 +82,15 @@ def main(json_path=None, remove_old_cells=True):
     except Exception as e:
         io_manager.write_error(f"Failed to integrate RAP data: {e}")
     
+    # Run CTAM modules (StormCast, etc.)
+    try:
+        from EdgeWARN.core.ctam.run import run_ctam
+        io_manager.write_info(f"Running CTAM modules for {len(result_cells)} cells")
+        result_cells = run_ctam(result_cells)
+        io_manager.write_debug("CTAM module execution completed successfully")
+    except Exception as e:
+        io_manager.write_error(f"Failed to run CTAM modules: {e}")
+    
     # Save data
     data = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, result_cells)
     handler.write_json(data, json_path)

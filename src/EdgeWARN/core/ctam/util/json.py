@@ -18,7 +18,19 @@ class CTAMJsonManager:
             identifier: A string timestamp (YYYYMMDD-HHMMSS) or a cell ID (int or numeric string).
         """
         self.identifier = identifier
-        self.properties: Dict[str, Any] = self.load_json(identifier) or {}
+        self.properties: Union[Dict[str, Any], List[Any]] = self.load_json(identifier) or {}
+
+    def save(self) -> None:
+        """
+        Saves the current properties to the JSON file.
+        """
+        target_path = self.get_json_path(self.identifier)
+        
+        # Ensure parent directory exists
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(target_path, 'w') as f:
+            json.dump(self.properties, f, indent=4, default=str)
 
     @staticmethod
     def get_json_path(identifier: Union[str, int]) -> Path:
@@ -75,22 +87,34 @@ class CTAMJsonManager:
         except json.JSONDecodeError:
             return None
 
-    def update_keys(self, new_data: Dict[str, Any]) -> None:
+    def update_keys(self, module_name: str, new_data: Dict[str, Any]) -> None:
         """
-        Updates the properties with new data and saves to the JSON file.
+        Updates the modules dictionary with new data for a specific module and saves.
         
         Args:
-            new_data: A dictionary of new key-value pairs to update.
+            module_name: The name of the module (e.g., 'StormCast').
+            new_data: A dictionary of new key-value pairs to update within the module's entry.
         """
-        self.properties.update(new_data)
+        target = self.properties
         
-        target_path = self.get_json_path(self.identifier)
+        # If the loaded data is a list (history file), update the latest entry
+        if isinstance(target, list):
+            if not target:
+                return
+            target = target[-1]
+
+        # Ensure 'modules' key exists
+        if "modules" not in target or not isinstance(target["modules"], dict):
+            target["modules"] = {}
         
-        # Ensure parent directory exists
-        target_path.parent.mkdir(parents=True, exist_ok=True)
+        # Ensure module entry exists within 'modules'
+        if module_name not in target["modules"] or not isinstance(target["modules"][module_name], dict):
+            target["modules"][module_name] = {}
+            
+        # Update the module-specific data
+        target["modules"][module_name].update(new_data)
         
-        with open(target_path, 'w') as f:
-            json.dump(self.properties, f, indent=4)
+        self.save()
 
     @staticmethod
     def extract_keys(data: Dict[str, Any], keys: List[str]) -> Dict[str, Any]:

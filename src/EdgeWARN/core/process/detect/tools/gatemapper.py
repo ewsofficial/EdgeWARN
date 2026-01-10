@@ -83,7 +83,7 @@ class GateMapper:
         Cells are assigned to the nearest polygon.
         Complexity: O(H*W) instead of O(N*H*W).
         """
-        polygon_grid = mapped_ds['PolygonID'].values.copy()
+        polygon_grid = mapped_ds['PolygonID'].values # No need to copy if we don't modify in place
         refl_grid = self.radar_ds['unknown'].values
         mask = refl_grid >= self.refl_threshold
 
@@ -107,7 +107,8 @@ class GateMapper:
         
         # indices has shape (ndim, H, W). 
         # indices[:, r, c] gives the (row, col) of the nearest pixel where fg_mask is False (i.e. polygon_grid > 0)
-        dist, indices = distance_transform_edt(fg_mask, return_distances=True, return_indices=True)
+        # Optimization: return_distances=False saves memory and computation
+        indices = distance_transform_edt(fg_mask, return_distances=False, return_indices=True)
         
         # Now we map the pixels.
         # For every pixel (r, c), correct_id is polygon_grid[indices[0, r, c], indices[1, r, c]]
