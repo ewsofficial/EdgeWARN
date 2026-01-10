@@ -55,9 +55,10 @@ class StormCastModule(AnalysisModule):
         # Extract required fields
         x = props.get("x", 0.0)
         y = props.get("y", 0.0)
-        dx = props.get("dx")
-        dy = props.get("dy")
-        dt = props.get("dt")
+        # dx, dy, dt are at top level (set by vecmath.py), not in properties
+        dx = storm_entry.get("dx")
+        dy = storm_entry.get("dy")
+        dt = storm_entry.get("dt")
         echo_top_30 = props.get("EchoTop30", 10.0)
         echo_top_50 = props.get("EchoTop50", 8.0)
         
