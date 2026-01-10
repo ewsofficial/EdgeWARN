@@ -93,132 +93,30 @@ class APIIndexManager:
     
     def update_stormcell_index(self, timestamp: str):
         """
-        Add new timestamp to stormcell_index.json.
-        Remove timestamps older than 24 hours (relative to the newest timestamp in the index).
+        Update stormcell_index.json by scanning the directory.
+        This ensures the index matches the filesystem (files deleted by main.py are removed).
         
         Args:
-            timestamp: Timestamp in YYYYMMDD-HHMMSS format
+            timestamp: Unused, kept for compatibility but we scan the dir anyway.
         """
-        # Load existing index or create new
-        if self.stormcell_index_path.exists():
-            with open(self.stormcell_index_path, 'r') as f:
-                index_data = json.load(f)
-            timestamps = index_data.get("timestamps", [])
-        else:
-            timestamps = []
-        
-        # Add new timestamp if not already present
-        if timestamp not in timestamps:
-            timestamps.append(timestamp)
-            timestamps.sort()
-            self.io_manager.write_debug(f"Added timestamp {timestamp} to stormcell index")
-        
-        if not timestamps:
-            return
+        self._initialize_stormcell_index()
 
-        # Determine retention cutoff based on the LATEST timestamp in the index
-        try:
-            latest_str = timestamps[-1]
-            latest_dt = datetime.strptime(latest_str, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
-            cutoff = latest_dt - timedelta(hours=24)
-        except ValueError:
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-
-        filtered_timestamps = []
-        
-        for ts in timestamps:
-            try:
-                # Parse YYYYMMDD-HHMMSS format
-                dt = datetime.strptime(ts, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
-                if dt >= cutoff:
-                    filtered_timestamps.append(ts)
-                else:
-                    # Delete old file
-                    old_file = fs.STORMCELL_DIR / f"stormcells_{ts}.json"
-                    if self.remove_old_cells:
-                        old_file.unlink()
-                        self.io_manager.write_debug(f"Deleted old stormcell file: {old_file.name}")
-            except ValueError:
-                # Keep if can't parse (shouldn't happen)
-                filtered_timestamps.append(ts)
-        
-        # Update index
-        index_data = {
-            "timestamps": filtered_timestamps,
-            "lastUpdated": datetime.now(timezone.utc).isoformat()
-        }
-        
-        with open(self.stormcell_index_path, 'w') as f:
-            json.dump(index_data, f, indent=2)
-    
     def update_cell_index(self, cell_ids: list):
         """
-        Add new cell IDs to cell_index.json.
+        Update cell_index.json by scanning the directory.
         
         Args:
-            cell_ids: List of cell IDs (integers)
+            cell_ids: Unused, kept for compatibility.
         """
-        # Load existing index or create new
-        if self.cell_index_path.exists():
-            with open(self.cell_index_path, 'r') as f:
-                index_data = json.load(f)
-            existing_ids = set(index_data.get("cellIds", []))
-        else:
-            existing_ids = set()
-        
-        # Add new IDs
-        for cell_id in cell_ids:
-            existing_ids.add(int(cell_id))
-        
-        # Update index
-        index_data = {
-            "cellIds": sorted(list(existing_ids)),
-            "lastUpdated": datetime.now(timezone.utc).isoformat()
-        }
-        
-        with open(self.cell_index_path, 'w') as f:
-            json.dump(index_data, f, indent=2)
-        
-        self.io_manager.write_debug(f"Updated cell index with {len(cell_ids)} new IDs")
+        self._initialize_cell_index()
     
     def cleanup_inactive_cells(self):
         """
-        Remove cell IDs from index that no longer have files.
-        Also removes files older than 1 hour (as per history.py cleanup policy).
+        Remove files older than 2 hours from CELL_DIR, then update index.
         """
-        if not self.cell_index_path.exists():
-            return
+        if self.remove_old_cells:
+            # Files older than 120 minutes
+            fs.clean_files_by_age(fs.CELL_DIR, max_age_minutes=120)
         
-        # Load index
-        with open(self.cell_index_path, 'r') as f:
-            index_data = json.load(f)
-        existing_ids = set(index_data.get("cellIds", []))
-        
-        # Check which files actually exist and aren't too old
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=1)
-        valid_ids = set()
-        
-        for cell_id in existing_ids:
-            cell_file = fs.CELL_DIR / f"{cell_id}.json"
-            if cell_file.exists():
-                # Check modification time
-                mtime = datetime.fromtimestamp(cell_file.stat().st_mtime, tz=timezone.utc)
-                if mtime >= cutoff_time:
-                    valid_ids.add(cell_id)
-                else:
-                    # Delete old file
-                    if self.remove_old_cells:
-                        cell_file.unlink()
-                        self.io_manager.write_debug(f"Deleted inactive cell file: {cell_id}.json")
-        # Update index with valid IDs only
-        index_data = {
-            "cellIds": sorted(list(valid_ids)),
-            "lastUpdated": datetime.now(timezone.utc).isoformat()
-        }
-        
-        with open(self.cell_index_path, 'w') as f:
-            json.dump(index_data, f, indent=2)
-        
-        removed = len(existing_ids) - len(valid_ids)
-        if removed > 0:
-            self.io_manager.write_info(f"Removed {removed} inactive cells from index")
+        # Update index to match reality
+        self._initialize_cell_index()

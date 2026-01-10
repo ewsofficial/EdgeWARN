@@ -1,18 +1,38 @@
 import path from 'path';
 import fs from 'fs';
 
-// Determine base directory similar to Python util/file.py
-let BASE_DIR;
-if (process.platform === 'win32') {
-  BASE_DIR = path.resolve('C:\\EdgeWARN_input');
-} else {
-  // Try /home/EdgeWARN_input first, then /workspaces/EdgeWARN_input, then fallback
-  if (fs.existsSync('/home/EdgeWARN_input')) {
-    BASE_DIR = path.resolve('/home/EdgeWARN_input');
-  } else if (fs.existsSync('/workspaces/EdgeWARN_input')) {
-    BASE_DIR = path.resolve('/workspaces/EdgeWARN_input');
+// Parse CLI arguments for --base-dir
+function parseBaseDir() {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--base-dir' && args[i + 1]) {
+      return path.resolve(args[i + 1]);
+    }
+    if (args[i].startsWith('--base-dir=')) {
+      return path.resolve(args[i].split('=')[1]);
+    }
+  }
+  return null;
+}
+
+// Determine base directory: CLI arg > environment > auto-detect
+let BASE_DIR = parseBaseDir();
+
+if (!BASE_DIR) {
+  // Check environment variable
+  if (process.env.EDGEWARN_BASE_DIR) {
+    BASE_DIR = path.resolve(process.env.EDGEWARN_BASE_DIR);
+  } else if (process.platform === 'win32') {
+    BASE_DIR = path.resolve('C:\\EdgeWARN_input');
   } else {
-    BASE_DIR = path.resolve('EdgeWARN_input');
+    // Try /home/EdgeWARN_input first, then /workspaces/EdgeWARN_input, then fallback
+    if (fs.existsSync('/home/EdgeWARN_input')) {
+      BASE_DIR = path.resolve('/home/EdgeWARN_input');
+    } else if (fs.existsSync('/workspaces/EdgeWARN_input')) {
+      BASE_DIR = path.resolve('/workspaces/EdgeWARN_input');
+    } else {
+      BASE_DIR = path.resolve('EdgeWARN_input');
+    }
   }
 }
 
@@ -46,5 +66,8 @@ const config = {
   // Filenames used by GUI
   STORMCELL_JSON: 'src/stormcell_test.json'
 };
+
+// Log which base directory is being used
+console.log(`[Config] Using BASE_DIR: ${BASE_DIR}`);
 
 export default config;
