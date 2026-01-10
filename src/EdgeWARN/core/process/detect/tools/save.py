@@ -63,28 +63,48 @@ class CellDataSaver:
 
         # Get global lat/lon grids (can be optimized to only extract subgrid if needed, 
         # but indexing is fast enough if we have the full array in memory)
-        lat_grid = self.radar_ds['latitude'].values
-        lon_grid = self.radar_ds['longitude'].values % 360
         
-        if lat_grid.ndim == 1:
-            lat_grid, lon_grid = np.meshgrid(lat_grid, lon_grid, indexing='ij')
+        # Optimization: Don't load full grid if not needed.
+        # But here we need to map indices to coords.
+        # If lat/lon are 1D (which they are for GRIB/netCDF usually), we can index directly.
+
+        lats = self.radar_ds['latitude'].values
+        lons = self.radar_ds['longitude'].values
 
         # Calculate offsets
         r_offset = slice_obj[0].start
         c_offset = slice_obj[1].start
 
         polygon_points = []
-        for r_local, c_local in sampled:
-            r_global = int(r_local + r_offset)
-            c_global = int(c_local + c_offset)
-            
-            # Safety clamp
-            r_global = max(0, min(r_global, lat_grid.shape[0] - 1))
-            c_global = max(0, min(c_global, lat_grid.shape[1] - 1))
-            
-            lat = float(lat_grid[r_global, c_global])
-            lon = float(lon_grid[r_global, c_global] % 360)
-            polygon_points.append((lat, lon))
+
+        if lats.ndim == 1:
+             for r_local, c_local in sampled:
+                r_global = int(r_local + r_offset)
+                c_global = int(c_local + c_offset)
+
+                # Safety clamp
+                r_global = max(0, min(r_global, lats.shape[0] - 1))
+                c_global = max(0, min(c_global, lons.shape[0] - 1))
+
+                lat = float(lats[r_global])
+                lon = float(lons[c_global] % 360)
+                polygon_points.append((lat, lon))
+        else:
+            # Fallback for 2D coords
+            if lats.ndim == 1: # Double check (redundant but safe)
+                 lats, lons = np.meshgrid(lats, lons, indexing='ij')
+
+            for r_local, c_local in sampled:
+                r_global = int(r_local + r_offset)
+                c_global = int(c_local + c_offset)
+
+                # Safety clamp
+                r_global = max(0, min(r_global, lats.shape[0] - 1))
+                c_global = max(0, min(c_global, lats.shape[1] - 1))
+
+                lat = float(lats[r_global, c_global])
+                lon = float(lons[r_global, c_global] % 360)
+                polygon_points.append((lat, lon))
 
         return polygon_points
 
@@ -96,11 +116,12 @@ class CellDataSaver:
         """
         polygon_grid = self.mapped_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
-        lat_grid = self.radar_ds['latitude'].values
-        lon_grid = self.radar_ds['longitude'].values % 360
 
-        if lat_grid.ndim == 1:
-            lat_grid, lon_grid = np.meshgrid(lat_grid, lon_grid, indexing='ij')
+        # Optimize: Avoid full meshgrid creation
+        lats = self.radar_ds['latitude'].values
+        lons = self.radar_ds['longitude'].values
+
+        is_1d_coords = (lats.ndim == 1)
 
         results = []
         
@@ -133,8 +154,6 @@ class CellDataSaver:
                 continue
                 
             refl_slice = refl_grid[sl]
-            lat_slice = lat_grid[sl]
-            lon_slice = lon_grid[sl]
             
             # Apply mask to sub-grids
             refl_vals = refl_slice[mask_slice]
@@ -146,8 +165,63 @@ class CellDataSaver:
             # Original logic: if refl_vals.size > 0 ==> weighted centroid. Else nan.
             
             if refl_vals.size > 0:
-                lat_vals = lat_slice[mask_slice][valid_refl_mask]
-                lon_vals = lon_slice[mask_slice][valid_refl_mask]
+                # Optimize coordinate extraction
+                if is_1d_coords:
+                     # Get indices within the slice
+                     # mask_slice is boolean (H_slice, W_slice)
+                     # We want indices where mask_slice & valid_refl (relative to slice) is True.
+                     # But valid_refl_mask is 1D (masked by mask_slice).
+
+                     # Let's go back to slice level
+                     # mask_slice is True where poly_id matches
+                     # refl_slice has NaNs potentially
+                     # combined_mask = mask_slice & ~np.isnan(refl_slice)
+
+                     combined_mask = mask_slice.copy()
+                     # Update combined_mask where refl is NaN
+                     # Note: refl_slice[mask_slice] gives values.
+                     # We can just iterate over mask_slice indices
+
+                     # Get indices of valid pixels relative to slice
+                     # np.where returns (rows, cols)
+
+                     # Let's reconstruct masked coords efficiently
+                     # We need lat_vals and lon_vals for each valid pixel
+
+                     rows, cols = np.where(combined_mask)
+                     # Filter by nan in refl
+                     # This is getting complicated to avoid meshgrid.
+                     # But we can just use fancy indexing on 1D arrays
+
+                     # global_rows = rows + sl[0].start
+                     # global_cols = cols + sl[1].start
+
+                     # But we need to filter out NaNs from refl_slice[rows, cols]
+                     vals = refl_slice[rows, cols]
+                     valid = ~np.isnan(vals)
+
+                     valid_rows = rows[valid]
+                     valid_cols = cols[valid]
+
+                     refl_vals = vals[valid] # This matches refl_vals above
+
+                     global_rows = valid_rows + sl[0].start
+                     global_cols = valid_cols + sl[1].start
+
+                     lat_vals = lats[global_rows]
+                     lon_vals = lons[global_cols]
+
+                else:
+                    # Fallback to meshgrid for 2D coords (slice first?)
+                    lat_slice = lats[sl]
+                    lon_slice = lons[sl]
+
+                    if lat_slice.ndim == 1: # Should not happen if lats is 2D
+                         lat_slice, lon_slice = np.meshgrid(lat_slice, lon_slice, indexing='ij')
+
+                    lat_vals = lat_slice[mask_slice][valid_refl_mask]
+                    lon_vals = lon_slice[mask_slice][valid_refl_mask]
+
                 
                 max_refl = float(np.nanmax(refl_vals))
                 weights = np.exp(refl_vals)

@@ -29,19 +29,11 @@ def detect_cells(
         lon_max,
     )
 
-    radar_ds_full = handler.load_radar_full()
-    if radar_ds_full is None:
-        io_manager.write_error(f"Failed to load radar data from {radar_path}")
-        return [], None if return_probsevere else []
-
-    radar_ds = handler.subset_radar(radar_ds_full)
+    # Use load_subset directly to avoid loading full metadata if possible/cleaner
+    radar_ds = handler.load_subset()
     
-    # === Memory Optimization: Release full radar dataset immediately ===
-    del radar_ds_full
-    gc.collect()
-
     if radar_ds is None:
-        io_manager.write_error("Failed to subset radar data")
+        io_manager.write_error(f"Failed to load/subset radar data from {radar_path}")
         return [], None if return_probsevere else []
 
     ps_ds = handler.load_probsevere()
