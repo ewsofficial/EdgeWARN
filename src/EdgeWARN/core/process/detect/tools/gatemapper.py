@@ -69,7 +69,7 @@ class GateMapper:
             transform=transform,
             fill=0,
             all_touched=True,  # or False for strict "contains" behavior
-            dtype=np.uint16
+            dtype=np.int32
         )
 
         return xr.Dataset(
@@ -129,7 +129,7 @@ class GateMapper:
         
         # Return as xarray Dataset
         return xr.Dataset(
-            {'PolygonID': (('latitude', 'longitude'), final_grid.astype(np.uint16))},
+            {'PolygonID': (('latitude', 'longitude'), final_grid.astype(np.int32))},
             coords={
                 'latitude': mapped_ds['latitude'].values,
                 'longitude': mapped_ds['longitude'].values
