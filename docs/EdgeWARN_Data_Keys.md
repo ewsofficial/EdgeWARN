@@ -26,6 +26,22 @@ The JSON output follows this structure:
 | dy          | m             | Y-displacement from previous scan centroid       |
 | dt          | s             | Time difference from previous scan              |
 | properties  | Object        | Integrated meteorological data |
+| modules     | Object        | CTAM module outputs (see Modules section below) |
+
+## Data Keys in ``modules``
+
+The `modules` object contains output from registered CTAM modules. Each module has its own key.
+
+### ``modules.StormCast``
+
+| Key              | Type           | Description                                      |
+|------------------|----------------|--------------------------------------------------|
+| status          | string        | "success", "skipped", or "error"                 |
+| u               | m/s           | Predicted eastward motion component (if success) |
+| v               | m/s           | Predicted northward motion component (if success) |
+| forecast_cones  | List[Object]  | Forecast uncertainty cones at various lead times |
+| reason          | string        | Explanation if status is "skipped"               |
+| error           | string        | Error message if status is "error"               |
 
 ## Data Keys in ``properties``
 
