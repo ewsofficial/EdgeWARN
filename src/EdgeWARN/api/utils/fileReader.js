@@ -1,5 +1,16 @@
 import fs from 'fs';
 import path from 'path';
+import { LRUCache } from 'lru-cache';
+
+// Initialize LRU Cache
+// Max 500 items, default TTL of 1 minute (60 * 1000 ms)
+const cache = new LRUCache({
+  max: 500,
+  ttl: 60 * 1000,
+  // Approximate size calculation if we wanted to limit by bytes
+  // sizeCalculation: (value) => JSON.stringify(value).length,
+  // maxSize: 50 * 1024 * 1024 // 50MB
+});
 
 /**
  * Check if filename is safe (no path traversal)
@@ -38,6 +49,11 @@ export async function readJsonFileSafe(dir, name) {
     throw e;
   }
 
+  // Check cache
+  if (cache.has(full)) {
+    return cache.get(full);
+  }
+
   if (!fs.existsSync(full)) {
     const e = new Error('Not found');
     e.code = 'ENOENT';
@@ -45,7 +61,14 @@ export async function readJsonFileSafe(dir, name) {
   }
 
   const txt = await fs.promises.readFile(full, 'utf8');
-  return JSON.parse(txt);
+  const json = JSON.parse(txt);
+
+  // Cache the result.
+  // If the file is 'stormcells_{timestamp}.json', it's likely immutable, so we could cache it longer.
+  // But for simplicity, we stick to default TTL.
+  cache.set(full, json);
+
+  return json;
 }
 
 /**
@@ -55,6 +78,11 @@ export async function readJsonFileSafe(dir, name) {
  * @throws {Error} If file doesn't exist or can't be read
  */
 export async function readIndexFile(indexPath) {
+  // Check cache with a shorter TTL for index files as they change more often
+  if (cache.has(indexPath)) {
+    return cache.get(indexPath);
+  }
+
   if (!fs.existsSync(indexPath)) {
     const e = new Error('Index file not found');
     e.code = 'ENOENT';
@@ -62,5 +90,10 @@ export async function readIndexFile(indexPath) {
   }
 
   const txt = await fs.promises.readFile(indexPath, 'utf8');
-  return JSON.parse(txt);
+  const json = JSON.parse(txt);
+
+  // Cache index files with a shorter TTL (e.g. 5 seconds)
+  cache.set(indexPath, json, { ttl: 5 * 1000 });
+
+  return json;
 }
