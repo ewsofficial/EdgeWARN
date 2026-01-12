@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import compression from 'compression';
 import cluster from 'cluster';
 import os from 'os';
+import helmet from 'helmet';
 
 dotenv.config();
 
@@ -31,8 +32,31 @@ if (cluster.isPrimary) {
   const app = express();
 
   // Middleware
+  // Security headers (Helmet) - disable HSTS to avoid breaking HTTP-only clients
+  app.use(helmet({
+    hsts: false,
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "default-src": ["'self'"],
+        // Add other directives if necessary for the API
+      }
+    }
+  }));
+
+  // Compression
   app.use(compression());
-  app.use(cors());
+
+  // CORS configuration
+  // Allow configuration via environment variable, default to * for backward compatibility
+  const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',')
+    : '*';
+
+  app.use(cors({
+    origin: allowedOrigins
+  }));
+
   app.use(express.json());
 
   // Rate Limiting
