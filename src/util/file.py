@@ -25,7 +25,7 @@ def _define_paths(base_path):
            MRMS_PRECIPRATE_DIR, MRMS_PROBSEVERE_DIR, MRMS_FLASH_DIR, MRMS_VIL_DIR, \
            MRMS_VII_DIR, MRMS_AZSHEARLOW_DIR, MRMS_AZSHEARMID_DIR, MRMS_COMPOSITE_DIR, \
            MRMS_RHOHV_DIR, MRMS_PRECIPTYP_DIR, MRMS_MESH_DIR, GOES_GLM_DIR, \
-           ABI_CLOUDPRES_DIR, RAP_DIR, MRMS_NWS_DIR, STORMCELL_DIR, CELL_DIR, GUI_DIR
+           ABI_CLOUDPRES_DIR, RAP_DIR, MRMS_NWS_DIR, STORMCELL_DIR, METAR_DIR, CELL_DIR, GUI_DIR
 
     BASE_DIR = base_path
     
@@ -55,6 +55,7 @@ def _define_paths(base_path):
     RAP_DIR = DATA_DIR / "RAP"
     STORMCELL_DIR = DATA_DIR / "stormcells"
     CELL_DIR = DATA_DIR / "cells"
+    METAR_DIR = DATA_DIR / "METAR"
     
     # ---------- GUI PATH CONFIG ----------
     GUI_DIR = BASE_DIR / "gui"
