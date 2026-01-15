@@ -17,5 +17,6 @@ dependencies:
   - xarray
   - pyproj
   - psutil
+  - ijson
   - pip:
     - gputil
