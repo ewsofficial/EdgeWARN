@@ -63,6 +63,7 @@ A storm motion forecasting module that predicts storm cell trajectories.
 **Location**: `modules/StormCast/`
 
 **Input Requirements** (from storm_entry):
+- `centroid` (top-level): Storm cell centroid [lat, lon] used as reference for coordinate conversion
 - `dx`, `dy`, `dt` (top-level): Displacement since last observation
 - `properties.EchoTop30`, `properties.EchoTop50`: Echo top heights
 - `properties.u850`, `properties.v850`, etc.: Wind components at pressure levels
@@ -70,7 +71,7 @@ A storm motion forecasting module that predicts storm cell trajectories.
 **Output** (stored in `storm_entry['modules']['StormCast']`):
 - `status`: "success", "skipped", or "error"
 - `u`, `v`: Predicted motion components (m/s) if successful
-- `forecast_cones`: List of forecast cone dictionaries
+- `forecast_cones`: List of forecast cone dictionaries (centers are in lat/lon relative to storm centroid)
 - `reason` or `error`: Explanation if skipped or failed
 
 ## Data Structure
