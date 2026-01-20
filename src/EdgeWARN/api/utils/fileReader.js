@@ -54,12 +54,8 @@ export async function readJsonFileSafe(dir, name) {
     return cache.get(full);
   }
 
-  if (!fs.existsSync(full)) {
-    const e = new Error('Not found');
-    e.code = 'ENOENT';
-    throw e;
-  }
-
+  // Optimization: Remove fs.existsSync to avoid double I/O and race condition
+  // If file doesn't exist, readFile will throw ENOENT
   const txt = await fs.promises.readFile(full, 'utf8');
   const json = JSON.parse(txt);
 
@@ -83,12 +79,7 @@ export async function readIndexFile(indexPath) {
     return cache.get(indexPath);
   }
 
-  if (!fs.existsSync(indexPath)) {
-    const e = new Error('Index file not found');
-    e.code = 'ENOENT';
-    throw e;
-  }
-
+  // Optimization: Remove fs.existsSync to avoid double I/O
   const txt = await fs.promises.readFile(indexPath, 'utf8');
   const json = JSON.parse(txt);
 
