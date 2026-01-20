@@ -10,11 +10,15 @@ const router = express.Router();
 const TIMESTAMP_REGEX = /^\d{8}-\d{4}00$/;
 
 /**
- * GET /data/download/metar?timestamp=YYYYMMDD-HHMM00
- * Downloads METAR data for the specified timestamp
+ * GET /data/download?type=[nws|metar]&timestamp=YYYYMMDD-HHMM00
+ * Downloads data for the specified type and timestamp
  */
-router.get('/metar', async (req, res) => {
-    const { timestamp } = req.query;
+router.get('/', async (req, res) => {
+    const { type, timestamp } = req.query;
+
+    if (!type || !['nws', 'metar'].includes(type)) {
+        return res.status(400).json({ error: 'Missing or invalid parameter: type. valid values: [nws, metar]' });
+    }
 
     if (!timestamp) {
         return res.status(400).json({ error: 'Missing required parameter: timestamp' });
@@ -27,84 +31,49 @@ router.get('/metar', async (req, res) => {
     }
 
     try {
-        // METAR files use hourly format: METAR_YYYYMMDD-HHz.json
-        // Extract the hour portion from the timestamp
-        const hourTimestamp = timestamp.slice(0, 11); // YYYYMMDD-HH
-        const filename = `METAR_${hourTimestamp}z.json`;
-        const filePath = path.join(apiConfig.METAR_DIR, filename);
+        let filename;
+        let dirPath;
+        let errorMessage = 'Data not found for the specified timestamp';
+
+        if (type === 'metar') {
+            // METAR files use hourly format: METAR_YYYYMMDD-HHz.json
+            const hourTimestamp = timestamp.slice(0, 11); // YYYYMMDD-HH
+            filename = `METAR_${hourTimestamp}z.json`;
+            dirPath = apiConfig.METAR_DIR;
+            errorMessage = 'METAR data not found for the specified timestamp';
+        } else if (type === 'nws') {
+            // NWS files: alerts_active_YYYYMMDD-HHMM00.json
+            filename = `alerts_active_${timestamp}.json`;
+            dirPath = apiConfig.NWS_DIR;
+            errorMessage = 'NWS data not found for the specified timestamp';
+        }
+
+        const filePath = path.join(dirPath, filename);
 
         // Check if file exists
         try {
             await fs.access(filePath);
         } catch {
             return res.status(404).json({
-                error: 'METAR data not found for the specified timestamp',
+                error: errorMessage,
                 timestamp: timestamp,
                 searched: filename
             });
         }
 
         // Read and return the JSON data
-        const data = await readJsonFileSafe(apiConfig.METAR_DIR, filename);
+        const data = await readJsonFileSafe(dirPath, filename);
 
         res.set('Cache-Control', 'public, max-age=60');
         res.json({
-            type: 'metar',
+            type: type,
             timestamp: timestamp,
             data: data
         });
+
     } catch (err) {
-        console.error('Error downloading METAR data:', err);
-        res.status(500).json({ error: 'Failed to download METAR data' });
-    }
-});
-
-/**
- * GET /data/download/nws?timestamp=YYYYMMDD-HHMM00
- * Downloads NWS alert data for the specified timestamp
- */
-router.get('/nws', async (req, res) => {
-    const { timestamp } = req.query;
-
-    if (!timestamp) {
-        return res.status(400).json({ error: 'Missing required parameter: timestamp' });
-    }
-
-    if (!TIMESTAMP_REGEX.test(timestamp)) {
-        return res.status(400).json({
-            error: 'Invalid timestamp format. Expected: YYYYMMDD-HHMM00'
-        });
-    }
-
-    try {
-        // NWS files: alerts_active_YYYYMMDD-HHMM00.json
-        // Exact match for minute timestamp
-        const filename = `alerts_active_${timestamp}.json`;
-        const filePath = path.join(apiConfig.NWS_DIR, filename);
-
-        // Check if file exists
-        try {
-            await fs.access(filePath);
-        } catch {
-            return res.status(404).json({
-                error: 'NWS data not found for the specified timestamp',
-                timestamp: timestamp,
-                searched: filename
-            });
-        }
-
-        // Read and return the JSON data
-        const data = await readJsonFileSafe(apiConfig.NWS_DIR, filename);
-
-        res.set('Cache-Control', 'public, max-age=60');
-        res.json({
-            type: 'nws',
-            timestamp: timestamp,
-            data: data
-        });
-    } catch (err) {
-        console.error('Error downloading NWS data:', err);
-        res.status(500).json({ error: 'Failed to download NWS data' });
+        console.error(`Error downloading ${type} data:`, err);
+        res.status(500).json({ error: `Failed to download ${type} data` });
     }
 });
 

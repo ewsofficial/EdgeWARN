@@ -39,58 +39,48 @@ async function getAvailableTimestamps(dirPath, filenamePattern) {
 }
 
 /**
- * GET /data/fetch/metar
- * Returns available METAR file timestamps
+ * GET /data/fetch?type=[nws/metar]
+ * Returns available file timestamps for the specified type
  */
-router.get('/metar', async (req, res) => {
-    try {
-        res.set('Cache-Control', 'public, max-age=5');
+router.get('/', async (req, res) => {
+    const { type } = req.query;
 
-        // METAR files: METAR_YYYYMMDD-HHz.json
-        const timestamps = await getAvailableTimestamps(
-            apiConfig.METAR_DIR,
-            /^METAR_(\d{8}-\d{2})z\.json$/
-        );
-
-        // Convert to YYYYMMDD-HHMM00 format for consistency
-        const formattedTimestamps = timestamps.map(ts => `${ts}0000`);
-
-        res.json({
-            type: 'metar',
-            count: formattedTimestamps.length,
-            timestamps: formattedTimestamps
-        });
-    } catch (err) {
-        console.error('Error fetching METAR timestamps:', err);
-        res.status(500).json({ error: 'Failed to fetch METAR resources' });
+    if (!type || !['nws', 'metar'].includes(type)) {
+        return res.status(400).json({ error: 'Missing or invalid parameter: type. valid values: [nws, metar]' });
     }
-});
 
-/**
- * GET /data/fetch/nws
- * Returns available NWS alert file timestamps
- */
-router.get('/nws', async (req, res) => {
     try {
         res.set('Cache-Control', 'public, max-age=5');
+        let timestamps = [];
+        let formattedTimestamps = [];
 
-        // NWS files: alerts_active_YYYYMMDD-HHMM00.json
-        const timestamps = await getAvailableTimestamps(
-            apiConfig.NWS_DIR,
-            /^alerts_active_(\d{8}-\d{6})\.json$/
-        );
+        if (type === 'metar') {
+            // METAR files: METAR_YYYYMMDD-HHz.json
+            timestamps = await getAvailableTimestamps(
+                apiConfig.METAR_DIR,
+                /^METAR_(\d{8}-\d{2})z\.json$/
+            );
+            // Convert to YYYYMMDD-HHMM00 format for consistency
+            formattedTimestamps = timestamps.map(ts => `${ts}0000`);
 
-        // timestamps are already in YYYYMMDD-HHMM00 format
-        const formattedTimestamps = timestamps;
+        } else if (type === 'nws') {
+            // NWS files: alerts_active_YYYYMMDD-HHMM00.json
+            timestamps = await getAvailableTimestamps(
+                apiConfig.NWS_DIR,
+                /^alerts_active_(\d{8}-\d{6})\.json$/
+            );
+            // timestamps are already in YYYYMMDD-HHMM00 format
+            formattedTimestamps = timestamps;
+        }
 
         res.json({
-            type: 'nws',
+            type: type,
             count: formattedTimestamps.length,
             timestamps: formattedTimestamps
         });
     } catch (err) {
-        console.error('Error fetching NWS timestamps:', err);
-        res.status(500).json({ error: 'Failed to fetch NWS resources' });
+        console.error(`Error fetching ${type} timestamps:`, err);
+        res.status(500).json({ error: `Failed to fetch ${type} resources` });
     }
 });
 
