@@ -21,11 +21,6 @@ def _get_unsigned_s3_client():
 
 _DECOMPRESS_CHUNK_SIZE = 1024 * 1024  # 1MB chunks to reduce syscall overhead during gzip copy
 
-
-# Module-level cache to store file lists per prefix
-# Structure: { prefix: {'files': [(ts, path), ...], 'last_key': str} }
-_CACHE = {}
-
 class FileFinder:
     __slots__ = ("dt", "bucket", "max_entries", "io_manager", "client", "paginator")
 
@@ -39,12 +34,15 @@ class FileFinder:
     
     def lookup_files(self, modifier, verbose=False):
         """
-        Look up latest S3 files with caching support.
+        Look up latest S3 files and return as list of (path, datetime_obj) tuples.
         
         Args:
             modifier (str | list[str]): Specify which part(s) of the bucket to search (e.g., folder prefix).
                                       Can be a single string or a list of strings to search sequentially.
             verbose (bool): Whether to print debug information
+        
+        Uses S3 client and instance variables to find and filter files.
+        Returns files sorted by timestamp in descending order (latest first).
         
         Returns:
             list: List of tuples (s3_path, datetime_obj) sorted by latest timestamp first
@@ -53,38 +51,21 @@ class FileFinder:
             # Normalize modifier to list
             modifiers = [modifier] if isinstance(modifier, str) else modifier
             
-            all_known_files = [] 
+            top_files = []
             
-            # Prune cache if too large (simple protection)
-            if len(_CACHE) > 200:
-                _CACHE.clear()
+            push = heapq.heappush
+            replace = heapq.heapreplace
+            max_entries = self.max_entries
 
             for prefix in modifiers:
+                # Set up prefix filter for bucket search
                 search_prefix = prefix if prefix else ""
-                
-                # Get cache entry or initialize
-                if search_prefix not in _CACHE:
-                    _CACHE[search_prefix] = {'files': [], 'last_key': None}
-                
-                cache_entry = _CACHE[search_prefix]
-                start_after = cache_entry['last_key']
-                
-                # Setup kwargs for pagination
-                paginate_kwargs = {'Bucket': self.bucket, 'Prefix': search_prefix}
-                if start_after:
-                    paginate_kwargs['StartAfter'] = start_after
 
-                new_files_found = 0
-                max_key_seen = start_after
-
-                # Fetch ONLY new files from S3 (using StartAfter)
-                for page in self.paginator.paginate(**paginate_kwargs):
+                # Iterate through all pages of results
+                for page in self.paginator.paginate(Bucket=self.bucket, Prefix=search_prefix):
                     if 'Contents' in page:
                         for obj in page['Contents']:
                             s3_path = obj['Key']
-                            
-                            # Update max_key_seen (S3 returns sorted keys, so last is largest)
-                            max_key_seen = s3_path
 
                             try:
                                 # Extract timestamp from S3 path
@@ -94,27 +75,25 @@ class FileFinder:
                                     continue
 
                                 entry = (timestamp, s3_path)
-                                cache_entry['files'].append(entry)
-                                new_files_found += 1
-                                
+                                if len(top_files) < max_entries:
+                                    push(top_files, entry)
+                                elif entry[0] > top_files[0][0]:
+                                    replace(top_files, entry)
                             except Exception:
+                                # Skip files that don't have valid timestamps
                                 continue
-                
-                # Update last_key for next time
-                if max_key_seen:
-                    cache_entry['last_key'] = max_key_seen
-                
-                if verbose and new_files_found > 0:
-                    self.io_manager.write_debug(f"[{search_prefix}] Found {new_files_found} new files. Total cached: {len(cache_entry['files'])}")
-                    
-                # Collect files from this prefix (both old cached and new)
-                all_known_files.extend(cache_entry['files'])
+
+                # Optimization: If we have enough files, stop searching subsequent modifiers
+                # We only check this after finishing a prefix to ensure we get all files from that prefix
+                # (e.g. all files from the current hour) before deciding if we need more.
+                if len(top_files) >= self.max_entries:
+                    break
 
             # Sort by timestamp (latest first)
-            all_known_files.sort(key=lambda x: x[0], reverse=True)
+            top_files.sort(key=lambda x: x[0], reverse=True)
 
             # Limit to max_entries
-            return [(path, ts) for ts, path in all_known_files[:self.max_entries]]
+            return [(path, ts) for ts, path in top_files[:self.max_entries]]
             
         except Exception as e:
             # Log error and return empty list
