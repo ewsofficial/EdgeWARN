@@ -91,3 +91,25 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - Fix StormCast module saving the uncertainty circle centers incorrectly
     - Problem: StormCast was using hardcoded values (35°N, -97°W) as the reference point for forecast cone calculations instead of each storm's actual centroid
 - Add a safeguard to abort processing with a warning if no valid radar data is found, preventing downstream crashes
+
+## 1.2.0 (2026-01-20)
+
+### Additions
+- Implement METAR ingestion module to fetch, parse, and save METAR data from NOAA cycle files
+    - Parses location, time, wind, visibility, temperature, and altimeter from METAR strings
+    - Processes the latest 3 hours of data automatically
+- Add streaming ingest for NWS active alerts from `api.weather.gov`
+    - Uses `ijson` for memory-efficient streaming JSON parsing
+    - Filters for severe weather events (Tornado, Severe Thunderstorm, Flood, Winter Weather)
+    - Outputs GeoJSON format compatible with mapping libraries
+- Add `round_to_nearest_even_minute()` utility for consistent timestamp matching across scheduler and downloader
+- Add data integrity check scripts: `check_data_integrity.py`, `validate_rounding.py`, `mock_download_test.py`
+
+### Changes
+- Scheduler and downloader now use rounded even-minute timestamps for file matching
+    - Fixes hour-boundary misalignment issues (e.g., 23:59 → 00:00)
+    - Debug logging added when non-exact rounded matches are used
+- Remove `NLDN_CG_005min_AvgDensity` from `check_modifiers` due to incompatible update cadence
+
+### Fixes
+- Fix timestamp misalignment causing missed downloads at hour boundaries for AzShear products
