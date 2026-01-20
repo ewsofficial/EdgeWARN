@@ -41,16 +41,16 @@ class IOManager:
             type=float,
             nargs=2,
             metavar=("LAT_MIN", "LAT_MAX"),
-            default=[36, 46],
-            help="Latitude limits for processing (default: 36 46)"
+            default=[20, 55],
+            help="Latitude limits for processing (default: 20 55)"
         )
         parser.add_argument(
             "--lon_limits",
             type=float,
             nargs=2,
             metavar=("LON_MIN", "LON_MAX"),
-            default=[-83, -63],
-            help="Longitude limits for processing (default: -83 -63)"
+            default=[230, 300],
+            help="Longitude limits for processing (default: 230 300)"
         )
         parser.add_argument(
             "--nogui",
