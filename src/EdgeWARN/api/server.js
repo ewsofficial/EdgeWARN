@@ -10,10 +10,12 @@ import compression from 'compression';
 import cluster from 'cluster';
 import os from 'os';
 import helmet from 'helmet';
+import config from './config.js';
 
 dotenv.config();
 
-const PORT = process.env.PORT || 5000;
+// Use DEBUG_PORT (3001) if --debug_server flag is set, otherwise DEFAULT_PORT (5000)
+const PORT = process.env.PORT || (config.DEBUG_SERVER ? config.DEBUG_PORT : config.DEFAULT_PORT);
 const numCPUs = os.cpus().length;
 
 if (cluster.isPrimary) {

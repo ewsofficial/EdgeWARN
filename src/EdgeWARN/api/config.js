@@ -15,6 +15,11 @@ function parseBaseDir() {
   return null;
 }
 
+// Parse CLI arguments for --debug_server
+function isDebugServer() {
+  return process.argv.includes('--debug_server');
+}
+
 // Determine base directory: CLI arg > environment > auto-detect
 let BASE_DIR = parseBaseDir();
 
@@ -66,7 +71,12 @@ const config = {
   NWS_DIR: path.join(DATA_DIR, 'NWS'),
 
   // Filenames used by GUI
-  STORMCELL_JSON: 'src/stormcell_test.json'
+  STORMCELL_JSON: 'src/stormcell_test.json',
+
+  // Debug server mode
+  DEBUG_SERVER: isDebugServer(),
+  DEBUG_PORT: 3001,
+  DEFAULT_PORT: 5000
 };
 
 // Log which base directory is being used
