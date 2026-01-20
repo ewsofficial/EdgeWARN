@@ -30,8 +30,13 @@ if (!BASE_DIR) {
   } else if (process.platform === 'win32') {
     BASE_DIR = path.resolve('C:\\EdgeWARN_input');
   } else {
-    // Try /home/EdgeWARN_input first, then /workspaces/EdgeWARN_input, then fallback
-    if (fs.existsSync('/home/EdgeWARN_input')) {
+    // Try user home directory first, then common locations
+    const homeDir = process.env.HOME || '/home';
+    const userEdgewarnPath = path.join(homeDir, 'EdgeWARN_input');
+
+    if (fs.existsSync(userEdgewarnPath)) {
+      BASE_DIR = path.resolve(userEdgewarnPath);
+    } else if (fs.existsSync('/home/EdgeWARN_input')) {
       BASE_DIR = path.resolve('/home/EdgeWARN_input');
     } else if (fs.existsSync('/workspaces/EdgeWARN_input')) {
       BASE_DIR = path.resolve('/workspaces/EdgeWARN_input');

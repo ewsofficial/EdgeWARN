@@ -74,22 +74,19 @@ router.get('/nws', async (req, res) => {
     try {
         res.set('Cache-Control', 'public, max-age=5');
 
-        // NWS files: NWS_alerts_YYYYMMDD-HHMMSS.json
+        // NWS files: alerts_active_YYYYMMDD-HHMM00.json
         const timestamps = await getAvailableTimestamps(
             apiConfig.NWS_DIR,
-            /^NWS_alerts_(\d{8}-\d{6})\.json$/
+            /^alerts_active_(\d{8}-\d{6})\.json$/
         );
 
-        // Convert to YYYYMMDD-HHMM00 format (truncate seconds)
-        const formattedTimestamps = timestamps.map(ts => ts.slice(0, 13) + '00');
-
-        // Remove duplicates (multiple files in same minute)
-        const uniqueTimestamps = [...new Set(formattedTimestamps)];
+        // timestamps are already in YYYYMMDD-HHMM00 format
+        const formattedTimestamps = timestamps;
 
         res.json({
             type: 'nws',
-            count: uniqueTimestamps.length,
-            timestamps: uniqueTimestamps
+            count: formattedTimestamps.length,
+            timestamps: formattedTimestamps
         });
     } catch (err) {
         console.error('Error fetching NWS timestamps:', err);

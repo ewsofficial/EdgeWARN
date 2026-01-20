@@ -77,36 +77,24 @@ router.get('/nws', async (req, res) => {
     }
 
     try {
-        // NWS files: NWS_alerts_YYYYMMDD-HHMMSS.json
-        // We need to find a file that matches the minute (ignore seconds)
-        const minutePrefix = timestamp.slice(0, 13); // YYYYMMDD-HHMM
+        // NWS files: alerts_active_YYYYMMDD-HHMM00.json
+        // Exact match for minute timestamp
+        const filename = `alerts_active_${timestamp}.json`;
+        const filePath = path.join(apiConfig.NWS_DIR, filename);
 
-        // List files in NWS directory and find matching one
-        let files;
+        // Check if file exists
         try {
-            files = await fs.readdir(apiConfig.NWS_DIR);
+            await fs.access(filePath);
         } catch {
             return res.status(404).json({
-                error: 'NWS data directory not found',
-                timestamp: timestamp
-            });
-        }
-
-        // Find file matching the minute
-        const matchingFile = files.find(f => {
-            const match = f.match(/^NWS_alerts_(\d{8}-\d{4})\d{2}\.json$/);
-            return match && match[1] === minutePrefix;
-        });
-
-        if (!matchingFile) {
-            return res.status(404).json({
                 error: 'NWS data not found for the specified timestamp',
-                timestamp: timestamp
+                timestamp: timestamp,
+                searched: filename
             });
         }
 
-        const filePath = path.join(apiConfig.NWS_DIR, matchingFile);
-        const data = await readJsonFileSafe(apiConfig.NWS_DIR, matchingFile);
+        // Read and return the JSON data
+        const data = await readJsonFileSafe(apiConfig.NWS_DIR, filename);
 
         res.set('Cache-Control', 'public, max-age=60');
         res.json({

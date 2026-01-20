@@ -3,8 +3,16 @@ import ijson
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+from decimal import Decimal
 import util.file as fs
 from util.io import IOManager
+
+# Custom JSON encoder to handle Decimal types from ijson
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 io_manager = IOManager("[NWS Ingest]")
 
@@ -75,7 +83,7 @@ def download_alerts(dt: datetime):
                         first = False
 
                     # Serialize the single feature back to JSON and write it
-                    json.dump(feature, outfile)
+                    json.dump(feature, outfile, cls=DecimalEncoder)
                     count += 1
 
             # Write the end of the GeoJSON object
