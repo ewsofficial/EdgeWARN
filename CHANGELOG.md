@@ -98,18 +98,30 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - Implement METAR ingestion module to fetch, parse, and save METAR data from NOAA cycle files
     - Parses location, time, wind, visibility, temperature, and altimeter from METAR strings
     - Processes the latest 3 hours of data automatically
+    - **Now supports coordinate lookup for stations using Aviation Weather database**
 - Add streaming ingest for NWS active alerts from `api.weather.gov`
     - Uses `ijson` for memory-efficient streaming JSON parsing
     - Filters for severe weather events (Tornado, Severe Thunderstorm, Flood, Winter Weather)
     - Outputs GeoJSON format compatible with mapping libraries
 - Add `round_to_nearest_even_minute()` utility for consistent timestamp matching across scheduler and downloader
 - Add data integrity check scripts: `check_data_integrity.py`, `validate_rounding.py`, `mock_download_test.py`
+- **Add `--debug_server` flag to API (runs on port 3001)**
+- **Add new API data endpoints for NWS and METAR access:**
+    - `GET /data/fetch?type=[nws|metar]`
+    - `GET /data/download?type=[nws|metar]&timestamp=YYYYMMDD-HHMM00`
 
 ### Changes
 - Scheduler and downloader now use rounded even-minute timestamps for file matching
     - Fixes hour-boundary misalignment issues (e.g., 23:59 → 00:00)
     - Debug logging added when non-exact rounded matches are used
 - Remove `NLDN_CG_005min_AvgDensity` from `check_modifiers` due to incompatible update cadence
+- **Changed default run bounds to 20-55 N, 230-300 E (approx. -130 to -60 W) to cover continental US**
+- **METAR parser now converts altimeter settings to decimal inHg (e.g. 30.12) and removes raw data field**
+- **Refactored API endpoints to consolidate fetch and download routes by resource type**
 
 ### Fixes
 - Fix timestamp misalignment causing missed downloads at hour boundaries for AzShear products
+- **Fixed critical bare `except` clause in NWS ingestion that was suppressing `KeyboardInterrupt`**
+- **Fixed NWS ingestion error with `Decimal` JSON serialization**
+- **Fixed API `BASE_DIR` detection to properly search user home directory for `EdgeWARN_input`**
+- **Fixed missing METAR ingestion in the main `run.py` pipeline**
