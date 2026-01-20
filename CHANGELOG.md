@@ -94,6 +94,7 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 
 ## 1.2.0 (2026-01-20)
 
+
 ### Additions
 - Implement METAR ingestion module to fetch, parse, and save METAR data from NOAA cycle files
     - Parses location, time, wind, visibility, temperature, and altimeter from METAR strings
@@ -109,6 +110,7 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - **Add new API data endpoints for NWS and METAR access:**
     - `GET /data/fetch?type=[nws|metar]`
     - `GET /data/download?type=[nws|metar]&timestamp=YYYYMMDD-HHMM00`
+- **Enable `trust proxy` support in API server for correct IP detection behind proxies**
 
 ### Changes
 - Scheduler and downloader now use rounded even-minute timestamps for file matching
@@ -118,6 +120,7 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - **Changed default run bounds to 20-55 N, 230-300 E (approx. -130 to -60 W) to cover continental US**
 - **METAR parser now converts altimeter settings to decimal inHg (e.g. 30.12) and removes raw data field**
 - **Refactored API endpoints to consolidate fetch and download routes by resource type**
+- **Adjusted rate limiting configuration to 100 requests per minute (was 10 req/sec) for better burst handling and security**
 
 ### Fixes
 - Fix timestamp misalignment causing missed downloads at hour boundaries for AzShear products
