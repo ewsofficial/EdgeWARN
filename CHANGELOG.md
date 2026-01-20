@@ -121,6 +121,7 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - **METAR parser now converts altimeter settings to decimal inHg (e.g. 30.12) and removes raw data field**
 - **Refactored API endpoints to consolidate fetch and download routes by resource type**
 - **Adjusted rate limiting configuration to 100 requests per minute (was 10 req/sec) for better burst handling and security**
+- **Implemented S3 listing cache with `StartAfter` optimization in Scheduler to significantly reduce API calls and latency during update checks**
 
 ### Fixes
 - Fix timestamp misalignment causing missed downloads at hour boundaries for AzShear products
