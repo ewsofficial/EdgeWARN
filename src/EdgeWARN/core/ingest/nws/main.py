@@ -89,8 +89,8 @@ def download_alerts(dt: datetime):
         if output_path.exists():
             try:
                 output_path.unlink()
-            except:
-                pass
+            except OSError:
+                pass  # Ignore errors during cleanup
 
 if __name__ == "__main__":
     # Test block
