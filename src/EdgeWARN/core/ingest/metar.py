@@ -3,18 +3,87 @@ import re
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-import util.file as file
+from pathlib import Path
+import util.file as fs
 from util.io import IOManager
 
 # Initialize IO Manager
 io = IOManager("[METAR Ingest]")
+
+# Station database cache
+_station_cache = None
+STATION_DB_URL = "https://aviationweather.gov/data/cache/stations.cache.json"
+
+def _load_station_database():
+    """
+    Load station database from cache file or download from Aviation Weather API.
+    Returns a dict mapping ICAO codes to [lat, lon] lists.
+    """
+    global _station_cache
+    if _station_cache is not None:
+        return _station_cache
+    
+    cache_file = fs.DATA_DIR / "stations_cache.json" if hasattr(fs, 'DATA_DIR') else Path("stations_cache.json")
+    
+    # Try to load from cache file first
+    if cache_file.exists():
+        try:
+            with open(cache_file, 'r') as f:
+                _station_cache = json.load(f)
+                io.write_debug(f"Loaded {len(_station_cache)} stations from cache")
+                return _station_cache
+        except Exception as e:
+            io.write_warning(f"Failed to load station cache: {e}")
+    
+    # Download and parse station database from JSON API
+    _station_cache = {}
+    try:
+        io.write_info("Downloading station database from Aviation Weather...")
+        req = urllib.request.Request(
+            STATION_DB_URL,
+            headers={"User-Agent": "EdgeWARN/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=60) as response:
+            stations = json.loads(response.read().decode('utf-8'))
+        
+        # Parse JSON format - each station has icaoId, lat, lon
+        for station in stations:
+            icao = station.get('icaoId') or station.get('stationId')
+            lat = station.get('lat')
+            lon = station.get('lon')
+            
+            if icao and lat is not None and lon is not None:
+                _station_cache[icao] = [round(float(lat), 4), round(float(lon), 4)]
+        
+        io.write_info(f"Parsed {len(_station_cache)} stations")
+        
+        # Save to cache file
+        try:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(cache_file, 'w') as f:
+                json.dump(_station_cache, f)
+            io.write_debug(f"Saved station cache to {cache_file}")
+        except Exception as e:
+            io.write_warning(f"Failed to save station cache: {e}")
+            
+    except Exception as e:
+        io.write_error(f"Failed to download station database: {e}")
+    
+    return _station_cache
+
+def get_station_coordinates(icao):
+    """
+    Get [lat, lon] for a station ICAO code.
+    Returns None if not found.
+    """
+    db = _load_station_database()
+    return db.get(icao.upper())
 
 def parse_metar(metar_str, observation_time):
     """
     Parses a single METAR string into a dict.
     """
     data = {
-        "raw": metar_str,
         "observation_time": observation_time
     }
 
@@ -31,6 +100,10 @@ def parse_metar(metar_str, observation_time):
 
     if idx < len(parts):
         data["station"] = parts[idx]
+        # Look up station coordinates
+        coords = get_station_coordinates(parts[idx])
+        if coords:
+            data["coordinates"] = coords
         idx += 1
 
     # Extract other fields using regex from the raw string for simplicity
@@ -54,10 +127,12 @@ def parse_metar(metar_str, observation_time):
         data["temperature"] = temp_match.group(1)
         data["dewpoint"] = temp_match.group(2)
 
-    # Altimeter
+    # Pressure (altimeter setting) - convert from AXXXX format to decimal inHg
     alt_match = re.search(r'\bA(\d{4})\b', metar_str)
     if alt_match:
-        data["altimeter"] = alt_match.group(1)
+        # Convert e.g. "3039" -> 30.39 inHg
+        alt_value = int(alt_match.group(1))
+        data["pressure"] = round(alt_value / 100, 2)
 
     return data
 
@@ -119,12 +194,12 @@ def save_metar_data(data, dt):
         io.write_warning("No METAR data to save.")
         return
 
-    if not file.METAR_DIR.exists():
-        io.write_info(f"Creating METAR directory: {file.METAR_DIR}")
-        file.METAR_DIR.mkdir(parents=True, exist_ok=True)
+    if not fs.METAR_DIR.exists():
+        io.write_info(f"Creating METAR directory: {fs.METAR_DIR}")
+        fs.METAR_DIR.mkdir(parents=True, exist_ok=True)
 
     filename = f"METAR_{dt.strftime('%Y%m%d-%H')}z.json"
-    filepath = file.METAR_DIR / filename
+    filepath = fs.METAR_DIR / filename
 
     io.write_info(f"Saving {len(data)} METAR records to {filepath}")
 
@@ -140,7 +215,7 @@ def ingest_metars():
     Fetches and processes METAR data for the last 3 hours.
     """
     # Ensure paths are defined
-    file.initialize_filesystem()
+    fs.initialize_filesystem()
 
     now = datetime.now(timezone.utc)
 
