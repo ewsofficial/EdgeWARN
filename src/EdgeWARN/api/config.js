@@ -62,6 +62,8 @@ const config = {
   ABI_CLOUDPRES_DIR: path.join(DATA_DIR, 'ABI-CloudPressure'),
   STORMCELL_DIR: path.join(DATA_DIR, 'stormcells'),
   CELL_DIR: path.join(DATA_DIR, 'cells'),
+  METAR_DIR: path.join(DATA_DIR, 'METAR'),
+  NWS_DIR: path.join(DATA_DIR, 'NWS'),
 
   // Filenames used by GUI
   STORMCELL_JSON: 'src/stormcell_test.json'

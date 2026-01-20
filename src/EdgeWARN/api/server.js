@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import featuresRouter from './routes/features/index.js';
+import dataRouter from './routes/data/index.js';
 import healthRouter from './routes/health.js';
 import rateLimit from 'express-rate-limit';
 import compression from 'compression';
@@ -77,6 +78,9 @@ if (cluster.isPrimary) {
 
   // Mount feature routes
   app.use('/features', featuresRouter);
+
+  // Mount data routes
+  app.use('/data', dataRouter);
 
   // Mount health route
   app.use('/health', healthRouter);
