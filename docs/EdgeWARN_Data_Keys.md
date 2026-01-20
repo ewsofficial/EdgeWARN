@@ -43,6 +43,16 @@ The `modules` object contains output from registered CTAM modules. Each module h
 | reason          | string        | Explanation if status is "skipped"               |
 | error           | string        | Error message if status is "error"               |
 
+#### ``forecast_cones`` Object Structure
+
+| Key        | Type          | Description                                           |
+|------------|---------------|-------------------------------------------------------|
+| center     | (lat, lon)    | Center of the uncertainty cone in lat/lon coordinates |
+| x          | m             | X position in local meters (relative to storm origin) |
+| y          | m             | Y position in local meters (relative to storm origin) |
+| radius     | m             | Radius of the uncertainty cone at given confidence    |
+| lead_time  | s             | Forecast lead time in seconds                         |
+
 ## Data Keys in ``properties``
 
 | Key              | Units          | Description                                      |

@@ -150,5 +150,5 @@ class DetectionDataHandler:
                     continue
 
         fallback = datetime.utcnow().isoformat()
-        _DETECTION_IO.write_info(f"Using fallback timestamp: {fallback}")
+        _DETECTION_IO.write_warning(f"Using fallback timestamp: {fallback}")
         return fallback

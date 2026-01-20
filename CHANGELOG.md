@@ -56,7 +56,7 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - Offloaded the synchronous ``merge_glm_files`` operation in the async ingest module to a thread pool using ``run_in_executor``, preventing the event loop from blocking during heavy I/O and CPU-bound operations.
 - Parallelized the MRMS update checks in the scheduler using ``ThreadPoolExecutor``, reducing latency when checking multiple data sources.
 
-### 1.1.0 (2026-01-07)
+## 1.1.0 (2026-01-07)
 
 ### Additions
 - Implemented RAP meteorological data integration for storm cells, incorporating U and V wind components at 850, 700, 500, and 250mb levels using a nearest-neighbor grid point mapping.
@@ -73,3 +73,21 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 ### Fixes
 - Resolved a coordinate mismatch issue in RAP integration by normalizing storm cell centroids to the -180 to 180 longitude range.
 - Fixed a crash in `xarray` dataset coordinate assignment by providing explicit dimension names for 2D coordinate data.
+
+## 1.1.1 (2026-01-13)
+
+### Additions
+- Add security headers (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection) to API responses
+- Add configurable CORS support via `CORS_ORIGINS` environment variable
+- Add a ``--base_dir`` option to ``run.py`` to allow for custom base directories for data storage
+- Add explicit checks for the existence of all input files (Radar, ProbSevere, PrecipType) at the start of the cell detection pipeline
+
+### Changes
+- Vectorize hailcore polygon creation for improved performance
+- Improve robustness for missing input files in the cell detection pipeline, allowing for graceful degradation instead of crashing
+- Update `DetectionDataHandler.find_timestamp` to log a warning instead of info when regex timestamp extraction fails and falls back to `utcnow`
+
+### Fixes
+- Fix StormCast module saving the uncertainty circle centers incorrectly
+    - Problem: StormCast was using hardcoded values (35°N, -97°W) as the reference point for forecast cone calculations instead of each storm's actual centroid
+- Add a safeguard to abort processing with a warning if no valid radar data is found, preventing downstream crashes

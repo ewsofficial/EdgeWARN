@@ -52,6 +52,29 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     lat_min, lat_max = lat_bounds
     lon_min, lon_max = lon_bounds
 
+    # === Input Data Safeguards ===
+    # Check "New" data existence
+    if radar_new and not Path(radar_new).exists():
+        io_manager.write_warning(f"New radar file not found: {radar_new}")
+        radar_new = None
+    if ps_new and not Path(ps_new).exists():
+        io_manager.write_warning(f"New ProbSevere file not found: {ps_new}")
+        ps_new = None
+    if pt_new and not Path(pt_new).exists():
+        io_manager.write_warning(f"New PrecipType file not found: {pt_new}")
+        pt_new = None
+
+    # Check "Old" data existence
+    if radar_old and not Path(radar_old).exists():
+        io_manager.write_warning(f"Old radar file not found: {radar_old}")
+        radar_old = None
+    if ps_old and not Path(ps_old).exists():
+        io_manager.write_warning(f"Old ProbSevere file not found: {ps_old}")
+        ps_old = None
+    if pt_old and not Path(pt_old).exists():
+        io_manager.write_warning(f"Old PrecipType file not found: {pt_old}")
+        pt_old = None
+
     # === Single-frame fallback ===
     single_frame = radar_new is None or ps_new is None or pt_new is None
     if single_frame:
@@ -59,6 +82,9 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
 
     # === Calculate Timestamp Early ===
     current_radar = radar_old if single_frame else radar_new
+    if current_radar is None:
+        io_manager.write_warning("No valid radar input data found. Aborting detection.")
+        return None
     ts_str = DetectionDataHandler.find_timestamp(current_radar)
     try:
         dt = datetime.fromisoformat(ts_str)

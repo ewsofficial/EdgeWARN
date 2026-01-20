@@ -72,12 +72,23 @@ class StormCastModule(AnalysisModule):
         
         # Build winds dict - first try environment, then extract from properties
         winds = {}
-        ref_lat = 35.0
-        ref_lon = -97.0
+        
+        # Extract reference lat/lon from storm's centroid
+        # Centroid is available in storm_entry (top-level) as [lat, lon] with lon in 0-360 format
+        centroid = storm_entry.get("centroid")
+        if centroid and len(centroid) >= 2:
+            ref_lat = centroid[0]
+            # Convert longitude from 0-360 to -180-180 format
+            ref_lon = centroid[1] if centroid[1] <= 180 else centroid[1] - 360
+        else:
+            # Fallback to defaults if centroid not available
+            ref_lat = 35.0
+            ref_lon = -97.0
         
         if environment is not None and "winds" in environment:
             # Use provided environment
             winds = environment["winds"]
+            # Environment can override reference coordinates if provided
             ref_lat = environment.get("reference_lat", ref_lat)
             ref_lon = environment.get("reference_lon", ref_lon)
         else:
