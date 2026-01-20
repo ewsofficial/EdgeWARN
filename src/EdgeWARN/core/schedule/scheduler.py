@@ -6,6 +6,7 @@ from EdgeWARN.core.ingest.mrms.s3_sync import FileFinder
 from EdgeWARN.core.ingest.mrms.utils import extract_timestamp
 from EdgeWARN.core.ingest.mrms.parse import parse_mrms_bucket_path
 from EdgeWARN.core.ingest.mrms.config import bucket
+from EdgeWARN.core.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 from util.io import IOManager
 
 io_manager = IOManager("[DataIngestion]")
@@ -85,10 +86,11 @@ class MRMSUpdateChecker:
             elif ts.tzinfo != datetime.timezone.utc:
                 ts = ts.astimezone(datetime.timezone.utc)
             
-            ts_rounded = ts.replace(second=0, microsecond=0)
+            ts_rounded = round_to_nearest_even_minute(ts)
             processed_timestamps.append(ts_rounded)
             
         return set(processed_timestamps)
+
 
     def all_sources_available(self, modifiers):
         """Check all MRMS modifiers for new data availability."""
