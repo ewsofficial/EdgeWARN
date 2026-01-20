@@ -62,10 +62,13 @@ if (cluster.isPrimary) {
 
   app.use(express.json());
 
+  // Enable trust proxy for correct IP checks behind proxies (and localhost sometimes)
+  app.set('trust proxy', 1);
+
   // Rate Limiting
   const limiter = rateLimit({
-    windowMs: 1000, // 1 second
-    max: 10, // Limit each IP to 10 requests per `windowMs`
+    windowMs: 60 * 1000, // 1 minute
+    max: 100, // Limit each IP to 100 requests per `windowMs`
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   });
