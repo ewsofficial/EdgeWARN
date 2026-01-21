@@ -22,3 +22,5 @@ dependencies:
     - gputil
     - pytest
     - pytest-mock
+    - aiofiles
+    - aiohttp

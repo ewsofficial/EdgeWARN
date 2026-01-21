@@ -1,4 +1,7 @@
 import urllib.request
+import aiohttp
+import asyncio
+import io as io_lib
 import re
 import json
 import logging
@@ -159,6 +162,30 @@ def fetch_metar_cycle(dt):
 
     return None
 
+    return None
+
+async def fetch_metar_cycle_async(dt):
+    """
+    Async version of fetch_metar_cycle.
+    """
+    hour_str = dt.strftime("%H")
+    url = f"https://tgftp.nws.noaa.gov/data/observations/metar/cycles/{hour_str}Z.TXT"
+    io.write_info(f"Fetching METAR data (async) from {url}")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=30) as response:
+                if response.status == 404:
+                    io.write_warning(f"METAR file not found for {hour_str}Z (404)")
+                    return None
+                response.raise_for_status()
+                content = await response.text(encoding='utf-8', errors='ignore')
+                return content
+    except Exception as e:
+        io.write_error(f"Failed to fetch {url} (async): {e}")
+    
+    return None
+
 def process_content(content):
     """
     Parses the content of a cycle file.
@@ -230,6 +257,38 @@ def ingest_metars():
             save_metar_data(parsed_data, target_time)
         else:
             io.write_warning(f"Skipping {target_time.strftime('%H')}Z due to fetch failure.")
+
+async def ingest_metars_async():
+    """
+    Async entry point for METAR ingestion.
+    Fetches and processes METAR data for the last 3 hours concurrently.
+    """
+    # Ensure paths are defined
+    fs.initialize_filesystem()
+
+    now = datetime.now(timezone.utc)
+    
+    tasks = []
+
+    async def _process_single_hour(i):
+        target_time = now - timedelta(hours=i)
+        io.write_info(f"Processing METARs (async) for {target_time.strftime('%Y-%m-%d %H:00')} UTC")
+        
+        content = await fetch_metar_cycle_async(target_time)
+        if content:
+            # CPU-bound parsing can run in executor if needed, but for now we do it in loop 
+            # as it's string splitting and regex, usually fast enough for 3 files.
+            # If blocking becomes an issue, wrap in loop.run_in_executor
+            parsed_data = process_content(content)
+            save_metar_data(parsed_data, target_time)
+        else:
+             io.write_warning(f"Skipping {target_time.strftime('%H')}Z due to fetch failure.")
+
+    # Create tasks for current hour and previous 2 hours
+    for i in range(3):
+        tasks.append(_process_single_hour(i))
+    
+    await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
     ingest_metars()
