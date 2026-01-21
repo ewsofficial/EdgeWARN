@@ -50,8 +50,8 @@ def download_alerts(dt: datetime):
     if not fs.MRMS_NWS_DIR.exists():
         fs.MRMS_NWS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Clean old files
-    fs.clean_old_files(fs.MRMS_NWS_DIR, max_age_minutes=60)
+    # Clean old files (120-minute retention, no file count limit)
+    fs.clean_files_by_age(fs.MRMS_NWS_DIR, max_age_minutes=120)
 
     # Output filename: alerts_active_YYYYMMDD-HHMM00.json
     filename = f"alerts_active_{dt.strftime('%Y%m%d-%H%M00')}.json"
@@ -118,8 +118,8 @@ async def download_alerts_async(dt: datetime):
     if not fs.MRMS_NWS_DIR.exists():
         fs.MRMS_NWS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Clean old files
-    fs.clean_old_files(fs.MRMS_NWS_DIR, max_age_minutes=60)
+    # Clean old files (120-minute retention, no file count limit)
+    fs.clean_files_by_age(fs.MRMS_NWS_DIR, max_age_minutes=120)
 
     # Output filename: alerts_active_YYYYMMDD-HHMM00.json
     filename = f"alerts_active_{dt.strftime('%Y%m%d-%H%M00')}.json"
