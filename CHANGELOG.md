@@ -112,6 +112,9 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
     - `GET /data/download?type=[nws|metar]&timestamp=YYYYMMDD-HHMM00`
 - **Enable `trust proxy` support in API server for correct IP detection behind proxies**
 
+- **Implement ingester for NOAA Surface Analysis features (Fronts, Highs, Lows) from National Forecast Chart**
+- **Add API endpoints for Surface Features data (`/data/fetch` and `/data/download` support `type=surface`)**
+
 ### Changes
 - Scheduler and downloader now use rounded even-minute timestamps for file matching
     - Fixes hour-boundary misalignment issues (e.g., 23:59 → 00:00)
@@ -121,7 +124,6 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - **METAR parser now converts altimeter settings to decimal inHg (e.g. 30.12) and removes raw data field**
 - **Refactored API endpoints to consolidate fetch and download routes by resource type**
 - **Adjusted rate limiting configuration to 100 requests per minute (was 10 req/sec) for better burst handling and security**
-- **Implemented S3 listing cache with `StartAfter` optimization in Scheduler to significantly reduce API calls and latency during update checks**
 
 ### Fixes
 - Fix timestamp misalignment causing missed downloads at hour boundaries for AzShear products

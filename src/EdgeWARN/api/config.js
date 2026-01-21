@@ -74,6 +74,7 @@ const config = {
   CELL_DIR: path.join(DATA_DIR, 'cells'),
   METAR_DIR: path.join(DATA_DIR, 'METAR'),
   NWS_DIR: path.join(DATA_DIR, 'NWS'),
+  SURFACE_DIR: path.join(DATA_DIR, 'surface_features'),
 
   // Filenames used by GUI
   STORMCELL_JSON: 'src/stormcell_test.json',
