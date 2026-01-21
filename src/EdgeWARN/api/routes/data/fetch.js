@@ -45,8 +45,8 @@ async function getAvailableTimestamps(dirPath, filenamePattern) {
 router.get('/', async (req, res) => {
     const { type } = req.query;
 
-    if (!type || !['nws', 'metar'].includes(type)) {
-        return res.status(400).json({ error: 'Missing or invalid parameter: type. valid values: [nws, metar]' });
+    if (!type || !['nws', 'metar', 'surface'].includes(type)) {
+        return res.status(400).json({ error: 'Missing or invalid parameter: type. valid values: [nws, metar, surface]' });
     }
 
     try {
@@ -70,6 +70,13 @@ router.get('/', async (req, res) => {
                 /^alerts_active_(\d{8}-\d{6})\.json$/
             );
             // timestamps are already in YYYYMMDD-HHMM00 format
+            formattedTimestamps = timestamps;
+        } else if (type === 'surface') {
+            // Surface features: surface_features_YYYYMMDD-HHMM00.json
+            timestamps = await getAvailableTimestamps(
+                apiConfig.SURFACE_DIR,
+                /^surface_features_(\d{8}-\d{6})\.json$/
+            );
             formattedTimestamps = timestamps;
         }
 

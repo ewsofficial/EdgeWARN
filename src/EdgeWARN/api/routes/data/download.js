@@ -16,8 +16,8 @@ const TIMESTAMP_REGEX = /^\d{8}-\d{4}00$/;
 router.get('/', async (req, res) => {
     const { type, timestamp } = req.query;
 
-    if (!type || !['nws', 'metar'].includes(type)) {
-        return res.status(400).json({ error: 'Missing or invalid parameter: type. valid values: [nws, metar]' });
+    if (!type || !['nws', 'metar', 'surface'].includes(type)) {
+        return res.status(400).json({ error: 'Missing or invalid parameter: type. valid values: [nws, metar, surface]' });
     }
 
     if (!timestamp) {
@@ -46,6 +46,11 @@ router.get('/', async (req, res) => {
             filename = `alerts_active_${timestamp}.json`;
             dirPath = apiConfig.NWS_DIR;
             errorMessage = 'NWS data not found for the specified timestamp';
+        } else if (type === 'surface') {
+            // Surface features: surface_features_YYYYMMDD-HHMM00.json
+            filename = `surface_features_${timestamp}.json`;
+            dirPath = apiConfig.SURFACE_DIR;
+            errorMessage = 'Surface features not found for the specified timestamp';
         }
 
         const filePath = path.join(dirPath, filename);
