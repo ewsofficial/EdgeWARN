@@ -16,7 +16,7 @@ dotenv.config();
 
 // Use DEBUG_PORT (3001) if --debug_server flag is set, otherwise DEFAULT_PORT (5000)
 const PORT = process.env.PORT || (config.DEBUG_SERVER ? config.DEBUG_PORT : config.DEFAULT_PORT);
-const numCPUs = os.cpus().length;
+const numCPUs = Math.min(os.cpus().length, 4);
 
 if (cluster.isPrimary) {
   console.log(`Primary ${process.pid} is running`);
