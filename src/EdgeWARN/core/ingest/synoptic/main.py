@@ -3,6 +3,13 @@ from datetime import datetime
 from EdgeWARN.core.ingest.synoptic.downloader import download_rap as _download_rap
 import util.file as fs
 
+
+async def download_rap_async(dt: datetime):
+    """
+    Async version of download_rap.
+    """
+    return await _download_rap(dt)
+
 def download_rap(dt: datetime):
     """
     Public API to download a RAP file for a given datetime.
