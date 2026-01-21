@@ -6,13 +6,16 @@ from pathlib import Path
 from datetime import datetime, timezone
 import time
 import multiprocessing
+import asyncio
 import xarray as xr
 # Suppress cfgrib/xarray compatibility warnings
 xr.set_options(use_new_combine_kwarg_defaults=True)
 
 import util.file as fs
 import EdgeWARN.core.ingest.mrms.main as ingest_main
-from EdgeWARN.core.ingest.synoptic.main import download_rap
+from EdgeWARN.core.ingest.synoptic.main import download_rap, download_rap_async
+import EdgeWARN.core.ingest.nws.main as nws_ingest
+import EdgeWARN.core.ingest.metar as metar_ingest
 import EdgeWARN.core.process.detect.main as detect
 import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
@@ -53,10 +56,28 @@ def pipeline(log_queue, dt):
     def log(msg):
         log_queue.put(f"{msg}")
 
+    async def run_async_ingest():
+        log(f"INFO: Starting Async Data Ingestion for timestamp {dt}")
+        await asyncio.gather(
+            ingest_main.download_all_files_async(dt),
+            download_rap_async(dt),
+            nws_ingest.download_alerts_async(dt),
+            metar_ingest.ingest_metars_async()
+        )
+
     try:
-        log(f"INFO: Starting Data Ingestion for timestamp {dt}")
-        ingest_main.download_all_files(dt)
-        download_rap(dt)
+        # 1. Ingestion (Async with Fallback)
+        try:
+            asyncio.run(run_async_ingest())
+        except Exception as e:
+            log(f"ERROR: Async ingestion failed ({e}). Falling back to synchronous ingestion.")
+            # Fallback to sync sequential
+            ingest_main.download_all_files(dt)
+            download_rap(dt)
+            nws_ingest.download_alerts(dt)
+            metar_ingest.ingest_metars()
+
+        # 2. Detection (Sync)
         log("INFO: Starting Storm Cell Detection")
         try:
             filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
@@ -69,13 +90,16 @@ def pipeline(log_queue, dt):
             pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)[-1], None
         
         generated_file = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
+        
+        # 3. Integration (Sync)
         integration.main(generated_file)
         log("Pipeline completed successfully")
+        
     except Exception as e:
         log(f"Error in pipeline: {e}")
 
 def main(ui_process=None):
-    """Scheduler: spawn pipeline() every 15 s if a new latest_common timestamp is available."""
+    """Scheduler: spawn pipeline() every 15s if a new latest_common timestamp is available."""
     print("Scheduler started. Press CTRL+C to exit.")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed = None  # Track last processed timestamp
@@ -86,12 +110,9 @@ def main(ui_process=None):
             files = sorted(fs.STORMCELL_DIR.glob("stormcells_*.json"))
             if files:
                 latest_file = files[-1]
-                # Format: stormcells_YYYYMMDD-HHMM00.json
-                # Extract YYYYMMDD-HHMM00
                 match = re.search(r"stormcells_(\d{8}-\d{6})\.json", latest_file.name)
                 if match:
-                    ts_str = match.group(1) # YYYYMMDD-HHMMSS
-                    # Parse assuming UTC, but round to minute to match scheduler
+                    ts_str = match.group(1) 
                     dt_exact = datetime.strptime(ts_str, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
                     last_processed = dt_exact.replace(second=0, microsecond=0)
                     print(f"[Scheduler] Initialized last_processed from {latest_file}: {last_processed}")
@@ -126,9 +147,9 @@ def main(ui_process=None):
                 # Spawn the pipeline process
                 proc = multiprocessing.Process(target=pipeline, args=(log_queue, dt))
                 proc.start()
-                print(f"Spawned pipeline process PID={proc.pid}")
+                print(f"Spawned pipeline process PID={proc.pid} for {dt}")
 
-                # Print logs in real-time
+                # Wait for process to complete, printing logs in real-time
                 while proc.is_alive() or not log_queue.empty():
                     if ui_process and not ui_process.is_alive():
                         print("GUI closed. Terminating pipeline and exiting.")
@@ -141,13 +162,14 @@ def main(ui_process=None):
 
                 proc.join()
                 print(f"Pipeline process PID={proc.pid} finished")
+
             else:
                 if not latest_common:
                     print("[Scheduler] WARN: No common timestamp available yet. Waiting ...")
                 else:
                     print(f"[Scheduler] DEBUG: Timestamp {latest_common} already processed. Waiting ...")
 
-            # Wait/Check loop
+            # Wait/Check loop (15 seconds)
             for _ in range(30):
                 if ui_process and not ui_process.is_alive():
                     print("GUI closed. Exiting.")
@@ -162,7 +184,7 @@ if __name__ == "__main__":
     if args.nogui:
         # No GUI mode: Print directly to console (already set up by default sys.stdout/stderr)
         try:
-            print(f"Running EdgeWARN v1.1.1")
+            print(f"Running EdgeWARN v1.2.0")
             print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
             main()
         except KeyboardInterrupt:
@@ -183,7 +205,7 @@ if __name__ == "__main__":
         ui_process.start()
         
         try:
-            print(f"Running EdgeWARN v1.1.1")
+            print(f"Running EdgeWARN v1.2.0")
             print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
             main(ui_process)
         except KeyboardInterrupt:

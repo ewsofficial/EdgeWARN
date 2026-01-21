@@ -29,7 +29,6 @@ def get_check_modifiers():
     return [
         ("CONUS", "EchoTop_18_00.50", fs.MRMS_ECHOTOP18_DIR), # Region / Product / Outdir
         ("CONUS", "EchoTop_30_00.50", fs.MRMS_ECHOTOP30_DIR),
-        ("CONUS", "NLDN_CG_005min_AvgDensity_00.00", fs.MRMS_NLDN_DIR),
         ("CONUS", "PrecipRate_00.00", fs.MRMS_PRECIPRATE_DIR),
         ("CONUS", "MergedAzShear_0-2kmAGL_00.50", fs.MRMS_AZSHEARLOW_DIR),
         ("CONUS", "MergedAzShear_3-6kmAGL_00.50", fs.MRMS_AZSHEARMID_DIR),
@@ -40,6 +39,7 @@ def get_check_modifiers():
         ("CONUS", "MergedReflectivityQCComposite_00.50", fs.MRMS_COMPOSITE_DIR),
         ("CONUS", "VII_00.50", fs.MRMS_VII_DIR)
     ]
+
 
 def get_goes_modifiers():
     return [
