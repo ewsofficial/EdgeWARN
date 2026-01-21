@@ -92,7 +92,7 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
     - Problem: StormCast was using hardcoded values (35°N, -97°W) as the reference point for forecast cone calculations instead of each storm's actual centroid
 - Add a safeguard to abort processing with a warning if no valid radar data is found, preventing downstream crashes
 
-## 1.2.0 (2026-01-20)
+## 1.2.0 (2026-01-21)
 
 
 ### Additions
@@ -112,9 +112,6 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
     - `GET /data/download?type=[nws|metar]&timestamp=YYYYMMDD-HHMM00`
 - **Enable `trust proxy` support in API server for correct IP detection behind proxies**
 
-- **Implement ingester for NOAA Surface Analysis features (Fronts, Highs, Lows) from National Forecast Chart**
-- **Add API endpoints for Surface Features data (`/data/fetch` and `/data/download` support `type=surface`)**
-
 ### Changes
 - Scheduler and downloader now use rounded even-minute timestamps for file matching
     - Fixes hour-boundary misalignment issues (e.g., 23:59 → 00:00)
@@ -124,6 +121,14 @@ where ``VALUE`` is the timestamp for ``type=list`` in ``YYYYMMDD-HHMM00`` format
 - **METAR parser now converts altimeter settings to decimal inHg (e.g. 30.12) and removes raw data field**
 - **Refactored API endpoints to consolidate fetch and download routes by resource type**
 - **Adjusted rate limiting configuration to 100 requests per minute (was 10 req/sec) for better burst handling and security**
+
+- **Implemented asynchronous ingestion pipeline for all data sources (MRMS, RAP, NWS, METAR)**
+    - Uses `asyncio.gather` for concurrent downloads, significantly reducing cycle latency
+    - Introduced async-capable functions: `download_all_files_async`, `download_rap_async`, `download_alerts_async`, and `ingest_metars_async`
+- Added robust synchronous fallback mechanism in `run.py` to ensure data ingestion continues even if async operations fail
+- Updated main runner with real-time log drainage for child processes using `multiprocessing.Queue`
+- **Exposed async interfaces for all core ingestion modules**
+- **Modified scheduler to drain process logs frequently to prevent buffer deadlocks**
 
 ### Fixes
 - Fix timestamp misalignment causing missed downloads at hour boundaries for AzShear products
