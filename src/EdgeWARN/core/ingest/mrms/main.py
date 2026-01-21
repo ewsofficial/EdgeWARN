@@ -19,13 +19,10 @@ import traceback
 
 io_manager = IOManager("[Ingest]")
 
-def download_all_files(dt, max_entries=10, remove_old_files=True):
-    """
-    Main function for downloading all MRMS files.
 
-    This function is called by src/run.py without any modifications needed.
-    It uses async operations internally for better performance while maintaining
-    the same synchronous interface.
+async def download_all_files_async(dt, max_entries=10, remove_old_files=True):
+    """
+    Async version of download_all_files.
     """
     # Clear files first
     mrms_modifiers = get_mrms_modifiers()
@@ -37,19 +34,21 @@ def download_all_files(dt, max_entries=10, remove_old_files=True):
     if remove_old_files:
         for f in folders:
             fs.clean_old_files(f, max_age_minutes=60)
+            
+    await asyncio.gather(
+        download_all_files_async_internal(dt, max_entries),
+        download_all_goes_files_async(dt, max_entries)
+    )
 
-    # Use different function for stormcell dirs
-
-    # Use async operations internally for better performance
-    # This maintains the same API but with improved performance
-    async def _download_all():
-        await asyncio.gather(
-            download_all_files_async_internal(dt, max_entries),
-            download_all_goes_files_async(dt, max_entries)
-        )
-
+def download_all_files(dt, max_entries=10, remove_old_files=True):
+    """
+    Main function for downloading all MRMS files.
+    
+    This operates synchronously as a wrapper/fallback or for legacy calls.
+    It catches exceptions and falls back to synchronous downloads if async fails.
+    """
     try:
-        asyncio.run(_download_all())
+        asyncio.run(download_all_files_async(dt, max_entries, remove_old_files))
     except Exception as e:
         io_manager.write_error(f"Async downloads failed: {e}")
         io_manager.write_info("Falling back to synchronous downloads...")

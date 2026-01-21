@@ -9,6 +9,7 @@ import aiofiles
 import aiofiles.os
 from datetime import timedelta
 from util.handler import extract_timestamp
+from EdgeWARN.core.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 
 
 _DECOMPRESS_CHUNK_SIZE = 1024 * 1024  # 1MB chunks to reduce syscall overhead during gzip copy
@@ -94,12 +95,31 @@ class AsyncFileDownloader:
         self.target_key = (dt.year, dt.month, dt.day, dt.hour, dt.minute)
 
     def _select_target_file(self, file_list, context: str):
+        """
+        Select the file that best matches the target datetime.
+        
+        Uses round_to_nearest_even_minute for matching, with debug logging
+        when a non-exact match is selected.
+        """
+        target_rounded = round_to_nearest_even_minute(self.dt)
+        target_key = (target_rounded.year, target_rounded.month, target_rounded.day, 
+                      target_rounded.hour, target_rounded.minute)
+        
         for s3_path, ts in file_list:
-            if (ts.year, ts.month, ts.day, ts.hour, ts.minute) == self.target_key:
+            ts_rounded = round_to_nearest_even_minute(ts)
+            ts_key = (ts_rounded.year, ts_rounded.month, ts_rounded.day,
+                      ts_rounded.hour, ts_rounded.minute)
+            
+            if ts_key == target_key:
+                # Log if not an exact match (rounding was applied)
+                if ts.minute != target_rounded.minute or ts.hour != target_rounded.hour:
+                    self.io_manager.write_debug(
+                        f"Rounded match: {ts.strftime('%H:%M:%S')} → {target_rounded.strftime('%H:%M')} for {context}"
+                    )
                 return s3_path
 
         self.io_manager.write_warning(
-            f"No file found matching timestamp {self.target_minute} for {context}. Falling back to latest available."
+            f"No file found matching timestamp {target_rounded} for {context}. Falling back to latest available."
         )
         # Fallback to the latest file (first in the list)
         return file_list[0][0]

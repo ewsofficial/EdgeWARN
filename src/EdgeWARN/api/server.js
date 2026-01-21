@@ -3,17 +3,20 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import featuresRouter from './routes/features/index.js';
+import dataRouter from './routes/data/index.js';
 import healthRouter from './routes/health.js';
 import rateLimit from 'express-rate-limit';
 import compression from 'compression';
 import cluster from 'cluster';
 import os from 'os';
 import helmet from 'helmet';
+import config from './config.js';
 
 dotenv.config();
 
-const PORT = process.env.PORT || 5000;
-const numCPUs = os.cpus().length;
+// Use DEBUG_PORT (3001) if --debug_server flag is set, otherwise DEFAULT_PORT (5000)
+const PORT = process.env.PORT || (config.DEBUG_SERVER ? config.DEBUG_PORT : config.DEFAULT_PORT);
+const numCPUs = Math.min(os.cpus().length, 4);
 
 if (cluster.isPrimary) {
   console.log(`Primary ${process.pid} is running`);
@@ -59,10 +62,13 @@ if (cluster.isPrimary) {
 
   app.use(express.json());
 
+  // Enable trust proxy for correct IP checks behind proxies (and localhost sometimes)
+  app.set('trust proxy', 1);
+
   // Rate Limiting
   const limiter = rateLimit({
-    windowMs: 1000, // 1 second
-    max: 10, // Limit each IP to 10 requests per `windowMs`
+    windowMs: 60 * 1000, // 1 minute
+    max: 100, // Limit each IP to 100 requests per `windowMs`
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   });
@@ -77,6 +83,9 @@ if (cluster.isPrimary) {
 
   // Mount feature routes
   app.use('/features', featuresRouter);
+
+  // Mount data routes
+  app.use('/data', dataRouter);
 
   // Mount health route
   app.use('/health', healthRouter);

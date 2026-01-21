@@ -11,6 +11,7 @@ from botocore import UNSIGNED
 from botocore.client import Config
 
 from util.handler import extract_timestamp
+from EdgeWARN.core.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 
 
 @lru_cache(maxsize=1)
@@ -111,16 +112,35 @@ class FileDownloader:
         self.client = client if client is not None else _get_unsigned_s3_client()
 
     def _select_target_file(self, file_list):
-        target_key = self.target_key
+        """
+        Select the file that best matches the target datetime.
+        
+        Uses round_to_nearest_even_minute for matching, with debug logging
+        when a non-exact match is selected.
+        """
+        target_rounded = round_to_nearest_even_minute(self.dt)
+        target_key = (target_rounded.year, target_rounded.month, target_rounded.day, 
+                      target_rounded.hour, target_rounded.minute)
+        
         for s3_path, ts in file_list:
-            if (ts.year, ts.month, ts.day, ts.hour, ts.minute) == target_key:
+            ts_rounded = round_to_nearest_even_minute(ts)
+            ts_key = (ts_rounded.year, ts_rounded.month, ts_rounded.day,
+                      ts_rounded.hour, ts_rounded.minute)
+            
+            if ts_key == target_key:
+                # Log if not an exact match (rounding was applied)
+                if ts.minute != target_rounded.minute or ts.hour != target_rounded.hour:
+                    self.io_manager.write_debug(
+                        f"Rounded match: {ts.strftime('%H:%M:%S')} → {target_rounded.strftime('%H:%M')}"
+                    )
                 return s3_path
 
         self.io_manager.write_warning(
-            f"No file found matching timestamp {self.target_minute}. Falling back to latest available."
+            f"No file found matching timestamp {target_rounded}. Falling back to latest available."
         )
         # Fallback to the latest file (first in the list)
         return file_list[0][0]
+
 
     def download_matching(self, file_list, outdir: Path):
         """

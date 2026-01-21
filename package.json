@@ -1,12 +1,13 @@
 {
   "name": "edgewarn-backend",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Node.js backend server for EdgeWARN",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "start": "node src/EdgeWARN/api/server.js",
     "dev": "node --watch src/EdgeWARN/api/server.js",
+    "debug": "node src/EdgeWARN/api/server.js --debug_server",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
