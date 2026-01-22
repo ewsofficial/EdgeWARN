@@ -6,12 +6,66 @@ on storm cell data.
 """
 
 import time
-from typing import List, Dict, Any
+from pathlib import Path
+from typing import List, Dict, Any, Optional
 from .registry import ModuleRegistry
 from .engine import initialize_modules
 
 # Import modules to trigger auto-registration
 from . import modules  # noqa: F401
+from .modules.GeoMapper import process_file as geomapper_process_file
+
+# File system utilities
+import util.file as fs
+
+
+def run_geomapper() -> Optional[Path]:
+    """
+    Process the latest NWS_RAW file using GeoMapper.
+    
+    Finds the most recent file in NWS_RAW_DIR, processes it with GeoMapper
+    (geocode-to-polygon mapping, junk key removal), and saves to NWS_DIR.
+    
+    Returns:
+        Path to the processed output file, or None if no input file found.
+    """
+    start_time = time.time()
+    print("[CTAM/GeoMapper] Starting GeoMapper processing...")
+    
+    # Ensure directories exist
+    if not fs.MRMS_NWS_RAW_DIR.exists():
+        print(f"[CTAM/GeoMapper] NWS_RAW_DIR does not exist: {fs.MRMS_NWS_RAW_DIR}")
+        return None
+    
+    fs.MRMS_NWS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Find latest raw file
+    raw_files = sorted(
+        [f for f in fs.MRMS_NWS_RAW_DIR.glob("*.json") if f.is_file()],
+        key=lambda f: f.stat().st_mtime,
+        reverse=True
+    )
+    
+    if not raw_files:
+        print("[CTAM/GeoMapper] No raw NWS files found.")
+        return None
+    
+    input_path = raw_files[0]
+    
+    # Generate output filename (same name as input)
+    output_path = fs.MRMS_NWS_DIR / input_path.name
+    
+    print(f"[CTAM/GeoMapper] Processing: {input_path.name}")
+    
+    try:
+        count = geomapper_process_file(input_path, output_path)
+        elapsed = time.time() - start_time
+        print(f"[CTAM/GeoMapper] Processed {count} warnings in {elapsed:.3f}s")
+        print(f"[CTAM/GeoMapper] Output: {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"[CTAM/GeoMapper] ERROR: {e}")
+        return None
 
 
 def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -28,6 +82,13 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         The same list of cells with 'modules' populated by each registered module.
     """
     start_time = time.time()
+    
+    # Run GeoMapper first to prepare NWS data
+    try:
+        run_geomapper()
+    except Exception as e:
+        print(f"[CTAM] WARN: GeoMapper execution failed: {e}")
+
     print("[CTAM] Starting CTAM pipeline...")
     
     registered_modules = ModuleRegistry.get_all()
@@ -68,3 +129,4 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     print(f"[CTAM] Pipeline complete: {success_count} success, {error_count} error(s) in {total_elapsed:.3f}s")
     
     return cells
+

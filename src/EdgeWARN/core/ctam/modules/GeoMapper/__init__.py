@@ -12,7 +12,9 @@ from shapely.geometry import Polygon, MultiPolygon
 from shapely.ops import unary_union
 
 # Assets path (relative to project root)
-_ASSETS_DIR = Path(__file__).resolve().parents[5] / "assets" / "nws_zones"
+# Path: src/EdgeWARN/core/ctam/modules/GeoMapper/__init__.py
+# parents[6] = project root
+_ASSETS_DIR = Path(__file__).resolve().parents[6] / "assets" / "nws_zones"
 
 # Keys to remove from properties
 JUNK_KEYS = [
@@ -87,6 +89,7 @@ def extract_exterior_polygon(polygons: List[List]) -> List:
         
     Returns:
         List of exterior coordinate rings (no holes).
+        If multiple disjoint zones, returns a list of exterior rings.
     """
     if not polygons:
         return []
@@ -114,6 +117,9 @@ def extract_exterior_polygon(polygons: List[List]) -> List:
     # Union all polygons
     try:
         unified = unary_union(shapely_polys)
+        
+        # Merge touching polygons using buffer(0) to fix precision issues
+        unified = unified.buffer(0)
         
         # Extract exterior coordinates
         if unified.geom_type == 'Polygon':
