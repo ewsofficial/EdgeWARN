@@ -186,6 +186,14 @@ async def fetch_metar_cycle_async(dt):
     
     return None
 
+# CONUS Boundaries
+CONUS_BOUNDS = {
+    "lat_min": 24.0,
+    "lat_max": 50.0,
+    "lon_min": -125.0,
+    "lon_max": -66.0
+}
+
 def process_content(content):
     """
     Parses the content of a cycle file.
@@ -209,7 +217,14 @@ def process_content(content):
         if current_time:
             metar_data = parse_metar(line, current_time)
             if metar_data:
-                parsed_data.append(metar_data)
+                # Filter by CONUS bounds
+                coords = metar_data.get("coordinates")
+                if coords:
+                    lat, lon = coords
+                    if (CONUS_BOUNDS["lat_min"] <= lat <= CONUS_BOUNDS["lat_max"] and 
+                        CONUS_BOUNDS["lon_min"] <= lon <= CONUS_BOUNDS["lon_max"]):
+                        parsed_data.append(metar_data)
+                # Skip if no coords or outside bounds
 
     return parsed_data
 
