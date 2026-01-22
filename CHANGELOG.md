@@ -8,6 +8,10 @@
 
 ## Changes
 - **Filter METAR stations to CONUS bounds** (Lat: 24-50, Lon: -125 to -66)
+- **Implement resilient async ingestion pipeline**
+    - Added granular error handling and individual sync fallbacks for each data source (MRMS, RAP, NWS, METAR)
+    - Prevents a single failed async source from triggering a slow synchronous download of all sources
+
 
 ## Fixes
 - **Fix StormCast forecast cones appearing far from storm center**
