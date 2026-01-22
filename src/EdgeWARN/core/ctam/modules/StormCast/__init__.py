@@ -119,13 +119,16 @@ class StormCastModule(AnalysisModule):
             engine.set_environment(env_profile)
             
             # Add observations (need at least 2 for velocity)
-            # First point: previous position
-            prev_x = x - dx
-            prev_y = y - dy
-            engine.add_observation(prev_x, prev_y, dt_seconds=0, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
+            # Use relative coordinates: centroid = (0, 0), previous = (-dx, -dy)
+            # This aligns with the engine's expectation of meters relative to reference_lat/lon
             
-            # Second point: current position
-            engine.add_observation(x, y, dt_seconds=dt, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
+            # Previous position: offset by -dx, -dy from current (which is the origin)
+            prev_rel_x = -dx
+            prev_rel_y = -dy
+            engine.add_observation(prev_rel_x, prev_rel_y, dt_seconds=0, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
+            
+            # Current position: at origin (0, 0) since reference is the centroid
+            engine.add_observation(0.0, 0.0, dt_seconds=dt, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
             
             # Generate forecast
             result = engine.generate_forecast()
