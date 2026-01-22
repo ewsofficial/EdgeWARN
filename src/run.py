@@ -58,24 +58,44 @@ def pipeline(log_queue, dt):
 
     async def run_async_ingest():
         log(f"INFO: Starting Async Data Ingestion for timestamp {dt}")
-        await asyncio.gather(
-            ingest_main.download_all_files_async(dt),
-            download_rap_async(dt),
-            nws_ingest.download_alerts_async(dt),
-            metar_ingest.ingest_metars_async()
-        )
+        
+        async def safe_ingest(task_name, async_func, sync_fallback, *args):
+            try:
+                if asyncio.iscoroutinefunction(async_func):
+                    await async_func(*args)
+                else:
+                    # In case it's a wrapper that isn't itself a coroutine but returns one
+                    await async_func(*args)
+                log(f"INFO: Async {task_name} ingestion successful")
+                return True
+            except Exception as e:
+                log(f"WARN: Async {task_name} ingestion failed: {e}. Falling back to sync.")
+                try:
+                    sync_fallback(*args)
+                    log(f"INFO: Sync fallback for {task_name} successful")
+                    return True
+                except Exception as ef:
+                    log(f"ERROR: Both async and sync ingestion failed for {task_name}: {ef}")
+                    return False
 
+        # Run all ingestion tasks concurrently with individual fallbacks
+        results = await asyncio.gather(
+            safe_ingest("MRMS/GOES", ingest_main.download_all_files_async, ingest_main.download_all_files, dt),
+            safe_ingest("RAP", download_rap_async, download_rap, dt),
+            safe_ingest("NWS Alerts", nws_ingest.download_alerts_async, nws_ingest.download_alerts, dt),
+            safe_ingest("METAR", metar_ingest.ingest_metars_async, metar_ingest.ingest_metars),
+            return_exceptions=True
+        )
+        
+        for i, res in enumerate(results):
+            if isinstance(res, Exception):
+                log(f"CRITICAL: Unexpected error in async wrapper {i}: {res}")
+
+    # 1. Ingestion (Async with Granular Fallback)
     try:
-        # 1. Ingestion (Async with Fallback)
-        try:
-            asyncio.run(run_async_ingest())
-        except Exception as e:
-            log(f"ERROR: Async ingestion failed ({e}). Falling back to synchronous ingestion.")
-            # Fallback to sync sequential
-            ingest_main.download_all_files(dt)
-            download_rap(dt)
-            nws_ingest.download_alerts(dt)
-            metar_ingest.ingest_metars()
+        asyncio.run(run_async_ingest())
+    except Exception as e:
+        log(f"ERROR: Global async ingestion wrapper failed: {e}")
 
         # 2. Detection (Sync)
         log("INFO: Starting Storm Cell Detection")
