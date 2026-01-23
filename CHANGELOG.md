@@ -17,3 +17,6 @@
 - **Fix StormCast forecast cones appearing far from storm center**
     - Root cause: Absolute projected coordinates were passed to the engine instead of relative offsets
     - Fix: Now uses relative coordinates (current = 0,0; previous = -dx, -dy) based on storm centroid
+- **Fix Centroid/Bbox mismatch and "Ghost" Cell hijacking** in detection engine
+    - Root cause: Distance-based Voronoi expansion allowed weak ProbSevere polygons to "hijack" distant high-reflectivity storms
+    - Fix: Implemented percentage-based seed filtering (min 40% coverage) to suppress weak seeds before expansion
