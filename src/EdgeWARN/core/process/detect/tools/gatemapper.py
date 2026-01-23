@@ -8,10 +8,11 @@ from affine import Affine
 import scipy.ndimage
 
 class GateMapper:
-    def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=40.0):
+    def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=40.0, min_seed_percentage=0.40):
         self.radar_ds = radar_ds
         self.ps_ds = ps_ds
         self.refl_threshold = refl_threshold
+        self.min_seed_percentage = min_seed_percentage
         self.io_manager = io_manager
 
     def map_gates_to_polygons(self):
@@ -83,51 +84,100 @@ class GateMapper:
         Cells are assigned to the nearest polygon.
         Complexity: O(H*W) instead of O(N*H*W).
         """
-        polygon_grid = mapped_ds['PolygonID'].values # No need to copy if we don't modify in place
+        # 1. Create High Reflectivity Mask
+        polygon_grid = mapped_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
         mask = refl_grid >= self.refl_threshold
+        
+        # 2. Filter IDs based on Percentage Coverage
+        # We need to know which IDs are "valid seeds".
+        # A valid seed is an ID where at least X% of its pixels are >= threshold.
+        
+        unique_ids = np.unique(polygon_grid)
+        unique_ids = unique_ids[unique_ids > 0] # Ignore 0 (background)
+        
+        valid_ids = []
+        
+        # Optimization: Use bincount if IDs are reasonable integers? 
+        # Or just loop if number of polygons is small (usually < 100).
+        # Direct numpy operations are faster for large grids.
+        
+        for pid in unique_ids:
+            # Create mask for this polygon
+            poly_mask = (polygon_grid == pid)
+            total_pixels = np.sum(poly_mask)
+            
+            if total_pixels == 0:
+                continue
+                
+            # Count how many of these are high-reflectivity
+            high_refl_pixels = np.sum(poly_mask & mask)
+            
+            coverage = high_refl_pixels / total_pixels
+            
+            if coverage >= self.min_seed_percentage:
+                valid_ids.append(pid)
+            # else: ID is discarded
+            
+        # 3. Create Refined Seed Grid
+        # The seeds for expansion are ONLY the high-reflectivity pixels belonging to valid IDs.
+        # This prevents "fringe" (low reflectivity) parts of a polygon from claiming distant storms.
+        
+        # Start with all zeros
+        seed_grid = np.zeros_like(polygon_grid)
+        
+        # Only populate with valid IDs where we have high reflectivity
+        if valid_ids:
+            # Create a mask of pixels that belong to ANY valid ID
+            # np.isin is efficient enough here
+            valid_poly_mask = np.isin(polygon_grid, valid_ids)
+            
+            # The intersection of Valid Polygon AND High Reflectivity is our seed
+            active_seeds_mask = valid_poly_mask & mask
+            
+            # Assign the IDs to these seed locations
+            seed_grid = np.where(active_seeds_mask, polygon_grid, 0)
+            
+        
+        # If no seeds remain, return original mapped_ds (or empty expanded)
+        if not np.any(seed_grid > 0):
+            self.io_manager.write_debug("No valid expansion seeds found after filtering.")
+            # Return same structure but effectively no expansion happened (or just mapped_ds?)
+            # If we return mapped_ds, we return the original polygons. 
+            # But if seeds are filtered, maybe we should return empty?
+            # Let's return mapped_ds as fallback, but with 0 expanded activity logic implies no cells saved.
+            # Actually, save.py uses separate bboxes from expanded_ds. 
+            # If expanded_ds is empty (all 0), bboxes will be empty, so no cells created. Correct.
+            return xr.Dataset(
+                {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
+                coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
+            )
 
-        # If we have no polygons, just return
-        if not np.any(polygon_grid > 0):
-            return mapped_ds
-
-        # Create a background mask (0 is background, 1 is foreground)
-        # We want distance from the nearest non-zero pixel.
-        # dt_indices returns the indices (row, col) of the nearest background pixel.
-        # So we invert the logic: we want distance FROM polygons TO empty space.
-        # But standard EDT gives distance from 0 to 1.
-        # We want to propagate the ID of the nearest non-zero pixel to all zero pixels.
+        # 4. Perform Voronoi Expansion from Refined Seeds
+        # We want to fill the "empty" space with the ID of the nearest "seed".
         
-        # scipy.ndimage.distance_transform_edt with return_indices=True
-        # calculates the index of the nearest BACKGROUND point for each FOREGROUND point.
-        # So if we treat "polygons" as background (0) and "empty space" as foreground (1),
-        # we can find the index of the nearest polygon pixel for every empty pixel.
+        # Empty space is where seed_grid == 0
+        bg_mask = (seed_grid == 0)
         
-        fg_mask = (polygon_grid == 0) # The "empty space" we want to fill
+        # distance_transform_edt finds distance to nearest 0 (background).
+        # We have sources (non-zero) and targets (zero).
+        # So we invert logic: we want distance to nearest SOURCE.
+        # edt input: 0=Source, 1=Target.
+        # Our bg_mask is: 0=Seed (Source), 1=Empty (Target).
+        # Wait, bg_mask is True (1) where seed is 0 (Target). False (0) where seed is >0 (Source).
+        # So bg_mask is exactly what we need for edt input.
         
-        # indices has shape (ndim, H, W). 
-        # indices[:, r, c] gives the (row, col) of the nearest pixel where fg_mask is False (i.e. polygon_grid > 0)
-        # Optimization: return_distances=False saves memory and computation
-        indices = distance_transform_edt(fg_mask, return_distances=False, return_indices=True)
+        indices = distance_transform_edt(bg_mask, return_distances=False, return_indices=True)
         
-        # Now we map the pixels.
-        # For every pixel (r, c), correct_id is polygon_grid[indices[0, r, c], indices[1, r, c]]
+        # Map pixels to nearest seed ID
+        nearest_seed_ids = seed_grid[indices[0], indices[1]]
         
-        # Use advanced indexing to pull the IDs
-        nearest_poly_ids = polygon_grid[indices[0], indices[1]]
+        # 5. Apply Reflectivity Threshold to Final Assignment
+        # We only assign an ID to a pixel if that pixel ITSELF is high reflectivity.
+        # (The expansion competes for ownership of all space, but we only "keep" the storm parts).
         
-        # Apply the assignment only where we have reflectivity > threshold
-        # and where we originally had 0 (though nearest_poly_ids handles the original non-zeros correctly too, 
-        # as distance is 0 and index is itself)
+        final_grid = np.where(mask, nearest_seed_ids, 0)
         
-        final_grid = np.where(mask, nearest_poly_ids, 0)
-        
-        # Restore the original polygon_grid indices where they existed? 
-        # Actually proper voronoi partition should just respect the nearest source.
-        # But we must ensure 0 stays 0 if refl < threshold.
-        # Done by np.where above.
-        
-        # Return as xarray Dataset
         return xr.Dataset(
             {'PolygonID': (('latitude', 'longitude'), final_grid.astype(np.int32))},
             coords={
