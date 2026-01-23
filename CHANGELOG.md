@@ -1,6 +1,12 @@
 # Changelog for Version ``1.3.0``
 
 ## Additions
+- **Enhanced METAR parsing**
+    - Added parsing for cloud layers, weather conditions, and remarks sections
+    - **New Data Keys:**
+        - `clouds`: List of cloud layers (e.g., `[{"code": "OVC", "altitude": 2000, "type": "CB"}]`)
+        - `weather`: List of weather phenomena strings (e.g., `["+RA", "BR"]`)
+        - `remarks`: Raw remarks string (e.g., `"AO2 SLP134"`)
 - **Integrated GeoMapper into NWS Ingest**
     - Geocode-to-polygon mapping logic
     - Junk property removal logic
