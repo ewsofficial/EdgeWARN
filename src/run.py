@@ -97,7 +97,8 @@ def pipeline(log_queue, dt):
     except Exception as e:
         log(f"ERROR: Global async ingestion wrapper failed: {e}")
 
-        # 2. Detection (Sync)
+    # 2. Detection (Sync)
+    try:
         log("INFO: Starting Storm Cell Detection")
         try:
             filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
