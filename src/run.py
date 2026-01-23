@@ -119,9 +119,57 @@ def pipeline(log_queue, dt):
     except Exception as e:
         log(f"Error in pipeline: {e}")
 
+
+
+def run_pipeline_worker(task_queue, result_queue, log_queue):
+    """Persistent worker process that waits for pipeline tasks."""
+    import gc
+    
+    # Keep the worker alive indefinitely
+    while True:
+        try:
+            # Wait for a task
+            task = task_queue.get()
+            
+            # Check for termination signal
+            if task is None:
+                break
+            
+            # Task is just dt now, log_queue is shared
+            dt = task
+            
+            # Run the pipeline
+            pipeline(log_queue, dt)
+            
+            # Signal completion
+            log_queue.put("PIPELINE_DONE")
+            result_queue.put(("DONE", dt))
+            
+            # Force garbage collection
+            gc.collect()
+            
+        except Exception as e:
+            # Fatal worker error
+            log_queue.put(f"CRITICAL WORKER ERROR: {e}")
+            log_queue.put("PIPELINE_DONE")
+            result_queue.put(("ERROR", str(e)))
+
 def main(ui_process=None):
     """Scheduler: spawn pipeline() every 15s if a new latest_common timestamp is available."""
     print("Scheduler started. Press CTRL+C to exit.")
+    
+    # Initialize Persistent Worker
+    task_queue = multiprocessing.Queue()
+    result_queue = multiprocessing.Queue()
+    log_queue = multiprocessing.Queue() # Shared log queue
+    
+    worker_proc = multiprocessing.Process(
+        target=run_pipeline_worker, 
+        args=(task_queue, result_queue, log_queue)
+    )
+    worker_proc.start()
+    print(f"[Scheduler] Started persistent pipeline worker PID={worker_proc.pid}")
+
     checker = MRMSUpdateChecker(verbose=True)
     last_processed = None  # Track last processed timestamp
 
@@ -140,7 +188,7 @@ def main(ui_process=None):
                 else:
                     print(f"[Scheduler] Could not parse timestamp from {latest_file}")
             else:
-                 print(f"[Scheduler] No previous stormcell data found in {fs.STORMCELL_DIR}. Starting fresh.")
+                print(f"[Scheduler] No previous stormcell data found in {fs.STORMCELL_DIR}. Starting fresh.")
         else:
              print(f"[Scheduler] {fs.STORMCELL_DIR} does not exist. Starting fresh.")
 
@@ -151,7 +199,18 @@ def main(ui_process=None):
         while True:
             if ui_process and not ui_process.is_alive():
                 print("GUI closed. Exiting.")
+                task_queue.put(None) # Signal worker to stop
+                worker_proc.join()
                 sys.exit(0)
+            
+            # Check if worker is still alive
+            if not worker_proc.is_alive():
+                print("[Scheduler] CRITICAL: Worker process died! Restarting...")
+                worker_proc = multiprocessing.Process(
+                    target=run_pipeline_worker, 
+                    args=(task_queue, result_queue, log_queue)
+                )
+                worker_proc.start()
 
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
@@ -162,27 +221,44 @@ def main(ui_process=None):
                 dt = latest_common
                 last_processed = latest_common
 
-                # Queue to capture logs
-                log_queue = multiprocessing.Queue()
-
-                # Spawn the pipeline process
-                proc = multiprocessing.Process(target=pipeline, args=(log_queue, dt))
-                proc.start()
-                print(f"Spawned pipeline process PID={proc.pid} for {dt}")
+                # Dispatch task to persistent worker
+                print(f"Dispatching task for {dt} to worker...")
+                task_queue.put(dt)
 
                 # Wait for process to complete, printing logs in real-time
-                while proc.is_alive() or not log_queue.empty():
+                # We wait for "PIPELINE_DONE" message in log_queue
+                pipeline_active = True
+                while pipeline_active:
                     if ui_process and not ui_process.is_alive():
                         print("GUI closed. Terminating pipeline and exiting.")
-                        proc.terminate()
+                        task_queue.put(None)
+                        worker_proc.terminate() # Force kill if needed
                         sys.exit(0)
 
                     while not log_queue.empty():
-                        print(log_queue.get())
-                    time.sleep(1)
+                        msg = log_queue.get()
+                        if msg == "PIPELINE_DONE":
+                            pipeline_active = False
+                        else:
+                            print(msg)
+                    
+                    if not pipeline_active:
+                        break
+                        
+                    # Also check result queue for errors/early termination if needed
+                    # or simply if worker died
+                    if not worker_proc.is_alive():
+                        print("[Scheduler] Worker died during execution!")
+                        pipeline_active = False
+                        break
 
-                proc.join()
-                print(f"Pipeline process PID={proc.pid} finished")
+                    time.sleep(0.5)
+
+                print(f"Pipeline task for {dt} finished")
+                
+                # Clear result queue just in case
+                while not result_queue.empty():
+                    result_queue.get()
 
             else:
                 if not latest_common:
@@ -194,11 +270,17 @@ def main(ui_process=None):
             for _ in range(30):
                 if ui_process and not ui_process.is_alive():
                     print("GUI closed. Exiting.")
+                    task_queue.put(None)
+                    worker_proc.join()
                     sys.exit(0)
                 time.sleep(0.5)
 
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")
+        task_queue.put(None)
+        worker_proc.join(timeout=5)
+        if worker_proc.is_alive():
+            worker_proc.terminate()
         sys.exit(0)
 
 if __name__ == "__main__":
