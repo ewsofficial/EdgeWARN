@@ -207,7 +207,7 @@ if __name__ == "__main__":
     if args.nogui:
         # No GUI mode: Print directly to console (already set up by default sys.stdout/stderr)
         try:
-            print(f"Running EdgeWARN v1.2.0")
+            print(f"Running EdgeWARN v1.3.0")
             print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
             main()
         except KeyboardInterrupt:
@@ -228,7 +228,7 @@ if __name__ == "__main__":
         ui_process.start()
         
         try:
-            print(f"Running EdgeWARN v1.2.0")
+            print(f"Running EdgeWARN v1.3.0")
             print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
             main(ui_process)
         except KeyboardInterrupt:

@@ -28,7 +28,7 @@ Check INSTALLATION.md for installation and run instructions
 
 <h2 align="center">Build Info</h2>
 
-## Current Version: 1.2.0
+## Current Version: 1.3.0
 
 Check [CHANGELOG.md](CHANGELOG.md) for changes
 
