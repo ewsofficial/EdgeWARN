@@ -20,6 +20,7 @@ def test_parse_metar_basic():
     assert result["temperature"] == "M02"
     assert result["dewpoint"] == "M17"
     assert result["pressure"] == 30.39
+    assert result["clouds"] == [{"code": "FEW", "altitude": 25000}]
 
 def test_parse_metar_with_gust():
     """Test parsing METAR with wind gusts."""
@@ -29,6 +30,8 @@ def test_parse_metar_with_gust():
     assert result["wind"]["direction"] == "270"
     assert result["wind"]["speed"] == "15"
     assert result["wind"]["gust"] == "25"
+    assert "RA" in result["weather"]
+    assert result["clouds"] == [{"code": "OVC", "altitude": 2000}]
 
 def test_parse_metar_variable_wind():
     """Test parsing METAR with variable wind direction (VRB)."""
@@ -37,6 +40,7 @@ def test_parse_metar_variable_wind():
     
     assert result["wind"]["direction"] == "VRB"
     assert result["wind"]["speed"] == "03"
+    assert result["clouds"] == [{"code": "CLR"}]
 
 def test_parse_metar_fractional_visibility():
     """Test parsing METAR with fractional visibility (e.g., 1/2SM)."""
@@ -44,6 +48,8 @@ def test_parse_metar_fractional_visibility():
     result = metar.parse_metar(metar_str, "2023/01/12 17:56")
     
     assert result["visibility"] == "1/2"
+    assert "FG" in result["weather"]
+    assert result["clouds"] == [{"code": "VV", "altitude": 200}]
 
 def test_parse_metar_empty():
     """Test parsing an empty string."""
@@ -58,6 +64,21 @@ def test_parse_metar_speci():
     assert result["type"] == "SPECI"
     assert result["station"] == "KLAS"
     assert result["wind"]["gust"] == "30"
+    assert "TSRA" in result["weather"]
+    assert result["clouds"] == [{"code": "OVC", "altitude": 1500, "type": "CB"}]
+
+def test_parse_metar_comprehensive():
+    """Test parsing a complex METAR with all new fields."""
+    metar_str = "KORD 121756Z 27015G25KT 5SM +RA BKN020 OVC040 08/06 A2990 RMK AO2 SLP134 T00830061"
+    result = metar.parse_metar(metar_str, "2023/01/12 17:56")
+
+    assert result["station"] == "KORD"
+    assert result["wind"]["speed"] == "15"
+    assert "+RA" in result["weather"]
+    assert len(result["clouds"]) == 2
+    assert result["clouds"][0] == {"code": "BKN", "altitude": 2000}
+    assert result["clouds"][1] == {"code": "OVC", "altitude": 4000}
+    assert result["remarks"] == "AO2 SLP134 T00830061"
 
 # === Tests for process_content ===
 
