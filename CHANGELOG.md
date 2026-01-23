@@ -2,9 +2,9 @@
 
 ## Additions
 - **Integrated GeoMapper into NWS Ingest**
-    - Moved geocode-to-polygon mapping logic to run during ingestion phase
-    - NWS data is now fully processed (polygons added, junk props removed) before entering pipeline
-    - Removed standalone GeoMapper CTAM module to optimize pipeline flow
+    - Geocode-to-polygon mapping logic
+    - Junk property removal logic
+    - Runs during ingestion pipeline
 
 ## Changes
 - **Filter METAR stations to CONUS bounds** (Lat: 24-50, Lon: -125 to -66)
