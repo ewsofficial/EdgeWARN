@@ -58,17 +58,41 @@ class StormCellIntegrator:
             try:
                 minx, miny, maxx, maxy = poly.bounds
 
-                lat_mask = (lat_vals >= miny) & (lat_vals <= maxy)
-                lon_mask = (lon_vals >= minx) & (lon_vals <= maxx)
+                # Optimization: Use searchsorted for O(logN) slicing instead of O(N) boolean masking
+                # This assumes lat_vals and lon_vals are monotonic (standard for GRIB grids)
+                
+                # Handle Latitude (check if ascending or descending)
+                if lat_vals[0] < lat_vals[-1]:
+                     # Ascending
+                    lat_start_idx = np.searchsorted(lat_vals, miny)
+                    lat_end_idx = np.searchsorted(lat_vals, maxy, side='right')
+                else:
+                    # Descending (common in GRIB) - searchsorted expects ascending, so we search on reversed or use negative logic
+                    # Easier to search on reversed array if descending
+                    # Or just use the fact that miny maps to higher index, maxy to lower index
+                    lat_len = len(lat_vals)
+                    lat_end_idx = lat_len - np.searchsorted(lat_vals[::-1], miny)
+                    lat_start_idx = lat_len - np.searchsorted(lat_vals[::-1], maxy, side='right')
 
-                lat_subset = lat_vals[lat_mask]
-                lon_subset = lon_vals[lon_mask]
+                # Handle Longitude (usually ascending 0-360 or -180-180)
+                lon_start_idx = np.searchsorted(lon_vals, minx)
+                lon_end_idx = np.searchsorted(lon_vals, maxx, side='right')
+                
+                # Clamp indices
+                lat_start_idx = max(0, min(lat_start_idx, len(lat_vals)))
+                lat_end_idx = max(0, min(lat_end_idx, len(lat_vals)))
+                lon_start_idx = max(0, min(lon_start_idx, len(lon_vals)))
+                lon_end_idx = max(0, min(lon_end_idx, len(lon_vals)))
+
+                # Create slices
+                lat_subset = lat_vals[lat_start_idx:lat_end_idx]
+                lon_subset = lon_vals[lon_start_idx:lon_end_idx]
 
                 if lat_subset.size == 0 or lon_subset.size == 0:
                     target[output_key] = 0
                     continue
 
-                sub_var = var_values[np.ix_(lat_mask, lon_mask)]
+                sub_var = var_values[lat_start_idx:lat_end_idx, lon_start_idx:lon_end_idx]
                 sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
 
                 if sub_var.size == 0:
