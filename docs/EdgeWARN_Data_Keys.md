@@ -1,8 +1,8 @@
 # EdgeWARN Data Keys
 
-## Root JSON Structure
+## Root JSON Structure (Storm Cells)
 
-The JSON output follows this structure:
+The storm cells JSON output follows this structure:
 
 | Key              | Type           | Description                                      |
 |------------------|----------------|--------------------------------------------------|
@@ -124,3 +124,47 @@ The `modules` object contains output from registered CTAM modules. Each module h
 | v500            | m/s           | 500-hPa v-component of wind                     |
 | u250            | m/s           | 250-hPa u-component of wind                     |
 | v250            | m/s           | 250-hPa v-component of wind                     |
+
+---
+
+## METAR Data Keys
+
+METAR data is provided as a list of observation objects.
+
+| Key              | Type           | Description                                      |
+|------------------|----------------|--------------------------------------------------|
+| observation_time | ISOFormat      | Time of observation (e.g. "2026/01/23 12:00")    |
+| type             | string         | "METAR" or "SPECI"                               |
+| station          | string         | Station ICAO code (e.g. "KJFK")                  |
+| coordinates      | [lat, lon]     | Station coordinates                              |
+| wind             | Object         | Wind data: `{direction, speed, gust}`            |
+| visibility       | string         | Visibility (e.g. "10SM")                         |
+| temperature      | string         | Temperature in °C                                |
+| dewpoint         | string         | Dewpoint in °C                                   |
+| pressure         | float          | Altimeter setting in inHg (e.g. 30.12)           |
+| clouds           | List[Object]   | Cloud layers: `[{code, altitude, type}]`         |
+| weather          | List[string]   | Weather phenomena (e.g. ["-RA", "BR"])           |
+| remarks          | string         | Raw remarks section                              |
+
+---
+
+## NWS Alert Data Keys
+
+NWS Alerts are provided as a GeoJSON FeatureCollection.
+
+### Feature Properties
+
+| Key          | Type           | Description                                      |
+|--------------|----------------|--------------------------------------------------|
+| event        | string         | Event name (e.g. "Severe Thunderstorm Warning")  |
+| headline     | string         | NWS Headline                                     |
+| description  | string         | Full text description                            |
+| effective    | ISOFormat      | Effective time                                   |
+| expires      | ISOFormat      | Expiration time                                  |
+| severity     | string         | Severity (e.g. "Severe")                         |
+| urgency      | string         | Urgency (e.g. "Immediate")                       |
+| certainty    | string         | Certainty (e.g. "Observed")                      |
+| areaDesc     | string         | Text description of the area                     |
+| Polygon      | List[[x,y]]    | **Computed** exterior polygon of the alert area (union of zones) |
+
+Note: Standard GeoJSON `geometry` is also present.
