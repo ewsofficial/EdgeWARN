@@ -41,3 +41,6 @@ Historical analysis capabilities all the way up to January 1, 2021 using the ``n
 ### Start Data Server
 - ``npm start``
 
+### Start Debug Server
+- ``npm run debug``
+
