@@ -69,7 +69,6 @@ const config = {
   MRMS_PRECIPTYP_DIR: path.join(DATA_DIR, 'PrecipFlag'),
   MRMS_MESH_DIR: path.join(DATA_DIR, 'MESH'),
   GOES_GLM_DIR: path.join(DATA_DIR, 'GLM'),
-  ABI_CLOUDPRES_DIR: path.join(DATA_DIR, 'ABI-CloudPressure'),
   STORMCELL_DIR: path.join(DATA_DIR, 'stormcells'),
   CELL_DIR: path.join(DATA_DIR, 'cells'),
   METAR_DIR: path.join(DATA_DIR, 'METAR'),
