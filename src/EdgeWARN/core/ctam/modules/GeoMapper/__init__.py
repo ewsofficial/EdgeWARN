@@ -179,12 +179,20 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
             # Add polygon to feature (top level, not properties)
             feature["Polygon"] = exterior
     
+    # Remove "geocode" from properties if valid geometry is found
+    # This refers to either the original "geometry" key or the newly added "Polygon"
+    has_geometry = False
+    if feature.get("geometry") and feature["geometry"].get("coordinates"):
+        has_geometry = True
+    if feature.get("Polygon"):
+        has_geometry = True
+        
+    if has_geometry:
+        props.pop("geocode", None)
+    
     # Remove junk keys from properties
     for key in JUNK_KEYS:
         props.pop(key, None)
-    
-    # Also remove geocode since we've converted it
-    props.pop("geocode", None)
     
     return feature
 
