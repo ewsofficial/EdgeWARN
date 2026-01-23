@@ -56,7 +56,6 @@ class APIIndexManager:
         with open(self.stormcell_index_path, 'w') as f:
             json.dump(index_data, f, indent=2)
         
-        self.io_manager.write_debug(f"Stormcell index created with {len(timestamps)} entries")
     
     def _initialize_cell_index(self):
         """Scan CELL_DIR and create/update cell_index.json"""
@@ -89,7 +88,6 @@ class APIIndexManager:
         with open(self.cell_index_path, 'w') as f:
             json.dump(index_data, f, indent=2)
         
-        self.io_manager.write_debug(f"Cell index created with {len(cell_ids)} entries")
     
     def update_stormcell_index(self, timestamp: str):
         """
