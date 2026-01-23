@@ -61,7 +61,6 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 module_start = time.time()
                 module.run(cell)
                 module_elapsed = time.time() - module_start
-                print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: Module '{module.name}' completed in {module_elapsed:.3f}s")
                 success_count += 1
             except Exception as e:
                 # Store error in modules dict

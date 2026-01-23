@@ -91,5 +91,3 @@ class CellHistoryManager:
             else:
                 # Debug logging for duplicates might be noisy, verify later
                 pass
-
-        self.io_manager.write_debug(f"Updated history for {success_count} cells")
