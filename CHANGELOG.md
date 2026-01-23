@@ -1,10 +1,10 @@
 # Changelog for Version ``1.3.0``
 
 ## Additions
-- **Add GeoMapper CTAM module** for NWS geocode-to-polygon mapping
-    - Converts zone codes (e.g., `INZ021`) to precise polygon geometries using local asset library
-    - Removes unnecessary properties from NWS alerts
-    - Integrated into CTAM pipeline execution
+- **Integrated GeoMapper into NWS Ingest**
+    - Moved geocode-to-polygon mapping logic to run during ingestion phase
+    - NWS data is now fully processed (polygons added, junk props removed) before entering pipeline
+    - Removed standalone GeoMapper CTAM module to optimize pipeline flow
 
 ## Changes
 - **Filter METAR stations to CONUS bounds** (Lat: 24-50, Lon: -125 to -66)
