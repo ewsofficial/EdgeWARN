@@ -11,6 +11,7 @@
 - **Implement resilient async ingestion pipeline**
     - Added granular error handling and individual sync fallbacks for each data source (MRMS, RAP, NWS, METAR)
     - Prevents a single failed async source from triggering a slow synchronous download of all sources
+- Remove redundant print statements in the CTAM processing pipeline
 
 
 ## Fixes
