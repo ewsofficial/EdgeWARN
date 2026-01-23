@@ -137,6 +137,50 @@ def parse_metar(metar_str, observation_time):
         alt_value = int(alt_match.group(1))
         data["pressure"] = round(alt_value / 100, 2)
 
+    # Clouds / Sky Condition
+    clouds = []
+    # Match CLR, SKC, CAVOK
+    if re.search(r'\b(CLR|SKC|CAVOK)\b', metar_str):
+        clouds.append({"code": "CLR"})
+    
+    # Match layers like FEW020, SCT030CB, VV002
+    cloud_matches = re.finditer(r'\b(FEW|SCT|BKN|OVC|VV)(\d{3}|///)?(CB|TCU)?\b', metar_str)
+    for m in cloud_matches:
+        layer = {"code": m.group(1)}
+        if m.group(2) and m.group(2) != "///":
+            try:
+                layer["altitude"] = int(m.group(2)) * 100
+            except ValueError:
+                pass
+        if m.group(3):
+            layer["type"] = m.group(3)
+        clouds.append(layer)
+    
+    if clouds:
+        data["clouds"] = clouds
+
+    # Weather Phenomena
+    # Matches optional intensity/proximity, optional descriptor, precipitation/obscuration
+    # We split by whitespace and check each token to handle symbols like '+' correctly
+    # which are not word characters for \b boundaries.
+    wx_regex = r'^(-|\+|VC)?(TS|SH|FZ|BL|DR|MI|BC|PR)?(RA|SN|SG|IC|PL|GR|GS|UP|DZ|FG|BR|SA|DU|HZ|FU|VA|PO|SQ|FC|SS|DS)+$'
+    
+    main_body = metar_str.split("RMK")[0]
+    parts = main_body.split()
+    
+    weather = []
+    for part in parts:
+        if re.match(wx_regex, part):
+            weather.append(part)
+        
+    if weather:
+        data["weather"] = list(set(weather))
+
+    # Remarks
+    rmk_match = re.search(r'\bRMK\s+(.*)', metar_str)
+    if rmk_match:
+        data["remarks"] = rmk_match.group(1)
+
     return data
 
 def fetch_metar_cycle(dt):
