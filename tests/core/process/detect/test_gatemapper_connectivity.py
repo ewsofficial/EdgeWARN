@@ -60,10 +60,13 @@ def test_connectivity_constraint():
     
     # Check Region 1 (Connected) - Should be ID 1
     # Specifically check a point outside the original polygon but connected
-    assert final_grid[9, 9] == 1, "Connected high-reflectivity pixel should catch the ID"
+    assert final_grid[9, 9] == 1, "Connected high-reflectivity pixel OUTSIDE polygon should be captured"
+    
+    # Check that expansion FILLED the connected blob
+    assert final_grid[10, 10] == 1, "Extreme edge of connected blob should be captured"
     
     # Check Region 2 (Disconnected) - Should be 0
-    # Voronoi would have likely assigned this to ID 1 as it's the only seed
+    # Even though we allowed expansion, it cannot jump the gap.
     assert final_grid[16, 16] == 0, "Disconnected high-reflectivity pixel should NOT be assigned an ID"
     
     # Check Background - Should match 0
