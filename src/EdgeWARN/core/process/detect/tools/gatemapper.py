@@ -80,28 +80,22 @@ class GateMapper:
 
     def expand_gates(self, mapped_ds):
         """
-        Fully vectorized expansion using a single distance transform (EDT).
-        Cells are assigned to the nearest polygon.
-        Complexity: O(H*W) instead of O(N*H*W).
+        Constrained expansion using Watershed algorithm.
+        Cells expand into ADJACENT high-reflectivity areas but CANNOT jump gaps.
+        Complexity: O(H*W).
         """
+        from skimage.segmentation import watershed
+
         # 1. Create High Reflectivity Mask
         polygon_grid = mapped_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
         mask = refl_grid >= self.refl_threshold
         
         # 2. Filter IDs based on Percentage Coverage
-        # We need to know which IDs are "valid seeds".
-        # A valid seed is an ID where at least X% of its pixels are >= threshold.
-        
         unique_ids = np.unique(polygon_grid)
         unique_ids = unique_ids[unique_ids > 0] # Ignore 0 (background)
         
         valid_ids = []
-        
-        # Optimization: Use bincount if IDs are reasonable integers? 
-        # Or just loop if number of polygons is small (usually < 100).
-        # Direct numpy operations are faster for large grids.
-        
         for pid in unique_ids:
             # Create mask for this polygon
             poly_mask = (polygon_grid == pid)
@@ -117,66 +111,39 @@ class GateMapper:
             
             if coverage >= self.min_seed_percentage:
                 valid_ids.append(pid)
-            # else: ID is discarded
             
-        # 3. Create Refined Seed Grid
-        # The seeds for expansion are ONLY the high-reflectivity pixels belonging to valid IDs.
-        # This prevents "fringe" (low reflectivity) parts of a polygon from claiming distant storms.
+        # 3. Create Refined Seed Grid (MARKERS)
+        # Seeds are the intersection of Valid Polygons AND High Reflectivity
+        markers = np.zeros_like(polygon_grid)
         
-        # Start with all zeros
-        seed_grid = np.zeros_like(polygon_grid)
-        
-        # Only populate with valid IDs where we have high reflectivity
         if valid_ids:
-            # Create a mask of pixels that belong to ANY valid ID
-            # np.isin is efficient enough here
             valid_poly_mask = np.isin(polygon_grid, valid_ids)
-            
-            # The intersection of Valid Polygon AND High Reflectivity is our seed
             active_seeds_mask = valid_poly_mask & mask
+            markers = np.where(active_seeds_mask, polygon_grid, 0)
             
-            # Assign the IDs to these seed locations
-            seed_grid = np.where(active_seeds_mask, polygon_grid, 0)
-            
-        
-        # If no seeds remain, return original mapped_ds (or empty expanded)
-        if not np.any(seed_grid > 0):
+        if not np.any(markers > 0):
             self.io_manager.write_debug("No valid expansion seeds found after filtering.")
-            # Return same structure but effectively no expansion happened (or just mapped_ds?)
-            # If we return mapped_ds, we return the original polygons. 
-            # But if seeds are filtered, maybe we should return empty?
-            # Let's return mapped_ds as fallback, but with 0 expanded activity logic implies no cells saved.
-            # Actually, save.py uses separate bboxes from expanded_ds. 
-            # If expanded_ds is empty (all 0), bboxes will be empty, so no cells created. Correct.
             return xr.Dataset(
                 {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
                 coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
             )
 
-        # 4. Perform Voronoi Expansion from Refined Seeds
-        # We want to fill the "empty" space with the ID of the nearest "seed".
+        # 4. Perform Watershed Expansion
+        # We want to fill the "mask" (high reflectivity) starting from "markers" (seeds).
+        # We use a distance transform as the "elevation" map to help split mergers naturally.
+        # Ideally, the "deepest" parts (furthest from edge) are basins.
         
-        # Empty space is where seed_grid == 0
-        bg_mask = (seed_grid == 0)
+        # Calculate distance from the edge of the storm mask
+        # We want high values in the center, low values at edges.
+        # -distance_transform_edt gives negative values (basins) at centers of objects.
+        elevation = -distance_transform_edt(mask)
         
-        # distance_transform_edt finds distance to nearest 0 (background).
-        # We have sources (non-zero) and targets (zero).
-        # So we invert logic: we want distance to nearest SOURCE.
-        # edt input: 0=Source, 1=Target.
-        # Our bg_mask is: 0=Seed (Source), 1=Empty (Target).
-        # Wait, bg_mask is True (1) where seed is 0 (Target). False (0) where seed is >0 (Source).
-        # So bg_mask is exactly what we need for edt input.
+        # Run watershed
+        # mask=mask ensures we ONLY label pixels where mask is True.
+        # markers=markers provides the starting labels.
+        final_grid = watershed(elevation, markers, mask=mask)
         
-        indices = distance_transform_edt(bg_mask, return_distances=False, return_indices=True)
-        
-        # Map pixels to nearest seed ID
-        nearest_seed_ids = seed_grid[indices[0], indices[1]]
-        
-        # 5. Apply Reflectivity Threshold to Final Assignment
-        # We only assign an ID to a pixel if that pixel ITSELF is high reflectivity.
-        # (The expansion competes for ownership of all space, but we only "keep" the storm parts).
-        
-        final_grid = np.where(mask, nearest_seed_ids, 0)
+        # Watershed returns 0 where mask is False, which is exactly what we want.
         
         return xr.Dataset(
             {'PolygonID': (('latitude', 'longitude'), final_grid.astype(np.int32))},
