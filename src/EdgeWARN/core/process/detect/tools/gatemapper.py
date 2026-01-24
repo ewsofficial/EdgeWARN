@@ -80,70 +80,110 @@ class GateMapper:
 
     def expand_gates(self, mapped_ds):
         """
-        Constrained expansion using Watershed algorithm.
-        Cells expand into ADJACENT high-reflectivity areas but CANNOT jump gaps.
-        Complexity: O(H*W).
+        Constrained expansion using Watershed algorithm with optimizations.
+        - Cropped processing (Speed)
+        - Vectorized coverage check (Speed)
+        - Float16 elevation map (Memory)
+        - Connected expansion outside polygon (Functionality)
         """
         from skimage.segmentation import watershed
-
+        
         # 1. Create High Reflectivity Mask
         polygon_grid = mapped_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
         mask = refl_grid >= self.refl_threshold
         
-        # 2. Filter IDs based on Percentage Coverage
-        unique_ids = np.unique(polygon_grid)
-        unique_ids = unique_ids[unique_ids > 0] # Ignore 0 (background)
+        # Optimization: Crop to active area
+        # Find bounding box of high reflectivity
+        rows_with_data = np.any(mask, axis=1)
+        cols_with_data = np.any(mask, axis=0)
         
-        valid_ids = []
-        for pid in unique_ids:
-            # Create mask for this polygon
-            poly_mask = (polygon_grid == pid)
-            total_pixels = np.sum(poly_mask)
+        if not np.any(rows_with_data):
+             return xr.Dataset(
+                {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
+                coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
+            )
             
-            if total_pixels == 0:
-                continue
-                
-            # Count how many of these are high-reflectivity
-            high_refl_pixels = np.sum(poly_mask & mask)
-            
-            coverage = high_refl_pixels / total_pixels
-            
-            if coverage >= self.min_seed_percentage:
-                valid_ids.append(pid)
-            
-        # 3. Create Refined Seed Grid (MARKERS)
-        # Seeds are the intersection of Valid Polygons AND High Reflectivity
-        markers = np.zeros_like(polygon_grid)
+        rmin, rmax = np.where(rows_with_data)[0][[0, -1]]
+        cmin, cmax = np.where(cols_with_data)[0][[0, -1]]
         
-        if valid_ids:
-            valid_poly_mask = np.isin(polygon_grid, valid_ids)
-            active_seeds_mask = valid_poly_mask & mask
-            markers = np.where(active_seeds_mask, polygon_grid, 0)
+        # Add a small buffer (e.g., 2 pixels) to ensure boundaries are handled cleanly
+        rmin = max(0, rmin - 2)
+        rmax = min(mask.shape[0], rmax + 3)
+        cmin = max(0, cmin - 2)
+        cmax = min(mask.shape[1], cmax + 3)
+        
+        # Slice views
+        sub_mask = mask[rmin:rmax, cmin:cmax]
+        sub_polygon = polygon_grid[rmin:rmax, cmin:cmax]
+        
+        # 2. Filter IDs based on Percentage Coverage (Vectorized)
+        unique_ids = np.unique(sub_polygon)
+        unique_ids = unique_ids[unique_ids > 0]
+        
+        if len(unique_ids) == 0:
+             return xr.Dataset(
+                {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
+                coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
+            )
             
-        if not np.any(markers > 0):
+        # Optimization: Use scipy.ndimage.sum for vectorized counting
+        # Count total pixels per ID
+        # Labels must be positive ints. We use unique_ids max to define bins.
+        max_id = unique_ids.max()
+        
+        # pixel_counts[i] will hold count for ID i
+        pixel_counts = scipy.ndimage.sum_labels(np.ones_like(sub_polygon), sub_polygon, index=unique_ids)
+        
+        # Count high-refl pixels per ID
+        refl_counts = scipy.ndimage.sum_labels(sub_mask, sub_polygon, index=unique_ids)
+        
+        # Calculate coverage ratio
+        # Avoid division by zero (shouldn't happen as unique_ids implies at least 1 pixel)
+        coverage_ratios = refl_counts / pixel_counts
+        
+        # Filter IDs
+        valid_indices = coverage_ratios >= self.min_seed_percentage
+        valid_ids = unique_ids[valid_indices]
+        
+        if len(valid_ids) == 0:
             self.io_manager.write_debug("No valid expansion seeds found after filtering.")
             return xr.Dataset(
                 {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
                 coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
             )
 
+        # 3. Create Refined Seed Grid (MARKERS)
+        # Seeds are the intersection of Valid Polygons AND High Reflectivity
+        markers = np.zeros_like(sub_polygon)
+        
+        # Optimization: Faster boolean check using simple standard indexing if small, 
+         # or np.isin for larger sets. np.isin is generally optimized.
+        valid_poly_mask = np.isin(sub_polygon, valid_ids)
+        active_seeds_mask = valid_poly_mask & sub_mask
+        markers = np.where(active_seeds_mask, sub_polygon, 0)
+        
+        if not np.any(markers > 0):
+             return xr.Dataset(
+                {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
+                coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
+            )
+
         # 4. Perform Watershed Expansion
-        # We want to fill the "mask" (high reflectivity) starting from "markers" (seeds).
-        # We use a distance transform as the "elevation" map to help split mergers naturally.
-        # Ideally, the "deepest" parts (furthest from edge) are basins.
+        # Optimization: Float16 for memory efficiency
+        # distance_transform_edt returns float64 by default.
+        dist = distance_transform_edt(sub_mask)
+        elevation = -dist.astype(np.float16)
+
+        # Run watershed on sub-grid
+        # mask=sub_mask ensures unrestricted expansion into ANY connected high-reflectivity area
+        sub_final = watershed(elevation, markers, mask=sub_mask)
         
-        # Calculate distance from the edge of the storm mask
-        # We want high values in the center, low values at edges.
-        # -distance_transform_edt gives negative values (basins) at centers of objects.
-        elevation = -distance_transform_edt(mask)
+        # 5. Place result back into full grid
+        final_grid = np.zeros_like(polygon_grid)
+        final_grid[rmin:rmax, cmin:cmax] = sub_final
         
-        # Run watershed
-        # mask=mask ensures we ONLY label pixels where mask is True.
-        # markers=markers provides the starting labels.
-        final_grid = watershed(elevation, markers, mask=mask)
-        
-        # Watershed returns 0 where mask is False, which is exactly what we want.
+        # Watershed returns 0 where mask is False.
         
         return xr.Dataset(
             {'PolygonID': (('latitude', 'longitude'), final_grid.astype(np.int32))},
