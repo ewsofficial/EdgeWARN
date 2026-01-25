@@ -127,14 +127,14 @@ class MRMSUpdateChecker:
         if not modifier_times:
             if self.verbose:
                 print("[Scheduler] No files found in any modifier")
-            return None
+            return self.check_https_fallback(modifiers, reference_dt)
 
         common_minutes = set.intersection(*modifier_times)
         if not common_minutes:
             if self.verbose:
                 print("[Scheduler] No common timestamps across all modifiers")
 
-                return None
+            return self.check_https_fallback(modifiers, reference_dt)
 
         latest_common = max(common_minutes)
         if self.verbose:
