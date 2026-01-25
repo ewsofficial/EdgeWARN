@@ -11,6 +11,10 @@
     - Geocode-to-polygon mapping logic
     - Junk property removal logic
     - Runs during ingestion pipeline
+- **Standardized Diagnostic & Verification Suite**
+    - Automated batch verification of centroid containment
+    - Tools for forecast linearity analysis and path-bend diagnostics
+    - Organized into `scripts/diagnostic/` for maintainability
 
 ## Changes
 - **Filter METAR stations to CONUS bounds** (Lat: 24-50, Lon: -125 to -66)
