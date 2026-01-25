@@ -111,9 +111,10 @@ class CellDataSaver:
         """
         Appends maximum reflectivity, num_gates, and reflectivity-weighted centroid
         to each ProbSevere cell entry using exponential weighting.
-        Optimized with slice-based processing.
+        Optimized with slice-based processing and Watershed-expanded masks.
         """
-        polygon_grid = self.mapped_ds['PolygonID'].values
+        # CRITICAL: Use expanded_ds (the watershed result) for all attribute calculations
+        polygon_grid = self.expanded_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
 
         # Optimize: Avoid full meshgrid creation
@@ -222,8 +223,11 @@ class CellDataSaver:
                     lon_vals = lon_slice[mask_slice][valid_refl_mask]
 
                 
-                max_refl = float(np.nanmax(refl_vals))
-                weights = np.exp(refl_vals)
+                max_refl_val = float(np.nanmax(refl_vals))
+                
+                # Use Log-Sum-Exp Trick for stability: exp(refl - max_refl)
+                # This prevents exp(70) which overflows float64
+                weights = np.exp(refl_vals - max_refl_val)
                 sum_weights = np.sum(weights)
                 
                 if sum_weights > 0:
@@ -234,18 +238,18 @@ class CellDataSaver:
                 else:
                     centroid = (np.nan, np.nan)
             else:
-                max_refl = float('nan')
+                max_refl_val = float('nan')
                 centroid = (np.nan, np.nan)
 
             hail_core = self.__create_hailcore_polygon(poly_id, sl)
 
             results.append({
-                "id": poly_id,
-                "num_gates": count,
+                "id": int(poly_id),
+                "num_gates": int(count),
                 "centroid": centroid,
-                "bbox": [[pt[0], pt[1] % 360] for pt in bbox],
-                "hail_core": hail_core,
-                "max_refl": max_refl,  # Fixed variable name
+                "bbox": [[float(pt[0]), float(pt[1]) % 360] for pt in bbox],
+                "hail_core": [[float(pt[0]), float(pt[1]) % 360] for pt in hail_core],
+                "max_refl": max_refl_val,
                 "properties": {}
             })
 
