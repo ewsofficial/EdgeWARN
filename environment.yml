@@ -25,3 +25,4 @@ dependencies:
     - aiofiles
     - aiohttp
     - requests
+    - beautifulsoup4
