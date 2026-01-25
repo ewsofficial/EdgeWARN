@@ -74,7 +74,10 @@ This is the entry point for the detection pipeline. It coordinates the loading o
 The `tools` directory contains helper classes and functions used by the core detection logic.
 
 -   **`utils.py`**: Contains `DetectionDataHandler` for loading and subsetting xarray datasets (Radar, ProbSevere, PrecipType).
--   **`gatemapper.py`**: Contains `GateMapper` for image processing tasks like thresholding, contour finding, and polygon mapping to identify storm cells from radar reflectivity.
+-   **`gatemapper.py`**: Contains `GateMapper` for identifying storm cells from radar reflectivity.
+    - **Method**: Uses a **Watershed algorithm** (via `skimage`) instead of simple Voronoi expansion.
+    - **Connectivity**: Enforces strict spatial connectivity by using a high-reflectivity mask ($\ge$ 40 dBZ). This prevents "gap jumping," where a cell might incorrectly claim a distant, unconnected storm.
+    - **Mergers**: Uses a negative Euclidean Distance Transform (EDT) as an "elevation" map. This ensures that when two cells merge, the boundary is drawn naturally along the "ridge" between their respective intensity cores.
 -   **`save.py`**: Contains `CellDataSaver` for structuring the detected cell data into a standardized dictionary format and managing the `storm_history` list.
 -   **`vecmath.py`**: Contains `StormVectorCalculator` for computing motion vectors (speed and bearing) based on centroid displacement over time.
 
