@@ -24,6 +24,7 @@ The module provides both synchronous and asynchronous interfaces for downloading
 #### MRMS & GOES (`src/EdgeWARN/core/ingest/mrms/main.py`)
 *   `download_all_files(dt, remove_old_files=True)`: Main entry point used by the scheduler. Orchestrates downloads for all configured MRMS and GOES products for the given datetime `dt`.
 *   `download_goes_product(...)`: Helper for downloading a single GOES product synchronously.
+*   **HTTPS Fallback**: In addition to S3 (via `s3_sync.py`), the system includes an HTTPS fallback (`https_client.py`) for MRMS data. This is used by the scheduler if S3 fails to provide valid timestamps.
 
 #### Synoptic (`src/EdgeWARN/core/ingest/synoptic/main.py`)
 *   `download_rap(dt)`: Entry point for downloading RAP (Rapid Refresh) data for a specific timestamp.
