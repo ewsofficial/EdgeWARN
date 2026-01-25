@@ -136,7 +136,56 @@ class MRMSUpdateChecker:
 
                 return None
 
+        return latest_common
+    
+    def check_https_fallback(self, modifiers, reference_dt):
+        """
+        Try to find the common timestamp using HTTPS fallback logic.
+        """
+        from EdgeWARN.core.ingest.mrms.https_client import HttpsFileFinder
+
+        if reference_dt is None:
+            reference_dt = datetime.datetime.now(datetime.timezone.utc)
+            
+        print("[Scheduler] Attempting HTTPS Fallback for timestamps...")
+        
+        modifier_times = []
+        
+        # Checking serially for now as this is a fallback
+        for modifier_tuple in modifiers:
+            region, modifier, _ = modifier_tuple
+            
+            try:
+                finder = HttpsFileFinder(reference_dt, io_manager)
+                # find_files_sync returns URLs
+                urls = finder.find_files_sync(region, modifier)
+                
+                timestamps = set()
+                for url in urls:
+                    # extract_timestamp works on the filename part, and url behaves like a path
+                    ts = extract_timestamp(url.split('/')[-1])
+                    if ts:
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=datetime.timezone.utc)
+                        timestamps.add(round_to_nearest_even_minute(ts))
+                
+                if timestamps:
+                    modifier_times.append(timestamps)
+                else:
+                    if self.verbose:
+                         print(f"[{modifier}] No files found via HTTPS")
+            except Exception as e:
+                print(f"[Scheduler] HTTPS Check Error for {modifier}: {e}")
+        
+        if not modifier_times:
+            return None
+
+        common_minutes = set.intersection(*modifier_times)
+        if not common_minutes:
+            if self.verbose:
+                print("[Scheduler] HTTPS: No common timestamps across all modifiers")
+            return None
+
         latest_common = max(common_minutes)
-        if self.verbose:
-            print(f"[Scheduler] Latest common timestamp: {latest_common}")
+        print(f"[Scheduler] HTTPS Fallback found latest common: {latest_common}")
         return latest_common
