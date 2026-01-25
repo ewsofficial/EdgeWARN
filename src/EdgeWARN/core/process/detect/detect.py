@@ -34,7 +34,9 @@ def detect_cells(
     
     if radar_ds is None:
         io_manager.write_error(f"Failed to load/subset radar data from {radar_path}")
-        return [], None if return_probsevere else []
+        if return_probsevere:
+            return [], None
+        return []
 
     ps_ds = handler.load_probsevere()
     
