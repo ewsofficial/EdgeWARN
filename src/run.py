@@ -150,21 +150,48 @@ def main(ui_process=None):
         print(f"[Scheduler] Failed to initialize last_processed: {e}")
 
     try:
-        consecutive_no_update = 0
-        while True:
-            if ui_process and not ui_process.is_alive():
-                print("GUI closed. Exiting.")
-                sys.exit(0)
+            # Strict check: Only accept if new AND strictly newer than last_processed
+            is_new_s3 = False
+            if latest_common:
+                if last_processed is None:
+                    is_new_s3 = True
+                elif latest_common > last_processed:
+                    is_new_s3 = True
+            
+            # If S3 didn't give us a NEW timestamp, try HTTPS immediately
+            if not is_new_s3:
+                # print(f"[Scheduler] S3 yielded no new data (Latest: {latest_common}, Last: {last_processed}). Checking HTTPS...")
+                latest_https = checker.check_https_fallback(check_modifiers, now)
+                
+                # Check if HTTPS result is better
+                if latest_https:
+                    is_new_https = False
+                    if last_processed is None:
+                         is_new_https = True
+                    elif latest_https > last_processed:
+                         is_new_https = True
+                    
+                    if is_new_https:
+                        print(f"[Scheduler] HTTPS Fallback found NEWER timestamp: {latest_https}")
+                        latest_common = latest_https # Take the HTTPS one
+                    else:
+                        pass # HTTPS found data but it's also old
+                else:
+                    pass # HTTPS failed or no files
 
-            now = datetime.now(timezone.utc)
-            check_modifiers = get_check_modifiers()
-            latest_common = checker.latest_common_minute_1h(check_modifiers) # Normal S3 check
+            # Now proceed with latest_common if it is effectively new
+            # Re-evaluate newness (in case we switched to HTTPS one)
+            should_run_pipeline = False
+            if latest_common:
+                 if last_processed is None:
+                     should_run_pipeline = True
+                 elif latest_common > last_processed:
+                     should_run_pipeline = True
 
-            if latest_common and latest_common != last_processed:
+            if should_run_pipeline:
                 print(f"[Scheduler] DEBUG: New latest common timestamp: {latest_common}")
                 dt = latest_common
                 last_processed = latest_common
-                consecutive_no_update = 0 # Reset counter
 
                 # Queue to capture logs
                 log_queue = multiprocessing.Queue()
@@ -189,53 +216,10 @@ def main(ui_process=None):
                 print(f"Pipeline process PID={proc.pid} finished")
 
             else:
-                consecutive_no_update += 1
                 if not latest_common:
-                    print(f"[Scheduler] WARN: No common timestamp available yet. (Attempt {consecutive_no_update}/3)")
+                     print("[Scheduler] No new data found (S3 or HTTPS). Waiting...")
                 else:
-                    print(f"[Scheduler] DEBUG: Timestamp {latest_common} already processed. (Attempt {consecutive_no_update}/3)")
-                
-                # Check 3 tries condition logic
-                # If we've waited 3 times (45 seconds approx), try HTTPS fallback
-                if consecutive_no_update >= 3:
-                     latest_common_https = checker.check_https_fallback(check_modifiers, now)
-                     
-                     if latest_common_https and latest_common_https != last_processed:
-                         print(f"[Scheduler] HTTPS Fallback succeeded! Found: {latest_common_https}")
-                         # Set latest_common to trigger the processing logic in next loop? 
-                         # Or just recurse/goto? simpler to just proceed here.
-                         latest_common = latest_common_https
-                         consecutive_no_update = 0 # Reset so we don't spam logic, but technically we should process now.
-                         
-                         # Duplicate processing logic (unfortunately) or restructure.
-                         # Let's restructure slightly to avoiding code duplication by setting latest_common and ensuring the if block above runs? 
-                         # But the loop has already passed the if.
-                         
-                         dt = latest_common
-                         last_processed = latest_common
-                         
-                         # --- Process Logic Duplicated ---
-                         log_queue = multiprocessing.Queue()
-                         proc = multiprocessing.Process(target=pipeline, args=(log_queue, dt))
-                         proc.start()
-                         print(f"Spawned pipeline process PID={proc.pid} for {dt} (via HTTPS)")
-                         while proc.is_alive() or not log_queue.empty():
-                             if ui_process and not ui_process.is_alive():
-                                 proc.terminate()
-                                 sys.exit(0)
-                             while not log_queue.empty():
-                                print(log_queue.get())
-                             time.sleep(1)
-                         proc.join()
-                         # --------------------------------
-                         
-                     else:
-                         print("[Scheduler] HTTPS Fallback: No new data found either.")
-                         # Reset counter? Or keep trying HTTPS every time now? 
-                         # The user said "if scheduler doesn't find ... after 3 tries ... try HTTPS".
-                         # If HTTPS also fails, probably wait another 3 tries? 
-                         # Or keep trying HTTPS? Let's reset counter to be safe and avoid hammering NCEP.
-                         consecutive_no_update = 0
+                     print(f"[Scheduler] Timestamp {latest_common} already processed. Waiting...")
 
             # Wait/Check loop (15 seconds)
             for _ in range(30):

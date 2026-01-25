@@ -6,7 +6,7 @@
 ## Changes
 - **MRMS HTTPS Fallback**
     - Implemented fallback to `mrms.ncep.noaa.gov` if S3 bucket is inaccessible.
-    - Added retry logic to scheduler: triggers fallback after 3 consecutive S3 failures.
+    - Integrated aggressive fallback in scheduler: immediately checks HTTPS if S3 timestamp is stale or unavailable.
     - New module `https_client.py` for direct NCEP access.
 
 ## Fixes
