@@ -150,7 +150,6 @@ def main(ui_process=None):
         print(f"[Scheduler] Failed to initialize last_processed: {e}")
 
     try:
-    try:
         consecutive_no_update = 0
         while True:
             if ui_process and not ui_process.is_alive():
