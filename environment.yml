@@ -24,3 +24,4 @@ dependencies:
     - pytest-mock
     - aiofiles
     - aiohttp
+    - requests

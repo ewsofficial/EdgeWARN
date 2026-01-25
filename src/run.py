@@ -150,6 +150,15 @@ def main(ui_process=None):
         print(f"[Scheduler] Failed to initialize last_processed: {e}")
 
     try:
+        while True:
+            if ui_process and not ui_process.is_alive():
+                print("GUI closed. Exiting.")
+                sys.exit(0)
+
+            now = datetime.now(timezone.utc)
+            check_modifiers = get_check_modifiers()
+            latest_common = checker.latest_common_minute_1h(check_modifiers)
+
             # Strict check: Only accept if new AND strictly newer than last_processed
             is_new_s3 = False
             if latest_common:
