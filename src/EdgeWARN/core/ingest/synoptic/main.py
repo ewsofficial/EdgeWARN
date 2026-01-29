@@ -14,8 +14,9 @@ def download_rap(dt: datetime):
     """
     Public API to download a RAP file for a given datetime.
     Handles the async loop if necessary.
+    Enforces a 10-file limit using clean_old_files.
     """
-    fs.clean_files_by_age(fs.RAP_DIR, max_age_minutes=90) # 90 min to ensure that there is another RAP file
+    fs.clean_old_files(fs.RAP_DIR, max_age_minutes=90) # 90 min to ensure that there is another RAP file
     try:
         # Check if there is a running event loop
         loop = asyncio.get_running_loop()

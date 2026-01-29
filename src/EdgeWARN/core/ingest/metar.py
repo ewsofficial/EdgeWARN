@@ -275,6 +275,7 @@ def process_content(content):
 def save_metar_data(data, dt):
     """
     Saves the parsed METAR data to a JSON file.
+    Enforces a 10-file limit using clean_old_files.
     """
     if not data:
         io.write_warning("No METAR data to save.")
@@ -294,6 +295,9 @@ def save_metar_data(data, dt):
             json.dump(data, f, indent=2)
     except Exception as e:
         io.write_error(f"Failed to save METAR data to {filepath}: {e}")
+    
+    # Enforce 10-file limit
+    fs.clean_old_files(fs.METAR_DIR, max_age_minutes=60)
 
 def ingest_metars():
     """
