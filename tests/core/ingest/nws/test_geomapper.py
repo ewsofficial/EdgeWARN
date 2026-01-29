@@ -1,0 +1,226 @@
+"""
+Tests for NWS GeoMapper module
+"""
+
+import pytest
+import json
+from pathlib import Path
+from unittest.mock import patch, mock_open
+from EdgeWARN.core.ingest.nws.geomapper import (
+    ZoneLookup,
+    extract_exterior_polygon,
+    process_warning
+)
+
+
+class TestZoneLookup:
+    """Tests for ZoneLookup class"""
+
+    def test_get_polygon_valid_zone(self, tmp_path):
+        """Test getting polygon for a valid zone code"""
+        # Setup mock zone data
+        zone_data = [
+            {"code": "TXC121", "Polygon": [[-97.0, 30.0], [-97.0, 31.0], [-96.0, 31.0], [-96.0, 30.0]]},
+            {"code": "TXC122", "Polygon": [[-96.0, 30.0], [-96.0, 31.0], [-95.0, 31.0], [-95.0, 30.0]]}
+        ]
+        
+        # Mock the assets directory
+        assets_dir = tmp_path / "assets" / "nws_zones"
+        tx_dir = assets_dir / "TX"
+        tx_dir.mkdir(parents=True)
+        
+        zone_file = tx_dir / "zones.json"
+        zone_file.write_text(json.dumps(zone_data))
+        
+        with patch.object(ZoneLookup, '_cache', {}):
+            with patch('EdgeWARN.core.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+                polygon = ZoneLookup.get_polygon("TXC121")
+                
+                assert polygon is not None
+                assert len(polygon) == 4
+                assert polygon[0] == [-97.0, 30.0]
+
+    def test_get_polygon_invalid_zone(self, tmp_path):
+        """Test getting polygon for an invalid zone code"""
+        assets_dir = tmp_path / "assets" / "nws_zones"
+        tx_dir = assets_dir / "TX"
+        tx_dir.mkdir(parents=True)
+        
+        zone_file = tx_dir / "zones.json"
+        zone_file.write_text(json.dumps([]))
+        
+        with patch.object(ZoneLookup, '_cache', {}):
+            with patch('EdgeWARN.core.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+                polygon = ZoneLookup.get_polygon("INVALID")
+                assert polygon is None
+
+    def test_get_polygon_short_code(self):
+        """Test getting polygon for a code that's too short"""
+        with patch.object(ZoneLookup, '_cache', {}):
+            polygon = ZoneLookup.get_polygon("X")
+            assert polygon is None
+
+    def test_caching(self, tmp_path):
+        """Test that zone data is cached after first load"""
+        zone_data = [{"code": "TXC121", "Polygon": [[-97.0, 30.0]]}]
+        
+        assets_dir = tmp_path / "assets" / "nws_zones"
+        tx_dir = assets_dir / "TX"
+        tx_dir.mkdir(parents=True)
+        
+        zone_file = tx_dir / "zones.json"
+        zone_file.write_text(json.dumps(zone_data))
+        
+        with patch('EdgeWARN.core.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+            # Clear cache
+            ZoneLookup._cache.clear()
+            
+            # First call should load from file
+            polygon1 = ZoneLookup.get_polygon("TXC121")
+            assert "TX" in ZoneLookup._cache
+            
+            # Second call should use cache
+            polygon2 = ZoneLookup.get_polygon("TXC121")
+            assert polygon1 == polygon2
+
+    def test_missing_state_file(self, tmp_path):
+        """Test handling of missing state file"""
+        assets_dir = tmp_path / "assets" / "nws_zones"
+        
+        with patch.object(ZoneLookup, '_cache', {}):
+            with patch('EdgeWARN.core.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+                polygon = ZoneLookup.get_polygon("XXC001")
+                assert polygon is None
+
+
+class TestExtractExteriorPolygon:
+    """Tests for extract_exterior_polygon function"""
+
+    def test_single_polygon(self):
+        """Test extracting exterior from single polygon"""
+        polygons = [
+            [[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]
+        ]
+        
+        result = extract_exterior_polygon(polygons)
+        
+        assert len(result) == 1
+        assert len(result[0]) == 5  # Including closing point
+
+    def test_multiple_polygons_union(self):
+        """Test union of multiple polygons"""
+        # Two overlapping squares
+        polygons = [
+            [[0, 0], [0, 2], [2, 2], [2, 0], [0, 0]],
+            [[1, 1], [1, 3], [3, 3], [3, 1], [1, 1]]
+        ]
+        
+        result = extract_exterior_polygon(polygons)
+        
+        assert len(result) >= 1
+
+    def test_empty_input(self):
+        """Test with empty input"""
+        result = extract_exterior_polygon([])
+        assert result == []
+
+    def test_invalid_polygons(self):
+        """Test with invalid polygon data"""
+        polygons = [
+            [],  # Empty polygon
+            [[0, 0]],  # Too few points
+            "invalid",  # Wrong type
+            [[0, 0], [1, 1], [2, 2]]  # Valid but not closed
+        ]
+        
+        result = extract_exterior_polygon(polygons)
+        # Should handle gracefully
+        assert isinstance(result, list)
+
+
+class TestProcessWarning:
+    """Tests for process_warning function"""
+
+    def test_process_warning_with_geocodes(self, tmp_path):
+        """Test processing warning with geocodes"""
+        # Setup zone data
+        zone_data = [
+            {"code": "TXC121", "Polygon": [[-97.0, 30.0], [-97.0, 31.0], [-96.0, 31.0], [-96.0, 30.0]]}
+        ]
+        
+        assets_dir = tmp_path / "assets" / "nws_zones"
+        tx_dir = assets_dir / "TX"
+        tx_dir.mkdir(parents=True)
+        
+        zone_file = tx_dir / "zones.json"
+        zone_file.write_text(json.dumps(zone_data))
+        
+        feature = {
+            "properties": {
+                "geocode": {
+                    "SAME": ["048121"]
+                },
+                "event": "Severe Thunderstorm Warning",
+                "references": "some-ref",
+                "sender": "NWS"
+            },
+            "geometry": None
+        }
+        
+        with patch.object(ZoneLookup, '_cache', {}):
+            with patch('EdgeWARN.core.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+                result = process_warning(feature)
+                
+                assert "properties" in result
+                assert "geometry" in result
+                # Junk keys should be removed
+                assert "references" not in result["properties"]
+                assert "sender" not in result["properties"]
+
+    def test_process_warning_without_geocodes(self):
+        """Test processing warning without geocodes"""
+        feature = {
+            "properties": {
+                "event": "Severe Thunderstorm Warning"
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]
+            }
+        }
+        
+        result = process_warning(feature)
+        
+        assert result["properties"]["event"] == "Severe Thunderstorm Warning"
+        assert result["geometry"] == feature["geometry"]
+
+    def test_process_warning_cleans_properties(self):
+        """Test that junk keys are removed from properties"""
+        feature = {
+            "properties": {
+                "event": "Tornado Warning",
+                "references": "ref123",
+                "sender": "NWS",
+                "parameters": {},
+                "instruction": "Take shelter",
+                "response": "Shelter",
+                "scope": "Public",
+                "code": "TOR",
+                "language": "en",
+                "web": "https://weather.gov",
+                "eventCode": "TOR",
+                "severity": "Extreme"  # This should remain
+            },
+            "geometry": None
+        }
+        
+        result = process_warning(feature)
+        
+        # Junk keys should be removed
+        for key in ["references", "sender", "parameters", "instruction", 
+                    "response", "scope", "code", "language", "web", "eventCode"]:
+            assert key not in result["properties"]
+        
+        # Valid keys should remain
+        assert result["properties"]["event"] == "Tornado Warning"
+        assert result["properties"]["severity"] == "Extreme"
