@@ -22,7 +22,7 @@ class CellDataSaver:
         return {
             "source": "Edgemont Weather Service",
             "product": "EdgeWARN Storm Cells",
-            "version": "1.3.1",
+            "version": "1.3.2",
             "latest_timestamp": latest_timestamp,
             "features": features
         }
