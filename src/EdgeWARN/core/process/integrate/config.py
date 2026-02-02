@@ -66,6 +66,33 @@ def get_datasets_config():
             "method": "percentile",
             "percentile": 50
         },
+        # === AzShear ===
+        {
+            "name": "AzShear Low",
+            "filepath": fs.MRMS_AZSHEARLOW_DIR,
+            "key": "p100AzShearLow",
+            "method": "max"
+        },
+        {
+            "name": "AzShear Low (95th)",
+            "filepath": fs.MRMS_AZSHEARLOW_DIR,
+            "key": "p95AzShearLow",
+            "method": "percentile",
+            "percentile": 95
+        },
+        {
+            "name": "AzShear Mid",
+            "filepath": fs.MRMS_AZSHEARMID_DIR,
+            "key": "p100AzShearMid",
+            "method": "max"
+        },
+        {
+            "name": "AzShear Mid (95th)",
+            "filepath": fs.MRMS_AZSHEARMID_DIR,
+            "key": "p95AzShearMid",
+            "method": "percentile",
+            "percentile": 95
+        },
         # === Others ===
         {
             "name": "PrecipRate",
