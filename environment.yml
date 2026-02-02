@@ -15,7 +15,6 @@ dependencies:
   - shapely
   - rasterio
   - xarray
-  - opencv
   - pyproj
   - psutil
   - ijson
@@ -27,3 +26,4 @@ dependencies:
     - aiohttp
     - requests
     - beautifulsoup4
+    - opencv-python-headless
