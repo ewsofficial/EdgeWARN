@@ -26,7 +26,7 @@ def test_morphology_logic():
     et = np.random.rand(30, 30) * 15
 
     # 4. Process
-    results = MorphologyEngine.process_cell(mask, None, vil, et)
+    results = MorphologyEngine.process_cell(mask, None)
 
     print("\n--- Results ---")
     for k, v in results.items():
@@ -46,9 +46,6 @@ def test_morphology_logic():
         print(f"PASS: Aspect Ratio {results['aspect_ratio']} is valid.")
     else:
         print(f"FAIL: Aspect Ratio {results['aspect_ratio']} < 1.0.")
-
-    # VIL check
-    print(f"PASS: VIL Max {results['vil_density_max']} extracted.")
     
     # Defect check
     if results['defect_max_depth'] > 0:

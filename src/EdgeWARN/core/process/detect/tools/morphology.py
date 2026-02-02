@@ -5,15 +5,13 @@ from skimage.morphology import skeletonize
 
 class MorphologyEngine:
     @staticmethod
-    def process_cell(mask_slice, refl_slice, vil_slice=None, et_slice=None):
+    def process_cell(mask_slice, refl_slice):
         """
-        Calculate scalar morphological and physical metrics for a single cell.
+        Calculate scalar morphological metrics for a single cell.
         
         Args:
             mask_slice (np.ndarray): Boolean mask of the storm object (within the slice).
             refl_slice (np.ndarray): Reflectivity values (same shape as mask).
-            vil_slice (np.ndarray): VIL Density values (same shape as mask) or None.
-            et_slice (np.ndarray): Echo Top values (same shape as mask) or None.
             
         Returns:
             dict: Dictionary of scalar metrics.
@@ -71,40 +69,11 @@ class MorphologyEngine:
                          metrics['defect_max_depth'] = 0.0
                          
                 # Aspect Ratio
-                x, y, w, h = cv2.boundingRect(cnt)
                 if w > 0 and h > 0:
                     aspect_ratio = float(w) / h
                     # Normalize to be >= 1 for "elongation"
                     if aspect_ratio < 1.0:
                         aspect_ratio = 1.0 / aspect_ratio
                     metrics['aspect_ratio'] = round(aspect_ratio, 2)
-                
-                
-        # === 2. Microphysics (VIL Density) ===
-        if vil_slice is not None:
-            # Mask VIL with the storm mask
-            # Note: slices are already aligned
-            vil_vals = vil_slice[mask_slice]
-            
-            if vil_vals.size > 0:
-                # Filter NaNs just in case
-                valid_vil = vil_vals[~np.isnan(vil_vals)]
-                if valid_vil.size > 0:
-                    # Scalar stats
-                    metrics['vil_density_max'] = float(round(np.max(valid_vil), 2))
-                    metrics['vil_density_mean'] = float(round(np.mean(valid_vil), 2))
-                    
-                    # 90th percentile (robust max)
-                    # Use np.percentile which is faster than sorting manually for small arrays
-                    if valid_vil.size > 10:
-                        metrics['vil_density_90p'] = float(round(np.percentile(valid_vil, 90), 2))
-        
-        # === 3. Kinematics Proxy (Echo Top) ===
-        if et_slice is not None:
-            et_vals = et_slice[mask_slice]
-            if et_vals.size > 0:
-                valid_et = et_vals[~np.isnan(et_vals)]
-                if valid_et.size > 0:
-                    metrics['echotop18_max'] = float(round(np.max(valid_et), 2))
                     
         return metrics
