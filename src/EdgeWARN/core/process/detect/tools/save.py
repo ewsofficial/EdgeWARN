@@ -123,14 +123,10 @@ class CellDataSaver:
         polygon_grid = self.expanded_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
         
-        # Optional Grids (Physics)
-        vil_grid = vil_ds['unknown'].values if vil_ds else None
-        et_grid = et_ds['unknown'].values if et_ds else None
-
         # Optimize: Avoid full meshgrid creation
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
-
+        
         is_1d_coords = (lats.ndim == 1)
 
         results = []
@@ -165,11 +161,9 @@ class CellDataSaver:
             
             # === Morphology Engine Call (Zero-Copy Views) ===
             refl_slice = refl_grid[sl]
-            vil_slice = vil_grid[sl] if vil_grid is not None else None
-            et_slice = et_grid[sl] if et_grid is not None else None
             
             # Calculate Scalars
-            morph_stats = MorphologyEngine.process_cell(mask_slice, refl_slice, vil_slice, et_slice)
+            morph_stats = MorphologyEngine.process_cell(mask_slice, refl_slice)
                 
             # === Standard Reflectivity Logic ===
             refl_vals = refl_slice[mask_slice]

@@ -33,7 +33,16 @@ def main(json_path=None, remove_old_cells=True):
             latest_file = fs.latest_files(outdir, 1)[-1]
             io_manager.write_debug(f"Using latest {name} file: {latest_file}")
 
-            result_cells = integrator.integrate_ds_via_max(latest_file, result_cells, key)
+            method = dataset_config.get("method", "max")
+            percentile = dataset_config.get("percentile", 90)
+
+            result_cells = integrator.integrate_ds_by_percentile(
+                latest_file, 
+                result_cells, 
+                key, 
+                method=method, 
+                percentile=percentile
+            )
             io_manager.write_debug(f"{name} integration completed successfully!")
         
         except Exception as e:

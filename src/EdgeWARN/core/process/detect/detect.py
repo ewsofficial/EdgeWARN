@@ -17,8 +17,6 @@ def detect_cells(
     lon_max,
     *,
     return_probsevere=False,
-    vil_path=None,  # NEW
-    et_path=None,   # NEW
 ):
     handler = DetectionDataHandler(
         radar_path,
@@ -41,24 +39,6 @@ def detect_cells(
         return []
 
     ps_ds = handler.load_probsevere()
-    
-    # === Consolidate Loading of Physics Grids (MorphoWind) ===
-    # We load them here so they are available for scalar extraction
-    vil_ds = None
-    if vil_path:
-        try:
-            vil_ds = handler.load_vil(vil_path)
-            io_manager.write_debug(f"Loaded VIL Density from {vil_path}")
-        except Exception as e:
-            io_manager.write_warning(f"Failed to load VIL: {e}")
-
-    et_ds = None
-    if et_path:
-        try:
-            et_ds = handler.load_echotop(et_path)
-            io_manager.write_debug(f"Loaded EchoTop form {et_path}")
-        except Exception as e:
-            io_manager.write_warning(f"Failed to load EchoTop: {e}")
 
 
     mapper = GateMapper(radar_ds, ps_ds, io_manager, refl_threshold=40.0)
@@ -81,7 +61,7 @@ def detect_cells(
     )
 
     # Pass physics grids to create_entry for scalar extraction
-    entries = saver.create_entry(vil_ds=vil_ds, et_ds=et_ds)
+    entries = saver.create_entry()
 
 
     if return_probsevere:

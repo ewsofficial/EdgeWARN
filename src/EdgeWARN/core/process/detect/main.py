@@ -21,8 +21,6 @@ def _detect_with_optional_probsevere(
     lon_min,
     lon_max,
     need_probsevere,
-    vil_path=None, # NEW
-    et_path=None,  # NEW
 ):
     if need_probsevere:
         return detect_cells(
@@ -35,8 +33,6 @@ def _detect_with_optional_probsevere(
             lon_min,
             lon_max,
             return_probsevere=True,
-            vil_path=vil_path, # Pass
-            et_path=et_path,   # Pass
         )
 
     return detect_cells(
@@ -48,8 +44,6 @@ def _detect_with_optional_probsevere(
         lat_max,
         lon_min,
         lon_max,
-        vil_path=vil_path, # Pass
-        et_path=et_path,   # Pass
     ), None
 
 
@@ -98,32 +92,11 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         final_ts = dt.strftime("%Y%m%d-%H%M%S") # Format for filename with seconds
         json_ts = dt.isoformat() # Format for JSON content
         
-        # === Find Matching Physics Grids (MorphoWind) ===
-        # We try to find VIL and EchoTop files that match this timestamp
-        # Format usually: MRMS_{Product}_00.50_{YYYYMMDD-HHMMSS}.grib2.gz
+        json_ts = dt.isoformat() # Format for JSON content
         
-        # Construct glob pattern from timestamp
-        # The file might be compressed (.gz) or not
-        ts_glob = f"*{final_ts}*" 
-        
-        vil_new = DetectionDataHandler.latest_file(fs.MRMS_VIL_DIR, ts_glob)
-        et_new = DetectionDataHandler.latest_file(fs.MRMS_ECHOTOP18_DIR, ts_glob)
-        
-        if vil_new:
-            io_manager.write_debug(f"Found matching VIL file: {vil_new.name}")
-        else:
-             io_manager.write_warning(f"No matching VIL file found for {final_ts}")
-
-        if et_new:
-             io_manager.write_debug(f"Found matching EchoTop file: {et_new.name}")
-        else:
-             io_manager.write_warning(f"No matching EchoTop file found for {final_ts}")
-
     except ValueError:
         final_ts = ts_str
         json_ts = ts_str
-        vil_new = None
-        et_new = None
 
     ps_old_data = None
 
@@ -210,8 +183,6 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         lon_min,
         lon_max,
         need_probsevere=True,
-        vil_path=vil_new, # Pass found physics files
-        et_path=et_new,   # Pass found physics files
     )
     io_manager.write_debug(f"Detected {len(entries_new)} cells in new scan")
 
