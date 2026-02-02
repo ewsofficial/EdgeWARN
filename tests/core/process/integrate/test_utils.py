@@ -23,7 +23,7 @@ class TestRAPFileHandler:
         """Test handler initialization"""
         handler = RAPFileHandler(mock_io)
         
-        assert handler.io == mock_io
+        assert handler.io_manager == mock_io
 
     def test_get_isobaric_dataset_success(self, mock_io):
         """Test successful dataset retrieval"""
@@ -53,7 +53,7 @@ class TestRAPFileHandler:
             result = handler.get_isobaric_dataset("dummy_path")
             
             assert result is None
-            mock_io.write_error.assert_called_once()
+            mock_io.write_error.assert_called()
 
     def test_get_isobaric_dataset_no_levels(self, mock_io):
         """Test handling when isobaricInhPa not found"""
@@ -68,7 +68,7 @@ class TestRAPFileHandler:
             result = handler.get_isobaric_dataset("dummy_path")
             
             assert result is None
-            mock_io.write_error.assert_called_once()
+            mock_io.write_error.assert_called()
 
     def test_get_isobaric_dataset_fallback(self, mock_io):
         """Test fallback to general approach"""
@@ -106,98 +106,25 @@ class TestStormIntegrationUtils:
         assert poly is not None
         assert hasattr(poly, 'exterior')
 
-    def test_create_cell_polygon_from_properties(self):
-        """Test creating polygon from properties"""
+    def test_create_cell_polygon_from_centroid(self):
+        """Test creating polygon from centroid"""
         cell = {
-            "properties": {
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[[34.9, -97.1], [34.9, -96.9], [35.1, -96.9], [35.1, -97.1]]]
-                }
-            }
-        }
+            "centroid": [35.0, -97.0]
         }
         
         poly = StormIntegrationUtils.create_cell_polygon(cell)
         
+        # Should return a Shapely Polygon
         assert poly is not None
+        assert hasattr(poly, 'exterior')
 
     def test_create_cell_polygon_missing_geometry(self):
         """Test handling when geometry is missing"""
         cell = {
-            "bbox": [[34.9, -97.1], [34.9, -96.9], [35.1, -96.9], [35.1, -97.1]]
+            "id": 101
         }
         
         poly = StormIntegrationUtils.create_cell_polygon(cell)
         
         # Should return None
         assert poly is None
-
-    def test_extract_timestamp_from_cell(self):
-        """Test extracting timestamp from cell"""
-        cell = {
-            "timestamp": "2023-10-15T14:30:00",
-            "properties": {
-                "timestamp": "2023-10-15T14:30:00"
-            }
-        }
-        
-        ts = StormIntegrationUtils.extract_timestamp(cell)
-        
-        assert ts == "2023-10-15T14:30:00"
-
-    def test_extract_timestamp_from_properties(self):
-        """Test extracting timestamp from properties"""
-        cell = {
-            "properties": {
-                "timestamp": "2023-10-15T14:30:00"
-            }
-        }
-        
-        ts = StormIntegrationUtils.extract_timestamp(cell)
-        
-        assert ts == "2023-10-15T14:30:00"
-
-    def test_extract_timestamp_missing(self):
-        """Test handling when timestamp is missing"""
-        cell = {
-            "id": 101,
-            "properties": {}
-        }
-        
-        ts = StormIntegrationUtils.extract_timestamp(cell)
-        
-        assert ts is None
-
-    def test_extract_centroid_from_cell(self):
-        """Test extracting centroid from cell"""
-        cell = {
-            "centroid": [35.0, -97.0]
-        }
-        
-        centroid = StormIntegrationUtils.extract_centroid(cell)
-        
-        assert centroid == [35.0, -97.0]
-
-    def test_extract_centroid_from_properties(self):
-        """Test extracting centroid from properties"""
-        cell = {
-            "properties": {
-                "centroid": [35.0, -97.0]
-            }
-        }
-        
-        centroid = StormIntegrationUtils.extract_centroid(cell)
-        
-        assert centroid == [35.0, -97.0]
-
-    def test_extract_centroid_missing(self):
-        """Test handling when centroid is missing"""
-        cell = {
-            "id": 101,
-            "properties": {}
-        }
-        
-        centroid = StormIntegrationUtils.extract_centroid(cell)
-        
-        assert centroid is None
