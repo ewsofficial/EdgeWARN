@@ -152,3 +152,16 @@ class DetectionDataHandler:
         fallback = datetime.utcnow().isoformat()
         _DETECTION_IO.write_warning(f"Using fallback timestamp: {fallback}")
         return fallback
+
+    @staticmethod
+    def latest_file(directory, pattern="*"):
+        """
+        Get the latest file in a directory matching a pattern.
+        """
+        try:
+            files = sorted(Path(directory).glob(pattern))
+            if not files:
+                return None
+            return files[-1]
+        except Exception:
+            return None
