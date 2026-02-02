@@ -15,6 +15,7 @@ dependencies:
   - shapely
   - rasterio
   - xarray
+  - opencv
   - pyproj
   - psutil
   - ijson
