@@ -24,29 +24,31 @@ def main(json_path=None, remove_old_cells=True):
     result_cells = cells
 
     # Integrate datasets
-    for dataset_config in get_datasets_config():
-        name = dataset_config["name"]
-        outdir = dataset_config["filepath"]
-        key = dataset_config["key"]
+    # Integrate datasets
+    from itertools import groupby
+    
+    # Sort configs by filepath first (required for groupby)
+    configs = get_datasets_config()
+    configs.sort(key=lambda x: x["filepath"])
+    
+    for filepath, group in groupby(configs, key=lambda x: x["filepath"]):
+        group_list = list(group)
+        name_list = [c["name"] for c in group_list]
+        name_str = ", ".join(name_list)
         
         try:
-            latest_file = fs.latest_files(outdir, 1)[-1]
-            io_manager.write_debug(f"Using latest {name} file: {latest_file}")
+            latest_file = fs.latest_files(filepath, 1)[-1]
+            io_manager.write_debug(f"Using latest file for {name_str}: {latest_file}")
 
-            method = dataset_config.get("method", "max")
-            percentile = dataset_config.get("percentile", 90)
-
-            result_cells = integrator.integrate_ds_by_percentile(
+            result_cells = integrator.integrate_multi_stats(
                 latest_file, 
                 result_cells, 
-                key, 
-                method=method, 
-                percentile=percentile
+                group_list
             )
-            io_manager.write_debug(f"{name} integration completed successfully!")
+            io_manager.write_debug(f"Integration completed for {name_str}")
         
         except Exception as e:
-            io_manager.write_error(f"Failed to integrate {name} data: {e}")
+            io_manager.write_error(f"Failed to integrate {name_str} data: {e}")
 
     # Integrate ProbSevere
     try:

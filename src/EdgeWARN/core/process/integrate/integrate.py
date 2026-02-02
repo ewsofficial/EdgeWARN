@@ -116,16 +116,15 @@ class StormCellIntegrator:
         ds.close()
         return storm_cells
 
-    def integrate_ds_by_percentile(self, dataset_path, storm_cells, output_key, method="max", percentile=90):
+    def integrate_multi_stats(self, dataset_path, storm_cells, stats_config_list):
         """
-        Integrate a dataset by calculating a specific statistic (max, mean, percentile).
+        Integrate a dataset by calculating multiple statistics in a single pass.
         
         Args:
             dataset_path (str): Path to the GRIB/NetCDF file.
             storm_cells (list): List of storm cell dictionaries.
-            output_key (str): Key to store the result in cell['properties'].
-            method (str): 'max', 'mean', or 'percentile'.
-            percentile (int): Percentile value (0-100) if method is 'percentile'.
+            stats_config_list (list): List of dicts, each containing:
+                                      {'key': str, 'method': str, 'percentile': int}
         """
         # Load dataset
         try:
@@ -136,7 +135,9 @@ class StormCellIntegrator:
 
             ds.load()
         except Exception as e:
-            self.io_manager.write_error(f"Load error for {output_key}: {e}")
+            # unique output keys
+            keys = [c['key'] for c in stats_config_list]
+            self.io_manager.write_error(f"Load error for {keys}: {e}")
             return storm_cells
 
         # Coordinates
@@ -157,7 +158,8 @@ class StormCellIntegrator:
 
         var_values = var.values
 
-        self.io_manager.write_info(f"Integrating {output_key} ({method}) for {len(storm_cells)} cells")
+        keys_str = ", ".join([c['key'] for c in stats_config_list])
+        self.io_manager.write_info(f"Integrating [{keys_str}] for {len(storm_cells)} cells")
 
         for cell in storm_cells:
             # Create properties dict if not exists
@@ -168,7 +170,8 @@ class StormCellIntegrator:
 
             poly = StormIntegrationUtils.create_cell_polygon(cell)
             if poly is None:
-                target[output_key] = 0
+                for conf in stats_config_list:
+                    target[conf['key']] = 0
                 continue
 
             try:
@@ -199,14 +202,16 @@ class StormCellIntegrator:
                 lon_subset = lon_vals[lon_start_idx:lon_end_idx]
 
                 if lat_subset.size == 0 or lon_subset.size == 0:
-                    target[output_key] = 0
+                    for conf in stats_config_list:
+                        target[conf['key']] = 0
                     continue
 
                 sub_var = var_values[lat_start_idx:lat_end_idx, lon_start_idx:lon_end_idx]
                 sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
 
                 if sub_var.size == 0:
-                    target[output_key] = 0
+                    for conf in stats_config_list:
+                        target[conf['key']] = 0
                     continue
 
                 inside = sv.contains(poly, sub_lon, sub_lat)
@@ -217,22 +222,33 @@ class StormCellIntegrator:
                 masked_vals = masked_vals[masked_vals >= 0]
 
                 if masked_vals.size == 0:
-                    target[output_key] = 0
+                    for conf in stats_config_list:
+                        target[conf['key']] = 0
                 else:
-                    if method == "max":
-                        res = np.max(masked_vals)
-                    elif method == "mean":
-                        res = np.mean(masked_vals)
-                    elif method == "percentile":
-                        res = np.percentile(masked_vals, percentile)
-                    else:
-                        res = 0
+                    # Sort once for percentiles if needed? 
+                    # np.percentile handles sorting internally. If we have multiple percentiles, sorting once might be faster 
+                    # but typically np.percentile is optimized enough for small N (storm cell pixels).
+                    
+                    for conf in stats_config_list:
+                        method = conf.get('method', 'max')
+                        percentile = conf.get('percentile', 90)
+                        key = conf['key']
                         
-                    target[output_key] = float(res)
+                        if method == "max":
+                            res = np.max(masked_vals)
+                        elif method == "mean":
+                            res = np.mean(masked_vals)
+                        elif method == "percentile":
+                            res = np.percentile(masked_vals, percentile)
+                        else:
+                            res = 0
+                        
+                        target[key] = float(res)
 
             except Exception as e:
                 # self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
-                target[output_key] = 0 # Default to 0 on error
+                for conf in stats_config_list:
+                    target[conf['key']] = 0 # Default to 0 on error
         
         ds.close()
         return storm_cells
