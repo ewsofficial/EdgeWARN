@@ -97,8 +97,6 @@ def latest_files(dir, n):
         [f for f in dir.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
         key=lambda f: f.stat().st_mtime
     )
-    if len(files) < n:
-        raise RuntimeError(f"Not enough files in {dir}")
     return [str(f) for f in files[-n:]]
 
 def clean_idx_files(folders):
@@ -128,7 +126,7 @@ def clean_idx_files(folders):
             io_manager.write_error(f"Folder not found: {folder}")
 
 # ---------- CLEANUP ----------
-def clean_old_files(directory: Path, max_age_minutes=60):
+def clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
     # Safety Check: Ensure directory is within BASE_DIR
     try:
         # resolve() handles symlinks and . and .. components
@@ -147,7 +145,7 @@ def clean_old_files(directory: Path, max_age_minutes=60):
     kept_files = []
 
     for f in directory.glob("*"):
-        if f.is_file():
+        if f.is_file() and f.suffix.lower() != ".idx":
             try:
                 mtime = f.stat().st_mtime
                 if mtime < cutoff:
@@ -158,10 +156,10 @@ def clean_old_files(directory: Path, max_age_minutes=60):
             except Exception as e:
                 io_manager.write_error(f"Could not process/delete {f.name}: {e}")
 
-    # If more than 10 files remain, delete the oldest ones until only 10 are left
-    if len(kept_files) > 10:
+    # If more than max_files remain, delete the oldest ones until only max_files are left
+    if len(kept_files) > max_files:
         kept_files.sort(key=lambda x: x[1]) # Sort by mtime (oldest first)
-        files_to_remove = len(kept_files) - 10
+        files_to_remove = len(kept_files) - max_files
         for i in range(files_to_remove):
             f, _ = kept_files[i]
             try:

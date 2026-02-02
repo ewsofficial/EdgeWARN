@@ -25,12 +25,12 @@ export default {
     // Test file patterns
     testMatch: [
         '**/tests/api/**/*.test.js',
-        '**/tests/api/**/*.spec.js'
+        '**/tests/api/**/*.spec.js',
+        '**/tests/api/**/test_*.js'
     ],
 
     // Module handling for ES modules
     transform: {},
-    extensionsToTreatAsEsm: ['.js'],
     moduleNameMapper: {
         '^(\\.{1,2}/.*)\\.js$': '$1'
     },
