@@ -12,6 +12,7 @@
 
 ## Changes
 
+- **Detection Phase Optimization**: Switched to custom fast GRIB loader for radar data, achieving ~75% speedup in detection phase (16s → 4s)
 - **RAP Loading Strategy**: Reverted to unfiltered `cfgrib.open_datasets` loading (fastest approach)
 - **Morphology Engine Optimization**: Reduced overhead with early bailout for small cells and pre-allocated kernels
 - **Integration I/O Optimization**: Grouped datasets to reduce file I/O operations
@@ -22,6 +23,7 @@
 
 ## Fixes
 
+- **RAP File Cleanup**: Fixed bug where RAP files were not deleting due to symlink safety check and hardcoded limit
 - **CVE-2025-55182**: Resolved critical vulnerability and updated dependencies
 - **AzShear Performance Bottleneck**: Fixed 44s → 1.5s GRIB loading regression caused by `cfgrib` metadata parsing issues
 - **RAP Integration Performance**: Fixed performance regression in RAP data loading
