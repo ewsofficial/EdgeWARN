@@ -113,3 +113,56 @@ def get_datasets_config():
             "method": "max"
         }
     ]
+
+
+def get_rap_products():
+    """
+    Configuration for RAP GRIB2 extraction.
+    Each entry specifies filter keys, variable name, and output property key.
+    """
+    return {
+        "products": [
+            # === Isobaric Winds ===
+            {
+                "filter": {"typeOfLevel": "isobaricInhPa"},
+                "var": "u",
+                "levels": [850, 700, 500, 250],
+                "key_template": "u{level}"
+            },
+            {
+                "filter": {"typeOfLevel": "isobaricInhPa"},
+                "var": "v",
+                "levels": [850, 700, 500, 250],
+                "key_template": "v{level}"
+            },
+            # === Surface 2m ===
+            {
+                "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
+                "var": "t2m",
+                "key": "temp_2m",
+                "transform": "kelvin_to_celsius"
+            },
+            {
+                "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
+                "var": "d2m",
+                "key": "dewpoint_2m",
+                "transform": "kelvin_to_celsius"
+            },
+            # === Freezing Level ===
+            {
+                "filter": {"typeOfLevel": "isothermZero"},
+                "var": "gh",
+                "key": "freezing_level_m"
+            },
+        ],
+        "derived": [
+            {
+                "formula": "temp_2m - dewpoint_2m",
+                "key": "dewpoint_depression"
+            },
+            {
+                "formula": "freezing_level_m / 1000",
+                "key": "freezing_level_height"
+            }
+        ]
+    }
