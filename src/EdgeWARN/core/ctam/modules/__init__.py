@@ -6,7 +6,7 @@ Automatically registers all available analysis modules on import.
 
 from ..registry import ModuleRegistry
 from .StormCast import StormCastModule
-from .morphowind import MorphoWindModule
+from .MorphoWind import MorphoWindModule
 
 # Register all modules
 ModuleRegistry.register(StormCastModule())

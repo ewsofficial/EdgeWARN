@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import patch
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
-from EdgeWARN.core.ctam.modules.morphowind import MorphoWindModule 
-from EdgeWARN.core.ctam.modules import morphowind_config as cfg
+from EdgeWARN.core.ctam.modules.MorphoWind.morphowind import MorphoWindModule 
+from EdgeWARN.core.ctam.modules.MorphoWind import config as cfg
 
 class TestMorphoWindPhysics(unittest.TestCase):
     def setUp(self):
