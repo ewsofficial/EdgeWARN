@@ -74,6 +74,29 @@ A storm motion forecasting module that predicts storm cell trajectories.
 - `forecast_cones`: List of forecast cone dictionaries (centers are in lat/lon relative to storm centroid)
 - `reason` or `error`: Explanation if skipped or failed
 
+---
+
+### MorphoWind
+A physics-based severe wind risk assessment module for Microbursts and QLCS/Bow Echoes.
+
+**Location**: `modules/MorphoWind/`
+
+**Input Requirements** (from storm_entry):
+- `properties.morphology`: Geometric features (`solidity`, `aspect_ratio`, `linearity`, `defect_bearing`, etc.)
+- `properties.p95VIL`, `properties.p95EchoTop18`, `properties.p95AzShearLow`: Microphysical features
+- `dx`, `dy` (top-level): Storm motion vector (for Rear Inflow Notch detection)
+- `environment` (optional): Dict with `freezing_level_height`, `dewpoint_depression`
+
+**Output** (stored in `storm_entry['modules']['MorphoWind']` and `storm_entry['properties']['morphowind']`):
+- `risk_type`: "QLCS", "Microburst", or "None"
+- `confidence`: 0.0 - 1.0 probability score
+- `severity_index`: Max of QLCS and Microburst scores
+- `physics_triggers`: List of triggered physics flags (e.g., `["VIL_COLLAPSE", "REAR_INFLOW_NOTCH"]`)
+- `scores.qlcs`, `scores.microburst`: Individual regime scores
+- `physics`: Detailed metrics (`vil_density`, `collapse_score`, `linearity`, etc.)
+
+**See Also**: [MorphoWind.md](ctam_modules/MorphoWind.md)
+
 ## Data Structure
 
 After CTAM processing, each storm cell has a `modules` key:
