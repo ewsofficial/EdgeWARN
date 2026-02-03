@@ -1,6 +1,7 @@
 """
 Config-driven RAP integration.
 Loads RAP file once and extracts all configured products.
+Optimized: Pre-calculates grid indices for all cells once.
 """
 import numpy as np
 import cfgrib
@@ -33,18 +34,6 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
         io_manager.write_error(f"Failed to load RAP file: {e}")
         return storm_cells
 
-    # Index datasets by their level type coordinate
-    dataset_index = {}
-    for ds in all_datasets:
-        coords = list(ds.coords.keys())
-        for coord in coords:
-            if coord not in ['time', 'step', 'latitude', 'longitude', 'valid_time', 'x', 'y']:
-                # This is a level coordinate (e.g., isobaricInhPa, heightAboveGround)
-                key = (coord, ds[coord].values.item() if ds[coord].values.ndim == 0 else tuple(ds[coord].values.tolist()))
-                if key not in dataset_index:
-                    dataset_index[key] = []
-                dataset_index[key].append(ds)
-
     # Extract lat/lon from first dataset
     lat_vals = None
     lon_vals = None
@@ -60,6 +49,9 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
         io_manager.write_error("Could not find lat/lon coordinates in RAP file")
         return storm_cells
 
+    # OPTIMIZATION: Pre-calculate grid indices for all cells ONCE
+    cell_indices = _precompute_cell_indices(storm_cells, lat_vals, lon_vals)
+
     def find_dataset(filter_keys, var_name):
         """Find dataset matching the filter criteria AND containing the variable."""
         level_type = filter_keys.get("typeOfLevel")
@@ -67,12 +59,9 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
         
         for ds in all_datasets:
             if level_type in ds.coords:
-                # Check if variable exists in this dataset
                 if var_name not in ds.data_vars:
                     continue
-                    
                 coord_val = ds[level_type].values
-                # Check if level matches (if specified)
                 if level is not None:
                     if coord_val.ndim == 0:
                         if float(coord_val) == float(level):
@@ -81,24 +70,19 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
                         if float(level) in coord_val:
                             return ds
                 else:
-                    # No specific level required, just return first match with var
                     return ds
         return None
 
-    # Process each product
+    # Process each product using pre-computed indices
     for product in products:
         var_name = product["var"]
         ds = find_dataset(product["filter"], var_name)
         if ds is None:
             io_manager.write_warning(f"No dataset found for filter: {product['filter']} with var '{var_name}'")
             continue
-        if var_name not in ds.data_vars:
-            io_manager.write_warning(f"Variable '{var_name}' not found in dataset for filter {product['filter']}")
-            continue
 
         transform_fn = TRANSFORMS.get(product.get("transform"), lambda x: x)
 
-        # Handle multi-level products (winds)
         if "levels" in product:
             levels = product["levels"]
             key_template = product["key_template"]
@@ -108,14 +92,13 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
                 try:
                     data = ds[var_name].sel({level_coord: level}).values
                     key = key_template.format(level=level)
-                    _apply_to_cells(storm_cells, lat_vals, lon_vals, data, key, transform_fn, io_manager)
+                    _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn)
                 except Exception as e:
                     io_manager.write_debug(f"Could not extract {var_name} at {level}: {e}")
         else:
-            # Single-level product
             key = product["key"]
             data = ds[var_name].values
-            _apply_to_cells(storm_cells, lat_vals, lon_vals, data, key, transform_fn, io_manager)
+            _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn)
 
     # Calculate derived fields
     for d in derived:
@@ -134,26 +117,47 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
     return storm_cells
 
 
-def _apply_to_cells(storm_cells, lat_vals, lon_vals, data, key, transform_fn, io_manager):
-    """Extract value at each storm cell centroid and store in properties."""
+def _precompute_cell_indices(storm_cells, lat_vals, lon_vals):
+    """
+    Pre-compute grid indices for all cells once.
+    Returns dict: cell_id -> (y_idx, x_idx) or None if invalid.
+    """
+    indices = {}
     for cell in storm_cells:
-        if "properties" not in cell:
-            cell["properties"] = {}
-
+        cell_id = cell.get("id")
         centroid = cell.get("centroid", [0, 0])
         centroid_lat, centroid_lon = centroid[0], centroid[1]
 
-        # Normalize longitude
         if centroid_lon > 180:
             centroid_lon -= 360
 
         try:
             dist_sq = (lat_vals - centroid_lat) ** 2 + (lon_vals - centroid_lon) ** 2
             min_idx = np.unravel_index(np.argmin(dist_sq), dist_sq.shape)
-            val = float(data[min_idx])
+            indices[cell_id] = min_idx
+        except Exception:
+            indices[cell_id] = None
+
+    return indices
+
+
+def _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn):
+    """Extract value using pre-computed indices (O(1) lookup per cell)."""
+    for cell in storm_cells:
+        if "properties" not in cell:
+            cell["properties"] = {}
+
+        cell_id = cell.get("id")
+        idx = cell_indices.get(cell_id)
+
+        if idx is None:
+            cell["properties"][key] = None
+            continue
+
+        try:
+            val = float(data[idx])
             cell["properties"][key] = round(transform_fn(val), 2)
-        except Exception as e:
-            io_manager.write_debug(f"Error extracting {key} for cell {cell.get('id')}: {e}")
+        except Exception:
             cell["properties"][key] = None
 
 
