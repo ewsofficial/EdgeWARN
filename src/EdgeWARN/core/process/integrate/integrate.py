@@ -20,7 +20,7 @@ class StormCellIntegrator:
             else:
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
 
-            ds.load()
+            ds.load()  # Eager load for fast in-memory access
         except Exception as e:
             self.io_manager.write_error(f"Load error: {e}")
             return storm_cells
@@ -114,6 +114,8 @@ class StormCellIntegrator:
                 target[output_key] = "PROCESSING_ERROR"
 
         ds.close()
+        del ds
+        gc.collect()
         return storm_cells
 
     def integrate_multi_stats(self, dataset_path, storm_cells, stats_config_list):
@@ -133,7 +135,7 @@ class StormCellIntegrator:
             else:
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
 
-            ds.load()
+            ds.load()  # Eager load for fast in-memory access
         except Exception as e:
             # unique output keys
             keys = [c['key'] for c in stats_config_list]
@@ -251,6 +253,8 @@ class StormCellIntegrator:
                     target[conf['key']] = 0 # Default to 0 on error
         
         ds.close()
+        del ds
+        gc.collect()
         return storm_cells
 
     def integrate_probsevere(self, probsevere_data, storm_cells):
