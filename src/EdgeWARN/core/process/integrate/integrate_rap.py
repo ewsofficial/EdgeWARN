@@ -1,7 +1,6 @@
 """
 Config-driven RAP integration.
-Loads RAP file once and extracts all configured products.
-Optimized: Pre-calculates grid indices for all cells once.
+Optimized: Single cfgrib.open_datasets call, then select needed datasets from list.
 """
 import numpy as np
 import cfgrib
@@ -15,8 +14,8 @@ TRANSFORMS = {
 
 def integrate_rap(storm_cells, rap_file_path, io_manager):
     """
-    Integrate RAP data into storm cells using config-driven approach.
-    Loads file once, extracts all products, calculates derived fields.
+    Integrate RAP data into storm cells.
+    Uses single cfgrib.open_datasets call for efficiency.
     """
     if not rap_file_path:
         io_manager.write_warning("No RAP file path provided")
@@ -26,15 +25,15 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
     products = config.get("products", [])
     derived = config.get("derived", [])
 
-    # Load ALL datasets once (no filter)
+    # Load ALL datasets in ONE call (efficient: single scan of GRIB file)
     try:
         all_datasets = cfgrib.open_datasets(rap_file_path)
-        io_manager.write_debug(f"Loaded {len(all_datasets)} datasets from RAP file")
+        io_manager.write_debug(f"Loaded {len(all_datasets)} datasets from RAP")
     except Exception as e:
         io_manager.write_error(f"Failed to load RAP file: {e}")
         return storm_cells
 
-    # Extract lat/lon from first dataset
+    # Extract lat/lon from first available dataset
     lat_vals = None
     lon_vals = None
     for ds in all_datasets:
@@ -46,39 +45,43 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
             break
 
     if lat_vals is None:
-        io_manager.write_error("Could not find lat/lon coordinates in RAP file")
+        io_manager.write_error("No lat/lon in RAP datasets")
         return storm_cells
 
-    # OPTIMIZATION: Pre-calculate grid indices for all cells ONCE
+    # Pre-compute cell indices ONCE
     cell_indices = _precompute_cell_indices(storm_cells, lat_vals, lon_vals)
 
-    def find_dataset(filter_keys, var_name):
-        """Find dataset matching the filter criteria AND containing the variable."""
+    # Find matching datasets for each product
+    def find_dataset_for_product(product):
+        """Find the dataset that matches the product's filter and has the variable."""
+        filter_keys = product["filter"]
+        var_name = product["var"]
         level_type = filter_keys.get("typeOfLevel")
         level = filter_keys.get("level")
-        
+
         for ds in all_datasets:
-            if level_type in ds.coords:
-                if var_name not in ds.data_vars:
-                    continue
-                coord_val = ds[level_type].values
-                if level is not None:
-                    if coord_val.ndim == 0:
-                        if float(coord_val) == float(level):
-                            return ds
-                    else:
-                        if float(level) in coord_val:
-                            return ds
+            if level_type not in ds.coords:
+                continue
+            if var_name not in ds.data_vars:
+                continue
+            
+            coord_val = ds[level_type].values
+            if level is not None:
+                # Check level match
+                if coord_val.ndim == 0:
+                    if float(coord_val) != float(level):
+                        continue
                 else:
-                    return ds
+                    if float(level) not in coord_val:
+                        continue
+            return ds
         return None
 
-    # Process each product using pre-computed indices
+    # Process each product
     for product in products:
         var_name = product["var"]
-        ds = find_dataset(product["filter"], var_name)
+        ds = find_dataset_for_product(product)
         if ds is None:
-            io_manager.write_warning(f"No dataset found for filter: {product['filter']} with var '{var_name}'")
             continue
 
         transform_fn = TRANSFORMS.get(product.get("transform"), lambda x: x)
@@ -93,72 +96,60 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
                     data = ds[var_name].sel({level_coord: level}).values
                     key = key_template.format(level=level)
                     _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn)
-                except Exception as e:
-                    io_manager.write_debug(f"Could not extract {var_name} at {level}: {e}")
+                except Exception:
+                    pass
         else:
             key = product["key"]
-            data = ds[var_name].values
-            _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn)
+            try:
+                data = ds[var_name].values
+                _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn)
+            except Exception:
+                pass
 
     # Calculate derived fields
     for d in derived:
-        formula = d["formula"]
-        key = d["key"]
-        _calculate_derived(storm_cells, formula, key)
+        _calculate_derived(storm_cells, d["formula"], d["key"])
 
-    # Cleanup
+    # Cleanup all datasets
     for ds in all_datasets:
-        if hasattr(ds, "close"):
-            try:
-                ds.close()
-            except Exception:
-                pass
+        try:
+            ds.close()
+        except Exception:
+            pass
 
     return storm_cells
 
 
 def _precompute_cell_indices(storm_cells, lat_vals, lon_vals):
-    """
-    Pre-compute grid indices for all cells once.
-    Returns dict: cell_id -> (y_idx, x_idx) or None if invalid.
-    """
+    """Pre-compute grid indices for all cells once."""
     indices = {}
     for cell in storm_cells:
         cell_id = cell.get("id")
         centroid = cell.get("centroid", [0, 0])
-        centroid_lat, centroid_lon = centroid[0], centroid[1]
-
-        if centroid_lon > 180:
-            centroid_lon -= 360
-
+        lat, lon = centroid[0], centroid[1]
+        if lon > 180:
+            lon -= 360
         try:
-            dist_sq = (lat_vals - centroid_lat) ** 2 + (lon_vals - centroid_lon) ** 2
-            min_idx = np.unravel_index(np.argmin(dist_sq), dist_sq.shape)
-            indices[cell_id] = min_idx
+            dist_sq = (lat_vals - lat) ** 2 + (lon_vals - lon) ** 2
+            indices[cell_id] = np.unravel_index(np.argmin(dist_sq), dist_sq.shape)
         except Exception:
             indices[cell_id] = None
-
     return indices
 
 
 def _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn):
-    """Extract value using pre-computed indices (O(1) lookup per cell)."""
+    """Extract value using pre-computed indices."""
     for cell in storm_cells:
         if "properties" not in cell:
             cell["properties"] = {}
-
-        cell_id = cell.get("id")
-        idx = cell_indices.get(cell_id)
-
+        idx = cell_indices.get(cell.get("id"))
         if idx is None:
             cell["properties"][key] = None
-            continue
-
-        try:
-            val = float(data[idx])
-            cell["properties"][key] = round(transform_fn(val), 2)
-        except Exception:
-            cell["properties"][key] = None
+        else:
+            try:
+                cell["properties"][key] = round(transform_fn(float(data[idx])), 2)
+            except Exception:
+                cell["properties"][key] = None
 
 
 def _calculate_derived(storm_cells, formula, key):
@@ -166,7 +157,6 @@ def _calculate_derived(storm_cells, formula, key):
     for cell in storm_cells:
         props = cell.get("properties", {})
         try:
-            result = eval(formula, {"__builtins__": {}}, props)
-            props[key] = round(result, 2)
+            props[key] = round(eval(formula, {"__builtins__": {}}, props), 2)
         except Exception:
             props[key] = None
