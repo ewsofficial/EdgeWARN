@@ -3,6 +3,7 @@ import xarray as xr
 import numpy as np
 import shapely.vectorized as sv
 import gc
+from util.grib_loader import load_grib_fast
 
 # Suppress cfgrib/xarray compatibility warnings
 xr.set_options(use_new_combine_kwarg_defaults=True)
@@ -16,11 +17,16 @@ class StormCellIntegrator:
         # Load dataset
         try:
             if dataset_path.endswith(".grib2"):
-                ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
+                # Try fast loader first for GRIB2 files
+                try:
+                    ds = load_grib_fast(dataset_path)
+                except Exception:
+                    # Fallback to cfgrib for complex/multi-message files
+                    ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
+                    ds.load()
             else:
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
-
-            ds.load()  # Eager load for fast in-memory access
+                ds.load()
         except Exception as e:
             self.io_manager.write_error(f"Load error: {e}")
             return storm_cells
@@ -131,11 +137,16 @@ class StormCellIntegrator:
         # Load dataset
         try:
             if dataset_path.endswith(".grib2"):
-                ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
+                try:
+                    ds = load_grib_fast(dataset_path)
+                except Exception as fast_e:
+                    # self.io_manager.write_warning(f"Fast load failed ({fast_e}), falling back")
+                    ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
+                    ds.load()
             else:
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
+                ds.load()
 
-            ds.load()  # Eager load for fast in-memory access
         except Exception as e:
             # unique output keys
             keys = [c['key'] for c in stats_config_list]
