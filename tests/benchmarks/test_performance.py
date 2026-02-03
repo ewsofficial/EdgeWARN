@@ -138,9 +138,12 @@ class TestIntegrationPerformance:
     def sample_stormcells_path(self):
         """Get a sample storm cells JSON for testing."""
         import util.file as fs
+        from pathlib import Path
         try:
-            files = fs.latest_files(fs.STORMCELL_DIR, 1)
-            return files[-1] if files else None
+            # Get all files and filter for actual stormcell data files (not index)
+            all_files = fs.latest_files(fs.STORMCELL_DIR, 10)
+            stormcell_files = [f for f in all_files if Path(f).name.startswith("stormcells_")]
+            return stormcell_files[-1] if stormcell_files else None
         except Exception:
             return None
     
@@ -216,3 +219,306 @@ class TestRAPIntegrationPerformance:
         # Cleanup
         for ds in datasets:
             ds.close()
+
+
+# =============================================================================
+# INGESTION PHASE BENCHMARKS
+# =============================================================================
+
+class TestIngestionPerformance:
+    """Benchmark tests for data ingestion components."""
+    
+    def test_mrms_file_discovery(self):
+        """Test MRMS file discovery performance."""
+        import util.file as fs
+        
+        result = PerformanceResult("MRMS File Discovery")
+        result.start()
+        
+        # Test file listing across multiple directories
+        directories = [
+            fs.MRMS_COMPOSITE_DIR,
+            fs.MRMS_AZSHEARLOW_DIR,
+            fs.MRMS_AZSHEARMID_DIR,
+            fs.MRMS_VIL_DIR,
+            fs.MRMS_ECHOTOP18_DIR,
+        ]
+        
+        for d in directories:
+            try:
+                fs.latest_files(d, 5)
+            except Exception:
+                pass
+        
+        result.stop()
+        print(result.report())
+        
+        # File discovery should be nearly instant
+        assert result.duration_s < 1.0, \
+            f"File discovery took {result.duration_s:.2f}s, expected < 1s"
+
+
+# =============================================================================
+# DETECTION PHASE BENCHMARKS
+# =============================================================================
+
+class TestDetectionPerformance:
+    """Benchmark tests for storm cell detection."""
+    
+    @pytest.fixture
+    def sample_composite_paths(self):
+        """Get sample composite reflectivity files for testing."""
+        import util.file as fs
+        try:
+            files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
+            return files if len(files) >= 2 else None
+        except Exception:
+            return None
+    
+    def test_reflectivity_loading(self, sample_composite_paths):
+        """Test composite reflectivity loading performance."""
+        if sample_composite_paths is None:
+            pytest.skip("No sample composite files available")
+        
+        from util.grib_loader import load_grib_fast
+        
+        result = PerformanceResult("Composite Reflectivity Loading")
+        result.start()
+        
+        ds = load_grib_fast(sample_composite_paths[-1])
+        
+        result.stop()
+        print(result.report())
+        
+        assert result.duration_s < 5.0, \
+            f"Reflectivity loading took {result.duration_s:.2f}s, expected < 5s"
+        assert ds is not None
+
+
+class TestMorphologyPerformance:
+    """Benchmark tests for morphology processing engine."""
+    
+    @pytest.fixture
+    def sample_reflectivity_data(self):
+        """Get sample reflectivity data for morphology testing."""
+        import util.file as fs
+        from util.grib_loader import load_grib_fast
+        try:
+            files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)
+            if files:
+                ds = load_grib_fast(files[-1])
+                var_name = list(ds.data_vars)[0]
+                return ds[var_name].values
+            return None
+        except Exception:
+            return None
+    
+    def test_morphology_processing(self, sample_reflectivity_data):
+        """Test morphology engine processing performance."""
+        if sample_reflectivity_data is None:
+            pytest.skip("No sample reflectivity data available")
+        
+        from EdgeWARN.core.process.detect.tools.morphology import MorphologyEngine
+        import threading
+        
+        result = PerformanceResult("Morphology Engine")
+        result.start()
+        
+        stop_sampling = threading.Event()
+        def sample_loop():
+            while not stop_sampling.is_set():
+                result.sample()
+                time.sleep(0.2)
+        
+        sampler = threading.Thread(target=sample_loop, daemon=True)
+        sampler.start()
+        
+        # Create a sample binary mask from reflectivity (>30 dBZ)
+        mask_slice = (sample_reflectivity_data > 30).astype(bool)
+        
+        # Process a small region for benchmarking
+        # Get a 500x500 slice to simulate typical cell processing
+        h, w = mask_slice.shape
+        slice_h, slice_w = min(500, h), min(500, w)
+        test_mask = mask_slice[:slice_h, :slice_w]
+        test_refl = sample_reflectivity_data[:slice_h, :slice_w]
+        
+        # Run morphology processing multiple times to get meaningful timing
+        for _ in range(10):
+            metrics = MorphologyEngine.process_cell(test_mask, test_refl)
+        
+        stop_sampling.set()
+        sampler.join(timeout=1)
+        result.stop()
+        
+        print(result.report())
+        
+        # Morphology should complete within reasonable time
+        assert result.duration_s < 5.0, \
+            f"Morphology took {result.duration_s:.2f}s, expected < 5s"
+
+
+# =============================================================================
+# CTAM MODULE BENCHMARKS
+# =============================================================================
+
+class TestCTAMPerformance:
+    """Benchmark tests for CTAM (Cell Tracking and Analysis Modules)."""
+    
+    @pytest.fixture
+    def sample_storm_cells(self):
+        """Get sample storm cells for CTAM testing."""
+        import util.file as fs
+        import json
+        from pathlib import Path
+        try:
+            # Get all files and filter for actual stormcell data files (not index)
+            all_files = fs.latest_files(fs.STORMCELL_DIR, 10)
+            stormcell_files = [f for f in all_files if Path(f).name.startswith("stormcells_")]
+            if stormcell_files:
+                with open(stormcell_files[-1], 'r') as f:
+                    data = json.load(f)
+                return data.get("cells", [])
+            return None
+        except Exception:
+            return None
+    
+    def test_ctam_pipeline_execution(self, sample_storm_cells):
+        """Test CTAM pipeline execution performance."""
+        if sample_storm_cells is None or len(sample_storm_cells) == 0:
+            pytest.skip("No sample storm cells available")
+        
+        from EdgeWARN.core.ctam.run import run_ctam
+        
+        result = PerformanceResult("CTAM Pipeline")
+        result.start()
+        
+        processed_cells = run_ctam(sample_storm_cells)
+        
+        result.stop()
+        print(result.report())
+        
+        # CTAM should be very fast (< 1s for typical cell count)
+        assert result.duration_s < 2.0, \
+            f"CTAM took {result.duration_s:.2f}s, expected < 2s"
+        assert len(processed_cells) == len(sample_storm_cells)
+    
+    def test_stormcast_module(self, sample_storm_cells):
+        """Test StormCast module performance."""
+        if sample_storm_cells is None or len(sample_storm_cells) == 0:
+            pytest.skip("No sample storm cells available")
+        
+        from EdgeWARN.core.ctam.modules.stormcast import StormCastModule
+        
+        result = PerformanceResult("StormCast Module")
+        result.start()
+        
+        module = StormCastModule()
+        for cell in sample_storm_cells:
+            module.process(cell)
+        
+        result.stop()
+        print(result.report())
+        
+        assert result.duration_s < 1.0, \
+            f"StormCast took {result.duration_s:.2f}s, expected < 1s"
+    
+    def test_morphowind_module(self, sample_storm_cells):
+        """Test MorphoWind module performance."""
+        if sample_storm_cells is None or len(sample_storm_cells) == 0:
+            pytest.skip("No sample storm cells available")
+        
+        from EdgeWARN.core.ctam.modules.morphowind import MorphoWindModule
+        
+        result = PerformanceResult("MorphoWind Module")
+        result.start()
+        
+        module = MorphoWindModule()
+        for cell in sample_storm_cells:
+            module.process(cell)
+        
+        result.stop()
+        print(result.report())
+        
+        assert result.duration_s < 1.0, \
+            f"MorphoWind took {result.duration_s:.2f}s, expected < 1s"
+
+
+# =============================================================================
+# GLM INTEGRATION BENCHMARKS
+# =============================================================================
+
+class TestGLMPerformance:
+    """Benchmark tests for GLM (GOES Lightning Mapper) integration."""
+    
+    @pytest.fixture
+    def sample_glm_path(self):
+        """Get a sample GLM file for testing."""
+        import util.file as fs
+        try:
+            files = fs.latest_files(fs.GOES_GLM_DIR, 1)
+            return files[-1] if files else None
+        except Exception:
+            return None
+    
+    def test_glm_loading(self, sample_glm_path):
+        """Test GLM NetCDF loading performance."""
+        if sample_glm_path is None:
+            pytest.skip("No sample GLM file available")
+        
+        import xarray as xr
+        
+        result = PerformanceResult("GLM Data Loading")
+        result.start()
+        
+        ds = xr.open_dataset(sample_glm_path)
+        ds.load()
+        
+        result.stop()
+        print(result.report())
+        
+        # GLM loading should be fast
+        assert result.duration_s < 3.0, \
+            f"GLM loading took {result.duration_s:.2f}s, expected < 3s"
+        
+        ds.close()
+
+
+# =============================================================================
+# PROBSEVERE INTEGRATION BENCHMARKS
+# =============================================================================
+
+class TestProbSeverePerformance:
+    """Benchmark tests for ProbSevere data integration."""
+    
+    @pytest.fixture
+    def sample_probsevere_path(self):
+        """Get a sample ProbSevere file for testing."""
+        import util.file as fs
+        try:
+            files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
+            return files[-1] if files else None
+        except Exception:
+            return None
+    
+    def test_probsevere_loading(self, sample_probsevere_path):
+        """Test ProbSevere JSON loading performance."""
+        if sample_probsevere_path is None:
+            pytest.skip("No sample ProbSevere file available")
+        
+        import json
+        
+        result = PerformanceResult("ProbSevere Data Loading")
+        result.start()
+        
+        with open(sample_probsevere_path, 'r') as f:
+            data = json.load(f)
+        
+        result.stop()
+        print(result.report())
+        
+        # JSON loading should be nearly instant
+        assert result.duration_s < 0.5, \
+            f"ProbSevere loading took {result.duration_s:.2f}s, expected < 0.5s"
+        assert data is not None
+
