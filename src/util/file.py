@@ -128,12 +128,16 @@ def clean_idx_files(folders):
             io_manager.write_error(f"Folder not found: {folder}")
 
 # ---------- CLEANUP ----------
-def clean_old_files(directory: Path, max_age_minutes=60):
+def clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
     # Safety Check: Ensure directory is within BASE_DIR
     try:
-        # resolve() handles symlinks and . and .. components
-        # is_relative_to (Python 3.9+) checks if BASE_DIR is a parent of directory
-        if not directory.resolve().is_relative_to(BASE_DIR.resolve()):
+        # Check if directory is logically inside BASE_DIR (allows symlinks)
+        # OR if the resolved path is inside resolved BASE_DIR (standard check)
+        # We need absolute() to ensure we compare full paths, but resolve() follows symlinks
+        is_logically_inside = directory.absolute().is_relative_to(BASE_DIR.absolute())
+        is_physically_inside = directory.resolve().is_relative_to(BASE_DIR.resolve())
+        
+        if not (is_logically_inside or is_physically_inside):
              io_manager.write_error(f"SAFETY ERROR: Attempting to clean {directory} which is not inside {BASE_DIR}")
              return
     except Exception as e:
@@ -153,15 +157,15 @@ def clean_old_files(directory: Path, max_age_minutes=60):
                 if mtime < cutoff:
                     f.unlink()
                     files_deleted += 1
-                else:
+                elif f.suffix != '.idx': # Only count non-idx files for the limit
                     kept_files.append((f, mtime))
             except Exception as e:
                 io_manager.write_error(f"Could not process/delete {f.name}: {e}")
 
-    # If more than 10 files remain, delete the oldest ones until only 10 are left
-    if len(kept_files) > 10:
+    # If more than max_files remain, delete the oldest ones until only max_files are left
+    if len(kept_files) > max_files:
         kept_files.sort(key=lambda x: x[1]) # Sort by mtime (oldest first)
-        files_to_remove = len(kept_files) - 10
+        files_to_remove = len(kept_files) - max_files
         for i in range(files_to_remove):
             f, _ = kept_files[i]
             try:
