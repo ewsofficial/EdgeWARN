@@ -1,21 +1,31 @@
 """
 Config-driven RAP integration.
-Optimized: Single cfgrib.open_datasets call, then select needed datasets from list.
+Optimized: Uses filter_by_keys to load only necessary level types.
 """
 import numpy as np
-import cfgrib
+import xarray as xr
 from .config import get_rap_products
+
+# Suppress cfgrib/xarray compatibility warnings
+xr.set_options(use_new_combine_kwarg_defaults=True)
 
 # Transformation functions
 TRANSFORMS = {
     "kelvin_to_celsius": lambda x: x - 273.15,
 }
 
+# Define the specific level types we need (only 3 instead of 39)
+_REQUIRED_LEVEL_TYPES = [
+    {"typeOfLevel": "isobaricInhPa"},  # Winds at pressure levels
+    {"typeOfLevel": "heightAboveGround", "level": 2},  # T2m, D2m
+    {"typeOfLevel": "isothermZero"},  # Freezing level
+]
+
 
 def integrate_rap(storm_cells, rap_file_path, io_manager):
     """
     Integrate RAP data into storm cells.
-    Uses single cfgrib.open_datasets call for efficiency.
+    Optimized: Only loads 3 required level types instead of all 39 datasets.
     """
     if not rap_file_path:
         io_manager.write_warning("No RAP file path provided")
@@ -25,63 +35,66 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
     products = config.get("products", [])
     derived = config.get("derived", [])
 
-    # Load ALL datasets in ONE call (efficient: single scan of GRIB file)
-    try:
-        all_datasets = cfgrib.open_datasets(rap_file_path)
-        io_manager.write_debug(f"Loaded {len(all_datasets)} datasets from RAP")
-    except Exception as e:
-        io_manager.write_error(f"Failed to load RAP file: {e}")
-        return storm_cells
-
-    # Extract lat/lon from first available dataset
+    # Load ONLY needed datasets using filter_by_keys (3 calls vs scanning 39)
+    datasets = {}
     lat_vals = None
     lon_vals = None
-    for ds in all_datasets:
-        if 'latitude' in ds.coords:
-            lat_vals = ds.latitude.values
-            lon_vals = ds.longitude.values
-            if lon_vals.max() > 180:
-                lon_vals = np.where(lon_vals > 180, lon_vals - 360, lon_vals)
-            break
+    
+    for filter_keys in _REQUIRED_LEVEL_TYPES:
+        try:
+            ds = xr.open_dataset(
+                rap_file_path,
+                engine="cfgrib",
+                backend_kwargs={"filter_by_keys": filter_keys}
+            )
+            ds.load()  # Eager load for fast access
+            
+            # Create key for lookup
+            level_type = filter_keys["typeOfLevel"]
+            level = filter_keys.get("level")
+            key = (level_type, level) if level else (level_type,)
+            datasets[key] = ds
+            
+            # Extract lat/lon from first successful load
+            if lat_vals is None and 'latitude' in ds.coords:
+                lat_vals = ds.latitude.values
+                lon_vals = ds.longitude.values
+                if lon_vals.max() > 180:
+                    lon_vals = np.where(lon_vals > 180, lon_vals - 360, lon_vals)
+                    
+            io_manager.write_debug(f"Loaded RAP dataset: {key}")
+        except Exception as e:
+            io_manager.write_debug(f"Could not load RAP with filter {filter_keys}: {e}")
 
     if lat_vals is None:
         io_manager.write_error("No lat/lon in RAP datasets")
         return storm_cells
 
+    io_manager.write_debug(f"Loaded {len(datasets)} RAP datasets (filtered)")
+
     # Pre-compute cell indices ONCE
     cell_indices = _precompute_cell_indices(storm_cells, lat_vals, lon_vals)
 
-    # Find matching datasets for each product
+    # Find matching dataset for a product
     def find_dataset_for_product(product):
-        """Find the dataset that matches the product's filter and has the variable."""
         filter_keys = product["filter"]
-        var_name = product["var"]
         level_type = filter_keys.get("typeOfLevel")
         level = filter_keys.get("level")
-
-        for ds in all_datasets:
-            if level_type not in ds.coords:
-                continue
-            if var_name not in ds.data_vars:
-                continue
-            
-            coord_val = ds[level_type].values
-            if level is not None:
-                # Check level match
-                if coord_val.ndim == 0:
-                    if float(coord_val) != float(level):
-                        continue
-                else:
-                    if float(level) not in coord_val:
-                        continue
-            return ds
-        return None
+        
+        # Try exact match first
+        key = (level_type, level) if level else (level_type,)
+        if key in datasets:
+            return datasets[key]
+        
+        # Try without level (for multi-level datasets like isobaric)
+        key = (level_type,)
+        return datasets.get(key)
 
     # Process each product
     for product in products:
         var_name = product["var"]
         ds = find_dataset_for_product(product)
-        if ds is None:
+        if ds is None or var_name not in ds.data_vars:
             continue
 
         transform_fn = TRANSFORMS.get(product.get("transform"), lambda x: x)
@@ -110,8 +123,8 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
     for d in derived:
         _calculate_derived(storm_cells, d["formula"], d["key"])
 
-    # Cleanup all datasets
-    for ds in all_datasets:
+    # Cleanup
+    for ds in datasets.values():
         try:
             ds.close()
         except Exception:
