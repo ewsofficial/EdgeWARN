@@ -159,10 +159,8 @@ class CellDataSaver:
             if count == 0:
                 continue
             
-            # === Morphology Engine Call (Zero-Copy Views) ===
+            # === Morphology Engine Call ===
             refl_slice = refl_grid[sl]
-            
-            # Calculate Scalars
             morph_stats = MorphologyEngine.process_cell(mask_slice, refl_slice)
                 
             # === Standard Reflectivity Logic ===
