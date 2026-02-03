@@ -1,6 +1,6 @@
 import math
-from ..interface import AnalysisModule
-from . import morphowind_config as cfg
+from ...interface import AnalysisModule
+from . import config as cfg
 
 class MorphoWindModule(AnalysisModule):
     """
@@ -34,7 +34,7 @@ class MorphoWindModule(AnalysisModule):
         """
         Process storm cells and inject 'morphowind' risk object.
         """
-        from ..util.history import get_cell_history
+        from ...util.history import get_cell_history
         
         props = storm_entry.get("properties", {})
         morphology = props.get("morphology", {})
