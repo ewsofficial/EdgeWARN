@@ -58,24 +58,29 @@ class MorphoWindModule(AnalysisModule):
             vil_density = vil / echotop_18
             
         # Freezing Level Correction
-        # Adjust effective VIL Density score based on environment
-        # If env is None, assume standard
+        # Check environment first, then properties (from RAP integration)
         fl_correction = 0.0
+        fl_height = None
         if environment and "freezing_level_height" in environment:
-            fl_height = environment["freezing_level_height"] # in km
+            fl_height = environment["freezing_level_height"]
+        elif "freezing_level_height" in props:
+            fl_height = props["freezing_level_height"]
+        
+        if fl_height is not None:
             diff = fl_height - cfg.REF_FREEZING_LEVEL_KM
-            # If FL is higher (5km), diff is +1. Correction = 0.5.
-            # We ADD this to the observed VIL Density to make it "score higher" (riskier) 
-            # Or we reduce the Mean threshold. Let's adjust the Mean in the gauss call.
             fl_correction = diff * cfg.VIL_DENSITY_CORRECTION_PER_KM
         
         # Dewpoint Depression Correction (Dry Air)
-        # High DD -> Dry sub-cloud layer -> Enhanced evaporative cooling
+        # Check environment first, then properties
         dp_correction = 0.0
+        dd = None
         if environment and "dewpoint_depression" in environment:
-            dd = environment["dewpoint_depression"] # Celsius
-            if dd > cfg.DEWPOINT_DEPRESSION_THRESHOLD:
-                dp_correction = cfg.DRY_AIR_VIL_CORRECTION
+            dd = environment["dewpoint_depression"]
+        elif "dewpoint_depression" in props:
+            dd = props["dewpoint_depression"]
+        
+        if dd is not None and dd > cfg.DEWPOINT_DEPRESSION_THRESHOLD:
+            dp_correction = cfg.DRY_AIR_VIL_CORRECTION
             
         # 2. Collapse Detection (Temporal Physics)
         history = get_cell_history(cell_id, limit=5)
