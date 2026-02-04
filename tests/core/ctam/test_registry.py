@@ -80,7 +80,7 @@ class TestModuleRegistry:
         """Test getting a module that doesn't exist"""
         ModuleRegistry.clear()
         
-        with pytest.raises(KeyError, match="test_module"):
+        with pytest.raises(KeyError, match="nonexistent"):
             ModuleRegistry.get("nonexistent")
 
     def test_get_all_modules(self):

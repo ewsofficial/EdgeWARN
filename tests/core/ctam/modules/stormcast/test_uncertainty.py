@@ -64,35 +64,28 @@ class TestComputeTrackingUncertainty:
 class TestComputeVelocityCovariance:
     """Tests for compute_velocity_covariance function"""
 
-    def test_covariance_matrix_shape(self):
-        """Test that covariance matrix is 2x2"""
-        cov = compute_velocity_covariance(u=10.0, v=5.0, sigma_u=2.0, sigma_v=1.5)
+    def test_return_values(self):
+        """Test that function returns tuple of sigmas"""
+        sigmas = compute_velocity_covariance(sigma_obs=2.0, sigma_env=1.5, sigma_hist=0.0)
         
-        assert cov.shape == (2, 2)
+        # Should return (sigma_u, sigma_v, sigma_total)
+        assert len(sigmas) == 3
+        
+        # Combined variance: 2.0^2 + 1.5^2 + 0^2 = 4 + 2.25 = 6.25
+        # sigma = sqrt(6.25) = 2.5
+        assert sigmas[0] == pytest.approx(2.5, abs=0.01)
+        assert sigmas[1] == pytest.approx(2.5, abs=0.01)
+        assert sigmas[2] == pytest.approx(2.5, abs=0.01)
 
-    def test_covariance_diagonal(self):
-        """Test that diagonal elements are variances"""
-        cov = compute_velocity_covariance(u=10.0, v=5.0, sigma_u=2.0, sigma_v=1.5)
-        
-        # Diagonal should be sigma^2
-        assert cov[0, 0] == pytest.approx(4.0, abs=0.01)  # 2.0^2
-        assert cov[1, 1] == pytest.approx(2.25, abs=0.01)  # 1.5^2
+    def test_isotropic(self):
+        """Test that uncertainty is isotropic (sigma_u == sigma_v)"""
+        sigmas = compute_velocity_covariance(sigma_obs=2.0)
+        assert sigmas[0] == sigmas[1]
 
-    def test_covariance_symmetric(self):
-        """Test that covariance matrix is symmetric"""
-        cov = compute_velocity_covariance(u=10.0, v=5.0, sigma_u=2.0, sigma_v=1.5)
-        
-        assert cov[0, 1] == pytest.approx(cov[1, 0], abs=0.01)
-
-    def test_covariance_zero_sigma(self):
-        """Test with zero sigma"""
-        cov = compute_velocity_covariance(u=10.0, v=5.0, sigma_u=0.0, sigma_v=0.0)
-        
-        # Should be zero matrix
-        assert cov[0, 0] == 0.0
-        assert cov[1, 1] == 0.0
-        assert cov[0, 1] == 0.0
-        assert cov[1, 0] == 0.0
+    def test_zero_sigma(self):
+        """Test with zero parameters"""
+        sigmas = compute_velocity_covariance(sigma_obs=0.0, sigma_env=0.0, sigma_hist=0.0)
+        assert sigmas == (0.0, 0.0, 0.0)
 
 
 class TestPropagatePositionUncertainty:
@@ -100,40 +93,34 @@ class TestPropagatePositionUncertainty:
 
     def test_uncertainty_grows_with_time(self):
         """Test that uncertainty grows with time"""
-        cov = [[4.0, 0.0], [0.0, 2.25]]  # From compute_velocity_covariance
+        sigma_pos = (500.0, 500.0)
+        sigma_vel = (10.0, 10.0)
         
         # Propagate 60 seconds
-        cov_60 = propagate_position_uncertainty(cov, dt=60.0)
+        sigma_new = propagate_position_uncertainty(sigma_pos, sigma_vel, dt=60.0)
         
         # Uncertainty should increase
-        assert cov_60[0, 0] >= cov[0, 0]
-        assert cov_60[1, 1] >= cov[1, 1]
+        # sqrt(500^2 + (10*60)^2) = sqrt(250000 + 360000) = sqrt(610000) ≈ 781
+        assert sigma_new[0] > sigma_pos[0]
+        assert sigma_new[1] > sigma_pos[1]
+        assert sigma_new[0] == pytest.approx(781.02, abs=0.1)
 
     def test_uncertainty_zero_time(self):
         """Test with zero time delta"""
-        cov = [[4.0, 0.0], [0.0, 2.25]]
+        sigma_pos = (500.0, 500.0)
+        sigma_vel = (10.0, 10.0)
         
-        cov_0 = propagate_position_uncertainty(cov, dt=0.0)
+        sigma_new = propagate_position_uncertainty(sigma_pos, sigma_vel, dt=0.0)
         
         # Should be unchanged
-        assert cov_0[0, 0] == pytest.approx(cov[0, 0], abs=0.01)
-        assert cov_0[1, 1] == pytest.approx(cov[1, 1], abs=0.01)
+        assert sigma_new == sigma_pos
 
     def test_uncertainty_large_time(self):
         """Test with large time delta"""
-        cov = [[4.0, 0.0], [0.0, 2.25]]
+        sigma_pos = (500.0, 500.0)
+        sigma_vel = (10.0, 10.0)
         
-        # Propagate 3600 seconds (1 hour)
-        cov_3600 = propagate_position_uncertainty(cov, dt=3600.0)
+        sigma_new = propagate_position_uncertainty(sigma_pos, sigma_vel, dt=3600.0)
         
         # Uncertainty should grow significantly
-        assert cov_3600[0, 0] > cov[0, 0] * 10
-        assert cov_3600[1, 1] > cov[1, 1] * 10
-
-    def test_uncertainty_preserves_symmetry(self):
-        """Test that propagated covariance remains symmetric"""
-        cov = [[4.0, 0.0], [0.0, 2.25]]
-        
-        cov_propagated = propagate_position_uncertainty(cov, dt=60.0)
-        
-        assert cov_propagated[0, 1] == pytest.approx(cov_propagated[1, 0], abs=0.01)
+        assert sigma_new[0] > sigma_pos[0] * 10

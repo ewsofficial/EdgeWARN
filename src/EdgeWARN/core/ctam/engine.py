@@ -20,17 +20,17 @@ def initialize_modules(entry: Dict[str, Any], module_names: List[str]) -> None:
 def run_modules(
     data: Union[Dict[str, Any], List[Dict[str, Any]]], 
     modules: Dict[str, AnalysisModule], 
-    module_names: List[str]
+    module_names: List[str],
+    **kwargs
 ) -> None:
     """
     Apply all enabled modules to storm data.
 
     Parameters:
-    - data: dict containing either:
-        - 'features' key: snapshot format (GeoJSON-like)
-        - list of entries: cell history format
+    - data: dict containing 'features' (snapshot) or list of entries (history)
     - modules: dict mapping module_name -> AnalysisModule instance
     - module_names: list of enabled module names to run (in order)
+    - **kwargs: additional arguments passed to module.run() (e.g. environment)
     """
     # Determine if we are working with a snapshot (features list) or history (list of entries)
     entries = []
@@ -39,20 +39,13 @@ def run_modules(
     elif isinstance(data, list):
         entries = data
     else:
-        # Fallback: if data is a single dict but not "features", treat as one entry?
-        # Or maybe it's invalid. For now, assume if it's not the above, it might be a single entry context
-        # but the spec says "snapshot features" or "cell history".
-        # Let's stick to the spec.
         return
 
     for entry in entries:
         initialize_modules(entry, module_names)
         for name in module_names:
             if name in modules:
-                # We assume modules might depend on previous ones, so we run in order
-                # but independent modules is the goal.
                 try:
-                    modules[name].run(entry)
+                    modules[name].run(entry, **kwargs)
                 except Exception as e:
-                    # Log error in the module output to avoid crashing the pipeline
                     entry["modules"][name]["error"] = str(e)
