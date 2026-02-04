@@ -1,135 +1,162 @@
-import xarray as xr
+"""
+Config-driven RAP integration.
+Optimized: Single cfgrib.open_datasets call, then select needed datasets from list.
+"""
 import numpy as np
-import shapely.vectorized as sv
-from .utils import StormIntegrationUtils, RAPFileHandler
+import cfgrib
+from .config import get_rap_products
 
-# Suppress cfgrib/xarray compatibility warnings
-xr.set_options(use_new_combine_kwarg_defaults=True)
+# Transformation functions
+TRANSFORMS = {
+    "kelvin_to_celsius": lambda x: x - 273.15,
+}
 
-def integrate_rap_winds(storm_cells, rap_file_path, io_manager):
+
+def integrate_rap(storm_cells, rap_file_path, io_manager):
     """
-    Integrates RAP wind components (U and V) for 850, 700, 500, and 250mb levels.
-    Finds the values at the grid point closest to each storm cell's centroid.
+    Integrate RAP data into storm cells.
+    Uses single cfgrib.open_datasets call for efficiency.
     """
     if not rap_file_path:
-        io_manager.write_warning("No RAP file path provided for integration")
+        io_manager.write_warning("No RAP file path provided")
         return storm_cells
 
-    handler = RAPFileHandler(io_manager)
-    ds = handler.get_isobaric_dataset(rap_file_path)
-    
-    if ds is None:
-        io_manager.write_warning("Could not load RAP dataset, returning cells unchanged")
+    config = get_rap_products()
+    products = config.get("products", [])
+    derived = config.get("derived", [])
+
+    # Load ALL datasets in ONE call (efficient: single scan of GRIB file)
+    try:
+        all_datasets = cfgrib.open_datasets(rap_file_path)
+        io_manager.write_debug(f"Loaded {len(all_datasets)} datasets from RAP")
+    except Exception as e:
+        io_manager.write_error(f"Failed to load RAP file: {e}")
         return storm_cells
 
-    levels = [850, 700, 500, 250]
-    variables = ['u', 'v']
-    
-    # Check available levels
-    if 'isobaricInhPa' not in ds.coords:
-        io_manager.write_error("No isobaricInhPa coordinate found in RAP file")
+    # Extract lat/lon from first available dataset
+    lat_vals = None
+    lon_vals = None
+    for ds in all_datasets:
+        if 'latitude' in ds.coords:
+            lat_vals = ds.latitude.values
+            lon_vals = ds.longitude.values
+            if lon_vals.max() > 180:
+                lon_vals = np.where(lon_vals > 180, lon_vals - 360, lon_vals)
+            break
+
+    if lat_vals is None:
+        io_manager.write_error("No lat/lon in RAP datasets")
         return storm_cells
-    
-    available_levels = [l for l in levels if l in ds.isobaricInhPa.values]
-    if not available_levels:
-        io_manager.write_error(f"None of the target levels {levels} found in RAP file. Available levels: {ds.isobaricInhPa.values}")
-        return storm_cells
 
-    io_manager.write_info(f"Integrating RAP wind data for levels: {available_levels}")
+    # Pre-compute cell indices ONCE
+    cell_indices = _precompute_cell_indices(storm_cells, lat_vals, lon_vals)
 
-    # Extract coordinates once and handle coordinate system
-    lat_vals = ds.latitude.values
-    lon_vals = ds.longitude.values
-    
-    # Handle longitude coordinate system conversion if needed
-    lon_needs_conversion = lon_vals.max() > 180
-    if lon_needs_conversion:
-        io_manager.write_debug("Converting longitude from 0-360 to -180-180 range")
-        lon_vals = np.where(lon_vals > 180, lon_vals - 360, lon_vals)
-        # Also update the dataset coordinates for consistency
-        ds = ds.assign_coords(longitude=(ds.longitude.dims, lon_vals))
+    # Find matching datasets for each product
+    def find_dataset_for_product(product):
+        """Find the dataset that matches the product's filter and has the variable."""
+        filter_keys = product["filter"]
+        var_name = product["var"]
+        level_type = filter_keys.get("typeOfLevel")
+        level = filter_keys.get("level")
 
-    # Check for available variables and their naming conventions
-    available_vars = []
-    for var in variables:
-        if var in ds.data_vars:
-            available_vars.append(var)
+        for ds in all_datasets:
+            if level_type not in ds.coords:
+                continue
+            if var_name not in ds.data_vars:
+                continue
+            
+            coord_val = ds[level_type].values
+            if level is not None:
+                # Check level match
+                if coord_val.ndim == 0:
+                    if float(coord_val) != float(level):
+                        continue
+                else:
+                    if float(level) not in coord_val:
+                        continue
+            return ds
+        return None
+
+    # Process each product
+    for product in products:
+        var_name = product["var"]
+        ds = find_dataset_for_product(product)
+        if ds is None:
+            continue
+
+        transform_fn = TRANSFORMS.get(product.get("transform"), lambda x: x)
+
+        if "levels" in product:
+            levels = product["levels"]
+            key_template = product["key_template"]
+            level_coord = product["filter"]["typeOfLevel"]
+
+            for level in levels:
+                try:
+                    data = ds[var_name].sel({level_coord: level}).values
+                    key = key_template.format(level=level)
+                    _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn)
+                except Exception:
+                    pass
         else:
-            # Try alternative naming conventions for RAP data
-            alt_names = {
-                'u': ['UGRD', 'u-component_of_wind_isobaric', 'wind_u'],
-                'v': ['VGRD', 'v-component_of_wind_isobaric', 'wind_v']
-            }
-            for alt_name in alt_names.get(var, []):
-                if alt_name in ds.data_vars:
-                    available_vars.append(alt_name)
-                    io_manager.write_debug(f"Found alternative variable name '{alt_name}' for '{var}'")
-                    break
-    
-    if not available_vars:
-        io_manager.write_error(f"No wind components found in RAP file. Available variables: {list(ds.data_vars.keys())}")
-        return storm_cells
+            key = product["key"]
+            try:
+                data = ds[var_name].values
+                _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn)
+            except Exception:
+                pass
 
-    # Pre-load all required level/variable arrays to avoid repetitive sel() calls
-    data_cache = {}
-    for level in available_levels:
-        ds_level = ds.sel(isobaricInhPa=level)
-        for var_name in available_vars:
-            if var_name in ds_level.data_vars:
-                data_cache[(var_name, level)] = ds_level[var_name].values
-                data_cache[(var_name, level)] = ds_level[var_name].values
+    # Calculate derived fields
+    for d in derived:
+        _calculate_derived(storm_cells, d["formula"], d["key"])
 
-    # Process each storm cell
+    # Cleanup all datasets
+    for ds in all_datasets:
+        try:
+            ds.close()
+        except Exception:
+            pass
+
+    return storm_cells
+
+
+def _precompute_cell_indices(storm_cells, lat_vals, lon_vals):
+    """Pre-compute grid indices for all cells once."""
+    indices = {}
+    for cell in storm_cells:
+        cell_id = cell.get("id")
+        centroid = cell.get("centroid", [0, 0])
+        lat, lon = centroid[0], centroid[1]
+        if lon > 180:
+            lon -= 360
+        try:
+            dist_sq = (lat_vals - lat) ** 2 + (lon_vals - lon) ** 2
+            indices[cell_id] = np.unravel_index(np.argmin(dist_sq), dist_sq.shape)
+        except Exception:
+            indices[cell_id] = None
+    return indices
+
+
+def _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn):
+    """Extract value using pre-computed indices."""
     for cell in storm_cells:
         if "properties" not in cell:
             cell["properties"] = {}
-        target = cell["properties"]
+        idx = cell_indices.get(cell.get("id"))
+        if idx is None:
+            cell["properties"][key] = None
+        else:
+            try:
+                cell["properties"][key] = round(transform_fn(float(data[idx])), 2)
+            except Exception:
+                cell["properties"][key] = None
 
-        # Normalize storm cell centroid to -180 to 180 if data was converted
-        centroid_lat, centroid_lon = cell.get('centroid', [0, 0])
-        if lon_needs_conversion and centroid_lon > 180:
-            centroid_lon -= 360
 
+def _calculate_derived(storm_cells, formula, key):
+    """Calculate derived field from existing properties."""
+    for cell in storm_cells:
+        props = cell.get("properties", {})
         try:
-            # Find the grid point that the centroid is closest to
-            dist_sq = (lat_vals - centroid_lat)**2 + (lon_vals - centroid_lon)**2
-            min_idx = np.unravel_index(np.argmin(dist_sq), dist_sq.shape)
-            
-            # Map values from the nearest grid point
-            for level in available_levels:
-                for var_name in available_vars:
-                    if (var_name, level) in data_cache:
-                        var_array = data_cache[(var_name, level)]
-                        val = var_array[min_idx]
-                        
-                        # Capture value preserving sign
-                        max_val = float(val)
-                        output_var = 'u' if var_name in ['u', 'UGRD', 'u-component_of_wind_isobaric', 'wind_u'] else 'v'
-                        target[f"{output_var}{level}"] = max_val
-
-            # Set 0 for any missing levels that were requested but not in file
-            missing_levels = set(levels) - set(available_levels)
-            for level in missing_levels:
-                for var in variables:
-                    target[f"{var}{level}"] = 0
-                    
-            # Set 0 for any missing variables (when alternative naming was used)
-            for level in available_levels:
-                for var in variables:
-                    if f"{var}{level}" not in target:
-                        target[f"{var}{level}"] = 0
-
-        except Exception as e:
-            io_manager.write_error(f"Error integrating RAP winds for cell {cell.get('id')}: {e}")
-            for level in levels:
-                for var in variables:
-                    target[f"{var}{level}"] = "PROCESSING_ERROR"
-
-    # Close dataset if possible
-    try:
-        if hasattr(ds, 'close'):
-            ds.close()
-    except Exception:
-        pass
-        
-    return storm_cells
+            props[key] = round(eval(formula, {"__builtins__": {}}, props), 2)
+        except Exception:
+            props[key] = None

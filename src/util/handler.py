@@ -70,8 +70,10 @@ class FileHandler:
         if filepath.endswith(".grib2"):
             self.io.write_info(f"Loading GRIB file from {filepath}")
             try:
-                ds = xr.open_dataset(filepath, engine="cfgrib", decode_timedelta=True)
-                self.io.write_debug(f"Loaded GRIB file from {filepath}")
+                # Use fast eccodes-based loader instead of slow cfgrib
+                from util.grib_loader import load_grib_fast
+                ds = load_grib_fast(filepath)
+                self.io.write_debug(f"Loaded GRIB file from {filepath} (fast loader)")
             except Exception as e:
                 self.io.write_error(f"Failed to load GRIB file: {e}")
                 return

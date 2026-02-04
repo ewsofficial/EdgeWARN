@@ -188,6 +188,14 @@ class TestCleanFilesByAge:
 
 class TestCleanOldFiles:
     """Tests for clean_old_files function"""
+    
+    @pytest.fixture(autouse=True)
+    def setup_base_dir(self, tmp_path):
+        """Ensure BASE_DIR is set to tmp_path for these tests"""
+        original_base = fs.BASE_DIR
+        fs.BASE_DIR = tmp_path
+        yield
+        fs.BASE_DIR = original_base
 
     def test_removes_oldest_files_when_limit_exceeded(self, tmp_path):
         """Test that oldest files are removed when exceeding limit"""

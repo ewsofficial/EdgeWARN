@@ -26,3 +26,4 @@ dependencies:
     - aiohttp
     - requests
     - beautifulsoup4
+    - opencv-python-headless
