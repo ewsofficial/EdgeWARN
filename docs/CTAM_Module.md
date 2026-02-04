@@ -87,7 +87,7 @@ A physics-based severe wind risk assessment module for Microbursts and QLCS/Bow 
 - `dx`, `dy` (top-level): Storm motion vector (for Rear Inflow Notch detection)
 - `environment` (optional): Dict with `freezing_level_height`, `dewpoint_depression`
 
-**Output** (stored in `storm_entry['modules']['MorphoWind']` and `storm_entry['properties']['morphowind']`):
+**Output** (stored in `storm_entry['modules']['MorphoWind']`):
 - `risk_type`: "QLCS", "Microburst", or "None"
 - `confidence`: 0.0 - 1.0 probability score
 - `severity_index`: Max of QLCS and Microburst scores
