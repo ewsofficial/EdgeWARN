@@ -123,19 +123,19 @@ class TestFileHandler:
         assert result is None
         mock_io.write_error.assert_called_once()
 
-    @patch('xarray.open_dataset')
-    def test_load_dataset_grib2_file(self, mock_xr_open, handler, tmp_path):
+    @patch('util.grib_loader.load_grib_fast')
+    def test_load_dataset_grib2_file(self, mock_load_grib, handler, tmp_path):
         """Test loading GRIB2 file"""
         grib_file = tmp_path / "test.grib2"
         grib_file.touch()
         
         mock_ds = MagicMock()
-        mock_xr_open.return_value = mock_ds
+        mock_load_grib.return_value = mock_ds
         
         result = handler.load_dataset(str(grib_file))
         
         assert result is not None
-        mock_xr_open.assert_called_once()
+        mock_load_grib.assert_called_once()
 
     @patch('xarray.open_dataset')
     def test_load_dataset_netcdf_file(self, mock_xr_open, handler, tmp_path):
@@ -163,8 +163,8 @@ class TestFileHandler:
     @patch('xarray.open_dataset')
     def test_load_dataset_with_subsetting(self, mock_xr_open, handler, tmp_path):
         """Test load_dataset with lat/lon limits"""
-        grib_file = tmp_path / "test.grib2"
-        grib_file.touch()
+        nc_file = tmp_path / "test.nc"
+        nc_file.touch()
         
         mock_ds = MagicMock()
         mock_ds.latitude.values = np.array([20, 30, 40, 50])
@@ -172,7 +172,7 @@ class TestFileHandler:
         mock_xr_open.return_value = mock_ds
         
         result = handler.load_dataset(
-            str(grib_file),
+            str(nc_file),
             lat_limits=(25, 45),
             lon_limits=(210, 230)
         )

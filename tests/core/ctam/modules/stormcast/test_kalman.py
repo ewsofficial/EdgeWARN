@@ -107,26 +107,27 @@ class TestStormKalmanFilter:
         assert vel_after_second[1] < 10
 
     def test_get_position(self):
-        """Test get_position method"""
+        """Test position property"""
         kf = StormKalmanFilter(initial_state=[100, 200, 10, 5])
         
-        pos = kf.get_position()
+        pos = kf.position
         
         assert pos == (100, 200)
 
     def test_get_velocity(self):
-        """Test get_velocity method"""
+        """Test velocity property"""
         kf = StormKalmanFilter(initial_state=[100, 200, 10, 5])
         
-        vel = kf.get_velocity()
+        vel = kf.velocity
         
         assert vel == (10, 5)
 
     def test_get_speed(self):
-        """Test get_speed method"""
+        """Test get_speed (calculated from velocity)"""
         kf = StormKalmanFilter(initial_state=[0, 0, 3, 4])  # 3-4-5 triangle
         
-        speed = kf.get_speed()
+        u, v = kf.velocity
+        speed = (u**2 + v**2) ** 0.5
         
         assert speed == pytest.approx(5.0, abs=0.01)
 
@@ -134,27 +135,7 @@ class TestStormKalmanFilter:
         """Test get_speed with zero velocity"""
         kf = StormKalmanFilter(initial_state=[0, 0, 0, 0])
         
-        speed = kf.get_speed()
+        u, v = kf.velocity
+        speed = (u**2 + v**2) ** 0.5
         
         assert speed == 0.0
-
-    def test_reset(self):
-        """Test reset method"""
-        kf = StormKalmanFilter(initial_state=[100, 200, 10, 5])
-        
-        # Modify state
-        kf.predict(dt=60.0)
-        
-        # Reset
-        kf.reset()
-        
-        # Should be back to initial state
-        assert kf.state == [100, 200, 10, 5]
-
-    def test_reset_to_new_state(self):
-        """Test reset with new state"""
-        kf = StormKalmanFilter(initial_state=[0, 0, 0, 0])
-        
-        kf.reset(new_state=[500, 600, 15, 8])
-        
-        assert kf.state == [500, 600, 15, 8]

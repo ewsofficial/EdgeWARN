@@ -8,6 +8,7 @@ import numpy as np
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+import xarray as xr
 
 
 class TestIngestToDetectWorkflow:
@@ -37,7 +38,7 @@ class TestIngestToDetectWorkflow:
         refl_data[4:6, 4:6] = 50.0  # Storm cell
         refl_data[3:7, 3:7] = 40.0  # Surrounding
         
-        import xarray as xr
+        # radar_ds created using global xr import
         radar_ds = xr.Dataset({
             'unknown': (('latitude', 'longitude'), refl_data)
         }, coords={
@@ -145,6 +146,10 @@ class TestIngestToDetectWorkflow:
                 {"id": 1, "centroid": [35.5, 265.5], "num_gates": 4, "max_refl": 50.0}
             ]
             
+            # Create a dummy radar file for the test
+            radar_file = tmp_path / "radar.grib2"
+            xr.Dataset().to_netcdf(radar_file)
+
             # Run detection
             from EdgeWARN.core.process.detect.detect import detect_cells
             result = detect_cells(
@@ -212,9 +217,8 @@ class TestIngestToDetectWorkflow:
         assert ps_file.exists()
         
         # Verify data can be loaded
-        with open(radar_file) as f:
-            radar_loaded = xr.open_dataset(f)
-            assert radar_loaded is not None
+        radar_loaded = xr.open_dataset(radar_file)
+        assert radar_loaded is not None
         
         with open(ps_file) as f:
             ps_loaded = json.load(f)

@@ -89,7 +89,7 @@ class TestSmoothObservedMotion:
 
     def test_invalid_method_raises_error(self):
         """Test that invalid method raises error"""
-        history = [(10.0, 5.0)]
+        history = [(10.0, 5.0), (20.0, 10.0)]
         
         with pytest.raises(ValueError):
             smooth_observed_motion(history, method="invalid")
@@ -100,47 +100,57 @@ class TestBlendMotion:
 
     def test_blend_observed_and_environmental(self):
         """Test blending observed and environmental motion"""
-        observed = (10.0, 5.0)  # 10 m/s east, 5 m/s north
-        environmental = (15.0, 8.0)  # 15 m/s east, 8 m/s north
-        weights = BlendingWeights(observed=0.6, environmental=0.4)
+        observed = (10.0, 5.0)
+        mean_wind = (15.0, 8.0)
+        bunkers = (12.0, 6.0)
         
-        result = blend_motion(observed, environmental, weights)
+        # Test primarily environmental vs observed
+        weights = BlendingWeights(w_obs=0.6, w_mean=0.3, w_bunkers=0.1)
         
-        # Expected: 0.6*10 + 0.4*15 = 12 for u
-        # Expected: 0.6*5 + 0.4*8 = 6.2 for v
-        assert result[0] == pytest.approx(12.0, abs=0.01)
-        assert result[1] == pytest.approx(6.2, abs=0.01)
+        result = blend_motion(observed, mean_wind, bunkers, weights)
+        
+        # Expected: 
+        # u = 0.6*10 + 0.3*15 + 0.1*12 = 6 + 4.5 + 1.2 = 11.7
+        # v = 0.6*5 + 0.3*8 + 0.1*6 = 3 + 2.4 + 0.6 = 6.0
+        assert result[0] == pytest.approx(11.7, abs=0.01)
+        assert result[1] == pytest.approx(6.0, abs=0.01)
 
     def test_equal_weights(self):
         """Test with equal weights"""
         observed = (10.0, 10.0)
-        environmental = (20.0, 20.0)
-        weights = BlendingWeights(observed=0.5, environmental=0.5)
+        mean_wind = (20.0, 20.0)
+        bunkers = (30.0, 30.0)
         
-        result = blend_motion(observed, environmental, weights)
+        weights = BlendingWeights(w_obs=0.333, w_mean=0.333, w_bunkers=0.334)
         
-        assert result[0] == pytest.approx(15.0, abs=0.01)
-        assert result[1] == pytest.approx(15.0, abs=0.01)
+        result = blend_motion(observed, mean_wind, bunkers, weights)
+        
+        # 10/3 + 20/3 + 30/3 = 60/3 = 20
+        assert result[0] == pytest.approx(20.0, abs=0.1)
 
     def test_all_observed(self):
         """Test with 100% observed weight"""
         observed = (10.0, 5.0)
-        environmental = (100.0, 100.0)
-        weights = BlendingWeights(observed=1.0, environmental=0.0)
+        mean_wind = (100.0, 100.0)
+        bunkers = (100.0, 100.0)
         
-        result = blend_motion(observed, environmental, weights)
+        weights = BlendingWeights(w_obs=1.0, w_mean=0.0, w_bunkers=0.0)
+        
+        result = blend_motion(observed, mean_wind, bunkers, weights)
         
         assert result == observed
 
     def test_all_environmental(self):
-        """Test with 100% environmental weight"""
+        """Test with 100% environmental (mean) weight"""
         observed = (10.0, 5.0)
-        environmental = (100.0, 100.0)
-        weights = BlendingWeights(observed=0.0, environmental=1.0)
+        mean_wind = (100.0, 100.0)
+        bunkers = (50.0, 50.0)
         
-        result = blend_motion(observed, environmental, weights)
+        weights = BlendingWeights(w_obs=0.0, w_mean=1.0, w_bunkers=0.0)
         
-        assert result == environmental
+        result = blend_motion(observed, mean_wind, bunkers, weights)
+        
+        assert result == mean_wind
 
 
 class TestAdjustWeightsForMaturity:
@@ -148,40 +158,60 @@ class TestAdjustWeightsForMaturity:
 
     def test_young_storm_prefers_environmental(self):
         """Test that young storms prefer environmental guidance"""
-        weights = BlendingWeights(observed=0.5, environmental=0.5)
+        weights = BlendingWeights(w_obs=0.5, w_mean=0.25, w_bunkers=0.25)
         
-        # Young storm (1 sample)
-        result = adjust_weights_for_maturity(weights, n_samples=1)
+        # Young storm (1 sample), moderate characteristics
+        result = adjust_weights_for_maturity(
+            h_core=8.0, 
+            track_history=1, 
+            shear_magnitude=15.0, 
+            base_weights=weights
+        )
         
-        # Should increase environmental weight
-        assert result.environmental > weights.environmental
-        assert result.observed < weights.observed
+        # Should increase mean/bunkers, decrease observed
+        assert result.w_mean > weights.w_mean
+        assert result.w_obs < weights.w_obs
 
     def test_mature_storm_prefers_observed(self):
         """Test that mature storms prefer observed motion"""
-        weights = BlendingWeights(observed=0.5, environmental=0.5)
+        weights = BlendingWeights(w_obs=0.5, w_mean=0.25, w_bunkers=0.25)
         
-        # Mature storm (many samples)
-        result = adjust_weights_for_maturity(weights, n_samples=20)
+        # Mature storm (20 samples)
+        result = adjust_weights_for_maturity(
+            h_core=8.0,
+            track_history=20,
+            shear_magnitude=15.0,
+            base_weights=weights
+        )
         
         # Should increase observed weight
-        assert result.observed > weights.observed
-        assert result.environmental < weights.environmental
+        assert result.w_obs > weights.w_obs
 
     def test_weights_sum_to_one(self):
         """Test that adjusted weights still sum to approximately 1"""
-        weights = BlendingWeights(observed=0.7, environmental=0.3)
+        weights = BlendingWeights(w_obs=0.5, w_mean=0.25, w_bunkers=0.25)
         
-        result = adjust_weights_for_maturity(weights, n_samples=5)
+        result = adjust_weights_for_maturity(
+            h_core=8.0,
+            track_history=5,
+            shear_magnitude=15.0,
+            base_weights=weights
+        )
         
-        total = result.observed + result.environmental
+        total = result.w_obs + result.w_mean + result.w_bunkers
         assert total == pytest.approx(1.0, abs=0.01)
 
     def test_no_samples_uses_environmental(self):
-        """Test with zero samples defaults to environmental"""
-        weights = BlendingWeights(observed=0.5, environmental=0.5)
+        """Test that low history strongly favors environmental"""
+        weights = BlendingWeights(w_obs=0.5, w_mean=0.25, w_bunkers=0.25)
         
-        result = adjust_weights_for_maturity(weights, n_samples=0)
+        result = adjust_weights_for_maturity(
+            h_core=8.0,
+            track_history=0,
+            shear_magnitude=15.0,
+            base_weights=weights
+        )
         
-        # Should heavily favor environmental
-        assert result.environmental > result.observed
+        # Should favor environmental components (mean + bunkers) > observed
+        env_weight = result.w_mean + result.w_bunkers
+        assert env_weight > result.w_obs

@@ -21,7 +21,7 @@ class MockAnalysisModule(AnalysisModule):
     
     def run(self, storm_entry, environment=None):
         storm_entry.setdefault('modules', {})
-        storm_entry['modules'][self._name] = {'test': True}
+        storm_entry['modules'][self._name] = {'test': True, 'environment': environment}
 
 
 class TestCTAMPipeline:
@@ -60,10 +60,12 @@ class TestCTAMPipeline:
     def sample_environment_profile(self):
         """Create sample environment profile"""
         return EnvironmentProfile(
-            u850=10.0, v850=5.0,
-            u700=15.0, v700=8.0,
-            u500=20.0, v500=10.0,
-            u250=25.0, v250=12.0
+            winds={
+                850: (10.0, 5.0),
+                700: (15.0, 8.0),
+                500: (20.0, 10.0),
+                250: (25.0, 12.0)
+            }
         )
 
     def test_initialize_modules_on_snapshot(self, sample_storm_cells):
@@ -75,7 +77,8 @@ class TestCTAMPipeline:
         
         snapshot_data = {"features": sample_storm_cells}
         
-        engine.initialize_modules(snapshot_data, ["module1", "module2"])
+        engine.initialize_modules(snapshot_data["features"][0], ["module1", "module2"])
+        engine.initialize_modules(snapshot_data["features"][1], ["module1", "module2"])
         
         # Verify modules were initialized
         for cell in snapshot_data["features"]:
@@ -92,7 +95,8 @@ class TestCTAMPipeline:
         
         history_data = sample_storm_cells
         
-        engine.initialize_modules(history_data, ["module1", "module2"])
+        for cell in history_data:
+            engine.initialize_modules(cell, ["module1", "module2"])
         
         # Verify modules were initialized
         for cell in history_data:
@@ -109,7 +113,7 @@ class TestCTAMPipeline:
         
         snapshot_data = {"features": sample_storm_cells}
         
-        engine.run_modules(snapshot_data, modules, environment=sample_environment_profile)
+        engine.run_modules(snapshot_data, modules, list(modules.keys()), environment=sample_environment_profile)
         
         # Verify modules were run
         for cell in snapshot_data["features"]:
@@ -125,14 +129,14 @@ class TestCTAMPipeline:
         
         history_data = sample_storm_cells
         
-        engine.run_modules(history_data, modules, environment=sample_environment_profile)
+        engine.run_modules(history_data, modules, list(modules.keys()), environment=sample_environment_profile)
         
         # Verify modules were run
         for cell in history_data:
             assert cell["modules"]["module1"]["test"] is True
             assert cell["modules"]["module2"]["test"] is True
 
-    def test_run_modules_with_environment(self, sample_storm_cells):
+    def test_run_modules_with_environment(self, sample_storm_cells, sample_environment_profile):
         """Test that environment is passed to modules"""
         modules = {
             "module1": MockAnalysisModule("module1"),
@@ -140,9 +144,9 @@ class TestCTAMPipeline:
         }
         
         snapshot_data = {"features": sample_storm_cells}
-        env = sample_environment_profile()
+        env = sample_environment_profile
         
-        engine.run_modules(snapshot_data, modules, environment=env)
+        engine.run_modules(snapshot_data, modules, list(modules.keys()), environment=env)
         
         # Verify environment was passed
         for cell in snapshot_data["features"]:
@@ -169,7 +173,7 @@ class TestCTAMPipeline:
         snapshot_data = {"features": sample_storm_cells}
         
         # Should not raise exception
-        engine.run_modules(snapshot_data, modules)
+        engine.run_modules(snapshot_data, modules, list(modules.keys()))
         
         # Verify error was logged to entry
         for cell in snapshot_data["features"]:
@@ -186,7 +190,7 @@ class TestCTAMPipeline:
         empty_data = []
         
         # Should not raise exception
-        engine.run_modules(empty_data, modules)
+        engine.run_modules(empty_data, modules, list(modules.keys()))
         
         # Should return without error
         assert empty_data == []
@@ -202,7 +206,7 @@ class TestCTAMPipeline:
         invalid_data = "invalid string"
         
         # Should not raise exception
-        engine.run_modules(invalid_data, modules)
+        engine.run_modules(invalid_data, modules, list(modules.keys()))
         
         # Should return without modification
         assert invalid_data == "invalid string"

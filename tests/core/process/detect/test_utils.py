@@ -126,8 +126,8 @@ class TestDetectionDataHandler:
         result = handler.load_probsevere()
         
         # Should only include features within lat/lon bounds
-        assert len(result) == 1
-        assert result[0]["properties"]["ID"] == 1
+        assert len(result["features"]) == 1
+        assert result["features"][0]["properties"]["ID"] == 1
 
     def test_load_probsevere_no_file(self, handler, mock_io):
         """Test loading ProbSevere when file doesn't exist"""
@@ -150,7 +150,7 @@ class TestDetectionDataHandler:
         
         result = handler.load_probsevere()
         
-        assert result == []
+        assert result["features"] == []
 
     def test_load_probsevere_normalizes_longitude(self, handler, tmp_path):
         """Test that longitude is normalized to -180 to 180 range"""

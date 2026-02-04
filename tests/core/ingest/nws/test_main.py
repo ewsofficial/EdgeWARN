@@ -15,27 +15,34 @@ class TestDownloadAlerts:
 
     @pytest.fixture
     def mock_io(self):
-        """Create a mock IOManager"""
-        return MagicMock()
+        """Mock the module-level io_manager"""
+        with patch('EdgeWARN.core.ingest.nws.main.io_manager') as mock:
+            yield mock
 
     @pytest.fixture
-    def tmp_path(self):
-        """Create a temporary path for testing"""
-        from tempfile import TemporaryDirectory
-        with TemporaryDirectory() as tmp:
-            yield Path(tmp)
+    def empty_response(self):
+        """Return a valid empty GeoJSON response"""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({
+            "type": "FeatureCollection",
+            "features": []
+        }).encode('utf-8')
+        mock_resp.__enter__.return_value = mock_resp
+        return mock_resp
 
-    def test_download_creates_output_directory(self, mock_io, tmp_path):
+    def test_download_creates_output_directory(self, mock_io, empty_response, tmp_path):
         """Test that output directory is created"""
-        with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path):
-            download_alerts(datetime(2023, 10, 15, 30))
+        with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
+             patch('urllib.request.urlopen', return_value=empty_response):
+            download_alerts(datetime(2023, 10, 15, 14, 30))
             
             assert tmp_path.exists()
 
-    def test_download_creates_correct_filename(self, mock_io, tmp_path):
+    def test_download_creates_correct_filename(self, mock_io, empty_response, tmp_path):
         """Test that correct filename is created"""
-        with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path):
-            download_alerts(datetime(2023, 10, 15, 30, 0))
+        with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
+             patch('urllib.request.urlopen', return_value=empty_response):
+            download_alerts(datetime(2023, 10, 15, 14, 30))
             
             # Should create file with format: alerts_active_YYYYMMDD-HHMM00.json
             expected_file = tmp_path / "alerts_active_20231015-143000.json"
@@ -56,18 +63,19 @@ class TestDownloadAlerts:
                 },
                 {
                     "properties": {
-                        "event": "Winter Storm Warning",  # Not in ALLOWED_EVENTS
+                        "event": "Space Weather Warning",  # Not in ALLOWED_EVENTS
                         "geocode": {"SAME": ["048121"]}
                     },
                     "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0]]]}
                 }
             ]
         }).encode('utf-8')
+        mock_response.__enter__.return_value = mock_response
         
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
              patch('urllib.request.urlopen', return_value=mock_response):
             
-            download_alerts(datetime(2023, 10, 15, 30, 0))
+            download_alerts(datetime(2023, 10, 15, 14, 30))
             
             # Read output file
             output_file = tmp_path / "alerts_active_20231015-143000.json"
@@ -94,11 +102,12 @@ class TestDownloadAlerts:
                 }
             ]
         }).encode('utf-8')
+        mock_response.__enter__.return_value = mock_response
         
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
              patch('urllib.request.urlopen', return_value=mock_response):
             
-            download_alerts(datetime(2023, 10, 15, 30, 0))
+            download_alerts(datetime(2023, 10, 15, 14, 30))
             
             # Read output file
             output_file = tmp_path / "alerts_active_20231015-143000.json"
@@ -113,33 +122,34 @@ class TestDownloadAlerts:
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
              patch('urllib.request.urlopen', side_effect=Exception("Network error")):
             
-            download_alerts(datetime(2023, 10, 15, 30, 0))
+            download_alerts(datetime(2023, 10, 15, 14, 30))
             
             # Should log error
             mock_io.write_error.assert_called_once()
 
-    def test_download_cleans_old_files(self, mock_io, tmp_path):
+    def test_download_cleans_old_files(self, mock_io, empty_response, tmp_path):
         """Test that old files are cleaned up"""
         # Create an old file
         old_file = tmp_path / "alerts_active_20231015-120000.json"
         old_file.write_text('{"old": "data"}')
         
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
-             patch('EdgeWARN.core.ingest.nws.main.fs.clean_files_by_age') as mock_clean:
+             patch('EdgeWARN.core.ingest.nws.main.fs.clean_files_by_age') as mock_clean, \
+             patch('urllib.request.urlopen', return_value=empty_response):
             
-            download_alerts(datetime(2023, 10, 15, 30, 0))
+            download_alerts(datetime(2023, 10, 15, 14, 30))
             
             # Should call clean_files_by_age
             mock_clean.assert_called_once()
 
-    def test_download_with_custom_base_dir(self, mock_io, tmp_path):
+    def test_download_with_custom_base_dir(self, mock_io, empty_response, tmp_path):
         """Test download with custom base directory"""
         custom_dir = tmp_path / "custom_nws"
         
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', custom_dir), \
-             patch('urllib.request.urlopen', return_value=MagicMock()):
+             patch('urllib.request.urlopen', return_value=empty_response):
             
-            download_alerts(datetime(2023, 10, 15, 30, 0))
+            download_alerts(datetime(2023, 10, 15, 14, 30))
             
             # File should be in custom directory
             expected_file = custom_dir / "alerts_active_20231015-143000.json"

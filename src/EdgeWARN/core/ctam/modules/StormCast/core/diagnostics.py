@@ -243,4 +243,10 @@ def compute_storm_core_height(echo_top_30: float, echo_top_50: float) -> float:
     Returns:
         Storm core height in km AGL
     """
+    if echo_top_30 is None and echo_top_50 is None:
+        return 0.0
+    if echo_top_30 is None:
+        return float(echo_top_50)
+    if echo_top_50 is None:
+        return float(echo_top_30)
     return (echo_top_30 + echo_top_50) / 2.0
