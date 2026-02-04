@@ -39,10 +39,7 @@ def detect_cells(
         return []
 
     ps_ds = handler.load_probsevere()
-    
-    # Delayed loading of preciptype_ds to save memory during mapping
-    # preciptype_ds = handler.load_preciptype()
-    # if preciptype_ds is None: ...
+
 
     mapper = GateMapper(radar_ds, ps_ds, io_manager, refl_threshold=40.0)
     mapped_ds = mapper.map_gates_to_polygons()
@@ -63,6 +60,7 @@ def detect_cells(
         preciptype_ds,
     )
 
+    # Pass physics grids to create_entry for scalar extraction
     entries = saver.create_entry()
 
 

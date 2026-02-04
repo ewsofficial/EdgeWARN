@@ -104,7 +104,10 @@ This script defines the integration workflow, specifying which datasets to proce
         3.  **Integrate ProbSevere**: Finds the latest ProbSevere JSON file and calls `integrator.integrate_probsevere`.
         4.  **Integrate GLM**: Integrates GOES-19 GLM lightning data.
         5.  **Integrate RAP**: Integrates RAP wind data at 850, 700, 500, and 250mb levels.
-        6.  **Run CTAM Modules**: Runs all registered CTAM analysis modules (e.g., StormCast) on each cell. See [CTAM_Module.md](CTAM_Module.md) for details.
+        6.  **Run CTAM Modules**: Runs all registered CTAM analysis modules on each cell:
+            - **StormCast**: Predicts storm motion trajectories
+            - **MorphoWind**: Assesses severe wind risk (Microbursts, QLCS/Bow Echoes) using physics-based morphological analysis
+            See [CTAM_Module.md](CTAM_Module.md) for details.
         7.  **Update Cell Histories**: Saves enriched data to individual cell history JSON files in `CELL_DIR`.
         8.  **Cleanup**: If `remove_old_cells=True`, removes inactive cell history files (not updated for over 1 hour).
 

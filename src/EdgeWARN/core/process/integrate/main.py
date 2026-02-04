@@ -1,7 +1,7 @@
 import util.file as fs
 from EdgeWARN.core.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.core.process.integrate.integrate_glm import integrate_glm
-from EdgeWARN.core.process.integrate.integrate_rap import integrate_rap_winds
+from EdgeWARN.core.process.integrate.integrate_rap import integrate_rap
 from EdgeWARN.core.process.integrate.utils import StatFileHandler
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
@@ -24,20 +24,31 @@ def main(json_path=None, remove_old_cells=True):
     result_cells = cells
 
     # Integrate datasets
-    for dataset_config in get_datasets_config():
-        name = dataset_config["name"]
-        outdir = dataset_config["filepath"]
-        key = dataset_config["key"]
+    # Integrate datasets
+    from itertools import groupby
+    
+    # Sort configs by filepath first (required for groupby)
+    configs = get_datasets_config()
+    configs.sort(key=lambda x: x["filepath"])
+    
+    for filepath, group in groupby(configs, key=lambda x: x["filepath"]):
+        group_list = list(group)
+        name_list = [c["name"] for c in group_list]
+        name_str = ", ".join(name_list)
         
         try:
-            latest_file = fs.latest_files(outdir, 1)[-1]
-            io_manager.write_debug(f"Using latest {name} file: {latest_file}")
+            latest_file = fs.latest_files(filepath, 1)[-1]
+            io_manager.write_debug(f"Using latest file for {name_str}: {latest_file}")
 
-            result_cells = integrator.integrate_ds_via_max(latest_file, result_cells, key)
-            io_manager.write_debug(f"{name} integration completed successfully!")
+            result_cells = integrator.integrate_multi_stats(
+                latest_file, 
+                result_cells, 
+                group_list
+            )
+            io_manager.write_debug(f"Integration completed for {name_str}")
         
         except Exception as e:
-            io_manager.write_error(f"Failed to integrate {name} data: {e}")
+            io_manager.write_error(f"Failed to integrate {name_str} data: {e}")
 
     # Integrate ProbSevere
     try:
@@ -68,15 +79,15 @@ def main(json_path=None, remove_old_cells=True):
     except Exception as e:
         io_manager.write_error(f"Failed to integrate GLM data: {e}")
     
-    # Integrate RAP Winds
+    # Integrate RAP (winds + environment)
     try:
-        io_manager.write_info(f"Integrating RAP wind data for {len(result_cells)} cells")
+        io_manager.write_info(f"Integrating RAP data for {len(result_cells)} cells")
         latest_rap_files = fs.latest_files(fs.RAP_DIR, 1)
         if latest_rap_files:
             latest_file = latest_rap_files[-1]
             io_manager.write_debug(f"Using latest RAP file: {latest_file}")
-            result_cells = integrate_rap_winds(result_cells, latest_file, io_manager)
-            io_manager.write_debug(f"Successfully integrated RAP wind data")
+            result_cells = integrate_rap(result_cells, latest_file, io_manager)
+            io_manager.write_debug(f"Successfully integrated RAP data")
         else:
             io_manager.write_warning("No RAP files found, skipping RAP integration")
     except Exception as e:

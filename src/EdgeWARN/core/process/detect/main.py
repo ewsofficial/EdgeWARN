@@ -91,6 +91,9 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         # dt = dt.replace(second=0, microsecond=0) # Removed: Keep seconds
         final_ts = dt.strftime("%Y%m%d-%H%M%S") # Format for filename with seconds
         json_ts = dt.isoformat() # Format for JSON content
+        
+        json_ts = dt.isoformat() # Format for JSON content
+        
     except ValueError:
         final_ts = ts_str
         json_ts = ts_str
@@ -139,6 +142,8 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             lon_min,
             lon_max,
             need_probsevere=not single_frame,
+            # We don't load physics for the *old* scan fallback to save time/ram
+            # as these are just for tracking continuity
         )
 
 

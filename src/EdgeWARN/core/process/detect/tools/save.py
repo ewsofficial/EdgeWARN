@@ -22,7 +22,7 @@ class CellDataSaver:
         return {
             "source": "Edgemont Weather Service",
             "product": "EdgeWARN Storm Cells",
-            "version": "1.3.2",
+            "version": "1.4.0",
             "latest_timestamp": latest_timestamp,
             "features": features
         }
@@ -107,20 +107,26 @@ class CellDataSaver:
 
         return polygon_points
 
-    def create_entry(self):
+        return results
+
+    def create_entry(self, vil_ds=None, et_ds=None):
         """
         Appends maximum reflectivity, num_gates, and reflectivity-weighted centroid
         to each ProbSevere cell entry using exponential weighting.
         Optimized with slice-based processing and Watershed-expanded masks.
+        
+        Now includes Eager Scalar Extraction for MorphoWind metrics.
         """
+        from EdgeWARN.core.process.detect.tools.morphology import MorphologyEngine
+        
         # CRITICAL: Use expanded_ds (the watershed result) for all attribute calculations
         polygon_grid = self.expanded_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
-
+        
         # Optimize: Avoid full meshgrid creation
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
-
+        
         is_1d_coords = (lats.ndim == 1)
 
         results = []
@@ -152,81 +158,43 @@ class CellDataSaver:
             count = np.count_nonzero(mask_slice)
             if count == 0:
                 continue
-                
-            refl_slice = refl_grid[sl]
             
-            # Apply mask to sub-grids
+            # === Morphology Engine Call ===
+            refl_slice = refl_grid[sl]
+            morph_stats = MorphologyEngine.process_cell(mask_slice, refl_slice)
+                
+            # === Standard Reflectivity Logic ===
             refl_vals = refl_slice[mask_slice]
             
             valid_refl_mask = ~np.isnan(refl_vals)
             refl_vals = refl_vals[valid_refl_mask]
             
-            # If no valid reflectivity, we still need centroid? 
-            # Original logic: if refl_vals.size > 0 ==> weighted centroid. Else nan.
-            
             if refl_vals.size > 0:
                 # Optimize coordinate extraction
                 if is_1d_coords:
-                     # Get indices within the slice
-                     # mask_slice is boolean (H_slice, W_slice)
-                     # We want indices where mask_slice & valid_refl (relative to slice) is True.
-                     # But valid_refl_mask is 1D (masked by mask_slice).
-
-                     # Let's go back to slice level
-                     # mask_slice is True where poly_id matches
-                     # refl_slice has NaNs potentially
-                     # combined_mask = mask_slice & ~np.isnan(refl_slice)
-
                      combined_mask = mask_slice.copy()
-                     # Update combined_mask where refl is NaN
-                     # Note: refl_slice[mask_slice] gives values.
-                     # We can just iterate over mask_slice indices
-
-                     # Get indices of valid pixels relative to slice
-                     # np.where returns (rows, cols)
-
-                     # Let's reconstruct masked coords efficiently
-                     # We need lat_vals and lon_vals for each valid pixel
-
                      rows, cols = np.where(combined_mask)
-                     # Filter by nan in refl
-                     # This is getting complicated to avoid meshgrid.
-                     # But we can just use fancy indexing on 1D arrays
-
-                     # global_rows = rows + sl[0].start
-                     # global_cols = cols + sl[1].start
-
-                     # But we need to filter out NaNs from refl_slice[rows, cols]
                      vals = refl_slice[rows, cols]
                      valid = ~np.isnan(vals)
-
                      valid_rows = rows[valid]
                      valid_cols = cols[valid]
-
-                     refl_vals = vals[valid] # This matches refl_vals above
-
+                     refl_vals = vals[valid] 
                      global_rows = valid_rows + sl[0].start
                      global_cols = valid_cols + sl[1].start
-
                      lat_vals = lats[global_rows]
                      lon_vals = lons[global_cols]
-
                 else:
-                    # Fallback to meshgrid for 2D coords (slice first?)
+                    # Fallback to meshgrid for 2D coords
                     lat_slice = lats[sl]
                     lon_slice = lons[sl]
-
-                    if lat_slice.ndim == 1: # Should not happen if lats is 2D
+                    if lat_slice.ndim == 1:
                          lat_slice, lon_slice = np.meshgrid(lat_slice, lon_slice, indexing='ij')
-
                     lat_vals = lat_slice[mask_slice][valid_refl_mask]
                     lon_vals = lon_slice[mask_slice][valid_refl_mask]
-
                 
                 max_refl_val = float(np.nanmax(refl_vals))
                 
-                # Use Log-Sum-Exp Trick for stability: exp(refl - max_refl)
-                # This prevents exp(70) which overflows float64
+                # Use Log-Sum-Exp Trick for stability
                 weights = np.exp(refl_vals - max_refl_val)
                 sum_weights = np.sum(weights)
                 
@@ -243,15 +211,18 @@ class CellDataSaver:
 
             hail_core = self.__create_hailcore_polygon(poly_id, sl)
 
-            results.append({
+            entry = {
                 "id": int(poly_id),
                 "num_gates": int(count),
                 "centroid": centroid,
                 "bbox": [[float(pt[0]), float(pt[1]) % 360] for pt in bbox],
                 "hail_core": [[float(pt[0]), float(pt[1]) % 360] for pt in hail_core],
                 "max_refl": max_refl_val,
-                "properties": {}
-            })
+                "properties": {
+                    "morphology": morph_stats # Inject MorphoWind stats
+                }
+            }
+            results.append(entry)
 
         return results
 

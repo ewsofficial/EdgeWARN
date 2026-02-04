@@ -78,6 +78,11 @@ The `tools` directory contains helper classes and functions used by the core det
     - **Method**: Uses a **Watershed algorithm** (via `skimage`) instead of simple Voronoi expansion.
     - **Connectivity**: Enforces strict spatial connectivity by using a high-reflectivity mask ($\ge$ 40 dBZ). This prevents "gap jumping," where a cell might incorrectly claim a distant, unconnected storm.
     - **Mergers**: Uses a negative Euclidean Distance Transform (EDT) as an "elevation" map. This ensures that when two cells merge, the boundary is drawn naturally along the "ridge" between their respective intensity cores.
+-   **`morphology.py`**: Contains `MorphologyEngine` for computing geometric features of storm cells.
+    - **Solidity**: Contour Area / Convex Hull Area (lower = more non-convex/bowed)
+    - **Aspect Ratio**: MinAreaRect width/height (higher = more linear)
+    - **Convexity Defects**: Depth and bearing of the deepest "notch" in the contour
+    - **Skeletonization**: `linearity` metric (skeleton length / complexity) and `branching_factor` (junctions)
 -   **`save.py`**: Contains `CellDataSaver` for structuring the detected cell data into a standardized dictionary format and managing the `storm_history` list.
 -   **`vecmath.py`**: Contains `StormVectorCalculator` for computing motion vectors (speed and bearing) based on centroid displacement over time.
 
