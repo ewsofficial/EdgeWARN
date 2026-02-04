@@ -97,8 +97,6 @@ def latest_files(dir, n):
         [f for f in dir.glob("*") if f.is_file() and f.suffix.lower() != ".idx"],
         key=lambda f: f.stat().st_mtime
     )
-    if len(files) < n:
-        raise RuntimeError(f"Not enough files in {dir}")
     return [str(f) for f in files[-n:]]
 
 def clean_idx_files(folders):
@@ -151,7 +149,7 @@ def clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
     kept_files = []
 
     for f in directory.glob("*"):
-        if f.is_file():
+        if f.is_file() and f.suffix.lower() != ".idx":
             try:
                 mtime = f.stat().st_mtime
                 if mtime < cutoff:
