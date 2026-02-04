@@ -17,6 +17,7 @@
 - **Morphology Engine Optimization**: Reduced overhead with early bailout for small cells and pre-allocated kernels
 - **Integration I/O Optimization**: Grouped datasets to reduce file I/O operations
 - **MorphoWind Refactor**: Moved into dedicated package folder, implemented Gaussian smoothing for scoring
+- **VIL of the Day Gaussian Smoothing**: Replaced threshold-based environmental corrections with Gaussian CDF smoothing for Freezing Level and Dewpoint Depression
 - **Microphysics Metrics**: Moved from detection phase to integration phase
 - **Integration Config Syntax**: Updated to use `p{percentile}` syntax (e.g., `p95AzShearLow`)
 - **OpenCV Dependency**: Moved to pip dependencies to resolve conda conflicts
