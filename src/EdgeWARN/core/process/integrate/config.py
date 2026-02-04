@@ -2,6 +2,25 @@ import util.file as fs
 
 def get_datasets_config():
     return [
+        # === Reflectivity Layers ===
+        {
+            "name": "Ref0",
+            "filepath": fs.MRMS_REF_0C_DIR,
+            "key": "Ref0",
+            "method": "max"
+        },
+        {
+            "name": "Ref5",
+            "filepath": fs.MRMS_REFM5C_DIR,
+            "key": "Ref5",
+            "method": "max"
+        },
+        {
+            "name": "Ref15",
+            "filepath": fs.MRMS_REFM15C_DIR,
+            "key": "Ref15",
+            "method": "max"
+        }
         # === Lightning ===
         {
             "name": "NLDN",

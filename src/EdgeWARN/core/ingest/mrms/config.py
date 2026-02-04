@@ -25,9 +25,7 @@ def get_mrms_modifiers():
         ("CONUS", "VII_00.50", fs.MRMS_VII_DIR),
         ("CONUS", "Reflectivity_0C_00.50", fs.MRMS_REF_0C_DIR),
         ("CONUS", "Reflectivity_-5C_00.50", fs.MRMS_REFM5C_DIR),
-        ("CONUS", "Reflectivity_-10C_00.50", fs.MRMS_REFM10C_DIR),
-        ("CONUS", "Reflectivity_-15C_00.50", fs.MRMS_REFM15C_DIR),
-        ("CONUS", "Reflectivity_-20C_00.50", fs.MRMS_REFM20C_DIR)
+        ("CONUS", "Reflectivity_-15C_00.50", fs.MRMS_REFM15C_DIR)
     ]
 
 def get_check_modifiers():
