@@ -105,10 +105,23 @@ def pipeline(log_queue, dt):
             ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
             pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
 
-        except RuntimeError:
-            filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)[-1], None
-            ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1], None
-            pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)[-1], None
+        except (RuntimeError, ValueError):
+            io_manager.write_debug("Not enough files for tracking, falling back to single-frame mode")
+            try:
+                comp_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)
+                filepath_old = comp_files[-1] if comp_files else None
+                filepath_new = None
+                
+                ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
+                ps_old = ps_files[-1] if ps_files else None
+                ps_new = None
+                
+                pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)
+                pt_old = pt_files[-1] if pt_files else None
+                pt_new = None
+            except Exception as e:
+                log(f"ERROR: Failed to prepare single-frame fallback: {e}")
+                return
         
         generated_file = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
         

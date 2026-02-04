@@ -72,7 +72,7 @@ def pipeline(dt, lat_limits, lon_limits, json_output):
             if not ps_files or not pt_files:
                  raise RuntimeError("Missing pairs for tracking")
 
-        except RuntimeError:
+        except (RuntimeError, ValueError):
             # Not enough files - single scan mode
             io_manager.write_info("Not enough files for tracking, using single-scan mode")
             
@@ -84,19 +84,13 @@ def pipeline(dt, lat_limits, lon_limits, json_output):
                  raise RuntimeError(f"Cannot run detection: No composite reflectivity files in {fs.MRMS_COMPOSITE_DIR}")
 
             # Handle ProbSevere
-            if fs.MRMS_PROBSEVERE_DIR.exists():
-                ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
-                ps_old = ps_files[-1] if ps_files else None
-            else:
-                ps_old = None
+            ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
+            ps_old = ps_files[-1] if ps_files else None
             ps_new = None
             
             # Handle PrecipType
-            if fs.MRMS_PRECIPTYP_DIR.exists():
-                pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)
-                pt_old = pt_files[-1] if pt_files else None
-            else:
-                pt_old = None
+            pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)
+            pt_old = pt_files[-1] if pt_files else None
             pt_new = None
         
         generated_file = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, json_output)
