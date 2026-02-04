@@ -72,10 +72,10 @@ This module integrates RAP (Rapid Refresh) meteorological data, specifically win
 
 #### Functions:
 
-- **`integrate_rap_winds(storm_cells, rap_file_path, io_manager)`**
-    - **Functionality**: Extracts U and V wind components at four isobaric levels: 850, 700, 500, and 250mb.
-    - **Method**: Uses nearest-neighbor lookup to map wind vectors from the GRIB2 grid to the storm cell centroid.
-    - **Output**: Adds keys such as `u850`, `v850`, `u700`, `v700`, etc., to the cell's `properties` dictionary.
+- **`integrate_rap(storm_cells, rap_file_path, io_manager)`**
+    - **Functionality**: Config-driven extraction of meteorological data from RAP GRIB2 files. Extracts U and V wind components at all available isobaric levels (100-1000 hPa) and surface data.
+    - **Method**: Uses nearest-neighbor lookup to map grid values to the storm cell centroid. Efficiently loads all datasets in a single pass.
+    - **Output**: Adds a `wind_field` dictionary to `properties` containing wind components (e.g., `wind_field['u850']`), plus surface/environmental keys (e.g., `u10m`, `freezing_level_height`).
     - **Returns**: Updated storm cells.
 
 ### 4. `history.py`
