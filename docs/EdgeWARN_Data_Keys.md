@@ -163,8 +163,7 @@ The `modules` object contains output from registered CTAM modules. Each module h
 | avg_beam_hgt    | km AGL        | Average Beam Height over storm cell             |
 | GLM_FLASH_COUNT | fl/min        | GLM Flash Count within storm cell (GOES)        |
 | GLM_TOTAL_ENERGY| J             | Total GLM Flash Energy within storm cell (GOES) |
-| u{level}        | m/s           | U-wind component at isobaric level (100-1000hPa)|
-| v{level}        | m/s           | V-wind component at isobaric level (100-1000hPa)|
+| wind_field      | Object        | Isobaric wind data: `{ "u{level}": m/s, "v{level}": m/s }`  |
 | u10m            | m/s           | 10-meter U-wind component                       |
 | v10m            | m/s           | 10-meter V-wind component                       |
 | freezing_level_height | km      | Height of 0°C isotherm (Derived)                |
