@@ -137,19 +137,35 @@ def _precompute_cell_indices(storm_cells, lat_vals, lon_vals):
     return indices
 
 
+def _set_nested(root, key, value):
+    """Set value in a nested dictionary using dot notation."""
+    parts = key.split(".")
+    curr = root
+    for part in parts[:-1]:
+        if part not in curr:
+            curr[part] = {}
+        elif not isinstance(curr[part], dict):
+            # Overwrite if it exists but isn't a dict (shouldn't happen with clean data)
+            curr[part] = {}
+        curr = curr[part]
+    curr[parts[-1]] = value
+
+
 def _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn):
     """Extract value using pre-computed indices."""
     for cell in storm_cells:
         if "properties" not in cell:
             cell["properties"] = {}
         idx = cell_indices.get(cell.get("id"))
-        if idx is None:
-            cell["properties"][key] = None
-        else:
+        
+        value = None
+        if idx is not None:
             try:
-                cell["properties"][key] = round(transform_fn(float(data[idx])), 2)
+                value = round(transform_fn(float(data[idx])), 2)
             except Exception:
-                cell["properties"][key] = None
+                value = None
+        
+        _set_nested(cell["properties"], key, value)
 
 
 def _calculate_derived(storm_cells, formula, key):

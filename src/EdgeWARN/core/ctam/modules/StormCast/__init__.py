@@ -94,12 +94,13 @@ class StormCastModule(AnalysisModule):
             ref_lat = environment.get("reference_lat", ref_lat)
             ref_lon = environment.get("reference_lon", ref_lon)
         else:
-            # Extract wind data from properties (format: u850, v850, etc.)
+            # Extract wind data from properties (format: wind_field.u{level}/v{level})
+            wind_field = props.get("wind_field", {})
             for level in PRESSURE_LEVELS:
                 u_key = f"u{level}"
                 v_key = f"v{level}"
-                if u_key in props and v_key in props:
-                    winds[level] = (props[u_key], props[v_key])
+                if u_key in wind_field and v_key in wind_field:
+                    winds[level] = (wind_field[u_key], wind_field[v_key])
         
         # Check if we have wind data
         if not winds:

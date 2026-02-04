@@ -176,7 +176,7 @@ def get_rap_products():
                     675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 
                     350, 325, 300, 275, 250, 225, 200, 175, 150, 125, 100
                 ],
-                "key_template": "u{level}"
+                "key_template": "wind_field.u{level}"
             },
             {
                 "filter": {"typeOfLevel": "isobaricInhPa"},
@@ -186,7 +186,7 @@ def get_rap_products():
                     675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 
                     350, 325, 300, 275, 250, 225, 200, 175, 150, 125, 100
                 ],
-                "key_template": "v{level}"
+                "key_template": "wind_field.v{level}"
             },
             # === Surface 10m Winds ===
             {
