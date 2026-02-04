@@ -96,19 +96,27 @@ The `modules` object contains output from registered CTAM modules. Each module h
 | dx              | m             | X-difference between previous storm scan centroid |
 | dy              | m             | Y-difference between previous storm scan centroid |
 | dt              | s             | Time difference between previous storm scan     |
-| CGFlashDensity  | fl/km²/min   | Cloud-to-ground flash density                   |
-| EchoTop18       | km MSL        | Highest level of 18 dBZ reflectivity            |
-| EchoTop30       | km MSL        | Highest level of 30 dBZ reflectivity            |
-| PrecipRate      | mm            | Highest instantaneous precip rate               |
-| VILDensity      | g/kg³         | Highest VIL Density                             |
-| RALA            | dBZ           | Reflectivity at lowest altitude                 |
-| VII             | kg/m²         | Highest VII                                     |
-| ProbSevere      | %             | Probability of severe weather                   |
-| ProbWind        | %             | Probability of severe wind                      |
-| ProbHail        | %             | Probability of severe hail                      |
-| ProbTor         | %             | Probability of tornado                          |
-| vx              | m/s           | Eastward velocity component                     |
-| vy              | m/s           | Southward velocity component                    |
+| p100CGFlashDensity | fl/km²/min   | Cloud-to-ground flash density (Max)             |
+| p100EchoTop18   | km MSL        | Maximum 18 dBZ Echo Top                          |
+| p95EchoTop18    | km MSL        | 95th percentile 18 dBZ Echo Top                  |
+| p90EchoTop18    | km MSL        | 90th percentile 18 dBZ Echo Top                  |
+| p100EchoTop30   | km MSL        | Maximum 30 dBZ Echo Top                          |
+| p100PrecipRate  | mm            | Highest instantaneous precip rate                |
+| p100VILDensity  | g/kg³         | Maximum VIL Density                              |
+| p95VILDensity   | g/m³          | 95th percentile VIL Density                      |
+| p90VILDensity   | g/m³          | 90th percentile VIL Density                      |
+| p50VILDensity   | g/m³          | Median VIL Density                               |
+| p100RALA        | dBZ           | Reflectivity at lowest altitude (Max)            |
+| p100VII         | kg/m²         | Maximum Vertically Integrated Ice                |
+| Ref0            | dBZ           | Maximum Reflectivity at 0°C                      |
+| Ref5            | dBZ           | Maximum Reflectivity at -5°C                     |
+| Ref15           | dBZ           | Maximum Reflectivity at -15°C                    |
+| ProbSevere      | %             | Probability of severe weather (ProbSevere model) |
+| ProbWind        | %             | Probability of severe wind                       |
+| ProbHail        | %             | Probability of severe hail                       |
+| ProbTor         | %             | Probability of tornado                           |
+| vx              | m/s           | Eastward velocity component                      |
+| vy              | m/s           | Southward velocity component                     |
 | MLCAPE          | J/kg          | Mixed Layer CAPE                                |
 | MUCAPE          | J/kg          | Most Unstable CAPE                              |
 | MLCIN           | J/kg          | Mixed Layer CIN                                 |
@@ -125,50 +133,43 @@ The `modules` object contains output from registered CTAM modules. Each module h
 | MeanWind_1-3kmAGL | kt          | 1-3 km Mean Wind                                |
 | LJA             | std           | Lightning Jump Algorithm                        |
 | CompRef         | dBZ           | Composite Reflectivity                          |
-| Ref10           | dBZ           | Max Reflectivity at -10°C                       |
-| Ref20           | dBZ           | Max Reflectivity at -20°C                       |
+| Ref10           | dBZ           | Max Reflectivity at -10°C (ProbSevere)          |
+| Ref20           | dBZ           | Max Reflectivity at -20°C (ProbSevere)          |
 | MESH            | in            | Maximum Expected Size of Hail                   |
 | H50_Above_0C    | km            | Height of 50 dBZ echo above 0°C Isotherm        |
 | EchoTop50       | km            | Maximum Height of 50 dBZ reflectivity           |
-| VIL             | kg/m²         | Vertically Integrated Liquid                    |
+| VIL             | kg/m²         | Vertically Integrated Liquid (ProbSevere)       |
+| p100VIL         | kg/m²         | Maximum VIL (MRMS Integration)                  |
+| p95VIL          | kg/m²         | 95th percentile VIL (MRMS Integration)          |
+| p90VIL          | kg/m²         | 90th percentile VIL (MRMS Integration)          |
+| p50VIL          | kg/m²         | Median VIL (MRMS Integration)                   |
 | MaxFED          | fl/km²/min    | Maximum Flash Extent Density                    |
 | MaxFCD          | fl/km²/min    | Maximum Flash Centroid Density                  |
 | AccumFCD        | fl/km²/min    | Accumulated Flash Centroid Density              |
 | MinFlashArea    | km²           | Minimum Flash Area                              |
 | TE@MaxFCD       | fJ            | Total Optical Energy at MaxFCD                  |
-| FlashRate       | fl/min        | Total lightning flashes per minute              |
+| FlashRate       | fl/min        | Total lightning flashes per minute (ENI)        |
 | FlashDensity    | fl/km²/min    | ENI Lightning Flash Density                     |
 | MaxLLAz         | 0.001 s⁻¹     | Maximum Low-level Azimuthal Shear               |
 | p98LLAz         | 0.001 s⁻¹     | 98th percentile Low-Level Azimuthal Shear       |
 | p98MLAz         | 0.001 s⁻¹     | 98th percentile Mid-Level Azimuthal Shear       |
+| p100AzShearLow  | 10⁻³ s⁻¹      | Maximum Low-Level (0-2km) Azimuthal Shear       |
+| p95AzShearLow   | 10⁻³ s⁻¹      | 95th percentile Low-Level Azimuthal Shear       |
+| p100AzShearMid  | 10⁻³ s⁻¹      | Maximum Mid-Level (3-6km) Azimuthal Shear       |
+| p95AzShearMid   | 10⁻³ s⁻¹      | 95th percentile Mid-Level Azimuthal Shear       |
 | MaxRC_Emiss     | %/min         | Max rate of change in 11μm top-of-troposphere emissivity |
 | ICP             | N/A           | Intense Convection Probability                  |
 | PWAT            | in            | Precipitable Water                              |
 | avg_beam_hgt    | km AGL        | Average Beam Height over storm cell             |
-| GLM_FLASH_COUNT | fl/min        | GLM Flash Count within storm cell               |
-| GLM_TOTAL_ENERGY| J             | Total GLM Flash Energy within storm cell        |
-| u850            | m/s           | 850-hPa u-component of wind                     |
-| v850            | m/s           | 850-hPa v-component of wind                     |
-| u700            | m/s           | 700-hPa u-component of wind                     |
-| v700            | m/s           | 700-hPa v-component of wind                     |
-| u500            | m/s           | 500-hPa u-component of wind                     |
-| v500            | m/s           | 500-hPa v-component of wind                     |
-| u250            | m/s           | 250-hPa u-component of wind                     |
-| v250            | m/s           | 250-hPa v-component of wind                     |
-| p100EchoTop18   | km MSL        | Maximum 18 dBZ Echo Top                          |
-| p95EchoTop18    | km MSL        | 95th percentile 18 dBZ Echo Top                  |
-| p90EchoTop18    | km MSL        | 90th percentile 18 dBZ Echo Top                  |
-| p100VILDensity  | g/m³          | Maximum VIL Density                              |
-| p95VILDensity   | g/m³          | 95th percentile VIL Density                      |
-| p90VILDensity   | g/m³          | 90th percentile VIL Density                      |
-| p50VILDensity   | g/m³          | Median VIL Density                               |
-| p100AzShearLow  | 10⁻³ s⁻¹      | Maximum Low-Level (0-2km) Azimuthal Shear        |
-| p95AzShearLow   | 10⁻³ s⁻¹      | 95th percentile Low-Level Azimuthal Shear        |
-| p100AzShearMid  | 10⁻³ s⁻¹      | Maximum Mid-Level (3-6km) Azimuthal Shear        |
-| p95AzShearMid   | 10⁻³ s⁻¹      | 95th percentile Mid-Level Azimuthal Shear        |
-| p95VIL          | kg/m²         | 95th percentile VIL                              |
-| freezing_level_height | km      | Height of 0°C isotherm (from RAP)                |
-| dewpoint_depression | °C        | T - Td at 2m (dry air correction)                |
+| GLM_FLASH_COUNT | fl/min        | GLM Flash Count within storm cell (GOES)        |
+| GLM_TOTAL_ENERGY| J             | Total GLM Flash Energy within storm cell (GOES) |
+| u{level}        | m/s           | U-wind component at isobaric level (100-1000hPa)|
+| v{level}        | m/s           | V-wind component at isobaric level (100-1000hPa)|
+| u10m            | m/s           | 10-meter U-wind component                       |
+| v10m            | m/s           | 10-meter V-wind component                       |
+| freezing_level_height | km      | Height of 0°C isotherm (Derived)                |
+| freezing_level_m | m            | Height of 0°C isotherm (Raw RAP)                |
+| dewpoint_depression | °C        | T - Td at 2m (dry air correction)               |
 | temp_2m         | °C            | 2-meter temperature                              |
 | dewpoint_2m     | °C            | 2-meter dewpoint temperature                     |
 | morphology      | Object        | Geometric features (see below)                   |
