@@ -57,8 +57,8 @@ class MorphoWindModule(AnalysisModule):
         if echotop_18 > 0:
             vil_density = vil / echotop_18
             
-        # Freezing Level Correction
-        # Check environment first, then properties (from RAP integration)
+        # Freezing Level Correction (Gaussian Smoothed)
+        # Higher FL = deeper warm layer = more evaporative potential = lower VIL threshold
         fl_correction = 0.0
         fl_height = None
         if environment and "freezing_level_height" in environment:
@@ -67,11 +67,12 @@ class MorphoWindModule(AnalysisModule):
             fl_height = props["freezing_level_height"]
         
         if fl_height is not None:
-            diff = fl_height - cfg.REF_FREEZING_LEVEL_KM
-            fl_correction = diff * cfg.VIL_DENSITY_CORRECTION_PER_KM
+            # Use Gaussian CDF to smoothly scale correction from 0 to FL_MAX_CORRECTION
+            fl_factor = self._gaussian_score(fl_height, cfg.FL_MEAN, cfg.FL_SIGMA)
+            fl_correction = fl_factor * cfg.FL_MAX_CORRECTION
         
-        # Dewpoint Depression Correction (Dry Air)
-        # Check environment first, then properties
+        # Dewpoint Depression Correction (Gaussian Smoothed)
+        # Higher DD = drier sub-cloud air = stronger evaporative cooling
         dp_correction = 0.0
         dd = None
         if environment and "dewpoint_depression" in environment:
@@ -79,8 +80,10 @@ class MorphoWindModule(AnalysisModule):
         elif "dewpoint_depression" in props:
             dd = props["dewpoint_depression"]
         
-        if dd is not None and dd > cfg.DEWPOINT_DEPRESSION_THRESHOLD:
-            dp_correction = cfg.DRY_AIR_VIL_CORRECTION
+        if dd is not None:
+            # Use Gaussian CDF to smoothly scale correction from 0 to DD_MAX_CORRECTION
+            dd_factor = self._gaussian_score(dd, cfg.DD_MEAN, cfg.DD_SIGMA)
+            dp_correction = dd_factor * cfg.DD_MAX_CORRECTION
             
         # 2. Collapse Detection (Temporal Physics)
         history = get_cell_history(cell_id, limit=5)

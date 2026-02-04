@@ -54,27 +54,28 @@ COLLAPSE_VIL_RATE_THRESHOLD = -1.0
 # Example: -1.5 km drop in 5 mins
 COLLAPSE_ET_RATE_THRESHOLD = -1.5
 
-# --- Environmental Calibration ---
+# --- Environmental Calibration (Gaussian Smoothing) ---
 
-# Reference Freezing Level (km) - Standard Mid-Latitude
-REF_FREEZING_LEVEL_KM = 4.0
+# Freezing Level Correction
+# Higher freezing level = deeper warm layer = more evaporative cooling potential
+# We calculate a multiplier using Gaussian CDF that scales the VIL density mean
+# P(correction) = 0.5 * (1 + erf((FL - FL_MEAN) / (FL_SIGMA * sqrt(2))))
+FL_MEAN = 4.0    # Reference freezing level (km) - Standard Mid-Latitude
+FL_SIGMA = 1.5   # Transition width (km)
+FL_MAX_CORRECTION = 1.0  # Maximum VIL mean reduction at high FL (g/m³)
 
-# VIL Density Correction (g/m^3 per km of deviation)
-# If Freezing Level is HIGHER (Warm), we LOWER the threshold (hail melts, wet microburst risk higher at lower density?)
-# Actually, if FL is High, deep warm layer -> more melting -> less hail loading, BUT more evap potential?
-# Standard practice: High FL -> Requires Higher VIL for *Hail*, but Density threshold might effectively shift.
-# Amburn and Wolf: Density >= 3.5 is universal-ish.
-# Let's use simple logic: For every 1km HIGHER freezing level, REDUCE threshold by 0.5 (easier to trigger).
-VIL_DENSITY_CORRECTION_PER_KM = 0.5 
+# Dewpoint Depression Correction (Dry Air Microburst Enhancement)
+# Higher depression = drier sub-cloud layer = stronger evaporative cooling
+# DD_MEAN: 50% correction applied at this value
+# DD_SIGMA: Controls how quickly correction ramps up
+DD_MEAN = 12.0   # Dewpoint depression (°C) where P(correction) = 0.5
+DD_SIGMA = 5.0   # Transition width (°C)
+DD_MAX_CORRECTION = 1.0  # Maximum VIL mean reduction for very dry air (g/m³) 
 
 # --- Bookend Vortex Logic ---
 BOOKEND_VORTEX_SHEAR_THRESHOLD = 5.0 # High shear requirement
 BOOKEND_VORTEX_LINEARITY_THRESHOLD = 0.6 # Stricter Skeleton Linearity
 BOOKEND_MAX_BRANCHING = 2 # Max junctions for a "clean" line
 
-# --- Dry Air / Dewpoint Depression Logic ---
-# If Dewpoint Depression (T - Td) is high, dry air in sub-cloud layer
-# enhances evaporative cooling, increasing Microburst risk.
-DEWPOINT_DEPRESSION_THRESHOLD = 15.0 # Celsius
-# Correction to VIL Density Mean (Lower Mean = Easier to trigger)
-DRY_AIR_VIL_CORRECTION = 0.75
+# (Deprecated: Old threshold-based constants removed)
+# Environmental corrections now use Gaussian smoothing above
