@@ -69,7 +69,7 @@ describe('Features Download Route', () => {
             const testData = {
                 source: 'Edgemont Weather Service',
                 product: 'EdgeWARN Storm Cells',
-                version: '1.3.2',
+                version: '1.4.0',
                 latest_timestamp: '20231015-143000',
                 features: [
                     { id: 101, centroid: [35.0, -97.0], properties: {} },
