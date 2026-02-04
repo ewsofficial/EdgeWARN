@@ -81,13 +81,30 @@ Driven by **Rear Inflow Jets (RIJ)** and **Bookend Vortices**.
 |:----------|:------|:------------|
 | `COLLAPSE_VIL_RATE_THRESHOLD` | -1.0 | VIL change per 5 min (trigger if below) |
 | `COLLAPSE_ET_RATE_THRESHOLD` | -1.5 | EchoTop change per 5 min (trigger if below) |
-| `REF_FREEZING_LEVEL_KM` | 4.0 | Reference freezing level for correction |
-| `VIL_DENSITY_CORRECTION_PER_KM` | 0.5 | Mean adjustment per km deviation |
-| `DEWPOINT_DEPRESSION_THRESHOLD` | 15.0 | DD threshold for Dry Air correction |
-| `DRY_AIR_VIL_CORRECTION` | 0.75 | Mean adjustment for Dry Air |
 | `BOOKEND_VORTEX_SHEAR_THRESHOLD` | 5.0 | AzShear for Bookend Vortex |
 | `BOOKEND_VORTEX_LINEARITY_THRESHOLD` | 0.6 | Linearity for Bookend Vortex |
 | `BOOKEND_MAX_BRANCHING` | 2 | Max skeleton junctions for "clean line" |
+
+### Environmental Corrections (Gaussian Smoothed)
+VIL of the Day corrections now use Gaussian CDF smoothing instead of hard thresholds:
+
+```
+correction = gaussian_cdf(value, mean, sigma) × max_correction
+adjusted_vil_mean = MB_VIL_DENSITY_MEAN - fl_correction - dp_correction
+```
+
+| Parameter | Mean (μ) | Sigma (σ) | Max Correction |
+|:----------|:---------|:----------|:---------------|
+| **Freezing Level** | 4.0 km | 1.5 km | 1.0 g/m³ |
+| **Dewpoint Depression** | 12.0°C | 5.0°C | 1.0 g/m³ |
+
+**VIL of the Day Table** (Freezing Level → Effective VIL Threshold):
+| FL (km) | VIL Threshold (g/m³) |
+|:--------|:---------------------|
+| 2.0 | 3.41 |
+| 4.0 | 3.00 |
+| 6.0 | 2.59 |
+| 8.0 | 2.50 |
 
 ---
 
