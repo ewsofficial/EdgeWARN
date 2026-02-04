@@ -59,7 +59,9 @@ class StormCastModule(AnalysisModule):
         dx = storm_entry.get("dx")
         dy = storm_entry.get("dy")
         dt = storm_entry.get("dt")
-        echo_top_30 = props.get("EchoTop30", 10.0)
+        # EchoTop30 comes from MRMS integration (p100EchoTop30)
+        echo_top_30 = props.get("p100EchoTop30", 10.0)
+        # EchoTop50 comes from ProbSevere integration (EchoTop_50 -> EchoTop50)
         echo_top_50 = props.get("EchoTop50", 8.0)
         
         # Check if we have enough data

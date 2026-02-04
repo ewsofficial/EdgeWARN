@@ -65,7 +65,7 @@ A storm motion forecasting module that predicts storm cell trajectories.
 **Input Requirements** (from storm_entry):
 - `centroid` (top-level): Storm cell centroid [lat, lon] used as reference for coordinate conversion
 - `dx`, `dy`, `dt` (top-level): Displacement since last observation
-- `properties.EchoTop30`, `properties.EchoTop50`: Echo top heights
+- `properties.p100EchoTop30`, `properties.EchoTop50`: Echo top heights
 - `properties.u850`, `properties.v850`, etc.: Wind components at pressure levels
 
 **Output** (stored in `storm_entry['modules']['StormCast']`):
