@@ -19,8 +19,7 @@ def get_datasets_config():
             "name": "Ref15",
             "filepath": fs.MRMS_REFM15C_DIR,
             "key": "Ref15",
-            "method": "max"
-        }
+        },
         # === Lightning ===
         {
             "name": "NLDN",

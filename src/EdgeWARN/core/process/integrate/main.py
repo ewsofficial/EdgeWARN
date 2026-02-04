@@ -37,7 +37,12 @@ def main(json_path=None, remove_old_cells=True):
         name_str = ", ".join(name_list)
         
         try:
-            latest_file = fs.latest_files(filepath, 1)[-1]
+            latest_files = fs.latest_files(filepath, 1)
+            if not latest_files:
+                io_manager.write_warning(f"No files found for {name_str} at {filepath}, skipping")
+                continue
+                
+            latest_file = latest_files[-1]
             io_manager.write_debug(f"Using latest file for {name_str}: {latest_file}")
 
             result_cells = integrator.integrate_multi_stats(
@@ -52,14 +57,17 @@ def main(json_path=None, remove_old_cells=True):
 
     # Integrate ProbSevere
     try:
-        io_manager.write_info(f"Integrating ProbSevere data for {len(cells)} cells")
-        latest_file = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)[-1]
-        with open(latest_file, 'r') as f:
-            probsevere_data = json.load(f)
-        io_manager.write_debug(f"Using latest ProbSevere file: {latest_file}")
+        latest_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
+        if not latest_files:
+            io_manager.write_warning("No ProbSevere files found, skipping ProbSevere integration")
+        else:
+            latest_file = latest_files[-1]
+            with open(latest_file, 'r') as f:
+                probsevere_data = json.load(f)
+            io_manager.write_debug(f"Using latest ProbSevere file: {latest_file}")
 
-        result_cells = integrator.integrate_probsevere(probsevere_data, result_cells)
-        io_manager.write_debug(f"Successfully integrated ProbSevere data")
+            result_cells = integrator.integrate_probsevere(probsevere_data, result_cells)
+            io_manager.write_debug(f"Successfully integrated ProbSevere data")
     
     except Exception as e:
         io_manager.write_error(f"Failed to integrate ProbSevere data: {e}")
