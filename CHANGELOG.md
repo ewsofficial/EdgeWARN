@@ -1,39 +1,25 @@
-# Changelog for Version ``1.4.0``
+# Changelog for Version ``1.5.0``
 
 ## Additions
 
-- **MorphoWind CTAM Module**: New physics-based wind detection module using morphological analysis and Gaussian smoothing for scoring
-- **Custom Fast GRIB Loader**: New `util/grib_loader.py` using direct `eccodes` bindings, bypassing `cfgrib` overhead (30x faster for AzShear files)
-- **RAP Environmental Integration**: Config-driven RAP integration with environmental data (CAPE, CIN, wind profiles, etc.)
-- **AzShear Integration**: Added AzShear Low/Mid to integration config for mesocyclone detection
-- **Cell History Retrieval Utility**: New utility for retrieving storm cell history
-- **Comprehensive Test Suite**: Added unit tests for MorphologyEngine, StormCellIntegrator, and physics-based MorphoWind logic
-- **Performance Benchmark Tests**: New `tests/benchmarks/test_performance.py` measuring memory, CPU, and execution time for all pipeline components
+- **VIL Integration**: Added VIL (Vertically Integrated Liquid) integration with multiple percentiles (p100, p95, p90, p50)
+- **Reflectivity Layers**: Added integration for Reflectivity at 0°C, -5°C, and -15°C isotherms
+- **MRMS Downloads**: Added support for downloading MRMS Reflectivity at 0°C, -5°C, -10°C, -15°C, and -20°C
+- **Verification Scripts**: Added scripts for verifying GLM and ProbSevere spatial alignment
 
 ## Changes
 
-- **Detection Phase Optimization**: Switched to custom fast GRIB loader for radar data, achieving ~75% speedup in detection phase (16s → 4s)
-- **RAP Loading Strategy**: Reverted to unfiltered `cfgrib.open_datasets` loading (fastest approach)
-- **Morphology Engine Optimization**: Reduced overhead with early bailout for small cells and pre-allocated kernels
-- **Integration I/O Optimization**: Grouped datasets to reduce file I/O operations
-- **MorphoWind Refactor**: Moved into dedicated package folder, implemented Gaussian smoothing for scoring
-- **VIL of the Day Gaussian Smoothing**: Replaced threshold-based environmental corrections with Gaussian CDF smoothing for Freezing Level and Dewpoint Depression
-- **Microphysics Metrics**: Moved from detection phase to integration phase
-- **Integration Config Syntax**: Updated to use `p{percentile}` syntax (e.g., `p95AzShearLow`)
-- **OpenCV Dependency**: Moved to pip dependencies to resolve conda conflicts
+- **Wind Field Restructuring**: Grouped all isobaric wind components into a nested `wind_field` dictionary (e.g., `wind_field.u850`) for cleaner JSON output
+- **RAP Wind Expansion**: Expanded RAP wind integration to include all 37 pressure levels (100 hPa to 1000 hPa)
+- **Surface Winds**: Added extraction of 10m surface winds (`u10m`, `v10m`)
+- **MorphoWind Cleanup**: Removed redundant `morphowind` key from cell properties (now exclusively in `modules.MorphoWind`)
+- **Cleanup**: Removed unused directories and legacy verification/benchmarking scripts
 
 ## Fixes
 
-- **RAP File Cleanup**: Fixed bug where RAP files were not deleting due to symlink safety check and hardcoded limit
-- **CVE-2025-55182**: Resolved critical vulnerability and updated dependencies
-- **AzShear Performance Bottleneck**: Fixed 44s → 1.5s GRIB loading regression caused by `cfgrib` metadata parsing issues
-- **RAP Integration Performance**: Fixed performance regression in RAP data loading
-- **Morphology Metrics Bugs**: Fixed skeletonization and contour analysis issues
-- **Test Failures**: Resolved various test failures in v1.4.0 test suite
+- **Pipeline Stability**: Resolved pipeline unpacking crashes and added safety checks for integration
+- **StormCast Module**: Fixed incorrect key usage for EchoTop30 in StormCast module
 
 ## Documentation
 
-- Added MorphoWind module documentation
-- Updated CTAM, Detection, and Integration docs with MorphoWind references
-- Added comprehensive RAP data structure documentation
-- Added CVE-2025-55182 fix documentation
+- **Data Keys Update**: Comprehensive update to `EdgeWARN_Data_Keys.md` reflecting the new 1.5.0 data structure, including `wind_field` and new reflectivity keys
