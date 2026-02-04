@@ -1,6 +1,6 @@
 {
   "name": "edgewarn-backend",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "Node.js backend server for EdgeWARN",
   "main": "server.js",
   "type": "module",
