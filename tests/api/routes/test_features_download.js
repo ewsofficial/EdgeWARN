@@ -3,7 +3,7 @@
  * @module tests/api/routes/test_features_download
  */
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import request from 'supertest';
 import express from 'express';
 import fs from 'fs';
@@ -202,7 +202,7 @@ describe('Features Download Route', () => {
                 .get('/features/download/resources?type=cell&id=../../../etc/passwd')
                 .expect(400);
 
-            expect(response.body.error).toContain('Invalid filename or access denied');
+            expect(response.body.error).toContain('Invalid or missing id parameter');
         });
     });
 });

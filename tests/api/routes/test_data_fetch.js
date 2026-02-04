@@ -3,7 +3,7 @@
  * @module tests/api/routes/test_data_fetch
  */
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import request from 'supertest';
 import express from 'express';
 import fs from 'fs';

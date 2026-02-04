@@ -77,9 +77,9 @@ class TestLatestFiles:
         result = fs.latest_files(tmp_path, 2)
         
         assert len(result) == 2
-        assert file2 in result
-        assert file3 in result
-        assert file1 not in result
+        assert str(file2) in result
+        assert str(file3) in result
+        assert str(file1) not in result
 
     def test_returns_sorted_oldest_to_newest(self, tmp_path):
         """Test that files are sorted oldest to newest"""
@@ -99,9 +99,9 @@ class TestLatestFiles:
         result = fs.latest_files(tmp_path, 3)
         
         # Should be sorted oldest to newest
-        assert result[0] == file1
-        assert result[1] == file2
-        assert result[2] == file3
+        assert result[0] == str(file1)
+        assert result[1] == str(file2)
+        assert result[2] == str(file3)
 
     def test_excludes_idx_files(self, tmp_path):
         """Test that .idx files are excluded"""
@@ -115,9 +115,9 @@ class TestLatestFiles:
         
         result = fs.latest_files(tmp_path, 10)
         
-        assert file1 in result
-        assert file2 in result
-        assert idx_file not in result
+        assert str(file1) in result
+        assert str(file2) in result
+        assert str(idx_file) not in result
 
     def test_returns_none_for_nonexistent_directory(self):
         """Test that None is returned for non-existent directory"""
@@ -139,6 +139,7 @@ class TestCleanFilesByAge:
 
     def test_removes_old_files(self, tmp_path):
         """Test that old files are removed"""
+        fs._define_paths(tmp_path)
         old_file = tmp_path / "old_file.txt"
         new_file = tmp_path / "new_file.txt"
         
@@ -160,6 +161,7 @@ class TestCleanFilesByAge:
 
     def test_keeps_recent_files(self, tmp_path):
         """Test that recent files are kept"""
+        fs._define_paths(tmp_path)
         file1 = tmp_path / "file1.txt"
         file2 = tmp_path / "file2.txt"
         
@@ -197,6 +199,7 @@ class TestCleanOldFiles:
 
     def test_removes_oldest_files_when_limit_exceeded(self, tmp_path):
         """Test that oldest files are removed when exceeding limit"""
+        fs._define_paths(tmp_path)
         files = []
         for i in range(5):
             f = tmp_path / f"file{i}.txt"
@@ -219,6 +222,7 @@ class TestCleanOldFiles:
 
     def test_keeps_all_files_when_under_limit(self, tmp_path):
         """Test that all files are kept when under limit"""
+        fs._define_paths(tmp_path)
         files = []
         for i in range(3):
             f = tmp_path / f"file{i}.txt"
@@ -239,6 +243,7 @@ class TestCleanOldFiles:
 
     def test_excludes_idx_files_from_count(self, tmp_path):
         """Test that .idx files are excluded from file count"""
+        fs._define_paths(tmp_path)
         txt_file = tmp_path / "file.txt"
         idx_file = tmp_path / "file.idx"
         
