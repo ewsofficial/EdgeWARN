@@ -123,45 +123,43 @@ class TestDetectToIntegrateWorkflow:
 
     def test_integrate_rap_adds_wind_data(self, sample_cell_data):
         """Test that RAP integration adds wind data"""
-        from EdgeWARN.core.process.integrate.integrate_rap import integrate_rap_winds
+        from EdgeWARN.core.process.integrate.integrate_rap import integrate_rap
         
-        # Mock RAP handler
-        mock_handler = MagicMock()
-        
-        # Create synthetic RAP dataset
-        lats_1d = np.linspace(30, 40, 10)
-        lons_1d = np.linspace(260, 270, 10)
-        lats, lons = np.meshgrid(lats_1d, lons_1d, indexing='ij')
+        # Create synthetic RAP datasets matching cfgrib structure
+        lats = np.linspace(30, 40, 10)
+        lons = np.linspace(260, 270, 10)  # 0-360 format
         
         levels = np.array([850, 700, 500, 250])
         
         u_data = np.zeros((4, 10, 10))
         u_data[0] = 10.0  # 850mb
+        u_data[1] = 15.0  # 700mb
         u_data[2] = 30.0  # 500mb
+        u_data[3] = 40.0  # 250mb
         
         v_data = np.zeros((4, 10, 10))
         v_data[0] = 5.0
+        v_data[1] = 8.0
         v_data[2] = 15.0
+        v_data[3] = 20.0
         
         import xarray as xr
         ds = xr.Dataset(
             {
-                "u": (("isobaricInhPa", "latitude", "longitude"), u_data),
-                "v": (("isobaricInhPa", "latitude", "longitude"), v_data)
+                "u": (("isobaricInhPa", "y", "x"), u_data),
+                "v": (("isobaricInhPa", "y", "x"), v_data)
             },
             coords={
                 "isobaricInhPa": levels,
-                "latitude": (("latitude", "longitude"), lats),
-                "longitude": (("latitude", "longitude"), lons)
+                "latitude": (("y", "x"), np.broadcast_to(lats[:, None], (10, 10))),
+                "longitude": (("y", "x"), np.broadcast_to(lons[None, :], (10, 10)))
             }
         )
         
-        mock_handler.get_isobaric_dataset.return_value = ds
-        
         mock_io = MagicMock()
         
-        with patch('EdgeWARN.core.process.integrate.integrate_rap.RAPFileHandler', return_value=mock_handler):
-            result = integrate_rap_winds(sample_cell_data, "dummy_path", mock_io)
+        with patch('cfgrib.open_datasets', return_value=[ds]):
+            result = integrate_rap(sample_cell_data, "dummy_path", mock_io)
         
         # Verify wind data was added
         for cell in result:
