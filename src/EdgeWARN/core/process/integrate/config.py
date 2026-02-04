@@ -143,6 +143,17 @@ def get_rap_products():
                 ],
                 "key_template": "v{level}"
             },
+            # === Surface 10m Winds ===
+            {
+                "filter": {"typeOfLevel": "heightAboveGround", "level": 10},
+                "var": "u10",
+                "key": "u10m"
+            },
+            {
+                "filter": {"typeOfLevel": "heightAboveGround", "level": 10},
+                "var": "v10",
+                "key": "v10m"
+            },
             # === Surface 2m ===
             {
                 "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
