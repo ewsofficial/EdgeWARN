@@ -213,7 +213,6 @@ class MorphoWindModule(AnalysisModule):
             result["confidence"] = round(mb_risk, 2)
             
         # Inject result
-        props["morphowind"] = result
         
         if "modules" not in storm_entry:
             storm_entry["modules"] = {}
