@@ -53,6 +53,37 @@ The `modules` object contains output from registered CTAM modules. Each module h
 | radius     | m             | Radius of the uncertainty cone at given confidence    |
 | lead_time  | s             | Forecast lead time in seconds                         |
 
+### ``modules.MorphoWind``
+
+| Key              | Type           | Description                                      |
+|------------------|----------------|--------------------------------------------------|
+| risk_type       | string        | "QLCS", "Microburst", or "None"                  |
+| confidence      | float         | 0.0 - 1.0 probability score                      |
+| severity_index  | float         | Maximum of QLCS and Microburst scores            |
+| physics_triggers | List[string] | Triggered physics flags (see below)              |
+| scores          | Object        | `{qlcs: float, microburst: float}`               |
+| physics         | Object        | Detailed metrics (see below)                     |
+
+#### ``physics_triggers`` Values
+
+| Trigger              | Description                                      |
+|----------------------|--------------------------------------------------|
+| `VIL_COLLAPSE`      | Rapid VIL drop detected (with pre-condition met) |
+| `ET_COLLAPSE`       | Rapid Echo Top drop detected                     |
+| `REAR_INFLOW_NOTCH` | Rear-sector convexity defect confirmed           |
+| `BOOKEND_VORTEX`    | Linear structure with high shear at ends         |
+
+#### ``physics`` Object Structure
+
+| Key            | Units | Description                                    |
+|----------------|-------|------------------------------------------------|
+| vil_density   | g/m³  | VIL / EchoTop18                                |
+| collapse_score | 0-1  | Combined VIL + ET collapse score               |
+| vil_change    | kg/m² | VIL change from 2 scans ago                    |
+| et_change     | km    | Echo Top change from 2 scans ago               |
+| defect_bearing | °    | Bearing of deepest convexity defect            |
+| linearity     | ratio | Skeleton linearity metric                      |
+
 ## Data Keys in ``properties``
 
 | Key              | Units          | Description                                      |
@@ -124,6 +155,34 @@ The `modules` object contains output from registered CTAM modules. Each module h
 | v500            | m/s           | 500-hPa v-component of wind                     |
 | u250            | m/s           | 250-hPa u-component of wind                     |
 | v250            | m/s           | 250-hPa v-component of wind                     |
+| p100EchoTop18   | km MSL        | Maximum 18 dBZ Echo Top                          |
+| p95EchoTop18    | km MSL        | 95th percentile 18 dBZ Echo Top                  |
+| p90EchoTop18    | km MSL        | 90th percentile 18 dBZ Echo Top                  |
+| p100VILDensity  | g/m³          | Maximum VIL Density                              |
+| p95VILDensity   | g/m³          | 95th percentile VIL Density                      |
+| p90VILDensity   | g/m³          | 90th percentile VIL Density                      |
+| p50VILDensity   | g/m³          | Median VIL Density                               |
+| p100AzShearLow  | 10⁻³ s⁻¹      | Maximum Low-Level (0-2km) Azimuthal Shear        |
+| p95AzShearLow   | 10⁻³ s⁻¹      | 95th percentile Low-Level Azimuthal Shear        |
+| p100AzShearMid  | 10⁻³ s⁻¹      | Maximum Mid-Level (3-6km) Azimuthal Shear        |
+| p95AzShearMid   | 10⁻³ s⁻¹      | 95th percentile Mid-Level Azimuthal Shear        |
+| p95VIL          | kg/m²         | 95th percentile VIL                              |
+| freezing_level_height | km      | Height of 0°C isotherm (from RAP)                |
+| dewpoint_depression | °C        | T - Td at 2m (dry air correction)                |
+| temp_2m         | °C            | 2-meter temperature                              |
+| dewpoint_2m     | °C            | 2-meter dewpoint temperature                     |
+| morphology      | Object        | Geometric features (see below)                   |
+
+### ``morphology`` Object
+
+| Key              | Units          | Description                                      |
+|------------------|----------------|--------------------------------------------------|
+| solidity        | ratio         | Contour Area / Convex Hull Area                  |
+| aspect_ratio    | ratio         | Major / Minor Axis of MinAreaRect                |
+| defect_max_depth | pixels       | Depth of largest convexity defect               |
+| defect_bearing  | degrees       | Bearing of defect from centroid (0-360°)         |
+| linearity       | ratio         | Skeleton Length / Complexity                     |
+| branching_factor | count        | Number of skeleton junctions                     |
 
 ---
 

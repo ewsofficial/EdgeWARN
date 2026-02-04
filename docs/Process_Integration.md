@@ -27,6 +27,15 @@ This module contains the `StormCellIntegrator` class, which performs the heavy l
         - **Error Handling**: Catches memory errors and general exceptions, logging them and marking the cell data as error codes (e.g., "MEMORY_ERROR", "PROCESSING_ERROR").
         - **Returns**: The updated list of storm cells.
 
+    - **`integrate_multi_stats(self, dataset_path, storm_cells, stats_config_list)`**:
+        - **Functionality**: Calculates multiple statistics (max, percentile) from a single dataset in a single pass, reducing I/O overhead.
+        - **Parameters**:
+            - `dataset_path`: Path to the GRIB2/NetCDF file
+            - `storm_cells`: List of storm cell dictionaries
+            - `stats_config_list`: List of dicts with `{'key': str, 'method': str, 'percentile': int}`
+        - **Usage**: Configured via `config.py` which defines all datasets and their statistics.
+        - **Returns**: The updated list of storm cells with multiple keys added per dataset.
+
     - **`integrate_probsevere(self, probsevere_data, storm_cells)`**:
         - **Functionality**: Merges ProbSevere JSON data into the storm cells based on matching IDs.
         - **Steps**:
@@ -98,18 +107,23 @@ This script defines the integration workflow, specifying which datasets to proce
         - `remove_old_cells`: If `True` (default), cleans up old cell history files not updated for over 1 hour
     - **Steps**:
         1.  **Setup**: Initializes `StatFileHandler`, `StormCellIntegrator`, and `CellHistory` manager. Loads the storm cell list from the provided JSON file.
-        2.  **Integrate Gridded Data**: Iterates through a predefined list of datasets (NLDN, EchoTop18, EchoTop30, PrecipRate, VIL, RALA, VII).
-            - Finds the latest file for each product.
-            - Calls `integrator.integrate_ds_via_max` to add the data to the cells.
-        3.  **Integrate ProbSevere**: Finds the latest ProbSevere JSON file and calls `integrator.integrate_probsevere`.
-        4.  **Integrate GLM**: Integrates GOES-19 GLM lightning data.
-        5.  **Integrate RAP**: Integrates RAP wind data at 850, 700, 500, and 250mb levels.
-        6.  **Run CTAM Modules**: Runs all registered CTAM analysis modules on each cell:
+        2.  **Load Config**: Reads dataset definitions from `config.py` via `get_datasets_config()`.
+        3.  **Group Datasets**: Groups datasets by filepath to minimize file I/O operations.
+        4.  **Integrate Gridded Data**: For each unique filepath:
+            - Finds the latest file for the product.
+            - Calls `integrator.integrate_multi_stats()` with all statistics for that dataset.
+            - Computes percentiles (p95, p90, p50) and max in a single pass.
+        5.  **Integrate ProbSevere**: Finds the latest ProbSevere JSON file and calls `integrator.integrate_probsevere`.
+        6.  **Integrate GLM**: Integrates GOES-19 GLM lightning data.
+        7.  **Integrate RAP**: Integrates RAP environmental data:
+            - Wind profiles (u/v at 850, 700, 500, 250 hPa)
+            - Environmental corrections: `freezing_level_height`, `dewpoint_depression`
+        8.  **Run CTAM Modules**: Runs all registered CTAM analysis modules on each cell:
             - **StormCast**: Predicts storm motion trajectories
             - **MorphoWind**: Assesses severe wind risk (Microbursts, QLCS/Bow Echoes) using physics-based morphological analysis
             See [CTAM_Module.md](CTAM_Module.md) for details.
-        7.  **Update Cell Histories**: Saves enriched data to individual cell history JSON files in `CELL_DIR`.
-        8.  **Cleanup**: If `remove_old_cells=True`, removes inactive cell history files (not updated for over 1 hour).
+        9.  **Update Cell Histories**: Saves enriched data to individual cell history JSON files in `CELL_DIR`.
+        10. **Cleanup**: If `remove_old_cells=True`, removes inactive cell history files (not updated for over 1 hour).
 
 ### 5. `utils.py`
 Contains utility classes for file handling and geometry operations.
