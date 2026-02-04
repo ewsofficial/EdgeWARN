@@ -57,30 +57,57 @@ def get_datasets_config():
             "key": "p100EchoTop30",
             "method": "max"
         },
-        # === VIL Density ===
+        # === VIL and VIL Density ===
+        {
+            "name": "VIL",
+            "filepath": fs.MRMS_VIL_DIR,
+            "key": "p100VIL",
+            "method": "max"
+        },
+        {
+            "name": "VIL (95th)",
+            "filepath": fs.MRMS_VIL_DIR,
+            "key": "p95VIL",
+            "method": "percentile",
+            "percentile": 95
+        },
+        {
+            "name": "VIL (90th)",
+            "filepath": fs.MRMS_VIL_DIR,
+            "key": "p90VIL",
+            "method": "percentile",
+            "percentile": 90
+        },
+        {
+            "name": "VIL (50th)",
+            "filepath": fs.MRMS_VIL_DIR,
+            "key": "p50VIL",
+            "method": "percentile",
+            "percentile": 50
+        },
         {
             "name": "VIL Density",
-            "filepath": fs.MRMS_VIL_DIR,
+            "filepath": fs.MRMS_DVIL_DIR,
             "key": "p100VILDensity",
             "method": "max"
         },
         {
             "name": "VIL Density (95th)",
-            "filepath": fs.MRMS_VIL_DIR,
+            "filepath": fs.MRMS_DVIL_DIR,
             "key": "p95VILDensity",
             "method": "percentile",
             "percentile": 95
         },
         {
             "name": "VIL Density (90th)",
-            "filepath": fs.MRMS_VIL_DIR,
+            "filepath": fs.MRMS_DVIL_DIR,
             "key": "p90VILDensity",
             "method": "percentile",
             "percentile": 90
         },
         {
             "name": "VIL Density (50th)",
-            "filepath": fs.MRMS_VIL_DIR,
+            "filepath": fs.MRMS_DVIL_DIR,
             "key": "p50VILDensity",
             "method": "percentile",
             "percentile": 50
