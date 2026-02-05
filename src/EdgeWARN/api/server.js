@@ -67,7 +67,7 @@ if (cluster.isPrimary) {
 
   // Rate Limiting
   const limiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 20 * 1000, // 20 seconds
     max: 100, // Limit each IP to 100 requests per `windowMs`
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
