@@ -37,7 +37,6 @@ def get_check_modifiers():
         ("CONUS", "MergedAzShear_0-2kmAGL_00.50", fs.MRMS_AZSHEARLOW_DIR),
         ("CONUS", "MergedAzShear_3-6kmAGL_00.50", fs.MRMS_AZSHEARMID_DIR),
         ("CONUS", "VIL_Density_00.50", fs.MRMS_DVIL_DIR),
-        ("CONUS", "VIL_00.50", fs.MRMS_VIL_DIR),
         ("ProbSevere", None, fs.MRMS_PROBSEVERE_DIR),
         ("CONUS", "PrecipFlag_00.00", fs.MRMS_PRECIPTYP_DIR),
         ("CONUS", "MergedReflectivityAtLowestAltitude_00.50", fs.MRMS_RALA_DIR),
