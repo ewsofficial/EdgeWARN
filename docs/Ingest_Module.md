@@ -45,6 +45,7 @@ The module provides both synchronous and asynchronous interfaces for downloading
 *   **Functionality**:
     - Fetches active alerts from `https://api.weather.gov/alerts/active`.
     - Streams and filters the GeoJSON response using `ijson` to minimize memory usage.
+    - **Filtering**: Implements a blocklist (`DROPPED_EVENTS`) to exclude specific alert types (e.g., tests, statements, advisories). All other events are ingested.
     - Applies the **GeoMapper** (`geomapper.py`) to map NWS zone codes (UGC) to actual polygons.
     - Saves the processed GeoJSON to `alerts_active_YYYYMMDD-HHMMSS.json`.
 
