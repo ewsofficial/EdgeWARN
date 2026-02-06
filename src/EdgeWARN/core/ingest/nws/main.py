@@ -24,19 +24,25 @@ class DecimalEncoder(json.JSONEncoder):
 
 io_manager = IOManager("[NWS Ingest]")
 
-# Define the set of allowed events
-ALLOWED_EVENTS = {
-    "Severe Thunderstorm Watch",
-    "Tornado Watch",
-    "Severe Thunderstorm Warning",
-    "Tornado Warning",
-    "Flash Flood Warning",
-    "Severe Weather Statement",
-    "Special Weather Statement",
-    "Winter Weather Advisory",
-    "Winter Storm Watch",
-    "Winter Storm Warning",
+# Define the set of dropped events (blocklist)
+DROPPED_EVENTS = {
+    # Always drop
+    "Administrative Message",
+    "Practice/Demo Warning",
+    "Required Weekly Test",
+    "Required Monthly Test",
+    "Hurricane Local Statement",
+    "Flood Statement",
+    "Flash Flood Statement",
+    "Rip Current Statement",
+    "Lakeshore Flood Statement",
+    "Hydrologic Outlook",
+    # Optional drops
+    "Air Quality Alert",
+    "Air Stagnation Advisory",
+    "Beach Hazards Statement",
 }
+
 
 def download_alerts(dt: datetime):
     """
@@ -165,18 +171,20 @@ def _process_nws_file(input_path, output_path):
                 props = feature.get('properties', {})
                 event = props.get('event')
 
-                if event in ALLOWED_EVENTS:
-                    # Apply GeoMapper Logic
-                    processed_feature = process_warning(feature)
-                    
-                    if not first:
-                        outfile.write(',')
-                    else:
-                        first = False
+                if event in DROPPED_EVENTS:
+                    continue
 
-                    # Serialize the single feature back to JSON and write it
-                    json.dump(processed_feature, outfile, cls=DecimalEncoder)
-                    count += 1
+                # Apply GeoMapper Logic
+                processed_feature = process_warning(feature)
+                
+                if not first:
+                    outfile.write(',')
+                else:
+                    first = False
+
+                # Serialize the single feature back to JSON and write it
+                json.dump(processed_feature, outfile, cls=DecimalEncoder)
+                count += 1
             
             # Write the end of the GeoJSON object
             outfile.write(']}')

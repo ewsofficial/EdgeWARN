@@ -48,8 +48,8 @@ class TestDownloadAlerts:
             expected_file = tmp_path / "alerts_active_20231015-143000.json"
             assert expected_file.exists()
 
-    def test_download_filters_by_event_type(self, mock_io, tmp_path):
-        """Test that alerts are filtered by event type"""
+    def test_download_filters_dropped_events(self, mock_io, tmp_path):
+        """Test that events in DROPPED_EVENTS are excluded"""
         # Mock urllib response with mixed events
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps({
@@ -63,7 +63,7 @@ class TestDownloadAlerts:
                 },
                 {
                     "properties": {
-                        "event": "Space Weather Warning",  # Not in ALLOWED_EVENTS
+                        "event": "Administrative Message",  # Should be dropped
                         "geocode": {"SAME": ["048121"]}
                     },
                     "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0]]]}
@@ -84,7 +84,9 @@ class TestDownloadAlerts:
             
             # Should only include Severe Thunderstorm Warning
             assert len(data["features"]) == 1
-            assert data["features"][0]["properties"]["event"] == "Severe Thunderstorm Warning"
+            events = [f["properties"]["event"] for f in data["features"]]
+            assert "Severe Thunderstorm Warning" in events
+            assert "Administrative Message" not in events
 
     def test_download_applies_geomapper(self, mock_io, tmp_path):
         """Test that GeoMapper is applied to alerts"""
