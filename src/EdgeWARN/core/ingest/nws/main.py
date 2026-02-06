@@ -28,6 +28,11 @@ io_manager = IOManager("[NWS Ingest]")
 DROPPED_EVENTS = {
     # Always drop
     "Administrative Message",
+    "Freezing Spray Advisory",
+    "Low Water Advisory",
+    "High Surf Advisory",
+    "Small Craft Advisory",
+    "Brisk Wind Advisory",
     "Practice/Demo Warning",
     "Required Weekly Test",
     "Required Monthly Test",
