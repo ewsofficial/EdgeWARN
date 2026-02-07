@@ -266,22 +266,24 @@ class GateMapper:
             
             r_offset = sl[0].start - 1
             c_offset = sl[1].start - 1
-            
-            coords = []
-            for c in contour:
-                r_global = int(c[0] + r_offset)
-                c_global = int(c[1] + c_offset)
+
+            if len(contour) > 0:
+                # Vectorized coordinate transformation
+                r_global = (contour[:, 0] + r_offset).astype(int)
+                c_global = (contour[:, 1] + c_offset).astype(int)
                 
                 # Safety clamp
-                r_global = max(0, min(r_global, lats.shape[0] - 1))
-                c_global = max(0, min(c_global, lats.shape[1] - 1))
+                np.clip(r_global, 0, lats.shape[0] - 1, out=r_global)
+                np.clip(c_global, 0, lats.shape[1] - 1, out=c_global)
                 
-                coords.append((
-                    round(float(lats[r_global, c_global]), 3),
-                    round(float(lons[r_global, c_global]), 3)
-                ))
+                # Vectorized lookup and rounding
+                lat_vals = np.round(lats[r_global, c_global], 3)
+                lon_vals = np.round(lons[r_global, c_global], 3)
                 
-            bboxes[poly_id] = coords
+                # Create list of tuples
+                bboxes[poly_id] = list(zip(lat_vals.tolist(), lon_vals.tolist()))
+            else:
+                bboxes[poly_id] = []
 
         return bboxes
 
