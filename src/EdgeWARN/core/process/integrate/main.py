@@ -23,16 +23,14 @@ def main(json_path=None, remove_old_cells=True):
 
     result_cells = cells
 
-    # Integrate datasets
-    # Integrate datasets
-    from itertools import groupby
-    
-    # Sort configs by filepath first (required for groupby)
-    configs = get_datasets_config()
-    configs.sort(key=lambda x: x["filepath"])
-    
-    for filepath, group in groupby(configs, key=lambda x: x["filepath"]):
-        group_list = list(group)
+    # Integrate datasets grouped by filepath (single pass, no presort/groupby overhead)
+    from collections import defaultdict
+
+    grouped_configs = defaultdict(list)
+    for config in get_datasets_config():
+        grouped_configs[config["filepath"]].append(config)
+
+    for filepath, group_list in grouped_configs.items():
         name_list = [c["name"] for c in group_list]
         name_str = ", ".join(name_list)
         
