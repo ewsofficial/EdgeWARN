@@ -12,6 +12,20 @@ class StormCellIntegrator:
     def __init__(self, io_manager):
         self.io_manager = io_manager
 
+    @staticmethod
+    def _lat_slice_indices(lat_vals, miny, maxy):
+        """Return start/end indices for latitude bounds on ascending or descending grids."""
+        if lat_vals[0] < lat_vals[-1]:
+            start_idx = np.searchsorted(lat_vals, miny)
+            end_idx = np.searchsorted(lat_vals, maxy, side='right')
+        else:
+            lat_reversed = lat_vals[::-1]
+            lat_len = len(lat_vals)
+            end_idx = lat_len - np.searchsorted(lat_reversed, miny)
+            start_idx = lat_len - np.searchsorted(lat_reversed, maxy, side='right')
+
+        return start_idx, end_idx
+
     def integrate_ds_via_max(self, dataset_path, storm_cells, output_key):
 
         # Load dataset
@@ -68,17 +82,7 @@ class StormCellIntegrator:
                 # This assumes lat_vals and lon_vals are monotonic (standard for GRIB grids)
                 
                 # Handle Latitude (check if ascending or descending)
-                if lat_vals[0] < lat_vals[-1]:
-                     # Ascending
-                    lat_start_idx = np.searchsorted(lat_vals, miny)
-                    lat_end_idx = np.searchsorted(lat_vals, maxy, side='right')
-                else:
-                    # Descending (common in GRIB) - searchsorted expects ascending, so we search on reversed or use negative logic
-                    # Easier to search on reversed array if descending
-                    # Or just use the fact that miny maps to higher index, maxy to lower index
-                    lat_len = len(lat_vals)
-                    lat_end_idx = lat_len - np.searchsorted(lat_vals[::-1], miny)
-                    lat_start_idx = lat_len - np.searchsorted(lat_vals[::-1], maxy, side='right')
+                lat_start_idx, lat_end_idx = self._lat_slice_indices(lat_vals, miny, maxy)
 
                 # Handle Longitude (usually ascending 0-360 or -180-180)
                 lon_start_idx = np.searchsorted(lon_vals, minx)
@@ -192,13 +196,7 @@ class StormCellIntegrator:
 
                 # Optimization: Use searchsorted for O(logN) slicing
                 # Handle Latitude
-                if lat_vals[0] < lat_vals[-1]: # Ascending
-                    lat_start_idx = np.searchsorted(lat_vals, miny)
-                    lat_end_idx = np.searchsorted(lat_vals, maxy, side='right')
-                else: # Descending
-                    lat_len = len(lat_vals)
-                    lat_end_idx = lat_len - np.searchsorted(lat_vals[::-1], miny)
-                    lat_start_idx = lat_len - np.searchsorted(lat_vals[::-1], maxy, side='right')
+                lat_start_idx, lat_end_idx = self._lat_slice_indices(lat_vals, miny, maxy)
 
                 # Handle Longitude
                 lon_start_idx = np.searchsorted(lon_vals, minx)
@@ -238,10 +236,17 @@ class StormCellIntegrator:
                     for conf in stats_config_list:
                         target[conf['key']] = 0
                 else:
-                    # Sort once for percentiles if needed? 
-                    # np.percentile handles sorting internally. If we have multiple percentiles, sorting once might be faster 
-                    # but typically np.percentile is optimized enough for small N (storm cell pixels).
-                    
+                    percentile_methods = [
+                        conf for conf in stats_config_list if conf.get('method') == 'percentile'
+                    ]
+                    percentile_cache = {}
+                    if percentile_methods:
+                        unique_percentiles = sorted(
+                            {conf.get('percentile', 90) for conf in percentile_methods}
+                        )
+                        percentile_values = np.percentile(masked_vals, unique_percentiles)
+                        percentile_cache = dict(zip(unique_percentiles, percentile_values))
+
                     for conf in stats_config_list:
                         method = conf.get('method', 'max')
                         percentile = conf.get('percentile', 90)
@@ -252,7 +257,7 @@ class StormCellIntegrator:
                         elif method == "mean":
                             res = np.mean(masked_vals)
                         elif method == "percentile":
-                            res = np.percentile(masked_vals, percentile)
+                            res = percentile_cache.get(percentile, 0)
                         else:
                             res = 0
                         

@@ -154,13 +154,13 @@ class GateMapper:
             )
 
         # 3. Create Refined Seed Grid (MARKERS)
-        # Seeds are the intersection of Valid Polygons AND High Reflectivity
+        # Seeds are the intersection of Valid Polygons AND High Reflectivity.
+        # Use a lookup-table mask instead of np.isin for lower overhead on dense grids.
         markers = np.zeros_like(sub_polygon)
-        
-        # Optimization: Faster boolean check using simple standard indexing if small, 
-         # or np.isin for larger sets. np.isin is generally optimized.
-        valid_poly_mask = np.isin(sub_polygon, valid_ids)
-        active_seeds_mask = valid_poly_mask & sub_mask
+
+        valid_id_mask = np.zeros(max_id + 1, dtype=bool)
+        valid_id_mask[valid_ids] = True
+        active_seeds_mask = valid_id_mask[sub_polygon] & sub_mask
         markers = np.where(active_seeds_mask, sub_polygon, 0)
         
         if not np.any(markers > 0):
