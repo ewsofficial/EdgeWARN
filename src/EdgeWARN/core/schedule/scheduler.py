@@ -7,7 +7,8 @@ from EdgeWARN.core.ingest.mrms.utils import extract_timestamp
 from EdgeWARN.core.ingest.mrms.parse import parse_mrms_bucket_path
 from EdgeWARN.core.ingest.mrms.config import bucket
 from EdgeWARN.core.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
-from util.io import IOManager
+from util.io import IOManager, PerformanceTimer
+import uuid
 
 io_manager = IOManager("[DataIngestion]")
 
@@ -68,8 +69,7 @@ class MRMSUpdateChecker:
             print(f"[MRMSUpdateChecker] Error checking {modifier}: {e}")
             return False
 
-    from util.io import PerformanceTimer
-    import uuid
+
 
     def _get_modifier_times(self, modifier_tuple, reference_dt, trace_id=None):
         """Helper to fetch timestamps for a single modifier."""
