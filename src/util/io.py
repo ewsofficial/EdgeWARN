@@ -95,3 +95,25 @@ class IOManager:
     def write_error(self, msg):
         print(f"{self.header} ERROR: {msg}")
         return
+
+class PerformanceTimer:
+    """Context manager for measuring execution time of blocks."""
+    def __init__(self, io_manager, operation, trace_id=None, threshold_ms=0):
+        self.io_manager = io_manager
+        self.operation = operation
+        self.trace_id = trace_id or "NO_TRACE"
+        self.threshold_ms = threshold_ms
+        self.start_time = None
+
+    def __enter__(self):
+        self.start_time = time.time()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        duration_ms = (time.time() - self.start_time) * 1000
+        if duration_ms >= self.threshold_ms:
+            self.io_manager.write_perf(f"[{self.trace_id}] {self.operation}: {duration_ms:.2f}ms")
+
+import time
+# Add write_perf to IOManager
+setattr(IOManager, "write_perf", lambda self, msg: print(f"{self.header} [PERF] {msg}"))

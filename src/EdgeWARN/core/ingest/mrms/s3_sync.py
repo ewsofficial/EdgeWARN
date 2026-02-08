@@ -32,7 +32,7 @@ class FileFinder:
         self.client = client if client is not None else _get_unsigned_s3_client()
         self.paginator = self.client.get_paginator('list_objects_v2')
     
-    def lookup_files(self, modifier, verbose=False):
+    def lookup_files(self, modifier, verbose=False, start_after=None):
         """
         Look up latest S3 files and return as list of (path, datetime_obj) tuples.
         
@@ -40,6 +40,7 @@ class FileFinder:
             modifier (str | list[str]): Specify which part(s) of the bucket to search (e.g., folder prefix).
                                       Can be a single string or a list of strings to search sequentially.
             verbose (bool): Whether to print debug information
+            start_after (str): optional S3 StartAfter key for pagination
         
         Uses S3 client and instance variables to find and filter files.
         Returns files sorted by timestamp in descending order (latest first).
@@ -60,9 +61,14 @@ class FileFinder:
             for prefix in modifiers:
                 # Set up prefix filter for bucket search
                 search_prefix = prefix if prefix else ""
+                
+                # Custom pagination config
+                kwargs = {"Bucket": self.bucket, "Prefix": search_prefix}
+                if start_after:
+                    kwargs["StartAfter"] = start_after
 
                 # Iterate through all pages of results
-                for page in self.paginator.paginate(Bucket=self.bucket, Prefix=search_prefix):
+                for page in self.paginator.paginate(**kwargs):
                     if 'Contents' in page:
                         for obj in page['Contents']:
                             s3_path = obj['Key']

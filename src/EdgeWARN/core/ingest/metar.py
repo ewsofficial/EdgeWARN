@@ -17,6 +17,48 @@ io = IOManager("[METAR Ingest]")
 _station_cache = None
 STATION_DB_URL = "https://aviationweather.gov/data/cache/stations.cache.json"
 
+async def ensure_station_database():
+    """
+    Ensure station database is loaded/cached asynchronously.
+    """
+    global _station_cache
+    if _station_cache is not None:
+        return
+
+    cache_file = fs.DATA_DIR / "stations_cache.json" if hasattr(fs, 'DATA_DIR') else Path("stations_cache.json")
+    if cache_file.exists():
+        # Will be loaded by sync function when needed
+        return
+
+    # Download async
+    io.write_info("Downloading station database from Aviation Weather (Async)...")
+    try:
+         async with aiohttp.ClientSession() as session:
+            async with session.get(STATION_DB_URL, timeout=60) as response:
+                response.raise_for_status()
+                stations = await response.json()
+                
+                # Process
+                parsed_cache = {}
+                for station in stations:
+                    icao = station.get('icaoId') or station.get('stationId')
+                    lat = station.get('lat')
+                    lon = station.get('lon')
+                    
+                    if icao and lat is not None and lon is not None:
+                        parsed_cache[icao] = [round(float(lat), 4), round(float(lon), 4)]
+                
+                # Save to cache file
+                cache_file.parent.mkdir(parents=True, exist_ok=True)
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, _write_json_sync, cache_file, parsed_cache)
+                
+                _station_cache = parsed_cache
+                io.write_info(f"Async loaded {len(_station_cache)} stations")
+
+    except Exception as e:
+        io.write_error(f"Async station download failed: {e}")
+
 def _load_station_database():
     """
     Load station database from cache file or download from Aviation Weather API.
@@ -208,7 +250,7 @@ def fetch_metar_cycle(dt):
 
     return None
 
-async def fetch_metar_cycle_async(dt):
+async def fetch_metar_cycle_async(dt, session=None):
     """
     Async version of fetch_metar_cycle.
     """
@@ -217,7 +259,7 @@ async def fetch_metar_cycle_async(dt):
     io.write_info(f"Fetching METAR data (async) from {url}")
 
     try:
-        async with aiohttp.ClientSession() as session:
+        if session:
             async with session.get(url, timeout=30) as response:
                 if response.status == 404:
                     io.write_warning(f"METAR file not found for {hour_str}Z (404)")
@@ -225,6 +267,17 @@ async def fetch_metar_cycle_async(dt):
                 response.raise_for_status()
                 content = await response.text(encoding='utf-8', errors='ignore')
                 return content
+        else:
+             async with aiohttp.ClientSession() as new_session:
+                async with new_session.get(url, timeout=30) as response:
+                    # ... duplication or call recursive? NO, simple logic
+                    if response.status == 404:
+                        io.write_warning(f"METAR file not found for {hour_str}Z (404)")
+                        return None
+                    response.raise_for_status()
+                    content = await response.text(encoding='utf-8', errors='ignore')
+                    return content
+
     except Exception as e:
         io.write_error(f"Failed to fetch {url} (async): {e}")
     
@@ -321,6 +374,38 @@ def ingest_metars():
         else:
             io.write_warning(f"Skipping {target_time.strftime('%H')}Z due to fetch failure.")
 
+async def save_metar_data_async(data, dt):
+    """
+    Async version of save_metar_data.
+    Uses thread executor for file I/O and async wrapper for cleanup.
+    """
+    if not data:
+        io.write_warning("No METAR data to save.")
+        return
+
+    if not fs.METAR_DIR.exists():
+        io.write_info(f"Creating METAR directory: {fs.METAR_DIR}")
+        fs.METAR_DIR.mkdir(parents=True, exist_ok=True)
+
+    filename = f"METAR_{dt.strftime('%Y%m%d-%H')}z.json"
+    filepath = fs.METAR_DIR / filename
+
+    io.write_info(f"Saving {len(data)} METAR records to {filepath}")
+
+    try:
+        # Offload JSON dump to thread
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _write_json_sync, filepath, data)
+    except Exception as e:
+        io.write_error(f"Failed to save METAR data to {filepath}: {e}")
+    
+    # Enforce 10-file limit (async)
+    await fs.async_clean_old_files(fs.METAR_DIR, max_age_minutes=60)
+
+def _write_json_sync(filepath, data):
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=2)
+
 async def ingest_metars_async():
     """
     Async entry point for METAR ingestion.
@@ -329,29 +414,30 @@ async def ingest_metars_async():
     # Ensure paths are defined
     fs.initialize_filesystem()
 
+    # Ensure station DB is loaded async
+    await ensure_station_database()
+
     now = datetime.now(timezone.utc)
     
-    tasks = []
-
-    async def _process_single_hour(i):
-        target_time = now - timedelta(hours=i)
-        io.write_info(f"Processing METARs (async) for {target_time.strftime('%Y-%m-%d %H:00')} UTC")
-        
-        content = await fetch_metar_cycle_async(target_time)
-        if content:
-            # CPU-bound parsing can run in executor if needed, but for now we do it in loop 
-            # as it's string splitting and regex, usually fast enough for 3 files.
-            # If blocking becomes an issue, wrap in loop.run_in_executor
-            parsed_data = process_content(content)
-            save_metar_data(parsed_data, target_time)
-        else:
-             io.write_warning(f"Skipping {target_time.strftime('%H')}Z due to fetch failure.")
-
     # Create tasks for current hour and previous 2 hours
-    for i in range(3):
-        tasks.append(_process_single_hour(i))
+    async with aiohttp.ClientSession() as session:
+        async def _process_single_hour(i):
+            target_time = now - timedelta(hours=i)
+            io.write_info(f"Processing METARs (async) for {target_time.strftime('%Y-%m-%d %H:00')} UTC")
+            
+            content = await fetch_metar_cycle_async(target_time, session=session)
+            if content:
+                # CPU-bound parsing
+                loop = asyncio.get_running_loop()
+                parsed_data = await loop.run_in_executor(None, process_content, content)
+                await save_metar_data_async(parsed_data, target_time)
+            else:
+                 io.write_warning(f"Skipping {target_time.strftime('%H')}Z due to fetch failure.")
     
-    await asyncio.gather(*tasks)
+        for i in range(3):
+            tasks.append(_process_single_hour(i))
+        
+        await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
     ingest_metars()

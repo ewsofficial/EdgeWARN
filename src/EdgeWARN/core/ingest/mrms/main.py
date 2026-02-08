@@ -31,14 +31,25 @@ async def download_all_files_async(dt, max_entries=10, remove_old_files=True):
     folders = [outdir for _, _, outdir in mrms_modifiers]
     # Add GOES folders
     folders.extend([outdir for _, outdir in goes_modifiers_list])
+    cleanup_tasks = []
     if remove_old_files:
+        io_manager.write_debug(f"Starting async cleanup for {len(folders)} directories...")
         for f in folders:
-            fs.clean_old_files(f, max_age_minutes=60)
+            cleanup_tasks.append(fs.async_clean_old_files(f, max_age_minutes=60))
             
-    await asyncio.gather(
+    # Run cleanup and downloads concurrently
+    # Note: We technically could await cleanup_tasks separately if we wanted, 
+    # but gathering them with downloads is fine as long as clean_old_files is robust.
+    # However, usually we want to clear space *before* downloading if disk is full. 
+    # But here it's time-based expiry. Let's run them in parallel with downloads for max speed.
+    
+    all_tasks = [
         download_all_files_async_internal(dt, max_entries),
         download_all_goes_files_async(dt, max_entries)
-    )
+    ]
+    all_tasks.extend(cleanup_tasks)
+    
+    await asyncio.gather(*all_tasks)
 
 def download_all_files(dt, max_entries=10, remove_old_files=True):
     """

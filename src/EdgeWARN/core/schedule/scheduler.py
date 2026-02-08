@@ -18,6 +18,11 @@ class MRMSUpdateChecker:
     def __init__(self, max_entries=10, verbose=False):
         self.max_entries = max_entries
         self.verbose = verbose
+        # Shared S3 client for all checks
+        import boto3
+        from botocore import UNSIGNED
+        from botocore.client import Config
+        self.s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
 
     def has_update(self, modifier_tuple, reference_dt=None):
         """Check if a specific MRMS modifier has a new file."""
@@ -25,7 +30,8 @@ class MRMSUpdateChecker:
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
 
-        finder = FileFinder(reference_dt, bucket, self.max_entries, io_manager)
+        # Pass shared client
+        finder = FileFinder(reference_dt, bucket, self.max_entries, io_manager, client=self.s3_client)
         try:
             bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False)
@@ -62,13 +68,40 @@ class MRMSUpdateChecker:
             print(f"[MRMSUpdateChecker] Error checking {modifier}: {e}")
             return False
 
-    def _get_modifier_times(self, modifier_tuple, reference_dt):
+    from util.io import PerformanceTimer
+    import uuid
+
+    def _get_modifier_times(self, modifier_tuple, reference_dt, trace_id=None):
         """Helper to fetch timestamps for a single modifier."""
         region, modifier, _ = modifier_tuple
-        finder = FileFinder(reference_dt, bucket, 20, io_manager)
+        # Pass shared client
+        finder = FileFinder(reference_dt, bucket, 20, io_manager, client=self.s3_client)
         bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
         try:
-            files_with_timestamps = finder.lookup_files(bucket_path, verbose=False)
+            # We can't use PerformanceTimer here easily because it's synchronous + threaded map
+            # But we can log manually if verbose
+            t0 = time.time()
+            
+            # Optimization: StartAfter to skip previous history (safe margin: 1-2 hours)
+            # Only reliable if we know the filename pattern
+            start_after = None
+            if modifier:
+                 # Standard MRMS: MRMS_{modifier}_{YYYYMMDD}-{HH}
+                 # Skip to 2 hours ago to be safe across day/hour boundaries
+                 from datetime import timedelta
+                 sa_dt = reference_dt - timedelta(hours=2)
+                 start_after = f"{bucket_path}MRMS_{modifier}_{sa_dt.strftime('%Y%m%d-%H')}"
+            else:
+                 # ProbSevere: MRMS_PROBSEVERE_{YYYYMMDD}_{HH}
+                 from datetime import timedelta
+                 sa_dt = reference_dt - timedelta(hours=2)
+                 start_after = f"{bucket_path}MRMS_PROBSEVERE_{sa_dt.strftime('%Y%m%d_%H')}"
+
+            files_with_timestamps = finder.lookup_files(bucket_path, verbose=False, start_after=start_after)
+            dt = (time.time() - t0) * 1000
+            if dt > 2000: # Threshold logging
+                print(f"[PERF] [{trace_id}] Scheduler check for {modifier}: {dt:.2f}ms")
+                
         except Exception as e:
             if self.verbose:
                  print(f"[{modifier}] Error looking up files: {e}")
@@ -111,18 +144,22 @@ class MRMSUpdateChecker:
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
 
-
+        trace_id = f"SCHED-{uuid.uuid4().hex[:8]}"
 
         modifier_times = []
 
         # Parallelize checks using ThreadPoolExecutor
+        t0 = time.time()
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Map returns an iterator in the order of the inputs
-            results = executor.map(lambda m: self._get_modifier_times(m, reference_dt), modifiers)
+            results = executor.map(lambda m: self._get_modifier_times(m, reference_dt, trace_id), modifiers)
             
             for res in results:
                 if res:
                     modifier_times.append(res)
+        
+        duration = (time.time() - t0) * 1000
+        print(f"[PERF] [{trace_id}] Scheduler Check Total: {duration:.2f}ms")
 
         if not modifier_times:
             if self.verbose:
