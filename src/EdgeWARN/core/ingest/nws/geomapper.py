@@ -121,9 +121,40 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
     
     # Compute union and extract exterior
     if all_polygon_coords:
-        exterior = extract_exterior_polygon(all_polygon_coords)
+        # Optimization: NWS alerts often cover the same sets of zones.
+        # Cache the result of the union operation based on the sorted tuple of zone codes.
+        # We need to extract just the codes to form a cache key.
+        zone_codes_tuple = tuple(sorted(geocodes))
+        
+        exterior = _get_cached_union_exterior(zone_codes_tuple)
         if exterior:
             feature["Polygon"] = exterior
+            
+# Helper for caching union operations
+from functools import lru_cache
+
+@lru_cache(maxsize=1024)
+def _get_cached_union_exterior(zone_codes_tuple):
+    """
+    Cached helper to compute union of zones.
+    Args:
+        zone_codes_tuple: Sorted tuple of zone codes
+    Returns:
+        List of exterior coordinates
+    """
+    if not zone_codes_tuple:
+        return []
+
+    all_poly_coords = []
+    for code in zone_codes_tuple:
+        poly = ZoneLookup.get_polygon(code)
+        if poly:
+            all_poly_coords.extend(poly)
+    
+    if not all_poly_coords:
+        return []
+        
+    return extract_exterior_polygon(all_poly_coords)
     
     # Remove "geocode" if valid geometry exists
     has_geometry = False
