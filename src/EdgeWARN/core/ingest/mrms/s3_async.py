@@ -27,12 +27,18 @@ class AsyncFileFinder:
         self.s3 = s3_client  # Shared S3 client is injected for performance
         self.paginator = self.s3.get_paginator("list_objects_v2")
 
-    async def async_lookup_files(self, prefix):
+    async def async_lookup_files(self, prefix, start_after=None):
         """Async version of file lookup with non-blocking S3 operations"""
         try:
             # Normalize prefix to list
             prefixes = [prefix] if isinstance(prefix, str) else prefix
-
+            
+            # Normalize start_after to list (one per prefix, or one for all?)
+            # Simplified: If start_after is a single string, apply it to all (assuming prefixes are related or only 1)
+            # But "paginator" iterators are separate.
+            # If we have multiple prefixes, start_after likely only applies if it matches the prefix structure.
+            # In current usage (downloader.py), prefix is a single string.
+            
             top_files = []
 
             push = heapq.heappush
@@ -42,8 +48,13 @@ class AsyncFileFinder:
             for search_prefix in prefixes:
                 # Handle None/empty prefix
                 p = search_prefix if search_prefix else ""
+                
+                # Setup kwargs
+                kwargs = {"Bucket": self.bucket, "Prefix": p}
+                if start_after:
+                     kwargs["StartAfter"] = start_after
 
-                async for page in self.paginator.paginate(Bucket=self.bucket, Prefix=p):
+                async for page in self.paginator.paginate(**kwargs):
                     if "Contents" not in page:
                         continue
                     for obj in page["Contents"]:

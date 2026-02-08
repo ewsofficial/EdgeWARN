@@ -210,3 +210,14 @@ def clean_files_by_age(directory: Path, max_age_minutes=60):
 
     if files_deleted > 0:
         io_manager.write_debug(f"Deleted {files_deleted} old files in {directory}")
+
+import asyncio
+async def async_clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
+    """Async wrapper for clean_old_files using threads."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, clean_old_files, directory, max_age_minutes, max_files)
+
+async def async_clean_files_by_age(directory: Path, max_age_minutes=60):
+    """Async wrapper for clean_files_by_age using threads."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, clean_files_by_age, directory, max_age_minutes)
