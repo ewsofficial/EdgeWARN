@@ -4,6 +4,7 @@ from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
 import util.file as fs
 import gc
+from util.performance import tracker as perf_tracker
 
 
 def detect_cells(
@@ -30,7 +31,9 @@ def detect_cells(
     )
 
     # Use load_subset directly to avoid loading full metadata if possible/cleaner
+    perf_tracker.start("Detection - Load Radar")
     radar_ds = handler.load_subset()
+    perf_tracker.stop("Detection - Load Radar")
     
     if radar_ds is None:
         io_manager.write_error(f"Failed to load/subset radar data from {radar_path}")
@@ -38,13 +41,24 @@ def detect_cells(
             return [], None
         return []
 
+    perf_tracker.start("Detection - Load ProbSevere")
     ps_ds = handler.load_probsevere()
+    perf_tracker.stop("Detection - Load ProbSevere")
 
 
     mapper = GateMapper(radar_ds, ps_ds, io_manager, refl_threshold=40.0)
+    
+    perf_tracker.start("Detection - Map Gates")
     mapped_ds = mapper.map_gates_to_polygons()
+    perf_tracker.stop("Detection - Map Gates")
+    
+    perf_tracker.start("Detection - Expand Gates")
     expanded_ds = mapper.expand_gates(mapped_ds)
+    perf_tracker.stop("Detection - Expand Gates")
+
+    perf_tracker.start("Detection - BBox")
     bboxes = mapper.draw_bbox(expanded_ds, step=8)
+    perf_tracker.stop("Detection - BBox")
 
     # === Load PrecipType now, just before saving ===
     preciptype_ds = handler.load_preciptype()
@@ -61,7 +75,9 @@ def detect_cells(
     )
 
     # Pass physics grids to create_entry for scalar extraction
+    perf_tracker.start("Detection - Create Entry")
     entries = saver.create_entry()
+    perf_tracker.stop("Detection - Create Entry")
 
 
     if return_probsevere:

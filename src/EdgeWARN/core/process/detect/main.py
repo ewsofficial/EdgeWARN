@@ -8,6 +8,7 @@ from util.io import IOManager
 import util.file as fs
 import json as js
 from datetime import datetime
+from util.performance import tracker as perf_tracker
 
 io_manager = IOManager("[CellDetection]")
 
@@ -133,6 +134,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
 
     if not entries_old:
         io_manager.write_info("No valid previous storm cell data found, detecting from old scan ...")
+        perf_tracker.start("Detection - Old Scan Fallback")
         entries_old, ps_old_data = _detect_with_optional_probsevere(
             radar_old,
             ps_old,
@@ -145,6 +147,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             # We don't load physics for the *old* scan fallback to save time/ram
             # as these are just for tracking continuity
         )
+        perf_tracker.stop("Detection - Old Scan Fallback")
 
 
     # === If single-frame mode, just update/save ===
@@ -174,6 +177,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
 
     # === Dual-frame mode ===
     io_manager.write_debug("Detecting cells in new scan ...")
+    perf_tracker.start("Detection - New Scan")
     entries_new, ps_new_data = _detect_with_optional_probsevere(
         radar_new,
         ps_new,
@@ -184,10 +188,12 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         lon_max,
         need_probsevere=True,
     )
+    perf_tracker.stop("Detection - New Scan")
     io_manager.write_debug(f"Detected {len(entries_new)} cells in new scan")
 
     io_manager.write_info("Matching and updating cell data")
     if ps_old_data is None:
+        perf_tracker.start("Detection - Load ProbSevere Old")
         ps_old_data = DetectionDataHandler(
             radar_old,
             ps_old,
@@ -198,13 +204,20 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             lon_min,
             lon_max,
         ).load_probsevere()
+        perf_tracker.stop("Detection - Load ProbSevere Old")
 
+    perf_tracker.start("Detection - Tracking")
     tracker = StormCellTracker(ps_old_data, ps_new_data, io_manager)
     saver = CellDataSaver(None, radar_new, None, None, ps_new_data, None)
     # Pass timestamp to tracker
     entries = tracker.update_cells(entries_old, entries_new, timestamp=json_ts)
+    perf_tracker.stop("Detection - Tracking")
+    
+    perf_tracker.start("Detection - Vector Calc")
     entries = StormVectorCalculator.calculate_vectors(entries)
+    perf_tracker.stop("Detection - Vector Calc")
 
+    perf_tracker.start("Detection - Save")
     output_data = saver.create_json_structure(json_ts, entries)
     
     stormcell_dir = fs.STORMCELL_DIR
@@ -213,6 +226,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
 
     with open(output_file, 'w') as f:
         js.dump(output_data, f, indent=2, default=str)
+    perf_tracker.stop("Detection - Save")
         
     io_manager.write_info(f"Saved detection results to {output_file}")
     

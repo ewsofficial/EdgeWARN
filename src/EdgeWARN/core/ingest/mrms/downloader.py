@@ -12,6 +12,7 @@ from botocore import UNSIGNED
 from botocore.client import Config
 
 from util.io import IOManager, PerformanceTimer
+from util.performance import tracker as perf_tracker
 import uuid
 
 io_manager = IOManager("[Ingest]")
@@ -52,6 +53,7 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
     finder = AsyncFileFinder(dt, bucket, max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, bucket, io_manager, s3_client=s3_client)
 
+    perf_tracker.start(f"Ingest - MRMS - {modifier_name}")
     try:
         bucket_path = parse_mrms_bucket_path(dt, region, modifier)
         
@@ -98,7 +100,9 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
         
         # Async file lookup (S3)
         with PerformanceTimer(io_manager, f"Lookup_{modifier_name}", trace_id, threshold_ms=100):
+            perf_tracker.start(f"Ingest - MRMS - {modifier_name} - Lookup")
             file_list = await finder.async_lookup_files(bucket_path, start_after=start_after)
+            perf_tracker.stop(f"Ingest - MRMS - {modifier_name} - Lookup")
 
         if not file_list:
             io_manager.write_warning(f"[{trace_id}] No files found in S3 for {bucket_path} at {dt}. Attempting HTTPS fallback...")
@@ -110,6 +114,7 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
                 
                 if not https_file_list:
                     io_manager.write_error(f"[{trace_id}] HTTPS Fallback failed: No files found for {modifier} at {dt}")
+                    perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
                     return
 
                 https_downloader = HttpsFileDownloader(dt, io_manager)
@@ -125,12 +130,15 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
             except Exception as e:
                 io_manager.write_error(f"[{trace_id}] HTTPS Fallback Exception: {e}")
             
+            perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
             return
         
         # Download most recent file asynchronously (S3)
         downloaded = None
         with PerformanceTimer(io_manager, f"Download_{modifier_name}", trace_id, threshold_ms=100):
+            perf_tracker.start(f"Ingest - MRMS - {modifier_name} - Download")
             downloaded = await downloader.async_download_matching(file_list, outdir)
+            perf_tracker.stop(f"Ingest - MRMS - {modifier_name} - Download")
             
         if downloaded:
             if downloaded.suffix == ".gz":
@@ -138,9 +146,12 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
                     await downloader.async_decompress_file(downloaded)
         else:
             io_manager.write_error(f"[{trace_id}] Failed to download {bucket_path} file")
+        
+        perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
     
     except Exception as e:
         io_manager.write_error(f"[{trace_id}] Failed to process {bucket_path} - {e}")
+        perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
 
 def download_all_files_sync_fallback(dt, max_entries):
     """Sync fallback for downloading all MRMS files"""
@@ -320,6 +331,7 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
     finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
     
+    perf_tracker.start(f"Ingest - GOES - {product}")
     try:
         # Generate list of paths to check
         bucket_paths = []
@@ -330,16 +342,21 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
         
         # Lookup files across all paths (AsyncFileFinder handles the loop and max_entries check)
         with PerformanceTimer(io_manager, f"Lookup_GOES_{product}", trace_id, threshold_ms=100):
+            perf_tracker.start(f"Ingest - GOES - {product} - Lookup")
             all_files = await finder.async_lookup_files(bucket_paths)
+            perf_tracker.stop(f"Ingest - GOES - {product} - Lookup")
         
         if not all_files:
             io_manager.write_warning(f"[{trace_id}] No files found for GOES product {product} at {dt}")
+            perf_tracker.stop(f"Ingest - GOES - {product}")
             return None
         
         
         # Download all matching files
         with PerformanceTimer(io_manager, f"Download_GOES_{product}", trace_id, threshold_ms=100):
+            perf_tracker.start(f"Ingest - GOES - {product} - Download")
             downloaded_files = await downloader.async_download_all_matching(all_files, outdir)
+            perf_tracker.stop(f"Ingest - GOES - {product} - Download")
         
         if downloaded_files:
             processed_files = []
@@ -363,8 +380,12 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
                 
                 # merge_glm_files is synchronous, so we offload it to a thread pool
                 loop = asyncio.get_running_loop()
+                # merge_glm_files is synchronous, so we offload it to a thread pool
+                loop = asyncio.get_running_loop()
                 with PerformanceTimer(io_manager, f"Merge_GLM", trace_id):
+                    perf_tracker.start(f"Ingest - GOES - {product} - Merge")
                     merged_ds = await loop.run_in_executor(None, merge_glm_files, processed_files, io_manager)
+                    perf_tracker.stop(f"Ingest - GOES - {product} - Merge")
                 
                 if merged_ds:
                     # Find the newest timestamp among the files
@@ -393,23 +414,31 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
                                 io_manager.write_warning(f"[{trace_id}] Failed to delete {f}: {del_e}")
                         io_manager.write_debug(f"[{trace_id}] Deleted {len(processed_files)} individual GLM files")
                         
+                        perf_tracker.stop(f"Ingest - GOES - {product}")
                         return [merged_path]
                     except Exception as e:
                         io_manager.write_error(f"[{trace_id}] Failed to save merged GLM file: {e}")
                         merged_ds.close()
+                        perf_tracker.stop(f"Ingest - GOES - {product}")
                         return processed_files
                 else:
                     io_manager.write_error(f"[{trace_id}] GLM merge failed, returning individual files")
+                    perf_tracker.stop(f"Ingest - GOES - {product}")
                     return processed_files
 
+            perf_tracker.stop(f"Ingest - GOES - {product}")
             return processed_files
         else:
             io_manager.write_error(f"[{trace_id}] Failed to download GOES {product} file")
+            perf_tracker.stop(f"Ingest - GOES - {product}")
             return []
     
     except Exception as e:
         io_manager.write_error(f"[{trace_id}] Failed to process GOES {product} - {e}")
+        perf_tracker.stop(f"Ingest - GOES - {product}")
         return []
+
+    perf_tracker.stop(f"Ingest - GOES - {product}")
 
 
 def download_all_goes_files(dt, max_entries=10, hour_lookback=3):

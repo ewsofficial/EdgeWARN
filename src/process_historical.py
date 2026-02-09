@@ -16,6 +16,7 @@ import EdgeWARN.core.process.integrate.main as integration
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
 from EdgeWARN.core.ingest.mrms.config import get_check_modifiers
 from util.io import TimestampedOutput, IOManager
+from util.performance import tracker as perf_tracker
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
@@ -33,13 +34,18 @@ def get_utc_time(time_str):
         return dt.astimezone(timezone.utc)
     return dt.replace(tzinfo=timezone.utc)
 
-def pipeline(dt, lat_limits, lon_limits, json_output):
+def pipeline(dt, lat_limits, lon_limits, json_output, profile=False):
     """Run the full ingestion → detection → integration pipeline once (same as run.py)."""
     
     try:
+        perf_tracker.reset()
+        perf_tracker.start("Total Pipeline")
+
         io_manager.write_info(f"Starting Data Ingestion for timestamp {dt}")
+        perf_tracker.start("Ingestion")
         ingest_main.download_all_files(dt, remove_old_files=False)
         download_rap(dt)
+        perf_tracker.stop("Ingestion")
         
         io_manager.write_info("Starting Storm Cell Detection")
         try:
@@ -93,12 +99,21 @@ def pipeline(dt, lat_limits, lon_limits, json_output):
             pt_old = pt_files[-1] if pt_files else None
             pt_new = None
         
+        perf_tracker.start("Detection")
         generated_file = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, json_output)
+        perf_tracker.stop("Detection")
         
         io_manager.write_info("Starting Integration")
+        perf_tracker.start("Integration")
         integration.main(generated_file, remove_old_cells=False)
+        perf_tracker.stop("Integration")
         
+        perf_tracker.stop("Total Pipeline")
         io_manager.write_info("Pipeline completed successfully")
+        
+        if profile:
+            perf_tracker.print_summary()
+
         return generated_file
         
     except Exception as e:
@@ -115,7 +130,8 @@ def main():
     parser.add_argument("--lon", nargs=2, type=float, default=[-130, -60], help="Longitude limits (min max)")
     parser.add_argument("--output", type=str, default="stormcell_test.json", help="Output JSON file")
     parser.add_argument("--base_dir", type=str, default=None, help="Custom base directory for input data")
-    
+    parser.add_argument("--profile", action="store_true", help="Enable performance profiling")
+
     args = parser.parse_args()
 
     # Initialize custom filesystem if provided
@@ -166,7 +182,7 @@ def main():
         
         # Run the pipeline
         try:
-            pipeline(latest_common, lat_limits, lon_limits, json_output)
+            pipeline(latest_common, lat_limits, lon_limits, json_output, profile=args.profile)
             last_processed_timestamp = latest_common
             
             # Verify output

@@ -23,6 +23,7 @@ from EdgeWARN.core.ingest.mrms.config import get_check_modifiers
 import EdgeWARN.ui.monitor_app as monitor_app
 from util.io import TimestampedOutput, IOManager, QueueWriter
 from EdgeWARN.core.api_integration.index_manager import APIIndexManager
+from util.performance import tracker as perf_tracker
 
 # Remove aiodns - Some users report issues with DNS resolution with it
 sys.modules.pop("aiodns", None)
@@ -31,6 +32,7 @@ sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
 
 io_manager = IOManager("[Main]")
+io_manager.add_arg("--profile", action="store_true", help="Enable performance profiling")
 args = io_manager.get_args()
 
 lat_limits = tuple(args.lat_limits)
@@ -47,7 +49,7 @@ try:
 except Exception as e:
     io_manager.write_error(f"Failed to initialize API indexes: {e}")
 
-def pipeline(log_queue, dt):
+def pipeline(log_queue, dt, profile=False):
     """Run the full ingestion → detection → integration pipeline once, logging to queue."""
     # Redirect stdout/stderr to the queue for this process
     sys.stdout = QueueWriter(log_queue)
@@ -55,6 +57,9 @@ def pipeline(log_queue, dt):
 
     def log(msg):
         log_queue.put(f"{msg}")
+
+    perf_tracker.reset()
+    perf_tracker.start("Total Pipeline")
 
     async def run_async_ingest():
         log(f"INFO: Starting Async Data Ingestion for timestamp {dt}")
@@ -93,13 +98,17 @@ def pipeline(log_queue, dt):
 
     # 1. Ingestion (Async with Granular Fallback)
     try:
+        perf_tracker.start("Ingestion")
         asyncio.run(run_async_ingest())
+        perf_tracker.stop("Ingestion")
     except Exception as e:
         log(f"ERROR: Global async ingestion wrapper failed: {e}")
 
-    # 2. Detection (Sync)
+        # 2. Detection (Sync)
     try:
         log("INFO: Starting Storm Cell Detection")
+        perf_tracker.start("Detection")
+        
         try:
             filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
             ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
@@ -124,10 +133,29 @@ def pipeline(log_queue, dt):
                 return
         
         generated_file = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
+        perf_tracker.stop("Detection")
         
         # 3. Integration (Sync)
+        perf_tracker.start("Integration")
         integration.main(generated_file)
+        perf_tracker.stop("Integration")
+        
+        perf_tracker.stop("Total Pipeline")
         log("Pipeline completed successfully")
+        
+        # Queue the performance summary if requested
+        if profile:
+            import io
+            summary_buffer = io.StringIO()
+            
+            summary_buffer.write("\n" + "="*50 + "\n")
+            summary_buffer.write(f"{'Component':<35} | {'Time (s)':<10}\n")
+            summary_buffer.write("-" * 50 + "\n")
+            for name, duration in perf_tracker.get_timings().items():
+                summary_buffer.write(f"{name:<35} | {duration:.4f}\n")
+            summary_buffer.write("="*50 + "\n")
+            
+            log(summary_buffer.getvalue())
         
     except Exception as e:
         log(f"Error in pipeline: {e}")
@@ -219,7 +247,7 @@ def main(ui_process=None):
                 log_queue = multiprocessing.Queue()
 
                 # Spawn the pipeline process
-                proc = multiprocessing.Process(target=pipeline, args=(log_queue, dt))
+                proc = multiprocessing.Process(target=pipeline, args=(log_queue, dt, args.profile))
                 proc.start()
                 print(f"Spawned pipeline process PID={proc.pid} for {dt}")
 
