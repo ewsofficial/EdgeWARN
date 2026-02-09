@@ -197,7 +197,8 @@ def main(ui_process=None):
 
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
-            latest_common = checker.latest_common_minute_1h(check_modifiers)
+            # Pass last_processed to allow StartAfter optimization
+            latest_common = checker.latest_common_minute_1h(check_modifiers, last_processed=last_processed)
 
             # Strict check: Only accept if new AND strictly newer than last_processed
             is_new_s3 = False
