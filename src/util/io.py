@@ -63,6 +63,11 @@ class IOManager:
             default=None,
             help="Custom base directory for input/output data"
         )
+        parser.add_argument(
+            "--profile",
+            action="store_true",
+            help="Enable performance profiling"
+        )
 
         args = parser.parse_args()
 

@@ -18,6 +18,9 @@ def detect_cells(
     lon_max,
     *,
     return_probsevere=False,
+    radar_obj=None,
+    ps_obj=None,
+    preciptype_obj=None,
 ):
     handler = DetectionDataHandler(
         radar_path,
@@ -28,6 +31,9 @@ def detect_cells(
         lat_max,
         lon_min,
         lon_max,
+        radar_obj=radar_obj,
+        ps_obj=ps_obj,
+        preciptype_obj=preciptype_obj,
     )
 
     # Use load_subset directly to avoid loading full metadata if possible/cleaner

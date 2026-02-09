@@ -34,7 +34,7 @@ def get_utc_time(time_str):
         return dt.astimezone(timezone.utc)
     return dt.replace(tzinfo=timezone.utc)
 
-def pipeline(dt, lat_limits, lon_limits, json_output, profile=False):
+def pipeline(dt, lat_limits, lon_limits, json_output, profile=False, cached_objs=(None, None, None)):
     """Run the full ingestion → detection → integration pipeline once (same as run.py)."""
     
     try:
@@ -49,76 +49,78 @@ def pipeline(dt, lat_limits, lon_limits, json_output, profile=False):
         
         io_manager.write_info("Starting Storm Cell Detection")
         try:
-            # Safely get latest files
-            comp_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
-            if not comp_files:
-                raise RuntimeError(f"No composite reflectivity files found in {fs.MRMS_COMPOSITE_DIR}")
-            filepath_old, filepath_new = comp_files
+            # Locate files for this timestamp
+            def find_file(directory, target_dt):
+                if not Path(directory).exists(): 
+                    io_manager.write_debug(f"Dir not found: {directory}")
+                    return None
+                
+                # Try hyphen separator (MRMS GRIB2)
+                pattern1 = f"*{target_dt.strftime('%Y%m%d-%H%M')}*"
+                files = sorted(Path(directory).glob(pattern1))
+                
+                # If not found, try underscore (ProbSevere)
+                if not files:
+                    pattern2 = f"*{target_dt.strftime('%Y%m%d_%H%M')}*"
+                    files = sorted(Path(directory).glob(pattern2))
+                
+                if not files:
+                    io_manager.write_debug(f"No match for {pattern1} or underscore version in {directory}")
+                else:
+                    io_manager.write_debug(f"Found {files[-1]}")
+                return str(files[-1]) if files else None
+
+            radar_new = find_file(fs.MRMS_COMPOSITE_DIR, dt)
+            ps_new = find_file(fs.MRMS_PROBSEVERE_DIR, dt)
+            pt_new = find_file(fs.MRMS_PRECIPTYP_DIR, dt)
             
-            # For other files, we can use None if missing (single scan mode logic handles None)
-            # But latest_files returns None if directory is missing, so we must check.
+            # Old files (dt - 2 mins)
+            dt_old = dt - timedelta(minutes=2)
+            radar_old = find_file(fs.MRMS_COMPOSITE_DIR, dt_old)
+            ps_old = find_file(fs.MRMS_PROBSEVERE_DIR, dt_old)
+            pt_old = find_file(fs.MRMS_PRECIPTYP_DIR, dt_old)
             
-            ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
-            if ps_files:
-                ps_old, ps_new = ps_files
+            perf_tracker.start("Detection")
+            
+            # Unpack cached objects for the "Old" scan
+            rad_old_obj, ps_old_obj, pt_old_obj = cached_objs
+            
+            generated_file, new_objs = detect.main(
+                radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, 
+                lat_limits, lon_limits, json_output,
+                radar_old_obj=rad_old_obj,
+                ps_old_obj=ps_old_obj,
+                pt_old_obj=pt_old_obj
+            )
+            perf_tracker.stop("Detection")
+            
+            perf_tracker.stop("Detection")
+            
+            if generated_file:
+                io_manager.write_info("Starting Integration")
+                perf_tracker.start("Integration")
+                integration.main(generated_file, remove_old_cells=False)
+                perf_tracker.stop("Integration")
             else:
-                ps_old, ps_new = None, None
-
-            pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
-            if pt_files:
-                pt_old, pt_new = pt_files
-            else:
-                pt_old, pt_new = None, None
+                io_manager.write_warning("Detection failed or produced no output, skipping integration")
             
-            # If any are None where we need pairs, we might trigger single-scan fallback below implicitly 
-            # or we should just raise RuntimeError to force the except block.
-            # Actually, standard behavior is: if latest_files fails (not enough files), it raises RuntimeError.
-            # But if directory doesn't exist, it returns None.
-            # So we manually raise RuntimeError if None to trigger the fallback logic cleanly.
-            if not ps_files or not pt_files:
-                 raise RuntimeError("Missing pairs for tracking")
-
-        except (RuntimeError, ValueError):
-            # Not enough files - single scan mode
-            io_manager.write_info("Not enough files for tracking, using single-scan mode")
+            perf_tracker.stop("Total Pipeline")
+            io_manager.write_info("Pipeline completed successfully")
             
-            # Handle Composite
-            comp_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)
-            filepath_old = comp_files[-1] if comp_files else None
-            filepath_new = None
-            if not filepath_old:
-                 raise RuntimeError(f"Cannot run detection: No composite reflectivity files in {fs.MRMS_COMPOSITE_DIR}")
+            if profile:
+                perf_tracker.print_summary()
 
-            # Handle ProbSevere
-            ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
-            ps_old = ps_files[-1] if ps_files else None
-            ps_new = None
-            
-            # Handle PrecipType
-            pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)
-            pt_old = pt_files[-1] if pt_files else None
-            pt_new = None
-        
-        perf_tracker.start("Detection")
-        generated_file = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, json_output)
-        perf_tracker.stop("Detection")
-        
-        io_manager.write_info("Starting Integration")
-        perf_tracker.start("Integration")
-        integration.main(generated_file, remove_old_cells=False)
-        perf_tracker.stop("Integration")
-        
-        perf_tracker.stop("Total Pipeline")
-        io_manager.write_info("Pipeline completed successfully")
-        
-        if profile:
-            perf_tracker.print_summary()
+            return generated_file, new_objs
 
-        return generated_file
-        
+        except Exception as e:
+            io_manager.write_error(f"Error in pipeline step: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, (None, None, None)
+
     except Exception as e:
-        io_manager.write_error(f"Error in pipeline: {e}")
-        raise
+         io_manager.write_error(f"Pipeline failed: {e}")
+         return None, (None, None, None)
 
 def main():
     """Historical scheduler: iterate through time range and process each available timestamp."""
@@ -157,6 +159,8 @@ def main():
     
     io_manager.write_info(f"Starting historical processing from {start_time} to {end_time}")
     
+    cached_objs = (None, None, None) # Initialize cache
+
     while current_time <= end_time:
         io_manager.write_info(f"\n{'='*60}")
         io_manager.write_info(f"Checking for data near: {current_time.isoformat()}")
@@ -170,6 +174,7 @@ def main():
         if latest_common is None:
             io_manager.write_warning(f"No common timestamp found near {current_time}")
             current_time += timedelta(minutes=1)
+            cached_objs = (None, None, None) # Reset cache on gap
             continue
         
         # Check if this is the same timestamp we already processed
@@ -182,7 +187,17 @@ def main():
         
         # Run the pipeline
         try:
-            pipeline(latest_common, lat_limits, lon_limits, json_output, profile=args.profile)
+            # Reset cache if time gap is too large (> 5 mins) to ensure we don't use stale data
+            if last_processed_timestamp and (latest_common - last_processed_timestamp).total_seconds() > 300:
+                io_manager.write_info("Time gap detected, resetting detection cache.")
+                cached_objs = (None, None, None)
+
+            _, new_objs = pipeline(latest_common, lat_limits, lon_limits, json_output, profile=args.profile, cached_objs=cached_objs)
+            
+            # Update cache for next iteration if valid
+            if new_objs and new_objs[0] is not None:
+                cached_objs = new_objs
+            
             last_processed_timestamp = latest_common
             
             # Verify output
@@ -195,6 +210,7 @@ def main():
             io_manager.write_error(f"Pipeline failed for {latest_common}: {e}")
             # Continue processing other timestamps even if this one failed
             last_processed_timestamp = latest_common
+            cached_objs = (None, None, None) # Reset on error
         
         # Increment search time by 1 minute
         current_time += timedelta(minutes=1)

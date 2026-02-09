@@ -17,6 +17,9 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
     Integrate RAP data into storm cells.
     Uses single cfgrib.open_datasets call for efficiency.
     """
+    if not storm_cells:
+        return storm_cells
+
     if not rap_file_path:
         io_manager.write_warning("No RAP file path provided")
         return storm_cells
