@@ -32,7 +32,6 @@ sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
 
 io_manager = IOManager("[Main]")
-io_manager.add_arg("--profile", action="store_true", help="Enable performance profiling")
 args = io_manager.get_args()
 
 lat_limits = tuple(args.lat_limits)

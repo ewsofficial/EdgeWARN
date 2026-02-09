@@ -22,6 +22,9 @@ def _detect_with_optional_probsevere(
     lon_min,
     lon_max,
     need_probsevere,
+    radar_obj=None,
+    ps_obj=None,
+    pt_obj=None,
 ):
     if need_probsevere:
         return detect_cells(
@@ -34,6 +37,9 @@ def _detect_with_optional_probsevere(
             lon_min,
             lon_max,
             return_probsevere=True,
+            radar_obj=radar_obj,
+            ps_obj=ps_obj,
+            preciptype_obj=pt_obj,
         )
 
     return detect_cells(
@@ -45,10 +51,14 @@ def _detect_with_optional_probsevere(
         lat_max,
         lon_min,
         lon_max,
+        radar_obj=radar_obj,
+        ps_obj=ps_obj,
+        preciptype_obj=pt_obj,
     ), None
 
 
-def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple, lon_bounds: tuple, json_output):
+def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple, lon_bounds: tuple, json_output,
+         radar_old_obj=None, ps_old_obj=None, pt_old_obj=None):
     fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=120)
     lat_min, lat_max = lat_bounds
     lon_min, lon_max = lon_bounds
@@ -85,14 +95,13 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     current_radar = radar_old if single_frame else radar_new
     if current_radar is None:
         io_manager.write_warning("No valid radar input data found. Aborting detection.")
-        return None
+        return None, None # Modified return signature
+        
     ts_str = DetectionDataHandler.find_timestamp(current_radar)
     try:
         dt = datetime.fromisoformat(ts_str)
         # dt = dt.replace(second=0, microsecond=0) # Removed: Keep seconds
         final_ts = dt.strftime("%Y%m%d-%H%M%S") # Format for filename with seconds
-        json_ts = dt.isoformat() # Format for JSON content
-        
         json_ts = dt.isoformat() # Format for JSON content
         
     except ValueError:
@@ -135,6 +144,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     if not entries_old:
         io_manager.write_info("No valid previous storm cell data found, detecting from old scan ...")
         perf_tracker.start("Detection - Old Scan Fallback")
+        # Use cached objects if available for OLD scan
         entries_old, ps_old_data = _detect_with_optional_probsevere(
             radar_old,
             ps_old,
@@ -144,8 +154,9 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             lon_min,
             lon_max,
             need_probsevere=not single_frame,
-            # We don't load physics for the *old* scan fallback to save time/ram
-            # as these are just for tracking continuity
+            radar_obj=radar_old_obj, # Pass cached object
+            ps_obj=ps_old_obj,
+            pt_obj=pt_old_obj,
         )
         perf_tracker.stop("Detection - Old Scan Fallback")
 
@@ -173,11 +184,52 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             js.dump(output_data, f, indent=2, default=str)
         
         io_manager.write_info(f"Saved single-frame results to {output_file}")
-        return output_file
+        
+        # In single frame mode (fallback), we might want to return the loaded dataset too?
+        # But usually this is the startup or error case.
+        return output_file, None
 
     # === Dual-frame mode ===
     io_manager.write_debug("Detecting cells in new scan ...")
     perf_tracker.start("Detection - New Scan")
+    
+    # We need to capture the loaded datasets from this call to return them
+    # detect_cells returns entries, ps_ds.
+    # It does NOT return the radar_ds explicitly unless we change it.
+    # However, we can instantiate a handler here to get them, OR change detect_cells to return more.
+    # Changing detect_cells return signature impacts _detect_with_optional_probsevere.
+    
+    # Alternative: Instantiate Handler here manually for valid caching?
+    # Or just rely on the file system cache in IO?
+    # Our simple persistent strategy is to return the OBJECT.
+    
+    # Let's modify logic: We want to get the loaded radar_ds NEW so we can return it.
+    # But `detect_cells` creates local variables.
+    
+    # Hack: We can just use the fact that if we pass `radar_obj` later, it works.
+    # But we need to EXTRACT `radar_obj` from this run.
+    
+    # Let's create a temporary handler just to load the NEW data, so we have the object reference.
+    # This might seem redundant but `DetectionDataHandler` is thin.
+    # Actually, `detect_cells` does: handler = ...; radar_ds = handler.load_subset();
+    
+    # If we want to return `radar_ds`, we should change `detect_cells` to return it?
+    # That changes signature widely.
+    
+    # Strategy: Just Load it here using handler, then pass it to detect_cells.
+    
+    new_data_handler = DetectionDataHandler(
+        radar_new, ps_new, pt_new, io_manager, 
+        lat_min, lat_max, lon_min, lon_max
+    )
+    
+    perf_tracker.start("Detection - New Scan - Preload")
+    radar_new_obj = new_data_handler.load_subset()
+    # We can also preload PS and PT if we want full persistence
+    ps_new_obj = new_data_handler.load_probsevere()
+    pt_new_obj = new_data_handler.load_preciptype()
+    perf_tracker.stop("Detection - New Scan - Preload")
+    
     entries_new, ps_new_data = _detect_with_optional_probsevere(
         radar_new,
         ps_new,
@@ -187,7 +239,11 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         lon_min,
         lon_max,
         need_probsevere=True,
+        radar_obj=radar_new_obj, # Pass preloaded
+        ps_obj=ps_new_obj,
+        pt_obj=pt_new_obj 
     )
+    
     perf_tracker.stop("Detection - New Scan")
     io_manager.write_debug(f"Detected {len(entries_new)} cells in new scan")
 
@@ -203,6 +259,9 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             lat_max,
             lon_min,
             lon_max,
+            radar_obj=radar_old_obj, # Use cached
+            ps_obj=ps_old_obj,
+            preciptype_obj=pt_old_obj
         ).load_probsevere()
         perf_tracker.stop("Detection - Load ProbSevere Old")
 
@@ -238,4 +297,5 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     except Exception as e:
         io_manager.write_error(f"Failed to update API index: {e}")
     
-    return output_file
+    # Return output file AND the new dataset objects for next iteration
+    return output_file, (radar_new_obj, ps_new_obj, pt_new_obj)

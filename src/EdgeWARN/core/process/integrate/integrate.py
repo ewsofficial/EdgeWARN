@@ -27,6 +27,8 @@ class StormCellIntegrator:
         return start_idx, end_idx
 
     def integrate_ds_via_max(self, dataset_path, storm_cells, output_key):
+        if not storm_cells:
+            return storm_cells
 
         # Load dataset
         try:
@@ -138,6 +140,9 @@ class StormCellIntegrator:
             stats_config_list (list): List of dicts, each containing:
                                       {'key': str, 'method': str, 'percentile': int}
         """
+        if not storm_cells:
+            return storm_cells
+
         # Load dataset
         try:
             if dataset_path.endswith(".grib2"):
@@ -278,6 +283,9 @@ class StormCellIntegrator:
         Integrate ProbSevere probability data with storm cells by matching IDs.
         Flattens all ProbSevere variables directly into each storm history entry.
         """
+        if not storm_cells:
+            return storm_cells
+
         if not isinstance(probsevere_data, dict) or 'features' not in probsevere_data:
             self.io_manager.write_error(f"Failed to integrate ProbSevere data - Invalid Data Format")
             return storm_cells

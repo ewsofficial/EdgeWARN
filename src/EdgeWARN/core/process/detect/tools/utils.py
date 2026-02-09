@@ -17,7 +17,8 @@ _TIMESTAMP_PATTERNS = [
 _DETECTION_IO = IOManager("[CellDetection]")
 
 class DetectionDataHandler:
-    def __init__(self, radar_path, ps_path, preciptype_path, io_manager, lat_min, lat_max, lon_min, lon_max):
+    def __init__(self, radar_path, ps_path, preciptype_path, io_manager, lat_min, lat_max, lon_min, lon_max, 
+                 radar_obj=None, ps_obj=None, preciptype_obj=None):
         """
         Initialize the RadarDataHandler.
 
@@ -28,6 +29,9 @@ class DetectionDataHandler:
             io_manager (IOManager): IO manager instance
             lat_min, lat_max (float): Latitude bounds for the subset
             lon_min, lon_max (float): Longitude bounds for the subset
+            radar_obj (xarray.Dataset, optional): Pre-loaded radar dataset
+            ps_obj (dict, optional): Pre-loaded ProbSevere data
+            preciptype_obj (xarray.Dataset, optional): Pre-loaded PrecipType dataset
         """
         self.radar_path = radar_path
         self.ps_path = ps_path
@@ -37,6 +41,11 @@ class DetectionDataHandler:
         self.dataset = None
         self.io_manager = io_manager
         self.file_handler = FileHandler(io_manager)
+        
+        # Cache
+        self.radar_obj = radar_obj
+        self.ps_obj = ps_obj
+        self.preciptype_obj = preciptype_obj
 
     def load_radar_full(self):
         """
@@ -60,6 +69,9 @@ class DetectionDataHandler:
         Load the MRMS radar dataset from file and return a lat/lon subset as xarray.Dataset.
         Uses the centralized FileHandler.load_dataset method.
         """
+        if self.radar_obj is not None:
+             return self.radar_obj
+
         return self.file_handler.load_dataset(
             self.radar_path,
             lat_limits=self.lat_grid,
@@ -71,6 +83,9 @@ class DetectionDataHandler:
         Load the precipitation type dataset from file and return a lat/lon subset as xarray.Dataset.
         Uses the centralized FileHandler.load_dataset method.
         """
+        if self.preciptype_obj is not None:
+            return self.preciptype_obj
+            
         return self.file_handler.load_dataset(
             self.preciptype_path,
             lat_limits=self.lat_grid,
@@ -84,7 +99,10 @@ class DetectionDataHandler:
         Uses the centralized FileHandler.load_dataset method for loading.
         """
         # Load the JSON data using FileHandler
-        data = self.file_handler.load_dataset(self.ps_path)
+        if self.ps_obj is not None:
+            data = self.ps_obj
+        else:
+            data = self.file_handler.load_dataset(self.ps_path)
         
         if data is None:
             return []
