@@ -71,7 +71,7 @@ class MRMSUpdateChecker:
 
 
 
-    def _get_modifier_times(self, modifier_tuple, reference_dt, trace_id=None):
+    def _get_modifier_times(self, modifier_tuple, reference_dt, trace_id=None, last_processed=None):
         """Helper to fetch timestamps for a single modifier."""
         region, modifier, _ = modifier_tuple
         # Pass shared client
@@ -82,20 +82,31 @@ class MRMSUpdateChecker:
             # But we can log manually if verbose
             t0 = time.time()
             
-            # Optimization: StartAfter to skip previous history (safe margin: 1-2 hours)
-            # Only reliable if we know the filename pattern
+            # Optimization: StartAfter to skip previous history
+            # If last_processed is provided, start after that timestamp
             start_after = None
-            if modifier:
-                 # Standard MRMS: MRMS_{modifier}_{YYYYMMDD}-{HH}
-                 # Skip to 2 hours ago to be safe across day/hour boundaries
-                 from datetime import timedelta
-                 sa_dt = reference_dt - timedelta(hours=2)
-                 start_after = f"{bucket_path}MRMS_{modifier}_{sa_dt.strftime('%Y%m%d-%H')}"
+            
+            if last_processed:
+                # Use last_processed timestamp converted to filename format
+                # This is much more efficient than looking back 2 hours
+                if modifier:
+                    # Standard MRMS: MRMS_{modifier}_{YYYYMMDD}-{HH}
+                    # We need to construct a key that is alphabetically just after the last processed file
+                    # Ideally we'd know the exact filename, but constructing a prefix based 
+                    # on last_processed is a good heuristic.
+                    # Start matching from last_processed
+                    start_after = f"{bucket_path}MRMS_{modifier}_{last_processed.strftime('%Y%m%d-%H%M')}"
+                else:
+                    # ProbSevere: MRMS_PROBSEVERE_{YYYYMMDD}_{HH}
+                    start_after = f"{bucket_path}MRMS_PROBSEVERE_{last_processed.strftime('%Y%m%d_%H%M')}"
             else:
-                 # ProbSevere: MRMS_PROBSEVERE_{YYYYMMDD}_{HH}
+                 # Standardfallback: Skip to 2 hours ago
                  from datetime import timedelta
                  sa_dt = reference_dt - timedelta(hours=2)
-                 start_after = f"{bucket_path}MRMS_PROBSEVERE_{sa_dt.strftime('%Y%m%d_%H')}"
+                 if modifier:
+                    start_after = f"{bucket_path}MRMS_{modifier}_{sa_dt.strftime('%Y%m%d-%H')}"
+                 else:
+                    start_after = f"{bucket_path}MRMS_PROBSEVERE_{sa_dt.strftime('%Y%m%d_%H')}"
 
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False, start_after=start_after)
             dt = (time.time() - t0) * 1000
@@ -136,7 +147,7 @@ class MRMSUpdateChecker:
                 all_new = False
         return all_new
 
-    def latest_common_minute_1h(self, modifiers, reference_dt=None):
+    def latest_common_minute_1h(self, modifiers, reference_dt=None, last_processed=None):
         """
         Find the latest common timestamp (to the minute) across all modifiers.
         FIXED: Now properly handles timezone-aware vs UTC conflicts.
@@ -152,7 +163,8 @@ class MRMSUpdateChecker:
         t0 = time.time()
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Map returns an iterator in the order of the inputs
-            results = executor.map(lambda m: self._get_modifier_times(m, reference_dt, trace_id), modifiers)
+            # Pass last_processed to _get_modifier_times
+            results = executor.map(lambda m: self._get_modifier_times(m, reference_dt, trace_id, last_processed), modifiers)
             
             for res in results:
                 if res:
@@ -181,21 +193,22 @@ class MRMSUpdateChecker:
     def check_https_fallback(self, modifiers, reference_dt):
         """
         Try to find the common timestamp using HTTPS fallback logic.
+        Now runs concurrently.
         """
         from EdgeWARN.core.ingest.mrms.https_client import HttpsFileFinder
 
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
             
-        print("[Scheduler] Attempting HTTPS Fallback for timestamps...")
+        print("[Scheduler] Attempting HTTPS Fallback for timestamps (Parallel)...")
         
         modifier_times = []
         
-        # Checking serially for now as this is a fallback
-        for modifier_tuple in modifiers:
+        def check_single_https(modifier_tuple):
             region, modifier, _ = modifier_tuple
-            
             try:
+                # Re-instantiate per thread or use thread-safe if HttpsFileFinder is safe
+                # HttpsFileFinder seems lightweight
                 finder = HttpsFileFinder(reference_dt, io_manager)
                 # find_files_sync returns URLs
                 urls = finder.find_files_sync(region, modifier)
@@ -209,13 +222,19 @@ class MRMSUpdateChecker:
                             ts = ts.replace(tzinfo=datetime.timezone.utc)
                         timestamps.add(round_to_nearest_even_minute(ts))
                 
-                if timestamps:
-                    modifier_times.append(timestamps)
-                else:
-                    if self.verbose:
-                         print(f"[{modifier}] No files found via HTTPS")
+                return timestamps
+                    
             except Exception as e:
                 print(f"[Scheduler] HTTPS Check Error for {modifier}: {e}")
+                return None
+
+        # Execute in parallel
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = executor.map(check_single_https, modifiers)
+            
+            for res in results:
+                if res:
+                    modifier_times.append(res)
         
         if not modifier_times:
             return None
