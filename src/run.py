@@ -131,7 +131,7 @@ def pipeline(log_queue, dt, profile=False):
                 log(f"ERROR: Failed to prepare single-frame fallback: {e}")
                 return
         
-        generated_file = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
+        generated_file, _ = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
         perf_tracker.stop("Detection")
         
         # 3. Integration (Sync)
@@ -286,7 +286,7 @@ if __name__ == "__main__":
     if args.nogui:
         # No GUI mode: Print directly to console (already set up by default sys.stdout/stderr)
         try:
-            print(f"Running EdgeWARN v1.5.1")
+            print(f"Running EdgeWARN v1.5.2")
             print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
             main()
         except KeyboardInterrupt:
@@ -307,7 +307,7 @@ if __name__ == "__main__":
         ui_process.start()
         
         try:
-            print(f"Running EdgeWARN v1.5.1")
+            print(f"Running EdgeWARN v1.5.2")
             print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
             main(ui_process)
         except KeyboardInterrupt:
