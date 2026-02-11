@@ -104,12 +104,13 @@ def test_integrate_rap_basic(mock_io_manager, mock_datasets, storm_cells):
     cell = results[0]
     props = cell['properties']
     
-    # Check isobaric winds
-    assert props['u850'] == 10.0
-    assert props['v850'] == 5.0
-    assert props['u700'] == 15.0
-    assert props['u500'] == 25.0
-    assert props['u250'] == 40.0
+    # Check isobaric winds (nested in wind_field)
+    wind = props['wind_field']
+    assert wind['u850'] == 10.0
+    assert wind['v850'] == 5.0
+    assert wind['u700'] == 15.0
+    assert wind['u500'] == 25.0
+    assert wind['u250'] == 40.0
 
 
 def test_integrate_rap_derived_fields(mock_io_manager, mock_datasets, storm_cells):

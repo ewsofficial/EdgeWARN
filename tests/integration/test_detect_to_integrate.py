@@ -163,10 +163,12 @@ class TestDetectToIntegrateWorkflow:
         
         # Verify wind data was added
         for cell in result:
-            assert "u850" in cell["properties"]
-            assert "v850" in cell["properties"]
-            assert "u500" in cell["properties"]
-            assert "v500" in cell["properties"]
+            assert "wind_field" in cell["properties"]
+            wind = cell["properties"]["wind_field"]
+            assert "u850" in wind
+            assert "v850" in wind
+            assert "u500" in wind
+            assert "v500" in wind
 
     def test_full_detect_to_integrate_pipeline(self, mock_io, tmp_path):
         """Test the full pipeline from detection to integration"""

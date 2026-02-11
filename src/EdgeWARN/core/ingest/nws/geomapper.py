@@ -130,6 +130,22 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
         if exterior:
             feature["Polygon"] = exterior
             
+    # Remove "geocode" if valid geometry exists
+    has_geometry = False
+    if feature.get("geometry") and feature.get("geometry", {}).get("coordinates"):
+        has_geometry = True
+    if feature.get("Polygon"):
+        has_geometry = True
+        
+    if has_geometry:
+        props.pop("geocode", None)
+    
+    # Remove junk keys from properties
+    for key in JUNK_KEYS:
+        props.pop(key, None)
+    
+    return feature
+
 # Helper for caching union operations
 from functools import lru_cache
 
@@ -155,19 +171,3 @@ def _get_cached_union_exterior(zone_codes_tuple):
         return []
         
     return extract_exterior_polygon(all_poly_coords)
-    
-    # Remove "geocode" if valid geometry exists
-    has_geometry = False
-    if feature.get("geometry") and feature.get("geometry", {}).get("coordinates"):
-        has_geometry = True
-    if feature.get("Polygon"):
-        has_geometry = True
-        
-    if has_geometry:
-        props.pop("geocode", None)
-    
-    # Remove junk keys from properties
-    for key in JUNK_KEYS:
-        props.pop(key, None)
-    
-    return feature

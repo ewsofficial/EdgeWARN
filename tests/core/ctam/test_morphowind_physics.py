@@ -46,7 +46,10 @@ class TestMorphoWindPhysics(unittest.TestCase):
 
         self.module.run(current_storm)
         
-        result = current_storm['properties']['morphowind']
+        if 'morphowind' in current_storm['properties']:
+             result = current_storm['properties']['morphowind']
+        else:
+             result = current_storm['modules']['MorphoWind']
         
         print("\n--- Microburst Collapse Test ---")
         print(f"Triggers: {result['physics_triggers']}")
@@ -79,7 +82,10 @@ class TestMorphoWindPhysics(unittest.TestCase):
         }
         
         self.module.run(current_storm)
-        result = current_storm['properties']['morphowind']
+        if 'morphowind' in current_storm['properties']:
+            result = current_storm['properties']['morphowind']
+        else:
+            result = current_storm['modules']['MorphoWind']
         
         print("\n--- Rear Inflow Notch Test ---")
         print(f"Triggers: {result['physics_triggers']}")
@@ -111,7 +117,10 @@ class TestMorphoWindPhysics(unittest.TestCase):
         with patch('EdgeWARN.core.ctam.util.history.get_cell_history', return_value=[]):
             self.module.run(current_storm)
             
-        result = current_storm['properties']['morphowind']
+        if 'morphowind' in current_storm['properties']:
+            result = current_storm['properties']['morphowind']
+        else:
+            result = current_storm['modules']['MorphoWind']
         print("\n--- Bookend Vortex Test ---")
         print(f"Triggers: {result['physics_triggers']}")
         
@@ -147,7 +156,10 @@ class TestMorphoWindPhysics(unittest.TestCase):
         with patch('EdgeWARN.core.ctam.util.history.get_cell_history', return_value=[]):
             self.module.run(current_storm, environment=environment)
             
-        result = current_storm['properties']['morphowind']
+        if 'morphowind' in current_storm['properties']:
+            result = current_storm['properties']['morphowind']
+        else:
+            result = current_storm['modules']['MorphoWind']
         print("\n--- Dry Air Enhancement Test ---")
         print(f"VIL Density: {result['physics']['vil_density']}, Risk: {result['risk_type']}, MB Score: {result['scores']['microburst']}")
         
@@ -179,7 +191,10 @@ class TestMorphoWindPhysics(unittest.TestCase):
         with patch('EdgeWARN.core.ctam.util.history.get_cell_history', return_value=[]):
             self.module.run(current_storm)
             
-        result = current_storm['properties']['morphowind']
+        if 'morphowind' in current_storm['properties']:
+            result = current_storm['properties']['morphowind']
+        else:
+            result = current_storm['modules']['MorphoWind']
         print("\n--- Complex Cluster Test ---")
         print(f"Triggers: {result['physics_triggers']}")
         
@@ -204,7 +219,10 @@ class TestMorphoWindPhysics(unittest.TestCase):
             }
         }
         self.module.run(current_storm)
-        result = current_storm['properties']['morphowind']
+        if 'morphowind' in current_storm['properties']:
+            result = current_storm['properties']['morphowind']
+        else:
+            result = current_storm['modules']['MorphoWind']
         self.assertNotIn("REAR_INFLOW_NOTCH", result['physics_triggers'])
 
 if __name__ == '__main__':
