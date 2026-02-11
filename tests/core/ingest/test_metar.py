@@ -91,14 +91,17 @@ KORD 121756Z 27015KT 5SM OVC020 08/06 A2990
 2023/01/12 18:00
 KLAX 121800Z 25010KT 10SM CLR 18/10 A3000
 """
-    result = metar.process_content(content)
-    
-    assert len(result) == 3
-    assert result[0]["station"] == "KJFK"
-    assert result[0]["observation_time"] == "2023/01/12 17:56"
-    assert result[1]["station"] == "KORD"
-    assert result[2]["station"] == "KLAX"
-    assert result[2]["observation_time"] == "2023/01/12 18:00"
+    with patch("EdgeWARN.core.ingest.metar.get_station_coordinates") as mock_coords:
+        mock_coords.side_effect = lambda s: [40.0, -90.0]  # Return valid coords inside CONUS
+        result = metar.process_content(content)
+        
+        assert len(result) == 3
+        # ... logic as before ...
+        assert result[0]["station"] == "KJFK"
+        assert result[0]["observation_time"] == "2023/01/12 17:56"
+        assert result[1]["station"] == "KORD"
+        assert result[2]["station"] == "KLAX"
+        assert result[2]["observation_time"] == "2023/01/12 18:00"
 
 def test_process_content_empty():
     """Test processing empty content."""

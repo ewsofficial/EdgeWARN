@@ -18,7 +18,7 @@ def update_checker(mock_io_manager):
 def test_fallback_when_no_intersection(update_checker, mocker):
     """Test that fallback is triggered when S3 has no common timestamps."""
     # Mock _get_modifier_times to return disjoint sets
-    def side_effect(mod, ref_dt):
+    def side_effect(mod, ref_dt, trace_id=None, last_processed=None):
         if mod[1] == "Mod1":
             return {TS_OLD}
         else:
