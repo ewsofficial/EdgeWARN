@@ -67,7 +67,7 @@ router.get('/', async (req, res) => {
         }
 
         // Read and return the JSON data
-        const data = await readJsonFileSafe(dirPath, filename);
+        const data = await readJsonFileSafe(dirPath, filename, { useCache: false });
 
         res.set('Cache-Control', 'public, max-age=60');
         res.json({

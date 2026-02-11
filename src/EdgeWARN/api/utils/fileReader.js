@@ -7,9 +7,9 @@ import { LRUCache } from 'lru-cache';
 const cache = new LRUCache({
   max: 500,
   ttl: 60 * 1000,
-  // Approximate size calculation if we wanted to limit by bytes
-  // sizeCalculation: (value) => JSON.stringify(value).length,
-  // maxSize: 50 * 1024 * 1024 // 50MB
+  // 40MB limit per worker (160MB total across 4 workers)
+  sizeCalculation: (value) => JSON.stringify(value).length,
+  maxSize: 40 * 1024 * 1024
 });
 
 /**
@@ -27,10 +27,12 @@ export function isSafeFilename(name) {
  * Safely read JSON file with path traversal protection
  * @param {string} dir - Directory path
  * @param {string} name - Filename
+ * @param {object} [options] - Options object
+ * @param {boolean} [options.useCache=true] - Whether to use the cache
  * @returns {Promise<object>} Parsed JSON content
  * @throws {Error} With code property for specific error types
  */
-export async function readJsonFileSafe(dir, name) {
+export async function readJsonFileSafe(dir, name, options = { useCache: true }) {
   if (!isSafeFilename(name)) {
     const e = new Error('Invalid filename');
     e.code = 'EINVAL';
@@ -38,11 +40,11 @@ export async function readJsonFileSafe(dir, name) {
   }
 
   const full = path.join(dir, name);
-  
+
   // Ensure resolved path is inside dir (prevent traversal)
   const resolvedDir = path.resolve(dir);
   const resolvedFull = path.resolve(full);
-  
+
   if (!resolvedFull.startsWith(resolvedDir + path.sep) && resolvedFull !== resolvedDir) {
     const e = new Error('Path outside allowed directory');
     e.code = 'EACCES';
@@ -50,7 +52,7 @@ export async function readJsonFileSafe(dir, name) {
   }
 
   // Check cache
-  if (cache.has(full)) {
+  if (options.useCache && cache.has(full)) {
     return cache.get(full);
   }
 
@@ -62,7 +64,9 @@ export async function readJsonFileSafe(dir, name) {
   // Cache the result.
   // If the file is 'stormcells_{timestamp}.json', it's likely immutable, so we could cache it longer.
   // But for simplicity, we stick to default TTL.
-  cache.set(full, json);
+  if (options.useCache) {
+    cache.set(full, json);
+  }
 
   return json;
 }
