@@ -21,8 +21,8 @@ router.get('/resources', async (req, res) => {
 
   // Validate type parameter
   if (!validateResourceType(type)) {
-    return res.status(400).json({ 
-      error: 'Invalid type parameter. Must be "cell" or "list"' 
+    return res.status(400).json({
+      error: 'Invalid type parameter. Must be "cell" or "list"'
     });
   }
 
@@ -30,8 +30,8 @@ router.get('/resources', async (req, res) => {
     if (type === 'list') {
       // Validate timestamp parameter
       if (!validateTimestamp(timestamp)) {
-        return res.status(400).json({ 
-          error: 'Invalid or missing timestamp parameter. Format: YYYYMMDD-HHMMSS' 
+        return res.status(400).json({
+          error: 'Invalid or missing timestamp parameter. Format: YYYYMMDD-HHMMSS'
         });
       }
 
@@ -46,8 +46,8 @@ router.get('/resources', async (req, res) => {
     } else if (type === 'cell') {
       // Validate id parameter
       if (!validateCellId(id)) {
-        return res.status(400).json({ 
-          error: 'Invalid or missing id parameter. Must be a positive integer' 
+        return res.status(400).json({
+          error: 'Invalid or missing id parameter. Must be a positive integer'
         });
       }
 
@@ -57,17 +57,18 @@ router.get('/resources', async (req, res) => {
 
       // Build filename: {id}.json
       const filename = `${id}.json`;
-      const content = await readJsonFileSafe(apiConfig.CELL_DIR, filename);
+      const content = await readJsonFileSafe(apiConfig.CELL_DIR, filename, { useCache: false });
       res.json(content);
     }
-  } catch (err) {if (err.code === 'ENOENT') {
-      return res.status(404).json({ 
-        error: 'The requested file was not found' 
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return res.status(404).json({
+        error: 'The requested file was not found'
       });
     }
     if (err.code === 'EINVAL' || err.code === 'EACCES') {
-      return res.status(400).json({ 
-        error: 'Invalid filename or access denied' 
+      return res.status(400).json({
+        error: 'Invalid filename or access denied'
       });
     }
     console.error('Error reading resource:', err);
