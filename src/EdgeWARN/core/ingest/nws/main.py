@@ -41,6 +41,7 @@ DROPPED_EVENTS = {
     "Practice/Demo Warning",
     "Required Weekly Test",
     "Required Monthly Test",
+    "Test Message",
     "Hurricane Local Statement",
     "Flood Statement",
     "Flash Flood Statement",
