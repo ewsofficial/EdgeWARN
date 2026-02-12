@@ -1,15 +1,13 @@
-# Changelog for Version ``1.5.2``
+# Changelog for Version ``1.5.3``
 
 ## Additions
 
-- **Performance profiling and instrumentation** - Added TimingTracker utility in `src/util/performance.py` for granular timing of ingestion, detection, and integration modules
-- **Profiling flag and optimization strategies** - Added `--profile` flag to `run.py` and `process_historical.py` with short-circuit logic for empty frames, state persistence (caching) for detection data, and pre-loaded objects support in DetectionDataHandler
-
 ## Changes
 
-- **Finalize Optimizations** - Implemented NWS LRU Cache for geometry processing (-54% latency), optimized S3 listing with StartAfter (-75% lookup time), verified full system stability
-- **Optimization of Ingestion Pipeline** - Implemented asynchronous filesystem cleanup, shared S3 client in scheduler, parallel decompression for GOES products, optimized METAR ingestion with async station DB load and session reuse
-- **Vectorize draw_bbox coordinate extraction** - Refactored `draw_bbox` in `gatemapper.py` to use vectorized NumPy operations for ~8-10x speedup (0.26s vs 2.20s)
-- **Optimize detection/integration pipeline hot paths** - Optimized hot paths in detection and integration pipelines
-- **Fix Test Suite** - Fixed 17 broken tests across Scheduler, RAP, MorphoWind, NWS, and METAR modules, ensuring full test suite pass (57/57 tests). Fixed critical NWS geomapper scope bug and missing test data mocks.
-- **Fix API Memory Leak** - Resolved critical memory ballooning in Node.js API by implementing 40MB/worker LRU cache limit and disabling caching for large file downloads.
+- **Maximize Detection Sensitivity** - Removed PrecipType-based stratiform discrimination logic to prevent false negatives for misclassified mature storms.
+- **Noise Reduction** - Implemented 5-gate minimum size filter in `GateMapper` to reject small radar noise artifacts.
+- **Repository Cleanup** - Moved development utility scripts (`check_overlap.py`, `check_radar.py`, `profile_ingest.py`) to `scripts/` directory.
+
+## Fixes
+
+- **Fix Developing Cell Detection** - Resolved issue where developing storm cells (e.g., ID 6605) were missed by lowering reflectivity threshold to 37.5 dBZ and relaxing seed trigger logic to "any pixel".
