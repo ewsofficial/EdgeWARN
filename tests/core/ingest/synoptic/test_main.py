@@ -4,8 +4,42 @@ Tests for Synoptic ingest main module
 
 import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, patch
-from EdgeWARN.core.ingest.synoptic.main import download_rap
+from unittest.mock import MagicMock, patch, AsyncMock
+from EdgeWARN.core.ingest.synoptic.main import download_rap, download_rap_async
+
+
+class TestDownloadRapAsync:
+    """Tests for download_rap_async function"""
+
+    @pytest.mark.asyncio
+    async def test_async_download_cleans_old_files(self):
+        """Test that async download cleans old files"""
+        with patch('EdgeWARN.core.ingest.synoptic.main.fs.async_clean_old_files') as mock_clean:
+            mock_clean.return_value = None  # Not a coroutine, just returns None
+            
+            with patch('EdgeWARN.core.ingest.synoptic.main._download_rap') as mock_download:
+                mock_download.return_value = "test_file.grib2"
+                
+                result = await download_rap_async(datetime(2023, 10, 15, 14, 30))
+                
+                # Should call async_clean_old_files
+                mock_clean.assert_called_once()
+                assert result == "test_file.grib2"
+
+    @pytest.mark.asyncio
+    async def test_async_download_with_custom_datetime(self):
+        """Test async download with specific datetime"""
+        test_dt = datetime(2023, 10, 15, 14, 30, 0)
+        
+        with patch('EdgeWARN.core.ingest.synoptic.main.fs.async_clean_old_files'):
+            with patch('EdgeWARN.core.ingest.synoptic.main._download_rap') as mock_download:
+                mock_download.return_value = "test_file.grib2"
+                
+                result = await download_rap_async(test_dt)
+                
+                # Should pass the datetime to _download_rap
+                mock_download.assert_called_once_with(test_dt)
+                assert result == "test_file.grib2"
 
 
 class TestDownloadRap:
