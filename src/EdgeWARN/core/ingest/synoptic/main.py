@@ -7,7 +7,9 @@ import util.file as fs
 async def download_rap_async(dt: datetime):
     """
     Async version of download_rap.
+    Cleans up old RAP files before downloading.
     """
+    await fs.async_clean_old_files(fs.RAP_DIR, max_age_minutes=90)
     return await _download_rap(dt)
 
 def download_rap(dt: datetime):
