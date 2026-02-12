@@ -173,7 +173,7 @@ class GateMapper:
              id_to_count = dict(zip(final_ids, final_counts))
              
              # Zero out small clusters
-             rejected_ids = [fid for fid, count in id_to_count.items() if count <= 5]
+             rejected_ids = [fid for fid, count in id_to_count.items() if count <= 3]
              if rejected_ids:
                   self.io_manager.write_debug(f"Rejecting small expanded clusters: {rejected_ids}")
                   reject_mask = np.isin(sub_final, rejected_ids)
