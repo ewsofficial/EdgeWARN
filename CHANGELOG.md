@@ -11,3 +11,4 @@
 ## Fixes
 
 - **Fix Developing Cell Detection** - Resolved issue where developing storm cells (e.g., ID 6605) were missed by lowering reflectivity threshold to 37.5 dBZ and relaxing seed trigger logic to "any pixel".
+- **Fix RAP File Cleanup** - Resolved issue where RAP files were not being deleted in the async pipeline path. The `download_rap_async()` function now properly calls `async_clean_old_files()` before downloading, matching the sync version's cleanup behavior.
