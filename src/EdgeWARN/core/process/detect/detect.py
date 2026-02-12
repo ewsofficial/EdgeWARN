@@ -51,8 +51,15 @@ def detect_cells(
     ps_ds = handler.load_probsevere()
     perf_tracker.stop("Detection - Load ProbSevere")
 
+    # Load PrecipType early for discrimination logic
+    perf_tracker.start("Detection - Load PrecipType")
+    preciptype_ds = handler.load_preciptype()
+    perf_tracker.stop("Detection - Load PrecipType")
 
-    mapper = GateMapper(radar_ds, ps_ds, io_manager, refl_threshold=40.0)
+    if preciptype_ds is None:
+         io_manager.write_warning("Failed to load precipitation type data, stratiform discrimination will be limited")
+
+    mapper = GateMapper(radar_ds, ps_ds, io_manager, refl_threshold=37.5, min_seed_percentage=0.001)
     
     perf_tracker.start("Detection - Map Gates")
     mapped_ds = mapper.map_gates_to_polygons()
@@ -65,11 +72,6 @@ def detect_cells(
     perf_tracker.start("Detection - BBox")
     bboxes = mapper.draw_bbox(expanded_ds, step=8)
     perf_tracker.stop("Detection - BBox")
-
-    # === Load PrecipType now, just before saving ===
-    preciptype_ds = handler.load_preciptype()
-    if preciptype_ds is None:
-         io_manager.write_warning("Failed to load precipitation type data, hail core detection will be disabled")
 
     saver = CellDataSaver(
         bboxes,

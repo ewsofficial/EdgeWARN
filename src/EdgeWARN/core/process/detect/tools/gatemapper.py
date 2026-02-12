@@ -8,7 +8,7 @@ from affine import Affine
 import scipy.ndimage
 
 class GateMapper:
-    def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=40.0, min_seed_percentage=0.40):
+    def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=37.5, min_seed_percentage=0.001):
         self.radar_ds = radar_ds
         self.ps_ds = ps_ds
         self.refl_threshold = refl_threshold
@@ -85,6 +85,7 @@ class GateMapper:
         - Vectorized coverage check (Speed)
         - Float16 elevation map (Memory)
         - Connected expansion outside polygon (Functionality)
+        - Discrimination Logic: Stratiform vs Convective
         """
         from skimage.segmentation import watershed
         
@@ -93,6 +94,7 @@ class GateMapper:
         refl_grid = self.radar_ds['unknown'].values
         mask = refl_grid >= self.refl_threshold
         
+
         # Optimization: Crop to active area
         # Find bounding box of high reflectivity
         rows_with_data = np.any(mask, axis=1)
@@ -128,40 +130,28 @@ class GateMapper:
             )
             
         # Optimization: Use scipy.ndimage.sum for vectorized counting
-        # Count total pixels per ID
-        # Labels must be positive ints. We use unique_ids max to define bins.
         max_id = unique_ids.max()
-        
-        # pixel_counts[i] will hold count for ID i
         pixel_counts = scipy.ndimage.sum_labels(np.ones_like(sub_polygon), sub_polygon, index=unique_ids)
-        
-        # Count high-refl pixels per ID
         refl_counts = scipy.ndimage.sum_labels(sub_mask, sub_polygon, index=unique_ids)
-        
-        # Calculate coverage ratio
-        # Avoid division by zero (shouldn't happen as unique_ids implies at least 1 pixel)
         coverage_ratios = refl_counts / pixel_counts
         
-        # Filter IDs
+        # Initial Filtering: Trigger expansion for ANY polygon with >= min_seed_percentage coverage
+        # With min_seed_percentage=0.001, this effectively triggers for "any pixel".
         valid_indices = coverage_ratios >= self.min_seed_percentage
         valid_ids = unique_ids[valid_indices]
         
         if len(valid_ids) == 0:
-            self.io_manager.write_debug("No valid expansion seeds found after filtering.")
             return xr.Dataset(
                 {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
                 coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
             )
 
-        # 3. Create Refined Seed Grid (MARKERS)
-        # Seeds are the intersection of Valid Polygons AND High Reflectivity.
-        # Use a lookup-table mask instead of np.isin for lower overhead on dense grids.
-        markers = np.zeros_like(sub_polygon)
-
+        # 4. Perform Watershed Expansion
         valid_id_mask = np.zeros(max_id + 1, dtype=bool)
         valid_id_mask[valid_ids] = True
-        active_seeds_mask = valid_id_mask[sub_polygon] & sub_mask
-        markers = np.where(active_seeds_mask, sub_polygon, 0)
+        
+        # Markers are valid polygons intersecting high reflectivity
+        markers = np.where(valid_id_mask[sub_polygon] & sub_mask, sub_polygon, 0)
         
         if not np.any(markers > 0):
              return xr.Dataset(
@@ -169,19 +159,37 @@ class GateMapper:
                 coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
             )
 
-        # 4. Perform Watershed Expansion
-        # Optimization: Float16 for memory efficiency
-        # distance_transform_edt returns float64 by default.
         dist = distance_transform_edt(sub_mask)
         elevation = -dist.astype(np.float16)
-
-        # Run watershed on sub-grid
-        # mask=sub_mask ensures unrestricted expansion into ANY connected high-reflectivity area
         sub_final = watershed(elevation, markers, mask=sub_mask)
         
-        # 5. Place result back into full grid
+        # 5. Final Size Filter: > 5 gates total in expanded cell
+        final_ids = np.unique(sub_final)
+        final_ids = final_ids[final_ids > 0]
+        
+        if len(final_ids) > 0:
+             final_counts = scipy.ndimage.sum_labels(np.ones_like(sub_final), sub_final, index=final_ids)
+             # Map IDs to their counts for filtering
+             id_to_count = dict(zip(final_ids, final_counts))
+             
+             # Zero out small clusters
+             rejected_ids = [fid for fid, count in id_to_count.items() if count <= 5]
+             if rejected_ids:
+                  self.io_manager.write_debug(f"Rejecting small expanded clusters: {rejected_ids}")
+                  reject_mask = np.isin(sub_final, rejected_ids)
+                  sub_final[reject_mask] = 0
+
+        # Place result back into full grid
         final_grid = np.zeros_like(polygon_grid)
         final_grid[rmin:rmax, cmin:cmax] = sub_final
+        
+        return xr.Dataset(
+            {'PolygonID': (('latitude', 'longitude'), final_grid.astype(np.int32))},
+            coords={
+                'latitude': mapped_ds['latitude'].values,
+                'longitude': mapped_ds['longitude'].values
+            }
+        )
         
         # Watershed returns 0 where mask is False.
         
