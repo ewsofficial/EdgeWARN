@@ -7,6 +7,9 @@ Adapter for integrating StormCast core into the CTAM framework.
 from typing import Dict, Any, Optional, List
 import dataclasses
 from ...interface import AnalysisModule
+import json
+from pathlib import Path
+import util.file as fs
 
 # Re-export core components for external use
 from .core import (
@@ -125,13 +128,200 @@ class StormCastModule(AnalysisModule):
             # Use relative coordinates: centroid = (0, 0), previous = (-dx, -dy)
             # This aligns with the engine's expectation of meters relative to reference_lat/lon
             
-            # Previous position: offset by -dx, -dy from current (which is the origin)
-            prev_rel_x = -dx
-            prev_rel_y = -dy
-            engine.add_observation(prev_rel_x, prev_rel_y, dt_seconds=0, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
-            
             # Current position: at origin (0, 0) since reference is the centroid
             engine.add_observation(0.0, 0.0, dt_seconds=dt, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
+            
+            # --- START HISTORY LOADING ---
+            try:
+                cell_id = storm_entry.get("id")
+                if cell_id:
+                    history_file = fs.CELL_DIR / f"{cell_id}.json"
+                    if history_file.exists():
+                        with open(history_file, "r") as f:
+                            history_data = json.load(f)
+                        
+                        # Sort by timestamp to be safe
+                        history_data.sort(key=lambda x: x.get("timestamp") or x.get("properties", {}).get("timestamp") or "")
+                        
+                        # We need to reconstruct relative positions for the engine.
+                        # The engine expects (0,0) to be the *current* centroid.
+                        # So previous points must be offset relative to current centroid.
+                        # However, we don't have easy lat/lon -> meters conversion here without using the engine's internal methods
+                        # or recreating the projection.
+                        #
+                        # BETTER APPROACH:
+                        # The engine is initialized with the CURRENT reference lat/lon.
+                        # We can add observations using their lat/lon if we convert them to meters relative to this reference.
+                        # The engine has `_meters_to_latlon` but not the inverse publicly exposed, but we can replicate the flat-earth approx.
+                        
+                        import math
+                        
+                        # Current Reference (Centroid)
+                        ref_lat_rad = math.radians(ref_lat)
+                        cos_ref_lat = math.cos(ref_lat_rad)
+                        
+                        # Meters per degree
+                        LAT_METERS = 111111.0
+                        LON_METERS = 111111.0 * cos_ref_lat
+                        
+                        current_ts_str = storm_entry.get("timestamp")
+                        
+                        # Add historical points
+                        # effective_history_count = 0
+                        for hist_entry in history_data:
+                            # Skip if it's the current entry (duplicate check by timestamp)
+                            hist_ts = hist_entry.get("timestamp") or hist_entry.get("properties", {}).get("timestamp")
+                            if hist_ts == current_ts_str:
+                                continue
+                                
+                            # Get Lat/Lon
+                            hist_centroid = hist_entry.get("centroid") or hist_entry.get("properties", {}).get("centroid")
+                            if not hist_centroid:
+                                continue
+                                
+                            h_lat = hist_centroid[0]
+                            h_lon = hist_centroid[1] if hist_centroid[1] <= 180 else hist_centroid[1] - 360
+                            
+                            # Calculate relative position in meters to CURRENT reference
+                            dy_meters = (h_lat - ref_lat) * LAT_METERS
+                            dx_meters = (h_lon - ref_lon) * LON_METERS
+                            
+                            # We can't easily adhere to the strict `dt` sequence required by `add_observation` 
+                            # if we just dump points in. `add_observation` calculates velocity from the *previous* point added.
+                            # So we must add them in strict chronological order.
+                            # But wait, we already added the "previous" (-dx, -dy) point from the current frame's motion vector!
+                            #
+                            # The `add_observation` logic:
+                            # 1. Appends pos to history
+                            # 2. If dt > 0, calculates velocity from (current - previous_in_history) / dt
+                            #
+                            # If we load history, we should probably NOT add the `-dx, -dy` synthetic point, 
+                            # OR ensuring it aligns.
+                            #
+                            # actually, the `storm_entry` has `dx`, `dy` which are "displacement from previous frame".
+                            # This is the most accurate instantaneous motion.
+                            # Using historical lat/lon might be noisy if centroids jump around.
+                            # 
+                            # HYBRID APPROACH:
+                            # 1. Initialize engine.
+                            # 2. Load history. Convert to relative meters. Add to engine with correct dt.
+                            # 3. Add current point (0,0).
+                            #
+                            # Issue: `add_observation` requires `dt` since *previous added observation*.
+                            # We need timestamps to calculate `dt`.
+                            
+                            pass # Logic implemented below in replacement
+                            
+            except Exception as e:
+                # print(f"Failed to load history for {cell_id}: {e}")
+                pass
+            # --- END HISTORY LOADING ---
+
+            # RE-WRITE:
+            # We will use a fresh approach.
+            # 1. Collect all historical points + current point.
+            # 2. Sort them.
+            # 3. Feed them into engine sequentially.
+            
+            historical_points = []
+            
+            # 1. Load from file
+            try:
+                cell_id = storm_entry.get("id")
+                if cell_id:
+                    history_file = fs.CELL_DIR / f"{cell_id}.json"
+                    if history_file.exists():
+                        with open(history_file, "r") as f:
+                            hist_data = json.load(f)
+                            for h in hist_data:
+                                h_ts = h.get("timestamp") or h.get("properties", {}).get("timestamp")
+                                h_cent = h.get("centroid")
+                                h_props = h.get("properties", {})
+                                if h_ts and h_cent:
+                                    historical_points.append({
+                                        "ts": h_ts,
+                                        "lat": h_cent[0],
+                                        "lon": h_cent[1] if h_cent[1] <= 180 else h_cent[1] - 360,
+                                        "echo_top_30": h_props.get("p100EchoTop30", 10.0), # Schema check?
+                                        "echo_top_50": h_props.get("EchoTop50", 8.0)
+                                    })
+            except Exception:
+                pass
+                
+            # 2. Add current point
+            from datetime import datetime
+            
+            # Function to parse ISO timestamp
+            def parse_ts(t_str):
+                try:
+                    return datetime.fromisoformat(t_str.replace('Z', '+00:00'))
+                except:
+                    return datetime.now() # Fallback
+
+            current_ts_str = storm_entry.get("timestamp")
+            if not current_ts_str:
+                 # Should have been caught by return earlier, but safe guard
+                 current_ts_str = datetime.now().isoformat()
+                 
+            historical_points.append({
+                "ts": current_ts_str,
+                "lat": ref_lat,
+                "lon": ref_lon,
+                "echo_top_30": echo_top_30,
+                "echo_top_50": echo_top_50,
+                "is_current": True
+            })
+            
+            # Sort
+            historical_points.sort(key=lambda x: x["ts"])
+            
+            # Filter duplicates (by ts)
+            unique_points = []
+            seen_ts = set()
+            for p in historical_points:
+                if p["ts"] not in seen_ts:
+                    seen_ts.add(p["ts"])
+                    unique_points.append(p)
+            
+            # Add to engine
+            import math
+            LAT_METERS = 111111.0
+            ref_lat_rad = math.radians(ref_lat)
+            LON_METERS = 111111.0 * math.cos(ref_lat_rad)
+            
+            prev_time = None
+            
+            # If we only have 1 point (current), try to use the dx/dy fallback
+            if len(unique_points) < 2 and (dx is not None and dy is not None):
+                 # Fallback to single-frame logic
+                 engine.add_observation(-dx, -dy, dt_seconds=0, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
+                 engine.add_observation(0.0, 0.0, dt_seconds=dt, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
+            else:
+                # Use history
+                for i, p in enumerate(unique_points):
+                    # Calculate relative meters from current reference
+                    rel_y = (p["lat"] - ref_lat) * LAT_METERS
+                    rel_x = (p["lon"] - ref_lon) * LON_METERS
+                    
+                    dt_sec = 0.0
+                    curr_time = parse_ts(p["ts"])
+                    
+                    if prev_time:
+                        dt_sec = (curr_time - prev_time).total_seconds()
+                    
+                    # Ensure dt is non-negative and reasonable
+                    if dt_sec < 0: dt_sec = 0
+                    
+                    # Add observation
+                    engine.add_observation(
+                        rel_x, 
+                        rel_y, 
+                        dt_seconds=dt_sec, 
+                        echo_top_30=p.get("echo_top_30", 10.0),
+                        echo_top_50=p.get("echo_top_50", 8.0),
+                        timestamp=curr_time
+                    )
+                    prev_time = curr_time
             
             # Generate forecast
             result = engine.generate_forecast()

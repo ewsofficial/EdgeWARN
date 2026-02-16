@@ -135,6 +135,6 @@ DEFAULT_LEAD_TIMES: Tuple[float, ...] = (900.0, 1800.0, 2700.0, 3600.0)
 MAX_RELIABLE_LEAD_TIME: float = 3600.0  # 60 minutes
 """Beyond this, forecast skill degrades significantly."""
 
-MIN_VELOCITY_THRESHOLD: float = 2.0  # m/s
+MIN_VELOCITY_THRESHOLD: float = 1.0  # m/s
 MAX_VELOCITY_THRESHOLD: float = 50.0  # m/s
 """Thresholds for filtering stationary or unrealistically fast storm motions."""
