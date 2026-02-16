@@ -28,7 +28,7 @@ Check INSTALLATION.md for installation and run instructions
 
 <h2 align="center">Build Info</h2>
 
-## Current Release: **1.5.2**
+## Current Release: **1.5.3**
 
 Check [CHANGELOG.md](CHANGELOG.md) for changes
 
