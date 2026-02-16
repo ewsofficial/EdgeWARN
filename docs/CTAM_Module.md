@@ -74,6 +74,12 @@ A storm motion forecasting module that predicts storm cell trajectories.
 - `forecast_cones`: List of forecast cone dictionaries (centers are in lat/lon relative to storm centroid)
 - `reason` or `error`: Explanation if skipped or failed
 
+- `reason` or `error`: Explanation if skipped or failed
+
+#### History Loading
+
+StormCast leverages the full history of a storm cell to improve forecast accuracy. It loads past states from the cell's history file (`CELL_DIR/{cell_id}.json`) to build a temporal sequence of observations. This allows the internal Kalman filter to better estimate the storm's velocity and trajectory compared to using only instantaneous motion vectors.
+
 ---
 
 ### MorphoWind

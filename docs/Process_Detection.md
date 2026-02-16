@@ -76,7 +76,7 @@ The `tools` directory contains helper classes and functions used by the core det
 -   **`utils.py`**: Contains `DetectionDataHandler` for loading and subsetting xarray datasets (Radar, ProbSevere, PrecipType).
 -   **`gatemapper.py`**: Contains `GateMapper` for identifying storm cells from radar reflectivity.
     - **Method**: Uses a **Watershed algorithm** (via `skimage`) instead of simple Voronoi expansion.
-    - **Connectivity**: Enforces strict spatial connectivity by using a high-reflectivity mask ($\ge$ 40 dBZ). This prevents "gap jumping," where a cell might incorrectly claim a distant, unconnected storm.
+    - **Connectivity**: Enforces strict spatial connectivity by using a high-reflectivity mask ($\ge$ 37.5 dBZ). This prevents "gap jumping," where a cell might incorrectly claim a distant, unconnected storm.
     - **Mergers**: Uses a negative Euclidean Distance Transform (EDT) as an "elevation" map. This ensures that when two cells merge, the boundary is drawn naturally along the "ridge" between their respective intensity cores.
 -   **`morphology.py`**: Contains `MorphologyEngine` for computing geometric features of storm cells.
     - **Solidity**: Contour Area / Convex Hull Area (lower = more non-convex/bowed)

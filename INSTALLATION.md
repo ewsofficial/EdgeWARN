@@ -26,6 +26,7 @@ The real-time analysis (``run.py``) pulls live data and analyses it in real-time
 - **``--lon_limits``** (``lon_min``, ``lon_max``): Longitude limits for data processing
 - **``--nogui``**: Disable server monitor GUI
 - **``--base_dir``**: Base directory to store data (Default is ``EdgeWARN_input``)
+- **``--profile``**: Enable performance profiling
 
 ### Historical Analysis (``process_historical.py``)
 
@@ -37,6 +38,10 @@ Historical analysis capabilities all the way up to January 1, 2021 using the ``n
 - **``--lat``** (``lat_min``, ``lat_max``): Latitude limits for data processing
 - **``--lon``** (``lon_min``, ``lon_max``): Longitude limits for data processing
 - **``--base_dir``**: Base directory to store data
+- **``--output``**: Output JSON file path (Default: ``stormcell_test.json``)
+- **``--profile``**: Enable performance profiling
+- **``--output``**: Output JSON file path (Default: ``stormcell_test.json``)
+- **``--profile``**: Enable performance profiling
 
 ### Start Data Server
 - ``npm start``
