@@ -1,0 +1,270 @@
+"""
+Lineage detection algorithm implementation.
+
+This module provides the core lineage detection logic that identifies
+merge and split events between old and new cell sets.
+"""
+
+from typing import List, Dict, Any, Optional, Tuple
+from pathlib import Path
+
+from .events import (
+    LineageEvent,
+    LineageResult,
+    MergeEvent,
+    SplitEvent,
+)
+from .spatial import (
+    build_spatial_index,
+    find_overlapping_cells,
+    select_dominant_parent,
+    select_dominant_child,
+    calculate_overlap_ratio,
+)
+from .buffer import LineageBuffer
+
+
+# Default configuration constants
+DEFAULT_OVERLAP_THRESHOLD = 0.30  # 30% overlap required for merge/split detection
+
+
+class LineageDetector:
+    """
+    Detects merge and split events between old and new storm cell sets.
+    
+    This class implements the lineage detection algorithm specified in the
+    Implementation Plan, including:
+    - Merge detection (multiple parents -> single child)
+    - Split detection (single parent -> multiple children)
+    - Hysteresis buffering for false positive prevention
+    
+    Example:
+        >>> detector = LineageDetector(buffer=LineageBuffer())
+        >>> result = detector.detect(old_cells, new_cells)
+        >>> for merge in result.merges:
+        ...     print(f"Merge: {merge.parent_ids} -> {merge.child_id}")
+    """
+    
+    def __init__(
+        self,
+        buffer: Optional[LineageBuffer] = None,
+        overlap_threshold: float = DEFAULT_OVERLAP_THRESHOLD,
+        io_manager: Optional[Any] = None,
+    ):
+        """
+        Initialize the lineage detector.
+        
+        Args:
+            buffer: LineageBuffer for hysteresis (created if None)
+            overlap_threshold: Minimum overlap ratio for merge/split detection
+            io_manager: IO manager for logging (optional)
+        """
+        self.buffer = buffer or LineageBuffer()
+        self.overlap_threshold = overlap_threshold
+        self.io_manager = io_manager
+    
+    def detect(
+        self,
+        old_cells: List[Dict[str, Any]],
+        new_cells: List[Dict[str, Any]],
+    ) -> LineageResult:
+        """
+        Detect merge and split events between old and new cell sets.
+        
+        This is the main entry point for lineage detection. It performs:
+        1. Build spatial indices for both cell sets
+        2. Detect merges (multiple old cells -> single new cell)
+        3. Detect splits (single old cell -> multiple new cells)
+        4. Apply hysteresis buffer for confirmation
+        5. Build lineage result with event classifications
+        
+        Args:
+            old_cells: List of cell dicts from previous scan
+            new_cells: List of cell dicts from current scan
+            
+        Returns:
+            LineageResult containing all detected events and classifications
+        """
+        result = LineageResult()
+        
+        # Build spatial indices
+        old_index = build_spatial_index(old_cells)
+        new_index = build_spatial_index(new_cells)
+        
+        # Get ID sets for quick lookup
+        old_ids = set(old_index.keys())
+        new_ids = set(new_index.keys())
+        
+        # Track which cells have been matched
+        matched_old: set = set()
+        matched_new: set = set()
+        
+        # === MERGE DETECTION ===
+        # For each new cell, find overlapping old cells
+        for new_cell in new_cells:
+            new_id = int(new_cell.get('id', 0))
+            
+            # Find overlapping old cells
+            overlapping = find_overlapping_cells(
+                new_cell, old_index, self.overlap_threshold
+            )
+            
+            if len(overlapping) > 1:
+                # Multiple old cells overlap with this new cell -> potential MERGE
+                parent_ids = [pid for pid, _ in overlapping]
+                overlap_ratios = {pid: ratio for pid, ratio in overlapping}
+                
+                # Select dominant parent
+                dominant_parent = select_dominant_parent(parent_ids, old_index)
+                
+                # Record in hysteresis buffer
+                confirmed = self.buffer.record_potential_merge(
+                    new_id, parent_ids, dominant_parent
+                )
+                
+                if confirmed:
+                    # Create merge event
+                    merge = MergeEvent(
+                        child_id=new_id,
+                        parent_ids=parent_ids,
+                        dominant_parent=dominant_parent,
+                        overlap_ratios=overlap_ratios,
+                    )
+                    result.merges.append(merge)
+                    
+                    # Mark all parents as matched
+                    for pid in parent_ids:
+                        matched_old.add(pid)
+                    
+                    # Mark child as matched
+                    matched_new.add(new_id)
+                    
+                    # Set event type for child
+                    result.cell_events[new_id] = LineageEvent.MERGE
+                    result.cell_lineage[new_id] = {
+                        'parent_ids': parent_ids,
+                        'dominant_parent': dominant_parent,
+                    }
+                    
+                    # Log the event
+                    self._log_merge_event(merge)
+        
+        # === SPLIT DETECTION ===
+        # For each old cell, find overlapping new cells
+        for old_cell in old_cells:
+            old_id = int(old_cell.get('id', 0))
+            
+            if old_id in matched_old:
+                continue  # Already matched in merge detection
+            
+            # Find overlapping new cells
+            overlapping = find_overlapping_cells(
+                old_cell, new_index, self.overlap_threshold
+            )
+            
+            if len(overlapping) > 1:
+                # Single old cell overlaps multiple new cells -> potential SPLIT
+                child_ids = [cid for cid, _ in overlapping]
+                overlap_ratios = {cid: ratio for cid, ratio in overlapping}
+                
+                # Select dominant child
+                dominant_child = select_dominant_child(child_ids, new_index)
+                
+                # Record in hysteresis buffer
+                confirmed = self.buffer.record_potential_split(
+                    old_id, child_ids, dominant_child
+                )
+                
+                if confirmed:
+                    # Create split event
+                    split = SplitEvent(
+                        parent_id=old_id,
+                        child_ids=child_ids,
+                        dominant_child=dominant_child,
+                        overlap_ratios=overlap_ratios,
+                    )
+                    result.splits.append(split)
+                    
+                    # Mark parent as matched
+                    matched_old.add(old_id)
+                    
+                    # Mark all children as matched
+                    for cid in child_ids:
+                        matched_new.add(cid)
+                    
+                    # Set event type for children
+                    for cid in child_ids:
+                        if cid == dominant_child:
+                            # Dominant child inherits parent ID
+                            result.cell_events[cid] = LineageEvent.ACTIVE
+                            result.cell_lineage[cid] = {
+                                'split_from': old_id,
+                                'is_dominant_child': True,
+                            }
+                        else:
+                            # Secondary children are marked as SPLIT
+                            result.cell_events[cid] = LineageEvent.SPLIT
+                            result.cell_lineage[cid] = {
+                                'split_from': old_id,
+                                'is_dominant_child': False,
+                            }
+                    
+                    # Log the event
+                    self._log_split_event(split)
+        
+        # === UNMATCHED CELLS ===
+        # Old cells not matched -> DISSIPATED
+        for old_id in old_ids:
+            if old_id not in matched_old:
+                result.unmatched_old.append(old_id)
+                result.cell_events[old_id] = LineageEvent.DISSIPATED
+        
+        # New cells not matched -> truly new cells
+        for new_id in new_ids:
+            if new_id not in matched_new:
+                result.unmatched_new.append(new_id)
+                result.cell_events[new_id] = LineageEvent.ACTIVE
+        
+        return result
+    
+    def _log_merge_event(self, merge: MergeEvent) -> None:
+        """Log a merge event per PRD TR4 format."""
+        if self.io_manager:
+            parent_str = ', '.join(str(pid) for pid in merge.parent_ids)
+            msg = f"Event Detected: Merge (IDs: {parent_str} -> {merge.child_id})"
+            self.io_manager.write_info(f"[CellDetection] {msg}")
+    
+    def _log_split_event(self, split: SplitEvent) -> None:
+        """Log a split event per PRD TR4 format."""
+        if self.io_manager:
+            child_str = ', '.join(str(cid) for cid in split.child_ids)
+            msg = f"Event Detected: Split (IDs: {split.parent_id} -> {child_str})"
+            self.io_manager.write_info(f"[CellDetection] {msg}")
+
+
+def detect_lineage_events(
+    old_cells: List[Dict[str, Any]],
+    new_cells: List[Dict[str, Any]],
+    buffer: Optional[LineageBuffer] = None,
+    overlap_threshold: float = DEFAULT_OVERLAP_THRESHOLD,
+    io_manager: Optional[Any] = None,
+) -> LineageResult:
+    """
+    Convenience function to detect lineage events without instantiating detector.
+    
+    Args:
+        old_cells: List of cell dicts from previous scan
+        new_cells: List of cell dicts from current scan
+        buffer: LineageBuffer for hysteresis (created if None)
+        overlap_threshold: Minimum overlap ratio for detection
+        io_manager: IO manager for logging
+        
+    Returns:
+        LineageResult containing all detected events
+    """
+    detector = LineageDetector(
+        buffer=buffer,
+        overlap_threshold=overlap_threshold,
+        io_manager=io_manager,
+    )
+    return detector.detect(old_cells, new_cells)
