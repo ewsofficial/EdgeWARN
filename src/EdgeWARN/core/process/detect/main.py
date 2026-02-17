@@ -268,8 +268,18 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     perf_tracker.start("Detection - Tracking")
     tracker = StormCellTracker(ps_old_data, ps_new_data, io_manager)
     saver = CellDataSaver(None, radar_new, None, None, ps_new_data, None)
-    # Pass timestamp to tracker
-    entries = tracker.update_cells(entries_old, entries_new, timestamp=json_ts)
+    
+    # Lineage detection (merge/split events)
+    stormcell_dir = fs.STORMCELL_DIR
+    stormcell_dir.mkdir(exist_ok=True)
+    lineage = tracker.detect_lineage_events(entries_old, entries_new, stormcell_dir)
+    
+    # Pass timestamp and lineage to tracker
+    entries = tracker.update_cells(entries_old, entries_new, timestamp=json_ts, lineage=lineage)
+    
+    # Save lineage buffer state for next scan
+    tracker.save_lineage_buffer(stormcell_dir)
+    
     perf_tracker.stop("Detection - Tracking")
     
     perf_tracker.start("Detection - Vector Calc")
@@ -279,8 +289,6 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     perf_tracker.start("Detection - Save")
     output_data = saver.create_json_structure(json_ts, entries)
     
-    stormcell_dir = fs.STORMCELL_DIR
-    stormcell_dir.mkdir(exist_ok=True)
     output_file = stormcell_dir / f"stormcells_{final_ts}.json"
 
     with open(output_file, 'w') as f:

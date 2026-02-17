@@ -22,7 +22,7 @@ class CellDataSaver:
         return {
             "source": "Edgemont Weather Service",
             "product": "EdgeWARN Storm Cells",
-            "version": "1.5.3",
+            "version": "1.6.0",
             "latest_timestamp": latest_timestamp,
             "features": features
         }
@@ -218,6 +218,9 @@ class CellDataSaver:
                 "bbox": [[float(pt[0]), float(pt[1]) % 360] for pt in bbox],
                 "hail_core": [[float(pt[0]), float(pt[1]) % 360] for pt in hail_core],
                 "max_refl": max_refl_val,
+                "event_type": "ACTIVE",
+                "parent_ids": [],
+                "split_from": None,
                 "properties": {
                     "morphology": morph_stats # Inject MorphoWind stats
                 }
