@@ -22,11 +22,35 @@ The storm cells JSON output follows this structure:
 | bbox        | List of [lat, lon] | Bounding Box of storm cell (Lon is in 0-360 format) |
 | hail_core   | List of [lat, lon] | Bounding box of storm's hail core (Lon is in 0-360 format) |
 | max_refl    | dBZ           | Maximum reflectivity in the storm cell          |
+| event_type  | string        | Lineage event type: "ACTIVE", "MERGE", "SPLIT", or "DISSIPATED" |
+| parent_ids  | List[int]     | IDs of parent cells that merged into this cell (empty if not a merge) |
+| split_from  | int or null   | ID of parent cell this cell split from (null if not a split) |
 | dx          | m             | X-displacement from previous scan centroid       |
 | dy          | m             | Y-displacement from previous scan centroid       |
 | dt          | s             | Time difference from previous scan              |
 | properties  | Object        | Integrated meteorological data |
 | modules     | Object        | CTAM module outputs (see Modules section below) |
+
+### Lineage Event Types
+
+The `event_type` field indicates how the cell relates to previous scan data:
+
+| Event Type   | Description                                      |
+|--------------|--------------------------------------------------|
+| ACTIVE       | Normal continuation - cell present in previous scan with same ID |
+| MERGE        | Multiple parent cells combined into this single child cell |
+| SPLIT        | This cell split from a parent cell (secondary child) |
+| DISSIPATED   | Cell was removed without merging (not included in output) |
+
+### Lineage Fields
+
+- **parent_ids**: When `event_type` is "MERGE", this list contains the IDs of all parent cells 
+  that merged into this child. The dominant parent (highest reflectivity or largest gate count) 
+  provides the historical tracking data for the merged cell.
+
+- **split_from**: When `event_type` is "SPLIT" or the cell is the dominant child of a split, 
+  this field contains the ID of the parent cell. The dominant child inherits the parent's ID 
+  and tracking history.
 
 ## Data Keys in ``modules``
 
