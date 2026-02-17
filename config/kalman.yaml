@@ -1,0 +1,37 @@
+# Kalman Filter Configuration for Storm Cell Tracking
+# 
+# This configuration file controls the behavior of the Kalman filter
+# used for storm cell tracking continuity.
+
+kalman_filter:
+  # Process noise parameters
+  # Controls how much the state is expected to change between predictions
+  process_noise:
+    position: 0.1      # Position process noise (degrees)
+    velocity: 0.5      # Velocity process noise (m/s)
+    acceleration: 0.1  # Acceleration process noise (m/s²)
+  
+  # Measurement noise parameters
+  # Controls the uncertainty in observations from ProbSevere
+  measurement_noise:
+    position: 0.5      # Position measurement noise (km)
+
+tracking:
+  # Maximum time a storm can be tracked in prediction mode (minutes)
+  # After this time, the storm will be terminated if not re-acquired
+  max_prediction_time_minutes: 10
+  
+  # Maximum distance for re-acquisition (km)
+  # A new ProbSevere detection within this radius of a predicted cell
+  # will be considered a re-acquisition
+  reacquisition_radius_km: 5.0
+  
+  # Minimum confidence before termination
+  # Confidence decays over time while in prediction mode
+  # When confidence drops below this threshold, the storm is terminated
+  confidence_threshold: 0.4
+  
+  # Per-scan confidence decay factor
+  # confidence = base_confidence * decay_factor^scan_count
+  # Lower values = faster decay
+  confidence_decay_factor: 0.7
