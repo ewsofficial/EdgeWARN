@@ -132,6 +132,71 @@ Downloads meteorological data for a specific type and timestamp.
 
 ---
 
+## Storm Cell Lineage Fields
+
+Storm cell JSON objects include lineage fields that track merge and split events:
+
+### Lineage Event Types
+
+| Event Type | Description |
+|------------|-------------|
+| `ACTIVE` | Normal continuation - cell present in previous scan with same ID |
+| `MERGE` | Multiple parent cells combined into this single child cell |
+| `SPLIT` | This cell split from a parent cell (secondary child) |
+| `DISSIPATED` | Cell was removed without merging (not included in output) |
+
+### Lineage Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | string | One of: `ACTIVE`, `MERGE`, `SPLIT`, `DISSIPATED` |
+| `parent_ids` | List[int] | IDs of parent cells that merged into this cell (empty if not a merge) |
+| `split_from` | int or null | ID of parent cell this cell split from (null if not a split) |
+
+### Merge Event Example
+
+When two storm cells merge into one:
+
+```json
+{
+  "id": 405,
+  "event_type": "MERGE",
+  "parent_ids": [405, 408],
+  "split_from": null,
+  "max_refl": 65.0,
+  "num_gates": 220,
+  "centroid": [35.15, 262.15],
+  "bbox": [[35.0, 262.0], [35.0, 262.3], [35.3, 262.3], [35.3, 262.0]]
+}
+```
+
+The dominant parent (highest `max_refl` or largest `num_gates`) provides the historical tracking data for the merged cell.
+
+### Split Event Example
+
+When one storm cell splits into multiple cells:
+
+```json
+{
+  "id": 10,
+  "event_type": "ACTIVE",
+  "parent_ids": [],
+  "split_from": 1,
+  "max_refl": 55.0,
+  "num_gates": 100
+}
+```
+
+The dominant child (highest `max_refl`) inherits the parent's ID and tracking history, while secondary children are marked with `event_type: "SPLIT"`.
+
+### Hysteresis Buffer
+
+Lineage events require confirmation across multiple scans to prevent false positives from ProbSevere ID instability. By default, events must be detected in 2 consecutive scans before being confirmed.
+
+Buffer state is persisted in `lineage_buffer.json` in the storm cells directory.
+
+---
+
 ## Rate Limiting
 
 The API implements rate limiting to ensure stability:
