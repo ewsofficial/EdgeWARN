@@ -25,29 +25,72 @@ This module handles the core logic for detecting storm cells from a single time 
     - **Returns**: A list of dictionaries, where each dictionary represents a detected storm cell with its properties and history.
 
 ### 2. `track.py`
-This module manages the tracking of storm cells across consecutive time steps.
+This module manages the tracking of storm cells across consecutive time steps with Kalman filter support for tracking continuity.
 
 #### Classes:
 
 - **`StormCellTracker`**
-    - **`__init__(self, ps_old, ps_new, io_manager)`**: Initializes the tracker with old and new ProbSevere data.
-    - **`update_cells(self, entries, updated_data, timestamp=None)`**:
-        - **Functionality**: Updates the list of storm cells based on new detection data.
+    - **`__init__(self, ps_old, ps_new, io_manager, tracking_config=None)`**: Initializes the tracker with old and new ProbSevere data and optional tracking configuration.
+    - **`update_cells(self, entries, updated_data, timestamp=None, dt_seconds=120.0)`**:
+        - **Functionality**: Updates the list of storm cells based on new detection data with Kalman filter prediction for unmatched cells.
         - **Parameters**:
             - `entries`: List of existing storm cells from the previous scan
             - `updated_data`: List of newly detected cells from the current scan
             - `timestamp`: Optional ISO-format timestamp string for the current scan
+            - `dt_seconds`: Time since last scan in seconds (default: 120.0)
+        - **Tracking Modes**:
+            - **active**: Normal tracking with ProbSevere observations
+            - **predicted**: Kalman-only prediction mode (ProbSevere dropped)
+            - **terminated**: Storm removed from tracking
         - **Logic**:
             - Maps `updated_data` (new detections) by cell ID for O(1) lookup.
             - Iterates through existing `entries` (previous cells):
-                - **Matched cells**: If a cell ID exists in the new data, it updates the cell's main fields (`num_gates`, `centroid`, `max_refl`, `bbox`) while preserving its `storm_history`. If `timestamp` is provided, assigns it to the cell (marking it as active).
-                - **Unmatched cells**: If a cell ID is missing in the new data, it is **not** updated and **removed** from tracking (not returned in the output list).
-            - Adds any **new** cells found in `updated_data` that were not in `entries`. If `timestamp` is provided, it is assigned to new cells as well.
-        - **Timestamp Behavior**:
-            - **Matched cells**: Receive the current `timestamp`, indicating they are active/current.
-            - **New cells**: Receive the current `timestamp` upon creation.
-            - **Unmatched cells**: Do NOT receive a timestamp update and are removed from tracking.
-            - This timestamp-based approach enables downstream processes (like history tracking) to identify which cells were active in the current scan by checking for the presence of the `timestamp` field.
+                - **Matched cells**: Updates cell's main fields and resets to active mode.
+                - **Unmatched cells**: Enters prediction mode using Kalman filter instead of immediate removal.
+            - Checks for re-acquisition: New cells within 5km of predicted cells are merged, preserving the original storm ID and history.
+            - Terminates predicted cells when confidence drops below threshold or time limit exceeded.
+        - **Re-acquisition**:
+            - New ProbSevere detections within 5km of a predicted cell are automatically merged.
+            - The new cell receives the old cell's ID, preserving storm history.
+            - Confidence resets to 1.0 and mode returns to active.
+
+#### Kalman Filter Module (`kalman/`)
+
+The Kalman filter module provides prediction-based tracking continuity when ProbSevere temporarily drops detection.
+
+##### Components:
+
+- **`filter.py`**: `KalmanFilter` class with 6-dimensional state vector (position, velocity, acceleration)
+- **`state.py`**: `StateVector` and `CovarianceMatrix` classes for state representation
+- **`confidence.py`**: `ConfidenceCalculator` and `PredictionState` for confidence scoring
+- **`config.py`**: Configuration classes for Kalman and tracking parameters
+
+##### Configuration (`config/kalman.yaml`):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| max_prediction_time_minutes | 10 | Maximum time in prediction mode |
+| reacquisition_radius_km | 5.0 | Maximum distance for re-acquisition |
+| confidence_threshold | 0.4 | Minimum confidence before termination |
+| confidence_decay_factor | 0.7 | Per-scan confidence decay |
+
+##### Usage Example:
+
+```python
+from EdgeWARN.core.process.detect.kalman import KalmanFilter, KalmanObservation
+
+# Initialize from storm cell
+kf = KalmanFilter()
+kf.initialize(lat=33.5, lon=-97.2, u=12.5, v=-6.7)
+
+# Predict forward (2 minutes)
+predicted_state = kf.predict(dt=120.0)
+print(f"Predicted position: {predicted_state.lat}, {predicted_state.lon}")
+
+# Update with observation
+obs = KalmanObservation(lat=33.52, lon=-97.18)
+updated_state = kf.update(obs)
+```
         - **Returns**: A filtered and updated list of storm cell dictionaries containing only matched and new cells.
 
 ### 3. `main.py`
