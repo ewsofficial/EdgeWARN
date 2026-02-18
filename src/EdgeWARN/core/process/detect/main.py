@@ -3,6 +3,7 @@ from pathlib import Path
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from EdgeWARN.core.process.detect.tools.vecmath import StormVectorCalculator
 from EdgeWARN.core.process.detect.track import StormCellTracker
+from EdgeWARN.core.process.detect.kalman.config import TrackingConfig, AssignmentConfig
 from EdgeWARN.core.process.detect.detect import detect_cells
 from util.io import IOManager
 import util.file as fs
@@ -141,6 +142,11 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             io_manager.write_error(f"Error parsing loaded data: {e}")
             entries_old = None
 
+    # Get old timestamp for dt calculation
+    old_ts_str = None
+    if data_old and isinstance(data_old, dict):
+        old_ts_str = data_old.get("latest_timestamp")
+
     if not entries_old:
         io_manager.write_info("No valid previous storm cell data found, detecting from old scan ...")
         perf_tracker.start("Detection - Old Scan Fallback")
@@ -266,7 +272,18 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         perf_tracker.stop("Detection - Load ProbSevere Old")
 
     perf_tracker.start("Detection - Tracking")
-    tracker = StormCellTracker(ps_old_data, ps_new_data, io_manager)
+    
+    # Load Kalman configurations
+    tracking_config = TrackingConfig.from_yaml()
+    assignment_config = AssignmentConfig.from_yaml()
+    
+    tracker = StormCellTracker(
+        ps_old_data, 
+        ps_new_data, 
+        io_manager,
+        tracking_config=tracking_config,
+        assignment_config=assignment_config
+    )
     saver = CellDataSaver(None, radar_new, None, None, ps_new_data, None)
     
     # Lineage detection (merge/split events)
@@ -274,8 +291,27 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     stormcell_dir.mkdir(exist_ok=True)
     lineage = tracker.detect_lineage_events(entries_old, entries_new, stormcell_dir)
     
-    # Pass timestamp and lineage to tracker
-    entries = tracker.update_cells(entries_old, entries_new, timestamp=json_ts, lineage=lineage)
+    # Calculate dt for Kalman filter
+    dt_seconds = 120.0 # Default
+    if old_ts_str:
+        try:
+            old_dt = datetime.fromisoformat(old_ts_str)
+            current_dt = datetime.fromisoformat(json_ts)
+            dt_seconds = (current_dt - old_dt).total_seconds()
+            if dt_seconds <= 0:
+                io_manager.write_warning(f"Calculated dt={dt_seconds}s is non-positive. Defaulting to 120s.")
+                dt_seconds = 120.0
+        except Exception as e:
+            io_manager.write_warning(f"Failed to calculate dt from timestamps: {e}. Defaulting to 120s.")
+            
+    # Pass timestamp, dt, and lineage to tracker
+    entries = tracker.update_cells(
+        entries_old, 
+        entries_new, 
+        timestamp=json_ts, 
+        dt_seconds=dt_seconds,
+        lineage=lineage
+    )
     
     # Save lineage buffer state for next scan
     tracker.save_lineage_buffer(stormcell_dir)
