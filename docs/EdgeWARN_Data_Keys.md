@@ -30,6 +30,43 @@ The storm cells JSON output follows this structure:
 | dt          | s             | Time difference from previous scan              |
 | properties  | Object        | Integrated meteorological data |
 | modules     | Object        | CTAM module outputs (see Modules section below) |
+| tracking_mode | string      | Tracking mode: "active", "predicted", or absent (legacy) |
+| prediction_count | int      | Number of consecutive scans in prediction mode (only when tracking_mode="predicted") |
+| confidence  | float         | Tracking confidence 0.0-1.0 (only when tracking_mode="predicted") |
+| kalman_predicted_centroid | Lat, Lon | Kalman filter predicted position (only when tracking_mode="predicted") |
+| kalman_state | Object       | Kalman filter state for serialization (see Kalman State section) |
+
+## Kalman Tracking Fields
+
+When a storm cell enters prediction mode (ProbSevere temporarily drops detection), additional fields are added:
+
+### Tracking Modes
+
+| Mode | Description |
+|------|-------------|
+| active | Normal tracking with ProbSevere observations |
+| predicted | Kalman-only prediction mode |
+| terminated | Storm removed from tracking (not included in output) |
+
+### Kalman State Object
+
+| Key | Type | Description |
+|-----|------|-------------|
+| lat | float | Latitude position (degrees) |
+| lon | float | Longitude position (degrees) |
+| u | float | Eastward velocity (m/s) |
+| v | float | Northward velocity (m/s) |
+| a_lat | float | Latitude acceleration (m/s²) |
+| a_lon | float | Longitude acceleration (m/s²) |
+| P | 6x6 array | Covariance matrix |
+
+### Confidence Model
+
+Confidence decays while in prediction mode:
+- Base confidence: 1.0
+- Decay factor: 0.7 per scan
+- Termination threshold: 0.4
+- Maximum prediction time: 10 minutes
 
 ### Lineage Event Types
 
