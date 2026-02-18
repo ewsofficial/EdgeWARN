@@ -28,6 +28,11 @@ from .kalman import (
     AssignmentConfig,
     haversine_distance,
 )
+from .kalman.assignment import (
+    run_hybrid_assignment,
+    run_greedy_assignment,
+    AssignmentResult
+)
 
 
 class StormCellTracker:
@@ -251,52 +256,120 @@ class StormCellTracker:
                 processed_new_ids.add(cell_id)
                 stats['matches'] += 1
 
-        # 4. Handle Unmatched Old Cells (Potential Prediction Mode)
-        predicted_candidates = []
+        # 4. Identify Unmatched Candidates for Secondary Assignment
+        unmatched_tracks = []
+        unmatched_tracks_map = {} # ID -> Entry
         for cell in entries:
             cell_id = int(cell['id'])
             if cell_id not in processed_old_ids:
-                # Cell wasn't matched by overlap.
-                # Try to enter/maintain prediction mode
-                if self._handle_unmatched_cell(cell, cell_id, timestamp, dt_seconds):
-                    predicted_candidates.append(cell)
-                    # Don't add to updated_entries yet, might be re-acquired
-                else:
-                    stats['terminated'] += 1
-        
-        # 5. Handle Unmatched New Cells (Potential Re-acquisition or True New)
+                unmatched_tracks.append(cell)
+                unmatched_tracks_map[cell_id] = cell
+                
+        unmatched_detections = []
+        unmatched_detections_map = {} # ID -> Data
         for cell_id, cell_data in updated_map.items():
             if cell_id not in processed_new_ids:
-                # This is a detection without an overlap match.
-                # Try to match against predicted candidates
-                reacquired_match = self._check_reacquisition(cell_data, predicted_candidates, timestamp)
+                cell_data_with_id = cell_data.copy() # Ensure ID is present if not
+                cell_data_with_id['id'] = cell_id
+                unmatched_detections.append(cell_data_with_id)
+                unmatched_detections_map[cell_id] = cell_data
+
+        # 5. Run Secondary Assignment (Hybrid/Greedy) on Remainder
+        # This handles fast-moving cells that lost overlap but are close enough/consistent enough
+        
+        assignment_method = self.assignment_config.method
+        assignment_result = None
+
+        if unmatched_tracks and unmatched_detections:
+            if assignment_method == 'hybrid':
+                assignment_result = run_hybrid_assignment(
+                    unmatched_tracks, unmatched_detections, self._kalman_filters,
+                    self.assignment_config, dt_seconds
+                )
+            elif assignment_method == 'greedy':
+                assignment_result = run_greedy_assignment(
+                    unmatched_tracks, unmatched_detections, self._kalman_filters,
+                    self.assignment_config, dt_seconds
+                )
+            # Add other methods if implemented
+            else:
+                # Default fallback to Greedy if unknown or legacy 'hungarian' mapped to hybrid usually
+                assignment_result = run_hybrid_assignment(
+                    unmatched_tracks, unmatched_detections, self._kalman_filters,
+                    self.assignment_config, dt_seconds
+                )
+        
+        # Process Assignment Results
+        if assignment_result:
+            # Matches (Re-acquisition / Continuation)
+            for track_id, det_id in assignment_result.matched:
+                track = unmatched_tracks_map.get(track_id)
+                detection = unmatched_detections_map.get(det_id)
                 
-                if reacquired_match:
-                    # Found a match!
-                    # reacquired_match is the OLD cell updated with NEW data
-                    updated_entries.append(reacquired_match)
+                if track and detection:
+                    self._update_cell_fields(track, detection, timestamp)
+                    # Reset lineage fields just in case
+                    track['event_type'] = LineageEvent.ACTIVE.value
                     
-                    # Remove from predicted_candidates so we don't add the ghost later
-                    # (Note: reacquired_match is a reference to the obj in predicted_candidates)
-                    if reacquired_match in predicted_candidates:
-                        predicted_candidates.remove(reacquired_match)
-                        
+                    self._update_kalman_with_observation(track, track_id)
+                    self._reset_prediction_state(track_id)
+                    
+                    updated_entries.append(track)
+                    processed_old_ids.add(track_id)
+                    processed_new_ids.add(det_id)
                     stats['reacquired'] += 1
+            
+            # Remaining Unmatched Tracks -> Prediction Mode
+            for track_id in assignment_result.unmatched_tracks:
+                track = unmatched_tracks_map.get(track_id)
+                if track and self._handle_unmatched_cell(track, track_id, timestamp, dt_seconds):
+                    updated_entries.append(track)
+                    stats['predicted'] += 1
                 else:
-                    # True New Cell
-                    new_entry = cell_data.copy()
+                    stats['terminated'] += 1
+            
+            # Remaining Unmatched Detections -> New Cells
+            for det_id in assignment_result.unmatched_detections:
+                detection = unmatched_detections_map.get(det_id)
+                if detection:
+                    new_entry = detection.copy()
                     new_entry['event_type'] = LineageEvent.ACTIVE.value
                     new_entry['parent_ids'] = []
                     new_entry['split_from'] = None
+                    new_entry['tracking_mode'] = 'active'
+                    new_entry['prediction_count'] = 0
+                    new_entry['confidence'] = 1.0
                     if timestamp: new_entry['timestamp'] = timestamp
                     
-                    self._update_kalman_with_observation(new_entry, cell_id)
+                    self._update_kalman_with_observation(new_entry, det_id)
                     updated_entries.append(new_entry)
                     stats['new'] += 1
-
-        # 6. Add remaining Predicted cells
-        updated_entries.extend(predicted_candidates)
-        stats['predicted'] += len(predicted_candidates)
+        else:
+            # Fallback if assignment didn't run (e.g. one list empty)
+            # Unmatched Tracks -> Prediction
+            for track in unmatched_tracks:
+                track_id = int(track['id'])
+                if self._handle_unmatched_cell(track, track_id, timestamp, dt_seconds):
+                    updated_entries.append(track)
+                    stats['predicted'] += 1
+                else:
+                    stats['terminated'] += 1
+            
+            # Unmatched Detections -> New Cells
+            for detection in unmatched_detections:
+                det_id = int(detection['id'])
+                new_entry = detection.copy()
+                new_entry['event_type'] = LineageEvent.ACTIVE.value
+                new_entry['parent_ids'] = []
+                new_entry['split_from'] = None
+                new_entry['tracking_mode'] = 'active'
+                new_entry['prediction_count'] = 0
+                new_entry['confidence'] = 1.0
+                if timestamp: new_entry['timestamp'] = timestamp
+                
+                self._update_kalman_with_observation(new_entry, det_id)
+                updated_entries.append(new_entry)
+                stats['new'] += 1
         
         # Log
         self.io_manager.write_info(
@@ -388,8 +461,6 @@ class StormCellTracker:
         # Check termination
         should_terminate, reason = self.confidence_calc.should_terminate(
             confidence=confidence,
-            confidence_threshold=self.tracking_config.min_confidence_threshold, # Use config
-            max_time=self.tracking_config.max_prediction_time_seconds,
             time_predicted_seconds=pred_state.total_time_seconds,
             scans_predicted=pred_state.scan_count
         )
