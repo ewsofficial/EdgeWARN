@@ -92,3 +92,73 @@ class TrackingConfig:
 # Default configurations
 DEFAULT_KALMAN_CONFIG = KalmanConfig()
 DEFAULT_TRACKING_CONFIG = TrackingConfig()
+
+
+@dataclass
+class AssignmentConfig:
+    """
+    Configuration for measurement assignment algorithm.
+    
+    Controls the hybrid pre-filter + Hungarian algorithm approach
+    for assigning detections to tracked storm cells.
+    """
+    
+    # Pre-filtering (Stage 1)
+    prefilter_radius_km: float = 16.0  # 10 miles - spatial pre-filter radius
+    
+    # Gating parameters (Stage 2)
+    gating_threshold: float = 6.0  # Chi-squared 95% confidence (2 DOF)
+    min_gating_radius_km: float = 2.0  # Floor for collapsed covariance
+    
+    # Cost function weights
+    weight_position: float = 1.0  # Mahalanobis distance weight
+    weight_velocity: float = 2.0  # Velocity direction consistency weight
+    weight_shape: float = 0.5  # Size/reflectivity similarity weight
+    
+    # Algorithm selection (for A/B testing and fallback)
+    method: str = "hybrid"  # 'hybrid', 'hungarian', or 'greedy'
+    
+    # Numerical stability
+    covariance_regularization: float = 1e-6
+    
+    @classmethod
+    def from_yaml(cls, path: Optional[Path] = None) -> "AssignmentConfig":
+        """
+        Load configuration from YAML file.
+        
+        Args:
+            path: Path to YAML config file. If None, uses default path.
+        
+        Returns:
+            AssignmentConfig instance
+        """
+        if path is None:
+            # Default config path
+            path = Path(__file__).parent.parent.parent.parent.parent.parent / "config" / "kalman.yaml"
+        
+        if not path.exists():
+            return cls()
+        
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f)
+        
+        if data is None or 'assignment' not in data:
+            return cls()
+        
+        assignment_data = data['assignment']
+        weights = assignment_data.get('weights', {})
+        
+        return cls(
+            prefilter_radius_km=assignment_data.get('prefilter_radius_km', 16.0),
+            gating_threshold=assignment_data.get('gating_threshold', 6.0),
+            min_gating_radius_km=assignment_data.get('min_gating_radius_km', 2.0),
+            weight_position=weights.get('position', 1.0),
+            weight_velocity=weights.get('velocity_direction', 2.0),
+            weight_shape=weights.get('size_similarity', 0.5),
+            method=assignment_data.get('method', 'hybrid'),
+            covariance_regularization=assignment_data.get('covariance_regularization', 1e-6),
+        )
+
+
+# Default assignment configuration
+DEFAULT_ASSIGNMENT_CONFIG = AssignmentConfig()

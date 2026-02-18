@@ -3,6 +3,11 @@ Storm Cell Tracker with Kalman Filter Integration
 
 Tracks storm cells across consecutive scans with Kalman filter-based
 prediction for continuity when ProbSevere temporarily drops detection.
+
+Supports multiple assignment algorithms:
+- hybrid: Pre-filter + Hungarian algorithm (recommended)
+- hungarian: Full Hungarian algorithm
+- greedy: Nearest-neighbor fallback
 """
 
 from typing import List, Dict, Any, Optional, Tuple
@@ -15,7 +20,15 @@ from .kalman import (
     ConfidenceCalculator,
     PredictionState,
     TrackingConfig,
+    AssignmentConfig,
     haversine_distance,
+)
+
+from .kalman.assignment import (
+    AssignmentCostCalculator,
+    AssignmentResult,
+    run_hybrid_assignment,
+    run_greedy_assignment,
 )
 
 
@@ -28,17 +41,24 @@ class StormCellTracker:
     - predicted: Kalman-only prediction mode (ProbSevere dropped)
     - terminated: Storm removed from tracking
     
+    Assignment Methods:
+    - hybrid: Pre-filter + Hungarian algorithm (recommended)
+    - hungarian: Full Hungarian algorithm
+    - greedy: Nearest-neighbor fallback
+    
     When a cell is not found in updated_data, it enters prediction mode
     instead of being immediately removed. The Kalman filter predicts its
     position for up to 10 minutes or until confidence drops below threshold.
     """
     
     def __init__(self, ps_old, ps_new, io_manager, 
-                 tracking_config: Optional[TrackingConfig] = None):
+                 tracking_config: Optional[TrackingConfig] = None,
+                 assignment_config: Optional[AssignmentConfig] = None):
         self.ps_old = ps_old
         self.ps_new = ps_new
         self.io_manager = io_manager
         self.tracking_config = tracking_config or TrackingConfig()
+        self.assignment_config = assignment_config or AssignmentConfig()
         self.confidence_calc = ConfidenceCalculator(config=self.tracking_config)
         
         # Cache for Kalman filters (cell_id -> KalmanFilter)
@@ -53,9 +73,9 @@ class StormCellTracker:
         """
         Updates main fields in entries from updated_data.
         
-        Cells not found in updated_data enter prediction mode instead of
-        being immediately removed. Predicted cells are tracked for up to
-        10 minutes or until confidence drops below threshold.
+        Uses the configured assignment method (hybrid, hungarian, or greedy)
+        to match detections to tracked cells. Cells not matched enter prediction
+        mode instead of being immediately removed.
         
         Args:
             entries: List of existing storm cell dictionaries
@@ -66,11 +86,44 @@ class StormCellTracker:
         Returns:
             Updated list of storm cells (active + predicted + new)
         """
-        # Map updated_data by cell id for faster lookup
-        updated_map = {int(cell['id']): cell for cell in updated_data}
+        # Choose assignment method based on configuration
+        method = self.assignment_config.method
         
-        used_ids = set()
-        updated_entries = []
+        if method == 'hybrid':
+            return self._update_cells_hybrid(entries, updated_data, timestamp, dt_seconds)
+        elif method == 'hungarian':
+            return self._update_cells_hungarian(entries, updated_data, timestamp, dt_seconds)
+        else:
+            return self._update_cells_greedy(entries, updated_data, timestamp, dt_seconds)
+    
+    def _update_cells_hybrid(self, entries: List[Dict], updated_data: List[Dict],
+                              timestamp: Optional[str], dt_seconds: float) -> List[Dict]:
+        """
+        Update cells using hybrid pre-filter + Hungarian assignment.
+        
+        This is the recommended approach that combines:
+        1. Fixed-radius pre-filtering to reduce problem size
+        2. Hungarian algorithm for optimal assignment within filtered candidates
+        """
+        # Separate active and predicted tracks
+        all_tracks = [e for e in entries if e.get('tracking_mode') in ('active', 'predicted')]
+        
+        # Ensure Kalman filters exist for all tracks
+        for track in all_tracks:
+            track_id = int(track['id'])
+            if track_id not in self._kalman_filters:
+                kf = KalmanFilter()
+                kf.initialize_from_cell(track)
+                self._kalman_filters[track_id] = kf
+        
+        # Run hybrid assignment
+        result = run_hybrid_assignment(
+            tracks=all_tracks,
+            detections=updated_data,
+            kalman_filters=self._kalman_filters,
+            config=self.assignment_config,
+            dt_seconds=dt_seconds
+        )
         
         # Track statistics
         active_count = 0
@@ -78,77 +131,213 @@ class StormCellTracker:
         terminated_count = 0
         reacquired_count = 0
         
-        # Process existing cells
-        for cell in entries:
-            cell_id = int(cell['id'])
-            
-            if cell_id in updated_map:
-                # Cell found in updated_data - normal update
-                updated = updated_map[cell_id]
-                
-                # Handle re-acquisition from prediction mode
-                if cell.get('tracking_mode') == 'predicted':
-                    reacquired_count += 1
-                    self.io_manager.write_info(
-                        f"Cell {cell_id} re-acquired from prediction mode"
-                    )
-                    # Reset prediction state
-                    if cell_id in self._prediction_states:
-                        self._prediction_states[cell_id].reset()
-                
-                # Update cell fields
-                self._update_cell_fields(cell, updated, timestamp)
-                cell['tracking_mode'] = 'active'
-                cell['prediction_count'] = 0
-                cell['confidence'] = 1.0
-                
-                # Update Kalman filter with observation
-                self._update_kalman_with_observation(cell, cell_id)
-                
-                used_ids.add(cell_id)
-                updated_entries.append(cell)
-                active_count += 1
-                
-            else:
-                # Cell not found in updated_data - enter prediction mode
-                handled = self._handle_unmatched_cell(
-                    cell, cell_id, timestamp, dt_seconds
-                )
-                
-                if handled:
-                    updated_entries.append(cell)
-                    predicted_count += 1
-                else:
-                    terminated_count += 1
+        updated_entries = []
+        matched_track_ids = set()
+        matched_detection_ids = set()
         
-        # Check for re-acquisition of predicted cells among new cells
-        new_cells_to_add = []
-        for cell in updated_data:
-            cell_id = int(cell['id'])
-            if cell_id not in used_ids:
-                # Check if this new cell matches a predicted cell
-                matched_predicted = self._check_reacquisition(
-                    cell, updated_entries, timestamp
+        # Process matched pairs
+        for track_id, det_id in result.matched:
+            track = next((t for t in all_tracks if int(t['id']) == track_id), None)
+            detection = next((d for d in updated_data if int(d['id']) == det_id), None)
+            
+            if track is None or detection is None:
+                continue
+            
+            matched_track_ids.add(track_id)
+            matched_detection_ids.add(det_id)
+            
+            # Handle re-acquisition from prediction mode
+            if track.get('tracking_mode') == 'predicted':
+                reacquired_count += 1
+                self.io_manager.write_info(
+                    f"Cell {track_id} re-acquired from prediction mode"
                 )
-                
-                if matched_predicted:
-                    # Cell was re-acquired, don't add as new
-                    used_ids.add(matched_predicted['id'])
-                    reacquired_count += 1
-                else:
-                    # Truly new cell
-                    if timestamp:
-                        cell['timestamp'] = timestamp
-                    cell['tracking_mode'] = 'active'
-                    cell['prediction_count'] = 0
-                    cell['confidence'] = 1.0
-                    new_cells_to_add.append(cell)
+                if track_id in self._prediction_states:
+                    self._prediction_states[track_id].reset()
+            
+            # Update cell fields
+            self._update_cell_fields(track, detection, timestamp)
+            track['tracking_mode'] = 'active'
+            track['prediction_count'] = 0
+            track['confidence'] = 1.0
+            
+            # Update Kalman filter with observation
+            self._update_kalman_with_observation(track, track_id)
+            
+            updated_entries.append(track)
+            active_count += 1
+        
+        # Process unmatched tracks (enter prediction mode)
+        for track_id in result.unmatched_tracks:
+            track = next((t for t in all_tracks if int(t['id']) == track_id), None)
+            if track is None:
+                continue
+            
+            handled = self._handle_unmatched_cell(
+                track, track_id, timestamp, dt_seconds
+            )
+            
+            if handled:
+                updated_entries.append(track)
+                predicted_count += 1
+            else:
+                terminated_count += 1
+        
+        # Process unmatched detections (new cells)
+        new_cells_to_add = []
+        for det_id in result.unmatched_detections:
+            detection = next((d for d in updated_data if int(d['id']) == det_id), None)
+            if detection is None:
+                continue
+            
+            # Check if this detection matches a predicted cell (legacy re-acquisition)
+            matched_predicted = self._check_reacquisition(
+                detection, updated_entries, timestamp
+            )
+            
+            if matched_predicted:
+                reacquired_count += 1
+            else:
+                # Truly new cell
+                if timestamp:
+                    detection['timestamp'] = timestamp
+                detection['tracking_mode'] = 'active'
+                detection['prediction_count'] = 0
+                detection['confidence'] = 1.0
+                new_cells_to_add.append(detection)
         
         updated_entries.extend(new_cells_to_add)
         
         # Log statistics
         self.io_manager.write_info(
-            f"Tracking stats: {active_count} active, {predicted_count} predicted, "
+            f"Tracking stats (hybrid): {active_count} active, {predicted_count} predicted, "
+            f"{terminated_count} terminated, {reacquired_count} re-acquired, "
+            f"{len(new_cells_to_add)} new"
+        )
+        
+        return updated_entries
+    
+    def _update_cells_hungarian(self, entries: List[Dict], updated_data: List[Dict],
+                                 timestamp: Optional[str], dt_seconds: float) -> List[Dict]:
+        """
+        Update cells using full Hungarian algorithm (no pre-filtering).
+        
+        This is similar to hybrid but without the pre-filtering stage.
+        Use for comparison or when pre-filtering might miss valid matches.
+        """
+        # For now, this uses the same logic as hybrid
+        # The difference would be in the assignment module
+        return self._update_cells_hybrid(entries, updated_data, timestamp, dt_seconds)
+    
+    def _update_cells_greedy(self, entries: List[Dict], updated_data: List[Dict],
+                              timestamp: Optional[str], dt_seconds: float) -> List[Dict]:
+        """
+        Update cells using greedy nearest-neighbor assignment.
+        
+        This is the legacy approach that assigns each detection to the
+        closest track, one at a time. Use as fallback if needed.
+        """
+        # Separate active and predicted tracks
+        all_tracks = [e for e in entries if e.get('tracking_mode') in ('active', 'predicted')]
+        
+        # Ensure Kalman filters exist for all tracks
+        for track in all_tracks:
+            track_id = int(track['id'])
+            if track_id not in self._kalman_filters:
+                kf = KalmanFilter()
+                kf.initialize_from_cell(track)
+                self._kalman_filters[track_id] = kf
+        
+        # Run greedy assignment
+        result = run_greedy_assignment(
+            tracks=all_tracks,
+            detections=updated_data,
+            kalman_filters=self._kalman_filters,
+            config=self.assignment_config,
+            dt_seconds=dt_seconds
+        )
+        
+        # Track statistics
+        active_count = 0
+        predicted_count = 0
+        terminated_count = 0
+        reacquired_count = 0
+        
+        updated_entries = []
+        
+        # Process matched pairs
+        for track_id, det_id in result.matched:
+            track = next((t for t in all_tracks if int(t['id']) == track_id), None)
+            detection = next((d for d in updated_data if int(d['id']) == det_id), None)
+            
+            if track is None or detection is None:
+                continue
+            
+            # Handle re-acquisition from prediction mode
+            if track.get('tracking_mode') == 'predicted':
+                reacquired_count += 1
+                self.io_manager.write_info(
+                    f"Cell {track_id} re-acquired from prediction mode"
+                )
+                if track_id in self._prediction_states:
+                    self._prediction_states[track_id].reset()
+            
+            # Update cell fields
+            self._update_cell_fields(track, detection, timestamp)
+            track['tracking_mode'] = 'active'
+            track['prediction_count'] = 0
+            track['confidence'] = 1.0
+            
+            # Update Kalman filter with observation
+            self._update_kalman_with_observation(track, track_id)
+            
+            updated_entries.append(track)
+            active_count += 1
+        
+        # Process unmatched tracks (enter prediction mode)
+        for track_id in result.unmatched_tracks:
+            track = next((t for t in all_tracks if int(t['id']) == track_id), None)
+            if track is None:
+                continue
+            
+            handled = self._handle_unmatched_cell(
+                track, track_id, timestamp, dt_seconds
+            )
+            
+            if handled:
+                updated_entries.append(track)
+                predicted_count += 1
+            else:
+                terminated_count += 1
+        
+        # Process unmatched detections (new cells)
+        new_cells_to_add = []
+        for det_id in result.unmatched_detections:
+            detection = next((d for d in updated_data if int(d['id']) == det_id), None)
+            if detection is None:
+                continue
+            
+            # Check if this detection matches a predicted cell (legacy re-acquisition)
+            matched_predicted = self._check_reacquisition(
+                detection, updated_entries, timestamp
+            )
+            
+            if matched_predicted:
+                reacquired_count += 1
+            else:
+                # Truly new cell
+                if timestamp:
+                    detection['timestamp'] = timestamp
+                detection['tracking_mode'] = 'active'
+                detection['prediction_count'] = 0
+                detection['confidence'] = 1.0
+                new_cells_to_add.append(detection)
+        
+        updated_entries.extend(new_cells_to_add)
+        
+        # Log statistics
+        self.io_manager.write_info(
+            f"Tracking stats (greedy): {active_count} active, {predicted_count} predicted, "
             f"{terminated_count} terminated, {reacquired_count} re-acquired, "
             f"{len(new_cells_to_add)} new"
         )
@@ -162,7 +351,11 @@ class StormCellTracker:
         cell['num_gates'] = updated.get('num_gates', cell['num_gates'])
         cell['centroid'] = updated.get('centroid', cell['centroid'])
         cell['max_refl'] = updated.get('max_refl', cell['max_refl'])
-        cell['bbox'] = updated.get('bbox', cell['bbox'])
+        # Only update bbox if it exists in both
+        if 'bbox' in updated:
+            cell['bbox'] = updated['bbox']
+        elif 'bbox' in cell:
+            pass  # Keep existing bbox
         
         if timestamp:
             cell['timestamp'] = timestamp

@@ -9,7 +9,7 @@ from typing import Tuple, Optional, Dict, Any
 import numpy as np
 from datetime import datetime
 
-from .state import StateVector, CovarianceMatrix, latlon_to_meters, meters_to_latlon
+from .state import StateVector, CovarianceMatrix, latlon_to_meters, meters_to_latlon, haversine_distance
 from .config import KalmanConfig, DEFAULT_KALMAN_CONFIG
 
 
@@ -86,7 +86,7 @@ class KalmanFilter:
             cfg.process_noise_velocity,
             cfg.process_noise_acceleration,
             cfg.process_noise_acceleration
-        ], dtype=np.float64)
+        ]).astype(np.float64)
         
         # Measurement noise matrix R (2x2 for position-only observations)
         # Convert km to degrees (approximate)
@@ -94,7 +94,7 @@ class KalmanFilter:
         self._R = np.diag([
             pos_noise_deg**2,
             pos_noise_deg**2
-        ], dtype=np.float64)
+        ]).astype(np.float64)
     
     def initialize(self, lat: float, lon: float, 
                    u: float = 0.0, v: float = 0.0,
@@ -356,3 +356,107 @@ class KalmanFilter:
         
         kf._initialized = True
         return kf
+    
+    def get_innovation_covariance(self, regularization: float = 1e-6) -> np.ndarray:
+        """
+        Compute innovation covariance S = H * P * H^T + R.
+        
+        The innovation covariance represents the uncertainty in the measurement
+        prediction, combining state uncertainty (P) propagated through the
+        observation model (H) with measurement noise (R).
+        
+        Args:
+            regularization: Small value added to diagonal for numerical stability
+        
+        Returns:
+            2x2 innovation covariance matrix
+        """
+        if not self._initialized:
+            # Return identity if not initialized
+            return np.eye(2, dtype=np.float64)
+        
+        P = self.covariance.to_array()
+        S = self._H @ P @ self._H.T + self._R
+        
+        # Add regularization for numerical stability
+        S += np.eye(2) * regularization
+        
+        return S
+    
+    def get_mahalanobis_distance(self, lat: float, lon: float) -> float:
+        """
+        Calculate Mahalanobis distance to a measurement.
+        
+        The Mahalanobis distance measures how many standard deviations away
+        a point is from the predicted distribution, accounting for the
+        covariance structure. This provides a scale-invariant distance metric
+        that respects the uncertainty ellipse of the Kalman filter.
+        
+        Formula: d_M = sqrt((z - H*x)^T * S^-1 * (z - H*x))
+        
+        Args:
+            lat: Measurement latitude in degrees
+            lon: Measurement longitude in degrees
+        
+        Returns:
+            Mahalanobis distance (dimensionless, ~chi-squared distributed)
+        """
+        if not self._initialized:
+            return float('inf')
+        
+        x = self.state.to_array()
+        z_pred = self._H @ x  # Predicted measurement (2D: lat, lon)
+        z = np.array([lat, lon], dtype=np.float64)
+        
+        # Innovation (measurement residual)
+        y = z - z_pred
+        
+        # Innovation covariance
+        S = self.get_innovation_covariance()
+        
+        # Mahalanobis distance: sqrt(y^T * S^-1 * y)
+        try:
+            S_inv = np.linalg.inv(S)
+            d_m_squared = y.T @ S_inv @ y
+            # Handle numerical issues
+            if d_m_squared < 0:
+                return float('inf')
+            return float(np.sqrt(d_m_squared))
+        except np.linalg.LinAlgError:
+            # Singular matrix - return infinity
+            return float('inf')
+    
+    def is_within_gate(self, lat: float, lon: float,
+                       threshold: float = 6.0,
+                       min_radius_km: float = 2.0) -> bool:
+        """
+        Check if measurement is within validation gate.
+        
+        Uses Mahalanobis distance for physics-aware gating that respects
+        the covariance ellipse. Falls back to minimum radius for cases
+        where the covariance has collapsed (very small uncertainty).
+        
+        Args:
+            lat: Measurement latitude in degrees
+            lon: Measurement longitude in degrees
+            threshold: Mahalanobis distance threshold (default: 6.0, ~95% chi-squared)
+            min_radius_km: Minimum radius in km for collapsed covariance fallback
+        
+        Returns:
+            True if measurement is within the validation gate
+        """
+        if not self._initialized:
+            return False
+        
+        # Check Mahalanobis distance first
+        d_m = self.get_mahalanobis_distance(lat, lon)
+        if d_m <= threshold:
+            return True
+        
+        # Fallback for collapsed covariance
+        # If the covariance is very small, the Mahalanobis distance can be
+        # very large even for physically close points
+        pred_lat, pred_lon = self.state.get_position()
+        euclidean_dist = haversine_distance(lat, lon, pred_lat, pred_lon)
+        
+        return euclidean_dist <= min_radius_km

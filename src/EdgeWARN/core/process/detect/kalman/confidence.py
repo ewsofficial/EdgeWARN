@@ -4,7 +4,7 @@ Confidence Calculator for Kalman Filter Tracking
 Calculates and manages confidence scores for storm cells in prediction mode.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 import numpy as np
 
@@ -20,7 +20,7 @@ class ConfidenceCalculator:
     by motion consistency and position uncertainty.
     """
     
-    config: TrackingConfig = DEFAULT_TRACKING_CONFIG
+    config: TrackingConfig = field(default_factory=TrackingConfig)
     
     # Base confidence when entering prediction mode
     base_confidence: float = 1.0

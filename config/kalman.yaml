@@ -1,7 +1,7 @@
 # Kalman Filter Configuration for Storm Cell Tracking
 # 
 # This configuration file controls the behavior of the Kalman filter
-# used for storm cell tracking continuity.
+# used for storm cell tracking continuity and measurement assignment.
 
 kalman_filter:
   # Process noise parameters
@@ -24,6 +24,7 @@ tracking:
   # Maximum distance for re-acquisition (km)
   # A new ProbSevere detection within this radius of a predicted cell
   # will be considered a re-acquisition
+  # Note: This is used as fallback; primary gating uses Mahalanobis distance
   reacquisition_radius_km: 5.0
   
   # Minimum confidence before termination
@@ -35,3 +36,47 @@ tracking:
   # confidence = base_confidence * decay_factor^scan_count
   # Lower values = faster decay
   confidence_decay_factor: 0.7
+
+assignment:
+  # Pre-filtering (Stage 1)
+  # Spatial pre-filter radius to reduce problem size before Hungarian algorithm
+  # Detections beyond this radius from a track are not considered
+  prefilter_radius_km: 16.0       # 10 miles
+  
+  # Gating parameters (Stage 2)
+  # Mahalanobis distance threshold for validation gate
+  # Chi-squared 95% confidence with 2 degrees of freedom ≈ 5.99
+  # Higher values = more permissive gating
+  gating_threshold: 6.0
+  
+  # Minimum gating radius (km)
+  # Fallback for collapsed covariance scenarios
+  # Prevents rejection of physically close detections when uncertainty is very small
+  min_gating_radius_km: 2.0
+  
+  # Cost function weights
+  # The total cost is: w1*d_position + w2*d_velocity + w3*d_shape
+  weights:
+    # Position cost weight (Mahalanobis distance)
+    # Scale-normalized distance accounting for covariance
+    position: 1.0
+    
+    # Velocity direction consistency weight
+    # Penalizes assignments that imply backward or sideways motion
+    # Higher values = stronger preference for motion-consistent matches
+    velocity_direction: 2.0
+    
+    # Size/reflectivity similarity weight
+    # Compares max reflectivity and number of gates
+    # Lower weight since these can vary significantly
+    size_similarity: 0.5
+  
+  # Algorithm selection
+  # - hybrid: Pre-filter + Hungarian (recommended)
+  # - hungarian: Full Hungarian without pre-filtering
+  # - greedy: Nearest-neighbor fallback
+  method: hybrid
+  
+  # Numerical stability
+  # Small value added to innovation covariance diagonal
+  covariance_regularization: 1e-6
