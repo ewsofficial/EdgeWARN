@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import apiConfig from '../../config.js';
+import { readJsonFileSafe } from '../../utils/fileReader.js';
 
 const router = express.Router();
 
@@ -39,8 +40,10 @@ async function getAvailableTimestamps(dirPath, filenamePattern) {
 }
 
 /**
- * GET /data/fetch?type=[nws/metar]
- * Returns available file timestamps for the specified type
+ * GET /data/fetch?type=[nws|metar|surface]
+ * 
+ * For NWS: Returns list of active alert IDs from the registry
+ * For METAR/surface: Returns available file timestamps
  */
 router.get('/', async (req, res) => {
     const { type } = req.query;
@@ -51,42 +54,67 @@ router.get('/', async (req, res) => {
 
     try {
         res.set('Cache-Control', 'public, max-age=5');
-        let timestamps = [];
-        let formattedTimestamps = [];
 
-        if (type === 'metar') {
+        if (type === 'nws') {
+            // NWS now uses registry-based storage
+            // Return active alert IDs from the registry
+            const registryPath = path.join(apiConfig.NWS_DIR, 'alerts_registry.json');
+            
+            try {
+                await fs.access(registryPath);
+            } catch {
+                // Registry doesn't exist yet
+                return res.json({
+                    type: 'nws',
+                    count: 0,
+                    last_updated: null,
+                    alert_ids: []
+                });
+            }
+
+            const registry = await readJsonFileSafe(apiConfig.NWS_DIR, 'alerts_registry.json', { useCache: true });
+            
+            const alertIds = Object.keys(registry.alerts || {});
+            const lastUpdated = registry.last_updated || null;
+
+            res.json({
+                type: 'nws',
+                count: alertIds.length,
+                last_updated: lastUpdated,
+                alert_ids: alertIds
+            });
+            
+        } else if (type === 'metar') {
             // METAR files: METAR_YYYYMMDD-HHz.json
-            timestamps = await getAvailableTimestamps(
+            const timestamps = await getAvailableTimestamps(
                 apiConfig.METAR_DIR,
                 /^METAR_(\d{8}-\d{2})z\.json$/
             );
             // Convert to YYYYMMDD-HHMM00 format for consistency
-            formattedTimestamps = timestamps.map(ts => `${ts}0000`);
+            const formattedTimestamps = timestamps.map(ts => `${ts}0000`);
 
-        } else if (type === 'nws') {
-            // NWS files: alerts_active_YYYYMMDD-HHMM00.json
-            timestamps = await getAvailableTimestamps(
-                apiConfig.NWS_DIR,
-                /^alerts_active_(\d{8}-\d{6})\.json$/
-            );
-            // timestamps are already in YYYYMMDD-HHMM00 format
-            formattedTimestamps = timestamps;
+            res.json({
+                type: 'metar',
+                count: formattedTimestamps.length,
+                timestamps: formattedTimestamps
+            });
+
         } else if (type === 'surface') {
             // Surface features: surface_features_YYYYMMDD-HHMM00.json
-            timestamps = await getAvailableTimestamps(
+            const timestamps = await getAvailableTimestamps(
                 apiConfig.SURFACE_DIR,
                 /^surface_features_(\d{8}-\d{6})\.json$/
             );
-            formattedTimestamps = timestamps;
+
+            res.json({
+                type: 'surface',
+                count: timestamps.length,
+                timestamps: timestamps
+            });
         }
 
-        res.json({
-            type: type,
-            count: formattedTimestamps.length,
-            timestamps: formattedTimestamps
-        });
     } catch (err) {
-        console.error(`Error fetching ${type} timestamps:`, err);
+        console.error(`Error fetching ${type} resources:`, err);
         res.status(500).json({ error: `Failed to fetch ${type} resources` });
     }
 });

@@ -47,7 +47,33 @@ The module provides both synchronous and asynchronous interfaces for downloading
     - Streams and filters the GeoJSON response using `ijson` to minimize memory usage.
     - **Filtering**: Implements a blocklist (`DROPPED_EVENTS`) to exclude specific alert types (e.g., tests, statements, advisories). All other events are ingested.
     - Applies the **GeoMapper** (`geomapper.py`) to map NWS zone codes (UGC) to actual polygons.
-    - Saves the processed GeoJSON to `alerts_active_YYYYMMDD-HHMMSS.json`.
+    - **Deduplication**: Uses the **AlertRegistry** (`registry.py`) to store unique alerts by ID, preventing duplicates from repeated downloads every 2 minutes.
+    - **TTL-based Cleanup**: Alerts not seen within 2 hours are automatically removed from the registry.
+    - Stores processed alerts in `alerts_registry.json` (single deduplicated file).
+
+#### Alert Registry (`src/EdgeWARN/core/ingest/nws/registry.py`)
+*   `AlertRegistry`: Manages unique NWS alerts with deduplication and expiration tracking.
+*   **Features**:
+    - Stores alerts by unique ID (extracted from NWS API response).
+    - Tracks `first_seen`, `last_seen`, and `expires` timestamps for each alert.
+    - Removes alerts not seen within configurable TTL (default 2 hours).
+    - Thread-safe operations using asyncio.Lock.
+    - Atomic file writes to prevent data corruption.
+*   **Registry Structure**:
+    ```json
+    {
+      "last_updated": "2026-02-23T03:40:00Z",
+      "alerts": {
+        "<alert_id>": {
+          "id": "https://api.weather.gov/alerts/urn:oid:...",
+          "first_seen": "2026-02-23T02:00:00Z",
+          "last_seen": "2026-02-23T03:40:00Z",
+          "expires": "2026-02-23T04:00:00Z",
+          "feature": { ... }
+        }
+      }
+    }
+    ```
 
 ### 2. Configuration (`config.py`)
 

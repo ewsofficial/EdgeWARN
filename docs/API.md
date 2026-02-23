@@ -76,7 +76,7 @@ Retrieves a list of available timestamps for meteorological data.
 |-----------|------|----------|-------------|
 | `type` | string | Yes | Data type: `"nws"`, `"metar"`, or `"surface"` |
 
-**Response Example:**
+**Response Example (METAR/Surface):**
 ```json
 {
   "type": "metar",
@@ -84,6 +84,19 @@ Retrieves a list of available timestamps for meteorological data.
   "timestamps": [
     "20260123-120000",
     "20260123-110000"
+  ]
+}
+```
+
+**Response Example (NWS - returns active alert IDs):**
+```json
+{
+  "type": "nws",
+  "count": 5,
+  "last_updated": "2026-02-23T03:40:00Z",
+  "alert_ids": [
+    "urn:oid:2.49.0.1.840.0.2406210827.1",
+    "urn:oid:2.49.0.1.840.0.2406210828.1"
   ]
 }
 ```
@@ -97,14 +110,56 @@ Downloads meteorological data for a specific type and timestamp.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `type` | string | Yes | Data type: `"nws"`, `"metar"`, or `"surface"` |
-| `timestamp` | string | Yes | Format: YYYYMMDD-HHMM00 |
+| `timestamp` | string | Conditional | Format: YYYYMMDD-HHMM00 (required for metar/surface) |
+| `alert_id` | string | No | For NWS: fetch specific alert by ID |
 
-**Response Example:**
+**Response Example (METAR/Surface):**
 ```json
 {
   "type": "metar",
   "timestamp": "20260123-120000",
   "data": { ... }
+}
+```
+
+**Response Example (NWS - all alerts):**
+```json
+{
+  "type": "nws",
+  "last_updated": "2026-02-23T03:40:00Z",
+  "count": 5,
+  "data": {
+    "@context": ["https://geojson.org/geojson-ld/geojson-context.jsonld", {...}],
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "id": "https://api.weather.gov/alerts/urn:oid:...",
+        "type": "Feature",
+        "properties": {
+          "event": "Severe Thunderstorm Warning",
+          "headline": "...",
+          "expires": "2026-02-23T22:00:00Z",
+          ...
+        },
+        "Polygon": [[...]]
+      }
+    ]
+  }
+}
+```
+
+**Response Example (NWS - specific alert):**
+```json
+{
+  "type": "nws",
+  "alert_id": "urn:oid:2.49.0.1.840.0.2406210827.1",
+  "data": {
+    "id": "https://api.weather.gov/alerts/urn:oid:...",
+    "first_seen": "2026-02-23T02:00:00Z",
+    "last_seen": "2026-02-23T03:40:00Z",
+    "expires": "2026-02-23T04:00:00Z",
+    "feature": { ... }
+  }
 }
 ```
 
