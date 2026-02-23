@@ -24,7 +24,7 @@ def get_datasets_config():
         {
             "name": "NLDN",
             "filepath": fs.MRMS_NLDN_DIR,
-            "key": "p100CGFlashDensity",
+            "key": "maxCGFlashDensity",
             "method": "max"
         },
         # === Echo Tops ===
@@ -32,7 +32,7 @@ def get_datasets_config():
         {
             "name": "EchoTop18",
             "filepath": fs.MRMS_ECHOTOP18_DIR,
-            "key": "p100EchoTop18",
+            "key": "maxEchoTop18",
             "method": "max" 
         },
         {
@@ -53,14 +53,14 @@ def get_datasets_config():
         {
             "name": "EchoTop30",
             "filepath": fs.MRMS_ECHOTOP30_DIR,
-            "key": "p100EchoTop30",
+            "key": "maxEchoTop30",
             "method": "max"
         },
         # === VIL and VIL Density ===
         {
             "name": "VIL",
             "filepath": fs.MRMS_VIL_DIR,
-            "key": "p100VIL",
+            "key": "maxVIL",
             "method": "max"
         },
         {
@@ -87,7 +87,7 @@ def get_datasets_config():
         {
             "name": "VIL Density",
             "filepath": fs.MRMS_DVIL_DIR,
-            "key": "p100VILDensity",
+            "key": "maxVILDensity",
             "method": "max"
         },
         {
@@ -115,7 +115,7 @@ def get_datasets_config():
         {
             "name": "AzShear Low",
             "filepath": fs.MRMS_AZSHEARLOW_DIR,
-            "key": "p100AzShearLow",
+            "key": "maxAzShearLow",
             "method": "max"
         },
         {
@@ -128,7 +128,7 @@ def get_datasets_config():
         {
             "name": "AzShear Mid",
             "filepath": fs.MRMS_AZSHEARMID_DIR,
-            "key": "p100AzShearMid",
+            "key": "maxAzShearMid",
             "method": "max"
         },
         {
@@ -142,19 +142,19 @@ def get_datasets_config():
         {
             "name": "PrecipRate",
             "filepath": fs.MRMS_PRECIPRATE_DIR,
-            "key": "p100PrecipRate",
+            "key": "maxPrecipRate",
             "method": "max"
         },
         {
             "name": "Reflectivity at Lowest Altitude",
             "filepath": fs.MRMS_RALA_DIR,
-            "key": "p100RALA",
+            "key": "maxRALA",
             "method": "max"
         },
         {
             "name": "VII",
             "filepath": fs.MRMS_VII_DIR,
-            "key": "p100VII",
+            "key": "maxVII",
             "method": "max"
         },
         {
