@@ -19,7 +19,7 @@ kalman_filter:
 tracking:
   # Maximum time a storm can be tracked in prediction mode (minutes)
   # After this time, the storm will be terminated if not re-acquired
-  max_prediction_time_minutes: 10
+  max_prediction_time_minutes: 6
   
   # Maximum distance for re-acquisition (km)
   # A new ProbSevere detection within this radius of a predicted cell
