@@ -21,19 +21,19 @@ This document tracks the resolution of issues found during the comprehensive cod
 
 ## 🟠 High Issues
 
-- [ ] **H1: Split Processing KF Migration**
+- [x] **H1: Split Processing KF Migration**
   - **Location:** `src/EdgeWARN/core/process/detect/track.py`
   - **Issue:** Dominant child gets parent's ID initially, but KF updates use parent ID while cell is updated to child ID. Also, parent's KF is never removed.
   - **Fix:** Ensure KF state correctly follows the dominant child, clean up old KF states for the parent.
-- [ ] **H2: Hysteresis Buffer Fails to Enforce Consecutive Scans**
+- [x] **H2: Hysteresis Buffer Fails to Enforce Consecutive Scans**
   - **Location:** `src/EdgeWARN/core/process/detect/lineage/buffer.py`
   - **Issue:** `count` increments unconditionally even if detections skip scans.
   - **Fix:** Reset count on non-consecutive detections (e.g., track `last_scan_number`).
-- [ ] **H3: Overlap Direction Asymmetry for Splits**
+- [x] **H3: Overlap Direction Asymmetry for Splits**
   - **Location:** `src/EdgeWARN/core/process/detect/lineage/spatial.py`, `detector.py`
   - **Issue:** Split detection calculates overlap relative to the *new* cell area rather than the *old* cell area. This can cause missed splits for fragmenting storms.
   - **Fix:** Review and correct the overlap ratio direction for split detection.
-- [ ] **H4: Bare `except` in KF Update**
+- [x] **H4: Bare `except` in KF Update**
   - **Location:** `src/EdgeWARN/core/process/detect/track.py`
   - **Issue:** Silently swallows all errors (including `KeyboardInterrupt`) when parsing timestamps.
   - **Fix:** Replace with `except (ValueError, TypeError)`.

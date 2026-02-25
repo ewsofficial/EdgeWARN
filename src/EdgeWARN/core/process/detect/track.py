@@ -226,6 +226,14 @@ class StormCellTracker:
                         new_entry['split_from'] = split.parent_id
                         # Kalman Update on parent track
                         self._update_kalman_with_observation(new_entry, split.parent_id)
+
+                        # H1 Fix: Migrate KF from parent_id → dominant child_id
+                        if split.parent_id != child_id:
+                            if split.parent_id in self._kalman_filters:
+                                self._kalman_filters[child_id] = self._kalman_filters.pop(split.parent_id)
+                            if split.parent_id in self._prediction_states:
+                                self._prediction_states[child_id] = self._prediction_states.pop(split.parent_id)
+                        self._reset_prediction_state(child_id)
                     else:
                         # Secondary child is new
                         new_entry = child_data.copy()
@@ -241,6 +249,10 @@ class StormCellTracker:
                     stats['splits'] += 1
                 
                 processed_old_ids.add(split.parent_id)
+
+                # H1 Fix: Clean up parent KF after split processing
+                self._kalman_filters.pop(split.parent_id, None)
+                self._prediction_states.pop(split.parent_id, None)
 
         # Process Normal Matches (Overlap)
         for cell in entries:
@@ -517,7 +529,8 @@ class StormCellTracker:
         if cell.get('timestamp'):
             try:
                 ts = datetime.fromisoformat(cell.get('timestamp'))
-            except: pass
+            except (ValueError, TypeError):
+                pass
             
         obs = KalmanObservation(
             lat=centroid[0],

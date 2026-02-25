@@ -35,6 +35,7 @@ class PendingMerge:
     first_seen: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
     dominant_parent: int = 0
+    last_scan_number: int = -1
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -45,6 +46,7 @@ class PendingMerge:
             'first_seen': self.first_seen,
             'last_seen': self.last_seen,
             'dominant_parent': self.dominant_parent,
+            'last_scan_number': self.last_scan_number,
         }
     
     @classmethod
@@ -57,6 +59,7 @@ class PendingMerge:
             first_seen=data.get('first_seen', time.time()),
             last_seen=data.get('last_seen', time.time()),
             dominant_parent=data.get('dominant_parent', 0),
+            last_scan_number=data.get('last_scan_number', -1),
         )
 
 
@@ -79,6 +82,7 @@ class PendingSplit:
     first_seen: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
     dominant_child: int = 0
+    last_scan_number: int = -1
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -89,6 +93,7 @@ class PendingSplit:
             'first_seen': self.first_seen,
             'last_seen': self.last_seen,
             'dominant_child': self.dominant_child,
+            'last_scan_number': self.last_scan_number,
         }
     
     @classmethod
@@ -101,6 +106,7 @@ class PendingSplit:
             first_seen=data.get('first_seen', time.time()),
             last_seen=data.get('last_seen', time.time()),
             dominant_child=data.get('dominant_child', 0),
+            last_scan_number=data.get('last_scan_number', -1),
         )
 
 
@@ -161,6 +167,9 @@ class LineageBuffer:
         
         # Track which events were seen this scan (for pruning)
         self._active_this_scan: Set[Tuple[str, int]] = set()
+        
+        # H2 Fix: Monotonic scan counter for consecutive detection enforcement
+        self._scan_number: int = 0
     
     @classmethod
     def load(cls, stormcell_dir: Path, **kwargs) -> 'LineageBuffer':
@@ -202,6 +211,9 @@ class LineageBuffer:
                 buffer.max_pending = data['config'].get(
                     'max_pending', buffer.max_pending
                 )
+                buffer._scan_number = data['config'].get(
+                    'scan_number', 0
+                )
                 
         except (json.JSONDecodeError, KeyError, IOError):
             # Return empty buffer on error
@@ -227,6 +239,7 @@ class LineageBuffer:
                     'min_confirmations': self.min_confirmations,
                     'max_pending': self.max_pending,
                     'prune_after_scans': self.prune_after_scans,
+                    'scan_number': self._scan_number,
                 },
                 'pending_merges': [
                     m.to_dict() for m in self.pending_merges.values()
@@ -267,7 +280,12 @@ class LineageBuffer:
             # Update existing pending merge
             pending = self.pending_merges[child_id]
             pending.parent_ids = set(parent_ids)
-            pending.count += 1
+            # H2 Fix: Only increment if this is a consecutive scan
+            if self._scan_number == pending.last_scan_number + 1:
+                pending.count += 1
+            else:
+                pending.count = 1  # Reset — non-consecutive detection
+            pending.last_scan_number = self._scan_number
             pending.last_seen = time.time()
             pending.dominant_parent = dominant_parent
         else:
@@ -276,6 +294,7 @@ class LineageBuffer:
                 child_id=child_id,
                 parent_ids=set(parent_ids),
                 dominant_parent=dominant_parent,
+                last_scan_number=self._scan_number,
             )
         
         # Check for confirmation
@@ -308,7 +327,12 @@ class LineageBuffer:
             # Update existing pending split
             pending = self.pending_splits[parent_id]
             pending.child_ids = set(child_ids)
-            pending.count += 1
+            # H2 Fix: Only increment if this is a consecutive scan
+            if self._scan_number == pending.last_scan_number + 1:
+                pending.count += 1
+            else:
+                pending.count = 1  # Reset — non-consecutive detection
+            pending.last_scan_number = self._scan_number
             pending.last_seen = time.time()
             pending.dominant_child = dominant_child
         else:
@@ -317,6 +341,7 @@ class LineageBuffer:
                 parent_id=parent_id,
                 child_ids=set(child_ids),
                 dominant_child=dominant_child,
+                last_scan_number=self._scan_number,
             )
         
         # Check for confirmation
@@ -403,6 +428,9 @@ class LineageBuffer:
         # Mark events not seen this scan as potentially inactive
         # (pruning happens based on time, not just absence)
         self._active_this_scan.clear()
+        
+        # H2 Fix: Increment scan counter for consecutive detection tracking
+        self._scan_number += 1
         
         # Prune old entries
         self.prune_inactive()
