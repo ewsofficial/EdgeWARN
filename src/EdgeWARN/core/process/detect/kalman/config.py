@@ -6,8 +6,11 @@ Configuration parameters for the Storm Cell Kalman Filter.
 
 from dataclasses import dataclass
 from typing import Optional
+import logging
 import yaml
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,12 +33,14 @@ class KalmanConfig:
             path = Path(__file__).parent.parent.parent.parent.parent.parent / "config" / "kalman.yaml"
         
         if not path.exists():
+            logger.warning(f"Kalman config file not found at {path}, using defaults")
             return cls()
         
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
         
         if data is None or 'kalman_filter' not in data:
+            logger.warning(f"Missing 'kalman_filter' section in {path}, using defaults")
             return cls()
         
         kalman_data = data['kalman_filter']
@@ -55,7 +60,7 @@ class TrackingConfig:
     """Configuration for tracking parameters."""
     
     # Prediction limits
-    max_prediction_time_minutes: float = 10.0  # Maximum time in prediction mode
+    max_prediction_time_minutes: float = 6.0  # Maximum time in prediction mode (matches kalman.yaml)
     
     # Re-acquisition parameters
     reacquisition_radius_km: float = 5.0  # Maximum distance for re-acquisition
@@ -71,12 +76,14 @@ class TrackingConfig:
             path = Path(__file__).parent.parent.parent.parent.parent.parent / "config" / "kalman.yaml"
         
         if not path.exists():
+            logger.warning(f"Kalman config file not found at {path}, using defaults")
             return cls()
         
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
         
         if data is None or 'tracking' not in data:
+            logger.warning(f"Missing 'tracking' section in {path}, using defaults")
             return cls()
         
         tracking_data = data['tracking']
@@ -137,12 +144,14 @@ class AssignmentConfig:
             path = Path(__file__).parent.parent.parent.parent.parent.parent / "config" / "kalman.yaml"
         
         if not path.exists():
+            logger.warning(f"Kalman config file not found at {path}, using defaults")
             return cls()
         
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
         
         if data is None or 'assignment' not in data:
+            logger.warning(f"Missing 'assignment' section in {path}, using defaults")
             return cls()
         
         assignment_data = data['assignment']

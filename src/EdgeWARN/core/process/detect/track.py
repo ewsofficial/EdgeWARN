@@ -184,9 +184,24 @@ class StormCellTracker:
                 merged_entry['parent_ids'] = merge.parent_ids
                 merged_entry['split_from'] = None
                 
-                # Kalman Update
+                # Kalman Update (observe under dominant parent's KF)
                 self._update_kalman_with_observation(merged_entry, merge.dominant_parent)
-                self._reset_prediction_state(child_id) # Child ID might be dominant parent ID
+                
+                # C1 Fix: Migrate KF from dominant_parent key → child_id key
+                # so future scans find the trained filter under the cell's new ID.
+                if merge.dominant_parent != child_id:
+                    if merge.dominant_parent in self._kalman_filters:
+                        self._kalman_filters[child_id] = self._kalman_filters.pop(merge.dominant_parent)
+                    if merge.dominant_parent in self._prediction_states:
+                        self._prediction_states[child_id] = self._prediction_states.pop(merge.dominant_parent)
+                
+                self._reset_prediction_state(child_id)
+                
+                # Clean up KF/prediction entries for non-dominant parents
+                for pid in merge.parent_ids:
+                    if pid != merge.dominant_parent and pid != child_id:
+                        self._kalman_filters.pop(pid, None)
+                        self._prediction_states.pop(pid, None)
                 
                 updated_entries.append(merged_entry)
                 
@@ -275,7 +290,9 @@ class StormCellTracker:
                 unmatched_detections_map[cell_id] = cell_data
 
         # 5. Run Secondary Assignment (Hybrid/Greedy) on Remainder
-        # This handles fast-moving cells that lost overlap but are close enough/consistent enough
+        # This handles fast-moving cells that lost overlap but are close enough/consistent enough.
+        # NOTE: This step also handles re-acquisition of predicted cells (replaces
+        # the former _check_reacquisition method that was removed as dead code).
         
         assignment_method = self.assignment_config.method
         assignment_result = None
@@ -485,48 +502,6 @@ class StormCellTracker:
         
         return True
 
-    def _check_reacquisition(self, new_cell: Dict, 
-                             predicted_cells: List[Dict],
-                             timestamp: Optional[str]) -> Optional[Dict]:
-        """
-        Check if a new cell matches a predicted cell for re-acquisition.
-        """
-        new_centroid = new_cell.get('centroid', [0, 0])
-        new_lat, new_lon = new_centroid[0], new_centroid[1]
-        
-        best_match = None
-        best_distance = float('inf')
-        
-        for cell in predicted_cells:
-            # Note: We iterate passed list, which works for both 'predicted' and just-switched cells
-            pred_centroid = cell.get('kalman_predicted_centroid') or cell.get('centroid')
-            if not pred_centroid: continue
-            
-            pred_lat, pred_lon = pred_centroid[0], pred_centroid[1]
-            distance = haversine_distance(new_lat, new_lon, pred_lat, pred_lon)
-            
-            if distance <= self.tracking_config.reacquisition_radius_km:
-                if distance < best_distance:
-                    best_distance = distance
-                    best_match = cell
-        
-        if best_match:
-            old_id = int(best_match['id'])
-            
-            # Update fields
-            self._update_cell_fields(best_match, new_cell, timestamp)
-            best_match['event_type'] = LineageEvent.ACTIVE.value # Re-acquired is active
-            
-            # Kalman Update
-            self._update_kalman_with_observation(best_match, old_id)
-            self._reset_prediction_state(old_id)
-            
-            self.io_manager.write_info(
-                f"Re-acquired cell {old_id} (dist: {best_distance:.2f} km)"
-            )
-            return best_match
-            
-        return None
 
     def _update_kalman_with_observation(self, cell: Dict, cell_id: int) -> None:
         """Update Kalman filter with new observation."""
