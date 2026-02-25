@@ -9,6 +9,7 @@ This module combines:
 from typing import List, Dict, Any, Optional, Tuple, Set
 from pathlib import Path
 from datetime import datetime
+import copy
 import numpy as np
 
 from .lineage import (
@@ -177,7 +178,7 @@ class StormCellTracker:
                 if not dominant_entry: continue # Should not happen
                 
                 # Create merged entry
-                merged_entry = dominant_entry.copy()
+                merged_entry = copy.deepcopy(dominant_entry)
                 self._update_cell_fields(merged_entry, child_data, timestamp)
                 
                 merged_entry['event_type'] = LineageEvent.MERGE.value
@@ -220,7 +221,7 @@ class StormCellTracker:
                     
                     if child_id == split.dominant_child:
                         # Dominant child inherits
-                        new_entry = parent_entry.copy()
+                        new_entry = copy.deepcopy(parent_entry)
                         new_entry['id'] = child_id
                         new_entry['event_type'] = LineageEvent.ACTIVE.value
                         new_entry['split_from'] = split.parent_id
@@ -236,7 +237,7 @@ class StormCellTracker:
                         self._reset_prediction_state(child_id)
                     else:
                         # Secondary child is new
-                        new_entry = child_data.copy()
+                        new_entry = copy.deepcopy(child_data)
                         new_entry['event_type'] = LineageEvent.SPLIT.value
                         new_entry['split_from'] = split.parent_id
                         new_entry['parent_ids'] = []
@@ -296,7 +297,7 @@ class StormCellTracker:
         unmatched_detections_map = {} # ID -> Data
         for cell_id, cell_data in updated_map.items():
             if cell_id not in processed_new_ids:
-                cell_data_with_id = cell_data.copy() # Ensure ID is present if not
+                cell_data_with_id = copy.deepcopy(cell_data) # Ensure ID is present if not
                 cell_data_with_id['id'] = cell_id
                 unmatched_detections.append(cell_data_with_id)
                 unmatched_detections_map[cell_id] = cell_data
@@ -361,7 +362,7 @@ class StormCellTracker:
             for det_id in assignment_result.unmatched_detections:
                 detection = unmatched_detections_map.get(det_id)
                 if detection:
-                    new_entry = detection.copy()
+                    new_entry = copy.deepcopy(detection)
                     new_entry['event_type'] = LineageEvent.ACTIVE.value
                     new_entry['parent_ids'] = []
                     new_entry['split_from'] = None
@@ -387,7 +388,7 @@ class StormCellTracker:
             # Unmatched Detections -> New Cells
             for detection in unmatched_detections:
                 det_id = int(detection['id'])
-                new_entry = detection.copy()
+                new_entry = copy.deepcopy(detection)
                 new_entry['event_type'] = LineageEvent.ACTIVE.value
                 new_entry['parent_ids'] = []
                 new_entry['split_from'] = None
@@ -405,6 +406,13 @@ class StormCellTracker:
             f"Update Stats: {stats['matches']} matches, {stats['merges']} merges, {stats['splits']} splits, "
             f"{stats['reacquired']} re-acquired, {stats['predicted']} predicted, {stats['new']} new, {stats['terminated']} terminated"
         )
+        
+        # M6 Fix: Clean up orphaned KF entries that are no longer in the result set
+        active_ids = {int(e['id']) for e in updated_entries}
+        orphaned = [k for k in self._kalman_filters if k not in active_ids]
+        for oid in orphaned:
+            del self._kalman_filters[oid]
+            self._prediction_states.pop(oid, None)
         
         return updated_entries
 
@@ -432,9 +440,17 @@ class StormCellTracker:
         if 'bbox' in updated:
             cell['bbox'] = updated['bbox']
         
-        cell['tracking_mode'] = 'active'
+        # M3 Fix: Monitor reflectivity for decay state
+        max_refl = updated.get('max_refl', cell.get('max_refl', 0))
+        if max_refl < 30:
+            cell['tracking_mode'] = 'decaying'
+            cell['decay_scan_count'] = cell.get('decay_scan_count', 0) + 1
+            cell['confidence'] = max(cell.get('confidence', 1.0) * 0.85, 0.3)
+        else:
+            cell['tracking_mode'] = 'active'
+            cell['decay_scan_count'] = 0
+            cell['confidence'] = 1.0
         cell['prediction_count'] = 0
-        cell['confidence'] = 1.0
         
         if timestamp:
             cell['timestamp'] = timestamp

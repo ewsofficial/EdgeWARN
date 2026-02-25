@@ -357,14 +357,22 @@ def build_filtered_cost_matrix(tracks: List[Dict[str, Any]],
         candidates = track_candidates.get(track_id, [])
         
         if len(candidates) == 1:
-            # Single candidate - check gating
+            # Single candidate - check gating AND total cost
             kf = kalman_filters.get(track_id)
             if kf is not None:
                 calculator = AssignmentCostCalculator(config)
                 if calculator.is_within_gate(track, candidates[0], kf):
-                    det_id = int(candidates[0]['id'])
-                    single_assignments.append((track_id, det_id))
-                    continue
+                    # M5 Fix: Enforce max cost validation for single candidates
+                    cost = calculator.compute_cost(
+                        track, candidates[0], kf, dt_seconds
+                    )
+                    max_cost = (config.weight_position * config.gating_threshold
+                                + config.weight_velocity * 2.0
+                                + config.weight_shape * 2.0)
+                    if cost <= max_cost:
+                        det_id = int(candidates[0]['id'])
+                        single_assignments.append((track_id, det_id))
+                        continue
         
         if len(candidates) > 1:
             multi_candidate_tracks.append(track)

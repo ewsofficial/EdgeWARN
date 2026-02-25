@@ -40,27 +40,27 @@ This document tracks the resolution of issues found during the comprehensive cod
 
 ## 🟡 Medium Issues
 
-- [ ] **M1: Process Noise Scaling**
+- [x] **M1: Process Noise Scaling**
   - **Location:** `src/EdgeWARN/core/process/detect/kalman/filter.py`
   - **Issue:** Linear scaling (`Q * dt`) underestimates positional noise for large `dt`.
   - **Fix:** Implement proper discrete-time Q matrix for constant-acceleration model.
-- [ ] **M2: Longitude Transition Matrix Error**
+- [x] **M2: Longitude Transition Matrix Error**
   - **Location:** `src/EdgeWARN/core/process/detect/kalman/filter.py`
   - **Issue:** Fails to adjust longitude change for latitude (`cos(lat)` correction missing), causing ~18% positional error.
   - **Fix:** Add `cos(lat)` correction for longitude updates.
-- [ ] **M3: Missing Reflectivity Decay Monitoring**
+- [x] **M3: Missing Reflectivity Decay Monitoring**
   - **Location:** `src/EdgeWARN/core/process/detect/track.py`
   - **Issue:** Unconditionally resets decay state upon ProbSevere match, ignoring the `< 30 dBZ` logic from the PRD.
   - **Fix:** Implement proper transition to DECAYING state based on reflectivity.
-- [ ] **M4: Shallow Copies on Cell Dicts**
+- [x] **M4: Shallow Copies on Cell Dicts**
   - **Location:** `src/EdgeWARN/core/process/detect/track.py`
   - **Issue:** Using `.copy()` on cells shares nested structures like `bbox`.
   - **Fix:** Use `copy.deepcopy()` or manually copy nested objects.
-- [ ] **M5: Missing Cost Check for Single Candidates**
+- [x] **M5: Missing Cost Check for Single Candidates**
   - **Location:** `src/EdgeWARN/core/process/detect/kalman/assignment.py`
   - **Issue:** Single-candidate assignments only check spatial gating, skipping total cost limits (velocity, shape).
   - **Fix:** Enforce maximum cost validation for single candidate paths.
-- [ ] **M6: Memory Leak for KF Objects**
+- [x] **M6: Memory Leak for KF Objects**
   - **Location:** `src/EdgeWARN/core/process/detect/track.py`
   - **Issue:** Kalman filters are never cleaned up for merged parents or typical exits (only handled for explicitly terminated cells).
   - **Fix:** Clean up dictionaries for orphaned track IDs.

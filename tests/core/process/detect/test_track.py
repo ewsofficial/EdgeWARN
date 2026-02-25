@@ -2,6 +2,16 @@ import pytest
 from unittest.mock import MagicMock
 from EdgeWARN.core.process.detect.track import StormCellTracker
 
+# Helper: generate a proper polygon bbox (list of [lat,lon] pairs)
+def _bbox(lat, lon, size=0.1):
+    """Create a square bbox polygon centered on (lat, lon)."""
+    return [
+        [lat - size, lon - size],
+        [lat - size, lon + size],
+        [lat + size, lon + size],
+        [lat + size, lon - size],
+    ]
+
 @pytest.fixture
 def tracker(mock_io_manager):
     """Create a StormCellTracker with mocked dependencies."""
@@ -12,13 +22,13 @@ def tracker(mock_io_manager):
 def test_update_cells_updates_existing(tracker):
     """Test that existing cells are updated with new data."""
     entries = [
-        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4]},
-        {"id": 102, "num_gates": 30, "centroid": [36.0, -96.0], "max_refl": 45, "bbox": [5,6,7,8]}
+        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)},
+        {"id": 102, "num_gates": 30, "centroid": [36.0, -96.0], "max_refl": 45, "bbox": _bbox(36.0, -96.0)}
     ]
     
     updated_data = [
-        {"id": 101, "num_gates": 60, "centroid": [35.1, -97.1], "max_refl": 60, "bbox": [10,20,30,40]},
-        {"id": 102, "num_gates": 35, "centroid": [36.1, -96.1], "max_refl": 50, "bbox": [50,60,70,80]}
+        {"id": 101, "num_gates": 60, "centroid": [35.1, -97.1], "max_refl": 60, "bbox": _bbox(35.1, -97.1)},
+        {"id": 102, "num_gates": 35, "centroid": [36.1, -96.1], "max_refl": 50, "bbox": _bbox(36.1, -96.1)}
     ]
     
     result = tracker.update_cells(entries, updated_data, timestamp="2023-10-15T12:00:00")
@@ -33,13 +43,13 @@ def test_update_cells_updates_existing(tracker):
 def test_update_cells_removes_missing(tracker):
     """Test that cells not in updated_data are removed."""
     entries = [
-        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4]},
-        {"id": 102, "num_gates": 30, "centroid": [36.0, -96.0], "max_refl": 45, "bbox": [5,6,7,8]},
-        {"id": 103, "num_gates": 20, "centroid": [37.0, -95.0], "max_refl": 40, "bbox": [9,10,11,12]}
+        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)},
+        {"id": 102, "num_gates": 30, "centroid": [36.0, -96.0], "max_refl": 45, "bbox": _bbox(36.0, -96.0)},
+        {"id": 103, "num_gates": 20, "centroid": [37.0, -95.0], "max_refl": 40, "bbox": _bbox(37.0, -95.0)}
     ]
     
     updated_data = [
-        {"id": 101, "num_gates": 55, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4]}
+        {"id": 101, "num_gates": 55, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)}
         # 102 and 103 are missing
     ]
     
@@ -51,12 +61,12 @@ def test_update_cells_removes_missing(tracker):
 def test_update_cells_adds_new(tracker):
     """Test that new cells from updated_data are appended."""
     entries = [
-        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4]}
+        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)}
     ]
     
     updated_data = [
-        {"id": 101, "num_gates": 55, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4]},
-        {"id": 104, "num_gates": 40, "centroid": [38.0, -94.0], "max_refl": 50, "bbox": [13,14,15,16]}  # New cell
+        {"id": 101, "num_gates": 55, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)},
+        {"id": 104, "num_gates": 40, "centroid": [38.0, -94.0], "max_refl": 50, "bbox": _bbox(38.0, -94.0)}  # New cell
     ]
     
     result = tracker.update_cells(entries, updated_data, timestamp="2023-10-15T12:00:00")
@@ -70,11 +80,11 @@ def test_update_cells_adds_new(tracker):
 def test_update_cells_preserves_storm_history(tracker):
     """Test that storm_history is not overwritten."""
     entries = [
-        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4], "storm_history": [{"t": 1, "val": 10}]}
+        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0), "storm_history": [{"t": 1, "val": 10}]}
     ]
     
     updated_data = [
-        {"id": 101, "num_gates": 60, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4]}
+        {"id": 101, "num_gates": 60, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)}
     ]
     
     result = tracker.update_cells(entries, updated_data)
@@ -87,7 +97,7 @@ def test_update_cells_empty_entries(tracker):
     entries = []
     
     updated_data = [
-        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4]}
+        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)}
     ]
     
     result = tracker.update_cells(entries, updated_data)
@@ -98,8 +108,8 @@ def test_update_cells_empty_entries(tracker):
 def test_update_cells_empty_updated_data(tracker):
     """Test updating with empty updated_data (all cells removed)."""
     entries = [
-        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4]},
-        {"id": 102, "num_gates": 30, "centroid": [36.0, -96.0], "max_refl": 45, "bbox": [5,6,7,8]}
+        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)},
+        {"id": 102, "num_gates": 30, "centroid": [36.0, -96.0], "max_refl": 45, "bbox": _bbox(36.0, -96.0)}
     ]
     
     result = tracker.update_cells(entries, [])
@@ -109,11 +119,11 @@ def test_update_cells_empty_updated_data(tracker):
 def test_update_cells_no_timestamp(tracker):
     """Test updating without providing a timestamp."""
     entries = [
-        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": [1,2,3,4]}
+        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)}
     ]
     
     updated_data = [
-        {"id": 101, "num_gates": 60, "centroid": [35.1, -97.1], "max_refl": 60, "bbox": [10,20,30,40]}
+        {"id": 101, "num_gates": 60, "centroid": [35.1, -97.1], "max_refl": 60, "bbox": _bbox(35.1, -97.1)}
     ]
     
     result = tracker.update_cells(entries, updated_data, timestamp=None)
