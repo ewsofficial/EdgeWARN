@@ -17,6 +17,7 @@ from .events import (
 from .spatial import (
     build_spatial_index,
     find_overlapping_cells,
+    bounds_overlap,
     select_dominant_parent,
     select_dominant_child,
     calculate_overlap_ratio,
@@ -158,7 +159,8 @@ class LineageDetector:
                 continue  # Already matched in merge detection
             
             # Find overlapping new cells
-            overlapping = find_overlapping_cells(
+            # H3 Fix: Use old cell area as denominator (parent-relative overlap)
+            overlapping = self._find_split_overlaps(
                 old_cell, new_index, self.overlap_threshold
             )
             
@@ -240,6 +242,53 @@ class LineageDetector:
             child_str = ', '.join(str(cid) for cid in split.child_ids)
             msg = f"Event Detected: Split (IDs: {split.parent_id} -> {child_str})"
             self.io_manager.write_info(f"[CellDetection] {msg}")
+
+    def _find_split_overlaps(
+        self,
+        old_cell: Dict[str, Any],
+        new_index: Dict[int, Dict[str, Any]],
+        threshold: float,
+    ) -> List[Tuple[int, float]]:
+        """
+        Find new cells overlapping old cell with ratio = intersection / old_cell_area.
+        
+        Unlike find_overlapping_cells (which uses new cell area as denominator),
+        this function uses the old cell's area. For split detection, we need to
+        know what fraction of the *parent* footprint each child captured.
+        
+        Args:
+            old_cell: The old (parent) cell dict with 'id' and 'bbox'
+            new_index: Spatial index of new cells
+            threshold: Minimum overlap ratio to include
+            
+        Returns:
+            List of (new_cell_id, overlap_ratio) tuples, sorted descending.
+        """
+        old_bbox = old_cell.get('bbox', [])
+        old_id = int(old_cell.get('id', 0))
+        if not old_bbox or len(old_bbox) < 3:
+            return []
+        
+        old_lats = [pt[0] for pt in old_bbox]
+        old_lons = [pt[1] for pt in old_bbox]
+        old_bounds = {
+            'min_lat': min(old_lats), 'max_lat': max(old_lats),
+            'min_lon': min(old_lons), 'max_lon': max(old_lons),
+        }
+        
+        results = []
+        for new_id, new_data in new_index.items():
+            if new_id == old_id:
+                continue
+            if not bounds_overlap(old_bounds, new_data):
+                continue
+            # Key: old_bbox as first arg = denominator is old cell area
+            ratio = calculate_overlap_ratio(old_bbox, new_data['bbox'])
+            if ratio >= threshold:
+                results.append((new_id, ratio))
+        
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results
 
 
 def detect_lineage_events(
