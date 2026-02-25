@@ -194,8 +194,8 @@ class KalmanFilter:
         x_pred = F @ x
         
         # Predict covariance: P' = F * P * F^T + Q
-        # Scale Q by dt for time-dependent process noise
-        Q_scaled = self._Q * dt
+        # Use proper discrete-time process noise matrix
+        Q_scaled = self._build_process_noise_matrix(dt)
         P_pred = F @ P @ F.T + Q_scaled
         
         # Update state and covariance
@@ -261,29 +261,78 @@ class KalmanFilter:
         - Velocity: v' = v + a*dt
         - Acceleration: a' = a (constant)
         
+        Longitude conversion includes cos(lat) correction to account for
+        the convergence of meridians at higher latitudes.
+        
         Args:
             dt: Time step in seconds
         
         Returns:
             6x6 state transition matrix
         """
-        # Convert dt to a normalized time step
-        # For numerical stability, we work in degrees for position
-        # and m/s for velocity
+        # Approximate conversion: 1 degree lat ~ 111 km ~ 111000 m
+        lat_scale = dt / 111000
+        lat_scale2 = 0.5 * dt**2 / 111000
         
-        # Approximate conversion: 1 degree ~ 111 km ~ 111000 m
-        # dt_norm = dt (in seconds)
+        # M2 Fix: Apply cos(lat) correction for longitude
+        cos_lat = np.cos(np.radians(self.state.lat))
+        if cos_lat > 1e-6:
+            lon_scale = dt / (111000 * cos_lat)
+            lon_scale2 = 0.5 * dt**2 / (111000 * cos_lat)
+        else:
+            lon_scale = lat_scale
+            lon_scale2 = lat_scale2
         
         F = np.array([
-            [1, 0, dt/111000, 0, 0.5*dt**2/111000, 0],          # lat' = lat + v_lat*dt + 0.5*a_lat*dt²
-            [0, 1, 0, dt/111000, 0, 0.5*dt**2/111000],          # lon' = lon + v_lon*dt + 0.5*a_lon*dt²
-            [0, 0, 1, 0, dt, 0],                                 # u' = u + a_lat*dt
-            [0, 0, 0, 1, 0, dt],                                 # v' = v + a_lon*dt
-            [0, 0, 0, 0, 1, 0],                                  # a_lat' = a_lat
-            [0, 0, 0, 0, 0, 1]                                   # a_lon' = a_lon
+            [1, 0, lat_scale, 0, lat_scale2, 0],                  # lat' = lat + v_lat*dt + 0.5*a_lat*dt²
+            [0, 1, 0, lon_scale, 0, lon_scale2],                   # lon' = lon + v_lon*dt + 0.5*a_lon*dt²  (cos(lat) corrected)
+            [0, 0, 1, 0, dt, 0],                                   # u' = u + a_lat*dt
+            [0, 0, 0, 1, 0, dt],                                   # v' = v + a_lon*dt
+            [0, 0, 0, 0, 1, 0],                                    # a_lat' = a_lat
+            [0, 0, 0, 0, 0, 1]                                     # a_lon' = a_lon
         ], dtype=np.float64)
         
         return F
+    
+    def _build_process_noise_matrix(self, dt: float) -> np.ndarray:
+        """
+        Build discrete-time process noise Q for constant-acceleration model.
+        
+        Uses the piecewise-constant white-noise jerk model.  The coupling
+        between position, velocity, and acceleration via powers of dt
+        prevents under-estimation of positional noise for large dt values.
+        
+        Args:
+            dt: Time step in seconds
+        
+        Returns:
+            6x6 process noise matrix
+        """
+        dt2 = dt * dt
+        dt3 = dt2 * dt
+        dt4 = dt3 * dt
+        dt5 = dt4 * dt
+        
+        q_a = self.config.process_noise_acceleration
+        
+        # Per-axis 3×3 block for [pos, vel, acc] driven by jerk noise
+        blk = np.array([
+            [dt5 / 20, dt4 / 8, dt3 / 6],
+            [dt4 / 8,  dt3 / 3, dt2 / 2],
+            [dt3 / 6,  dt2 / 2, dt      ],
+        ], dtype=np.float64) * q_a
+        
+        # State layout is interleaved: [lat, lon, u, v, a_lat, a_lon]
+        # Lat axis → indices 0, 2, 4     Lon axis → indices 1, 3, 5
+        Q = np.zeros((6, 6), dtype=np.float64)
+        lat_idx = [0, 2, 4]
+        lon_idx = [1, 3, 5]
+        for ri in range(3):
+            for ci in range(3):
+                Q[lat_idx[ri], lat_idx[ci]] = blk[ri, ci]
+                Q[lon_idx[ri], lon_idx[ci]] = blk[ri, ci]
+        
+        return Q
     
     def get_predicted_position(self, dt: float) -> Tuple[float, float]:
         """
