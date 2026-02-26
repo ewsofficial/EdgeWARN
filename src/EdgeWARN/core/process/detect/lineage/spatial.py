@@ -70,14 +70,18 @@ def calculate_overlap_ratio(parent_bbox: List[List[float]],
         if parent_poly.is_empty or child_poly.is_empty:
             return 0.0
         
+        # L4 Fix: Guard against degenerate (collinear) polygons that have
+        # zero or near-zero area despite having ≥3 points.
+        MIN_AREA = 1e-10  # degrees² — below this is effectively a line
+        parent_area = parent_poly.area
+        if parent_area < MIN_AREA:
+            return 0.0
+        if child_poly.area < MIN_AREA:
+            return 0.0
+        
         intersection = parent_poly.intersection(child_poly)
         
         if intersection.is_empty:
-            return 0.0
-        
-        # Ratio of parent area that overlaps with child (per FR1.2)
-        parent_area = parent_poly.area
-        if parent_area == 0:
             return 0.0
         
         return intersection.area / parent_area

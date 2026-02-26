@@ -67,19 +67,19 @@ This document tracks the resolution of issues found during the comprehensive cod
 
 ## 🔵 Low Issues
 
-- [ ] **L1: Buffer Scan Interval Mismatch**
+- [x] **L1: Buffer Scan Interval Mismatch**
   - **Location:** `src/EdgeWARN/core/process/detect/lineage/buffer.py`
   - **Issue:** `scan_interval_seconds` defaults to 300s, but scans are typically 120s, resulting in overly long pruning thresholds.
   - **Fix:** Update default parameter to match reality.
-- [ ] **L2: Hardcoded Latitude in Initialization**
+- [x] **L2: Hardcoded Latitude in Initialization**
   - **Location:** `src/EdgeWARN/core/process/detect/kalman/state.py`
   - **Issue:** Hardcodes latitude to 35° when bootstrapping longitudinal covariance.
   - **Fix:** Use actual cell latitude.
-- [ ] **L3: Greedy Assignment is Detection-Centric**
+- [x] **L3: Greedy Assignment is Detection-Centric**
   - **Location:** `src/EdgeWARN/core/process/detect/kalman/assignment.py`
   - **Issue:** Assigns by max reflectivity rather than shortest distance first.
   - **Fix:** Change greedy sorting to distance/cost-based ranking.
-- [ ] **L4: Polynomial Coordinate Count**
+- [x] **L4: Polynomial Coordinate Count**
   - **Location:** `src/EdgeWARN/core/process/detect/lineage/spatial.py`
   - **Issue:** Degenerate collinear 3-point polygons give zero area silently.
   - **Fix:** Document constraint or provide minimum dimension checks.

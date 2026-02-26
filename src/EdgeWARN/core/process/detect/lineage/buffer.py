@@ -142,7 +142,7 @@ class LineageBuffer:
         min_confirmations: int = 2,
         max_pending: int = 100,
         prune_after_scans: int = 5,
-        scan_interval_seconds: float = 300.0
+        scan_interval_seconds: float = 120.0
     ):
         """
         Initialize the lineage buffer.
