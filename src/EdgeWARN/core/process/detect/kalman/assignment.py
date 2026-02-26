@@ -577,27 +577,18 @@ def run_greedy_assignment(tracks: List[Dict[str, Any]],
     matched_detection_ids = set()
     costs = {}
     
-    # Sort detections by some priority (e.g., size or reflectivity)
-    sorted_detections = sorted(
-        detections,
-        key=lambda d: d.get('max_refl', 0),
-        reverse=True
-    )
-    
-    for detection in sorted_detections:
-        det_id = int(detection['id'])
-        best_track_id = None
-        best_cost = float('inf')
+    # L3 Fix: Pre-compute all valid (track, detection) costs, then assign
+    # lowest-cost pair first. This is cost-centric rather than
+    # detection-centric, producing globally better assignments.
+    candidate_pairs = []
+    for track in tracks:
+        track_id = int(track['id'])
+        kf = kalman_filters.get(track_id)
+        if kf is None:
+            continue
         
-        for track in tracks:
-            track_id = int(track['id'])
-            
-            if track_id in matched_track_ids:
-                continue
-            
-            kf = kalman_filters.get(track_id)
-            if kf is None:
-                continue
+        for detection in detections:
+            det_id = int(detection['id'])
             
             # Check gating
             if not calculator.is_within_gate(track, detection, kf):
@@ -605,16 +596,19 @@ def run_greedy_assignment(tracks: List[Dict[str, Any]],
             
             # Compute cost
             cost = calculator.compute_cost(track, detection, kf, dt_seconds)
-            
-            if cost < best_cost:
-                best_cost = cost
-                best_track_id = track_id
+            candidate_pairs.append((cost, track_id, det_id, track, detection))
+    
+    # Sort by ascending cost — best matches first
+    candidate_pairs.sort(key=lambda x: x[0])
+    
+    for cost, track_id, det_id, track, detection in candidate_pairs:
+        if track_id in matched_track_ids or det_id in matched_detection_ids:
+            continue
         
-        if best_track_id is not None:
-            matched.append((best_track_id, det_id))
-            matched_track_ids.add(best_track_id)
-            matched_detection_ids.add(det_id)
-            costs[(best_track_id, det_id)] = best_cost
+        matched.append((track_id, det_id))
+        matched_track_ids.add(track_id)
+        matched_detection_ids.add(det_id)
+        costs[(track_id, det_id)] = cost
     
     # Build unmatched lists
     all_track_ids = {int(t['id']) for t in tracks}

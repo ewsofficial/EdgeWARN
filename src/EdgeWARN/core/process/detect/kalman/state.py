@@ -118,19 +118,21 @@ class CovarianceMatrix:
         return cls(_matrix=np.diag(variances).astype(np.float64))
     
     @classmethod
-    def from_position_uncertainty(cls, position_std_km: float) -> "CovarianceMatrix":
+    def from_position_uncertainty(cls, position_std_km: float, ref_lat: float = 35.0) -> "CovarianceMatrix":
         """
         Create covariance matrix with position uncertainty only.
         
         Args:
             position_std_km: Standard deviation of position uncertainty in km
+            ref_lat: Reference latitude in degrees for longitude scaling.
+                     Callers should pass the actual cell latitude.
         
         Returns:
             CovarianceMatrix with position variance and default velocity/acceleration
         """
         # Convert km to degrees (approximate)
         lat_std = position_std_km / 111.0  # 1 degree lat ~ 111 km
-        lon_std = position_std_km / (111.0 * cos(radians(35)))  # Adjust for latitude
+        lon_std = position_std_km / (111.0 * cos(radians(ref_lat)))  # Adjust for latitude
         
         variances = [
             lat_std**2,      # var_lat
@@ -159,7 +161,8 @@ class CovarianceMatrix:
         Get position standard deviations in km.
         
         Args:
-            ref_lat: Reference latitude for longitude conversion
+            ref_lat: Reference latitude for longitude conversion.
+                     Callers should pass the actual cell latitude for accuracy.
         
         Returns:
             (std_lat_km, std_lon_km)
