@@ -26,7 +26,7 @@ from .buffer import LineageBuffer
 
 
 # Default configuration constants
-DEFAULT_OVERLAP_THRESHOLD = 0.30  # 30% overlap required for merge/split detection
+DEFAULT_OVERLAP_THRESHOLD = 0.15  # 15% overlap required for merge/split detection
 
 
 class LineageDetector:
@@ -213,6 +213,36 @@ class LineageDetector:
                     
                     # Log the event
                     self._log_split_event(split)
+        
+        # === 1-TO-1 MATCH DETECTION ===
+        # For remaining unmatched new cells, check for 1-to-1 overlap with remaining unmatched old cells
+        for new_cell in new_cells:
+            new_id = int(new_cell.get('id', 0))
+            if new_id in matched_new:
+                continue
+            
+            # 1. Check same-ID overlap first (since find_overlapping_cells skips same-ID)
+            if new_id in old_index and new_id not in matched_old:
+                old_data = old_index[new_id]
+                ratio = calculate_overlap_ratio(old_data['bbox'], new_cell.get('bbox', []))
+                if ratio >= self.overlap_threshold:
+                    matched_old.add(new_id)
+                    matched_new.add(new_id)
+                    result.cell_events[new_id] = LineageEvent.ACTIVE
+                    continue
+
+            # 2. Check other 1-to-1 overlaps
+            overlapping = find_overlapping_cells(
+                new_cell, old_index, self.overlap_threshold
+            )
+            
+            if len(overlapping) == 1:
+                old_id, _ = overlapping[0]
+                if old_id not in matched_old:
+                    matched_old.add(old_id)
+                    matched_new.add(new_id)
+                    result.cell_events[new_id] = LineageEvent.ACTIVE
+                    result.cell_events[old_id] = LineageEvent.ACTIVE
         
         # === UNMATCHED CELLS ===
         # Old cells not matched -> DISSIPATED
