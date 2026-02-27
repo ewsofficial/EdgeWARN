@@ -124,8 +124,8 @@ class HttpsFileFinder:
         
         self.io_manager.write_debug(f"Scanning {url} for {target_ts_str}...")
         
-        # Disable SSL verification to avoid "unable to get local issuer certificate" errors
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+        # Standard SSL verification is now used as testing confirmed support
+        async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(url) as response:
                     if response.status != 200:
@@ -170,7 +170,7 @@ class HttpsFileFinder:
         self.io_manager.write_debug(f"Scanning (Sync) {url} for {target_ts_str}...")
         
         try:
-            response = requests.get(url, verify=False, timeout=10)
+            response = requests.get(url, timeout=10)
             if response.status_code != 200:
                 self.io_manager.write_warning(f"Failed to access {url}: HTTP {response.status_code}")
                 return []
@@ -252,7 +252,7 @@ class HttpsFileDownloader:
 
         self.io_manager.write_info(f"Downloading (HTTPS Fallback): {filename}")
         
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+        async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(match) as response:
                     if response.status == 200:
