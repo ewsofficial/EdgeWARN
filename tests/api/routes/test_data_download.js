@@ -105,19 +105,26 @@ describe('Data Download Route', () => {
             expect(response.body.data).toEqual(testData);
         });
 
-        it('should download NWS file successfully', async () => {
-            // Create test NWS file
-            const testData = { features: [{ id: 1, event: 'Severe Thunderstorm Warning' }] };
-            const nwsFile = path.join(tempDir, 'NWS', 'alerts_active_20231015-143000.json');
+        it('should download NWS alerts registry successfully', async () => {
+            // Create test NWS alerts registry
+            const testData = {
+                last_updated: '20231015-143000',
+                alerts: {
+                    'alert1': { feature: { id: 'alert1', event: 'Severe Thunderstorm Warning' } },
+                    'alert2': { feature: { id: 'alert2', event: 'Tornado Warning' } }
+                }
+            };
+            const nwsFile = path.join(tempDir, 'NWS', 'alerts_registry.json');
             await fs.promises.writeFile(nwsFile, JSON.stringify(testData));
 
             const response = await request(app)
-                .get('/data/download?type=nws&timestamp=20231015-143000')
+                .get('/data/download?type=nws')
                 .expect(200);
 
             expect(response.body.type).toBe('nws');
-            expect(response.body.timestamp).toBe('20231015-143000');
-            expect(response.body.data).toEqual(testData);
+            expect(response.body.last_updated).toBe('20231015-143000');
+            expect(response.body.count).toBe(2);
+            expect(response.body.data.features.length).toBe(2);
         });
 
         it('should download surface features file successfully', async () => {
@@ -144,13 +151,12 @@ describe('Data Download Route', () => {
             expect(response.body.timestamp).toBe('20231015-140000');
         });
 
-        it('should return 404 for missing NWS file', async () => {
+        it('should return 404 for missing NWS alerts registry', async () => {
             const response = await request(app)
-                .get('/data/download?type=nws&timestamp=20231015-143000')
+                .get('/data/download?type=nws')
                 .expect(404);
 
-            expect(response.body.error).toContain('NWS data not found');
-            expect(response.body.timestamp).toBe('20231015-143000');
+            expect(response.body.error).toContain('NWS alerts registry not found');
         });
 
         it('should set Cache-Control header', async () => {

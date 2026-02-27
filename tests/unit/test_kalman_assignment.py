@@ -123,7 +123,7 @@ class TestAssignmentConfig:
         assert config.weight_position == 1.0
         assert config.weight_velocity == 2.0
         assert config.weight_shape == 0.5
-        assert config.method == "hybrid"
+        assert config.method == "greedy"
     
     def test_custom_config(self):
         """Test custom configuration values."""

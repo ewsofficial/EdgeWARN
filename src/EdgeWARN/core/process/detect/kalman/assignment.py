@@ -99,7 +99,7 @@ class AssignmentCostCalculator:
         return total_cost
     
     def prefilter_candidates(self, track: Dict[str, Any],
-                             detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+                              detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Stage 1: Filter detections within prefilter_radius_km.
         
@@ -108,7 +108,7 @@ class AssignmentCostCalculator:
         Args:
             track: Tracked storm cell dictionary
             detections: List of all new detections
-        
+            
         Returns:
             List of detections within the pre-filter radius
         """
@@ -122,12 +122,16 @@ class AssignmentCostCalculator:
             centroid = track.get('centroid', [0, 0])
             pred_lat, pred_lon = centroid[0], centroid[1]
         
+        print(f"Track {track['id']} predicted position:", (pred_lat, pred_lon))
+        
         candidates = []
         for det in detections:
             det_centroid = det.get('centroid', [0, 0])
             det_lat, det_lon = det_centroid[0], det_centroid[1]
             
             dist = haversine_distance(pred_lat, pred_lon, det_lat, det_lon)
+            
+            print(f"  Detection {det['id']} distance from track {track['id']}: {dist:.3f} km")
             
             if dist <= self.config.prefilter_radius_km:
                 candidates.append(det)
