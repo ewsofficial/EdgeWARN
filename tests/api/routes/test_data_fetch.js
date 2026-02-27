@@ -100,15 +100,18 @@ describe('Data Fetch Route', () => {
             expect(response.body.timestamps).toContain('20231015-150000');
         });
 
-        it('should return NWS timestamps from files', async () => {
-            // Create test NWS files
+        it('should return NWS alert IDs from registry', async () => {
+            // Create test NWS registry
+            const testRegistry = {
+                last_updated: '20231015-143000',
+                alerts: {
+                    'alert1': { feature: { id: 'alert1' } },
+                    'alert2': { feature: { id: 'alert2' } }
+                }
+            };
             await fs.promises.writeFile(
-                path.join(tempDir, 'NWS', 'alerts_active_20231015-143000.json'),
-                JSON.stringify({ data: 'test' })
-            );
-            await fs.promises.writeFile(
-                path.join(tempDir, 'NWS', 'alerts_active_20231015-144000.json'),
-                JSON.stringify({ data: 'test' })
+                path.join(tempDir, 'NWS', 'alerts_registry.json'),
+                JSON.stringify(testRegistry)
             );
 
             const response = await request(app)
@@ -117,8 +120,9 @@ describe('Data Fetch Route', () => {
 
             expect(response.body.type).toBe('nws');
             expect(response.body.count).toBe(2);
-            expect(response.body.timestamps).toContain('20231015-143000');
-            expect(response.body.timestamps).toContain('20231015-144000');
+            expect(response.body.alert_ids).toContain('alert1');
+            expect(response.body.alert_ids).toContain('alert2');
+            expect(response.body.last_updated).toBe('20231015-143000');
         });
 
         it('should return surface feature timestamps from files', async () => {
@@ -137,30 +141,25 @@ describe('Data Fetch Route', () => {
             expect(response.body.timestamps).toContain('20231015-143000');
         });
 
-        it('should sort timestamps in descending order (newest first)', async () => {
-            // Create files with out-of-order timestamps
+        it('should return empty alert IDs array when registry has no alerts', async () => {
+            // Create test NWS registry with no alerts
+            const testRegistry = {
+                last_updated: null,
+                alerts: {}
+            };
             await fs.promises.writeFile(
-                path.join(tempDir, 'NWS', 'alerts_active_20231015-100000.json'),
-                JSON.stringify({ data: 'test' })
-            );
-            await fs.promises.writeFile(
-                path.join(tempDir, 'NWS', 'alerts_active_20231015-150000.json'),
-                JSON.stringify({ data: 'test' })
-            );
-            await fs.promises.writeFile(
-                path.join(tempDir, 'NWS', 'alerts_active_20231015-120000.json'),
-                JSON.stringify({ data: 'test' })
+                path.join(tempDir, 'NWS', 'alerts_registry.json'),
+                JSON.stringify(testRegistry)
             );
 
             const response = await request(app)
                 .get('/data/fetch?type=nws')
                 .expect(200);
 
-            expect(response.body.timestamps).toEqual([
-                '20231015-150000',
-                '20231015-120000',
-                '20231015-100000'
-            ]);
+            expect(response.body.type).toBe('nws');
+            expect(response.body.count).toBe(0);
+            expect(response.body.alert_ids).toEqual([]);
+            expect(response.body.last_updated).toBeNull();
         });
 
         it('should set Cache-Control header', async () => {
@@ -176,14 +175,23 @@ describe('Data Fetch Route', () => {
             expect(response.headers['cache-control']).toContain('max-age=5');
         });
 
-        it('should ignore non-JSON files', async () => {
+        it('should ignore non-JSON files in NWS directory', async () => {
+            // Create test NWS registry
+            const testRegistry = {
+                last_updated: '20231015-143000',
+                alerts: {
+                    'alert1': { feature: { id: 'alert1' } }
+                }
+            };
+            await fs.promises.writeFile(
+                path.join(tempDir, 'NWS', 'alerts_registry.json'),
+                JSON.stringify(testRegistry)
+            );
+
+            // Create non-JSON file
             await fs.promises.writeFile(
                 path.join(tempDir, 'NWS', 'alerts_active_20231015-143000.txt'),
                 'not json'
-            );
-            await fs.promises.writeFile(
-                path.join(tempDir, 'NWS', 'alerts_active_20231015-143000.json'),
-                JSON.stringify({ data: 'test' })
             );
 
             const response = await request(app)
@@ -191,7 +199,7 @@ describe('Data Fetch Route', () => {
                 .expect(200);
 
             expect(response.body.count).toBe(1);
-            expect(response.body.timestamps).toContain('20231015-143000');
+            expect(response.body.alert_ids).toContain('alert1');
         });
     });
 });

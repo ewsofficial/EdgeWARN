@@ -277,7 +277,7 @@ class TestCleanupExpired:
 
     def test_cleanup_mixed_alerts(self, registry, sample_feature, sample_feature_2):
         """Test cleanup with mix of expired and active alerts."""
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.fromisoformat("2026-02-23T21:45:00Z")
         
         # Add two alerts
         registry.process_alert(sample_feature, current_time)

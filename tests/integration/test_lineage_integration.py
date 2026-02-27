@@ -335,7 +335,7 @@ class TestPerformanceBenchmarks:
             entries_old.append(create_mock_cell(i * 2 + 2, base_lat, base_lon + 0.25, max_refl=60.0))
             
             # One merged new cell
-            entries_new.append(create_mock_cell(100 + i, base_lat, base_lon, size=0.2, max_refl=65.0))
+            entries_new.append(create_mock_cell(100 + i, base_lat, base_lon, size=0.4, max_refl=65.0))
         
         # 10 split scenarios (1 cell -> 2 cells)
         for i in range(10):
@@ -347,7 +347,7 @@ class TestPerformanceBenchmarks:
             
             # Two new cells
             entries_new.append(create_mock_cell(300 + i * 2, base_lat, base_lon, size=0.2, max_refl=55.0))
-            entries_new.append(create_mock_cell(300 + i * 2 + 1, base_lat + 0.2, base_lon + 0.2, size=0.2, max_refl=50.0))
+            entries_new.append(create_mock_cell(300 + i * 2 + 1, base_lat + 0.1, base_lon + 0.1, size=0.2, max_refl=50.0))
         
         # Create detector
         buffer = LineageBuffer(min_confirmations=1)

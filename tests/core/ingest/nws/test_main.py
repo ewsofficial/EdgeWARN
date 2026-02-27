@@ -4,11 +4,11 @@ Tests for NWS ingest main module
 
 import pytest
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 from EdgeWARN.core.ingest.nws.main import download_alerts
-
+from EdgeWARN.core.ingest.nws.registry import reset_registry
 
 class TestDownloadAlerts:
     """Tests for download_alerts function"""
@@ -18,6 +18,11 @@ class TestDownloadAlerts:
         """Mock the module-level io_manager"""
         with patch('EdgeWARN.core.ingest.nws.main.io_manager') as mock:
             yield mock
+
+    @pytest.fixture(autouse=True)
+    def reset_registry_fixture(self):
+        """Reset the singleton registry instance before each test"""
+        reset_registry()
 
     @pytest.fixture
     def empty_response(self):
@@ -33,19 +38,21 @@ class TestDownloadAlerts:
     def test_download_creates_output_directory(self, mock_io, empty_response, tmp_path):
         """Test that output directory is created"""
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
+             patch('EdgeWARN.core.ingest.nws.main.fs.NWS_REGISTRY_PATH', tmp_path / "registry.json"), \
              patch('urllib.request.urlopen', return_value=empty_response):
             download_alerts(datetime(2023, 10, 15, 14, 30))
             
             assert tmp_path.exists()
 
     def test_download_creates_correct_filename(self, mock_io, empty_response, tmp_path):
-        """Test that correct filename is created"""
+        """Test that correct registry file is saved"""
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
+             patch('EdgeWARN.core.ingest.nws.main.fs.NWS_REGISTRY_PATH', tmp_path / "registry.json"), \
              patch('urllib.request.urlopen', return_value=empty_response):
             download_alerts(datetime(2023, 10, 15, 14, 30))
             
-            # Should create file with format: alerts_active_YYYYMMDD-HHMM00.json
-            expected_file = tmp_path / "alerts_active_20231015-143000.json"
+            # Should create registry file
+            expected_file = tmp_path / "registry.json"
             assert expected_file.exists()
 
     def test_download_filters_dropped_events(self, mock_io, tmp_path):
@@ -56,6 +63,7 @@ class TestDownloadAlerts:
             "features": [
                 {
                     "properties": {
+                        "id": "1",
                         "event": "Severe Thunderstorm Warning",
                         "geocode": {"SAME": ["048121"]}
                     },
@@ -63,6 +71,7 @@ class TestDownloadAlerts:
                 },
                 {
                     "properties": {
+                        "id": "2",
                         "event": "Administrative Message",  # Should be dropped
                         "geocode": {"SAME": ["048121"]}
                     },
@@ -73,18 +82,20 @@ class TestDownloadAlerts:
         mock_response.__enter__.return_value = mock_response
         
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
+             patch('EdgeWARN.core.ingest.nws.main.fs.NWS_REGISTRY_PATH', tmp_path / "registry.json"), \
              patch('urllib.request.urlopen', return_value=mock_response):
             
-            download_alerts(datetime(2023, 10, 15, 14, 30))
+            download_alerts(datetime(2023, 10, 15, 14, 30, tzinfo=timezone.utc))
             
             # Read output file
-            output_file = tmp_path / "alerts_active_20231015-143000.json"
+            output_file = tmp_path / "registry.json"
             with open(output_file) as f:
                 data = json.load(f)
             
             # Should only include Severe Thunderstorm Warning
-            assert len(data["features"]) == 1
-            events = [f["properties"]["event"] for f in data["features"]]
+            alerts = data.get("alerts", {})
+            assert len(alerts) == 1
+            events = [alerts[k]["feature"]["properties"]["event"] for k in alerts]
             assert "Severe Thunderstorm Warning" in events
             assert "Administrative Message" not in events
 
@@ -96,6 +107,7 @@ class TestDownloadAlerts:
             "features": [
                 {
                     "properties": {
+                        "id": "1",
                         "event": "Severe Thunderstorm Warning",
                         "geocode": {"SAME": ["048121"]},
                         "references": "should be removed"
@@ -107,52 +119,57 @@ class TestDownloadAlerts:
         mock_response.__enter__.return_value = mock_response
         
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
+             patch('EdgeWARN.core.ingest.nws.main.fs.NWS_REGISTRY_PATH', tmp_path / "registry.json"), \
              patch('urllib.request.urlopen', return_value=mock_response):
             
-            download_alerts(datetime(2023, 10, 15, 14, 30))
+            download_alerts(datetime(2023, 10, 15, 14, 30, tzinfo=timezone.utc))
             
             # Read output file
-            output_file = tmp_path / "alerts_active_20231015-143000.json"
+            output_file = tmp_path / "registry.json"
             with open(output_file) as f:
                 data = json.load(f)
             
-            # References should be removed
-            assert "references" not in data["features"][0]["properties"]
+            alerts = data.get("alerts", {})
+            assert len(alerts) == 1
+            feature = list(alerts.values())[0]["feature"]
+            assert "references" not in feature["properties"]
 
     def test_download_handles_network_error(self, mock_io, tmp_path):
         """Test handling of network errors"""
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
              patch('urllib.request.urlopen', side_effect=Exception("Network error")):
             
-            download_alerts(datetime(2023, 10, 15, 14, 30))
+            with pytest.raises(Exception):
+                download_alerts(datetime(2023, 10, 15, 14, 30))
             
             # Should log error
             mock_io.write_error.assert_called_once()
 
     def test_download_cleans_old_files(self, mock_io, empty_response, tmp_path):
-        """Test that old files are cleaned up"""
-        # Create an old file
-        old_file = tmp_path / "alerts_active_20231015-120000.json"
-        old_file.write_text('{"old": "data"}')
-        
+        """Test that old registry items are cleaned up instead of old files."""
+        # Note: clean_files_by_age logic has been replaced by registry cleanup
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
-             patch('EdgeWARN.core.ingest.nws.main.fs.clean_files_by_age') as mock_clean, \
+             patch('EdgeWARN.core.ingest.nws.main.fs.NWS_REGISTRY_PATH', tmp_path / "registry.json"), \
+             patch('EdgeWARN.core.ingest.nws.main._get_registry') as mock_get_registry, \
              patch('urllib.request.urlopen', return_value=empty_response):
             
+            mock_registry = MagicMock()
+            mock_registry.cleanup_expired.return_value = 0
+            mock_get_registry.return_value = mock_registry
             download_alerts(datetime(2023, 10, 15, 14, 30))
             
-            # Should call clean_files_by_age
-            mock_clean.assert_called_once()
+            # Should call cleanup_expired
+            mock_registry.cleanup_expired.assert_called_once()
 
     def test_download_with_custom_base_dir(self, mock_io, empty_response, tmp_path):
-        """Test download with custom base directory"""
+        """Test download respects base registry paths"""
         custom_dir = tmp_path / "custom_nws"
+        custom_reg = custom_dir / "reg.json"
         
         with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', custom_dir), \
+             patch('EdgeWARN.core.ingest.nws.main.fs.NWS_REGISTRY_PATH', custom_reg), \
              patch('urllib.request.urlopen', return_value=empty_response):
             
             download_alerts(datetime(2023, 10, 15, 14, 30))
             
-            # File should be in custom directory
-            expected_file = custom_dir / "alerts_active_20231015-143000.json"
-            assert expected_file.exists()
+            assert custom_reg.exists()
