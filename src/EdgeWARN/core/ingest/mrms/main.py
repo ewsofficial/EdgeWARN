@@ -20,6 +20,9 @@ import traceback
 io_manager = IOManager("[Ingest]")
 
 
+def get_detection_modifiers():
+    return ["MergedReflectivityQCComposite_00.50", "PrecipFlag_00.00", None]
+
 async def download_all_files_async(dt, max_entries=10, remove_old_files=True):
     """
     Async version of download_all_files.
@@ -37,15 +40,46 @@ async def download_all_files_async(dt, max_entries=10, remove_old_files=True):
         for f in folders:
             cleanup_tasks.append(fs.async_clean_old_files(f, max_age_minutes=60))
             
-    # Run cleanup and downloads concurrently
-    # Note: We technically could await cleanup_tasks separately if we wanted, 
-    # but gathering them with downloads is fine as long as clean_old_files is robust.
-    # However, usually we want to clear space *before* downloading if disk is full. 
-    # But here it's time-based expiry. Let's run them in parallel with downloads for max speed.
-    
     all_tasks = [
         download_all_files_async_internal(dt, max_entries),
         download_all_goes_files_async(dt, max_entries)
+    ]
+    all_tasks.extend(cleanup_tasks)
+    
+    await asyncio.gather(*all_tasks)
+
+async def download_detection_files_async(dt, max_entries=10, remove_old_files=True):
+    """Downloads only files strictly required for detection phase."""
+    mrms_modifiers = get_mrms_modifiers()
+    detection_mods = get_detection_modifiers()
+    folders = [outdir for _, mod, outdir in mrms_modifiers if mod in detection_mods]
+    cleanup_tasks = []
+    if remove_old_files:
+        io_manager.write_debug(f"Starting async cleanup for {len(folders)} detection directories...")
+        for f in folders:
+            cleanup_tasks.append(fs.async_clean_old_files(f, max_age_minutes=60))
+            
+    all_tasks = [
+        download_all_files_async_internal(dt, max_entries, target_modifiers=detection_mods),
+    ]
+    all_tasks.extend(cleanup_tasks)
+    
+    await asyncio.gather(*all_tasks)
+
+async def download_integration_files_async(dt, max_entries=10, remove_old_files=True):
+    """Downloads MRMS integration products, excluding detection products."""
+    mrms_modifiers = get_mrms_modifiers()
+    detection_mods = get_detection_modifiers()
+    folders = [outdir for _, mod, outdir in mrms_modifiers if mod not in detection_mods]
+    cleanup_tasks = []
+    if remove_old_files:
+        io_manager.write_debug(f"Starting async cleanup for {len(folders)} integration directories...")
+        for f in folders:
+            cleanup_tasks.append(fs.async_clean_old_files(f, max_age_minutes=60))
+            
+    integration_mods = [mod for _, mod, _ in mrms_modifiers if mod not in detection_mods]
+    all_tasks = [
+        download_all_files_async_internal(dt, max_entries, target_modifiers=integration_mods),
     ]
     all_tasks.extend(cleanup_tasks)
     

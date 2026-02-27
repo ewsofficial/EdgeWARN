@@ -13,6 +13,7 @@ xr.set_options(use_new_combine_kwarg_defaults=True)
 
 import util.file as fs
 import EdgeWARN.core.ingest.mrms.main as ingest_main
+from EdgeWARN.core.ingest.mrms.downloader import download_all_goes_files_async, download_all_goes_files
 from EdgeWARN.core.ingest.synoptic.main import download_rap, download_rap_async
 import EdgeWARN.core.ingest.nws.main as nws_ingest
 import EdgeWARN.core.ingest.metar as metar_ingest
@@ -60,7 +61,7 @@ def pipeline(log_queue, dt, profile=False):
     perf_tracker.reset()
     perf_tracker.start("Total Pipeline")
 
-    async def run_async_ingest():
+    async def run_pipeline_async():
         log(f"INFO: Starting Async Data Ingestion for timestamp {dt}")
         
         async def safe_ingest(task_name, async_func, sync_fallback, *args):
@@ -68,7 +69,6 @@ def pipeline(log_queue, dt, profile=False):
                 if asyncio.iscoroutinefunction(async_func):
                     await async_func(*args)
                 else:
-                    # In case it's a wrapper that isn't itself a coroutine but returns one
                     await async_func(*args)
                 log(f"INFO: Async {task_name} ingestion successful")
                 return True
@@ -82,67 +82,75 @@ def pipeline(log_queue, dt, profile=False):
                     log(f"ERROR: Both async and sync ingestion failed for {task_name}: {ef}")
                     return False
 
-        # Run all ingestion tasks concurrently with individual fallbacks
-        results = await asyncio.gather(
-            safe_ingest("MRMS/GOES", ingest_main.download_all_files_async, ingest_main.download_all_files, dt),
-            safe_ingest("RAP", download_rap_async, download_rap, dt),
-            safe_ingest("NWS Alerts", nws_ingest.download_alerts_async, nws_ingest.download_alerts, dt),
-            safe_ingest("METAR", metar_ingest.ingest_metars_async, metar_ingest.ingest_metars),
-            return_exceptions=True
+        # 1. Start all downloads concurrently
+        perf_tracker.start("Ingestion - Detection Files")
+        detection_task = asyncio.create_task(
+            safe_ingest("MRMS Detection", ingest_main.download_detection_files_async, ingest_main.download_all_files, dt)
         )
         
-        for i, res in enumerate(results):
-            if isinstance(res, Exception):
-                log(f"CRITICAL: Unexpected error in async wrapper {i}: {res}")
+        integration_tasks = [
+            asyncio.create_task(safe_ingest("MRMS Integration", ingest_main.download_integration_files_async, ingest_main.download_all_files, dt)),
+            asyncio.create_task(safe_ingest("GOES", download_all_goes_files_async, download_all_goes_files, dt, 10, 3)),
+            asyncio.create_task(safe_ingest("RAP", download_rap_async, download_rap, dt))
+        ]
 
-    # 1. Ingestion (Async with Granular Fallback)
-    try:
-        perf_tracker.start("Ingestion")
-        asyncio.run(run_async_ingest())
-        perf_tracker.stop("Ingestion")
-    except Exception as e:
-        log(f"ERROR: Global async ingestion wrapper failed: {e}")
+        # 2. Await strictly necessary detection files
+        await detection_task
+        perf_tracker.stop("Ingestion - Detection Files")
 
-        # 2. Detection (Sync)
-    try:
+        # 3. Storm Cell Detection (Run in thread to not block async background downloads)
         log("INFO: Starting Storm Cell Detection")
         perf_tracker.start("Detection")
         
-        try:
-            filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
-            ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
-            pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
-
-        except (RuntimeError, ValueError):
-            io_manager.write_debug("Not enough files for tracking, falling back to single-frame mode")
+        def run_detect_sync():
             try:
-                comp_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)
-                filepath_old = comp_files[-1] if comp_files else None
-                filepath_new = None
-                
-                ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
-                ps_old = ps_files[-1] if ps_files else None
-                ps_new = None
-                
-                pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)
-                pt_old = pt_files[-1] if pt_files else None
-                pt_new = None
-            except Exception as e:
-                log(f"ERROR: Failed to prepare single-frame fallback: {e}")
-                return
-        
-        generated_file, _ = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
+                filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
+                ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
+                pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
+            except (RuntimeError, ValueError):
+                io_manager.write_debug("Not enough files for tracking, falling back to single-frame mode")
+                try:
+                    comp_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)
+                    filepath_old = comp_files[-1] if comp_files else None
+                    filepath_new = None
+                    
+                    ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
+                    ps_old = ps_files[-1] if ps_files else None
+                    ps_new = None
+                    
+                    pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)
+                    pt_old = pt_files[-1] if pt_files else None
+                    pt_new = None
+                except Exception as e:
+                    log(f"ERROR: Failed to prepare single-frame fallback: {e}")
+                    return None
+            
+            generated_file, _ = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
+            return generated_file
+
+        generated_file = await asyncio.to_thread(run_detect_sync)
         perf_tracker.stop("Detection")
-        
-        # 3. Integration (Sync)
+
+        if not generated_file:
+            log("ERROR: Detection failed to generate a file, skipping integration.")
+            return
+
+        # 4. Await remaining integration files
+        perf_tracker.start("Ingestion - Integration Files (Wait)")
+        await asyncio.gather(*integration_tasks, return_exceptions=True)
+        perf_tracker.stop("Ingestion - Integration Files (Wait)")
+
+        # 5. Integration Phase
         perf_tracker.start("Integration")
-        integration.main(generated_file)
+        await asyncio.to_thread(integration.main, generated_file)
         perf_tracker.stop("Integration")
+
+    try:
+        asyncio.run(run_pipeline_async())
         
         perf_tracker.stop("Total Pipeline")
         log("Pipeline completed successfully")
         
-        # Queue the performance summary if requested
         if profile:
             import io
             summary_buffer = io.StringIO()
@@ -155,9 +163,48 @@ def pipeline(log_queue, dt, profile=False):
             summary_buffer.write("="*50 + "\n")
             
             log(summary_buffer.getvalue())
-        
+            
     except Exception as e:
+        import traceback
         log(f"Error in pipeline: {e}")
+        log(traceback.format_exc())
+
+def metar_loop(ui_process=None):
+    from datetime import timedelta
+    while True:
+        if ui_process and not ui_process.is_alive():
+            sys.exit(0)
+            
+        now = datetime.now(timezone.utc)
+        minutes_to_next = 5 - (now.minute % 5)
+        next_run = now.replace(second=0, microsecond=0) + timedelta(minutes=minutes_to_next)
+        sleep_seconds = (next_run - now).total_seconds()
+        
+        if sleep_seconds > 0:
+            time.sleep(sleep_seconds)
+            
+        if ui_process and not ui_process.is_alive():
+             sys.exit(0)
+             
+        try:
+            asyncio.run(metar_ingest.ingest_metars_async())
+        except Exception as e:
+            print(f"[METAR Loop] Error: {e}")
+
+def nws_loop(ui_process=None):
+    while True:
+        if ui_process and not ui_process.is_alive():
+            sys.exit(0)
+            
+        try:
+            asyncio.run(nws_ingest.download_alerts_async(datetime.now(timezone.utc)))
+        except Exception as e:
+            print(f"[NWS Loop] Error: {e}")
+            
+        for _ in range(120):
+             if ui_process and not ui_process.is_alive():
+                 sys.exit(0)
+             time.sleep(1)
 
 
 
@@ -188,6 +235,12 @@ def main(ui_process=None):
 
     except Exception as e:
         print(f"[Scheduler] Failed to initialize last_processed: {e}")
+
+    print("[Scheduler] Starting background loops (METAR, NWS)...")
+    metar_proc = multiprocessing.Process(target=metar_loop, args=(ui_process,), daemon=True)
+    nws_proc = multiprocessing.Process(target=nws_loop, args=(ui_process,), daemon=True)
+    metar_proc.start()
+    nws_proc.start()
 
     try:
         while True:
