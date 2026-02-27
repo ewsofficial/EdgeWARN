@@ -17,7 +17,7 @@ import uuid
 
 io_manager = IOManager("[Ingest]")
 
-async def download_all_files_async_internal(dt, max_entries):
+async def download_all_files_async_internal(dt, max_entries, target_modifiers=None):
     """Internal async function that handles the actual download operations"""
     trace_id = f"INGEST-{uuid.uuid4().hex[:8]}"
     
@@ -29,6 +29,8 @@ async def download_all_files_async_internal(dt, max_entries):
             # Create async tasks for all modifiers
             tasks = []
             for region, modifier, outdir in get_mrms_modifiers():
+                if target_modifiers is not None and modifier not in target_modifiers:
+                    continue
                 task = download_modifier_async(
                     region, modifier, outdir, dt, max_entries, s3, trace_id
                 )
