@@ -16,3 +16,4 @@
 - **NWS Alert Deduplication**: Addressed code review issues within NWS data feed logic, improving deduplication logic to accurately filter out redundant event alerts.
 - **StormCast Dropout Prevention**: Modified `StormCast` history mechanics to load historical state directly from persistent files rather than caching locally, preventing data dropouts during stateless backend executions.
 - **TimingTracker Race Condition**: Resolved an identified thread-safety race condition within concurrent system tracking instances.
+- **MRMS Download SSL**: Updated MRMS download logic to use standard SSL verification.
