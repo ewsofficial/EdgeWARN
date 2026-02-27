@@ -96,12 +96,13 @@ class TestSpatialIndex:
         ]
         
         index = build_spatial_index(cells)
+        cells_data = index['cells_data']
         
-        assert len(index) == 2
-        assert 1 in index
-        assert 2 in index
-        assert index[1]['max_refl'] == 55.0
-        assert index[2]['num_gates'] == 150
+        assert len(cells_data) == 2
+        assert 1 in cells_data
+        assert 2 in cells_data
+        assert cells_data[1]['max_refl'] == 55.0
+        assert cells_data[2]['num_gates'] == 150
     
     def test_build_index_skips_invalid_cells(self):
         """Building index should skip cells with invalid bbox."""
@@ -124,9 +125,10 @@ class TestSpatialIndex:
         ]
         
         index = build_spatial_index(cells)
+        cells_data = index['cells_data']
         
-        assert len(index) == 1
-        assert 1 in index
+        assert len(cells_data) == 1
+        assert 1 in cells_data
 
 
 class TestDominantSelection:
@@ -135,11 +137,11 @@ class TestDominantSelection:
     def test_select_dominant_parent_by_refl(self):
         """Should select parent with highest max_refl."""
         parent_ids = [1, 2, 3]
-        cell_index = {
+        cell_index = {'cells_data': {
             1: {'max_refl': 55.0, 'num_gates': 100},
             2: {'max_refl': 65.0, 'num_gates': 80},  # Highest refl
             3: {'max_refl': 60.0, 'num_gates': 120},
-        }
+        }}
         
         dominant = select_dominant_parent(parent_ids, cell_index)
         assert dominant == 2
@@ -147,11 +149,11 @@ class TestDominantSelection:
     def test_select_dominant_parent_by_gates_tiebreaker(self):
         """Should use num_gates as tiebreaker when max_refl is equal."""
         parent_ids = [1, 2, 3]
-        cell_index = {
+        cell_index = {'cells_data': {
             1: {'max_refl': 60.0, 'num_gates': 100},
             2: {'max_refl': 60.0, 'num_gates': 150},  # Same refl, more gates
             3: {'max_refl': 60.0, 'num_gates': 120},
-        }
+        }}
         
         dominant = select_dominant_parent(parent_ids, cell_index)
         assert dominant == 2
@@ -159,11 +161,11 @@ class TestDominantSelection:
     def test_select_dominant_child_by_refl(self):
         """Should select child with highest max_refl."""
         child_ids = [10, 20, 30]
-        cell_index = {
+        cell_index = {'cells_data': {
             10: {'max_refl': 50.0, 'num_gates': 100},
             20: {'max_refl': 70.0, 'num_gates': 80},  # Highest refl
             30: {'max_refl': 55.0, 'num_gates': 120},
-        }
+        }}
         
         dominant = select_dominant_child(child_ids, cell_index)
         assert dominant == 20
@@ -171,9 +173,9 @@ class TestDominantSelection:
     def test_select_dominant_single_candidate(self):
         """Should return the only candidate when list has one item."""
         parent_ids = [1]
-        cell_index = {
+        cell_index = {'cells_data': {
             1: {'max_refl': 55.0, 'num_gates': 100},
-        }
+        }}
         
         dominant = select_dominant_parent(parent_ids, cell_index)
         assert dominant == 1

@@ -257,3 +257,34 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     c = 2 * atan2(sqrt(a), sqrt(1-a))
     
     return EARTH_RADIUS_KM * c
+
+
+def vectorized_haversine_distance(lat1: float, lon1: float, lats2: np.ndarray, lons2: np.ndarray) -> np.ndarray:
+    """
+    Calculate the great circle distance between one point and an array of points in km.
+    
+    Args:
+        lat1, lon1: Origin point coordinates in degrees
+        lats2, lons2: Arrays of target point coordinates in degrees
+        
+    Returns:
+        Array of distances in km
+    """
+    # Convert to radians
+    lat1_rad = np.radians(lat1)
+    lats2_rad = np.radians(lats2)
+    
+    # Handle longitude mapping to -180 to 180
+    lon1_mapped = lon1 if lon1 <= 180 else lon1 - 360
+    lons2_mapped = np.where(lons2 <= 180, lons2, lons2 - 360)
+    
+    lon1_rad = np.radians(lon1_mapped)
+    lons2_rad = np.radians(lons2_mapped)
+    
+    dlat = lats2_rad - lat1_rad
+    dlon = lons2_rad - lon1_rad
+    
+    a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lats2_rad) * np.sin(dlon/2)**2
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+    
+    return EARTH_RADIUS_KM * c

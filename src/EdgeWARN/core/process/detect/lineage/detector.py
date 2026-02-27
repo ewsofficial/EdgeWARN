@@ -93,8 +93,8 @@ class LineageDetector:
         new_index = build_spatial_index(new_cells)
         
         # Get ID sets for quick lookup
-        old_ids = set(old_index.keys())
-        new_ids = set(new_index.keys())
+        old_ids = set(old_index.get('cells_data', {}).keys())
+        new_ids = set(new_index.get('cells_data', {}).keys())
         
         # Track which cells have been matched
         matched_old: set = set()
@@ -222,8 +222,9 @@ class LineageDetector:
                 continue
             
             # 1. Check same-ID overlap first (since find_overlapping_cells skips same-ID)
-            if new_id in old_index and new_id not in matched_old:
-                old_data = old_index[new_id]
+            old_cells_data = old_index.get('cells_data', {})
+            if new_id in old_cells_data and new_id not in matched_old:
+                old_data = old_cells_data[new_id]
                 ratio = calculate_overlap_ratio(old_data['bbox'], new_cell.get('bbox', []))
                 if ratio >= self.overlap_threshold:
                     matched_old.add(new_id)
@@ -307,7 +308,8 @@ class LineageDetector:
         }
         
         results = []
-        for new_id, new_data in new_index.items():
+        new_cells_data = new_index.get('cells_data', {})
+        for new_id, new_data in new_cells_data.items():
             if new_id == old_id:
                 continue
             if not bounds_overlap(old_bounds, new_data):
