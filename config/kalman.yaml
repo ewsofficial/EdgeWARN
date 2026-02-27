@@ -75,7 +75,7 @@ assignment:
   # - hybrid: Pre-filter + Hungarian (recommended)
   # - hungarian: Full Hungarian without pre-filtering
   # - greedy: Nearest-neighbor fallback
-  method: hybrid
+  method: greedy
   
   # Numerical stability
   # Small value added to innovation covariance diagonal

@@ -119,10 +119,13 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         if stormcell_dir.exists():
             json_files = sorted(stormcell_dir.glob("stormcells_*.json"))
             if json_files:
-                latest_json = json_files[-1]
-                io_manager.write_debug(f"Loading previous cells from {latest_json}")
-                with open(latest_json, 'r') as f:
-                    data_old = js.load(f)
+                # Filter out files that are from the future relative to this scan
+                valid_files = [f for f in json_files if f.stem < f"stormcells_{final_ts}"]
+                if valid_files:
+                    latest_json = valid_files[-1]
+                    io_manager.write_debug(f"Loading previous cells from {latest_json}")
+                    with open(latest_json, 'r') as f:
+                        data_old = js.load(f)
     except Exception as e:
         io_manager.write_error(f"Error loading previous data: {e}")
 

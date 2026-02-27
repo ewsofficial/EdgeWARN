@@ -283,6 +283,9 @@ class LineageBuffer:
             # H2 Fix: Only increment if this is a consecutive scan
             if self._scan_number == pending.last_scan_number + 1:
                 pending.count += 1
+            elif self._scan_number == pending.last_scan_number:
+                # Same scan call - don't increment, but don't reset
+                pass
             else:
                 pending.count = 1  # Reset — non-consecutive detection
             pending.last_scan_number = self._scan_number
@@ -330,6 +333,9 @@ class LineageBuffer:
             # H2 Fix: Only increment if this is a consecutive scan
             if self._scan_number == pending.last_scan_number + 1:
                 pending.count += 1
+            elif self._scan_number == pending.last_scan_number:
+                # Same scan call - don't increment, but don't reset
+                pass
             else:
                 pending.count = 1  # Reset — non-consecutive detection
             pending.last_scan_number = self._scan_number

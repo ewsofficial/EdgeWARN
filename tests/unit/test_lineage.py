@@ -190,6 +190,9 @@ class TestLineageBuffer:
         confirmed = buffer.record_potential_merge(100, [100, 101], 100)
         assert confirmed is False
         
+        # End scan 1
+        buffer.end_scan(Path("/tmp"))
+        
         # Second scan - confirmed
         confirmed = buffer.record_potential_merge(100, [100, 101], 100)
         assert confirmed is True

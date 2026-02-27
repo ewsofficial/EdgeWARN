@@ -123,7 +123,7 @@ class AssignmentConfig:
     weight_shape: float = 0.5  # Size/reflectivity similarity weight
     
     # Algorithm selection (for A/B testing and fallback)
-    method: str = "hybrid"  # 'hybrid', 'hungarian', or 'greedy'
+    method: str = "greedy"  # 'hybrid', 'hungarian', or 'greedy'
     
     # Numerical stability
     covariance_regularization: float = 1e-6
@@ -164,7 +164,7 @@ class AssignmentConfig:
             weight_position=weights.get('position', 1.0),
             weight_velocity=weights.get('velocity_direction', 2.0),
             weight_shape=weights.get('size_similarity', 0.5),
-            method=assignment_data.get('method', 'hybrid'),
+            method=assignment_data.get('method', 'greedy'),
             covariance_regularization=assignment_data.get('covariance_regularization', 1e-6),
         )
 
