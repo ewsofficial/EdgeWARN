@@ -20,6 +20,7 @@ class StormState:
         u: Zonal velocity in m/s (positive = eastward)
         v: Meridional velocity in m/s (positive = northward)
         h_core: Storm core height in km AGL, computed as (EchoTop30 + EchoTop50) / 2
+        echo_top_30: Height of 30 dBZ echo top in km AGL
         track_history: Number of valid observation samples
         timestamp: Time of state estimate
     """
@@ -28,6 +29,7 @@ class StormState:
     u: float
     v: float
     h_core: float
+    echo_top_30: float = 10.0
     track_history: int = 1
     motion_jitter: float = 0.0
     timestamp: Optional[datetime] = None
@@ -52,9 +54,13 @@ class EnvironmentProfile:
     Attributes:
         winds: Dictionary mapping pressure level (mb) to (u, v) wind components in m/s
         timestamp: Time of RAP analysis
+        freezing_level_km: Height of the environmental freezing level in km AGL
+        mucape: Most Unstable CAPE in J/kg
     """
     winds: Dict[int, Tuple[float, float]]
     timestamp: Optional[datetime] = None
+    freezing_level_km: Optional[float] = None
+    mucape: Optional[float] = None
     
     def get_wind(self, level: int) -> Tuple[float, float]:
         """Get wind at specified pressure level."""

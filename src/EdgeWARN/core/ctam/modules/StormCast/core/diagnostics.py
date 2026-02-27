@@ -5,7 +5,7 @@ Height-adaptive steering, shear, and Bunkers motion calculations.
 """
 
 import math
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 from .config import (
     PRESSURE_LEVELS,
@@ -134,7 +134,8 @@ def compute_shear(
 def compute_effective_shear(
     profile: EnvironmentProfile,
     h_core: float,
-    base_level: int = 850
+    base_level: int = 850,
+    echo_top_30: Optional[float] = None
 ) -> Tuple[float, float]:
     """
     Compute effective shear over the storm depth.
@@ -145,11 +146,13 @@ def compute_effective_shear(
         profile: Environmental wind profile
         h_core: Storm core height in km AGL
         base_level: Base level (default 850 mb)
+        echo_top_30: Optional 30 dBZ echo top for capping shear layer in shallow storms
         
     Returns:
         Effective shear vector (du, dv) in m/s
     """
     # Select top level based on storm height
+    top_level = 850
     if h_core >= 10.0:
         top_level = 250
     elif h_core >= 5.5:
@@ -158,6 +161,24 @@ def compute_effective_shear(
         top_level = 700
     else:
         top_level = 850  # Minimal shear for very shallow
+        
+    # Cap shear for shallow storms
+    if h_core <= 5.0 and top_level < 700:
+        top_level = 700
+        
+    # If echo top 30 is provided, prevent top_level from exceeding physical storm height
+    # Approximate standard atmosphere heights: 850mb~1.5km, 700mb~3km, 500mb~5.5km, 250mb~10km
+    if echo_top_30 is not None:
+        if echo_top_30 < 3.0 and top_level < 850:
+            top_level = 850
+        elif echo_top_30 < 5.5 and top_level < 700:
+            top_level = 700
+        elif echo_top_30 < 10.0 and top_level < 500:
+            top_level = 500
+            
+    # Always ensure that top_level <= base_level
+    if top_level > base_level:
+        top_level = base_level
     
     return compute_shear(profile, base_level, top_level)
 
@@ -229,8 +250,98 @@ def compute_bunkers_motion(
     
     return (u_bunkers, v_bunkers)
 
+def compute_raw_bunkers_motion(
+    profile: EnvironmentProfile,
+    right_mover: bool = True
+) -> Tuple[float, float]:
+    """
+    Compute Bunkers-type deviant storm motion estimate using the raw Bunkers et al. (2000) method.
+    Fixed 0-6 km mean wind, 0-6 km shear, and constant 7.5 m/s deviation.
+    """
+    # 0-6 km mean (sfc to 500mb approximation using 850, 700, 500)
+    u_vals, v_vals = [], []
+    for level in [850, 700, 500]:
+        if level in profile.winds:
+            u, v = profile.winds[level]
+            u_vals.append(u)
+            v_vals.append(v)
+            
+    if not u_vals:
+        return (0.0, 0.0)
+        
+    u_mean = sum(u_vals) / len(u_vals)
+    v_mean = sum(v_vals) / len(v_vals)
+    
+    # 0-6 km shear (850 to 500mb approximation)
+    u_base, v_base = profile.get_wind(850)
+    u_top, v_top = profile.get_wind(500)
+    shear_u = u_top - u_base
+    shear_v = v_top - v_base
+    
+    shear_mag = _vector_magnitude(shear_u, shear_v)
+    if shear_mag < 1e-10:
+        return (u_mean, v_mean)
+        
+    n_u, n_v = _rotate_vector_90(shear_u, shear_v, clockwise=right_mover)
+    n_u, n_v = _unit_vector(n_u, n_v)
+    
+    # Canonical deviation
+    d = 7.5
+    
+    u_bunkers = u_mean + d * n_u
+    v_bunkers = v_mean + d * n_v
+    
+    return (u_bunkers, v_bunkers)
 
-def compute_storm_core_height(echo_top_30: float, echo_top_50: float) -> float:
+def compute_corfidi_motion(
+    profile: EnvironmentProfile,
+    right_mover: bool = True
+) -> Tuple[float, float]:
+    """
+    Compute Corfidi-type (MCS) deviant storm motion estimate.
+    
+    V_corfidi = V_mean(850-250) - V_llj(850)
+    
+    This is the "Downshear Corfidi" vector used for predicting the motion
+    of mesoscale convective systems (MCSs).
+    
+    Args:
+        profile: Environmental wind profile
+        right_mover: Unused for standard Corfidi, kept for signature parity
+        
+    Returns:
+        Corfidi motion vector (u_corfidi, v_corfidi) in m/s
+    """
+    # Use a deep-layer mean (850 to 250 mb)
+    u_vals, v_vals = [], []
+    for level in [850, 700, 500, 250]:
+        if level in profile.winds:
+            u, v = profile.winds[level]
+            u_vals.append(u)
+            v_vals.append(v)
+    
+    if not u_vals:
+        return (0.0, 0.0)
+        
+    u_mean = sum(u_vals) / len(u_vals)
+    v_mean = sum(v_vals) / len(v_vals)
+    
+    # Inflow/LLJ (850 mb)
+    u_llj, v_llj = profile.get_wind(850)
+    
+    # Downshear Corfidi: V_mcs = V_mean - V_llj
+    # Note: V_mean is effectively V_advection, V_llj is V_propagation
+    u_corfidi = u_mean - u_llj
+    v_corfidi = v_mean - v_llj
+    
+    return (u_corfidi, v_corfidi)
+
+
+def compute_storm_core_height(
+    echo_top_30: Optional[float], 
+    echo_top_50: Optional[float],
+    freezing_level_km: Optional[float] = None
+) -> float:
     """
     Compute storm core height from echo top diagnostics.
     
@@ -239,14 +350,23 @@ def compute_storm_core_height(echo_top_30: float, echo_top_50: float) -> float:
     Args:
         echo_top_30: Height of 30 dBZ echo top in km AGL
         echo_top_50: Height of 50 dBZ echo top in km AGL
+        freezing_level_km: Optional freezing level limiting height
         
     Returns:
         Storm core height in km AGL
     """
-    if echo_top_30 is None and echo_top_50 is None:
-        return 0.0
-    if echo_top_30 is None:
-        return float(echo_top_50)
-    if echo_top_50 is None:
-        return float(echo_top_30)
-    return (echo_top_30 + echo_top_50) / 2.0
+    if (echo_top_30 is None or echo_top_30 == 0.0) and (echo_top_50 is None or echo_top_50 == 0.0):
+        h_core = 0.0
+    elif echo_top_50 is None or echo_top_50 < 2.0:
+        # Fallback to 30 dBZ mainly if 50 dBZ is weak/absent
+        h_core = float(echo_top_30) if echo_top_30 is not None else 0.0
+    elif echo_top_30 is None or echo_top_30 == 0.0:
+        h_core = float(echo_top_50)
+    else:
+        h_core = (echo_top_30 + echo_top_50) / 2.0
+        
+    # Thermal capping
+    if freezing_level_km is not None and h_core > freezing_level_km + 1.0:
+        h_core = freezing_level_km + 1.0
+        
+    return h_core

@@ -10,15 +10,18 @@ from typing import Dict, Tuple
 # =============================================================================
 # Pressure Levels (Section 3.2)
 # =============================================================================
-PRESSURE_LEVELS: Tuple[int, ...] = (850, 700, 500, 250)
-"""Pressure levels in mb for environmental wind extraction."""
+PRESSURE_LEVELS: Tuple[int, ...] = tuple(range(1000, 75, -25))
+"""Pressure levels in mb for environmental wind extraction (1000mb to 100mb)."""
+
+def _pressure_to_height_km(p_mb: float) -> float:
+    """Convert pressure (mb) to approximate height (km AGL) using standard atmosphere."""
+    # Using simple standard atmosphere approximation
+    # H = 44.3308 * (1 - (P/1013.25)^0.190263)
+    return 44.3308 * (1 - (p_mb / 1013.25)**0.190263)
 
 # Approximate heights AGL for reference
 LEVEL_HEIGHTS: Dict[int, float] = {
-    850: 1.5,   # km AGL
-    700: 3.0,   # km AGL
-    500: 5.5,   # km AGL
-    250: 10.5,  # km AGL
+    p: _pressure_to_height_km(p) for p in PRESSURE_LEVELS
 }
 
 # =============================================================================
@@ -31,10 +34,7 @@ class GaussianWeightParams:
     sigma: float # Spread (km)
 
 GAUSSIAN_WEIGHT_PARAMS: Dict[int, GaussianWeightParams] = {
-    850: GaussianWeightParams(mu=3.0, sigma=3.0),
-    700: GaussianWeightParams(mu=5.0, sigma=3.0),
-    500: GaussianWeightParams(mu=8.0, sigma=3.0),
-    250: GaussianWeightParams(mu=12.0, sigma=3.0),
+    p: GaussianWeightParams(mu=LEVEL_HEIGHTS[p], sigma=2.0) for p in PRESSURE_LEVELS
 }
 """Gaussian parameters for each pressure level's height-dependent weight."""
 
@@ -49,11 +49,14 @@ class BlendingWeights:
     w_bunkers: float  # Weight for Bunkers deviant motion
 
 DEFAULT_BLENDING_WEIGHTS = BlendingWeights(
-    w_obs=0.4,
-    w_mean=0.3,
-    w_bunkers=0.3,
+    w_obs=0.6,
+    w_mean=0.2,
+    w_bunkers=0.2,
 )
-"""Default blending weights for warm-season convection."""
+"""Default blending weights (optimized for Operational MAE)."""
+
+MOTION_SMOOTHING_WINDOW: int = 10
+"""Number of past observations to use for smoothing (optimized for Operational MAE)."""
 
 # Dynamic weight presets
 SHALLOW_STORM_WEIGHTS = BlendingWeights(w_obs=0.3, w_mean=0.3, w_bunkers=0.4)
@@ -96,12 +99,12 @@ class KalmanParams:
     q_vel: float           # Velocity process noise variance (m²/s²)
 
 KALMAN_PARAMS = KalmanParams(
-    alpha=0.7,
+    alpha=0.97,            # Optimized for Operational MAE
     dt_default=300.0,      # 5 minutes
-    sigma_pos=5000.0,      # meters
+    sigma_pos=800.0,       # Optimized for Operational MAE
     sigma_vel=12.0,        # m/s
-    q_pos=10000.0,         # (100 m)²
-    q_vel=144.0,           # (12 m/s)²
+    q_pos=500.0,           # Optimized for Operational MAE (0.05 scale)
+    q_vel=7.2,             # Optimized for Operational MAE (0.05 scale)
 )
 
 # =============================================================================
@@ -135,6 +138,6 @@ DEFAULT_LEAD_TIMES: Tuple[float, ...] = (900.0, 1800.0, 2700.0, 3600.0)
 MAX_RELIABLE_LEAD_TIME: float = 3600.0  # 60 minutes
 """Beyond this, forecast skill degrades significantly."""
 
-MIN_VELOCITY_THRESHOLD: float = 1.0  # m/s
+MIN_VELOCITY_THRESHOLD: float = 2.0  # m/s
 MAX_VELOCITY_THRESHOLD: float = 50.0  # m/s
 """Thresholds for filtering stationary or unrealistically fast storm motions."""
