@@ -112,6 +112,9 @@ class AssignmentCostCalculator:
         Returns:
             List of detections within the pre-filter radius
         """
+        if not detections:
+            return []
+            
         # Get predicted position from Kalman state or centroid
         kalman_state = track.get('kalman_state', {})
         pred_lat = kalman_state.get('lat')
@@ -122,19 +125,24 @@ class AssignmentCostCalculator:
             centroid = track.get('centroid', [0, 0])
             pred_lat, pred_lon = centroid[0], centroid[1]
         
-        print(f"Track {track['id']} predicted position:", (pred_lat, pred_lon))
+        # Extract all detection centroids into numpy arrays for vectorized distance calc
+        det_lats = np.zeros(len(detections))
+        det_lons = np.zeros(len(detections))
+        
+        for i, det in enumerate(detections):
+            det_centroid = det.get('centroid', [0, 0])
+            det_lats[i] = det_centroid[0]
+            det_lons[i] = det_centroid[1]
+            
+        from .state import vectorized_haversine_distance
+        
+        # Calculate distances to all detections at once
+        distances = vectorized_haversine_distance(pred_lat, pred_lon, det_lats, det_lons)
         
         candidates = []
-        for det in detections:
-            det_centroid = det.get('centroid', [0, 0])
-            det_lat, det_lon = det_centroid[0], det_centroid[1]
-            
-            dist = haversine_distance(pred_lat, pred_lon, det_lat, det_lon)
-            
-            print(f"  Detection {det['id']} distance from track {track['id']}: {dist:.3f} km")
-            
+        for i, dist in enumerate(distances):
             if dist <= self.config.prefilter_radius_km:
-                candidates.append(det)
+                candidates.append(detections[i])
         
         return candidates
     

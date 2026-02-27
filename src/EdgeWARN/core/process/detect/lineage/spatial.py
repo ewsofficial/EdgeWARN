@@ -6,7 +6,8 @@ building spatial indices for efficient cell matching.
 """
 
 from typing import List, Dict, Tuple, Optional, Any
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, box
+from shapely.strtree import STRtree
 from shapely.validation import make_valid
 import numpy as np
 
@@ -128,27 +129,27 @@ def _normalize_antimeridian(polygon: Polygon) -> Polygon:
     return polygon
 
 
-def build_spatial_index(cells: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+def build_spatial_index(cells: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Build a spatial index for efficient overlap queries.
+    Build a spatial index for efficient overlap queries using STRtree.
     
-    This function creates a dictionary mapping cell IDs to their bounding
-    box extents, enabling quick spatial filtering before expensive polygon
-    overlap calculations.
+    This function creates a lookup dictionary of cell details alongside
+    a shapely STRtree constructed from the bounding box polygons.
     
     Args:
         cells: List of cell dictionaries, each containing 'id', 'bbox', and
                optionally 'centroid', 'max_refl', 'num_gates'.
     
     Returns:
-        Dictionary mapping cell_id to a dict with:
-            - 'bbox': The polygon coordinates
-            - 'min_lat', 'max_lat', 'min_lon', 'max_lon': Bounding extents
-            - 'centroid': Cell centroid [lat, lon]
-            - 'max_refl': Maximum reflectivity (for dominant parent selection)
-            - 'num_gates': Number of gates (for dominant parent selection)
+        Dictionary with:
+            - 'tree': The shapely STRtree object
+            - 'geoms': List of shapely box polygons passed to the tree
+            - 'cells_data': Dictionary mapping cell_id -> attributes
+            - 'geom_to_id': List mapping geometry indices to cell IDs
     """
-    index = {}
+    cells_data = {}
+    geoms = []
+    geom_to_id = []
     
     for cell in cells:
         cell_id = int(cell.get('id', 0))
@@ -161,18 +162,36 @@ def build_spatial_index(cells: List[Dict[str, Any]]) -> Dict[int, Dict[str, Any]
         lats = [pt[0] for pt in bbox]
         lons = [pt[1] for pt in bbox]
         
-        index[cell_id] = {
+        min_lat, max_lat = min(lats), max(lats)
+        min_lon, max_lon = min(lons), max(lons)
+        
+        cells_data[cell_id] = {
             'bbox': bbox,
-            'min_lat': min(lats),
-            'max_lat': max(lats),
-            'min_lon': min(lons),
-            'max_lon': max(lons),
+            'min_lat': min_lat,
+            'max_lat': max_lat,
+            'min_lon': min_lon,
+            'max_lon': max_lon,
             'centroid': cell.get('centroid', [None, None]),
             'max_refl': cell.get('max_refl', 0.0),
             'num_gates': cell.get('num_gates', 0),
         }
+        
+        # Create a Shapely bounding box polygon (lon=x, lat=y)
+        # Note: Handled Antimeridian simply for indexing since the actual
+        # polygon overlap check handles antimeridian issues.
+        poly_box = box(min_lon, min_lat, max_lon, max_lat)
+        
+        geoms.append(poly_box)
+        geom_to_id.append(cell_id)
+        
+    tree = STRtree(geoms) if geoms else None
     
-    return index
+    return {
+        'tree': tree,
+        'geoms': geoms,
+        'cells_data': cells_data,
+        'geom_to_id': geom_to_id
+    }
 
 
 def bounds_overlap(bounds1: Dict[str, float], 
@@ -223,14 +242,14 @@ def bounds_overlap(bounds1: Dict[str, float],
 
 def find_overlapping_cells(
     target_cell: Dict[str, Any],
-    cell_index: Dict[int, Dict[str, Any]],
+    cell_index: Dict[str, Any],
     overlap_threshold: float = 0.0
 ) -> List[Tuple[int, float]]:
     """
     Find all cells that overlap with a target cell above a threshold.
     
     This function performs a two-stage overlap detection:
-    1. Fast bounding box pre-filter
+    1. Fast R-Tree lookup via Shapely STRtree
     2. Precise polygon intersection calculation
     
     Args:
@@ -243,31 +262,37 @@ def find_overlapping_cells(
     """
     target_id = int(target_cell.get('id', 0))
     target_bbox = target_cell.get('bbox', [])
+    tree = cell_index.get('tree')
     
-    if not target_bbox:
+    if not target_bbox or tree is None:
         return []
     
-    # Calculate target bounds
+    # Calculate target bounds box
     target_lats = [pt[0] for pt in target_bbox]
     target_lons = [pt[1] for pt in target_bbox]
-    target_bounds = {
-        'min_lat': min(target_lats),
-        'max_lat': max(target_lats),
-        'min_lon': min(target_lons),
-        'max_lon': max(target_lons),
-    }
+    
+    min_lat, max_lat = min(target_lats), max(target_lats)
+    min_lon, max_lon = min(target_lons), max(target_lons)
+    
+    target_geom = box(min_lon, min_lat, max_lon, max_lat)
+    
+    # Query the R-Tree for candidate indices
+    candidate_indices = tree.query(target_geom)
     
     overlapping = []
+    cells_data = cell_index.get('cells_data', {})
+    geom_to_id = cell_index.get('geom_to_id', [])
     
-    for cell_id, cell_data in cell_index.items():
+    for idx in candidate_indices:
+        cell_id = geom_to_id[idx]
         if cell_id == target_id:
             continue
-        
-        # Stage 1: Fast bounding box check
-        if not bounds_overlap(target_bounds, cell_data):
+            
+        cell_data = cells_data.get(cell_id)
+        if not cell_data:
             continue
         
-        # Stage 2: Precise polygon overlap
+        # Exact polygon overlap check
         overlap_ratio = calculate_overlap_ratio(cell_data['bbox'], target_bbox)
         
         if overlap_ratio >= overlap_threshold:
@@ -281,7 +306,7 @@ def find_overlapping_cells(
 
 def select_dominant_parent(
     parent_ids: List[int],
-    cell_index: Dict[int, Dict[str, Any]]
+    cell_index: Dict[str, Any]
 ) -> int:
     """
     Select the dominant parent cell from a list of merge candidates.
@@ -302,13 +327,15 @@ def select_dominant_parent(
     
     if len(parent_ids) == 1:
         return parent_ids[0]
+        
+    cells_data = cell_index.get('cells_data', {})
     
     best_id = parent_ids[0]
-    best_refl = cell_index.get(best_id, {}).get('max_refl', 0.0) or 0.0
-    best_gates = cell_index.get(best_id, {}).get('num_gates', 0) or 0
+    best_refl = cells_data.get(best_id, {}).get('max_refl', 0.0) or 0.0
+    best_gates = cells_data.get(best_id, {}).get('num_gates', 0) or 0
     
     for pid in parent_ids[1:]:
-        cell_data = cell_index.get(pid, {})
+        cell_data = cells_data.get(pid, {})
         refl = cell_data.get('max_refl', 0.0) or 0.0
         gates = cell_data.get('num_gates', 0) or 0
         
@@ -323,7 +350,7 @@ def select_dominant_parent(
 
 def select_dominant_child(
     child_ids: List[int],
-    cell_index: Dict[int, Dict[str, Any]]
+    cell_index: Dict[str, Any]
 ) -> int:
     """
     Select the dominant child cell from a list of split candidates.
@@ -346,13 +373,15 @@ def select_dominant_child(
     
     if len(child_ids) == 1:
         return child_ids[0]
+        
+    cells_data = cell_index.get('cells_data', {})
     
     best_id = child_ids[0]
-    best_refl = cell_index.get(best_id, {}).get('max_refl', 0.0) or 0.0
-    best_gates = cell_index.get(best_id, {}).get('num_gates', 0) or 0
+    best_refl = cells_data.get(best_id, {}).get('max_refl', 0.0) or 0.0
+    best_gates = cells_data.get(best_id, {}).get('num_gates', 0) or 0
     
     for cid in child_ids[1:]:
-        cell_data = cell_index.get(cid, {})
+        cell_data = cells_data.get(cid, {})
         refl = cell_data.get('max_refl', 0.0) or 0.0
         gates = cell_data.get('num_gates', 0) or 0
         
