@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'path';
-import apiConfig from '../../config.js';
-import { readJsonFileSafe, readIndexFile } from '../../utils/fileReader.js';
-import { validateCellId } from '../../utils/validation.js';
+import apiConfig from '../../../config.js';
+import { readJsonFileSafe, readIndexFile } from '../../../utils/fileReader.js';
+import { validateCellId } from '../../../utils/validation.js';
 
 const router = express.Router();
 
