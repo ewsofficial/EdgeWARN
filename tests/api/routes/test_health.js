@@ -26,27 +26,28 @@ describe('Health Route', () => {
             expect(response.body.status).toBe('OK');
         });
 
-        it('should include CPU usage percentage', async () => {
+        it('should include timestamp', async () => {
             const response = await request(app)
                 .get('/health')
                 .expect(200);
 
-            expect(response.body).toHaveProperty('cpuUsage');
-            expect(typeof response.body.cpuUsage).toBe('number');
-            expect(response.body.cpuUsage).toBeGreaterThanOrEqual(0);
+            expect(response.body).toHaveProperty('timestamp');
+            expect(typeof response.body.timestamp).toBe('string');
+            // Verify it's a valid ISO timestamp
+            expect(new Date(response.body.timestamp).toISOString()).toBe(response.body.timestamp);
         });
 
-        it('should include system memory usage in MB', async () => {
+        it('should not expose system information (CPU/memory)', async () => {
             const response = await request(app)
                 .get('/health')
                 .expect(200);
 
-            expect(response.body).toHaveProperty('systemMemoryUsageMB');
-            expect(typeof response.body.systemMemoryUsageMB).toBe('number');
-            expect(response.body.systemMemoryUsageMB).toBeGreaterThan(0);
+            // Security: Ensure system info is not exposed
+            expect(response.body).not.toHaveProperty('cpuUsage');
+            expect(response.body).not.toHaveProperty('systemMemoryUsageMB');
         });
 
-        it('should handle multiple requests (CPU diff calculation)', async () => {
+        it('should handle multiple requests consistently', async () => {
             // First request
             const response1 = await request(app).get('/health').expect(200);
 
@@ -58,21 +59,18 @@ describe('Health Route', () => {
 
             expect(response1.body.status).toBe('OK');
             expect(response2.body.status).toBe('OK');
-
-            // CPU usage should be a number in both responses
-            expect(typeof response1.body.cpuUsage).toBe('number');
-            expect(typeof response2.body.cpuUsage).toBe('number');
+            expect(response1.body).toHaveProperty('timestamp');
+            expect(response2.body).toHaveProperty('timestamp');
         });
 
-        it('should return consistent response structure', async () => {
+        it('should return secure response structure', async () => {
             const response = await request(app)
                 .get('/health')
                 .expect(200);
 
             expect(response.body).toMatchObject({
                 status: expect.any(String),
-                cpuUsage: expect.any(Number),
-                systemMemoryUsageMB: expect.any(Number)
+                timestamp: expect.any(String)
             });
         });
     });

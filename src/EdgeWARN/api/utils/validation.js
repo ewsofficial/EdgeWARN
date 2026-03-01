@@ -59,15 +59,15 @@ export function validateCellId(id) {
 }
 
 /**
- * Validate alert ID (must be alphanumeric with hyphens/underscores)
+ * Validate alert ID (must be alphanumeric with hyphens, underscores, dots, and colons)
  * Prevents prototype pollution by rejecting special property names
  * @param {string} id - Alert ID
  * @returns {boolean} True if valid
  */
 export function validateAlertId(id) {
-  if (typeof id !== 'string' || id.length === 0 || id.length > 100) return false;
+  if (typeof id !== 'string' || id.length === 0 || id.length > 200) return false;
   // Reject prototype pollution attempts
   if (id === '__proto__' || id === 'constructor' || id === 'prototype') return false;
-  // Allow alphanumeric, hyphens, and underscores only
-  return /^[a-zA-Z0-9_-]+$/.test(id);
+  // Allow alphanumeric, hyphens, underscores, dots, and colons (for URN-style IDs like urn:oid:...)
+  return /^[a-zA-Z0-9_.:-]+$/.test(id);
 }
