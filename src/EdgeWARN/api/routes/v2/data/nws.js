@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import apiConfig from '../../../config.js';
 import { readJsonFileSafe } from '../../../utils/fileReader.js';
-import { validateTimestampV2, validateMutualExclusion } from '../../../utils/validation.js';
+import { validateTimestampV2, validateMutualExclusion, validateAlertId } from '../../../utils/validation.js';
 
 const router = express.Router();
 
@@ -60,6 +60,13 @@ router.get('/', async (req, res) => {
   try {
     // If id is provided, return specific alert
     if (id !== undefined && id !== '') {
+      // Validate id parameter to prevent prototype pollution
+      if (!validateAlertId(id)) {
+        return res.status(400).json({
+          error: 'Invalid id parameter. Must be alphanumeric with hyphens/underscores only'
+        });
+      }
+
       res.set('Cache-Control', 'public, max-age=60');
 
       // Read the alerts registry

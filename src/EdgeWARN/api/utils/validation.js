@@ -57,3 +57,17 @@ export function validateCellId(id) {
   const num = parseInt(id, 10);
   return !isNaN(num) && num > 0 && num.toString() === id.toString();
 }
+
+/**
+ * Validate alert ID (must be alphanumeric with hyphens/underscores)
+ * Prevents prototype pollution by rejecting special property names
+ * @param {string} id - Alert ID
+ * @returns {boolean} True if valid
+ */
+export function validateAlertId(id) {
+  if (typeof id !== 'string' || id.length === 0 || id.length > 100) return false;
+  // Reject prototype pollution attempts
+  if (id === '__proto__' || id === 'constructor' || id === 'prototype') return false;
+  // Allow alphanumeric, hyphens, and underscores only
+  return /^[a-zA-Z0-9_-]+$/.test(id);
+}
