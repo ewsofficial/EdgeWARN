@@ -5,6 +5,7 @@ import path from 'path';
 import featuresRouter from './routes/features/index.js';
 import dataRouter from './routes/data/index.js';
 import healthRouter from './routes/health.js';
+import v2Router from './routes/v2/index.js';
 import rateLimit from 'express-rate-limit';
 import compression from 'compression';
 import cluster from 'cluster';
@@ -89,6 +90,9 @@ if (cluster.isPrimary) {
 
   // Mount health route
   app.use('/health', healthRouter);
+
+  // Mount v2 API routes
+  app.use('/api/v2', v2Router);
 
   // Serve robots.txt
   app.get('/robots.txt', (req, res) => {

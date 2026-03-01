@@ -24,6 +24,31 @@ export function validateTimestamp(timestamp) {
 }
 
 /**
+ * Validate timestamp format for v2 API (YYYYMMDD-HHMMSS)
+ * @param {string} timestamp - Timestamp string
+ * @returns {boolean} True if valid format
+ */
+export function validateTimestampV2(timestamp) {
+  if (!timestamp) return false;
+  // Format: YYYYMMDD-HHMMSS (same as existing validateTimestamp)
+  const regex = /^\d{8}-\d{6}$/;
+  return regex.test(timestamp);
+}
+
+/**
+ * Validate mutual exclusion - ensures two parameters are not both present
+ * @param {object} params - Object containing query parameters
+ * @param {string} key1 - First parameter name
+ * @param {string} key2 - Second parameter name
+ * @returns {boolean} True if valid (not both present)
+ */
+export function validateMutualExclusion(params, key1, key2) {
+  const hasKey1 = params[key1] !== undefined && params[key1] !== '';
+  const hasKey2 = params[key2] !== undefined && params[key2] !== '';
+  return !(hasKey1 && hasKey2);
+}
+
+/**
  * Validate cell ID (must be positive integer)
  * @param {string|number} id - Cell ID
  * @returns {boolean} True if valid
