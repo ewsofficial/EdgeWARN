@@ -107,3 +107,55 @@ def test_merger_split():
     
     # Check that they cover the block
     assert np.all(final_grid[5:15, 5:15] > 0)
+
+def test_dynamic_thresholding():
+    """
+    Test that dynamic thresholding applies correctly to strong vs weak cells.
+    Strong cell (>= 45 max refl) drops to 40.
+    Weak cell (< 45 max refl) drops to 37.5.
+    """
+    lats = np.arange(20)
+    lons = np.arange(20)
+    
+    # Baseline mask is 37.5
+    refl_data = np.zeros((20, 20))
+    
+    # Cell 1: Strong cell. Max refl = 50. Should threshold at max(40, 50-10) = 40.
+    refl_data[2:8, 2:8] = 42 # Within expanded area
+    refl_data[4:6, 4:6] = 50 # Core
+    refl_data[2:8, 8] = 39   # Just below its allowed threshold, should NOT expand here
+    
+    # Cell 2: Weak cell. Max refl = 44. Should threshold at max(37.5, 44-10) = 37.5.
+    refl_data[12:18, 12:18] = 38 # Within expanded area
+    refl_data[14:16, 14:16] = 44 # Core
+    refl_data[12:18, 18] = 37    # Below 37.5 baseline entirely
+
+    radar_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), refl_data),
+         'latitude': lats,
+         'longitude': lons}
+    )
+    
+    polygon_grid = np.zeros((20, 20), dtype=np.int32)
+    polygon_grid[5, 5] = 1 # ID 1 (Strong)
+    polygon_grid[15, 15] = 2 # ID 2 (Weak)
+    
+    mapped_ds = xr.Dataset(
+        {'PolygonID': (('latitude', 'longitude'), polygon_grid),
+         'latitude': lats,
+         'longitude': lons}
+    )
+    
+    mapper = GateMapper(radar_ds, ps_ds=None, io_manager=MockIOManager(), refl_threshold=37.5, drop_offset=10.0)
+    expanded_ds = mapper.expand_gates(mapped_ds)
+    final_grid = expanded_ds['PolygonID'].values
+    
+    # Verify Strong Cell (Thresh = 40)
+    assert final_grid[4, 4] == 1, "Core should be included"
+    assert final_grid[2, 2] == 1, "Area >= 40 should be included"
+    assert final_grid[5, 8] == 0, "Area < 40 should NOT be included for strong cell"
+    
+    # Verify Weak Cell (Thresh = 37.5)
+    assert final_grid[15, 15] == 2, "Core should be included"
+    assert final_grid[13, 13] == 2, "Area >= 37.5 should be included"
+    assert final_grid[15, 18] == 0, "Area < 37.5 should NOT be included for weak cell"
