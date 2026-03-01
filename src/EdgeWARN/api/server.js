@@ -34,9 +34,13 @@ if (cluster.isPrimary) {
   const app = express();
 
   // Middleware
-  // Security headers (Helmet) - disable HSTS to avoid breaking HTTP-only clients
+  // Security headers (Helmet) - enable HSTS for HTTPS enforcement
   app.use(helmet({
-    hsts: false,
+    hsts: {
+      maxAge: 31536000, // 1 year in seconds
+      includeSubDomains: true,
+      preload: true
+    },
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
