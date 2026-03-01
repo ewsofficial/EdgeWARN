@@ -1,5 +1,13 @@
 # EdgeWARN API Documentation
 
+## Overview
+
+This document describes the EdgeWARN Backend API. The current API version is **v2**.
+
+**Base URL:** `http://localhost:5000`
+
+---
+
 ## Authentication
 
 Currently, the API does not require authentication.
@@ -38,188 +46,72 @@ Returns server health status, uptime, and system resource usage.
 
 ---
 
-### 2. Features API
+## API v2 Endpoints
 
-#### 2.1 Fetch Available Resources
-
-**GET** `/features/fetch/resources`
-
-Retrieves a list of available timestamps or cell IDs from index files.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `type` | string | Yes | Resource type: `"cell"` or `"list"` |
-
-#### 2.2 Download Resource
-
-**GET** `/features/download/resources`
-
-Downloads a specific stormcell list or individual cell history JSON.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `type` | string | Yes | Resource type: `"cell"` or `"list"` |
-| `timestamp` | string | Conditional | Required if `type=list`. Format: YYYYMMDD-HHMMSS |
-| `id` | integer | Conditional | Required if `type=cell`. Positive integer cell ID |
-
----
-
-### 3. Data API
-
-#### 3.1 Fetch Available Data
-
-**GET** `/data/fetch`
-
-Retrieves a list of available timestamps for meteorological data.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `type` | string | Yes | Data type: `"nws"`, `"metar"`, or `"surface"` |
-
-**Response Example (METAR/Surface):**
-```json
-{
-  "type": "metar",
-  "count": 2,
-  "timestamps": [
-    "20260123-120000",
-    "20260123-110000"
-  ]
-}
-```
-
-**Response Example (NWS - returns active alert IDs):**
-```json
-{
-  "type": "nws",
-  "count": 5,
-  "last_updated": "2026-02-23T03:40:00Z",
-  "alert_ids": [
-    "urn:oid:2.49.0.1.840.0.2406210827.1",
-    "urn:oid:2.49.0.1.840.0.2406210828.1"
-  ]
-}
-```
-
-#### 3.2 Download Data
-
-**GET** `/data/download`
-
-Downloads meteorological data for a specific type and timestamp.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `type` | string | Yes | Data type: `"nws"`, `"metar"`, or `"surface"` |
-| `timestamp` | string | Conditional | Format: YYYYMMDD-HHMM00 (required for metar/surface) |
-| `alert_id` | string | No | For NWS: fetch specific alert by ID |
-
-**Response Example (METAR/Surface):**
-```json
-{
-  "type": "metar",
-  "timestamp": "20260123-120000",
-  "data": { ... }
-}
-```
-
-**Response Example (NWS - all alerts):**
-```json
-{
-  "type": "nws",
-  "last_updated": "2026-02-23T03:40:00Z",
-  "count": 5,
-  "data": {
-    "@context": ["https://geojson.org/geojson-ld/geojson-context.jsonld", {...}],
-    "type": "FeatureCollection",
-    "features": [
-      {
-        "id": "https://api.weather.gov/alerts/urn:oid:...",
-        "type": "Feature",
-        "properties": {
-          "event": "Severe Thunderstorm Warning",
-          "headline": "...",
-          "expires": "2026-02-23T22:00:00Z",
-          ...
-        },
-        "Polygon": [[...]]
-      }
-    ]
-  }
-}
-```
-
-**Response Example (NWS - specific alert):**
-```json
-{
-  "type": "nws",
-  "alert_id": "urn:oid:2.49.0.1.840.0.2406210827.1",
-  "data": {
-    "id": "https://api.weather.gov/alerts/urn:oid:...",
-    "first_seen": "2026-02-23T02:00:00Z",
-    "last_seen": "2026-02-23T03:40:00Z",
-    "expires": "2026-02-23T04:00:00Z",
-    "feature": { ... }
-  }
-}
-```
-
----
-
-### 4. API Information
-
-**GET** `/features/` - Returns Features API info.
-**GET** `/data/` - Returns Data API info.
-
----
-
-## API v2 (New)
-
-API v2 provides a more RESTful interface with cleaner URL structures. The v1 API remains available for backward compatibility.
-
-### v2 Features Endpoints
-
-#### 4.1 List Available Cells
+### 2. Features - Cells
 
 **GET** `/api/v2/features/cells`
 
-Returns a list of available cell IDs.
+Returns a list of available cells or a specific cell's data.
 
-**Query Parameters:**
+#### Query Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `id` | integer | No | If specified, returns data for that specific cell |
+| `id` | integer | No | Cell ID to fetch specific cell data |
 
-**Response (without id):**
+#### Response (without id)
+
+Returns a list of available cell IDs:
+
 ```json
-[1, 2, 3, 5, 8, 13]
+[1, 2, 3, 5, 8, 13, 21, 34]
 ```
 
-**Response (with id):**
+#### Response (with id)
+
+Returns the specific cell data:
+
 ```json
 {
   "id": 123,
   "first_seen": "20260123-120000",
   "last_seen": "20260123-143000",
-  "history": [...]
+  "history": [
+    {
+      "timestamp": "20260123-120000",
+      "lat": 35.5,
+      "lon": 240.1,
+      "intensity": 65.5
+    }
+  ]
 }
 ```
 
+#### Error Responses
+
+- `400 Bad Request` - Invalid id parameter
+- `404 Not Found` - Cell not found
+- `500 Internal Server Error` - Server error
+
 ---
 
-#### 4.2 List Available Timestamps
+### 3. Features - Timestamps
 
 **GET** `/api/v2/features/timestamps`
 
 Returns a list of available timestamps or stormcell data for a specific timestamp.
 
-**Query Parameters:**
+#### Query Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `timestamp` | string | No | Format: `YYYYMMDD-HHMMSS`. Returns stormcell list for this time |
 
-**Response (without timestamp):**
+#### Response (without timestamp)
+
+Returns a list of available timestamps:
+
 ```json
 [
   "20260123-150000",
@@ -228,7 +120,10 @@ Returns a list of available timestamps or stormcell data for a specific timestam
 ]
 ```
 
-**Response (with timestamp):**
+#### Response (with timestamp)
+
+Returns the stormcell list for that timestamp:
+
 ```json
 {
   "timestamp": "20260123-150000",
@@ -244,26 +139,33 @@ Returns a list of available timestamps or stormcell data for a specific timestam
 }
 ```
 
+#### Error Responses
+
+- `400 Bad Request` - Invalid timestamp format
+- `404 Not Found` - Stormcell data not found for timestamp
+- `500 Internal Server Error` - Server error
+
 ---
 
-### v2 Data Endpoints
-
-#### 4.3 NWS Alert Data
+### 4. Data - NWS
 
 **GET** `/api/v2/data/nws`
 
-Returns NWS alert timestamps or specific alert data.
+Returns NWS alert data. Supports three modes of operation based on query parameters.
 
-**Query Parameters:**
+#### Query Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `timestamp` | string | Conditional | Format: `YYYYMMDD-HHMMSS`. Returns snapshot at this time |
-| `id` | string | Conditional | Alert ID to fetch specific alert |
+| `timestamp` | string | Conditional | Format: `YYYYMMDD-HHMMSS`. Returns snapshot at this time. Mutually exclusive with `id` |
+| `id` | string | Conditional | Alert ID to fetch specific alert. Mutually exclusive with `timestamp` |
 
-**Note:** `timestamp` and `id` are mutually exclusive.
+**Note:** `timestamp` and `id` cannot be specified at the same time.
 
-**Response (no parameters):**
+#### Response (no parameters)
+
+Returns a list of available timestamps:
+
 ```json
 [
   "20260123-150000",
@@ -272,7 +174,10 @@ Returns NWS alert timestamps or specific alert data.
 ]
 ```
 
-**Response (with timestamp):**
+#### Response (with timestamp)
+
+Returns the NWS snapshot for that timestamp:
+
 ```json
 {
   "timestamp": "20260123-150000",
@@ -287,32 +192,47 @@ Returns NWS alert timestamps or specific alert data.
 }
 ```
 
-**Response (with id):**
+#### Response (with id)
+
+Returns the specific alert:
+
 ```json
 {
   "id": "urn:oid:2.49.0.1.840.0.2406210827.1",
   "first_seen": "2026-02-23T02:00:00Z",
   "last_seen": "2026-02-23T03:40:00Z",
   "expires": "2026-02-23T04:00:00Z",
-  "feature": { ... }
+  "feature": {
+    "id": "https://api.weather.gov/alerts/urn:oid:...",
+    "event": "Severe Thunderstorm Warning"
+  }
 }
 ```
 
+#### Error Responses
+
+- `400 Bad Request` - Invalid parameters or both timestamp and id specified
+- `404 Not Found` - Timestamp or alert ID not found
+- `500 Internal Server Error` - Server error
+
 ---
 
-#### 4.4 METAR Data
+### 5. Data - METAR
 
 **GET** `/api/v2/data/metar`
 
-Returns METAR timestamps or specific METAR data.
+Returns METAR data timestamps or specific METAR data.
 
-**Query Parameters:**
+#### Query Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `timestamp` | string | No | Format: `YYYYMMDD-HHMMSS`. Returns METAR data for this time |
+| `timestamp` | string | No | Format: `YYYYMMDD-HHMMSS`. Returns METAR data for this timestamp |
 
-**Response (without timestamp):**
+#### Response (without timestamp)
+
+Returns a list of available timestamps:
+
 ```json
 [
   "20260123-150000",
@@ -321,14 +241,56 @@ Returns METAR timestamps or specific METAR data.
 ]
 ```
 
-**Response (with timestamp):**
+#### Response (with timestamp)
+
+Returns the METAR data:
+
 ```json
 {
   "type": "metar",
   "timestamp": "20260123-150000",
   "data": {
-    "stations": [...],
-    "observations": [...]
+    "stations": ["KJFK", "KLAX"],
+    "observations": [
+      {
+        "station": "KJFK",
+        "temp": 25,
+        "wind": "10KT"
+      }
+    ]
+  }
+}
+```
+
+#### Error Responses
+
+- `400 Bad Request` - Invalid timestamp format
+- `404 Not Found` - METAR data not found for timestamp
+- `500 Internal Server Error` - Server error
+
+---
+
+### 6. API v2 Information
+
+**GET** `/api/v2`
+
+Returns API v2 information and available endpoints.
+
+#### Response
+
+```json
+{
+  "message": "EdgeWARN API v2",
+  "version": "2.0.0",
+  "endpoints": {
+    "features": {
+      "cells": "/api/v2/features/cells[?id={int}]",
+      "timestamps": "/api/v2/features/timestamps[?timestamp={YYYYMMDD-HHMMSS}]"
+    },
+    "data": {
+      "nws": "/api/v2/data/nws[?timestamp={YYYYMMDD-HHMMSS}|id={alert_id}]",
+      "metar": "/api/v2/data/metar[?timestamp={YYYYMMDD-HHMMSS}]"
+    }
   }
 }
 ```
@@ -339,14 +301,35 @@ Returns METAR timestamps or specific METAR data.
 
 ### Timestamp Format
 
-- **Features**: `YYYYMMDD-HHMMSS` (e.g., `20251230-150000`)
-- **Data**: `YYYYMMDD-HHMM00` (e.g., `20251230-150000`)
+- **Format**: `YYYYMMDD-HHMMSS` (e.g., `20251230-150000`)
 - **Internal JSON**: ISO 8601 (e.g., `2025-12-30T15:00:00Z`)
 
 ### Coordinates
 
 - **Latitude**: Decimal degrees [20, 55]
 - **Longitude**: Decimal degrees [227, 300] (0-360 format)
+
+---
+
+## HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `200 OK` | Request successful |
+| `400 Bad Request` | Invalid parameters |
+| `404 Not Found` | Resource not found |
+| `410 Gone` | API v1 has been removed (for old v1 endpoints) |
+| `500 Internal Server Error` | Server error |
+
+---
+
+## Caching
+
+The API uses appropriate cache headers:
+
+- **List endpoints** (`/cells`, `/timestamps`, `/nws`, `/metar` without params): `Cache-Control: public, max-age=5`
+- **Specific resource endpoints** (with id/timestamp): `Cache-Control: public, max-age=60`
+- **Immutable data** (stormcell files): `Cache-Control: public, max-age=3600`
 
 ---
 
@@ -361,73 +344,3 @@ Storm cell JSON objects include lineage fields that track merge and split events
 | `ACTIVE` | Normal continuation - cell present in previous scan with same ID |
 | `MERGE` | Multiple parent cells combined into this single child cell |
 | `SPLIT` | This cell split from a parent cell (secondary child) |
-| `DISSIPATED` | Cell was removed without merging (not included in output) |
-
-### Lineage Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `event_type` | string | One of: `ACTIVE`, `MERGE`, `SPLIT`, `DISSIPATED` |
-| `parent_ids` | List[int] | IDs of parent cells that merged into this cell (empty if not a merge) |
-| `split_from` | int or null | ID of parent cell this cell split from (null if not a split) |
-
-### Merge Event Example
-
-When two storm cells merge into one:
-
-```json
-{
-  "id": 405,
-  "event_type": "MERGE",
-  "parent_ids": [405, 408],
-  "split_from": null,
-  "max_refl": 65.0,
-  "num_gates": 220,
-  "centroid": [35.15, 262.15],
-  "bbox": [[35.0, 262.0], [35.0, 262.3], [35.3, 262.3], [35.3, 262.0]]
-}
-```
-
-The dominant parent (highest `max_refl` or largest `num_gates`) provides the historical tracking data for the merged cell.
-
-### Split Event Example
-
-When one storm cell splits into multiple cells:
-
-```json
-{
-  "id": 10,
-  "event_type": "ACTIVE",
-  "parent_ids": [],
-  "split_from": 1,
-  "max_refl": 55.0,
-  "num_gates": 100
-}
-```
-
-The dominant child (highest `max_refl`) inherits the parent's ID and tracking history, while secondary children are marked with `event_type: "SPLIT"`.
-
-### Hysteresis Buffer
-
-Lineage events require confirmation across multiple scans to prevent false positives from ProbSevere ID instability. By default, events must be detected in 2 consecutive scans before being confirmed.
-
-Buffer state is persisted in `lineage_buffer.json` in the storm cells directory.
-
----
-
-## Rate Limiting
-
-The API implements rate limiting to ensure stability:
-- **Limit**: 100 requests per minute per IP address.
-- **Headers**: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`.
-
----
-
-## Error Handling
-
-- **400 Bad Request**: Invalid or missing parameters.
-- **404 Not Found**: Resource doesn't exist.
-- **429 Too Many Requests**: Rate limit exceeded.
-- **500 Internal Server Error**: Server-side error.
-
-Error responses include an `error` field.

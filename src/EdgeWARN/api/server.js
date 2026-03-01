@@ -2,8 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import featuresRouter from './routes/features/index.js';
-import dataRouter from './routes/data/index.js';
 import healthRouter from './routes/health.js';
 import v2Router from './routes/v2/index.js';
 import rateLimit from 'express-rate-limit';
@@ -79,20 +77,29 @@ if (cluster.isPrimary) {
 
   // Routes
   app.get('/', (req, res) => {
-    res.json({ message: 'EdgeWARN Backend API' });
+    res.json({ message: 'EdgeWARN Backend API', version: '2.0.0' });
   });
-
-  // Mount feature routes
-  app.use('/features', featuresRouter);
-
-  // Mount data routes
-  app.use('/data', dataRouter);
 
   // Mount health route
   app.use('/health', healthRouter);
 
-  // Mount v2 API routes
+  // Mount API v2 routes (default API version)
   app.use('/api/v2', v2Router);
+  
+  // Redirect old v1 paths to v2
+  app.use('/features', (req, res) => {
+    res.status(410).json({
+      error: 'API v1 has been removed. Please use API v2.',
+      documentation: '/api/v2'
+    });
+  });
+  
+  app.use('/data', (req, res) => {
+    res.status(410).json({
+      error: 'API v1 has been removed. Please use API v2.',
+      documentation: '/api/v2'
+    });
+  });
 
   // Serve robots.txt
   app.get('/robots.txt', (req, res) => {

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+- **API v1 Removed**: All v1 endpoints (`/features/*`, `/data/*`) have been removed
+  - Old endpoints now return `410 Gone` with migration instructions
+  - All clients must migrate to API v2 endpoints (`/api/v2/*`)
+
 ### Additions
 - **API v2**: New RESTful API endpoints for improved developer experience:
   - `GET /api/v2/features/cells` - List available cells or get specific cell data
