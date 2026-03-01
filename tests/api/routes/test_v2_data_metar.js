@@ -1,6 +1,6 @@
 /**
  * Tests for API v2 Data METAR route
- * @module tests/api/routes/v2/data/test_metar
+ * @module tests/api/routes/test_v2_data_metar
  */
 
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
@@ -9,8 +9,8 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import metarRouter from '../../../../../src/EdgeWARN/api/routes/v2/data/metar.js';
-import apiConfig from '../../../../../src/EdgeWARN/api/config.js';
+import metarRouter from '../../../src/EdgeWARN/api/routes/v2/data/metar.js';
+import apiConfig from '../../../src/EdgeWARN/api/config.js';
 
 describe('API v2 Data METAR Route', () => {
     let app;

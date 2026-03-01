@@ -1,6 +1,6 @@
 /**
  * Tests for API v2 Data NWS route
- * @module tests/api/routes/v2/data/test_nws
+ * @module tests/api/routes/test_v2_data_nws
  */
 
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
@@ -9,8 +9,8 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import nwsRouter from '../../../../../src/EdgeWARN/api/routes/v2/data/nws.js';
-import apiConfig from '../../../../../src/EdgeWARN/api/config.js';
+import nwsRouter from '../../../src/EdgeWARN/api/routes/v2/data/nws.js';
+import apiConfig from '../../../src/EdgeWARN/api/config.js';
 
 describe('API v2 Data NWS Route', () => {
     let app;

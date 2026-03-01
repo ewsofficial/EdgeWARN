@@ -1,6 +1,6 @@
 /**
  * Tests for API v2 Features Timestamps route
- * @module tests/api/routes/v2/features/test_timestamps
+ * @module tests/api/routes/test_v2_features_timestamps
  */
 
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
@@ -9,8 +9,8 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import timestampsRouter from '../../../../../src/EdgeWARN/api/routes/v2/features/timestamps.js';
-import apiConfig from '../../../../../src/EdgeWARN/api/config.js';
+import timestampsRouter from '../../../src/EdgeWARN/api/routes/v2/features/timestamps.js';
+import apiConfig from '../../../src/EdgeWARN/api/config.js';
 
 describe('API v2 Features Timestamps Route', () => {
     let app;
