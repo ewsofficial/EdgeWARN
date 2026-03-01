@@ -8,11 +8,12 @@ from affine import Affine
 import scipy.ndimage
 
 class GateMapper:
-    def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=37.5, min_seed_percentage=0.001):
+    def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=37.5, min_seed_percentage=0.001, drop_offset=10.0):
         self.radar_ds = radar_ds
         self.ps_ds = ps_ds
         self.refl_threshold = refl_threshold
         self.min_seed_percentage = min_seed_percentage
+        self.drop_offset = drop_offset
         self.io_manager = io_manager
 
     def map_gates_to_polygons(self):
@@ -89,16 +90,16 @@ class GateMapper:
         """
         from skimage.segmentation import watershed
         
-        # 1. Create High Reflectivity Mask
+        # 1. Create Baseline High Reflectivity Mask
         polygon_grid = mapped_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
-        mask = refl_grid >= self.refl_threshold
+        baseline_mask = refl_grid >= min(37.5, self.refl_threshold)
         
 
         # Optimization: Crop to active area
         # Find bounding box of high reflectivity
-        rows_with_data = np.any(mask, axis=1)
-        cols_with_data = np.any(mask, axis=0)
+        rows_with_data = np.any(baseline_mask, axis=1)
+        cols_with_data = np.any(baseline_mask, axis=0)
         
         if not np.any(rows_with_data):
              return xr.Dataset(
@@ -111,12 +112,13 @@ class GateMapper:
         
         # Add a small buffer (e.g., 2 pixels) to ensure boundaries are handled cleanly
         rmin = max(0, rmin - 2)
-        rmax = min(mask.shape[0], rmax + 3)
+        rmax = min(baseline_mask.shape[0], rmax + 3)
         cmin = max(0, cmin - 2)
-        cmax = min(mask.shape[1], cmax + 3)
+        cmax = min(baseline_mask.shape[1], cmax + 3)
         
         # Slice views
-        sub_mask = mask[rmin:rmax, cmin:cmax]
+        sub_mask = baseline_mask[rmin:rmax, cmin:cmax]
+        sub_refl = refl_grid[rmin:rmax, cmin:cmax]
         sub_polygon = polygon_grid[rmin:rmax, cmin:cmax]
         
         # 2. Filter IDs based on Percentage Coverage (Vectorized)
@@ -150,8 +152,29 @@ class GateMapper:
         valid_id_mask = np.zeros(max_id + 1, dtype=bool)
         valid_id_mask[valid_ids] = True
         
-        # Markers are valid polygons intersecting high reflectivity
-        markers = np.where(valid_id_mask[sub_polygon] & sub_mask, sub_polygon, 0)
+        # Dynamic Thresholding Per Cell
+        dyn_thresh = np.full(max_id + 1, self.refl_threshold, dtype=np.float32)
+        composite_mask = np.zeros_like(sub_mask, dtype=bool)
+        
+        for cell_id in valid_ids:
+            # Find max reflectivity for this cell
+            cell_refl = sub_refl[sub_polygon == cell_id]
+            max_refl = np.max(cell_refl) if len(cell_refl) > 0 else 0.0
+            
+            # User defined dynamic dropping rules
+            if max_refl < 45.0:
+                min_thresh = 37.5
+            else:
+                min_thresh = 40.0
+                
+            cell_thresh = max(min_thresh, max_refl - self.drop_offset)
+            dyn_thresh[cell_id] = cell_thresh
+            
+            # Incorporate cell's valid area into the composite mask
+            composite_mask |= (sub_refl >= cell_thresh)
+        
+        # Markers are valid polygons intersecting their own logical threshold mask
+        markers = np.where(valid_id_mask[sub_polygon] & (sub_refl >= dyn_thresh[sub_polygon]), sub_polygon, 0)
         
         if not np.any(markers > 0):
              return xr.Dataset(
@@ -159,9 +182,15 @@ class GateMapper:
                 coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
             )
 
-        dist = distance_transform_edt(sub_mask)
+        dist = distance_transform_edt(composite_mask)
         elevation = -dist.astype(np.float16)
-        sub_final = watershed(elevation, markers, mask=sub_mask)
+        sub_final = watershed(elevation, markers, mask=composite_mask)
+        
+        # Post-Filtering to enforce strict per-cell thresholds against watershed competition leaks
+        for cell_id in np.unique(sub_final):
+            if cell_id > 0:
+                invalid_mask = (sub_final == cell_id) & (sub_refl < dyn_thresh[cell_id])
+                sub_final[invalid_mask] = 0
         
         # 5. Final Size Filter: > 5 gates total in expanded cell
         final_ids = np.unique(sub_final)
