@@ -81,12 +81,20 @@ if (cluster.isPrimary) {
     app.set('trust proxy', false);
   }
 
-  // Rate Limiting
+  // Rate Limiting - configurable via environment variables
+  const rateLimitWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60 * 1000; // 1 minute default
+  const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX, 10) || 60; // 60 requests per window default
+
   const limiter = rateLimit({
-    windowMs: 20 * 1000, // 20 seconds
-    max: 100, // Limit each IP to 100 requests per `windowMs`
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    windowMs: rateLimitWindowMs,
+    max: rateLimitMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later' },
+    skip: (req) => {
+      // Optionally skip rate limiting for health checks from internal monitoring
+      return req.path === '/health' && req.headers['x-internal-check'] === 'true';
+    }
   });
 
   // Apply the rate limiting middleware to all requests
