@@ -102,7 +102,9 @@ if (cluster.isPrimary) {
 
   // Routes
   app.get('/', (req, res) => {
-    res.json({ message: 'EdgeWARN Backend API', version: '2.0.0' });
+    // Only expose detailed version in non-production environments
+    const version = process.env.NODE_ENV === 'production' ? '2.x' : '2.0.0';
+    res.json({ message: 'EdgeWARN Backend API', version: version });
   });
 
   // Mount health route
