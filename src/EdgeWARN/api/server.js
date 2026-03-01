@@ -50,13 +50,20 @@ if (cluster.isPrimary) {
   app.use(compression());
 
   // CORS configuration
-  // Allow configuration via environment variable, default to * for backward compatibility
+  // In production, CORS origins must be explicitly configured
   const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
-    : '*';
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3000', 'http://localhost:8080']);
+
+  if (allowedOrigins.length === 0 && process.env.NODE_ENV === 'production') {
+    console.warn('[Security] ALLOWED_ORIGINS not set. CORS requests will be blocked in production.');
+  }
 
   app.use(cors({
-    origin: allowedOrigins
+    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
   }));
 
   app.use(express.json());
