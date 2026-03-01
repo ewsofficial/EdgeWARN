@@ -9,7 +9,8 @@ import {
     validateTimestamp,
     validateCellId,
     validateTimestampV2,
-    validateMutualExclusion
+    validateMutualExclusion,
+    validateAlertId
 } from '../../../src/EdgeWARN/api/utils/validation.js';
 
 describe('validateResourceType', () => {
@@ -200,5 +201,39 @@ describe('validateMutualExclusion', () => {
             'timestamp',
             'id'
         )).toBe(true);
+    });
+});
+
+describe('validateAlertId', () => {
+    it('should return true for valid alert IDs', () => {
+        expect(validateAlertId('alert-123')).toBe(true);
+        expect(validateAlertId('urn:oid:2.49.0.1.840.0.2406210827.1')).toBe(true);
+        expect(validateAlertId('NWS-ALERT_2023')).toBe(true);
+        expect(validateAlertId('simpleid')).toBe(true);
+    });
+
+    it('should return false for prototype pollution attempts', () => {
+        expect(validateAlertId('__proto__')).toBe(false);
+        expect(validateAlertId('constructor')).toBe(false);
+        expect(validateAlertId('prototype')).toBe(false);
+    });
+
+    it('should return false for invalid characters', () => {
+        expect(validateAlertId('alert<script>')).toBe(false);
+        expect(validateAlertId('alert../path')).toBe(false);
+        expect(validateAlertId('alert\nnewline')).toBe(false);
+        expect(validateAlertId('alert@domain')).toBe(false);
+    });
+
+    it('should return false for empty or invalid types', () => {
+        expect(validateAlertId('')).toBe(false);
+        expect(validateAlertId(null)).toBe(false);
+        expect(validateAlertId(undefined)).toBe(false);
+        expect(validateAlertId(123)).toBe(false);
+    });
+
+    it('should return false for IDs exceeding max length', () => {
+        const longId = 'a'.repeat(201);
+        expect(validateAlertId(longId)).toBe(false);
     });
 });
