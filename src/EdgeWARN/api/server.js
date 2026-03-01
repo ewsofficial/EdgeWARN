@@ -114,8 +114,13 @@ if (cluster.isPrimary) {
 
   // Error handling middleware
   app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Internal server error' });
+    const isDev = process.env.NODE_ENV !== 'production';
+    // Only log stack traces in development
+    console.error(isDev ? err.stack : `Error: ${err.message}`);
+    // Only expose error details in development
+    res.status(500).json({
+      error: isDev ? err.message : 'Internal server error'
+    });
   });
 
   // Start server
