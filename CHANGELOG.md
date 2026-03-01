@@ -1,3 +1,18 @@
+# Changelog
+
+## [Unreleased]
+
+### Additions
+- **API v2**: New RESTful API endpoints for improved developer experience:
+  - `GET /api/v2/features/cells` - List available cells or get specific cell data
+  - `GET /api/v2/features/timestamps` - List available timestamps or get stormcell data
+  - `GET /api/v2/data/nws` - List NWS timestamps or get snapshot/alert data
+  - `GET /api/v2/data/metar` - List METAR timestamps or get METAR data
+- **API v2 Features**: Cleaner URL structure, consistent response formats, and proper HTTP status codes
+- **API v2 Tests**: Comprehensive test suite for all v2 endpoints
+
+---
+
 # Changelog for Version ``2.0.0``
 
 ## Additions
