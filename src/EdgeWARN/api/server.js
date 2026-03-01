@@ -72,8 +72,14 @@ if (cluster.isPrimary) {
 
   app.use(express.json());
 
-  // Enable trust proxy for correct IP checks behind proxies (and localhost sometimes)
-  app.set('trust proxy', 1);
+  // Trust proxy configuration - only enable when explicitly configured
+  if (process.env.TRUST_PROXY === 'true') {
+    app.set('trust proxy', true);
+  } else if (process.env.TRUST_PROXY_IPS) {
+    app.set('trust proxy', process.env.TRUST_PROXY_IPS.split(','));
+  } else {
+    app.set('trust proxy', false);
+  }
 
   // Rate Limiting
   const limiter = rateLimit({
