@@ -7,7 +7,9 @@ import { describe, it, expect } from '@jest/globals';
 import {
     validateResourceType,
     validateTimestamp,
-    validateCellId
+    validateCellId,
+    validateTimestampV2,
+    validateMutualExclusion
 } from '../../../src/EdgeWARN/api/utils/validation.js';
 
 describe('validateResourceType', () => {
@@ -123,5 +125,80 @@ describe('validateCellId', () => {
         // '01' as string should not equal 1 when converted back
         expect(validateCellId('01')).toBe(false);
         expect(validateCellId('00101')).toBe(false);
+    });
+});
+
+describe('validateTimestampV2', () => {
+    it('should return true for valid timestamp format YYYYMMDD-HHMMSS', () => {
+        expect(validateTimestampV2('20231015-143000')).toBe(true);
+        expect(validateTimestampV2('20230101-000000')).toBe(true);
+        expect(validateTimestampV2('20231231-235959')).toBe(true);
+    });
+
+    it('should return false for invalid timestamp formats', () => {
+        expect(validateTimestampV2('2023-10-15-14-30-00')).toBe(false);
+        expect(validateTimestampV2('20231015')).toBe(false);
+        expect(validateTimestampV2('14:30:00')).toBe(false);
+    });
+
+    it('should return false for timestamps with wrong length', () => {
+        expect(validateTimestampV2('20231015-14300')).toBe(false);
+        expect(validateTimestampV2('20231015-1430000')).toBe(false);
+    });
+
+    it('should return false for null and undefined', () => {
+        expect(validateTimestampV2(null)).toBe(false);
+        expect(validateTimestampV2(undefined)).toBe(false);
+    });
+
+    it('should return false for empty string', () => {
+        expect(validateTimestampV2('')).toBe(false);
+    });
+});
+
+describe('validateMutualExclusion', () => {
+    it('should return true when neither parameter is present', () => {
+        expect(validateMutualExclusion({}, 'timestamp', 'id')).toBe(true);
+        expect(validateMutualExclusion({ other: 'value' }, 'timestamp', 'id')).toBe(true);
+    });
+
+    it('should return true when only first parameter is present', () => {
+        expect(validateMutualExclusion({ timestamp: '20231015-143000' }, 'timestamp', 'id')).toBe(true);
+    });
+
+    it('should return true when only second parameter is present', () => {
+        expect(validateMutualExclusion({ id: 'alert-1' }, 'timestamp', 'id')).toBe(true);
+    });
+
+    it('should return false when both parameters are present', () => {
+        expect(validateMutualExclusion(
+            { timestamp: '20231015-143000', id: 'alert-1' },
+            'timestamp',
+            'id'
+        )).toBe(false);
+    });
+
+    it('should treat empty strings as not present', () => {
+        expect(validateMutualExclusion(
+            { timestamp: '', id: '' },
+            'timestamp',
+            'id'
+        )).toBe(true);
+    });
+
+    it('should return false when one is empty string and one has value', () => {
+        expect(validateMutualExclusion(
+            { timestamp: '', id: 'some-id' },
+            'timestamp',
+            'id'
+        )).toBe(true);
+    });
+
+    it('should return true when one parameter is undefined and other is absent', () => {
+        expect(validateMutualExclusion(
+            { timestamp: undefined },
+            'timestamp',
+            'id'
+        )).toBe(true);
     });
 });

@@ -172,6 +172,169 @@ Downloads meteorological data for a specific type and timestamp.
 
 ---
 
+## API v2 (New)
+
+API v2 provides a more RESTful interface with cleaner URL structures. The v1 API remains available for backward compatibility.
+
+### v2 Features Endpoints
+
+#### 4.1 List Available Cells
+
+**GET** `/api/v2/features/cells`
+
+Returns a list of available cell IDs.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | integer | No | If specified, returns data for that specific cell |
+
+**Response (without id):**
+```json
+[1, 2, 3, 5, 8, 13]
+```
+
+**Response (with id):**
+```json
+{
+  "id": 123,
+  "first_seen": "20260123-120000",
+  "last_seen": "20260123-143000",
+  "history": [...]
+}
+```
+
+---
+
+#### 4.2 List Available Timestamps
+
+**GET** `/api/v2/features/timestamps`
+
+Returns a list of available timestamps or stormcell data for a specific timestamp.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `timestamp` | string | No | Format: `YYYYMMDD-HHMMSS`. Returns stormcell list for this time |
+
+**Response (without timestamp):**
+```json
+[
+  "20260123-150000",
+  "20260123-143000",
+  "20260123-140000"
+]
+```
+
+**Response (with timestamp):**
+```json
+{
+  "timestamp": "20260123-150000",
+  "cells": [
+    {
+      "id": 123,
+      "lat": 35.4676,
+      "lon": 240.1234,
+      "intensity": 65.5,
+      "lineage_status": "ACTIVE"
+    }
+  ]
+}
+```
+
+---
+
+### v2 Data Endpoints
+
+#### 4.3 NWS Alert Data
+
+**GET** `/api/v2/data/nws`
+
+Returns NWS alert timestamps or specific alert data.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `timestamp` | string | Conditional | Format: `YYYYMMDD-HHMMSS`. Returns snapshot at this time |
+| `id` | string | Conditional | Alert ID to fetch specific alert |
+
+**Note:** `timestamp` and `id` are mutually exclusive.
+
+**Response (no parameters):**
+```json
+[
+  "20260123-150000",
+  "20260123-143000",
+  "20260123-140000"
+]
+```
+
+**Response (with timestamp):**
+```json
+{
+  "timestamp": "20260123-150000",
+  "count": 5,
+  "alerts": [
+    {
+      "id": "urn:oid:2.49.0.1.840.0.2406210827.1",
+      "event": "Severe Thunderstorm Warning",
+      "headline": "..."
+    }
+  ]
+}
+```
+
+**Response (with id):**
+```json
+{
+  "id": "urn:oid:2.49.0.1.840.0.2406210827.1",
+  "first_seen": "2026-02-23T02:00:00Z",
+  "last_seen": "2026-02-23T03:40:00Z",
+  "expires": "2026-02-23T04:00:00Z",
+  "feature": { ... }
+}
+```
+
+---
+
+#### 4.4 METAR Data
+
+**GET** `/api/v2/data/metar`
+
+Returns METAR timestamps or specific METAR data.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `timestamp` | string | No | Format: `YYYYMMDD-HHMMSS`. Returns METAR data for this time |
+
+**Response (without timestamp):**
+```json
+[
+  "20260123-150000",
+  "20260123-140000",
+  "20260123-130000"
+]
+```
+
+**Response (with timestamp):**
+```json
+{
+  "type": "metar",
+  "timestamp": "20260123-150000",
+  "data": {
+    "stations": [...],
+    "observations": [...]
+  }
+}
+```
+
+---
+
 ## Data Formats
 
 ### Timestamp Format
