@@ -464,16 +464,27 @@ class KalmanFilter:
         S = self.get_innovation_covariance()
         
         # Mahalanobis distance: sqrt(y^T * S^-1 * y)
+        # Use np.linalg.solve for numerical stability instead of explicit inverse
         try:
-            S_inv = np.linalg.inv(S)
-            d_m_squared = y.T @ S_inv @ y
+            # Solve S * x = y for x, which gives x = S^-1 * y
+            x = np.linalg.solve(S, y)
+            d_m_squared = y.T @ x
             # Handle numerical issues
             if d_m_squared < 0:
                 return float('inf')
             return float(np.sqrt(d_m_squared))
         except np.linalg.LinAlgError:
-            # Singular matrix - return infinity
-            return float('inf')
+            # Singular matrix - add more regularization and retry
+            try:
+                S_regularized = S + np.eye(2) * 1e-4
+                x = np.linalg.solve(S_regularized, y)
+                d_m_squared = y.T @ x
+                if d_m_squared < 0:
+                    return float('inf')
+                return float(np.sqrt(d_m_squared))
+            except np.linalg.LinAlgError:
+                # Still singular - return infinity
+                return float('inf')
     
     def is_within_gate(self, lat: float, lon: float,
                        threshold: float = 6.0,
