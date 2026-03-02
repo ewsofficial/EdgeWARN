@@ -1,10 +1,12 @@
 """
 Config-driven RAP integration.
 Optimized: Single cfgrib.open_datasets call, then select needed datasets from list.
+Optimized: Grid-aware indexing for O(1) cell-to-grid lookups.
 """
 import numpy as np
 import cfgrib
 from .config import get_rap_products
+from .grid_index import GridIndex
 
 # Transformation functions
 TRANSFORMS = {
@@ -124,19 +126,34 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
 
 
 def _precompute_cell_indices(storm_cells, lat_vals, lon_vals):
-    """Pre-compute grid indices for all cells once."""
+    """
+    Pre-compute grid indices for all cells using optimized grid indexing.
+    
+    Uses GridIndex factory to automatically select the optimal indexing
+    strategy (regular grid O(1) or k-d tree O(log N)) based on grid type.
+    
+    Args:
+        storm_cells: List of storm cell dictionaries with 'id' and 'centroid'
+        lat_vals: 2D array of latitudes from RAP grid
+        lon_vals: 2D array of longitudes from RAP grid
+    
+    Returns:
+        Dictionary mapping cell_id -> (lat_idx, lon_idx) or None
+    """
+    # Create appropriate indexer based on grid type (auto-detected)
+    indexer = GridIndex.create(lat_vals, lon_vals)
+    
     indices = {}
     for cell in storm_cells:
         cell_id = cell.get("id")
         centroid = cell.get("centroid", [0, 0])
         lat, lon = centroid[0], centroid[1]
-        if lon > 180:
-            lon -= 360
+        
         try:
-            dist_sq = (lat_vals - lat) ** 2 + (lon_vals - lon) ** 2
-            indices[cell_id] = np.unravel_index(np.argmin(dist_sq), dist_sq.shape)
+            indices[cell_id] = indexer.query(lat, lon)
         except Exception:
             indices[cell_id] = None
+    
     return indices
 
 
