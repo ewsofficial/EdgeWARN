@@ -31,8 +31,9 @@ class StormCellIntegrator:
             return storm_cells
 
         # Load dataset
+        is_grib = dataset_path.endswith(".grib2")
         try:
-            if dataset_path.endswith(".grib2"):
+            if is_grib:
                 # Try fast loader first for GRIB2 files
                 try:
                     ds = load_grib_fast(dataset_path)
@@ -41,8 +42,8 @@ class StormCellIntegrator:
                     ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
                     ds.load()
             else:
+                # NetCDF: Use lazy loading - do NOT call ds.load()
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
-                ds.load()
         except Exception as e:
             self.io_manager.write_error(f"Load error: {e}")
             return storm_cells
@@ -63,7 +64,10 @@ class StormCellIntegrator:
         active_cells = storm_cells
         self.io_manager.write_info(f"Integrating {output_key} data for {len(active_cells)} cells")
 
-        var_values = var.values
+        # For GRIB: load all values at once (already in memory from load_grib_fast)
+        # For NetCDF: keep var lazy for subset loading
+        if is_grib:
+            var_values = var.values
 
         for cell in active_cells:
             # Create properties dict if not exists
@@ -104,7 +108,15 @@ class StormCellIntegrator:
                     target[output_key] = 0
                     continue
 
-                sub_var = var_values[lat_start_idx:lat_end_idx, lon_start_idx:lon_end_idx]
+                # LAZY LOADING: For NetCDF, only load the subset we need
+                if is_grib:
+                    sub_var = var_values[lat_start_idx:lat_end_idx, lon_start_idx:lon_end_idx]
+                else:
+                    sub_var = var.isel(
+                        {lat_name: slice(lat_start_idx, lat_end_idx),
+                         lon_name: slice(lon_start_idx, lon_end_idx)}
+                    ).compute().values
+
                 sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
 
                 if sub_var.size == 0:
@@ -144,8 +156,9 @@ class StormCellIntegrator:
             return storm_cells
 
         # Load dataset
+        is_grib = dataset_path.endswith(".grib2")
         try:
-            if dataset_path.endswith(".grib2"):
+            if is_grib:
                 try:
                     ds = load_grib_fast(dataset_path)
                 except Exception as fast_e:
@@ -153,8 +166,8 @@ class StormCellIntegrator:
                     ds = xr.open_dataset(dataset_path, engine="cfgrib", decode_timedelta=True)
                     ds.load()
             else:
+                # NetCDF: Use lazy loading - do NOT call ds.load()
                 ds = xr.open_dataset(dataset_path, decode_timedelta=True)
-                ds.load()
 
         except Exception as e:
             # unique output keys
@@ -178,7 +191,10 @@ class StormCellIntegrator:
             self.io_manager.write_error(f"Variable not found in {dataset_path}")
             return storm_cells
 
-        var_values = var.values
+        # For GRIB: load all values at once (already in memory from load_grib_fast)
+        # For NetCDF: keep var lazy for subset loading
+        if is_grib:
+            var_values = var.values
 
         keys_str = ", ".join([c['key'] for c in stats_config_list])
         self.io_manager.write_info(f"Integrating [{keys_str}] for {len(storm_cells)} cells")
@@ -222,7 +238,15 @@ class StormCellIntegrator:
                         target[conf['key']] = 0
                     continue
 
-                sub_var = var_values[lat_start_idx:lat_end_idx, lon_start_idx:lon_end_idx]
+                # LAZY LOADING: For NetCDF, only load the subset we need
+                if is_grib:
+                    sub_var = var_values[lat_start_idx:lat_end_idx, lon_start_idx:lon_end_idx]
+                else:
+                    sub_var = var.isel(
+                        {lat_name: slice(lat_start_idx, lat_end_idx),
+                         lon_name: slice(lon_start_idx, lon_end_idx)}
+                    ).compute().values
+
                 sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
 
                 if sub_var.size == 0:
