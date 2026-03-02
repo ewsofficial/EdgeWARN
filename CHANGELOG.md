@@ -21,6 +21,7 @@
 - **Predictive Storm Tracking**: Implemented a core Kalman Filter motion tracking system to continuously predict and associate storm cells over time, replacing static overlap tracking. Includes configurable state dynamics to handle missed scans and a 6-minute Time-To-Live (TTL) for predictions.
 - **Storm Lineage Detection Engine**: Introduced a storm merge/split tracking module to maintain continuity when storm cells intersect or fragment. Supported by comprehensive unit and integration tests.
 - **Warm Rain Probability Integration**: Added ingestion and processing logic for Warm Rain Probability, returning the maximum (`max`) expected probability value across precipitation features.
+- **Storm Alert Integration**: Integrated active alerts into storm cell histories
 - **Tracking Documentation**: Added comprehensive documentation, PRDs, and implementation plans covering tracking updates, lineage continuity, and termination logic.
 
 ## Changes
