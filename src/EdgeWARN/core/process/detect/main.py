@@ -2,6 +2,7 @@ from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 from pathlib import Path
 from EdgeWARN.core.process.detect.tools.save import CellDataSaver
 from EdgeWARN.core.process.detect.tools.vecmath import StormVectorCalculator
+from EdgeWARN.core.process.detect.tools.alert_matcher import match_alerts_to_cells
 from EdgeWARN.core.process.detect.track import StormCellTracker
 from EdgeWARN.core.process.detect.kalman.config import TrackingConfig, AssignmentConfig
 from EdgeWARN.core.process.detect.detect import detect_cells
@@ -182,6 +183,9 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         for cell in entries:
             cell["timestamp"] = json_ts
 
+        # Match convective/flood alerts to cells
+        entries = match_alerts_to_cells(entries, fs.NWS_REGISTRY_PATH)
+
         output_data = saver.create_json_structure(json_ts, entries)
         
         # Save to stormcell directory
@@ -324,6 +328,11 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     perf_tracker.start("Detection - Vector Calc")
     entries = StormVectorCalculator.calculate_vectors(entries)
     perf_tracker.stop("Detection - Vector Calc")
+
+    # Match convective/flood alerts to cells
+    perf_tracker.start("Detection - Alert Matching")
+    entries = match_alerts_to_cells(entries, fs.NWS_REGISTRY_PATH)
+    perf_tracker.stop("Detection - Alert Matching")
 
     perf_tracker.start("Detection - Save")
     output_data = saver.create_json_structure(json_ts, entries)

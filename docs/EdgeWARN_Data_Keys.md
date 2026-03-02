@@ -35,6 +35,7 @@ The storm cells JSON output follows this structure:
 | confidence  | float         | Tracking confidence 0.0-1.0 (only when tracking_mode="predicted") |
 | kalman_predicted_centroid | Lat, Lon | Kalman filter predicted position (only when tracking_mode="predicted") |
 | kalman_state | Object       | Kalman filter state for serialization (see Kalman State section) |
+| alerts | List[string] | List of alert IDs for active NWS convective/flood alerts intersecting this cell |
 
 ## Kalman Tracking Fields
 
