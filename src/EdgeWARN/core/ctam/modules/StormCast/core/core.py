@@ -241,7 +241,7 @@ class StormCastEngine:
             hull_shapes.append(ShapelyPolygon(storm.polygon))
             
         for fp in forecast_track:
-            # Expansion radius used for building the polygon
+            # Expansion radius used for building the cone
             radius = max(fp.sigma_x, fp.sigma_y) * scale
             
             # Convert center to lat/lon
@@ -254,16 +254,24 @@ class StormCastEngine:
                 "lead_time": fp.lead_time
             })
 
-            if fp.polygon:
-                # Add to hull if within 30 minutes (1800s)
-                if fp.lead_time <= 1800:
-                    hull_shapes.append(ShapelyPolygon(fp.polygon))
-                
-                # Convert back to lat/lon
-                latlon_poly = [self._meters_to_latlon(px, py) for px, py in fp.polygon]
-                polygons.append(latlon_poly)
-            else:
-                polygons.append([self._meters_to_latlon(fp.x, fp.y)])
+            # Pass along the expansion ratio and center exactly
+            # Downstream consumers will use the base polygon and scale it up by this ratio.
+            polygons.append({
+                "center": (center_lat, center_lon),
+                "expansion_ratio": getattr(fp, "expansion_ratio", 1.0),
+                "lead_time": fp.lead_time
+            })
+            
+            # We still need a hull for polygon_0_30m, but we no longer have fp.polygon
+            # We will construct a lightweight proxy for the hull by just translating the base polygon
+            # without buffering it, because polygon_0_30m is meant to show the *track* corridor.
+            if storm.polygon and fp.lead_time <= 1800:
+                dx = fp.x - storm.x
+                dy = fp.y - storm.y
+                from shapely.affinity import translate
+                translated = translate(hull_shapes[0], xoff=dx, yoff=dy)
+                # optionally buffer slightly by fp.expansion_ratio, but simple translation is fine for the hull
+                hull_shapes.append(translated)
                 
         # Calculate 0-30m Encompassing Polygon (Quadrilateral / Trapezoid)
         polygon_0_30m = None

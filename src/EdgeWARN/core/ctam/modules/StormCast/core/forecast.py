@@ -124,14 +124,10 @@ def forecast_with_uncertainty(
         delta_t = dt - prev_dt
         sigma_pos = propagate_position_uncertainty(sigma_pos, sigma_vel, delta_t)
         
+        expansion_ratio = 1.0
         forecast_poly_coords = None
+        
         if base_poly is not None:
-            from shapely.affinity import translate
-            # Translate from current storm position (state.x, state.y) to future position (x, y)
-            dx = x - state.x
-            dy = y - state.y
-            translated_poly = translate(base_poly, xoff=dx, yoff=dy)
-            
             # Proportional Expansion: Scale buffer by cell width
             # Small cells shouldn't balloon to 30km clusters
             minx, miny, maxx, maxy = base_poly.bounds
@@ -147,11 +143,10 @@ def forecast_with_uncertainty(
             # Add a small 500m floor for tiny cells
             radius = max(radius, 500.0)
             
-            buffered_poly = translated_poly.buffer(radius)
-            
-            if not buffered_poly.is_empty:
-                # Use exterior coords
-                forecast_poly_coords = list(buffered_poly.exterior.coords)
+            # Calculate expansion ratio using radius vs cell width
+            # Roughly: new width = original width + 2*radius
+            if width > 0:
+                expansion_ratio = (width + 2*radius) / width
         
         forecast_points.append(ForecastPoint(
             x=x,
@@ -159,7 +154,8 @@ def forecast_with_uncertainty(
             lead_time=dt,
             sigma_x=sigma_pos[0],
             sigma_y=sigma_pos[1],
-            polygon=forecast_poly_coords
+            polygon=None,
+            expansion_ratio=expansion_ratio
         ))
         
         prev_dt = dt
