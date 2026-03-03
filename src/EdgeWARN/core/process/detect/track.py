@@ -149,13 +149,12 @@ class StormCellTracker:
         Returns:
             Updated list of cell entries
         """
-        # Debug prints
-        print("Entries in update_cells:")
+        self.io_manager.write_debug("Entries in update_cells:")
         for cell in entries:
-            print(f"  Entry ID: {cell['id']}, Tracking Mode: {cell.get('tracking_mode', 'N/A')}")
-        print("\nUpdated data:")
+            self.io_manager.write_debug(f"  Entry ID: {cell['id']}, Tracking Mode: {cell.get('tracking_mode', 'N/A')}")
+        self.io_manager.write_debug("Updated data:")
         for cell in updated_data:
-            print(f"  Updated cell ID: {cell['id']}, Centroid: {cell['centroid']}")
+            self.io_manager.write_debug(f"  Updated cell ID: {cell['id']}, Centroid: {cell['centroid']}")
 
         # 1. Initialize/Sync Kalman Filters for all existing tracks
         self._ensure_kalman_filters(entries)
@@ -327,13 +326,13 @@ class StormCellTracker:
         # NOTE: This step also handles re-acquisition of predicted cells (replaces
         # the former _check_reacquisition method that was removed as dead code).
         
-        print(f"DEBUG assignment inputs: len(unmatched_tracks) {len(unmatched_tracks)}, len(unmatched_detections) {len(unmatched_detections)}")
+        self.io_manager.write_debug(f"Assignment inputs: len(unmatched_tracks) {len(unmatched_tracks)}, len(unmatched_detections) {len(unmatched_detections)}")
         
         assignment_method = self.assignment_config.method
         assignment_result = None
 
         if unmatched_tracks and unmatched_detections:
-            print("DEBUG: Calling assignment method", assignment_method)
+            self.io_manager.write_debug(f"Calling assignment method {assignment_method}")
             if assignment_method == 'hybrid':
                 assignment_result = run_hybrid_assignment(
                     unmatched_tracks, unmatched_detections, self._kalman_filters,
@@ -351,16 +350,16 @@ class StormCellTracker:
                     unmatched_tracks, unmatched_detections, self._kalman_filters,
                     self.assignment_config, dt_seconds
                 )
-            print(f"DEBUG: Assignment result matched pairs: {assignment_result.matched}")
+            self.io_manager.write_debug(f"Assignment result matched pairs: {assignment_result.matched}")
         
         # Process Assignment Results
         if assignment_result:
             # Matches (Re-acquisition / Continuation)
             for track_id, det_id in assignment_result.matched:
-                print(f"DEBUG: Matching track_id: {track_id} (type {type(track_id)}), det_id: {det_id} (type {type(det_id)})")
+                self.io_manager.write_debug(f"Matching track_id: {track_id}, det_id: {det_id}")
                 track = unmatched_tracks_map.get(track_id)
                 detection = unmatched_detections_map.get(det_id)
-                print(f"DEBUG: Track found: {track}, Detection found: {detection}")
+                self.io_manager.write_debug(f"Track found: {track is not None}, Detection found: {detection is not None}")
                 
                 if track and detection:
                     self._update_cell_fields(track, detection, timestamp)
@@ -440,17 +439,17 @@ class StormCellTracker:
             del self._kalman_filters[oid]
             self._prediction_states.pop(oid, None)
         
-        print("DEBUG Final updated_entries before returning:")
+        self.io_manager.write_debug("Final updated_entries before returning:")
         for cell in updated_entries:
-            print(f"  ID {cell['id']}, Mode {cell['tracking_mode']}")
+            self.io_manager.write_debug(f"  ID {cell['id']}, Mode {cell['tracking_mode']}")
         return updated_entries
 
     def _ensure_kalman_filters(self, entries: List[Dict]):
         """Ensure KF exists for all tracks."""
-        print("\n_ensure_kalman_filters called with entries:")
+        self.io_manager.write_debug("_ensure_kalman_filters called with entries:")
         for track in entries:
             track_id = int(track['id'])
-            print(f"  Track ID: {track_id}, in _kalman_filters: {track_id in self._kalman_filters}")
+            self.io_manager.write_debug(f"  Track ID: {track_id}, in _kalman_filters: {track_id in self._kalman_filters}")
             if track_id not in self._kalman_filters:
                 kf = KalmanFilter(config=self.kalman_config)
                 kf.initialize_from_cell(track)
@@ -494,11 +493,11 @@ class StormCellTracker:
         Enters prediction mode if within time/confidence limits.
         Returns: True if cell should continue tracking, False if terminated.
         """
-        print(f"DEBUG: _handle_unmatched_cell called for cell {cell_id}")
+        self.io_manager.write_debug(f"_handle_unmatched_cell called for cell {cell_id}")
         
         # Ensure KF exists
         if cell_id not in self._kalman_filters:
-             print("DEBUG: No KF found, terminating")
+             self.io_manager.write_debug("No KF found, terminating")
              return False # If no KF, can't predict. Terminate.
         
         kf = self._kalman_filters[cell_id]
@@ -536,7 +535,7 @@ class StormCellTracker:
             position_uncertainty_km=pos_unc
         )
         
-        print(f"DEBUG: calculated confidence {confidence} for scan count {pred_state.scan_count}")
+        self.io_manager.write_debug(f"calculated confidence {confidence} for scan count {pred_state.scan_count}")
         pred_state.confidence = confidence
         
         # Check termination
@@ -547,7 +546,7 @@ class StormCellTracker:
         )
         
         if should_terminate:
-            print(f"DEBUG: Terminating cell {cell_id}: {reason}")
+            self.io_manager.write_debug(f"Terminating cell {cell_id}: {reason}")
             # Clean up
             if cell_id in self._kalman_filters: del self._kalman_filters[cell_id]
             if cell_id in self._prediction_states: del self._prediction_states[cell_id]
