@@ -92,6 +92,7 @@ class ForecastPoint:
     lead_time: float
     sigma_x: float = 0.0
     sigma_y: float = 0.0
+    expansion_ratio: float = 1.0
     polygon: Optional[List[Tuple[float, float]]] = None
     
     @property
