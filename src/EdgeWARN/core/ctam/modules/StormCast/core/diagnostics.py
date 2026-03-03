@@ -93,32 +93,16 @@ def compute_adaptive_steering(
     Returns:
         Tuple (u_mean, v_mean) in m/s
     """
-    # Get all candidate pressure levels with winds
-    available_levels = list(profile.winds.keys())
-    if not available_levels:
-        return (0.0, 0.0)
-    
-    # Compute raw weights only for available levels
-    raw_weights = {}
-    for level in available_levels:
-        params = GAUSSIAN_WEIGHT_PARAMS[level]
-        raw_weights[level] = _gaussian(h_core, params.mu, params.sigma)
-    
-    # Normalize weights to sum to 1.0
-    total = sum(raw_weights.values())
-    if total < 1e-10:
-        n = len(available_levels)
-        normalized_weights = {level: 1.0 / n for level in available_levels}
-    else:
-        normalized_weights = {level: w / total for level, w in raw_weights.items()}
+    weights = compute_height_weights(h_core)
     
     u_mean = 0.0
     v_mean = 0.0
     
-    for level, weight in normalized_weights.items():
-        u, v = profile.winds[level]
-        u_mean += weight * u
-        v_mean += weight * v
+    for level, weight in weights.items():
+        if level in profile.winds:
+            u, v = profile.winds[level]
+            u_mean += weight * u
+            v_mean += weight * v
     
     return (u_mean, v_mean)
 

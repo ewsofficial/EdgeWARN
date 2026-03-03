@@ -33,6 +33,7 @@ class StormState:
     track_history: int = 1
     motion_jitter: float = 0.0
     timestamp: Optional[datetime] = None
+    polygon: Optional[List[Tuple[float, float]]] = None
     
     @property
     def speed(self) -> float:
@@ -91,6 +92,7 @@ class ForecastPoint:
     lead_time: float
     sigma_x: float = 0.0
     sigma_y: float = 0.0
+    polygon: Optional[List[Tuple[float, float]]] = None
     
     @property
     def position(self) -> Tuple[float, float]:
