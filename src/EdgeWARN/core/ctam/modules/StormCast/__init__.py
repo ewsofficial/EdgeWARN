@@ -331,6 +331,8 @@ class StormCastModule(AnalysisModule):
                 "u": result.u,
                 "v": result.v,
                 "forecast_cones": result.forecast_cones,
+                "forecast_polygons": result.forecast_polygons,
+                "polygon_0_30m": result.polygon_0_30m,
                 "status": "success"
             }
             
