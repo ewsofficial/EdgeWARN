@@ -5,13 +5,11 @@ Automatically registers all available analysis modules on import.
 """
 
 from ..registry import ModuleRegistry
-from .Footprint import FootprintModule
 from .StormCast import StormCastModule
 from .MorphoWind import MorphoWindModule
 
 # Register all modules in execution order
-# 1. Footprint (ensures base polygons are ready)
-ModuleRegistry.register(FootprintModule())
+# 1. Base Tracking Features (e.g. History if needed)
 
 # 2. Main Analysis Modules
 ModuleRegistry.register(StormCastModule())
