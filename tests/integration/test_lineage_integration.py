@@ -41,6 +41,9 @@ class MockIOManager:
     
     def write_warning(self, msg):
         self.messages.append(('warning', msg))
+    
+    def write_debug(self, msg):
+        self.messages.append(('debug', msg))
 
 
 def create_mock_cell(cell_id, lat, lon, size=0.2, max_refl=55.0, num_gates=100):
