@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from .registry import ModuleRegistry
 from .engine import initialize_modules
+from EdgeWARN.core.alerts import AlertManager
 
 # Import modules to trigger auto-registration
 from . import modules  # noqa: F401
@@ -50,6 +51,7 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     
     success_count = 0
     error_count = 0
+    alert_count = 0
     
     for cell_idx, cell in enumerate(cells):
         # Initialize modules dict
@@ -70,9 +72,18 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 }
                 print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: Module '{module.name}' FAILED: {e}")
                 error_count += 1
+
+            # Collect and publish alerts from module
+            try:
+                module_alerts = module.alerts(cell)
+                if module_alerts:
+                    alert_count += AlertManager.publish_many(module_alerts)
+            except Exception as e:
+                print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: Alerts from '{module.name}' FAILED: {e}")
     
     total_elapsed = time.time() - start_time
-    print(f"[CTAM] Pipeline complete: {success_count} success, {error_count} error(s) in {total_elapsed:.3f}s")
+    print(f"[CTAM] Pipeline complete: {success_count} success, {error_count} error(s), {alert_count} alert(s) in {total_elapsed:.3f}s")
     
     return cells
+
 
