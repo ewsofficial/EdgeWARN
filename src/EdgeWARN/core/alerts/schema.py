@@ -1,0 +1,52 @@
+"""
+Alert Schema
+
+Defines the standardised AlertPayload dataclass used by all CTAM modules
+that wish to emit alerts.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+
+
+@dataclass
+class AlertPayload:
+    """
+    Unified alert payload.
+
+    Attributes:
+        alert_type:     Category of the alert (e.g. "severe_weather", "flash_flood").
+        source:         Name of the CTAM module that produced this alert.
+        cell_id:        Storm cell identifier.
+        geometry:       Polygon as a list of (lat, lon) coordinate pairs.
+        effective_time: When the alert becomes active (ISO 8601 datetime).
+        expiry_time:    When the alert expires (ISO 8601 datetime).
+        severity:       Free-form severity label (e.g. "warning", "watch", "advisory").
+        threats:        Module-specific threat metadata.
+    """
+
+    alert_type: str
+    source: str
+    cell_id: str
+    geometry: List[Tuple[float, float]]
+    effective_time: datetime
+    expiry_time: datetime
+    severity: str = "warning"
+    threats: Dict[str, Any] = field(default_factory=dict)
+
+    # ------------------------------------------------------------------
+    # Serialisation helper
+    # ------------------------------------------------------------------
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serialisable dictionary."""
+        return {
+            "alert_type": self.alert_type,
+            "source": self.source,
+            "id": self.cell_id,
+            "geometry": self.geometry,
+            "effective": self.effective_time.isoformat(),
+            "expires": self.expiry_time.isoformat(),
+            "severity": self.severity,
+            "threats": self.threats,
+        }

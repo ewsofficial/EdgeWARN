@@ -26,7 +26,7 @@ def _define_paths(base_path):
            MRMS_REF_0C_DIR, MRMS_REFM5C_DIR, MRMS_REFM15C_DIR, \
            MRMS_VII_DIR, MRMS_AZSHEARLOW_DIR, MRMS_AZSHEARMID_DIR, MRMS_COMPOSITE_DIR, \
            MRMS_RHOHV_DIR, MRMS_PRECIPTYP_DIR, MRMS_MESH_DIR, GOES_GLM_DIR, \
-           RAP_DIR, MRMS_NWS_RAW_DIR, MRMS_NWS_DIR, NWS_REGISTRY_PATH, STORMCELL_DIR, METAR_DIR, CELL_DIR, SURFACE_DIR
+           RAP_DIR, MRMS_NWS_RAW_DIR, MRMS_NWS_DIR, NWS_REGISTRY_PATH, STORMCELL_DIR, METAR_DIR, CELL_DIR, SURFACE_DIR, ALERTS_DIR
 
     BASE_DIR = base_path
     
@@ -63,6 +63,7 @@ def _define_paths(base_path):
     CELL_DIR = DATA_DIR / "cells"
     METAR_DIR = DATA_DIR / "METAR"
     SURFACE_DIR = DATA_DIR / "surface_features"
+    ALERTS_DIR = DATA_DIR / "Alerts"
 
 def initialize_filesystem(base_dir=None):
     """

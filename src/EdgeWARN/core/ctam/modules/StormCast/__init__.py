@@ -7,8 +7,10 @@ Adapter for integrating StormCast core into the CTAM framework.
 from typing import Dict, Any, Optional, List
 import dataclasses
 from ...interface import AnalysisModule
+from EdgeWARN.core.alerts.schema import AlertPayload
 import json
 from pathlib import Path
+from datetime import datetime, timedelta
 import util.file as fs
 
 # Re-export core components for external use
@@ -20,6 +22,7 @@ from .core import (
     ForecastPoint,
     PRESSURE_LEVELS,
 )
+
 
 
 class StormCastModule(AnalysisModule):
@@ -326,6 +329,8 @@ class StormCastModule(AnalysisModule):
             # Generate forecast
             result = engine.generate_forecast()
             
+
+            
             # Store results
             storm_entry["modules"][self.name] = {
                 "u": result.u,
@@ -341,3 +346,44 @@ class StormCastModule(AnalysisModule):
                 "status": "error",
                 "error": str(e)
             }
+
+    # ------------------------------------------------------------------
+    # Alert generation
+    # ------------------------------------------------------------------
+    def alerts(self, storm_entry: Dict[str, Any]) -> Optional[List[AlertPayload]]:
+        """
+        Build an alert from the 0-30m forecast polygon if the module ran
+        successfully.
+        """
+        result = storm_entry.get("modules", {}).get(self.name, {})
+
+        if result.get("status") != "success":
+            return None
+
+        polygon = result.get("polygon_0_30m")
+        if not polygon:
+            return None
+
+        # Parse timestamp for effective / expiry calculation
+        ts_str = storm_entry.get("timestamp")
+        if ts_str:
+            try:
+                effective = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                effective = datetime.now()
+        else:
+            effective = datetime.now()
+
+        expiry = effective + timedelta(minutes=30)
+
+        return [
+            AlertPayload(
+                alert_type="severe_weather",
+                source=self.name,
+                cell_id=storm_entry.get("id", "unknown_cell"),
+                geometry=polygon,
+                effective_time=effective,
+                expiry_time=expiry,
+            )
+        ]
+
