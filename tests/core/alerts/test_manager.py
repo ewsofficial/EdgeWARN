@@ -136,3 +136,63 @@ class TestAlertManager:
             assert json.load(f)["source"] == "StormCast"
         with open(override_alerts_dir / "alert_FloodModule_cell_x.json") as f:
             assert json.load(f)["source"] == "FloodModule"
+
+    # ------------------------------------------------------------------
+    # Load tests
+    # ------------------------------------------------------------------
+
+    def test_load_existing_alert(self, override_alerts_dir):
+        """load() should reconstruct an AlertPayload from disk."""
+        effective = datetime(2026, 3, 4, 12, 0, 0)
+        original = AlertPayload(
+            "severe_weather", "StormCast", "cell_50",
+            [(35.0, -97.0)], effective, effective + timedelta(minutes=30),
+            threats={"hail": True},
+        )
+        AlertManager.publish(original)
+
+        loaded = AlertManager.load("StormCast", "cell_50")
+        assert loaded is not None
+        assert loaded.cell_id == "cell_50"
+        assert loaded.source == "StormCast"
+        assert loaded.threats == {"hail": True}
+
+    def test_load_nonexistent_returns_none(self, override_alerts_dir):
+        assert AlertManager.load("StormCast", "does_not_exist") is None
+
+    def test_load_all_returns_all_sources(self, override_alerts_dir):
+        now = datetime.now()
+        AlertManager.publish(AlertPayload(
+            "severe_weather", "StormCast", "cell_y",
+            [(35.0, -97.0)], now, now + timedelta(minutes=30)))
+        AlertManager.publish(AlertPayload(
+            "flash_flood", "FloodModule", "cell_y",
+            [(36.0, -98.0)], now, now + timedelta(minutes=60)))
+
+        all_alerts = AlertManager.load_all("cell_y")
+        assert len(all_alerts) == 2
+        sources = {a.source for a in all_alerts}
+        assert sources == {"StormCast", "FloodModule"}
+
+    def test_load_all_empty_dir(self, override_alerts_dir):
+        assert AlertManager.load_all("nonexistent") == []
+
+    def test_load_append_republish(self, override_alerts_dir):
+        """Demonstrates the load → modify → republish workflow."""
+        now = datetime(2026, 3, 4, 14, 0, 0)
+        original = AlertPayload(
+            "severe_weather", "StormCast", "cell_77",
+            [(35.0, -97.0)], now, now + timedelta(minutes=30),
+            threats={"hail": True},
+        )
+        AlertManager.publish(original)
+
+        # Another module loads, appends a threat, and republishes
+        loaded = AlertManager.load("StormCast", "cell_77")
+        loaded.threats["tornado"] = True
+        AlertManager.publish(loaded)
+
+        # Verify the file now has both threats
+        reloaded = AlertManager.load("StormCast", "cell_77")
+        assert reloaded.threats == {"hail": True, "tornado": True}
+
