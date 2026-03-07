@@ -8,7 +8,13 @@ def get_mrms_modifiers():
     return [
         ("CONUS", "EchoTop_18_00.50", fs.MRMS_ECHOTOP18_DIR), # Region / Product / Outdir
         ("CONUS", "EchoTop_30_00.50", fs.MRMS_ECHOTOP30_DIR),
-        ("CONUS", "FLASH_QPE_FFG01H_00.00", fs.MRMS_FLASH_DIR),
+        ("CONUS", "FLASH_CREST_MAXUNITSTREAMFLOW_00.00", fs.MRMS_FLASH_CREST_MAXUNIT_DIR),
+        ("CONUS", "FLASH_QPE_ARIMAX_00.00", fs.MRMS_FLASH_ARIMAX_DIR),
+        ("CONUS", "FLASH_QPE_ARI30M_00.00", fs.MRMS_FLASH_ARI30M_DIR),
+        ("CONUS", "FLASH_QPE_ARI01H_00.00", fs.MRMS_FLASH_ARI01H_DIR),
+        ("CONUS", "FLASH_HP_MAXUNITSTREAMFLOW_00.00", fs.MRMS_FLASH_HP_MAXUNIT_DIR),
+        ("CONUS", "FLASH_SAC_MAXSOILSAT_00.00", fs.MRMS_FLASH_SAC_MAXSOIL_DIR),
+        ("CONUS", "FLASH_QPE_FFGMAX_00.00", fs.MRMS_FLASH_FFGMAX_DIR),
         ("CONUS", "MESH_00.50", fs.MRMS_MESH_DIR),
         ("CONUS", "WarmRainProbability_00.50", fs.MRMS_RAIN_DIR),
         ("CONUS", "NLDN_CG_005min_AvgDensity_00.00", fs.MRMS_NLDN_DIR),
