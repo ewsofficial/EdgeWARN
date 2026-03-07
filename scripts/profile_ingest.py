@@ -79,7 +79,9 @@ class BenchmarkHarness:
     def populate_dummy_files(self):
         print("Populating dummy files to simulate dirty state...")
         dirs_to_populate = [
-            fs.MRMS_ECHOTOP18_DIR, fs.MRMS_ECHOTOP30_DIR, fs.MRMS_FLASH_DIR,
+            fs.MRMS_ECHOTOP18_DIR, fs.MRMS_ECHOTOP30_DIR, fs.MRMS_FLASH_CREST_MAXUNIT_DIR,
+            fs.MRMS_FLASH_ARIMAX_DIR, fs.MRMS_FLASH_ARI30M_DIR, fs.MRMS_FLASH_ARI01H_DIR,
+            fs.MRMS_FLASH_HP_MAXUNIT_DIR, fs.MRMS_FLASH_SAC_MAXSOIL_DIR, fs.MRMS_FLASH_FFGMAX_DIR,
             fs.MRMS_MESH_DIR, fs.MRMS_RAIN_DIR, fs.MRMS_NLDN_DIR,
             fs.MRMS_PRECIPRATE_DIR, fs.MRMS_QPE_DIR, fs.MRMS_AZSHEARLOW_DIR,
             fs.MRMS_NWS_DIR, fs.METAR_DIR
