@@ -47,28 +47,28 @@ SOIL_BOOST_MAX = 0.25  # +25% max boost when soil > threshold
 
 # ── Pillar 3: Guidance Exceedance ───────────────────────────────────
 # FFG ratio piecewise breakpoints
-FFG_RAMP_START = 0.75
-FFG_RAMP_MID = 1.0
+FFG_RAMP_START = 0.85   # previously 0.75
+FFG_RAMP_MID = 1.25     # previously 1.0
 FFG_RAMP_END = 2.0
 
 # ── Quality Control (Radar Quality Index) ───────────────────────────
-RQI_FULL_WEIGHT_THRESHOLD = 0.8   # RQI >= this → full weight (1.0)
-RQI_MIN_WEIGHT_THRESHOLD = 0.3    # RQI < this → hard mask (0.0)
+RQI_FULL_WEIGHT_THRESHOLD = 0.9   # previously 0.8
+RQI_MIN_WEIGHT_THRESHOLD = 0.5    # previously 0.3
 
 # ── Severity tiers (checked in descending order) ────────────────────
 SEVERITY_TIERS = [
-    (75, "emergency"),
-    (50, "warning"),
-    (25, "advisory"),
+    (80, "emergency"),  # previously 75
+    (55, "warning"),    # previously 50
+    (30, "advisory"),   # previously 25
     (0, "none"),
 ]
 
 # ── Region extraction ───────────────────────────────────────────────
-THREAT_THRESHOLD = 25               # minimum score to form a region
-MIN_REGION_AREA_KM2 = 4.0           # discard regions smaller than this
-POLYGON_SIMPLIFY_TOLERANCE = 0.005   # degrees, for polygon simplification
-CONNECTIVITY = 8                     # 8-connectivity for diagonal flood pixel connection
-MAX_REGIONS = 1000                   # maximum number of regions per cycle
+THREAT_THRESHOLD = 30               # previously 25
+MIN_REGION_AREA_KM2 = 10.0          # previously 4.0
+POLYGON_SIMPLIFY_TOLERANCE = 0.005
+CONNECTIVITY = 8
+MAX_REGIONS = 1000
 
 # ── Temporal persistence ────────────────────────────────────────────
 MAX_HISTORY_LENGTH = 6  # number of cycles to track for persistence

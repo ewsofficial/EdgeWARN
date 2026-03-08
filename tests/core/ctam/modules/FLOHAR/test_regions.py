@@ -11,7 +11,7 @@ import pytest
 from EdgeWARN.core.ctam.modules.FLOHAR.regions import (
     extract_regions,
     _pixel_area_km2,
-    _compute_region_area_km2,
+    _compute_region_area_km2_vectorized as _compute_region_area_km2,
 )
 
 
