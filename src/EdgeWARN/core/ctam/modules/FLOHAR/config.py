@@ -9,9 +9,9 @@ from pathlib import Path
 
 # ── Pillar weights (must sum to 1.0) ────────────────────────────────
 PILLAR_WEIGHTS = {
-    "rainfall": 0.40,
-    "hydro": 0.35,
-    "ffg": 0.25,
+    "rainfall": 0.25,
+    "hydro": 0.45,
+    "ffg": 0.30,
 }
 
 # ── Pillar 1: Rainfall Extremity ────────────────────────────────────
