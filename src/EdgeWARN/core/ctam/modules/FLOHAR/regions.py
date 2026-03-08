@@ -4,11 +4,14 @@ FLOHAR Region Extraction
 Thresholds the composite threat grid, applies connected-component
 labeling (8-connectivity), filters by area, polygonizes regions,
 and computes per-region metadata.
+
+Memory-optimised: uses scipy.ndimage.find_objects for bounding-box
+slicing instead of full-grid boolean masks per region.
 """
 
 import numpy as np
-from scipy.ndimage import label
-from typing import List, Dict, Any, Optional
+from scipy.ndimage import label, find_objects
+from typing import List, Dict, Any, Optional, Tuple
 
 from . import config as cfg
 from .engine import classify_severity_scalar
@@ -53,8 +56,8 @@ def _compute_region_area_km2(
     Compute total area of a labeled region in km².
 
     Args:
-        region_mask: 2D boolean mask of the region
-        lat_coords: 1D array of latitude values for each row
+        region_mask: 2D boolean mask of the region (may be a sub-grid slice)
+        lat_coords: 1D array of latitude values for each row of the mask
         dlat: Grid spacing in latitude (degrees)
         dlon: Grid spacing in longitude (degrees)
 
@@ -92,7 +95,7 @@ def extract_regions(
         1. Threshold: mask pixels where threat_score >= threshold
         2. Static water body mask (if provided): zero-out permanent water
         3. Connected-component labeling with 8-connectivity
-        4. Filter by minimum area
+        4. Filter by minimum area using bounding-box slices (memory-efficient)
         5. Cap at max_regions (largest first)
         6. Polygonize and compute metadata
 
@@ -123,6 +126,7 @@ def extract_regions(
 
     # ── Step 3: Connected-component labeling ────────────────────────
     labeled_array, num_features = label(binary_mask, structure=CONNECTIVITY_STRUCTURE)
+    del binary_mask
 
     if num_features == 0:
         return []
@@ -131,14 +135,28 @@ def extract_regions(
     dlat = abs(lat_coords[1] - lat_coords[0]) if len(lat_coords) > 1 else 0.01
     dlon = abs(lon_coords[1] - lon_coords[0]) if len(lon_coords) > 1 else 0.01
 
-    # ── Step 4: Compute areas and filter ────────────────────────────
+    # ── Step 4: Use find_objects for bounding-box slicing ───────────
+    # find_objects returns a list of (row_slice, col_slice) per label,
+    # avoiding full-grid boolean masks that cause OOM on CONUS grids.
+    slices = find_objects(labeled_array)
+
     regions_with_area = []
-    for region_id in range(1, num_features + 1):
-        region_mask = labeled_array == region_id
-        area_km2 = _compute_region_area_km2(region_mask, lat_coords, dlat, dlon)
+    for region_id, bbox in enumerate(slices, start=1):
+        if bbox is None:
+            continue  # label was removed (e.g. by water body mask)
+
+        row_slice, col_slice = bbox
+
+        # Extract sub-grids for this region's bounding box only
+        label_sub = labeled_array[row_slice, col_slice]
+        region_mask_sub = label_sub == region_id
+
+        # Compute area using sub-grid lat coords
+        lat_sub = lat_coords[row_slice]
+        area_km2 = _compute_region_area_km2(region_mask_sub, lat_sub, dlat, dlon)
 
         if area_km2 >= min_area_km2:
-            regions_with_area.append((region_id, region_mask, area_km2))
+            regions_with_area.append((region_id, bbox, area_km2))
 
     if not regions_with_area:
         return []
@@ -149,32 +167,48 @@ def extract_regions(
 
     # ── Step 6: Polygonize and compute metadata ─────────────────────
     results = []
-    for idx, (region_id, region_mask, area_km2) in enumerate(regions_with_area, start=1):
-        region_scores = threat_grid[region_mask]
+    for idx, (region_id, bbox, area_km2) in enumerate(regions_with_area, start=1):
+        row_slice, col_slice = bbox
+
+        # Re-extract sub-grid mask (small, bounded to bbox)
+        label_sub = labeled_array[row_slice, col_slice]
+        region_mask_sub = label_sub == region_id
+
+        threat_sub = threat_grid[row_slice, col_slice]
+        region_scores = threat_sub[region_mask_sub]
         peak_score = int(np.max(region_scores))
         mean_score = float(np.mean(region_scores))
         severity = classify_severity_scalar(peak_score)
 
-        # Centroid (weighted by score)
-        rows, cols = np.where(region_mask)
-        weights = threat_grid[rows, cols].astype(float)
+        # Centroid (weighted by score, in full-grid coordinates)
+        sub_rows, sub_cols = np.where(region_mask_sub)
+        full_rows = sub_rows + row_slice.start
+        full_cols = sub_cols + col_slice.start
+        weights = threat_grid[full_rows, full_cols].astype(float)
         weight_sum = weights.sum()
         if weight_sum > 0:
-            centroid_lat = float(np.average(lat_coords[rows], weights=weights))
-            centroid_lon = float(np.average(lon_coords[cols], weights=weights))
+            centroid_lat = float(np.average(lat_coords[full_rows], weights=weights))
+            centroid_lon = float(np.average(lon_coords[full_cols], weights=weights))
         else:
-            centroid_lat = float(np.mean(lat_coords[rows]))
-            centroid_lon = float(np.mean(lon_coords[cols]))
+            centroid_lat = float(np.mean(lat_coords[full_rows]))
+            centroid_lon = float(np.mean(lon_coords[full_cols]))
 
-        # Pillar peaks
+        # Pillar peaks (bounded to bbox)
         pillar_peaks = {}
         for pname, pgrid in pillar_grids.items():
-            pillar_peaks[pname] = float(np.max(pgrid[region_mask]))
+            pillar_sub = pgrid[row_slice, col_slice]
+            pillar_peaks[pname] = float(np.max(pillar_sub[region_mask_sub]))
 
-        # Polygon: build bounding polygon from region mask pixels
+        # Polygon: build from sub-grid mask with sub-grid coordinates
+        lat_sub = lat_coords[row_slice]
+        lon_sub = lon_coords[col_slice]
         polygon_coords = _mask_to_polygon(
-            region_mask, lat_coords, lon_coords, dlat, dlon, simplify_tolerance
+            region_mask_sub, lat_sub, lon_sub, dlat, dlon, simplify_tolerance
         )
+
+        # Skip regions that produced invalid/empty polygons
+        if len(polygon_coords) < 3:
+            continue
 
         results.append({
             "region_id": idx,
@@ -206,44 +240,44 @@ def _mask_to_polygon(
     Convert a binary mask to a simplified polygon in [lon, lat] coords.
 
     Uses rasterio.features.shapes for pixel-to-polygon conversion,
-    then simplifies with shapely.
+    then simplifies with shapely. The mask should be a sub-grid
+    (bounding-box crop) for memory efficiency.
 
     Falls back to a convex-hull of pixel centres if rasterio is
     not available.
 
     Args:
-        mask:              2D boolean mask
-        lat_coords:        1D latitude array
-        lon_coords:        1D longitude array
+        mask:              2D boolean mask (ideally bbox-cropped)
+        lat_coords:        1D latitude array for the mask rows
+        lon_coords:        1D longitude array for the mask cols
         dlat:              Grid spacing latitude (degrees)
         dlon:              Grid spacing longitude (degrees)
         simplify_tolerance: Simplification tolerance in degrees
 
     Returns:
-        List of [lon, lat] coordinate pairs forming a closed polygon
+        List of [lon, lat] coordinate pairs forming a closed polygon.
+        Returns [] if polygon extraction fails.
     """
     try:
         import rasterio.features
         from rasterio.transform import from_bounds
-        from shapely.geometry import shape as shapely_shape
+        from shapely.geometry import shape as shapely_shape, Polygon, MultiPolygon
 
-        # Build affine transform: pixel (col, row) → (lon, lat)
+        # Build affine transform for the sub-grid
         nrows, ncols = mask.shape
         west = float(lon_coords[0]) - dlon / 2
         east = float(lon_coords[-1]) + dlon / 2
         # Determine if latitude goes N→S or S→N
         if lat_coords[0] > lat_coords[-1]:
-            # N→S (typical)
             north = float(lat_coords[0]) + dlat / 2
             south = float(lat_coords[-1]) - dlat / 2
         else:
-            # S→N
             north = float(lat_coords[-1]) + dlat / 2
             south = float(lat_coords[0]) - dlat / 2
 
         transform = from_bounds(west, south, east, north, ncols, nrows)
 
-        # Extract shapes
+        # Extract shapes from sub-grid mask
         mask_uint8 = mask.astype(np.uint8)
         shapes = list(rasterio.features.shapes(
             mask_uint8, mask=mask_uint8, transform=transform
@@ -259,8 +293,24 @@ def _mask_to_polygon(
         if simplify_tolerance > 0:
             poly = poly.simplify(simplify_tolerance)
 
-        # Return exterior coordinates as [lon, lat]
-        coords = list(poly.exterior.coords)
+        # Handle degenerate geometries after simplification
+        if poly.is_empty:
+            return []
+
+        # Extract exterior from the appropriate geometry type
+        if isinstance(poly, Polygon) and poly.exterior is not None:
+            coords = list(poly.exterior.coords)
+        elif isinstance(poly, MultiPolygon):
+            # Take the largest polygon from the MultiPolygon
+            largest = max(poly.geoms, key=lambda g: g.area)
+            if largest.exterior is not None:
+                coords = list(largest.exterior.coords)
+            else:
+                return []
+        else:
+            # Point, LineString, GeometryCollection, etc. — not valid
+            return []
+
         return [[round(c[0], 5), round(c[1], 5)] for c in coords]
 
     except ImportError:
@@ -276,7 +326,7 @@ def _fallback_polygon(
     Fallback polygon from convex hull of pixel centres.
     Used when rasterio is not available.
     """
-    from shapely.geometry import MultiPoint
+    from shapely.geometry import MultiPoint, Polygon
 
     rows, cols = np.where(mask)
     if len(rows) == 0:
@@ -288,5 +338,9 @@ def _fallback_polygon(
     if hull.is_empty:
         return []
 
-    coords = list(hull.exterior.coords) if hasattr(hull, 'exterior') else []
+    # Guard against degenerate hulls (Point, LineString)
+    if not isinstance(hull, Polygon) or hull.exterior is None:
+        return []
+
+    coords = list(hull.exterior.coords)
     return [[round(c[0], 5), round(c[1], 5)] for c in coords]
