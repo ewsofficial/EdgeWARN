@@ -1,0 +1,226 @@
+"""
+FLOHAR Engine Unit Tests
+
+Tests for the scoring engine: normalization functions, pillar scoring,
+composite threat scores, NaN handling, RQI quality control, and
+severity classification.
+"""
+
+import numpy as np
+import pytest
+
+from EdgeWARN.core.ctam.modules.FLOHAR.engine import (
+    compute_threat_grid,
+    classify_severity_scalar,
+    _normalize_ari,
+    _normalize_ffg,
+    _normalize_soil_sat,
+    _rqi_weight,
+    _sigmoid,
+)
+
+
+# ── Helpers ─────────────────────────────────────────────────────────
+
+def _make_grid(value, shape=(10, 10)):
+    """Create a uniform grid filled with `value`."""
+    return np.full(shape, value, dtype=np.float64)
+
+
+def _zeros(shape=(10, 10)):
+    return np.zeros(shape, dtype=np.float64)
+
+
+def _ones(shape=(10, 10)):
+    return np.ones(shape, dtype=np.float64)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 1: All zeros → all pixels score 0
+# ─────────────────────────────────────────────────────────────────────
+
+def test_all_zeros():
+    """All-zero inputs should produce near-zero threat scores.
+    
+    Note: sigmoid(0, x0=1.5, k=2.0) ≈ 0.047, so the hydro pillar
+    contributes a tiny floor value even with zero streamflow. This
+    produces scores of ~1 after rounding. This is correct behaviour.
+    """
+    z = _zeros()
+    threat, r, h, f = compute_threat_grid(z, z, z, z, z, z, z, _ones())
+    assert np.all(threat <= 2), f"Expected near-zero, got max={threat.max()}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 2: Uniform extreme values → score ≈ 100
+# ─────────────────────────────────────────────────────────────────────
+
+def test_uniform_extreme():
+    """Extreme values across all indicators, with RQI=1, should score ≥ 90."""
+    threat, r, h, f = compute_threat_grid(
+        ari_max=_make_grid(500),       # well above ARI ceiling
+        ari_30m=_make_grid(500),
+        ari_01h=_make_grid(500),
+        crest_streamflow=_make_grid(10),  # very high streamflow
+        hp_streamflow=_make_grid(10),
+        soil_sat=_make_grid(0.95),     # near full saturation
+        ffg_ratio=_make_grid(5.0),     # well above 2.0
+        rqi=_ones(),                   # perfect quality
+    )
+    assert np.all(threat >= 90), f"Min threat score: {threat.min()}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 3: ARI-only scenario
+# ─────────────────────────────────────────────────────────────────────
+
+def test_ari_only():
+    """High ARI with zero streamflow/FFG → moderate rainfall score, low others."""
+    threat, r, h, f = compute_threat_grid(
+        ari_max=_make_grid(200),
+        ari_30m=_make_grid(200),
+        ari_01h=_make_grid(200),
+        crest_streamflow=_zeros(),
+        hp_streamflow=_zeros(),
+        soil_sat=_zeros(),
+        ffg_ratio=_zeros(),
+        rqi=_ones(),
+    )
+    # Rainfall pillar should be ~1.0 (ARI=200 → ceiling)
+    assert np.all(r > 0.9), f"Rainfall pillar too low: {r.min()}"
+    # FFG should be 0
+    assert np.all(f == 0.0)
+    # Final score should be moderate (only 40% weight from rainfall)
+    assert np.all(threat > 0)
+    assert np.all(threat < 80)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 4: FFG ratio edge cases
+# ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("ratio,expected", [
+    (0.5, 0.0),     # below ramp start
+    (0.75, 0.0),    # at ramp start → 0
+    (1.0, 0.5),     # at midpoint
+    (2.0, 1.0),     # at ramp end
+    (3.0, 1.0),     # above ramp end (clamped)
+])
+def test_ffg_edge_cases(ratio, expected):
+    """FFG normalization edge cases match spec."""
+    arr = _make_grid(ratio, shape=(1, 1))
+    result = _normalize_ffg(arr)
+    assert abs(result[0, 0] - expected) < 0.01, \
+        f"FFG({ratio}) = {result[0, 0]}, expected {expected}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 5: NaN handling — NaN pixels produce valid output
+# ─────────────────────────────────────────────────────────────────────
+
+def test_nan_handling():
+    """Grids with NaN pixels should produce valid (non-NaN) threat scores."""
+    shape = (5, 5)
+    grid = _make_grid(100.0, shape)
+    grid[2, 2] = np.nan  # inject NaN in one pixel
+
+    threat, r, h, f = compute_threat_grid(
+        ari_max=grid, ari_30m=grid, ari_01h=grid,
+        crest_streamflow=grid, hp_streamflow=grid,
+        soil_sat=_make_grid(0.5, shape), ffg_ratio=grid,
+        rqi=_ones(shape),
+    )
+    assert not np.any(np.isnan(threat)), "NaN leaked into threat grid"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 6: All NaN → score 0
+# ─────────────────────────────────────────────────────────────────────
+
+def test_all_nan():
+    """All-NaN inputs should produce all-zero threat scores."""
+    nans = _make_grid(np.nan)
+    threat, r, h, f = compute_threat_grid(nans, nans, nans, nans, nans, nans, nans, nans)
+    assert np.all(threat == 0), f"Expected all zeros, got max={threat.max()}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 7: Soil saturation boost
+# ─────────────────────────────────────────────────────────────────────
+
+def test_soil_saturation_boost():
+    """Score should be amplified when soil_sat > 0.85."""
+    base_args = dict(
+        ari_max=_make_grid(50),
+        ari_30m=_make_grid(50),
+        ari_01h=_make_grid(50),
+        crest_streamflow=_make_grid(2.0),
+        hp_streamflow=_make_grid(2.0),
+        ffg_ratio=_make_grid(1.5),
+        rqi=_ones(),
+    )
+    # Without boost (soil_sat = 0.5)
+    threat_low, _, _, _ = compute_threat_grid(soil_sat=_make_grid(0.5), **base_args)
+    # With boost (soil_sat = 0.95)
+    threat_high, _, _, _ = compute_threat_grid(soil_sat=_make_grid(0.95), **base_args)
+
+    # High soil sat should produce higher scores
+    assert np.all(threat_high >= threat_low), \
+        f"Boost failed: low={threat_low.mean()}, high={threat_high.mean()}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 8: Severity tier boundaries
+# ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("score,expected_tier", [
+    (24, "none"),
+    (25, "advisory"),
+    (49, "advisory"),
+    (50, "warning"),
+    (74, "warning"),
+    (75, "emergency"),
+    (100, "emergency"),
+    (0, "none"),
+])
+def test_severity_boundaries(score, expected_tier):
+    """Severity tiers match spec boundaries."""
+    assert classify_severity_scalar(score) == expected_tier
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 9: RQI quality control
+# ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("rqi_val,expected_weight", [
+    (1.0, 1.0),     # full quality → full weight
+    (0.8, 1.0),     # threshold → full weight
+    (0.65, 0.7),    # mid-ramp → ~70%
+    (0.3, 0.0),     # min threshold → 0%
+    (0.2, 0.0),     # below threshold → hard mask
+])
+def test_rqi_quality_control(rqi_val, expected_weight):
+    """RQI weighting matches spec."""
+    arr = _make_grid(rqi_val, shape=(1, 1))
+    result = _rqi_weight(arr)
+    assert abs(result[0, 0] - expected_weight) < 0.05, \
+        f"RQI({rqi_val}) = {result[0, 0]}, expected ~{expected_weight}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 10: Sentinel values treated as NaN
+# ─────────────────────────────────────────────────────────────────────
+
+def test_sentinel_handling():
+    """Sentinel values (-999, -9999) should be treated as missing data."""
+    shape = (3, 3)
+    sentinel = _make_grid(-999.0, shape)
+    normal = _make_grid(100.0, shape)
+
+    threat, _, _, _ = compute_threat_grid(
+        sentinel, sentinel, sentinel,
+        sentinel, sentinel, sentinel,
+        sentinel, _ones(shape),
+    )
+    # Sentinel-filled grids → all zeros (treated as NaN)
+    assert np.all(threat == 0)
