@@ -3,12 +3,16 @@ CTAM Pipeline Entry Point
 
 Provides a single entry point for running all registered CTAM modules
 on storm cell data.
+
+Supports both:
+- Cell-based modules: Operate on storm cells and modify them in-place
+- Grid-based modules: Operate on raster data (GRIB/NetCDF) and produce GeoJSON
 """
 
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from .registry import ModuleRegistry
+from .registry import CellModuleRegistry, GridModuleRegistry, ModuleRegistry
 from .engine import initialize_modules
 from EdgeWARN.core.alerts import AlertManager
 
@@ -22,6 +26,9 @@ import util.file as fs
 def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Run all registered CTAM modules on the provided storm cells.
+    
+    First runs cell-based modules, then runs grid-based modules.
+    Grid results are attached to the first cell for output.
     
     This is the single entry point for CTAM processing in the pipeline.
     Modules are automatically discovered from the registry.
@@ -39,31 +46,34 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     print("[CTAM] Starting CTAM pipeline...")
     
-    registered_modules = ModuleRegistry.get_all()
+    # Get registered modules
+    cell_modules = CellModuleRegistry.get_all()
+    grid_modules = GridModuleRegistry.get_all()
     
-    if not registered_modules:
+    if not cell_modules and not grid_modules:
         print("[CTAM] No modules registered. Skipping processing.")
         return cells
     
-    module_names = list(registered_modules.keys())
-    print(f"[CTAM] Discovered {len(registered_modules)} registered module(s): {module_names}")
+    print(f"[CTAM] Cell modules: {list(cell_modules.keys())}")
+    print(f"[CTAM] Grid modules: {list(grid_modules.keys())}")
     print(f"[CTAM] Processing {len(cells)} storm cell(s)...")
     
-    success_count = 0
-    error_count = 0
-    alert_count = 0
+    # Step 1: Run cell-based modules
+    cell_success_count = 0
+    cell_error_count = 0
     
     for cell_idx, cell in enumerate(cells):
         # Initialize modules dict
+        module_names = list(cell_modules.keys())
         initialize_modules(cell, module_names)
         
-        # Run each module
-        for module in registered_modules.values():
+        # Run each cell-based module
+        for module in cell_modules.values():
             try:
                 module_start = time.time()
                 module.run(cell)
                 module_elapsed = time.time() - module_start
-                success_count += 1
+                cell_success_count += 1
             except Exception as e:
                 # Store error in modules dict
                 cell["modules"][module.name] = {
@@ -71,18 +81,52 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     "error": str(e)
                 }
                 print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: Module '{module.name}' FAILED: {e}")
-                error_count += 1
+                cell_error_count += 1
 
-            # Collect and publish alerts from module
+            # Collect and publish alerts from cell module
             try:
                 module_alerts = module.alerts(cell)
                 if module_alerts:
-                    alert_count += AlertManager.publish_many(module_alerts)
+                    AlertManager.publish_many(module_alerts)
             except Exception as e:
                 print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: Alerts from '{module.name}' FAILED: {e}")
     
+    # Step 2: Run grid-based modules
+    grid_results = {}
+    grid_success_count = 0
+    grid_error_count = 0
+    grid_alert_count = 0
+    
+    for module in grid_modules.values():
+        try:
+            module_start = time.time()
+            result = module.run()
+            module_elapsed = time.time() - module_start
+            grid_results[module.name] = result
+            grid_success_count += 1
+            print(f"[CTAM]   Grid module '{module.name}' completed in {module_elapsed:.3f}s")
+            
+            # Generate alerts from grid results
+            if result.get("features") and result["features"].get("features"):
+                features = result["features"]["features"]
+                alerts = module.alerts(features)
+                if alerts:
+                    grid_alert_count += AlertManager.publish_many(alerts)
+                    
+        except Exception as e:
+            grid_results[module.name] = {"status": "error", "error": str(e)}
+            print(f"[CTAM]   Grid module '{module.name}' FAILED: {e}")
+            grid_error_count += 1
+    
+    # Attach grid results to first cell (or create placeholder)
+    if cells:
+        cells[0]["modules"]["_grid_outputs"] = grid_results
+    else:
+        # No cells, but grid modules ran - store results separately
+        cells = [{"modules": {"_grid_outputs": grid_results}}]
+    
     total_elapsed = time.time() - start_time
-    print(f"[CTAM] Pipeline complete: {success_count} success, {error_count} error(s), {alert_count} alert(s) in {total_elapsed:.3f}s")
+    print(f"[CTAM] Pipeline complete: {cell_success_count} cell success, {cell_error_count} cell error(s), {grid_success_count} grid success, {grid_error_count} grid error(s), {grid_alert_count} grid alert(s) in {total_elapsed:.3f}s")
     
     return cells
 
