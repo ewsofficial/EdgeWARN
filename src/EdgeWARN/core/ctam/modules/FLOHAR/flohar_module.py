@@ -8,9 +8,10 @@ and produces GeoJSON output with alert integration.
 
 import json
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from EdgeWARN.core.ctam.interface import GridAnalysisModule
 from EdgeWARN.core.alerts.schema import AlertPayload
@@ -69,6 +70,11 @@ class FLOHARModule(GridAnalysisModule):
             grids["rqi"],
         )
 
+        # Free input grids — engine has extracted what it needs
+        lat_coords = grids["latitude"]
+        lon_coords = grids["longitude"]
+        del grids
+
         # Extract regions
         pillar_grids = {
             "rainfall": rainfall_grid,
@@ -78,8 +84,8 @@ class FLOHARModule(GridAnalysisModule):
 
         regions = extract_regions(
             threat_grid,
-            grids["latitude"],
-            grids["longitude"],
+            lat_coords,
+            lon_coords,
             pillar_grids,
             threshold=cfg.THREAT_THRESHOLD,
             min_area_km2=cfg.MIN_REGION_AREA_KM2,
@@ -184,9 +190,8 @@ class FLOHARModule(GridAnalysisModule):
         """
         Load all required FLASH GRIB files and extract 2D arrays.
 
-        Uses util.file.latest_files() to find the most recent GRIB
-        in each product directory, then util.grib_loader.load_grib_fast()
-        for fast eccodes-based loading.
+        Uses ThreadPoolExecutor to load all 8 GRIB files concurrently,
+        since the bottleneck is I/O (disk reads + eccodes parsing).
 
         Returns:
             Dict mapping grid key → 2D numpy array, plus 'latitude'
@@ -195,9 +200,8 @@ class FLOHARModule(GridAnalysisModule):
         """
         from util.grib_loader import load_grib_fast
 
-        grids = {}
-        ref_shape = None
-
+        # Build list of (grid_key, filepath) pairs
+        load_tasks: List[Tuple[str, str]] = []
         for grid_key, dir_attr in cfg.GRID_DIR_MAP.items():
             directory = getattr(fs, dir_attr, None)
             if directory is None:
@@ -209,35 +213,49 @@ class FLOHARModule(GridAnalysisModule):
                 print(f"[FLOHAR] No files found in {directory} for '{grid_key}'.")
                 return None
 
+            load_tasks.append((grid_key, files[0]))
+
+        # Load all GRIB files in parallel
+        def _load_one(task: Tuple[str, str]) -> Tuple[str, Any]:
+            grid_key, filepath = task
             try:
-                ds = load_grib_fast(files[0])
-                # Extract the first (and usually only) data variable
+                ds = load_grib_fast(filepath)
                 var_names = list(ds.data_vars)
                 if not var_names:
-                    print(f"[FLOHAR] No data variables in {files[0]}.")
+                    return (grid_key, None)
+                data_array = ds[var_names[0]]
+                return (grid_key, data_array)
+            except Exception as e:
+                print(f"[FLOHAR] Failed to load '{grid_key}' from {filepath}: {e}")
+                return (grid_key, None)
+
+        with ThreadPoolExecutor(max_workers=len(load_tasks)) as executor:
+            results = list(executor.map(_load_one, load_tasks))
+
+        # Assemble grids dict
+        grids = {}
+        ref_shape = None
+
+        for grid_key, data_array in results:
+            if data_array is None:
+                print(f"[FLOHAR] No data for '{grid_key}'.")
+                return None
+
+            arr_2d = data_array.values
+
+            if ref_shape is None:
+                ref_shape = arr_2d.shape
+                grids["latitude"] = data_array.coords["latitude"].values
+                grids["longitude"] = data_array.coords["longitude"].values
+            else:
+                if arr_2d.shape != ref_shape:
+                    print(
+                        f"[FLOHAR] Grid shape mismatch for '{grid_key}': "
+                        f"expected {ref_shape}, got {arr_2d.shape}."
+                    )
                     return None
 
-                data_array = ds[var_names[0]]
-                arr_2d = data_array.values
-
-                # Store lat/lon from first grid
-                if ref_shape is None:
-                    ref_shape = arr_2d.shape
-                    grids["latitude"] = data_array.coords["latitude"].values
-                    grids["longitude"] = data_array.coords["longitude"].values
-                else:
-                    if arr_2d.shape != ref_shape:
-                        print(
-                            f"[FLOHAR] Grid shape mismatch for '{grid_key}': "
-                            f"expected {ref_shape}, got {arr_2d.shape}."
-                        )
-                        return None
-
-                grids[grid_key] = arr_2d
-
-            except Exception as e:
-                print(f"[FLOHAR] Failed to load '{grid_key}' from {files[0]}: {e}")
-                return None
+            grids[grid_key] = arr_2d
 
         return grids
 

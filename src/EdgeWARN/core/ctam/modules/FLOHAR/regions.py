@@ -5,12 +5,14 @@ Thresholds the composite threat grid, applies connected-component
 labeling (8-connectivity), filters by area, polygonizes regions,
 and computes per-region metadata.
 
-Memory-optimised: uses scipy.ndimage.find_objects for bounding-box
-slicing instead of full-grid boolean masks per region.
+Performance notes:
+    - Uses scipy.ndimage.find_objects for bounding-box slicing (no full-grid masks)
+    - Vectorized area computation (no Python loops over rows)
+    - sum_labels for single-pass pixel counting during area filtering
 """
 
 import numpy as np
-from scipy.ndimage import label, find_objects
+from scipy.ndimage import label, find_objects, sum_labels
 from typing import List, Dict, Any, Optional, Tuple
 
 from . import config as cfg
@@ -25,7 +27,7 @@ _EARTH_RADIUS_KM = 6371.0
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Pixel area calculation
+# Pixel area calculation (vectorized)
 # ─────────────────────────────────────────────────────────────────────
 
 def _pixel_area_km2(lat: float, dlat: float, dlon: float) -> float:
@@ -46,14 +48,34 @@ def _pixel_area_km2(lat: float, dlat: float, dlon: float) -> float:
     return abs(height * width)
 
 
-def _compute_region_area_km2(
+def _pixel_area_column_km2(
+    lat_coords: np.ndarray, dlat: float, dlon: float
+) -> np.ndarray:
+    """
+    Vectorized pixel area for each row (latitude), returned as a 1D array.
+
+    Args:
+        lat_coords: 1D array of latitude values
+        dlat: Grid spacing in latitude (degrees)
+        dlon: Grid spacing in longitude (degrees)
+
+    Returns:
+        1D float32 array of pixel areas in km² for each row
+    """
+    lat_rad = np.radians(lat_coords)
+    height = _EARTH_RADIUS_KM * np.radians(dlat)
+    width = _EARTH_RADIUS_KM * np.cos(lat_rad) * np.radians(dlon)
+    return np.abs(height * width).astype(np.float32)
+
+
+def _compute_region_area_km2_vectorized(
     region_mask: np.ndarray,
     lat_coords: np.ndarray,
     dlat: float,
     dlon: float,
 ) -> float:
     """
-    Compute total area of a labeled region in km².
+    Compute total area of a labeled region in km² (fully vectorized).
 
     Args:
         region_mask: 2D boolean mask of the region (may be a sub-grid slice)
@@ -64,13 +86,9 @@ def _compute_region_area_km2(
     Returns:
         Total area in km²
     """
-    row_indices = np.where(np.any(region_mask, axis=1))[0]
-    total_area = 0.0
-    for row_idx in row_indices:
-        n_pixels = np.sum(region_mask[row_idx])
-        pixel_area = _pixel_area_km2(lat_coords[row_idx], dlat, dlon)
-        total_area += n_pixels * pixel_area
-    return total_area
+    pixels_per_row = region_mask.sum(axis=1)  # vectorized row counts
+    pixel_areas = _pixel_area_column_km2(lat_coords, dlat, dlon)
+    return float(np.sum(pixels_per_row * pixel_areas))
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -95,9 +113,10 @@ def extract_regions(
         1. Threshold: mask pixels where threat_score >= threshold
         2. Static water body mask (if provided): zero-out permanent water
         3. Connected-component labeling with 8-connectivity
-        4. Filter by minimum area using bounding-box slices (memory-efficient)
-        5. Cap at max_regions (largest first)
-        6. Polygonize and compute metadata
+        4. Fast area filtering using sum_labels + pixel area estimates
+        5. Precise area calculation with find_objects bounding-box slicing
+        6. Cap at max_regions (largest first)
+        7. Polygonize and compute metadata
 
     Args:
         threat_grid:      2D int array of threat scores (0–100)
@@ -135,25 +154,49 @@ def extract_regions(
     dlat = abs(lat_coords[1] - lat_coords[0]) if len(lat_coords) > 1 else 0.01
     dlon = abs(lon_coords[1] - lon_coords[0]) if len(lon_coords) > 1 else 0.01
 
-    # ── Step 4: Use find_objects for bounding-box slicing ───────────
-    # find_objects returns a list of (row_slice, col_slice) per label,
-    # avoiding full-grid boolean masks that cause OOM on CONUS grids.
+    # ── Step 4: Fast pre-filter using sum_labels ────────────────────
+    # Count pixels per label in a single vectorized pass
+    label_ids = np.arange(1, num_features + 1)
+    pixel_counts = sum_labels(
+        np.ones(labeled_array.shape, dtype=np.int32),
+        labeled_array,
+        label_ids,
+    )
+
+    # Approximate minimum pixel count from min_area and mid-latitude pixel size
+    mid_lat = float(np.median(lat_coords))
+    approx_pixel_area = _pixel_area_km2(mid_lat, dlat, dlon)
+    if approx_pixel_area > 0:
+        # Use a conservative lower bound (80% of mid-lat area) to avoid
+        # false rejections at extreme latitudes
+        min_pixel_count = int(min_area_km2 / (approx_pixel_area * 1.25))
+    else:
+        min_pixel_count = 0
+
+    # Pre-filter: skip labels with too few pixels
+    candidate_ids = label_ids[pixel_counts >= max(min_pixel_count, 1)]
+
+    if len(candidate_ids) == 0:
+        return []
+
+    # ── Step 5: Precise area with find_objects bounding-box slicing ──
     slices = find_objects(labeled_array)
 
     regions_with_area = []
-    for region_id, bbox in enumerate(slices, start=1):
+    for region_id in candidate_ids:
+        bbox = slices[region_id - 1]  # find_objects is 0-indexed
         if bbox is None:
-            continue  # label was removed (e.g. by water body mask)
+            continue
 
         row_slice, col_slice = bbox
 
-        # Extract sub-grids for this region's bounding box only
+        # Extract sub-grid mask (bounded to bbox)
         label_sub = labeled_array[row_slice, col_slice]
         region_mask_sub = label_sub == region_id
 
-        # Compute area using sub-grid lat coords
+        # Precise area with vectorized computation
         lat_sub = lat_coords[row_slice]
-        area_km2 = _compute_region_area_km2(region_mask_sub, lat_sub, dlat, dlon)
+        area_km2 = _compute_region_area_km2_vectorized(region_mask_sub, lat_sub, dlat, dlon)
 
         if area_km2 >= min_area_km2:
             regions_with_area.append((region_id, bbox, area_km2))
@@ -161,11 +204,11 @@ def extract_regions(
     if not regions_with_area:
         return []
 
-    # ── Step 5: Sort by area (largest first), cap at max ────────────
+    # ── Step 6: Sort by area (largest first), cap at max ────────────
     regions_with_area.sort(key=lambda x: x[2], reverse=True)
     regions_with_area = regions_with_area[:max_regions]
 
-    # ── Step 6: Polygonize and compute metadata ─────────────────────
+    # ── Step 7: Polygonize and compute metadata ─────────────────────
     results = []
     for idx, (region_id, bbox, area_km2) in enumerate(regions_with_area, start=1):
         row_slice, col_slice = bbox
@@ -184,7 +227,7 @@ def extract_regions(
         sub_rows, sub_cols = np.where(region_mask_sub)
         full_rows = sub_rows + row_slice.start
         full_cols = sub_cols + col_slice.start
-        weights = threat_grid[full_rows, full_cols].astype(float)
+        weights = threat_grid[full_rows, full_cols].astype(np.float32)
         weight_sum = weights.sum()
         if weight_sum > 0:
             centroid_lat = float(np.average(lat_coords[full_rows], weights=weights))
