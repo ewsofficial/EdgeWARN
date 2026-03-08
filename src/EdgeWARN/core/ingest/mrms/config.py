@@ -15,6 +15,7 @@ def get_mrms_modifiers():
         ("CONUS", "FLASH_HP_MAXUNITSTREAMFLOW_00.00", fs.MRMS_FLASH_HP_MAXUNIT_DIR),
         ("CONUS", "FLASH_SAC_MAXSOILSAT_00.00", fs.MRMS_FLASH_SAC_MAXSOIL_DIR),
         ("CONUS", "FLASH_QPE_FFGMAX_00.00", fs.MRMS_FLASH_FFGMAX_DIR),
+        ("CONUS", "RadarQualityIndex_00.00", fs.MRMS_RQI_DIR),
         ("CONUS", "MESH_00.50", fs.MRMS_MESH_DIR),
         ("CONUS", "WarmRainProbability_00.50", fs.MRMS_RAIN_DIR),
         ("CONUS", "NLDN_CG_005min_AvgDensity_00.00", fs.MRMS_NLDN_DIR),
