@@ -63,8 +63,8 @@ def test_uniform_extreme():
         ari_01h=_make_grid(500),
         crest_streamflow=_make_grid(10),  # very high streamflow
         hp_streamflow=_make_grid(10),
-        soil_sat=_make_grid(0.95),     # near full saturation
-        ffg_ratio=_make_grid(5.0),     # well above 2.0
+        soil_sat=_make_grid(95.0),     # near full saturation (percentage)
+        ffg_ratio=_make_grid(500.0),   # well above 200% (percentage)
         rqi=_ones(),                   # perfect quality
     )
     assert np.all(threat >= 90), f"Min threat score: {threat.min()}"
@@ -101,8 +101,8 @@ def test_ari_only():
 
 @pytest.mark.parametrize("ratio,expected", [
     (0.5, 0.0),     # below ramp start
-    (0.75, 0.0),    # at ramp start → 0
-    (1.0, 0.5),     # at midpoint
+    (0.85, 0.0),    # at ramp start → 0
+    (1.25, 0.5),    # at midpoint
     (2.0, 1.0),     # at ramp end
     (3.0, 1.0),     # above ramp end (clamped)
 ])
@@ -127,7 +127,7 @@ def test_nan_handling():
     threat, r, h, f = compute_threat_grid(
         ari_max=grid, ari_30m=grid, ari_01h=grid,
         crest_streamflow=grid, hp_streamflow=grid,
-        soil_sat=_make_grid(0.5, shape), ffg_ratio=grid,
+        soil_sat=_make_grid(50.0, shape), ffg_ratio=grid,
         rqi=_ones(shape),
     )
     assert not np.any(np.isnan(threat)), "NaN leaked into threat grid"
@@ -156,13 +156,13 @@ def test_soil_saturation_boost():
         ari_01h=_make_grid(50),
         crest_streamflow=_make_grid(2.0),
         hp_streamflow=_make_grid(2.0),
-        ffg_ratio=_make_grid(1.5),
+        ffg_ratio=_make_grid(150.0), # 150% ratio
         rqi=_ones(),
     )
-    # Without boost (soil_sat = 0.5)
-    threat_low, _, _, _ = compute_threat_grid(soil_sat=_make_grid(0.5), **base_args)
-    # With boost (soil_sat = 0.95)
-    threat_high, _, _, _ = compute_threat_grid(soil_sat=_make_grid(0.95), **base_args)
+    # Without boost (soil_sat = 50.0)
+    threat_low, _, _, _ = compute_threat_grid(soil_sat=_make_grid(50.0), **base_args)
+    # With boost (soil_sat = 95.0)
+    threat_high, _, _, _ = compute_threat_grid(soil_sat=_make_grid(95.0), **base_args)
 
     # High soil sat should produce higher scores
     assert np.all(threat_high >= threat_low), \
@@ -174,12 +174,12 @@ def test_soil_saturation_boost():
 # ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("score,expected_tier", [
-    (24, "none"),
-    (25, "advisory"),
-    (49, "advisory"),
-    (50, "warning"),
-    (74, "warning"),
-    (75, "emergency"),
+    (29, "none"),
+    (30, "advisory"),
+    (54, "advisory"),
+    (55, "warning"),
+    (79, "warning"),
+    (80, "emergency"),
     (100, "emergency"),
     (0, "none"),
 ])
@@ -193,11 +193,11 @@ def test_severity_boundaries(score, expected_tier):
 # ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("rqi_val,expected_weight", [
-    (1.0, 1.0),     # full quality → full weight
-    (0.8, 1.0),     # threshold → full weight
-    (0.65, 0.7),    # mid-ramp → ~70%
-    (0.3, 0.0),     # min threshold → 0%
-    (0.2, 0.0),     # below threshold → hard mask
+    (1.0, 1.0),
+    (0.9, 1.0),
+    (0.7, 1.0),     # Now acts as a binary mask, so 0.7 >= 0.5 threshold gets 1.0
+    (0.5, 1.0),
+    (0.2, 0.0),     # Below threshold -> hard mask
 ])
 def test_rqi_quality_control(rqi_val, expected_weight):
     """RQI weighting matches spec."""
