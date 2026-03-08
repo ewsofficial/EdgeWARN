@@ -107,7 +107,8 @@ def classify_severity(score: np.ndarray) -> np.ndarray:
     Returns string array with 'none', 'advisory', 'warning', 'emergency'.
     """
     result = np.full(score.shape, "none", dtype="U10")
-    for threshold, label in cfg.SEVERITY_TIERS:
+    # Iterate ascending so higher tiers overwrite lower ones
+    for threshold, label in reversed(cfg.SEVERITY_TIERS):
         result = np.where(score >= threshold, label, result)
     return result
 
@@ -160,46 +161,52 @@ def compute_threat_grid(
     """
     shape = ari_max.shape
 
-    # ── Step 0: Mask sentinels ──────────────────────────────────────
-    ari_max_c = _mask_sentinels(ari_max)
-    ari_30m_c = _mask_sentinels(ari_30m)
-    ari_01h_c = _mask_sentinels(ari_01h)
-    crest_c = _mask_sentinels(crest_streamflow)
-    hp_c = _mask_sentinels(hp_streamflow)
-    soil_c = _mask_sentinels(soil_sat)
-    ffg_c = _mask_sentinels(ffg_ratio)
-    rqi_c = _mask_sentinels(rqi)
-
     # ── Pillar 1: Rainfall Extremity ────────────────────────────────
+    # Process ARI grids and free sentinel-masked copies immediately
+    ari_max_c = _mask_sentinels(ari_max)
     ari_max_norm = _normalize_ari(ari_max_c)
-    ari_30m_norm = _normalize_ari(ari_30m_c)
-    ari_01h_norm = _normalize_ari(ari_01h_c)
+    del ari_max_c
 
-    # Weighted average with NaN redistribution
+    ari_30m_c = _mask_sentinels(ari_30m)
+    ari_30m_norm = _normalize_ari(ari_30m_c)
+    del ari_30m_c
+
+    ari_01h_c = _mask_sentinels(ari_01h)
+    ari_01h_norm = _normalize_ari(ari_01h_c)
+    del ari_01h_c
+
     indicators = [
         (ari_max_norm, cfg.ARI_SUB_WEIGHTS["ari_max"]),
         (ari_30m_norm, cfg.ARI_SUB_WEIGHTS["ari_30m"]),
         (ari_01h_norm, cfg.ARI_SUB_WEIGHTS["ari_01h"]),
     ]
     rainfall_grid = _weighted_nanmean(indicators, shape)
+    del ari_max_norm, ari_30m_norm, ari_01h_norm
 
     # ── Pillar 2: Hydrologic Response ───────────────────────────────
+    crest_c = _mask_sentinels(crest_streamflow)
     crest_norm = _sigmoid(crest_c, cfg.CREST_SIGMOID["x0"], cfg.CREST_SIGMOID["k"])
+    del crest_c
+
+    hp_c = _mask_sentinels(hp_streamflow)
     hp_norm = _sigmoid(hp_c, cfg.HP_SIGMOID["x0"], cfg.HP_SIGMOID["k"])
+    del hp_c
+
+    soil_c = _mask_sentinels(soil_sat)
     soil_norm = _normalize_soil_sat(soil_c)
 
-    # Streamflow blend
     stream_indicators = [
         (crest_norm, cfg.CREST_SUB_WEIGHT),
         (hp_norm, cfg.HP_SUB_WEIGHT),
     ]
     streamflow_blend = _weighted_nanmean(stream_indicators, shape)
+    del crest_norm, hp_norm
 
-    # Hydro score = streamflow blend * 0.70 + soil factor * 0.30
     hydro_grid = (
         streamflow_blend * cfg.HYDRO_STREAMFLOW_WEIGHT
         + soil_norm * cfg.HYDRO_SOIL_WEIGHT
     )
+    del streamflow_blend, soil_norm
 
     # Soil saturation conditioning: boost when soil > 0.85
     soil_boost_mask = soil_c > cfg.SOIL_BOOST_THRESHOLD
@@ -210,15 +217,17 @@ def compute_threat_grid(
             1.0 + cfg.SOIL_BOOST_MAX * ((soil_c - cfg.SOIL_BOOST_THRESHOLD) / boost_range),
             1.0,
         )
-        # Clamp boost_factor NaNs to 1.0
         boost_factor = np.where(np.isnan(boost_factor), 1.0, boost_factor)
         hydro_grid = hydro_grid * boost_factor
+        del boost_factor
+    del soil_c, soil_boost_mask
 
-    # Clamp hydro_grid to [0, 1]
     hydro_grid = np.clip(hydro_grid, 0.0, 1.0)
 
     # ── Pillar 3: Guidance Exceedance ───────────────────────────────
+    ffg_c = _mask_sentinels(ffg_ratio)
     ffg_grid = _normalize_ffg(np.nan_to_num(ffg_c, nan=0.0))
+    del ffg_c
 
     # ── Replace NaN pillar scores with 0 ────────────────────────────
     rainfall_grid = np.nan_to_num(rainfall_grid, nan=0.0)
@@ -233,11 +242,15 @@ def compute_threat_grid(
     )
 
     # ── Quality control: RQI weighting ──────────────────────────────
+    rqi_c = _mask_sentinels(rqi)
     rqi_w = _rqi_weight(np.nan_to_num(rqi_c, nan=0.0))
+    del rqi_c
     adjusted = composite * rqi_w
+    del composite, rqi_w
 
     # ── Scale to 0–100 integer ──────────────────────────────────────
     threat_grid = np.clip(np.round(adjusted * 100).astype(int), 0, 100)
+    del adjusted
 
     return threat_grid, rainfall_grid, hydro_grid, ffg_grid
 

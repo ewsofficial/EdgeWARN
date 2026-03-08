@@ -274,6 +274,6 @@ class FLOHARModule(GridAnalysisModule):
         filepath = output_dir / filename
 
         with open(filepath, "w") as f:
-            json.dump(feature_collection, f, indent=2)
+            json.dump(feature_collection, f, separators=(",", ":"))
 
         print(f"[FLOHAR] Saved GeoJSON to {filepath}")
