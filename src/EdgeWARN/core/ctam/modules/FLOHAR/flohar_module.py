@@ -142,7 +142,7 @@ class FLOHARModule(GridAnalysisModule):
 
             if severity == "emergency":
                 alerts.append(AlertPayload(
-                    alert_type="flash_flood",
+                    alert_type="FF",
                     source="FLOHAR",
                     cell_id=f"flohar_region_{region_id}",
                     geometry=polygon,
@@ -158,7 +158,7 @@ class FLOHARModule(GridAnalysisModule):
                 ))
             elif severity == "warning":
                 alerts.append(AlertPayload(
-                    alert_type="flash_flood",
+                    alert_type="FF",
                     source="FLOHAR",
                     cell_id=f"flohar_region_{region_id}",
                     geometry=polygon,

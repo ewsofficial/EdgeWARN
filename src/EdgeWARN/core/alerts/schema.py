@@ -35,6 +35,12 @@ class AlertPayload:
     severity: str = "warning"
     threats: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def id(self) -> str:
+        """Formatted alert ID: id:{alert_type}:{YYYY}.{MM}.{DD}.{HH}.{MM}.{SS}"""
+        formatted_time = self.effective_time.strftime("%Y.%m.%d.%H.%M.%S")
+        return f"id:{self.alert_type}:{formatted_time}"
+
     # ------------------------------------------------------------------
     # Serialisation helper
     # ------------------------------------------------------------------
@@ -43,7 +49,8 @@ class AlertPayload:
         return {
             "alert_type": self.alert_type,
             "source": self.source,
-            "id": self.cell_id,
+            "id": self.id,
+            "cell_id": self.cell_id,
             "geometry": self.geometry,
             "effective": self.effective_time.isoformat(),
             "expires": self.expiry_time.isoformat(),

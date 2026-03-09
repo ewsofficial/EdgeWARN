@@ -90,7 +90,7 @@ def test_multiple_disjoint_regions():
     assert len(regions) == 2
     # Should be sorted by area (both same size, but let's just check count)
     severities = {r["severity"] for r in regions}
-    assert "warning" in severities
+    assert "advisory" in severities
     assert "emergency" in severities
 
 

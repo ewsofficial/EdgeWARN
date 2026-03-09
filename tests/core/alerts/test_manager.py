@@ -10,12 +10,12 @@ from EdgeWARN.core.alerts.manager import AlertManager
 
 @pytest.fixture
 def override_alerts_dir(tmp_path):
-    """Redirect ALERTS_DIR to a temporary directory for isolation."""
-    original = getattr(fs, "ALERTS_DIR", None)
-    fs.ALERTS_DIR = tmp_path / "Alerts"
-    yield fs.ALERTS_DIR
+    """Redirect EDGEWARN_ALERTS_DIR to a temporary directory for isolation."""
+    original = getattr(fs, "EDGEWARN_ALERTS_DIR", None)
+    fs.EDGEWARN_ALERTS_DIR = tmp_path / "EdgeWARN"
+    yield fs.EDGEWARN_ALERTS_DIR
     if original is not None:
-        fs.ALERTS_DIR = original
+        fs.EDGEWARN_ALERTS_DIR = original
 
 
 # ------------------------------------------------------------------
@@ -40,7 +40,8 @@ class TestAlertPayload:
 
         assert d["alert_type"] == "severe_weather"
         assert d["source"] == "StormCast"
-        assert d["id"] == "cell_42"
+        assert d["id"] == "id:severe_weather:2026.03.04.12.00.00"
+        assert d["cell_id"] == "cell_42"
         assert d["severity"] == "warning"
         assert d["threats"] == {"hail": True}
         assert d["effective"] == effective.isoformat()
@@ -74,7 +75,8 @@ class TestAlertManager:
             data = json.load(f)
 
         assert data["source"] == "StormCast"
-        assert data["id"] == "cell_99"
+        assert data["id"] == "id:severe_weather:2026.03.04.12.00.00"
+        assert data["cell_id"] == "cell_99"
         assert data["alert_type"] == "severe_weather"
         assert data["geometry"] == [[35.0, -97.0], [35.1, -97.0]]
 

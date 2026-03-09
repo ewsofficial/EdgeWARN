@@ -96,9 +96,16 @@ def storm_cells():
     ]
 
 
-def test_integrate_rap_basic(mock_io_manager, mock_datasets, storm_cells):
+def test_integrate_rap_basic(mock_io_manager, storm_cells):
     """Test basic RAP integration with isobaric winds."""
-    with patch("cfgrib.open_datasets", return_value=mock_datasets):
+    with patch("EdgeWARN.core.process.integrate.integrate_rap.RAPPointExtractor") as MockExtractor:
+        mock_instance = MockExtractor.return_value
+        mock_instance.extract_batch.return_value = {
+            "wind_field.u850": {1: 10.0}, "wind_field.v850": {1: 5.0},
+            "wind_field.u700": {1: 15.0}, "wind_field.v700": {1: 5.0},
+            "wind_field.u500": {1: 25.0}, "wind_field.v500": {1: 5.0},
+            "wind_field.u250": {1: 40.0}, "wind_field.v250": {1: 5.0}
+        }
         results = integrate_rap(storm_cells, "dummy_path.grib2", mock_io_manager)
         
     cell = results[0]
@@ -113,9 +120,15 @@ def test_integrate_rap_basic(mock_io_manager, mock_datasets, storm_cells):
     assert wind['u250'] == 40.0
 
 
-def test_integrate_rap_derived_fields(mock_io_manager, mock_datasets, storm_cells):
+def test_integrate_rap_derived_fields(mock_io_manager, storm_cells):
     """Test derived field calculation (dewpoint_depression)."""
-    with patch("cfgrib.open_datasets", return_value=mock_datasets):
+    with patch("EdgeWARN.core.process.integrate.integrate_rap.RAPPointExtractor") as MockExtractor:
+        mock_instance = MockExtractor.return_value
+        mock_instance.extract_batch.return_value = {
+            "temp_2m": {1: 300.0},
+            "dewpoint_2m": {1: 290.0},
+            "freezing_level_m": {1: 3500.0}
+        }
         results = integrate_rap(storm_cells, "dummy_path.grib2", mock_io_manager)
         
     cell = results[0]
@@ -141,7 +154,9 @@ def test_integrate_rap_no_file(mock_io_manager, storm_cells):
 
 def test_integrate_rap_load_fail(mock_io_manager, storm_cells):
     """Test dataset load failure."""
-    with patch("cfgrib.open_datasets", side_effect=Exception("Load failed")):
+    with patch("EdgeWARN.core.process.integrate.integrate_rap.RAPPointExtractor") as MockExtractor:
+        mock_instance = MockExtractor.return_value
+        mock_instance.extract_batch.side_effect = Exception("Load failed")
         results = integrate_rap(storm_cells, "bad_path.grib2", mock_io_manager)
         
     assert results == storm_cells
@@ -150,8 +165,10 @@ def test_integrate_rap_load_fail(mock_io_manager, storm_cells):
 
 def test_integrate_rap_empty_datasets(mock_io_manager, storm_cells):
     """Test empty datasets list."""
-    with patch("cfgrib.open_datasets", return_value=[]):
+    with patch("EdgeWARN.core.process.integrate.integrate_rap.RAPPointExtractor") as MockExtractor:
+        mock_instance = MockExtractor.return_value
+        mock_instance.extract_batch.return_value = {}
         results = integrate_rap(storm_cells, "empty.grib2", mock_io_manager)
         
-    # Should return unchanged - no lat/lon found
-    mock_io_manager.write_error.assert_called()
+    # Should return unchanged
+    assert results == storm_cells
