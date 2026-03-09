@@ -1,12 +1,9 @@
 """
 Config-driven RAP integration.
-Optimized: Single cfgrib.open_datasets call, then select needed datasets from list.
-Optimized: Grid-aware indexing for O(1) cell-to-grid lookups.
+Optimized: Zero-grid-memory extraction via eccodes RAPPointExtractor.
 """
-import numpy as np
-import cfgrib
 from .config import get_rap_products
-from .grid_index import GridIndex
+from util.grib_loader import RAPPointExtractor
 
 # Transformation functions
 TRANSFORMS = {
@@ -17,7 +14,7 @@ TRANSFORMS = {
 def integrate_rap(storm_cells, rap_file_path, io_manager):
     """
     Integrate RAP data into storm cells.
-    Uses single cfgrib.open_datasets call for efficiency.
+    Uses RAPPointExtractor for efficient point-based data extraction.
     """
     if not storm_cells:
         return storm_cells
@@ -30,131 +27,47 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
     products = config.get("products", [])
     derived = config.get("derived", [])
 
-    # Load ALL datasets in ONE call (efficient: single scan of GRIB file)
+    # Prepare cell coordinates
+    cell_coords = {}
+    for cell in storm_cells:
+        cid = cell.get("id")
+        centroid = cell.get("centroid", [0, 0])
+        cell_coords[cid] = (centroid[0], centroid[1])
+
+    # Run batch extraction
     try:
-        all_datasets = cfgrib.open_datasets(rap_file_path)
-        io_manager.write_debug(f"Loaded {len(all_datasets)} datasets from RAP")
+        print(">>> [DEBUG] Before RAPPointExtractor initialization", flush=True)
+        extractor = RAPPointExtractor(rap_file_path)
+        print(">>> [DEBUG] After RAPPointExtractor initialization, before extract_batch", flush=True)
+        extracted_data = extractor.extract_batch(products, cell_coords)
+        print(">>> [DEBUG] After extract_batch", flush=True)
+        io_manager.write_debug(f"Extracted {len(extracted_data)} keys from RAP")
     except Exception as e:
-        io_manager.write_error(f"Failed to load RAP file: {e}")
+        io_manager.write_error(f"Failed to extract RAP data: {e}")
         return storm_cells
 
-    # Extract lat/lon from first available dataset
-    lat_vals = None
-    lon_vals = None
-    for ds in all_datasets:
-        if 'latitude' in ds.coords:
-            lat_vals = ds.latitude.values
-            lon_vals = ds.longitude.values
-            if lon_vals.max() > 180:
-                lon_vals = np.where(lon_vals > 180, lon_vals - 360, lon_vals)
-            break
-
-    if lat_vals is None:
-        io_manager.write_error("No lat/lon in RAP datasets")
-        return storm_cells
-
-    # Pre-compute cell indices ONCE
-    cell_indices = _precompute_cell_indices(storm_cells, lat_vals, lon_vals)
-
-    # Find matching datasets for each product
-    def find_dataset_for_product(product):
-        """Find the dataset that matches the product's filter and has the variable."""
-        filter_keys = product["filter"]
-        var_name = product["var"]
-        level_type = filter_keys.get("typeOfLevel")
-        level = filter_keys.get("level")
-
-        for ds in all_datasets:
-            if level_type not in ds.coords:
-                continue
-            if var_name not in ds.data_vars:
-                continue
-            
-            coord_val = ds[level_type].values
-            if level is not None:
-                # Check level match
-                if coord_val.ndim == 0:
-                    if float(coord_val) != float(level):
-                        continue
-                else:
-                    if float(level) not in coord_val:
-                        continue
-            return ds
-        return None
-
-    # Process each product
+    # Apply extracted data to cells
     for product in products:
-        var_name = product["var"]
-        ds = find_dataset_for_product(product)
-        if ds is None:
-            continue
-
         transform_fn = TRANSFORMS.get(product.get("transform"), lambda x: x)
-
+        
         if "levels" in product:
             levels = product["levels"]
             key_template = product["key_template"]
-            level_coord = product["filter"]["typeOfLevel"]
-
+            
             for level in levels:
-                try:
-                    data = ds[var_name].sel({level_coord: level}).values
-                    key = key_template.format(level=level)
-                    _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn)
-                except Exception:
-                    pass
+                key = key_template.format(level=level)
+                if key in extracted_data:
+                    _apply_to_cells(storm_cells, extracted_data[key], key, transform_fn)
         else:
             key = product["key"]
-            try:
-                data = ds[var_name].values
-                _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn)
-            except Exception:
-                pass
-
+            if key in extracted_data:
+                _apply_to_cells(storm_cells, extracted_data[key], key, transform_fn)
+                
     # Calculate derived fields
     for d in derived:
         _calculate_derived(storm_cells, d["formula"], d["key"])
 
-    # Cleanup all datasets
-    for ds in all_datasets:
-        try:
-            ds.close()
-        except Exception:
-            pass
-
     return storm_cells
-
-
-def _precompute_cell_indices(storm_cells, lat_vals, lon_vals):
-    """
-    Pre-compute grid indices for all cells using optimized grid indexing.
-    
-    Uses GridIndex factory to automatically select the optimal indexing
-    strategy (regular grid O(1) or k-d tree O(log N)) based on grid type.
-    
-    Args:
-        storm_cells: List of storm cell dictionaries with 'id' and 'centroid'
-        lat_vals: 2D array of latitudes from RAP grid
-        lon_vals: 2D array of longitudes from RAP grid
-    
-    Returns:
-        Dictionary mapping cell_id -> (lat_idx, lon_idx) or None
-    """
-    # Create appropriate indexer based on grid type (auto-detected)
-    indexer = GridIndex.create(lat_vals, lon_vals)
-    
-    indices = {}
-    for cell in storm_cells:
-        cell_id = cell.get("id")
-        centroid = cell.get("centroid", [0, 0])
-        lat, lon = centroid[0], centroid[1]
-        
-        try:
-            indices[cell_id] = indexer.query(lat, lon)
-        except Exception:
-            indices[cell_id] = None
-    
-    return indices
 
 
 def _set_nested(root, key, value):
@@ -171,21 +84,23 @@ def _set_nested(root, key, value):
     curr[parts[-1]] = value
 
 
-def _apply_to_cells_fast(storm_cells, cell_indices, data, key, transform_fn):
-    """Extract value using pre-computed indices."""
+def _apply_to_cells(storm_cells, cell_values, key, transform_fn):
+    """Apply extracted values to cells."""
     for cell in storm_cells:
         if "properties" not in cell:
             cell["properties"] = {}
-        idx = cell_indices.get(cell.get("id"))
+            
+        cid = cell.get("id")
+        val = cell_values.get(cid)
         
-        value = None
-        if idx is not None:
+        final_val = None
+        if val is not None:
             try:
-                value = round(transform_fn(float(data[idx])), 2)
+                final_val = round(transform_fn(float(val)), 2)
             except Exception:
-                value = None
-        
-        _set_nested(cell["properties"], key, value)
+                final_val = None
+                
+        _set_nested(cell["properties"], key, final_val)
 
 
 def _calculate_derived(storm_cells, formula, key):
