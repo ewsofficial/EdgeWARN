@@ -125,40 +125,16 @@ class TestDetectToIntegrateWorkflow:
         """Test that RAP integration adds wind data"""
         from EdgeWARN.core.process.integrate.integrate_rap import integrate_rap
         
-        # Create synthetic RAP datasets matching cfgrib structure
-        lats = np.linspace(30, 40, 10)
-        lons = np.linspace(260, 270, 10)  # 0-360 format
-        
-        levels = np.array([850, 700, 500, 250])
-        
-        u_data = np.zeros((4, 10, 10))
-        u_data[0] = 10.0  # 850mb
-        u_data[1] = 15.0  # 700mb
-        u_data[2] = 30.0  # 500mb
-        u_data[3] = 40.0  # 250mb
-        
-        v_data = np.zeros((4, 10, 10))
-        v_data[0] = 5.0
-        v_data[1] = 8.0
-        v_data[2] = 15.0
-        v_data[3] = 20.0
-        
-        import xarray as xr
-        ds = xr.Dataset(
-            {
-                "u": (("isobaricInhPa", "y", "x"), u_data),
-                "v": (("isobaricInhPa", "y", "x"), v_data)
-            },
-            coords={
-                "isobaricInhPa": levels,
-                "latitude": (("y", "x"), np.broadcast_to(lats[:, None], (10, 10))),
-                "longitude": (("y", "x"), np.broadcast_to(lons[None, :], (10, 10)))
-            }
-        )
-        
         mock_io = MagicMock()
         
-        with patch('cfgrib.open_datasets', return_value=[ds]):
+        with patch('EdgeWARN.core.process.integrate.integrate_rap.RAPPointExtractor') as MockExtractor:
+            mock_instance = MockExtractor.return_value
+            mock_instance.extract_batch.return_value = {
+                "wind_field.u850": {101: 10.0, 102: 10.0},
+                "wind_field.v850": {101: 5.0, 102: 5.0},
+                "wind_field.u500": {101: 30.0, 102: 30.0},
+                "wind_field.v500": {101: 15.0, 102: 15.0}
+            }
             result = integrate_rap(sample_cell_data, "dummy_path", mock_io)
         
         # Verify wind data was added

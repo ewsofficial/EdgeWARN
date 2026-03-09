@@ -378,7 +378,7 @@ class StormCastModule(AnalysisModule):
 
         return [
             AlertPayload(
-                alert_type="severe_weather",
+                alert_type="TSTM",
                 source=self.name,
                 cell_id=storm_entry.get("id", "unknown_cell"),
                 geometry=polygon,

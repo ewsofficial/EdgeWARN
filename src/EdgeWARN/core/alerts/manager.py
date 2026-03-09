@@ -46,10 +46,10 @@ class AlertManager:
             return False
 
         try:
-            fs.ALERTS_DIR.mkdir(parents=True, exist_ok=True)
+            fs.EDGEWARN_ALERTS_DIR.mkdir(parents=True, exist_ok=True)
 
             filename = f"alert_{alert.source}_{alert.cell_id}.json"
-            alert_file = fs.ALERTS_DIR / filename
+            alert_file = fs.EDGEWARN_ALERTS_DIR / filename
 
             with open(alert_file, "w") as f:
                 json.dump(alert.to_dict(), f, indent=4)
@@ -89,7 +89,7 @@ class AlertManager:
         return AlertPayload(
             alert_type=data.get("alert_type", "unknown"),
             source=data.get("source", "unknown"),
-            cell_id=data.get("id", ""),
+            cell_id=data.get("cell_id", data.get("id", "")),
             geometry=data.get("geometry", []),
             effective_time=_parse_dt(data.get("effective", "")),
             expiry_time=_parse_dt(data.get("expires", "")),
@@ -109,7 +109,7 @@ class AlertManager:
         Returns:
             The ``AlertPayload`` if the file exists, otherwise ``None``.
         """
-        alert_file = fs.ALERTS_DIR / f"alert_{source}_{cell_id}.json"
+        alert_file = fs.EDGEWARN_ALERTS_DIR / f"alert_{source}_{cell_id}.json"
         if not alert_file.exists():
             return None
 
@@ -134,11 +134,11 @@ class AlertManager:
         Returns:
             A list of ``AlertPayload`` objects (may be empty).
         """
-        if not fs.ALERTS_DIR.exists():
+        if not fs.EDGEWARN_ALERTS_DIR.exists():
             return []
 
         results: List[AlertPayload] = []
-        for path in fs.ALERTS_DIR.glob(f"alert_*_{cell_id}.json"):
+        for path in fs.EDGEWARN_ALERTS_DIR.glob(f"alert_*_{cell_id}.json"):
             try:
                 with open(path, "r") as f:
                     data = json.load(f)

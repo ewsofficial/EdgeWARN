@@ -47,7 +47,12 @@ def test_all_zeros():
     produces scores of ~1 after rounding. This is correct behaviour.
     """
     z = _zeros()
-    threat, r, h, f = compute_threat_grid(z, z, z, z, z, z, z, _ones())
+    grids = {
+        "ari_max": z.copy(), "ari_30m": z.copy(), "ari_01h": z.copy(),
+        "crest_streamflow": z.copy(), "hp_streamflow": z.copy(),
+        "soil_sat": z.copy(), "ffg_ratio": z.copy(), "rqi": _ones()
+    }
+    threat, r, h, f = compute_threat_grid(grids)
     assert np.all(threat <= 2), f"Expected near-zero, got max={threat.max()}"
 
 
@@ -57,16 +62,17 @@ def test_all_zeros():
 
 def test_uniform_extreme():
     """Extreme values across all indicators, with RQI=1, should score ≥ 90."""
-    threat, r, h, f = compute_threat_grid(
-        ari_max=_make_grid(500),       # well above ARI ceiling
-        ari_30m=_make_grid(500),
-        ari_01h=_make_grid(500),
-        crest_streamflow=_make_grid(10),  # very high streamflow
-        hp_streamflow=_make_grid(10),
-        soil_sat=_make_grid(95.0),     # near full saturation (percentage)
-        ffg_ratio=_make_grid(500.0),   # well above 200% (percentage)
-        rqi=_ones(),                   # perfect quality
-    )
+    grids = {
+        "ari_max": _make_grid(500),
+        "ari_30m": _make_grid(500),
+        "ari_01h": _make_grid(500),
+        "crest_streamflow": _make_grid(10),
+        "hp_streamflow": _make_grid(10),
+        "soil_sat": _make_grid(95.0),
+        "ffg_ratio": _make_grid(500.0),
+        "rqi": _ones(),
+    }
+    threat, r, h, f = compute_threat_grid(grids)
     assert np.all(threat >= 90), f"Min threat score: {threat.min()}"
 
 
@@ -76,16 +82,17 @@ def test_uniform_extreme():
 
 def test_ari_only():
     """High ARI with zero streamflow/FFG → moderate rainfall score, low others."""
-    threat, r, h, f = compute_threat_grid(
-        ari_max=_make_grid(200),
-        ari_30m=_make_grid(200),
-        ari_01h=_make_grid(200),
-        crest_streamflow=_zeros(),
-        hp_streamflow=_zeros(),
-        soil_sat=_zeros(),
-        ffg_ratio=_zeros(),
-        rqi=_ones(),
-    )
+    grids = {
+        "ari_max": _make_grid(200),
+        "ari_30m": _make_grid(200),
+        "ari_01h": _make_grid(200),
+        "crest_streamflow": _zeros(),
+        "hp_streamflow": _zeros(),
+        "soil_sat": _zeros(),
+        "ffg_ratio": _zeros(),
+        "rqi": _ones(),
+    }
+    threat, r, h, f = compute_threat_grid(grids)
     # Rainfall pillar should be ~1.0 (ARI=200 → ceiling)
     assert np.all(r > 0.9), f"Rainfall pillar too low: {r.min()}"
     # FFG should be 0
@@ -124,12 +131,13 @@ def test_nan_handling():
     grid = _make_grid(100.0, shape)
     grid[2, 2] = np.nan  # inject NaN in one pixel
 
-    threat, r, h, f = compute_threat_grid(
-        ari_max=grid, ari_30m=grid, ari_01h=grid,
-        crest_streamflow=grid, hp_streamflow=grid,
-        soil_sat=_make_grid(50.0, shape), ffg_ratio=grid,
-        rqi=_ones(shape),
-    )
+    grids = {
+        "ari_max": grid.copy(), "ari_30m": grid.copy(), "ari_01h": grid.copy(),
+        "crest_streamflow": grid.copy(), "hp_streamflow": grid.copy(),
+        "soil_sat": _make_grid(50.0, shape), "ffg_ratio": grid.copy(),
+        "rqi": _ones(shape)
+    }
+    threat, r, h, f = compute_threat_grid(grids)
     assert not np.any(np.isnan(threat)), "NaN leaked into threat grid"
 
 
@@ -140,7 +148,12 @@ def test_nan_handling():
 def test_all_nan():
     """All-NaN inputs should produce all-zero threat scores."""
     nans = _make_grid(np.nan)
-    threat, r, h, f = compute_threat_grid(nans, nans, nans, nans, nans, nans, nans, nans)
+    grids = {
+        "ari_max": nans.copy(), "ari_30m": nans.copy(), "ari_01h": nans.copy(),
+        "crest_streamflow": nans.copy(), "hp_streamflow": nans.copy(),
+        "soil_sat": nans.copy(), "ffg_ratio": nans.copy(), "rqi": nans.copy()
+    }
+    threat, r, h, f = compute_threat_grid(grids)
     assert np.all(threat == 0), f"Expected all zeros, got max={threat.max()}"
 
 
@@ -159,10 +172,13 @@ def test_soil_saturation_boost():
         ffg_ratio=_make_grid(150.0), # 150% ratio
         rqi=_ones(),
     )
-    # Without boost (soil_sat = 50.0)
-    threat_low, _, _, _ = compute_threat_grid(soil_sat=_make_grid(50.0), **base_args)
-    # With boost (soil_sat = 95.0)
-    threat_high, _, _, _ = compute_threat_grid(soil_sat=_make_grid(95.0), **base_args)
+    grids_low = base_args.copy()
+    grids_low["soil_sat"] = _make_grid(50.0)
+    threat_low, _, _, _ = compute_threat_grid(grids_low)
+
+    grids_high = base_args.copy()
+    grids_high["soil_sat"] = _make_grid(95.0)
+    threat_high, _, _, _ = compute_threat_grid(grids_high)
 
     # High soil sat should produce higher scores
     assert np.all(threat_high >= threat_low), \
@@ -217,10 +233,12 @@ def test_sentinel_handling():
     sentinel = _make_grid(-999.0, shape)
     normal = _make_grid(100.0, shape)
 
-    threat, _, _, _ = compute_threat_grid(
-        sentinel, sentinel, sentinel,
-        sentinel, sentinel, sentinel,
-        sentinel, _ones(shape),
-    )
+    grids = {
+        "ari_max": sentinel.copy(), "ari_30m": sentinel.copy(), "ari_01h": sentinel.copy(),
+        "crest_streamflow": sentinel.copy(), "hp_streamflow": sentinel.copy(),
+        "soil_sat": sentinel.copy(), "ffg_ratio": sentinel.copy(),
+        "rqi": _ones(shape)
+    }
+    threat, _, _, _ = compute_threat_grid(grids)
     # Sentinel-filled grids → all zeros (treated as NaN)
     assert np.all(threat == 0)
