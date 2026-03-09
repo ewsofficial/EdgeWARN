@@ -17,7 +17,7 @@ Performance notes:
 """
 
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Dict
 
 from . import config as cfg
 
@@ -137,14 +137,7 @@ def classify_severity_scalar(score: int) -> str:
 # ─────────────────────────────────────────────────────────────────────
 
 def compute_threat_grid(
-    ari_max: np.ndarray,
-    ari_30m: np.ndarray,
-    ari_01h: np.ndarray,
-    crest_streamflow: np.ndarray,
-    hp_streamflow: np.ndarray,
-    soil_sat: np.ndarray,
-    ffg_ratio: np.ndarray,
-    rqi: np.ndarray,
+    grids: Dict[str, np.ndarray],
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute per-pixel threat scores from aligned FLASH grids.
@@ -155,16 +148,10 @@ def compute_threat_grid(
 
     Uses float32 throughout to halve memory usage vs float64.
     Applies RQI hard mask early to skip computation on invalid pixels.
+    Grids are progressively popped from the input dict to allow eager GC.
 
     Args:
-        ari_max:          Maximum ARI of QPE (all durations)
-        ari_30m:          ARI for 30-minute QPE
-        ari_01h:          ARI for 1-hour QPE
-        crest_streamflow: CREST max unit streamflow
-        hp_streamflow:    HP max unit streamflow
-        soil_sat:         SAC max soil saturation fraction (0–1)
-        ffg_ratio:        QPE-to-FFG ratio
-        rqi:              Radar Quality Index (0–1)
+        grids: Dictionary mapped to required grid keys. Handled destructively.
 
     Returns:
         Tuple of:
@@ -173,14 +160,15 @@ def compute_threat_grid(
             hydro_grid:    2D float32 array — Pillar 2 score (0–1)
             ffg_grid:      2D float32 array — Pillar 3 score (0–1)
     """
-    shape = ari_max.shape
+    rqi = grids.pop("rqi")
+    shape = rqi.shape
 
     # ── Early RQI masking ───────────────────────────────────────────
     # Compute RQI weight first so we can identify pixels to skip.
     # Pixels with rqi < RQI_MIN_WEIGHT_THRESHOLD will always be 0.
     rqi_c = _mask_sentinels(rqi)
     rqi_w = _rqi_weight(np.nan_to_num(rqi_c, nan=np.float32(0.0)))
-    del rqi_c
+    del rqi, rqi_c
 
     # valid_mask: True where RQI is high enough to produce nonzero output
     valid_mask = rqi_w > 0
@@ -188,23 +176,27 @@ def compute_threat_grid(
     # If no valid pixels, return zeros immediately
     if not np.any(valid_mask):
         zeros = np.zeros(shape, dtype=_DTYPE)
+        grids.clear() # Free remaining grids
         return (
             np.zeros(shape, dtype=int),
             zeros.copy(), zeros.copy(), zeros.copy(),
         )
 
     # ── Pillar 1: Rainfall Extremity ────────────────────────────────
+    ari_max = grids.pop("ari_max")
     ari_max_c = _mask_sentinels(ari_max)
     ari_max_norm = _normalize_ari(ari_max_c)
-    del ari_max_c
+    del ari_max, ari_max_c
 
+    ari_30m = grids.pop("ari_30m")
     ari_30m_c = _mask_sentinels(ari_30m)
     ari_30m_norm = _normalize_ari(ari_30m_c)
-    del ari_30m_c
+    del ari_30m, ari_30m_c
 
+    ari_01h = grids.pop("ari_01h")
     ari_01h_c = _mask_sentinels(ari_01h)
     ari_01h_norm = _normalize_ari(ari_01h_c)
-    del ari_01h_c
+    del ari_01h, ari_01h_c
 
     indicators = [
         (ari_max_norm, cfg.ARI_SUB_WEIGHTS["ari_max"]),
@@ -215,20 +207,20 @@ def compute_threat_grid(
     del ari_max_norm, ari_30m_norm, ari_01h_norm
 
     # ── Pillar 2: Hydrologic Response ───────────────────────────────
-    # For streamflow, sentinels usually mean 0 flow (no data = no flow in MRMS).
-    # If we mask them as NaN, the engine redistributes their 70% weight
-    # to soil saturation, causing the hydro score to falsely max out
-    # in areas with wet soil but zero flooding.
+    crest_streamflow = grids.pop("crest_streamflow")
     crest_c = np.where(np.isin(crest_streamflow, cfg.SENTINEL_VALUES), np.float32(0.0), crest_streamflow)
     crest_norm = _sigmoid(crest_c, cfg.CREST_SIGMOID["x0"], cfg.CREST_SIGMOID["k"])
-    del crest_c
+    del crest_streamflow, crest_c
 
+    hp_streamflow = grids.pop("hp_streamflow")
     hp_c = np.where(np.isin(hp_streamflow, cfg.SENTINEL_VALUES), np.float32(0.0), hp_streamflow)
     hp_norm = _sigmoid(hp_c, cfg.HP_SIGMOID["x0"], cfg.HP_SIGMOID["k"])
-    del hp_c
+    del hp_streamflow, hp_c
 
     # Convert soil saturation from raw percentage to fraction
+    soil_sat = grids.pop("soil_sat")
     soil_c = _mask_sentinels(soil_sat) / np.float32(100.0)
+    del soil_sat
     soil_norm = _normalize_soil_sat(soil_c)
 
     stream_indicators = [
@@ -263,7 +255,9 @@ def compute_threat_grid(
 
     # ── Pillar 3: Guidance Exceedance ───────────────────────────────
     # Convert FFG exceedance from raw percentage to ratio
+    ffg_ratio = grids.pop("ffg_ratio")
     ffg_c = _mask_sentinels(ffg_ratio) / np.float32(100.0)
+    del ffg_ratio
     ffg_grid = _normalize_ffg(np.nan_to_num(ffg_c, nan=np.float32(0.0)))
     del ffg_c
 

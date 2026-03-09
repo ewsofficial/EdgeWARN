@@ -58,22 +58,13 @@ class FLOHARModule(GridAnalysisModule):
                 "timestamp": timestamp.isoformat(),
             }
 
-        # Compute threat scores
-        threat_grid, rainfall_grid, hydro_grid, ffg_grid = compute_threat_grid(
-            grids["ari_max"],
-            grids["ari_30m"],
-            grids["ari_01h"],
-            grids["crest_streamflow"],
-            grids["hp_streamflow"],
-            grids["soil_sat"],
-            grids["ffg_ratio"],
-            grids["rqi"],
-        )
+        # Remove coordinates so they aren't passed to the core engine
+        lat_coords = grids.pop("latitude")
+        lon_coords = grids.pop("longitude")
 
-        # Free input grids — engine has extracted what it needs
-        lat_coords = grids["latitude"]
-        lon_coords = grids["longitude"]
-        del grids
+        # Compute threat scores (grids dict is consumed destructively to save memory)
+        threat_grid, rainfall_grid, hydro_grid, ffg_grid = compute_threat_grid(grids)
+
 
         # Extract regions
         pillar_grids = {
@@ -229,7 +220,8 @@ class FLOHARModule(GridAnalysisModule):
                 print(f"[FLOHAR] Failed to load '{grid_key}' from {filepath}: {e}")
                 return (grid_key, None)
 
-        with ThreadPoolExecutor(max_workers=len(load_tasks)) as executor:
+        # Limit max_workers to 2 to prevent excessive concurrent eccodes float64 allocations
+        with ThreadPoolExecutor(max_workers=2) as executor:
             results = list(executor.map(_load_one, load_tasks))
 
         # Assemble grids dict
