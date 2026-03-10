@@ -673,9 +673,9 @@ Decay monitoring tracks reflectivity decline for each cell:
 #### Decay Event Logging
 
 ```
-[CellDetection] Cell {id} entered decay monitoring (max_refl: {value} dBZ)
-[CellDetection] Cell {id} decay count: {n}/{threshold} (max_refl: {value} dBZ)
-[CellDetection] Cell {id} terminated: reflectivity decay + prediction exhaustion
+[StormTracker] Cell {id} entered decay monitoring (max_refl: {value} dBZ)
+[StormTracker] Cell {id} decay count: {n}/{threshold} (max_refl: {value} dBZ)
+[StormTracker] Cell {id} terminated: reflectivity decay + prediction exhaustion
 ```
 
 ---

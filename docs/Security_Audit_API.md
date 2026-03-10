@@ -9,6 +9,10 @@
 
 ## Executive Summary
 
+> [!NOTE]
+> **Status: RESOLVED**  
+> All issues identified in this report have been addressed in recent commits (March 2026). Specifically, the legacy `data/nws.js` route was removed, and security best practices (Helmet, CORS, Rate Limiting) were properly configured in the API server.
+
 This security audit identified **10 security issues** in the EdgeWARN API, ranging from **Critical** to **Low** severity. The most concerning issues include unvalidated user input that could lead to prototype pollution, overly permissive CORS configuration, and information disclosure through error messages and health endpoints.
 
 | Severity | Count |

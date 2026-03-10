@@ -147,48 +147,70 @@ Returns the stormcell list for that timestamp:
 
 ---
 
-### 4. Data - NWS
+### 4. Features - Alerts
 
-**GET** `/api/v2/data/nws`
+**GET** `/api/v2/features/alerts/official`
+**GET** `/api/v2/features/alerts/edgewarn`
 
-Returns NWS alert data. Supports three modes of operation based on query parameters.
+Returns alert data (either Official NWS alerts or EdgeWARN internal alerts). Supports three modes of operation based on query parameters.
 
 #### Query Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `timestamp` | string | Conditional | Format: `YYYYMMDD-HHMMSS`. Returns snapshot at this time. Mutually exclusive with `id` |
+| `timestamp` | string | Conditional | Format: `YYYYMMDD-HHMMSS`. Returns active alerts at this time. Mutually exclusive with `id` |
 | `id` | string | Conditional | Alert ID to fetch specific alert. Mutually exclusive with `timestamp` |
 
 **Note:** `timestamp` and `id` cannot be specified at the same time.
 
 #### Response (no parameters)
 
-Returns a list of available timestamps:
+Returns a list of available timestamps and all current alerts:
 
 ```json
-[
-  "20260123-150000",
-  "20260123-143000",
-  "20260123-140000"
-]
+{
+  "success": true,
+  "data": {
+    "timestamps": [
+      "20260123-150000",
+      "20260123-143000"
+    ],
+    "alerts": [
+      {
+        "id": "urn:oid:...",
+        "first_seen": "2026-02-23T02:00:00Z",
+        "last_seen": "2026-02-23T03:40:00Z",
+        "expires": "2026-02-23T04:00:00Z",
+        "feature": { ... }
+      }
+    ]
+  },
+  "meta": {
+    "timestamp": "2026-03-10T12:00:00.000Z"
+  }
+}
 ```
 
 #### Response (with timestamp)
 
-Returns the NWS snapshot for that timestamp:
+Returns the active alerts for that timestamp:
 
 ```json
 {
-  "timestamp": "20260123-150000",
-  "count": 5,
-  "alerts": [
+  "success": true,
+  "data": [
     {
-      "id": "urn:oid:2.49.0.1.840.0.2406210827.1",
-      "event": "Severe Thunderstorm Warning",
-      "headline": "..."
+      "id": "urn:oid:...",
+      "feature": {
+        "event": "Severe Thunderstorm Warning"
+      }
     }
-  ]
+  ],
+  "meta": {
+    "timestamp": "2026-03-10T12:00:10.000Z",
+    "count": 1,
+    "total": 1
+  }
 }
 ```
 
@@ -198,20 +220,26 @@ Returns the specific alert:
 
 ```json
 {
-  "id": "urn:oid:2.49.0.1.840.0.2406210827.1",
-  "first_seen": "2026-02-23T02:00:00Z",
-  "last_seen": "2026-02-23T03:40:00Z",
-  "expires": "2026-02-23T04:00:00Z",
-  "feature": {
-    "id": "https://api.weather.gov/alerts/urn:oid:...",
-    "event": "Severe Thunderstorm Warning"
+  "success": true,
+  "data": {
+    "id": "urn:oid:2.49.0.1.840.0.2406210827.1",
+    "first_seen": "2026-02-23T02:00:00Z",
+    "last_seen": "2026-02-23T03:40:00Z",
+    "expires": "2026-02-23T04:00:00Z",
+    "feature": {
+      "id": "https://api.weather.gov/alerts/urn:oid:...",
+      "event": "Severe Thunderstorm Warning"
+    }
+  },
+  "meta": {
+    "timestamp": "2026-03-10T12:00:20.000Z"
   }
 }
 ```
 
 #### Error Responses
 
-- `400 Bad Request` - Invalid parameters or both timestamp and id specified
+- `400 Bad Request` - Invalid parameters, mutually exclusive parameters, formatting issues
 - `404 Not Found` - Timestamp or alert ID not found
 - `500 Internal Server Error` - Server error
 
@@ -281,14 +309,17 @@ Returns API v2 information and available endpoints.
 ```json
 {
   "message": "EdgeWARN API v2",
-  "version": "2.0.0",
+  "version": "2.x",
   "endpoints": {
     "features": {
       "cells": "/api/v2/features/cells[?id={int}]",
-      "timestamps": "/api/v2/features/timestamps[?timestamp={YYYYMMDD-HHMMSS}]"
+      "timestamps": "/api/v2/features/timestamps[?timestamp={YYYYMMDD-HHMMSS}]",
+      "alerts": {
+        "official": "/api/v2/features/alerts/official[?id={urn:oid:...}|timestamp={YYYYMMDD-HHMMSS}]",
+        "edgewarn": "/api/v2/features/alerts/edgewarn[?id={id}|timestamp={YYYYMMDD-HHMMSS}]"
+      }
     },
     "data": {
-      "nws": "/api/v2/data/nws[?timestamp={YYYYMMDD-HHMMSS}|id={alert_id}]",
       "metar": "/api/v2/data/metar[?timestamp={YYYYMMDD-HHMMSS}]"
     }
   }
@@ -327,7 +358,7 @@ Returns API v2 information and available endpoints.
 
 The API uses appropriate cache headers:
 
-- **List endpoints** (`/cells`, `/timestamps`, `/nws`, `/metar` without params): `Cache-Control: public, max-age=5`
+- **List endpoints** (`/cells`, `/timestamps`, `/alerts/official`, `/metar` without params): `Cache-Control: public, max-age=5`
 - **Specific resource endpoints** (with id/timestamp): `Cache-Control: public, max-age=60`
 - **Immutable data** (stormcell files): `Cache-Control: public, max-age=3600`
 
