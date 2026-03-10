@@ -5,7 +5,7 @@
 EdgeWARN-Core is the backend server for the EdgeWARN severe weather nowcasting system. It processes meteorological data from various sources (NOAA MRMS, ProbSevere v3, RAP, GOES-19 GLM, NWS Alerts, METAR) to provide real-time and historical weather analysis.
 
 The system consists of two main components:
-1.  **Python Core:** Handles data ingestion, processing, and analysis (real-time and historical). Includes the **Context-aware Threat Assessment Module (CTAM)** for specialized detection (FLOHAR, MorphoWind, StormCast).
+1.  **Python Core:** Handles data ingestion, processing, and analysis (real-time and historical). Includes the **Context-aware Threat Assessment Module (CTAM)** for specialized detection (MorphoWind, StormCast).
 2.  **Node.js API (v2):** A high-performance RESTful API server (Express.js) that serves processed data and features to frontends.
 
 ### Key Technologies

@@ -11,7 +11,8 @@
 - **API v2**: New RESTful API endpoints for improved developer experience:
   - `GET /api/v2/features/cells` - List available cells or get specific cell data
   - `GET /api/v2/features/timestamps` - List available timestamps or get stormcell data
-  - `GET /api/v2/data/nws` - List NWS timestamps or get snapshot/alert data
+  - `GET /api/v2/features/alerts/official` - List active official (NWS) alerts or get snapshot/alert data
+  - `GET /api/v2/features/alerts/edgewarn` - List active EdgeWARN internal alerts
   - `GET /api/v2/data/metar` - List METAR timestamps or get METAR data
 ---
 

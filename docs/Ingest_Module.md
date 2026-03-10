@@ -49,7 +49,7 @@ The module provides both synchronous and asynchronous interfaces for downloading
     - Applies the **GeoMapper** (`geomapper.py`) to map NWS zone codes (UGC) to actual polygons.
     - **Deduplication**: Uses the **AlertRegistry** (`registry.py`) to store unique alerts by ID, preventing duplicates from repeated downloads every 2 minutes.
     - **TTL-based Cleanup**: Alerts not seen within 2 hours are automatically removed from the registry.
-    - Stores processed alerts in `alerts_registry.json` (single deduplicated file).
+    - Stores processed alerts as individual JSON files in the `ids` directory, and a summary snapshot in the `timestamps` directory.
 
 #### Alert Registry (`src/EdgeWARN/core/ingest/nws/registry.py`)
 *   `AlertRegistry`: Manages unique NWS alerts with deduplication and expiration tracking.
@@ -59,6 +59,7 @@ The module provides both synchronous and asynchronous interfaces for downloading
     - Removes alerts not seen within configurable TTL (default 2 hours).
     - Thread-safe operations using asyncio.Lock.
     - Atomic file writes to prevent data corruption.
+    - Separates storage into individual alert files (`ids` directory) and timestamp snapshots (`timestamps` directory).
 *   **Registry Structure**:
     ```json
     {
