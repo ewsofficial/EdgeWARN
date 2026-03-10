@@ -133,9 +133,8 @@ const requiredDirs = [
 
 for (const dir of requiredDirs) {
   if (!fs.existsSync(dir)) {
-    console.warn(`[Config] Directory not found: ${dir}`);
-    // Optionally create directory if missing
-    // fs.mkdirSync(dir, { recursive: true });
+    console.warn(`[Config] Directory not found. Creating: ${dir}`);
+    fs.mkdirSync(dir, { recursive: true });
   }
 }
 
