@@ -30,15 +30,17 @@ from decimal import Decimal
 # =============================================================================
 
 @pytest.fixture
-def temp_registry_path(tmp_path):
-    """Create a temporary path for the registry file."""
-    return tmp_path / "alerts_registry.json"
+def temp_registry_dir(tmp_path):
+    """Create a temporary path for the registry directory."""
+    path = tmp_path / "alerts_registry"
+    path.mkdir()
+    return path
 
 
 @pytest.fixture
-def registry(temp_registry_path):
+def registry(temp_registry_dir):
     """Create a fresh AlertRegistry instance for each test."""
-    return AlertRegistry(temp_registry_path, ttl_hours=2.0)
+    return AlertRegistry(temp_registry_dir, ttl_hours=2.0)
 
 
 @pytest.fixture
@@ -303,45 +305,43 @@ class TestCleanupExpired:
 class TestPersistence:
     """Tests for registry persistence."""
 
-    def test_save_and_load(self, temp_registry_path, sample_feature):
+    def test_save_and_load(self, temp_registry_dir, sample_feature):
         """Test saving and loading registry from disk."""
         current_time = datetime.now(timezone.utc)
         
         # Create registry and add alert
-        registry1 = AlertRegistry(temp_registry_path)
+        registry1 = AlertRegistry(temp_registry_dir)
         registry1.process_alert(sample_feature, current_time)
         registry1.save()
         
         # Create new registry instance (should load from disk)
-        registry2 = AlertRegistry(temp_registry_path)
+        registry2 = AlertRegistry(temp_registry_dir)
         
         assert registry2.alert_count == 1
         assert registry2.last_updated is not None
 
-    def test_atomic_write(self, temp_registry_path, sample_feature):
+    def test_atomic_write(self, temp_registry_dir, sample_feature):
         """Test that save uses atomic write pattern."""
         current_time = datetime.now(timezone.utc)
         
-        registry = AlertRegistry(temp_registry_path)
+        registry = AlertRegistry(temp_registry_dir)
         registry.process_alert(sample_feature, current_time)
         registry.save()
         
-        # Check file exists and is valid JSON
-        assert temp_registry_path.exists()
-        with open(temp_registry_path, 'r') as f:
-            data = json.load(f)
-        
-        assert "alerts" in data
-        assert "last_updated" in data
+        # Check files exist
+        assert (temp_registry_dir / "ids").exists()
+        assert (temp_registry_dir / "timestamps").exists()
 
-    def test_load_corrupted_file(self, temp_registry_path):
+    def test_load_corrupted_file(self, temp_registry_dir):
         """Test handling of corrupted registry file."""
         # Write invalid JSON
-        with open(temp_registry_path, 'w') as f:
+        registry1 = AlertRegistry(temp_registry_dir)
+        corrupted = registry1.ids_dir / "corrupted.json"
+        with open(corrupted, 'w') as f:
             f.write("{ invalid json }")
         
         # Should create new empty registry
-        registry = AlertRegistry(temp_registry_path)
+        registry = AlertRegistry(temp_registry_dir)
         
         assert registry.alert_count == 0
         assert registry._registry["alerts"] == {}
@@ -412,22 +412,22 @@ class TestRetrievalMethods:
 class TestSingleton:
     """Tests for singleton get_registry function."""
 
-    def test_singleton_instance(self, temp_registry_path):
+    def test_singleton_instance(self, temp_registry_dir):
         """Test that get_registry returns singleton instance."""
         reset_registry()
         
-        registry1 = get_registry(temp_registry_path)
+        registry1 = get_registry(temp_registry_dir)
         registry2 = get_registry()
         
         assert registry1 is registry2
 
-    def test_reset_registry(self, temp_registry_path):
+    def test_reset_registry(self, temp_registry_dir):
         """Test that reset_registry clears the singleton."""
         reset_registry()
         
-        registry1 = get_registry(temp_registry_path)
+        registry1 = get_registry(temp_registry_dir)
         reset_registry()
-        registry2 = get_registry(temp_registry_path)
+        registry2 = get_registry(temp_registry_dir)
         
         assert registry1 is not registry2
 
