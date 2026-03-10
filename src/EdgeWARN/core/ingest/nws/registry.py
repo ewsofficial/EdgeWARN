@@ -57,7 +57,7 @@ class AlertRegistry:
     }
     
     Usage:
-        registry = AlertRegistry(Path("/data/NWS/alerts_registry.json"))
+        registry = AlertRegistry(fs.MRMS_NWS_DIR)
         
         # Process incoming alerts
         new_count, updated_count = registry.process_alerts(features, datetime.now(timezone.utc))
@@ -73,76 +73,122 @@ class AlertRegistry:
         ids = registry.get_active_ids()
     """
     
-    def __init__(self, registry_path: Path, ttl_hours: float = 2.0):
+    def __init__(self, registry_dir: Path, ttl_hours: float = 2.0):
         """
         Initialize the AlertRegistry.
         
         Args:
-            registry_path: Path to the registry JSON file
+            registry_dir: Path to the base official alerts directory
             ttl_hours: Time-to-live in hours for alerts not seen (default 2.0)
         """
-        self.registry_path = Path(registry_path)
+        self.registry_dir = Path(registry_dir)
+        self.ids_dir = self.registry_dir / "ids"
+        self.ts_dir = self.registry_dir / "timestamps"
         self.ttl_hours = ttl_hours
+        
+        self.ids_dir.mkdir(parents=True, exist_ok=True)
+        self.ts_dir.mkdir(parents=True, exist_ok=True)
+        
         self._registry = self._load_registry()
     
     def _load_registry(self) -> Dict[str, Any]:
         """
-        Load existing registry from disk or create new structure.
-        
-        Returns:
-            Registry dictionary with last_updated and alerts keys
+        Load existing registry from individual ID and timestamp files.
         """
-        if not self.registry_path.exists():
-            return {
-                "last_updated": None,
-                "alerts": {}
-            }
+        data = {
+            "last_updated": None,
+            "alerts": {}
+        }
         
         try:
-            with open(self.registry_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            # Load all alert files from ids directory
+            for file_path in self.ids_dir.glob("*.json"):
+                if file_path.is_file() and not file_path.name.startswith(".tmp"):
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            alert_data = json.load(f)
+                            if "id" in alert_data:
+                                alert_id = self._extract_alert_id(alert_data.get("feature", {}))
+                                if alert_id:
+                                    data["alerts"][alert_id] = alert_data
+                                else:
+                                    data["alerts"][file_path.stem] = alert_data
+                    except Exception as load_err:
+                        pass
             
-            # Validate structure
-            if "alerts" not in data:
-                data["alerts"] = {}
-            if "last_updated" not in data:
-                data["last_updated"] = None
-            
+            # Find the most recent timestamp to get last_updated
+            ts_files = sorted([f for f in self.ts_dir.glob("*.json") if not f.name.startswith(".tmp")])
+            if ts_files:
+                try:
+                    with open(ts_files[-1], 'r', encoding='utf-8') as f:
+                        ts_data = json.load(f)
+                        data["last_updated"] = ts_data.get("timestamp")
+                except Exception:
+                    pass
+                    
             return data
         except Exception as e:
-            io_manager.write_warning(f"Failed to load registry, creating new: {e}")
-            return {
-                "last_updated": None,
-                "alerts": {}
-            }
+            io_manager.write_warning(f"Failed to load registry: {e}")
+            return data
     
     def save(self) -> None:
         """
-        Persist registry to disk using atomic write pattern.
-        
-        Writes to a temporary file first, then renames to ensure
-        atomic operation and prevent data corruption.
+        Persist registry to disk:
+        1. Write individual alert JSONs to ids_dir
+        2. Write a snapshot of active IDs to ts_dir
         """
-        # Ensure parent directory exists
-        self.registry_path.parent.mkdir(parents=True, exist_ok=True)
+        current_time_str = self._registry["last_updated"]
+        if not current_time_str:
+            return
+            
+        # Write timestamp snapshot
+        try:
+            dt = datetime.fromisoformat(current_time_str.replace('Z', '+00:00'))
+            timestamp_filename = dt.strftime("%Y%m%d-%H%M%S") + ".json"
+        except Exception:
+            timestamp_filename = current_time_str.replace(":", "").replace("-", "").replace("T", "-").replace("Z", "") + ".json"
+            
+        snapshot_path = self.ts_dir / timestamp_filename
         
-        # Atomic write: write to temp file, then rename
-        fd, temp_path = tempfile.mkstemp(
-            dir=self.registry_path.parent,
-            prefix=".tmp_registry_"
-        )
+        snapshot_data = {
+            "timestamp": current_time_str,
+            "count": len(self._registry["alerts"]),
+            "alerts": list(self._registry["alerts"].keys())
+        }
         
+        fd, temp_path = tempfile.mkstemp(dir=self.ts_dir, prefix=".tmp_ts_")
         try:
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                json.dump(self._registry, f, cls=DecimalEncoder, indent=2)
-            
-            # Atomic rename
-            os.replace(temp_path, self.registry_path)
+                json.dump(snapshot_data, f, indent=2)
+            os.replace(temp_path, snapshot_path)
         except Exception as e:
-            # Cleanup temp file on error
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
-            raise e
+            io_manager.write_error(f"Failed to save timestamp file: {e}")
+            
+        # Write individual ID files
+        valid_filenames = set()
+        for alert_id, alert_data in self._registry["alerts"].items():
+            safe_id = alert_id.replace(":", "_").replace("/", "_") + ".json"
+            valid_filenames.add(safe_id)
+            alert_path = self.ids_dir / safe_id
+            
+            fd, temp_path = tempfile.mkstemp(dir=self.ids_dir, prefix=".tmp_id_")
+            try:
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    json.dump(alert_data, f, cls=DecimalEncoder, indent=2)
+                os.replace(temp_path, alert_path)
+            except Exception as e:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        
+        # Cleanup expired OR orphaned files
+        for file_path in self.ids_dir.glob("*.json"):
+            if not file_path.name.startswith(".tmp_") and file_path.name not in valid_filenames:
+                try:
+                    file_path.unlink()
+                except OSError:
+                    pass
     
     def _extract_alert_id(self, feature: Dict) -> Optional[str]:
         """
@@ -386,32 +432,32 @@ class AlertRegistry:
 _registry_instance: Optional[AlertRegistry] = None
 
 
-def get_registry(registry_path: Optional[Path] = None, ttl_hours: float = 2.0) -> AlertRegistry:
+def get_registry(registry_dir: Optional[Path] = None, ttl_hours: float = 2.0) -> AlertRegistry:
     """
     Get or create the singleton AlertRegistry instance.
     
     Args:
-        registry_path: Path to registry file (required on first call)
+        registry_dir: Path to registry base directory (required on first call)
         ttl_hours: TTL in hours for expired alerts
         
     Returns:
         AlertRegistry instance
         
     Raises:
-        ValueError: If registry_path is not provided on first call
+        ValueError: If registry_dir is not provided on first call
     """
     global _registry_instance
     
     if _registry_instance is None:
-        if registry_path is None:
-            raise ValueError("registry_path required for first initialization")
-        _registry_instance = AlertRegistry(registry_path, ttl_hours)
-    elif registry_path is not None:
+        if registry_dir is None:
+            raise ValueError("registry_dir required for first initialization")
+        _registry_instance = AlertRegistry(registry_dir, ttl_hours)
+    elif registry_dir is not None:
         # Warn if called with different path than existing instance
-        existing_path = _registry_instance.registry_path
-        if Path(registry_path) != existing_path:
+        existing_path = _registry_instance.registry_dir
+        if Path(registry_dir) != existing_path:
             io_manager.write_warning(
-                f"get_registry called with different path ({registry_path}); "
+                f"get_registry called with different path ({registry_dir}); "
                 f"using existing instance with path ({existing_path})"
             )
     

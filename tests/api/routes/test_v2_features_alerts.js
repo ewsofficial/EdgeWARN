@@ -20,17 +20,22 @@ describe('API v2 Features Alerts Route', () => {
         tempVars.tempStormcellDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'edgewarn-test-stormcell-'));
         tempVars.tempEdgewarnDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'edgewarn-test-ew-'));
         tempVars.tempOfficialDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'edgewarn-test-off-'));
+        tempVars.tempOfficialIdsDir = path.join(tempVars.tempOfficialDir, 'ids');
+        tempVars.tempOfficialTsDir = path.join(tempVars.tempOfficialDir, 'timestamps');
+        await fs.promises.mkdir(tempVars.tempOfficialIdsDir);
+        await fs.promises.mkdir(tempVars.tempOfficialTsDir);
 
         tempVars.originalStormcellDir = apiConfig.STORMCELL_DIR;
         tempVars.originalEdgewarnDir = apiConfig.EDGEWARN_ALERTS_DIR;
         tempVars.originalOfficialDir = apiConfig.OFFICIAL_ALERTS_DIR;
+        tempVars.originalOfficialIdsDir = apiConfig.OFFICIAL_ALERTS_IDS_DIR;
+        tempVars.originalOfficialTsDir = apiConfig.OFFICIAL_ALERTS_TS_DIR;
 
         apiConfig.STORMCELL_DIR = tempVars.tempStormcellDir;
         apiConfig.EDGEWARN_ALERTS_DIR = tempVars.tempEdgewarnDir;
         apiConfig.OFFICIAL_ALERTS_DIR = tempVars.tempOfficialDir;
-        tempVars.originalNwsDir = apiConfig.NWS_DIR;
-        tempVars.tempNwsDir = tempVars.tempOfficialDir;
-        apiConfig.NWS_DIR = tempVars.tempNwsDir;
+        apiConfig.OFFICIAL_ALERTS_IDS_DIR = tempVars.tempOfficialIdsDir;
+        apiConfig.OFFICIAL_ALERTS_TS_DIR = tempVars.tempOfficialTsDir;
 
         app = express();
         app.use('/api/v2/features/alerts', alertsRouter);
@@ -40,7 +45,8 @@ describe('API v2 Features Alerts Route', () => {
         apiConfig.STORMCELL_DIR = tempVars.originalStormcellDir;
         apiConfig.EDGEWARN_ALERTS_DIR = tempVars.originalEdgewarnDir;
         apiConfig.OFFICIAL_ALERTS_DIR = tempVars.originalOfficialDir;
-        apiConfig.NWS_DIR = tempVars.originalNwsDir;
+        apiConfig.OFFICIAL_ALERTS_IDS_DIR = tempVars.originalOfficialIdsDir;
+        apiConfig.OFFICIAL_ALERTS_TS_DIR = tempVars.originalOfficialTsDir;
 
         for (const dir of [tempVars.tempStormcellDir, tempVars.tempEdgewarnDir, tempVars.tempOfficialDir]) {
             try { await fs.promises.rm(dir, { recursive: true, force: true }); } catch (e) { }
@@ -78,10 +84,14 @@ describe('API v2 Features Alerts Route', () => {
         };
 
         beforeEach(async () => {
-            // Write NWS registry
+            // Write NWS ID files
             await fs.promises.writeFile(
-                path.join(tempVars.tempOfficialDir, 'alerts_registry.json'),
-                JSON.stringify(sampleRegistry)
+                path.join(tempVars.tempOfficialIdsDir, 'urn_oid_123.json'),
+                JSON.stringify(sampleRegistry.alerts["urn:oid:123"])
+            );
+            await fs.promises.writeFile(
+                path.join(tempVars.tempOfficialIdsDir, 'urn_oid_456.json'),
+                JSON.stringify(sampleRegistry.alerts["urn:oid:456"])
             );
             // Write System Timestamps
             await fs.promises.writeFile(
@@ -92,11 +102,11 @@ describe('API v2 Features Alerts Route', () => {
             // Create NWS snapshot files
             const snapshotData = { alerts: [] };
             await fs.promises.writeFile(
-                path.join(tempVars.tempNwsDir, 'nws_snapshot_20260309-110000.json'),
+                path.join(tempVars.tempOfficialTsDir, '20260309-110000.json'),
                 JSON.stringify(snapshotData)
             );
             await fs.promises.writeFile(
-                path.join(tempVars.tempNwsDir, 'nws_snapshot_20260309-120000.json'),
+                path.join(tempVars.tempOfficialTsDir, '20260309-120000.json'),
                 JSON.stringify(snapshotData)
             );
         });
@@ -152,14 +162,27 @@ describe('API v2 Features Alerts Route', () => {
             const specialSnapshot = {
                 count: 3,
                 alerts: [
-                    { id: "urn:oid:snapshot1" },
-                    { id: "urn:oid:snapshot2" },
-                    { id: "urn:oid:snapshot3" }
+                    "urn:oid:snapshot1",
+                    "urn:oid:snapshot2",
+                    "urn:oid:snapshot3"
                 ]
             };
             await fs.promises.writeFile(
-                path.join(tempVars.tempNwsDir, 'nws_snapshot_20260309-110000.json'),
+                path.join(tempVars.tempOfficialTsDir, '20260309-110000.json'),
                 JSON.stringify(specialSnapshot)
+            );
+
+            await fs.promises.writeFile(
+                path.join(tempVars.tempOfficialIdsDir, 'urn_oid_snapshot1.json'),
+                JSON.stringify({ id: "urn:oid:snapshot1" })
+            );
+            await fs.promises.writeFile(
+                path.join(tempVars.tempOfficialIdsDir, 'urn_oid_snapshot2.json'),
+                JSON.stringify({ id: "urn:oid:snapshot2" })
+            );
+            await fs.promises.writeFile(
+                path.join(tempVars.tempOfficialIdsDir, 'urn_oid_snapshot3.json'),
+                JSON.stringify({ id: "urn:oid:snapshot3" })
             );
 
             const response = await request(app)

@@ -48,12 +48,12 @@ async function getAvailableTimestamps() {
  */
 async function getNwsTimestamps() {
   try {
-    const files = await fs.readdir(apiConfig.NWS_DIR);
+    const files = await fs.readdir(apiConfig.OFFICIAL_ALERTS_TS_DIR);
     const timestamps = [];
 
     for (const file of files) {
-      // NWS snapshot files: nws_snapshot_YYYYMMDD-HHMMSS.json
-      const match = file.match(/^nws_snapshot_(\d{8}-\d{6})\.json$/);
+      // NWS snapshot files: YYYYMMDD-HHMMSS.json
+      const match = file.match(/^(\d{8}-\d{6})\.json$/);
       if (match && match[1]) {
         timestamps.push(match[1]);
       }
@@ -96,15 +96,23 @@ async function loadEdgeWARNAlerts() {
  * Helper to load all Official (NWS) alerts from the registry
  */
 async function loadOfficialAlerts() {
+  const alerts = [];
   try {
-    const registry = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_DIR, 'alerts_registry.json', { useCache: true });
-    return Object.values(registry.alerts || {});
+    const files = await fs.readdir(apiConfig.OFFICIAL_ALERTS_IDS_DIR);
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        const data = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_IDS_DIR, file, { useCache: true });
+        if (data && Object.keys(data).length > 0) {
+          alerts.push(data);
+        }
+      }
+    }
   } catch (err) {
     if (err.code !== 'ENOENT') {
-      console.error('Error reading Official alerts registry:', err);
+      console.error('Error reading Official alerts ids:', err);
     }
-    return [];
   }
+  return alerts;
 }
 
 /**
@@ -137,9 +145,18 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
     }
 
     try {
-      const allAlerts = await loadAlertsFn();
-      // EdgeWARN uses `id`, NWS might use `id` or we fall back to extracting it
-      const alert = allAlerts.find(a => a.id === id);
+      let alert = null;
+      if (typeStr === 'official') {
+        const safeId = id.replace(/:/g, "_").replace(/\//g, "_") + ".json";
+        try {
+          alert = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_IDS_DIR, safeId, { useCache: true });
+        } catch (e) {
+          // Will be handled by the !alert check below
+        }
+      } else {
+        const allAlerts = await loadAlertsFn();
+        alert = allAlerts.find(a => a.id === id);
+      }
 
       if (!alert) {
         return res.status(404).json({
@@ -184,24 +201,39 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
       if (typeStr === 'official') {
         res.set('Cache-Control', 'public, max-age=60');
 
-        // Build filename: nws_snapshot_{timestamp}.json
-        const filename = `nws_snapshot_${timestamp}.json`;
+        // Build filename: {timestamp}.json
+        const filename = `${timestamp}.json`;
         try {
-          const snapshotData = await readJsonFileSafe(apiConfig.NWS_DIR, filename, { useCache: false });
+          const snapshotData = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_TS_DIR, filename, { useCache: false });
+          let alertBodies = [];
+
+          if (snapshotData.alerts && Array.isArray(snapshotData.alerts)) {
+            // Read actual alert bodies from ids/
+            for (const alertId of snapshotData.alerts) {
+              const safeId = alertId.replace(/:/g, "_").replace(/\//g, "_") + ".json";
+              try {
+                const alertData = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_IDS_DIR, safeId, { useCache: true });
+                if (alertData) alertBodies.push(alertData);
+              } catch (e) {
+                // Ignore missing alert
+              }
+            }
+          }
+
           return res.json({
             success: true,
-            data: snapshotData.alerts || [],
+            data: alertBodies,
             meta: {
               timestamp: new Date().toISOString(),
-              count: (snapshotData.alerts || []).length,
-              total: snapshotData.count || (snapshotData.alerts || []).length
+              count: alertBodies.length,
+              total: snapshotData.count || alertBodies.length
             }
           });
         } catch (fileErr) {
           if (fileErr.code !== 'ENOENT') {
             console.error('Error fetching snapshot:', fileErr);
           }
-          // If the snapshot file does not exist, gracefully fallback to filtering `alerts_registry.json`.
+          // If the snapshot file does not exist, gracefully fallback
         }
       }
 

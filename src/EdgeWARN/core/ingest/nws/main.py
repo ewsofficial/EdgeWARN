@@ -75,7 +75,7 @@ DROPPED_EVENTS = {
 
 def _get_registry() -> AlertRegistry:
     """Get or initialize the AlertRegistry singleton."""
-    return get_registry(fs.NWS_REGISTRY_PATH, ttl_hours=2.0)
+    return get_registry(fs.MRMS_NWS_DIR, ttl_hours=2.0)
 
 
 def download_alerts(dt: datetime):

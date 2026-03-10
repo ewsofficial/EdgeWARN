@@ -33,7 +33,10 @@ async def ensure_station_database():
     # Download async
     io.write_info("Downloading station database from Aviation Weather (Async)...")
     try:
-         async with aiohttp.ClientSession() as session:
+         connector = aiohttp.TCPConnector(ssl=False)
+         # Force drop 'br' from default Accept-Encoding to prevent decoding failures
+         headers = {"Accept-Encoding": "gzip, deflate"}
+         async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
             async with session.get(STATION_DB_URL, timeout=60) as response:
                 response.raise_for_status()
                 stations = await response.json()
@@ -84,12 +87,22 @@ def _load_station_database():
     _station_cache = {}
     try:
         io.write_info("Downloading station database from Aviation Weather...")
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
         req = urllib.request.Request(
             STATION_DB_URL,
-            headers={"User-Agent": "EdgeWARN/1.0"}
+            headers={"User-Agent": "EdgeWARN/1.0", "Accept-Encoding": "gzip, deflate"}
         )
-        with urllib.request.urlopen(req, timeout=60) as response:
-            stations = json.loads(response.read().decode('utf-8'))
+        with urllib.request.urlopen(req, context=ctx, timeout=60) as response:
+            import gzip
+            if response.info().get('Content-Encoding') == 'gzip':
+                raw_data = gzip.decompress(response.read())
+            else:
+                raw_data = response.read()
+            stations = json.loads(raw_data.decode('utf-8'))
         
         # Parse JSON format - each station has icaoId, lat, lon
         for station in stations:
@@ -234,8 +247,13 @@ def fetch_metar_cycle(dt):
     url = f"https://tgftp.nws.noaa.gov/data/observations/metar/cycles/{hour_str}Z.TXT"
     io.write_info(f"Fetching METAR data from {url}")
 
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
     try:
-        with urllib.request.urlopen(url, timeout=30) as response:
+        with urllib.request.urlopen(url, context=ctx, timeout=30) as response:
             content = response.read().decode('utf-8', errors='ignore')
             return content
     except urllib.error.HTTPError as e:
@@ -268,7 +286,8 @@ async def fetch_metar_cycle_async(dt, session=None):
                 content = await response.text(encoding='utf-8', errors='ignore')
                 return content
         else:
-             async with aiohttp.ClientSession() as new_session:
+             connector = aiohttp.TCPConnector(ssl=False)
+             async with aiohttp.ClientSession(connector=connector) as new_session:
                 async with new_session.get(url, timeout=30) as response:
                     # ... duplication or call recursive? NO, simple logic
                     if response.status == 404:
@@ -297,6 +316,7 @@ def process_content(content):
     """
     lines = content.splitlines()
     parsed_data = []
+    seen_stations = set()  # Track seen stations to avoid duplicates
 
     current_time = None
 
@@ -312,6 +332,20 @@ def process_content(content):
 
         # Assume it is a METAR
         if current_time:
+            # First extract the station code from the line
+            parts = line.split()
+            station_code = None
+            idx = 0
+            if parts and parts[idx] in ["METAR", "SPECI"]:
+                idx += 1
+            if idx < len(parts):
+                station_code = parts[idx]
+            
+            if station_code and station_code in seen_stations:
+                continue
+            if station_code:
+                seen_stations.add(station_code)
+            
             metar_data = parse_metar(line, current_time)
             if metar_data:
                 # Filter by CONUS bounds
@@ -420,7 +454,8 @@ async def ingest_metars_async():
     now = datetime.now(timezone.utc)
     
     # Create tasks for current hour and previous 2 hours
-    async with aiohttp.ClientSession() as session:
+    connector = aiohttp.TCPConnector(ssl=False)
+    async with aiohttp.ClientSession(connector=connector) as session:
         async def _process_single_hour(i):
             target_time = now - timedelta(hours=i)
             io.write_info(f"Processing METARs (async) for {target_time.strftime('%Y-%m-%d %H:00')} UTC")
@@ -434,6 +469,7 @@ async def ingest_metars_async():
             else:
                  io.write_warning(f"Skipping {target_time.strftime('%H')}Z due to fetch failure.")
     
+        tasks = []
         for i in range(3):
             tasks.append(_process_single_hour(i))
         

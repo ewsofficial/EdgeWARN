@@ -84,6 +84,8 @@ const config = {
   ALERTS_DIR: path.join(DATA_DIR, 'Alerts'),
   EDGEWARN_ALERTS_DIR: path.join(DATA_DIR, 'Alerts', 'EdgeWARN'),
   OFFICIAL_ALERTS_DIR: path.join(DATA_DIR, 'Alerts', 'official'),
+  OFFICIAL_ALERTS_IDS_DIR: path.join(DATA_DIR, 'Alerts', 'official', 'ids'),
+  OFFICIAL_ALERTS_TS_DIR: path.join(DATA_DIR, 'Alerts', 'official', 'timestamps'),
 
   // Filenames used by GUI
   STORMCELL_JSON: 'src/stormcell_test.json',
@@ -128,7 +130,9 @@ const requiredDirs = [
   config.SURFACE_DIR,
   config.ALERTS_DIR,
   config.EDGEWARN_ALERTS_DIR,
-  config.OFFICIAL_ALERTS_DIR
+  config.OFFICIAL_ALERTS_DIR,
+  config.OFFICIAL_ALERTS_IDS_DIR,
+  config.OFFICIAL_ALERTS_TS_DIR
 ];
 
 for (const dir of requiredDirs) {
