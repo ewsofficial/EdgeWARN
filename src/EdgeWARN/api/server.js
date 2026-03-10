@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import healthRouter from './routes/health.js';
 import v2Router from './routes/v2/index.js';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import compression from 'compression';
 import cluster from 'cluster';
 import os from 'os';
@@ -70,9 +70,10 @@ if (cluster.isPrimary) {
 
   app.use(express.json());
 
-  // Trust proxy configuration - only enable when explicitly configured
-  if (process.env.TRUST_PROXY === 'true') {
-    app.set('trust proxy', true);
+  // Trust proxy configuration
+  const trustProxy = process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY_IPS ? true : false;
+  if (process.env.TRUST_PROXY === 'false') {
+    app.set('trust proxy', false);
   } else if (process.env.TRUST_PROXY_IPS) {
     app.set('trust proxy', process.env.TRUST_PROXY_IPS.split(','));
   } else {
@@ -92,6 +93,21 @@ if (cluster.isPrimary) {
     skip: (req) => {
       // Optionally skip rate limiting for health checks from internal monitoring
       return req.path === '/health' && req.headers['x-internal-check'] === 'true';
+    },
+    keyGenerator: (req) => {
+      // Use custom key generator to avoid validation errors when X-Forwarded-For is present
+      // but trust proxy is false
+      let clientIp;
+      if (trustProxy) {
+        clientIp = req.ip;
+      } else {
+        // When trust proxy is false, use the direct remote address instead of X-Forwarded-For
+        clientIp = req.connection.remoteAddress || req.socket.remoteAddress ||
+          (req.connection.socket ? req.connection.socket.remoteAddress : null);
+      }
+
+      // Use ipKeyGenerator to handle IPv6 addresses correctly
+      return ipKeyGenerator(clientIp);
     }
   });
 
@@ -110,7 +126,7 @@ if (cluster.isPrimary) {
 
   // Mount API v2 routes (default API version)
   app.use('/api/v2', v2Router);
-  
+
   // Redirect old v1 paths to v2
   app.use('/features', (req, res) => {
     res.status(410).json({
@@ -118,7 +134,7 @@ if (cluster.isPrimary) {
       documentation: '/api/v2'
     });
   });
-  
+
   app.use('/data', (req, res) => {
     res.status(410).json({
       error: 'API v1 has been removed. Please use API v2.',
