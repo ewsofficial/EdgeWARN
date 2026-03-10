@@ -210,4 +210,5 @@ EdgeWARN-Core/
 - Profile performance using Python's cProfile or Node.js tools
 
 ### Committing Guidelines
-- Always follow the contributing guidelines at CONTRIBUTING.md, make sure that each commit has a prefix attached to it, which can be found at CONTRIBUTING.md
+- Always follow the contributing guidelines at CONTRIBUTING.md
+- Ensure that each commit message has a prefix that **MUST** be in CONTRIBUTING.md
