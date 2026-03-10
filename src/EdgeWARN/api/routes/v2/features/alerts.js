@@ -43,6 +43,33 @@ async function getAvailableTimestamps() {
 }
 
 /**
+ * Helper to scan NWS directory for available snapshot timestamps
+ * @returns {Promise<string[]>} - Array of timestamps in YYYYMMDD-HHMMSS format
+ */
+async function getNwsTimestamps() {
+  try {
+    const files = await fs.readdir(apiConfig.NWS_DIR);
+    const timestamps = [];
+
+    for (const file of files) {
+      // NWS snapshot files: nws_snapshot_YYYYMMDD-HHMMSS.json
+      const match = file.match(/^nws_snapshot_(\d{8}-\d{6})\.json$/);
+      if (match && match[1]) {
+        timestamps.push(match[1]);
+      }
+    }
+
+    // Sort descending (newest first)
+    return timestamps.sort().reverse();
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return [];
+    }
+    throw err;
+  }
+}
+
+/**
  * Helper to load all EdgeWARN alerts from the filesystem
  */
 async function loadEdgeWARNAlerts() {
@@ -124,6 +151,10 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
         });
       }
 
+      if (typeStr === 'official') {
+        res.set('Cache-Control', 'public, max-age=60');
+      }
+
       return res.json({
         success: true,
         data: alert,
@@ -150,15 +181,39 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
     }
 
     try {
+      if (typeStr === 'official') {
+        res.set('Cache-Control', 'public, max-age=60');
+
+        // Build filename: nws_snapshot_{timestamp}.json
+        const filename = `nws_snapshot_${timestamp}.json`;
+        try {
+          const snapshotData = await readJsonFileSafe(apiConfig.NWS_DIR, filename, { useCache: false });
+          return res.json({
+            success: true,
+            data: snapshotData.alerts || [],
+            meta: {
+              timestamp: new Date().toISOString(),
+              count: (snapshotData.alerts || []).length,
+              total: snapshotData.count || (snapshotData.alerts || []).length
+            }
+          });
+        } catch (fileErr) {
+          if (fileErr.code !== 'ENOENT') {
+            console.error('Error fetching snapshot:', fileErr);
+          }
+          // If the snapshot file does not exist, gracefully fallback to filtering `alerts_registry.json`.
+        }
+      }
+
       const timestampDate = parseScanTimestamp(timestamp);
       const allAlerts = await loadAlertsFn();
-      
+
       const activeAlerts = allAlerts.filter(alert => isAlertActiveAt(alert, timestampDate));
 
       return res.json({
         success: true,
         data: activeAlerts,
-        meta: { 
+        meta: {
           timestamp: new Date().toISOString(),
           count: activeAlerts.length,
           total: activeAlerts.length
@@ -174,8 +229,15 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
 
   // No modifiers - return timestamps list and all current alerts
   try {
-    const timestamps = await getAvailableTimestamps();
+    const timestamps = typeStr === 'official'
+      ? await getNwsTimestamps()
+      : await getAvailableTimestamps();
+
     const allAlerts = await loadAlertsFn();
+
+    if (typeStr === 'official') {
+      res.set('Cache-Control', 'public, max-age=5');
+    }
 
     return res.json({
       success: true,

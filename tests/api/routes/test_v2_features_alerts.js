@@ -28,6 +28,9 @@ describe('API v2 Features Alerts Route', () => {
         apiConfig.STORMCELL_DIR = tempVars.tempStormcellDir;
         apiConfig.EDGEWARN_ALERTS_DIR = tempVars.tempEdgewarnDir;
         apiConfig.OFFICIAL_ALERTS_DIR = tempVars.tempOfficialDir;
+        tempVars.originalNwsDir = apiConfig.NWS_DIR;
+        tempVars.tempNwsDir = tempVars.tempOfficialDir;
+        apiConfig.NWS_DIR = tempVars.tempNwsDir;
 
         app = express();
         app.use('/api/v2/features/alerts', alertsRouter);
@@ -37,12 +40,13 @@ describe('API v2 Features Alerts Route', () => {
         apiConfig.STORMCELL_DIR = tempVars.originalStormcellDir;
         apiConfig.EDGEWARN_ALERTS_DIR = tempVars.originalEdgewarnDir;
         apiConfig.OFFICIAL_ALERTS_DIR = tempVars.originalOfficialDir;
+        apiConfig.NWS_DIR = tempVars.originalNwsDir;
 
         for (const dir of [tempVars.tempStormcellDir, tempVars.tempEdgewarnDir, tempVars.tempOfficialDir]) {
-            try { await fs.promises.rm(dir, { recursive: true, force: true }); } catch (e) {}
+            try { await fs.promises.rm(dir, { recursive: true, force: true }); } catch (e) { }
         }
     });
-    
+
     // Test base paths
     describe('Mutual Exclusion Validation', () => {
         it('should return 400 when both id and timestamp are provided', async () => {
@@ -84,6 +88,17 @@ describe('API v2 Features Alerts Route', () => {
                 path.join(tempVars.tempStormcellDir, 'stormcell_index.json'),
                 JSON.stringify({ timestamps: ["20260309-110000", "20260309-120000"] })
             );
+
+            // Create NWS snapshot files
+            const snapshotData = { alerts: [] };
+            await fs.promises.writeFile(
+                path.join(tempVars.tempNwsDir, 'nws_snapshot_20260309-110000.json'),
+                JSON.stringify(snapshotData)
+            );
+            await fs.promises.writeFile(
+                path.join(tempVars.tempNwsDir, 'nws_snapshot_20260309-120000.json'),
+                JSON.stringify(snapshotData)
+            );
         });
 
         it('should return timestamps and all alerts when no modifiers given', async () => {
@@ -111,16 +126,52 @@ describe('API v2 Features Alerts Route', () => {
                 .expect(404);
         });
 
-        it('should return active alerts for specific timestamp', async () => {
-            // Timestamp is 2026-03-09 12:00:00 Z
+        it('should return correct cache headers for id modifier', async () => {
+            const response = await request(app)
+                .get('/api/v2/features/alerts/official?id=urn:oid:123')
+                .expect(200);
+
+            expect(response.headers['cache-control']).toContain('max-age=60');
+        });
+
+        it('should return active alerts for specific timestamp (legacy static fallback)', async () => {
+            // Timestamp is 2026-03-09 12:00:00 Z and there is no snapshot file.
             // Only alert 123 is active at this time
             const response = await request(app)
-                .get('/api/v2/features/alerts/official?timestamp=20260309-120000')
+                .get('/api/v2/features/alerts/official?timestamp=20260309-130000')
                 .expect(200);
 
             expect(response.body.success).toBe(true);
             expect(response.body.data).toHaveLength(1);
             expect(response.body.data[0].id).toBe("urn:oid:123");
+            expect(response.headers['cache-control']).toContain('max-age=60');
+        });
+
+        it('should return specific historical snapshot if the snapshot file exists', async () => {
+            // Write a special snapshot for 20260309-110000
+            const specialSnapshot = {
+                count: 3,
+                alerts: [
+                    { id: "urn:oid:snapshot1" },
+                    { id: "urn:oid:snapshot2" },
+                    { id: "urn:oid:snapshot3" }
+                ]
+            };
+            await fs.promises.writeFile(
+                path.join(tempVars.tempNwsDir, 'nws_snapshot_20260309-110000.json'),
+                JSON.stringify(specialSnapshot)
+            );
+
+            const response = await request(app)
+                .get('/api/v2/features/alerts/official?timestamp=20260309-110000')
+                .expect(200);
+
+            expect(response.body.success).toBe(true);
+            expect(response.body.data).toHaveLength(3);
+            expect(response.body.data[0].id).toBe("urn:oid:snapshot1");
+            expect(response.body.meta.count).toBe(3);
+            expect(response.body.meta.total).toBe(3);
+            expect(response.headers['cache-control']).toContain('max-age=60');
         });
     });
 
