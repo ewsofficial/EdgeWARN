@@ -46,7 +46,7 @@ class CellDataSaver:
         if not np.any(poly_mask):
             return []
 
-        hail_mask = (precip_subgrid == 7) & poly_mask
+        hail_mask = (precip_subgrid == 6) & poly_mask
         if not np.any(hail_mask):
             return []
 
