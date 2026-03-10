@@ -38,14 +38,12 @@ if (cluster.isPrimary) {
   app.use(helmet({
     hsts: {
       maxAge: 31536000, // 1 year in seconds
-      includeSubDomains: true,
-      preload: true
+      includeSubDomains: true
     },
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
         "default-src": ["'self'"],
-        // Add other directives if necessary for the API
       }
     }
   }));

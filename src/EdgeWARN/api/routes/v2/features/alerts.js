@@ -51,7 +51,7 @@ async function loadEdgeWARNAlerts() {
     const files = await fs.readdir(apiConfig.EDGEWARN_ALERTS_DIR);
     for (const file of files) {
       if (file.startsWith('alert_') && file.endsWith('.json')) {
-        const data = await readJsonFileSafe(apiConfig.EDGEWARN_ALERTS_DIR, file, { useCache: false });
+        const data = await readJsonFileSafe(apiConfig.EDGEWARN_ALERTS_DIR, file, { useCache: true });
         if (data && Object.keys(data).length > 0) {
           alerts.push(data);
         }
