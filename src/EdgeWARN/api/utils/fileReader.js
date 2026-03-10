@@ -78,17 +78,22 @@ export async function readJsonFileSafe(dir, name, options = { useCache: true }) 
  * @throws {Error} If file doesn't exist or can't be read
  */
 export async function readIndexFile(indexPath) {
-  // Check cache with a shorter TTL for index files as they change more often
-  if (cache.has(indexPath)) {
-    return cache.get(indexPath);
+  try {
+    // Check cache with a shorter TTL for index files as they change more often
+    if (cache.has(indexPath)) {
+      return cache.get(indexPath);
+    }
+
+    // Optimization: Remove fs.existsSync to avoid double I/O
+    const txt = await fs.promises.readFile(indexPath, 'utf8');
+    const json = JSON.parse(txt);
+
+    // Cache index files with a shorter TTL (e.g. 5 seconds)
+    cache.set(indexPath, json, { ttl: 5 * 1000 });
+
+    return json;
+  } catch (err) {
+    console.error('Error reading index file:', err);
+    throw err;
   }
-
-  // Optimization: Remove fs.existsSync to avoid double I/O
-  const txt = await fs.promises.readFile(indexPath, 'utf8');
-  const json = JSON.parse(txt);
-
-  // Cache index files with a shorter TTL (e.g. 5 seconds)
-  cache.set(indexPath, json, { ttl: 5 * 1000 });
-
-  return json;
 }

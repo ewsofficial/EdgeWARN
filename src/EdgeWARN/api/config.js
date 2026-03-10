@@ -94,6 +94,51 @@ const config = {
   DEFAULT_PORT: 5000
 };
 
+// Validate directories exist
+const requiredDirs = [
+  config.MRMS_RALA_DIR,
+  config.MRMS_CGFLASH_DIR,
+  config.MRMS_NLDN_DIR,
+  config.MRMS_ECHOTOP18_DIR,
+  config.MRMS_ECHOTOP30_DIR,
+  config.MRMS_QPE_DIR,
+  config.MRMS_RAIN_DIR,
+  config.MRMS_PRECIPRATE_DIR,
+  config.MRMS_PROBSEVERE_DIR,
+  config.MRMS_FLASH_CREST_MAXUNIT_DIR,
+  config.MRMS_FLASH_ARIMAX_DIR,
+  config.MRMS_FLASH_ARI30M_DIR,
+  config.MRMS_FLASH_ARI01H_DIR,
+  config.MRMS_FLASH_HP_MAXUNIT_DIR,
+  config.MRMS_FLASH_SAC_MAXSOIL_DIR,
+  config.MRMS_FLASH_FFGMAX_DIR,
+  config.MRMS_DVIL_DIR,
+  config.MRMS_VIL_DIR,
+  config.MRMS_VII_DIR,
+  config.MRMS_ROTATIONT_DIR,
+  config.MRMS_COMPOSITE_DIR,
+  config.MRMS_RHOHV_DIR,
+  config.MRMS_PRECIPTYP_DIR,
+  config.MRMS_MESH_DIR,
+  config.GOES_GLM_DIR,
+  config.STORMCELL_DIR,
+  config.CELL_DIR,
+  config.METAR_DIR,
+  config.NWS_DIR,
+  config.SURFACE_DIR,
+  config.ALERTS_DIR,
+  config.EDGEWARN_ALERTS_DIR,
+  config.OFFICIAL_ALERTS_DIR
+];
+
+for (const dir of requiredDirs) {
+  if (!fs.existsSync(dir)) {
+    console.warn(`[Config] Directory not found: ${dir}`);
+    // Optionally create directory if missing
+    // fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
 // Log which base directory is being used
 console.log(`[Config] Using BASE_DIR: ${BASE_DIR}`);
 
