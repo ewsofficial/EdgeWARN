@@ -6,6 +6,9 @@ import eccodes
 import numpy as np
 import xarray as xr
 
+# Enable multi-message support globally so fields like V-component wind (packed with U-component) are extracted correctly
+eccodes.codes_grib_multi_support_on()
+
 
 def load_grib_fast(filepath: str) -> xr.Dataset:
     """
