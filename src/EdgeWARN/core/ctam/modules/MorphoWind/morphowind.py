@@ -30,11 +30,10 @@ class MorphoWindModule(AnalysisModule):
             
         return 0.5 * (1 + math.erf(z))
 
-    def run(self, storm_entry, environment=None):
+    def run(self, storm_entry, environment=None, history_cache=None):
         """
         Process storm cells and inject 'morphowind' risk object.
         """
-        from ...util.history import get_cell_history
         
         props = storm_entry.get("properties", {})
         morphology = props.get("morphology", {})
@@ -86,7 +85,11 @@ class MorphoWindModule(AnalysisModule):
             dp_correction = dd_factor * cfg.DD_MAX_CORRECTION
             
         # 2. Collapse Detection (Temporal Physics)
-        history = get_cell_history(cell_id, limit=5)
+        if history_cache is not None:
+            history = history_cache.get(cell_id, limit=5)
+        else:
+            from ...util.history import get_cell_history
+            history = get_cell_history(cell_id, limit=5)
         
         max_historical_vil_density = 0.0
         # Pre-condition check loop

@@ -15,6 +15,7 @@ from typing import List, Dict, Any, Optional
 from .registry import CellModuleRegistry, GridModuleRegistry, ModuleRegistry
 from .engine import initialize_modules
 from EdgeWARN.core.alerts import AlertManager
+from .util.history_cache import CellHistoryCache
 
 # Import modules to trigger auto-registration
 from . import modules  # noqa: F401
@@ -59,6 +60,12 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     print(f"[CTAM] Processing {len(cells)} storm cell(s)...")
     
     # Step 1: Run cell-based modules
+    
+    # Pre-initialize history cache
+    hist_cache = CellHistoryCache()
+    active_cell_ids = [c["id"] for c in cells if "id" in c]
+    hist_cache.preload_active(active_cells=active_cell_ids)
+    
     cell_success_count = 0
     cell_error_count = 0
     
@@ -71,7 +78,7 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         for module in cell_modules.values():
             try:
                 module_start = time.time()
-                module.run(cell)
+                module.run(cell, environment=None, history_cache=hist_cache)
                 module_elapsed = time.time() - module_start
                 cell_success_count += 1
             except Exception as e:

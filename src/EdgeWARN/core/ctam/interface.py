@@ -19,7 +19,7 @@ class AnalysisModule(ABC):
         pass
 
     @abstractmethod
-    def run(self, storm_entry: Dict[str, Any], environment: Optional[Dict[str, Any]] = None) -> None:
+    def run(self, storm_entry: Dict[str, Any], environment: Optional[Dict[str, Any]] = None, history_cache: Optional[Any] = None) -> None:
         """
         Perform analysis on a single storm entry.
 
