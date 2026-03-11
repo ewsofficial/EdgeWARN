@@ -84,11 +84,7 @@ async function handleAlertsRequest(req, res, idsDir, tsDir, typeStr) {
 
       res.set('Cache-Control', 'public, max-age=60');
 
-      return res.json({
-        success: true,
-        data: alert.feature ? alert.feature : alert, // Official nests in .feature, EdgeWARN does not
-        meta: { timestamp: new Date().toISOString() }
-      });
+      return res.json(alert.feature ? alert.feature : alert);
     } catch (err) {
       return res.status(500).json({
         success: false,
@@ -118,27 +114,11 @@ async function handleAlertsRequest(req, res, idsDir, tsDir, typeStr) {
         const snapshotData = await readJsonFileSafe(tsDir, filename, { useCache: false });
         const alertIds = Array.isArray(snapshotData.alerts) ? snapshotData.alerts : [];
 
-        return res.json({
-          success: true,
-          data: alertIds,
-          meta: {
-            timestamp: new Date().toISOString(),
-            count: alertIds.length,
-            total: snapshotData.count || alertIds.length
-          }
-        });
+        return res.json(alertIds);
       } catch (fileErr) {
         if (fileErr.code === 'ENOENT') {
           // Gracefully fallback to empty array if the snapshot file doesn't exist yet/anymore
-          return res.json({
-            success: true,
-            data: [],
-            meta: {
-              timestamp: new Date().toISOString(),
-              count: 0,
-              total: 0
-            }
-          });
+          return res.json([]);
         }
         console.error('Error fetching snapshot:', fileErr);
         throw fileErr;
@@ -159,13 +139,7 @@ async function handleAlertsRequest(req, res, idsDir, tsDir, typeStr) {
     // though caching on 'edgewarn' can safely follow 'official' since both are file-backed now.
     res.set('Cache-Control', 'public, max-age=5');
 
-    return res.json({
-      success: true,
-      data: {
-        timestamps: timestamps
-      },
-      meta: { timestamp: new Date().toISOString() }
-    });
+    return res.json(timestamps);
   } catch (err) {
     return res.status(500).json({
       success: false,
