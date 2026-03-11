@@ -200,40 +200,47 @@ def _get_cell_polygon(cell: Dict[str, Any]) -> Optional[Polygon]:
     return None
 
 
-def match_alerts_to_cell(cell: Dict[str, Any], alerts: List[Dict[str, Any]]) -> List[str]:
+def match_alerts_to_cell(cell: Dict[str, Any], prepped_alerts: List[tuple]) -> List[str]:
     """
     Find all alert IDs that intersect with a given cell.
     
-    Uses centroid-based matching for efficiency: if the cell's centroid
-    falls within an alert polygon, it's considered a match.
+    Uses polygon-to-polygon intersection for precision, falling back to 
+    centroid-based matching if cell polygon is unavailable.
     
     Args:
         cell: Cell entry dictionary with "centroid" and/or "bbox"
-        alerts: List of alert feature dictionaries
+        prepped_alerts: List of (alert_id, prepared_polygon) tuples
         
     Returns:
         List of matching alert ID strings
     """
     matching_ids = []
     
-    # Get cell centroid for point-in-polygon test
-    cell_point = _get_cell_centroid(cell)
-    if cell_point is None:
+    # Try to get cell polygon (bbox) first for better precision
+    cell_geom = _get_cell_polygon(cell)
+    
+    # Fallback to centroid if no bbox
+    if cell_geom is None:
+        cell_geom = _get_cell_centroid(cell)
+    
+    if cell_geom is None:
         return matching_ids
     
-    for alert in alerts:
-        alert_id = _extract_alert_id(alert)
-        if not alert_id:
-            continue
-        
-        # Get alert polygon
-        alert_poly = _get_alert_polygon(alert)
-        if alert_poly is None:
-            continue
-        
-        # Check if cell centroid is within alert polygon
+    # Add a tiny buffer (approx 500m) to account for edge precision/rounding
+    try:
+        if isinstance(cell_geom, Polygon):
+            # Using a slightly larger buffer for polygons to ensure overlap detection
+            match_geom = cell_geom.buffer(0.005) 
+        else:
+            # For points, use a smaller buffer
+            match_geom = cell_geom.buffer(0.01)
+    except Exception:
+        match_geom = cell_geom
+    
+    for alert_id, alert_poly_prepared in prepped_alerts:
+        # Check if cell geometry intersects with alert polygon
         try:
-            if alert_poly.contains(cell_point) or alert_poly.intersects(cell_point.buffer(0.01)):
+            if alert_poly_prepared.intersects(match_geom):
                 matching_ids.append(alert_id)
         except Exception:
             # Skip on geometry errors
@@ -271,9 +278,22 @@ def match_alerts_to_cells(
             cell["alerts"] = []
         return cell_entries
     
+    # Pre-process alert polygons for efficiency (prep once, check many)
+    prepped_alerts = []
+    for alert in filtered_alerts:
+        alert_id = _extract_alert_id(alert)
+        alert_poly = _get_alert_polygon(alert)
+        if alert_id and alert_poly:
+            prepped_alerts.append((alert_id, prep(alert_poly)))
+    
+    if not prepped_alerts:
+        for cell in cell_entries:
+            cell["alerts"] = []
+        return cell_entries
+
     # Match alerts to each cell
     for cell in cell_entries:
-        matching_ids = match_alerts_to_cell(cell, filtered_alerts)
+        matching_ids = match_alerts_to_cell(cell, prepped_alerts)
         cell["alerts"] = matching_ids
     
     total_matches = sum(len(cell.get("alerts", [])) for cell in cell_entries)

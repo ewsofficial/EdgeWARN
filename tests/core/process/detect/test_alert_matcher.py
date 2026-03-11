@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
+from shapely.prepared import prep
 from EdgeWARN.core.process.detect.tools.alert_matcher import (
     CONVECTIVE_FLOOD_EVENTS,
     load_active_alerts,
@@ -20,6 +21,7 @@ from EdgeWARN.core.process.detect.tools.alert_matcher import (
     _extract_alert_id,
     _get_alert_polygon,
     _get_cell_centroid,
+    _get_cell_polygon,
     match_alerts_to_cell,
     match_alerts_to_cells,
 )
@@ -28,6 +30,26 @@ from EdgeWARN.core.process.detect.tools.alert_matcher import (
 # =============================================================================
 # Fixtures
 # =============================================================================
+
+@pytest.fixture
+def prepped_alerts(sample_convective_alert, sample_flood_alert):
+    """Create a list of prepped alerts for testing match_alerts_to_cell."""
+    from shapely.geometry import Polygon
+    # We need to manually prep because match_alerts_to_cell expects prepped list
+    alerts = []
+    
+    # Convective
+    id1 = _extract_alert_id(sample_convective_alert)
+    poly1 = _get_alert_polygon(sample_convective_alert)
+    alerts.append((id1, prep(poly1)))
+    
+    # Flood
+    id2 = _extract_alert_id(sample_flood_alert)
+    poly2 = _get_alert_polygon(sample_flood_alert)
+    alerts.append((id2, prep(poly2)))
+    
+    return alerts
+
 
 @pytest.fixture
 def temp_registry(tmp_path):
@@ -211,20 +233,20 @@ class TestExtractAlertId:
 class TestSpatialMatching:
     """Tests for spatial intersection logic."""
     
-    def test_cell_inside_alert_polygon(self, sample_convective_alert, sample_cell_inside_storm):
+    def test_cell_inside_alert_polygon(self, prepped_alerts, sample_cell_inside_storm):
         """Verify cell inside alert polygon returns matching alert ID."""
-        matching_ids = match_alerts_to_cell(sample_cell_inside_storm, [sample_convective_alert])
+        matching_ids = match_alerts_to_cell(sample_cell_inside_storm, prepped_alerts)
         
         assert len(matching_ids) == 1
         assert matching_ids[0] == "urn:oid:2.49.0.1.840.0.2406210827.1"
         
-    def test_cell_outside_alert_polygon(self, sample_convective_alert, sample_cell_outside_storm):
+    def test_cell_outside_alert_polygon(self, prepped_alerts, sample_cell_outside_storm):
         """Verify cell outside alert polygon returns empty list."""
-        matching_ids = match_alerts_to_cell(sample_cell_outside_storm, [sample_convective_alert])
+        matching_ids = match_alerts_to_cell(sample_cell_outside_storm, prepped_alerts)
         
         assert len(matching_ids) == 0
         
-    def test_cell_matches_multiple_alerts(self, sample_convective_alert, sample_flood_alert):
+    def test_cell_matches_multiple_alerts(self, prepped_alerts):
         """Verify cell can match multiple overlapping alerts."""
         # Create a cell that overlaps both alert polygons
         cell = {
@@ -233,21 +255,41 @@ class TestSpatialMatching:
             "bbox": [[34.9, -97.1], [34.9, -96.9], [35.1, -96.9], [35.1, -97.1]],
         }
         
-        matching_ids = match_alerts_to_cell(cell, [sample_convective_alert, sample_flood_alert])
+        matching_ids = match_alerts_to_cell(cell, prepped_alerts)
         
         # Should match at least one (depending on exact geometry)
         assert len(matching_ids) >= 1
+
+    def test_cell_bbox_intersection(self, sample_convective_alert):
+        """Verify cell matches via bbox even if centroid is outside."""
+        # Alert is -97 to -96, 35 to 36
+        # Cell centroid is at -97.05 (outside), but bbox extends to -96.95 (inside)
+        cell = {
+            "id": 5,
+            "centroid": [35.5, -97.05], 
+            "bbox": [[35.4, -97.1], [35.4, -96.95], [35.6, -96.95], [35.6, -97.1]],
+        }
+        
+        alert_id = _extract_alert_id(sample_convective_alert)
+        alert_poly = _get_alert_polygon(sample_convective_alert)
+        prepped = [(alert_id, prep(alert_poly))]
+        
+        matching_ids = match_alerts_to_cell(cell, prepped)
+        assert alert_id in matching_ids
         
     def test_empty_alerts_returns_empty(self, sample_cell_inside_storm):
         """Verify empty alerts list returns empty matches."""
         matching_ids = match_alerts_to_cell(sample_cell_inside_storm, [])
         assert matching_ids == []
         
-    def test_cell_without_centroid_returns_empty(self, sample_convective_alert):
-        """Verify cell without centroid returns empty list."""
-        cell = {"id": 4, "bbox": [[35.0, -97.0], [35.0, -96.0], [36.0, -96.0], [36.0, -97.0]]}
-        matching_ids = match_alerts_to_cell(cell, [sample_convective_alert])
-        assert matching_ids == []
+    def test_cell_without_centroid_but_with_bbox(self, prepped_alerts):
+        """Verify cell without centroid but with bbox still matches."""
+        cell = {
+            "id": 4, 
+            "bbox": [[35.4, -96.6], [35.4, -96.4], [35.6, -96.4], [35.6, -96.6]]
+        }
+        matching_ids = match_alerts_to_cell(cell, prepped_alerts)
+        assert "urn:oid:2.49.0.1.840.0.2406210827.1" in matching_ids
 
 
 # =============================================================================
