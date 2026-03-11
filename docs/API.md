@@ -152,11 +152,20 @@ Returns the stormcell list for that timestamp:
 **GET** `/api/v2/features/alerts/official`
 **GET** `/api/v2/features/alerts/edgewarn`
 
-Returns a list of available alert timestamps (either Official NWS alerts or EdgeWARN internal alerts).
+Returns alert data (either Official NWS alerts or EdgeWARN internal alerts). Supports three modes of operation based on query parameters.
 
-#### Response
+#### Query Parameters
 
-Returns a simple list of available timestamps:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `timestamp` | string | Conditional | Format: `YYYYMMDD-HHMMSS`. Returns active alerts at this time. Mutually exclusive with `id` |
+| `id` | string | Conditional | Alert ID to fetch specific alert. Mutually exclusive with `timestamp` |
+
+**Note:** `timestamp` and `id` cannot be specified at the same time.
+
+#### Response (no parameters)
+
+Returns a list of available timestamps:
 
 ```json
 [
@@ -168,6 +177,32 @@ Returns a simple list of available timestamps:
 #### Response (with timestamp)
 
 Returns the active alerts for that timestamp:
+
+```json
+[
+  "urn:oid:alert1",
+  "urn:oid:alert2"
+]
+```
+
+#### Response (with id)
+
+Returns the specific alert:
+
+```json
+{
+  "id": "urn:oid:2.49.0.1.840.0.2406210827.1",
+  "alert_type": "severe_weather",
+  "effective": "2026-02-23T02:00:00Z",
+  "expires": "2026-02-23T04:00:00Z"
+}
+```
+
+#### Error Responses
+
+- `400 Bad Request` - Invalid parameters, mutually exclusive parameters, formatting issues
+- `404 Not Found` - Timestamp or alert ID not found
+- `500 Internal Server Error` - Server error
 
 ```json
 {
