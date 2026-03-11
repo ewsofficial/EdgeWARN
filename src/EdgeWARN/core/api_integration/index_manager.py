@@ -13,6 +13,8 @@ class APIIndexManager:
         self.stormcell_index_path = fs.STORMCELL_DIR / "stormcell_index.json"
         self.cell_index_path = fs.CELL_DIR / "cell_index.json"
         self.remove_old_cells = remove_old_cells
+        self.cell_timestamps = {}
+        self._initial_scan_done = False
         
     def initialize_indexes(self):
         """
@@ -25,7 +27,7 @@ class APIIndexManager:
         self._initialize_stormcell_index()
         
         # Initialize cell index
-        self._initialize_cell_index()
+        self._initial_scan_cell_index()
         
         self.io_manager.write_info("API indexes initialized successfully")
     
@@ -55,40 +57,52 @@ class APIIndexManager:
         # Write index
         with open(self.stormcell_index_path, 'w') as f:
             json.dump(index_data, f, indent=2)
-        
-    
-    def _initialize_cell_index(self):
-        """Scan CELL_DIR and create/update cell_index.json"""
+            
+    def _initial_scan_cell_index(self):
+        """Scan CELL_DIR once on startup to populate our internal state."""
         if not fs.CELL_DIR.exists():
             fs.CELL_DIR.mkdir(parents=True, exist_ok=True)
+            
+        current_time = datetime.now(timezone.utc).timestamp()
         
         # Find all {id}.json files
-        cell_files = sorted(fs.CELL_DIR.glob("*.json"))
+        cell_files = fs.CELL_DIR.glob("*.json")
         
-        # Extract cell IDs from filenames
-        cell_ids = []
+        self.cell_timestamps.clear()
+        
         for file in cell_files:
             name = file.stem  # Remove .json
-            # Skip index file itself
             if name == "cell_index":
                 continue
+            
             try:
-                cell_id = int(name)
-                cell_ids.append(cell_id)
+                cell_id = name
+                # Initialize with file modification time or current time
+                self.cell_timestamps[cell_id] = file.stat().st_mtime
+            except Exception:
+                pass
+                
+        self._initial_scan_done = True
+        self._write_cell_index()
+
+    def _write_cell_index(self):
+        """Write the current state to the index file."""
+        # cellIds should be int if possible according to the old logic
+        cell_ids = []
+        for cid in self.cell_timestamps.keys():
+            try:
+                cell_ids.append(int(cid))
             except ValueError:
-                self.io_manager.write_warning(f"Skipping non-numeric cell file: {name}")
-        
-        # Create index
+                self.io_manager.write_warning(f"Skipping non-numeric cell file: {cid}")
+                
         index_data = {
             "cellIds": sorted(cell_ids),
             "lastUpdated": datetime.now(timezone.utc).isoformat()
         }
         
-        # Write index
         with open(self.cell_index_path, 'w') as f:
             json.dump(index_data, f, indent=2)
-        
-    
+            
     def update_stormcell_index(self, timestamp: str):
         """
         Update stormcell_index.json by scanning the directory.
@@ -101,20 +115,49 @@ class APIIndexManager:
 
     def update_cell_index(self, cell_ids: list):
         """
-        Update cell_index.json by scanning the directory.
+        Update cell_index.json incrementally without a full directory scan!
         
         Args:
-            cell_ids: Unused, kept for compatibility.
+            cell_ids: List of active cell IDs just processed.
         """
-        self._initialize_cell_index()
+        if not self._initial_scan_done:
+            self._initial_scan_cell_index()
+            
+        current_time = datetime.now(timezone.utc).timestamp()
+        
+        for cid in cell_ids:
+            self.cell_timestamps[str(cid)] = current_time
+            
+        self._write_cell_index()
     
     def cleanup_inactive_cells(self):
         """
-        Remove files older than 2 hours from CELL_DIR, then update index.
+        Remove files older than 2 hours using our tracked state, then update index.
+        Doesn't glob the directory.
         """
+        if not self._initial_scan_done:
+            self._initial_scan_cell_index()
+            
         if self.remove_old_cells:
-            # Files older than 120 minutes
-            fs.clean_files_by_age(fs.CELL_DIR, max_age_minutes=120)
-        
+            current_time = datetime.now(timezone.utc).timestamp()
+            cutoff_time = current_time - (120 * 60) # 120 minutes ago
+            
+            expired_cells = []
+            for cell_id, timestamp in self.cell_timestamps.items():
+                if timestamp < cutoff_time:
+                    expired_cells.append(cell_id)
+            
+            for cell_id in expired_cells:
+                # Remove from disk
+                file_path = fs.CELL_DIR / f"{cell_id}.json"
+                try:
+                    if file_path.exists():
+                        file_path.unlink()
+                except Exception as e:
+                    self.io_manager.write_error(f"Failed to delete old cell file {cell_id}.json: {e}")
+                    
+                # Remove from tracking
+                del self.cell_timestamps[cell_id]
+                
         # Update index to match reality
-        self._initialize_cell_index()
+        self._write_cell_index()

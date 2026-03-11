@@ -38,7 +38,7 @@ class StormCastModule(AnalysisModule):
     def name(self) -> str:
         return "StormCast"
 
-    def run(self, storm_entry: Dict[str, Any], environment: Optional[Dict[str, Any]] = None) -> None:
+    def run(self, storm_entry: Dict[str, Any], environment: Optional[Dict[str, Any]] = None, history_cache: Optional[Any] = None) -> None:
         """
         Run StormCast on a storm entry.
         
@@ -232,22 +232,30 @@ class StormCastModule(AnalysisModule):
             try:
                 cell_id = storm_entry.get("id")
                 if cell_id:
-                    history_file = fs.CELL_DIR / f"{cell_id}.json"
-                    if history_file.exists():
-                        with open(history_file, "r") as f:
-                            hist_data = json.load(f)
-                            for h in hist_data:
-                                h_ts = h.get("timestamp") or h.get("properties", {}).get("timestamp")
-                                h_cent = h.get("centroid")
-                                h_props = h.get("properties", {})
-                                if h_ts and h_cent:
-                                    historical_points.append({
-                                        "ts": h_ts,
-                                        "lat": h_cent[0],
-                                        "lon": h_cent[1] if h_cent[1] <= 180 else h_cent[1] - 360,
-                                        "echo_top_30": h_props.get("p100EchoTop30", 10.0), # Schema check?
-                                        "echo_top_50": h_props.get("EchoTop50", 8.0)
-                                    })
+                    if history_cache is not None:
+                        # cache get() returns highest-to-lowest, but we need lowest-to-highest for StormCast
+                        hist_data = history_cache.get(cell_id)
+                        hist_data = list(reversed(hist_data))
+                    else:
+                        history_file = fs.CELL_DIR / f"{cell_id}.json"
+                        if history_file.exists():
+                            with open(history_file, "r") as f:
+                                hist_data = json.load(f)
+                        else:
+                            hist_data = []
+                            
+                    for h in hist_data:
+                        h_ts = h.get("timestamp") or h.get("properties", {}).get("timestamp")
+                        h_cent = h.get("centroid")
+                        h_props = h.get("properties", {})
+                        if h_ts and h_cent:
+                            historical_points.append({
+                                "ts": h_ts,
+                                "lat": h_cent[0],
+                                "lon": h_cent[1] if h_cent[1] <= 180 else h_cent[1] - 360,
+                                "echo_top_30": h_props.get("p100EchoTop30", 10.0), # Schema check?
+                                "echo_top_50": h_props.get("EchoTop50", 8.0)
+                            })
             except Exception:
                 pass
                 
