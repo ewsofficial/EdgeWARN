@@ -127,9 +127,8 @@ describe('API v2 Features Alerts Route', () => {
                 .get('/api/v2/features/alerts/official')
                 .expect(200);
 
-            expect(response.body.success).toBe(true);
-            expect(response.body.data.timestamps).toHaveLength(2);
-            expect(response.body.data.alerts).toBeUndefined();
+            expect(Array.isArray(response.body)).toBe(true);
+            expect(response.body).toHaveLength(2);
         });
 
         it('should return single alert when id modifier is given', async () => {
@@ -137,8 +136,7 @@ describe('API v2 Features Alerts Route', () => {
                 .get('/api/v2/features/alerts/official?id=urn:oid:456')
                 .expect(200);
 
-            expect(response.body.success).toBe(true);
-            expect(response.body.data.alert_type).toBe('flash_flood');
+            expect(response.body.alert_type).toBe('flash_flood');
         });
 
         it('should return 404 for unknown id modifier', async () => {
@@ -189,13 +187,11 @@ describe('API v2 Features Alerts Route', () => {
                 .get('/api/v2/features/alerts/official?timestamp=20260309-110000')
                 .expect(200);
 
-            expect(response.body.success).toBe(true);
-            expect(response.body.data).toHaveLength(3);
-            expect(response.body.data[0]).toBe("urn:oid:snapshot1");
-            expect(response.body.data[1]).toBe("urn:oid:snapshot2");
-            expect(response.body.data[2]).toBe("urn:oid:snapshot3");
-            expect(response.body.meta.count).toBe(3);
-            expect(response.body.meta.total).toBe(3);
+            expect(Array.isArray(response.body)).toBe(true);
+            expect(response.body).toHaveLength(3);
+            expect(response.body[0]).toBe("urn:oid:snapshot1");
+            expect(response.body[1]).toBe("urn:oid:snapshot2");
+            expect(response.body[2]).toBe("urn:oid:snapshot3");
             expect(response.headers['cache-control']).toContain('max-age=60');
         });
     });
@@ -243,9 +239,8 @@ describe('API v2 Features Alerts Route', () => {
                 .get('/api/v2/features/alerts/edgewarn')
                 .expect(200);
 
-            expect(response.body.success).toBe(true);
-            expect(response.body.data.timestamps).toHaveLength(2);
-            expect(response.body.data.alerts).toBeUndefined();
+            expect(Array.isArray(response.body)).toBe(true);
+            expect(response.body).toHaveLength(2);
         });
 
         it('should return single alert when id modifier is given', async () => {
@@ -253,8 +248,7 @@ describe('API v2 Features Alerts Route', () => {
                 .get('/api/v2/features/alerts/edgewarn?id=id:severe_weather:StormCast:C123:2026.03.09.11.00.00')
                 .expect(200);
 
-            expect(response.body.success).toBe(true);
-            expect(response.body.data.alert_type).toBe('severe_weather');
+            expect(response.body.alert_type).toBe('severe_weather');
         });
 
         it('should filter correctly based on timestamp modifier and return IDs only', async () => {
@@ -262,9 +256,9 @@ describe('API v2 Features Alerts Route', () => {
                 .get('/api/v2/features/alerts/edgewarn?timestamp=20260309-120000')
                 .expect(200);
 
-            expect(response.body.success).toBe(true);
-            expect(response.body.data).toHaveLength(1);
-            expect(response.body.data[0]).toBe('id:severe_weather:StormCast:C123:2026.03.09.11.00.00');
+            expect(Array.isArray(response.body)).toBe(true);
+            expect(response.body).toHaveLength(1);
+            expect(response.body[0]).toBe('id:severe_weather:StormCast:C123:2026.03.09.11.00.00');
         });
     });
 });
