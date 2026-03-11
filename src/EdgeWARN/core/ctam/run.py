@@ -42,6 +42,13 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     start_time = time.time()
     
+    # Clean up expired alerts before running modules
+    # This prevents expired alerts from piling up on disk
+    try:
+        AlertManager.cleanup_expired()
+    except Exception as e:
+        print(f"[CTAM] Failed to clean up expired alerts: {e}")
+    
     # GeoMapper is now integrated into NWS Ingest, so we don't need to run it here.
     # Data in fs.MRMS_NWS_DIR is already processed with polygons.
 

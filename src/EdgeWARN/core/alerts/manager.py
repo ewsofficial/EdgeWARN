@@ -6,7 +6,7 @@ to/from the filesystem.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -148,3 +148,65 @@ class AlertManager:
                     f"Failed to load alert {path.name}: {e}"
                 )
         return results
+
+    @staticmethod
+    def cleanup_expired(max_age_minutes: Optional[int] = 120) -> int:
+        """
+        Delete expired or stale alert files from disk.
+
+        Args:
+            max_age_minutes: Maximum age of a file (in minutes) before it is unconditionally
+                             deleted as a safety measure. If None, only check 'expires'.
+
+        Returns:
+            The number of files deleted.
+        """
+        if not fs.EDGEWARN_ALERTS_DIR.exists():
+            return 0
+
+        now = datetime.now(timezone.utc)
+        now_ts = now.timestamp()
+        cutoff_ts = None
+        if max_age_minutes is not None:
+            cutoff_ts = now_ts - (max_age_minutes * 60)
+
+        deleted_count = 0
+
+        for path in fs.EDGEWARN_ALERTS_DIR.glob("alert_*.json"):
+            if not path.is_file():
+                continue
+
+            should_delete = False
+
+            # 1. Safety check: file is too old
+            if cutoff_ts is not None and path.stat().st_mtime < cutoff_ts:
+                should_delete = True
+            else:
+                # 2. Check expires timestamp inside the file
+                try:
+                    with open(path, "r") as f:
+                        data = json.load(f)
+                    
+                    expires_str = data.get("expires")
+                    if expires_str:
+                        expires_dt = datetime.fromisoformat(expires_str)
+                        # Make expires_dt timezone-aware if it isn't already
+                        if expires_dt.tzinfo is None:
+                             expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                        if expires_dt < now:
+                            should_delete = True
+                except Exception as e:
+                    io_manager.write_warning(f"Failed to read/parse {path.name} during cleanup: {e}")
+                    pass
+
+            if should_delete:
+                try:
+                    path.unlink()
+                    deleted_count += 1
+                except Exception as e:
+                    io_manager.write_error(f"Failed to delete expired alert {path.name}: {e}")
+
+        if deleted_count > 0:
+            io_manager.write_info(f"Cleaned up {deleted_count} expired/stale EdgeWARN alerts.")
+
+        return deleted_count
