@@ -2,57 +2,22 @@ import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import apiConfig from '../../../config.js';
-import { readJsonFileSafe, readIndexFile } from '../../../utils/fileReader.js';
+import { readJsonFileSafe } from '../../../utils/fileReader.js';
 import { validateTimestampV2, validateMutualExclusion, validateAlertId } from '../../../utils/validation.js';
 
 const router = express.Router();
 
 /**
- * Helper to parse a YYYYMMDD-HHMMSS string into a Date object
- */
-function parseScanTimestamp(timestampStr) {
-  // Format: YYYYMMDD-HHMMSS
-  const match = timestampStr.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/);
-  if (!match) return null;
-  const [_, year, month, day, hour, minute, second] = match;
-  return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
-}
-
-/**
- * Helper to check if an alert is active at a given timestamp
- */
-function isAlertActiveAt(alert, timestampDate) {
-  if (!alert.effective || !alert.expires) return false;
-  const effective = new Date(alert.effective);
-  const expires = new Date(alert.expires);
-  return timestampDate >= effective && timestampDate <= expires;
-}
-
-/**
- * Helper to get available timestamps from the system (stormcell index)
- */
-async function getAvailableTimestamps() {
-  try {
-    const indexPath = path.join(apiConfig.STORMCELL_DIR, 'stormcell_index.json');
-    const indexData = await readIndexFile(indexPath);
-    return indexData.timestamps || [];
-  } catch (err) {
-    console.error('Failed to get available timestamps:', err);
-    return [];
-  }
-}
-
-/**
- * Helper to scan NWS directory for available snapshot timestamps
+ * Helper to scan a given TS directory for available snapshot timestamps
  * @returns {Promise<string[]>} - Array of timestamps in YYYYMMDD-HHMMSS format
  */
-async function getNwsTimestamps() {
+async function getTimestamps(tsDir) {
   try {
-    const files = await fs.readdir(apiConfig.OFFICIAL_ALERTS_TS_DIR);
+    const files = await fs.readdir(tsDir);
     const timestamps = [];
 
     for (const file of files) {
-      // NWS snapshot files: YYYYMMDD-HHMMSS.json
+      // Snapshot files: YYYYMMDD-HHMMSS.json
       const match = file.match(/^(\d{8}-\d{6})\.json$/);
       if (match && match[1]) {
         timestamps.push(match[1]);
@@ -70,55 +35,9 @@ async function getNwsTimestamps() {
 }
 
 /**
- * Helper to load all EdgeWARN alerts from the filesystem
- */
-async function loadEdgeWARNAlerts() {
-  const alerts = [];
-  try {
-    const files = await fs.readdir(apiConfig.EDGEWARN_ALERTS_DIR);
-    for (const file of files) {
-      if (file.startsWith('alert_') && file.endsWith('.json')) {
-        const data = await readJsonFileSafe(apiConfig.EDGEWARN_ALERTS_DIR, file, { useCache: true });
-        if (data && Object.keys(data).length > 0) {
-          alerts.push(data);
-        }
-      }
-    }
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.error('Error reading EdgeWARN alerts:', err);
-    }
-  }
-  return alerts;
-}
-
-/**
- * Helper to load all Official (NWS) alerts from the registry
- */
-async function loadOfficialAlerts() {
-  const alerts = [];
-  try {
-    const files = await fs.readdir(apiConfig.OFFICIAL_ALERTS_IDS_DIR);
-    for (const file of files) {
-      if (file.endsWith('.json')) {
-        const data = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_IDS_DIR, file, { useCache: true });
-        if (data && Object.keys(data).length > 0) {
-          alerts.push(data);
-        }
-      }
-    }
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      console.error('Error reading Official alerts ids:', err);
-    }
-  }
-  return alerts;
-}
-
-/**
  * Standard GET handler logic for both endpoints
  */
-async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
+async function handleAlertsRequest(req, res, idsDir, tsDir, typeStr) {
   const { timestamp, id } = req.query;
 
   // Validate mutual exclusion
@@ -145,20 +64,15 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
     }
 
     try {
+      const safeId = id.replace(/:/g, "_").replace(/\//g, "_") + ".json";
       let alert = null;
-      if (typeStr === 'official') {
-        const safeId = id.replace(/:/g, "_").replace(/\//g, "_") + ".json";
-        try {
-          alert = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_IDS_DIR, safeId, { useCache: true });
-        } catch (e) {
-          // Will be handled by the !alert check below
-        }
-      } else {
-        const allAlerts = await loadAlertsFn();
-        alert = allAlerts.find(a => a.id === id);
+      try {
+        alert = await readJsonFileSafe(idsDir, safeId, { useCache: true });
+      } catch (e) {
+        // Will be handled by the !alert check below
       }
 
-      if (!alert) {
+      if (!alert || Object.keys(alert).length === 0) {
         return res.status(404).json({
           success: false,
           error: {
@@ -168,13 +82,11 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
         });
       }
 
-      if (typeStr === 'official') {
-        res.set('Cache-Control', 'public, max-age=60');
-      }
+      res.set('Cache-Control', 'public, max-age=60');
 
       return res.json({
         success: true,
-        data: alert,
+        data: alert.feature ? alert.feature : alert, // Official nests in .feature, EdgeWARN does not
         meta: { timestamp: new Date().toISOString() }
       });
     } catch (err) {
@@ -198,48 +110,39 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
     }
 
     try {
-      if (typeStr === 'official') {
-        res.set('Cache-Control', 'public, max-age=60');
+      res.set('Cache-Control', 'public, max-age=60');
 
-        // Build filename: {timestamp}.json
-        const filename = `${timestamp}.json`;
-        try {
-          const snapshotData = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_TS_DIR, filename, { useCache: false });
-          const alertIds = Array.isArray(snapshotData.alerts) ? snapshotData.alerts : [];
+      // Build filename: {timestamp}.json
+      const filename = `${timestamp}.json`;
+      try {
+        const snapshotData = await readJsonFileSafe(tsDir, filename, { useCache: false });
+        const alertIds = Array.isArray(snapshotData.alerts) ? snapshotData.alerts : [];
 
+        return res.json({
+          success: true,
+          data: alertIds,
+          meta: {
+            timestamp: new Date().toISOString(),
+            count: alertIds.length,
+            total: snapshotData.count || alertIds.length
+          }
+        });
+      } catch (fileErr) {
+        if (fileErr.code === 'ENOENT') {
+          // Gracefully fallback to empty array if the snapshot file doesn't exist yet/anymore
           return res.json({
             success: true,
-            data: alertIds,
+            data: [],
             meta: {
               timestamp: new Date().toISOString(),
-              count: alertIds.length,
-              total: snapshotData.count || alertIds.length
+              count: 0,
+              total: 0
             }
           });
-        } catch (fileErr) {
-          if (fileErr.code !== 'ENOENT') {
-            console.error('Error fetching snapshot:', fileErr);
-          }
-          // If the snapshot file does not exist, gracefully fallback
         }
+        console.error('Error fetching snapshot:', fileErr);
+        throw fileErr;
       }
-
-      const timestampDate = parseScanTimestamp(timestamp);
-      const allAlerts = await loadAlertsFn();
-
-      const activeAlertIds = allAlerts
-        .filter(alert => isAlertActiveAt(alert, timestampDate))
-        .map(alert => alert.id);
-
-      return res.json({
-        success: true,
-        data: activeAlertIds,
-        meta: {
-          timestamp: new Date().toISOString(),
-          count: activeAlertIds.length,
-          total: activeAlertIds.length
-        }
-      });
     } catch (err) {
       return res.status(500).json({
         success: false,
@@ -250,13 +153,11 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
 
   // No modifiers - return timestamps list only
   try {
-    const timestamps = typeStr === 'official'
-      ? await getNwsTimestamps()
-      : await getAvailableTimestamps();
+    const timestamps = await getTimestamps(tsDir);
 
-    if (typeStr === 'official') {
-      res.set('Cache-Control', 'public, max-age=5');
-    }
+    // Slight caching logic distinction keeping original semantics for now if needed,
+    // though caching on 'edgewarn' can safely follow 'official' since both are file-backed now.
+    res.set('Cache-Control', 'public, max-age=5');
 
     return res.json({
       success: true,
@@ -277,14 +178,26 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
  * GET /api/v2/features/alerts/official
  */
 router.get('/official', async (req, res) => {
-  await handleAlertsRequest(req, res, loadOfficialAlerts, 'official');
+  await handleAlertsRequest(
+    req,
+    res,
+    apiConfig.OFFICIAL_ALERTS_IDS_DIR,
+    apiConfig.OFFICIAL_ALERTS_TS_DIR,
+    'official'
+  );
 });
 
 /**
  * GET /api/v2/features/alerts/edgewarn
  */
 router.get('/edgewarn', async (req, res) => {
-  await handleAlertsRequest(req, res, loadEdgeWARNAlerts, 'edgewarn');
+  await handleAlertsRequest(
+    req,
+    res,
+    apiConfig.EDGEWARN_ALERTS_IDS_DIR,
+    apiConfig.EDGEWARN_ALERTS_TS_DIR,
+    'edgewarn'
+  );
 });
 
 export default router;

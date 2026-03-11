@@ -117,7 +117,7 @@ def main(json_path=None, remove_old_cells=True):
         from EdgeWARN.core.ctam.run import run_ctam
         io_manager.write_info(f"Running CTAM modules for {len(result_cells)} cells")
         perf_tracker.start("Integration - CTAM")
-        result_cells = run_ctam(result_cells)
+        result_cells = run_ctam(result_cells, timestamp=timestamp)
         perf_tracker.stop("Integration - CTAM")
         io_manager.write_debug("CTAM module execution completed successfully")
     except Exception as e:

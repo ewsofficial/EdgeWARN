@@ -10,12 +10,18 @@ from EdgeWARN.core.alerts.manager import AlertManager
 
 @pytest.fixture
 def override_alerts_dir(tmp_path):
-    """Redirect EDGEWARN_ALERTS_DIR to a temporary directory for isolation."""
-    original = getattr(fs, "EDGEWARN_ALERTS_DIR", None)
-    fs.EDGEWARN_ALERTS_DIR = tmp_path / "EdgeWARN"
-    yield fs.EDGEWARN_ALERTS_DIR
-    if original is not None:
-        fs.EDGEWARN_ALERTS_DIR = original
+    """Redirect EDGEWARN_ALERTS_IDS_DIR and TS_DIR to a temporary directory for isolation."""
+    original_ids = getattr(fs, "EDGEWARN_ALERTS_IDS_DIR", None)
+    original_ts = getattr(fs, "EDGEWARN_ALERTS_TS_DIR", None)
+    fs.EDGEWARN_ALERTS_IDS_DIR = tmp_path / "EdgeWARN" / "ids"
+    fs.EDGEWARN_ALERTS_TS_DIR = tmp_path / "EdgeWARN" / "timestamps"
+    fs.EDGEWARN_ALERTS_IDS_DIR.mkdir(parents=True, exist_ok=True)
+    fs.EDGEWARN_ALERTS_TS_DIR.mkdir(parents=True, exist_ok=True)
+    yield fs.EDGEWARN_ALERTS_IDS_DIR
+    if original_ids is not None:
+        fs.EDGEWARN_ALERTS_IDS_DIR = original_ids
+    if original_ts is not None:
+        fs.EDGEWARN_ALERTS_TS_DIR = original_ts
 
 
 # ------------------------------------------------------------------
@@ -40,7 +46,7 @@ class TestAlertPayload:
 
         assert d["alert_type"] == "severe_weather"
         assert d["source"] == "StormCast"
-        assert d["id"] == "id:severe_weather:2026.03.04.12.00.00"
+        assert d["id"] == "id:severe_weather:StormCast:cell_42:2026.03.04.12.00.00"
         assert d["cell_id"] == "cell_42"
         assert d["severity"] == "warning"
         assert d["threats"] == {"hail": True}
@@ -68,14 +74,14 @@ class TestAlertManager:
         result = AlertManager.publish(alert)
 
         assert result is True
-        alert_file = override_alerts_dir / "alert_StormCast_cell_99.json"
+        alert_file = override_alerts_dir / "id_severe_weather_StormCast_cell_99_2026.03.04.12.00.00.json"
         assert alert_file.exists()
 
         with open(alert_file) as f:
             data = json.load(f)
 
         assert data["source"] == "StormCast"
-        assert data["id"] == "id:severe_weather:2026.03.04.12.00.00"
+        assert data["id"] == "id:severe_weather:StormCast:cell_99:2026.03.04.12.00.00"
         assert data["cell_id"] == "cell_99"
         assert data["alert_type"] == "severe_weather"
         assert data["geometry"] == [[35.0, -97.0], [35.1, -97.0]]
@@ -116,7 +122,7 @@ class TestAlertManager:
         ]
         count = AlertManager.publish_many(alerts)
         assert count == 3
-        assert len(list(override_alerts_dir.glob("alert_*.json"))) == 3
+        assert len(list(override_alerts_dir.glob("*.json"))) == 3
 
     def test_no_collision_across_sources(self, override_alerts_dir):
         """Two modules alerting on the same cell_id must produce separate files."""
@@ -129,14 +135,15 @@ class TestAlertManager:
         AlertManager.publish(a1)
         AlertManager.publish(a2)
 
-        files = sorted(f.name for f in override_alerts_dir.glob("alert_*.json"))
-        assert "alert_FloodModule_cell_x.json" in files
-        assert "alert_StormCast_cell_x.json" in files
+        files = sorted(f.name for f in override_alerts_dir.glob("*.json"))
+        # we aren't necessarily asserting the exact name except that there's two distinct ones
+        assert len(files) == 2
 
         # Contents are distinct
-        with open(override_alerts_dir / "alert_StormCast_cell_x.json") as f:
+        formatted_time = now.strftime("%Y.%m.%d.%H.%M.%S")
+        with open(override_alerts_dir / f"id_severe_weather_StormCast_cell_x_{formatted_time}.json") as f:
             assert json.load(f)["source"] == "StormCast"
-        with open(override_alerts_dir / "alert_FloodModule_cell_x.json") as f:
+        with open(override_alerts_dir / f"id_flash_flood_FloodModule_cell_x_{formatted_time}.json") as f:
             assert json.load(f)["source"] == "FloodModule"
 
     # ------------------------------------------------------------------
@@ -153,14 +160,15 @@ class TestAlertManager:
         )
         AlertManager.publish(original)
 
-        loaded = AlertManager.load("StormCast", "cell_50")
+        # load_by_id mapping
+        loaded = AlertManager.load_by_id(original.id)
         assert loaded is not None
         assert loaded.cell_id == "cell_50"
         assert loaded.source == "StormCast"
         assert loaded.threats == {"hail": True}
 
     def test_load_nonexistent_returns_none(self, override_alerts_dir):
-        assert AlertManager.load("StormCast", "does_not_exist") is None
+        assert AlertManager.load_by_id("does_not_exist") is None
 
     def test_load_all_returns_all_sources(self, override_alerts_dir):
         now = datetime.now()
@@ -190,12 +198,12 @@ class TestAlertManager:
         AlertManager.publish(original)
 
         # Another module loads, appends a threat, and republishes
-        loaded = AlertManager.load("StormCast", "cell_77")
+        loaded = AlertManager.load_by_id(original.id)
         loaded.threats["tornado"] = True
         AlertManager.publish(loaded)
 
         # Verify the file now has both threats
-        reloaded = AlertManager.load("StormCast", "cell_77")
+        reloaded = AlertManager.load_by_id(original.id)
         assert reloaded.threats == {"hail": True, "tornado": True}
 
     def test_cleanup_expired_removes_old_files(self, override_alerts_dir):
@@ -223,13 +231,13 @@ class TestAlertManager:
         AlertManager.publish(a_expired)
         
         # Verify both exist
-        assert len(list(override_alerts_dir.glob("alert_*.json"))) == 2
+        assert len(list(override_alerts_dir.glob("*.json"))) == 2
         
         # Run cleanup
         count = AlertManager.cleanup_expired()
         
         # Verify only active remains
         assert count == 1
-        remaining_files = list(override_alerts_dir.glob("alert_*.json"))
+        remaining_files = list(override_alerts_dir.glob("*.json"))
         assert len(remaining_files) == 1
         assert "cell_active" in remaining_files[0].name
