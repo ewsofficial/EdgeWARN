@@ -358,6 +358,50 @@ class AlertRegistry:
         
         return len(alerts_to_remove)
     
+    def cleanup_old_timestamps(self, current_time: datetime) -> int:
+        """
+        Remove timestamp snapshot files older than TTL from the timestamps directory.
+        
+        Args:
+            current_time: Current timestamp for age calculation
+            
+        Returns:
+            Count of removed timestamp files
+        """
+        ttl_delta = timedelta(hours=self.ttl_hours)
+        cutoff_time = current_time - ttl_delta
+        removed_count = 0
+        
+        try:
+            for file_path in self.ts_dir.glob("*.json"):
+                if file_path.name.startswith(".tmp"):
+                    continue
+                
+                # Parse filename: YYYYMMDD-HHMMSS.json
+                stem = file_path.stem
+                try:
+                    file_dt = datetime.strptime(stem, "%Y%m%d-%H%M%S").replace(
+                        tzinfo=timezone.utc
+                    )
+                except ValueError:
+                    continue
+                
+                if file_dt < cutoff_time:
+                    try:
+                        file_path.unlink()
+                        removed_count += 1
+                    except OSError:
+                        pass
+        except Exception as e:
+            io_manager.write_warning(f"Error during timestamp cleanup: {e}")
+        
+        if removed_count:
+            io_manager.write_info(
+                f"Cleaned up {removed_count} old timestamp snapshot(s)"
+            )
+        
+        return removed_count
+    
     def get_active_alerts(self) -> List[Dict]:
         """
         Return list of all active alert features.

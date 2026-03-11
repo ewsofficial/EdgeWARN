@@ -205,28 +205,15 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
         const filename = `${timestamp}.json`;
         try {
           const snapshotData = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_TS_DIR, filename, { useCache: false });
-          let alertBodies = [];
-
-          if (snapshotData.alerts && Array.isArray(snapshotData.alerts)) {
-            // Read actual alert bodies from ids/
-            for (const alertId of snapshotData.alerts) {
-              const safeId = alertId.replace(/:/g, "_").replace(/\//g, "_") + ".json";
-              try {
-                const alertData = await readJsonFileSafe(apiConfig.OFFICIAL_ALERTS_IDS_DIR, safeId, { useCache: true });
-                if (alertData) alertBodies.push(alertData);
-              } catch (e) {
-                // Ignore missing alert
-              }
-            }
-          }
+          const alertIds = Array.isArray(snapshotData.alerts) ? snapshotData.alerts : [];
 
           return res.json({
             success: true,
-            data: alertBodies,
+            data: alertIds,
             meta: {
               timestamp: new Date().toISOString(),
-              count: alertBodies.length,
-              total: snapshotData.count || alertBodies.length
+              count: alertIds.length,
+              total: snapshotData.count || alertIds.length
             }
           });
         } catch (fileErr) {
@@ -240,15 +227,17 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
       const timestampDate = parseScanTimestamp(timestamp);
       const allAlerts = await loadAlertsFn();
 
-      const activeAlerts = allAlerts.filter(alert => isAlertActiveAt(alert, timestampDate));
+      const activeAlertIds = allAlerts
+        .filter(alert => isAlertActiveAt(alert, timestampDate))
+        .map(alert => alert.id);
 
       return res.json({
         success: true,
-        data: activeAlerts,
+        data: activeAlertIds,
         meta: {
           timestamp: new Date().toISOString(),
-          count: activeAlerts.length,
-          total: activeAlerts.length
+          count: activeAlertIds.length,
+          total: activeAlertIds.length
         }
       });
     } catch (err) {
@@ -259,13 +248,11 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
     }
   }
 
-  // No modifiers - return timestamps list and all current alerts
+  // No modifiers - return timestamps list only
   try {
     const timestamps = typeStr === 'official'
       ? await getNwsTimestamps()
       : await getAvailableTimestamps();
-
-    const allAlerts = await loadAlertsFn();
 
     if (typeStr === 'official') {
       res.set('Cache-Control', 'public, max-age=5');
@@ -274,8 +261,7 @@ async function handleAlertsRequest(req, res, loadAlertsFn, typeStr) {
     return res.json({
       success: true,
       data: {
-        timestamps: timestamps,
-        alerts: allAlerts
+        timestamps: timestamps
       },
       meta: { timestamp: new Date().toISOString() }
     });

@@ -97,6 +97,10 @@ def download_alerts(dt: datetime):
 
     io_manager.write_info(f"Downloading active alerts for registry update...")
 
+    # Cleanup old timestamp snapshot files before download
+    current_time = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    registry.cleanup_old_timestamps(current_time)
+
     headers = {
         "User-Agent": "(EdgeWARN/1.0, contact@edgewarn.com)",
         "Accept": "application/geo+json"
@@ -154,6 +158,10 @@ async def download_alerts_async(dt: datetime):
     registry = _get_registry()
 
     io_manager.write_info(f"Downloading active alerts (async) for registry update...")
+
+    # Cleanup old timestamp snapshot files before download
+    current_time = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    registry.cleanup_old_timestamps(current_time)
 
     headers = {
         "User-Agent": "(EdgeWARN/1.0, contact@edgewarn.com)",
