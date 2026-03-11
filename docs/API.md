@@ -323,6 +323,7 @@ Returns API v2 information and available endpoints.
 
 - **Latitude**: Decimal degrees [20, 55]
 - **Longitude**: Decimal degrees [227, 300] (0-360 format)
+- **Precision**: Computed spatial coordinates (e.g., StormCast forecast polygons and cones) are rounded to 3 decimal places to reduce payload size.
 
 ---
 
