@@ -198,3 +198,38 @@ class TestAlertManager:
         reloaded = AlertManager.load("StormCast", "cell_77")
         assert reloaded.threats == {"hail": True, "tornado": True}
 
+    def test_cleanup_expired_removes_old_files(self, override_alerts_dir):
+        """cleanup_expired should remove files with expires < now."""
+        from datetime import timezone
+        
+        # 1. Active alert
+        now = datetime.now(timezone.utc)
+        active_eff = now - timedelta(minutes=10)
+        active_exp = now + timedelta(minutes=20)
+        a_active = AlertPayload(
+            "severe_weather", "StormCast", "cell_active",
+            [(35.0, -97.0)], active_eff, active_exp
+        )
+        
+        # 2. Expired alert
+        exp_eff = now - timedelta(minutes=40)
+        exp_exp = now - timedelta(minutes=10)
+        a_expired = AlertPayload(
+            "severe_weather", "StormCast", "cell_expired",
+            [(35.0, -97.0)], exp_eff, exp_exp
+        )
+        
+        AlertManager.publish(a_active)
+        AlertManager.publish(a_expired)
+        
+        # Verify both exist
+        assert len(list(override_alerts_dir.glob("alert_*.json"))) == 2
+        
+        # Run cleanup
+        count = AlertManager.cleanup_expired()
+        
+        # Verify only active remains
+        assert count == 1
+        remaining_files = list(override_alerts_dir.glob("alert_*.json"))
+        assert len(remaining_files) == 1
+        assert "cell_active" in remaining_files[0].name
