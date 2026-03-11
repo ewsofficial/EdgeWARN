@@ -300,13 +300,25 @@ class StormCastModule(AnalysisModule):
             ref_lat_rad = math.radians(ref_lat)
             LON_METERS = 111111.0 * math.cos(ref_lat_rad)
             
+            # Extract cell polygon
+            current_polygon = None
+            try:
+                from EdgeWARN.core.process.integrate.utils import StormIntegrationUtils
+                polygon_shape = StormIntegrationUtils.create_cell_polygon(storm_entry)
+                if polygon_shape:
+                    # Shapely exterior coords are usually (lon, lat) or (lat, lon) depending on usage
+                    # StormIntegrationUtils returns (lon, lat). We need (lat, lon).
+                    current_polygon = [(lat, lon) for lon, lat in polygon_shape.exterior.coords]
+            except Exception:
+                pass
+                
             prev_time = None
             
             # If we only have 1 point (current), try to use the dx/dy fallback
             if len(unique_points) < 2 and (dx is not None and dy is not None):
                  # Fallback to single-frame logic
                  engine.add_observation(-dx, -dy, dt_seconds=0, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
-                 engine.add_observation(0.0, 0.0, dt_seconds=dt, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
+                 engine.add_observation(0.0, 0.0, dt_seconds=dt, echo_top_30=echo_top_30, echo_top_50=echo_top_50, polygon=current_polygon)
             else:
                 # Use history
                 for i, p in enumerate(unique_points):
@@ -323,6 +335,9 @@ class StormCastModule(AnalysisModule):
                     # Ensure dt is non-negative and reasonable
                     if dt_sec < 0: dt_sec = 0
                     
+                    # Pass polygon only for the current observation (last element)
+                    poly_arg = current_polygon if p.get("is_current") else None
+                    
                     # Add observation
                     engine.add_observation(
                         rel_x, 
@@ -330,7 +345,8 @@ class StormCastModule(AnalysisModule):
                         dt_seconds=dt_sec, 
                         echo_top_30=p.get("echo_top_30", 10.0),
                         echo_top_50=p.get("echo_top_50", 8.0),
-                        timestamp=curr_time
+                        timestamp=curr_time,
+                        polygon=poly_arg
                     )
                     prev_time = curr_time
             
