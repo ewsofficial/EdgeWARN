@@ -346,7 +346,7 @@ class StormCastEngine:
         return meters_poly
 
     def _meters_to_latlon(self, x: float, y: float) -> Tuple[float, float]:
-        """Convert local meters (x, y) to (lat, lon) using flat-earth approx."""
+        """Convert local meters (x, y) to (lat, lon) using flat-earth approx, rounded to 3 decimals."""
         import math
         # 1 deg lat ~ 111,111 m
         dlat = y / 111111.0
@@ -357,4 +357,4 @@ class StormCastEngine:
         dlon = x / (111111.0 * math.cos(avg_lat_rad))
         new_lon = self.reference_lon + dlon
         
-        return (new_lat, new_lon)
+        return (round(new_lat, 3), round(new_lon, 3))
