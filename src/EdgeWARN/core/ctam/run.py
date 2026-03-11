@@ -24,7 +24,7 @@ from . import modules  # noqa: F401
 import util.file as fs
 
 
-def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Run all registered CTAM modules on the provided storm cells.
     
@@ -36,6 +36,7 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     
     Args:
         cells: List of storm cell dictionaries, each with 'properties' key.
+        timestamp: Optional scan timestamp (e.g. YYYYMMDD-HHMMSS) to save as an alert snapshot.
         
     Returns:
         The same list of cells with 'modules' populated by each registered module.
@@ -142,6 +143,13 @@ def run_ctam(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     total_elapsed = time.time() - start_time
     print(f"[CTAM] Pipeline complete: {cell_success_count} cell success, {cell_error_count} cell error(s), {grid_success_count} grid success, {grid_error_count} grid error(s), {grid_alert_count} grid alert(s) in {total_elapsed:.3f}s")
     
+    # Generate timestamp snapshot of active alerts if provided
+    if timestamp:
+        try:
+            AlertManager.create_snapshot(timestamp)
+        except Exception as e:
+            print(f"[CTAM] Failed to create alert snapshot for {timestamp}: {e}")
+
     return cells
 
 

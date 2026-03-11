@@ -83,6 +83,8 @@ const config = {
   SURFACE_DIR: path.join(DATA_DIR, 'surface_features'),
   ALERTS_DIR: path.join(DATA_DIR, 'Alerts'),
   EDGEWARN_ALERTS_DIR: path.join(DATA_DIR, 'Alerts', 'EdgeWARN'),
+  EDGEWARN_ALERTS_IDS_DIR: path.join(DATA_DIR, 'Alerts', 'EdgeWARN', 'ids'),
+  EDGEWARN_ALERTS_TS_DIR: path.join(DATA_DIR, 'Alerts', 'EdgeWARN', 'timestamps'),
   OFFICIAL_ALERTS_DIR: path.join(DATA_DIR, 'Alerts', 'official'),
   OFFICIAL_ALERTS_IDS_DIR: path.join(DATA_DIR, 'Alerts', 'official', 'ids'),
   OFFICIAL_ALERTS_TS_DIR: path.join(DATA_DIR, 'Alerts', 'official', 'timestamps'),
@@ -130,6 +132,8 @@ const requiredDirs = [
   config.SURFACE_DIR,
   config.ALERTS_DIR,
   config.EDGEWARN_ALERTS_DIR,
+  config.EDGEWARN_ALERTS_IDS_DIR,
+  config.EDGEWARN_ALERTS_TS_DIR,
   config.OFFICIAL_ALERTS_DIR,
   config.OFFICIAL_ALERTS_IDS_DIR,
   config.OFFICIAL_ALERTS_TS_DIR

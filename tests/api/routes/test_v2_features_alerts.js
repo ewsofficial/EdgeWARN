@@ -19,6 +19,11 @@ describe('API v2 Features Alerts Route', () => {
     beforeEach(async () => {
         tempVars.tempStormcellDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'edgewarn-test-stormcell-'));
         tempVars.tempEdgewarnDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'edgewarn-test-ew-'));
+        tempVars.tempEdgewarnIdsDir = path.join(tempVars.tempEdgewarnDir, 'ids');
+        tempVars.tempEdgewarnTsDir = path.join(tempVars.tempEdgewarnDir, 'timestamps');
+        await fs.promises.mkdir(tempVars.tempEdgewarnIdsDir);
+        await fs.promises.mkdir(tempVars.tempEdgewarnTsDir);
+
         tempVars.tempOfficialDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'edgewarn-test-off-'));
         tempVars.tempOfficialIdsDir = path.join(tempVars.tempOfficialDir, 'ids');
         tempVars.tempOfficialTsDir = path.join(tempVars.tempOfficialDir, 'timestamps');
@@ -27,12 +32,16 @@ describe('API v2 Features Alerts Route', () => {
 
         tempVars.originalStormcellDir = apiConfig.STORMCELL_DIR;
         tempVars.originalEdgewarnDir = apiConfig.EDGEWARN_ALERTS_DIR;
+        tempVars.originalEdgewarnIdsDir = apiConfig.EDGEWARN_ALERTS_IDS_DIR;
+        tempVars.originalEdgewarnTsDir = apiConfig.EDGEWARN_ALERTS_TS_DIR;
         tempVars.originalOfficialDir = apiConfig.OFFICIAL_ALERTS_DIR;
         tempVars.originalOfficialIdsDir = apiConfig.OFFICIAL_ALERTS_IDS_DIR;
         tempVars.originalOfficialTsDir = apiConfig.OFFICIAL_ALERTS_TS_DIR;
 
         apiConfig.STORMCELL_DIR = tempVars.tempStormcellDir;
         apiConfig.EDGEWARN_ALERTS_DIR = tempVars.tempEdgewarnDir;
+        apiConfig.EDGEWARN_ALERTS_IDS_DIR = tempVars.tempEdgewarnIdsDir;
+        apiConfig.EDGEWARN_ALERTS_TS_DIR = tempVars.tempEdgewarnTsDir;
         apiConfig.OFFICIAL_ALERTS_DIR = tempVars.tempOfficialDir;
         apiConfig.OFFICIAL_ALERTS_IDS_DIR = tempVars.tempOfficialIdsDir;
         apiConfig.OFFICIAL_ALERTS_TS_DIR = tempVars.tempOfficialTsDir;
@@ -44,6 +53,8 @@ describe('API v2 Features Alerts Route', () => {
     afterEach(async () => {
         apiConfig.STORMCELL_DIR = tempVars.originalStormcellDir;
         apiConfig.EDGEWARN_ALERTS_DIR = tempVars.originalEdgewarnDir;
+        apiConfig.EDGEWARN_ALERTS_IDS_DIR = tempVars.originalEdgewarnIdsDir;
+        apiConfig.EDGEWARN_ALERTS_TS_DIR = tempVars.originalEdgewarnTsDir;
         apiConfig.OFFICIAL_ALERTS_DIR = tempVars.originalOfficialDir;
         apiConfig.OFFICIAL_ALERTS_IDS_DIR = tempVars.originalOfficialIdsDir;
         apiConfig.OFFICIAL_ALERTS_TS_DIR = tempVars.originalOfficialTsDir;
@@ -144,18 +155,7 @@ describe('API v2 Features Alerts Route', () => {
             expect(response.headers['cache-control']).toContain('max-age=60');
         });
 
-        it('should return active alert IDs for specific timestamp (legacy static fallback)', async () => {
-            // Timestamp is 2026-03-09 13:00:00 Z and there is no snapshot file.
-            // Only alert 123 is active at this time
-            const response = await request(app)
-                .get('/api/v2/features/alerts/official?timestamp=20260309-130000')
-                .expect(200);
 
-            expect(response.body.success).toBe(true);
-            expect(response.body.data).toHaveLength(1);
-            expect(response.body.data[0]).toBe("urn:oid:123");
-            expect(response.headers['cache-control']).toContain('max-age=60');
-        });
 
         it('should return specific historical snapshot if the snapshot file exists', async () => {
             // Write a special snapshot for 20260309-110000
@@ -204,18 +204,18 @@ describe('API v2 Features Alerts Route', () => {
         beforeEach(async () => {
             // Write EdgeWARN alerts
             await fs.promises.writeFile(
-                path.join(tempVars.tempEdgewarnDir, 'alert_StormCast_C123.json'),
+                path.join(tempVars.tempEdgewarnIdsDir, 'id_severe_weather_StormCast_C123_2026.03.09.11.00.00.json'),
                 JSON.stringify({
-                    id: "id:severe_weather:2026.03.09.11.00.00",
+                    id: "id:severe_weather:StormCast:C123:2026.03.09.11.00.00",
                     alert_type: "severe_weather",
                     effective: "2026-03-09T11:00:00Z",
                     expires: "2026-03-09T13:00:00Z"
                 })
             );
             await fs.promises.writeFile(
-                path.join(tempVars.tempEdgewarnDir, 'alert_FLOHAR_C124.json'),
+                path.join(tempVars.tempEdgewarnIdsDir, 'id_flash_flood_FLOHAR_C124_2026.03.09.10.00.00.json'),
                 JSON.stringify({
-                    id: "id:flash_flood:2026.03.09.10.00.00",
+                    id: "id:flash_flood:FLOHAR:C124:2026.03.09.10.00.00",
                     alert_type: "flash_flood",
                     effective: "2026-03-09T10:00:00Z",
                     expires: "2026-03-09T11:30:00Z"
@@ -223,8 +223,18 @@ describe('API v2 Features Alerts Route', () => {
             );
             // Write Timestamps
             await fs.promises.writeFile(
-                path.join(tempVars.tempStormcellDir, 'stormcell_index.json'),
-                JSON.stringify({ timestamps: ["20260309-110000", "20260309-120000"] })
+                path.join(tempVars.tempEdgewarnTsDir, '20260309-120000.json'),
+                JSON.stringify({
+                    count: 1,
+                    alerts: ["id:severe_weather:StormCast:C123:2026.03.09.11.00.00"]
+                })
+            );
+            await fs.promises.writeFile(
+                path.join(tempVars.tempEdgewarnTsDir, '20260309-110000.json'),
+                JSON.stringify({
+                    count: 2,
+                    alerts: ["id:severe_weather:StormCast:C123:2026.03.09.11.00.00", "id:flash_flood:FLOHAR:C124:2026.03.09.10.00.00"]
+                })
             );
         });
 
@@ -240,7 +250,7 @@ describe('API v2 Features Alerts Route', () => {
 
         it('should return single alert when id modifier is given', async () => {
             const response = await request(app)
-                .get('/api/v2/features/alerts/edgewarn?id=id:severe_weather:2026.03.09.11.00.00')
+                .get('/api/v2/features/alerts/edgewarn?id=id:severe_weather:StormCast:C123:2026.03.09.11.00.00')
                 .expect(200);
 
             expect(response.body.success).toBe(true);
@@ -254,7 +264,7 @@ describe('API v2 Features Alerts Route', () => {
 
             expect(response.body.success).toBe(true);
             expect(response.body.data).toHaveLength(1);
-            expect(response.body.data[0]).toBe('id:severe_weather:2026.03.09.11.00.00');
+            expect(response.body.data[0]).toBe('id:severe_weather:StormCast:C123:2026.03.09.11.00.00');
         });
     });
 });

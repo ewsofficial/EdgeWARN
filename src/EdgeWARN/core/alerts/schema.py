@@ -37,9 +37,9 @@ class AlertPayload:
 
     @property
     def id(self) -> str:
-        """Formatted alert ID: id:{alert_type}:{YYYY}.{MM}.{DD}.{HH}.{MM}.{SS}"""
+        """Formatted alert ID: id:{alert_type}:{source}:{cell_id}:{YYYY}.{MM}.{DD}.{HH}.{MM}.{SS}"""
         formatted_time = self.effective_time.strftime("%Y.%m.%d.%H.%M.%S")
-        return f"id:{self.alert_type}:{formatted_time}"
+        return f"id:{self.alert_type}:{self.source}:{self.cell_id}:{formatted_time}"
 
     # ------------------------------------------------------------------
     # Serialisation helper
