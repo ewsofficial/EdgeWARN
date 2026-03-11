@@ -350,10 +350,18 @@ class StormCastModule(AnalysisModule):
                     )
                     prev_time = curr_time
             
+            # Calculate tracking duration
+            can_generate_alerts = False
+            if len(unique_points) >= 2:
+                first_ts = parse_ts(unique_points[0]["ts"])
+                last_ts = parse_ts(unique_points[-1]["ts"])
+                duration_min = (last_ts - first_ts).total_seconds() / 60
+                if duration_min >= 15:
+                    can_generate_alerts = True
+            
             # Generate forecast
             result = engine.generate_forecast()
             
-
             
             # Store results
             storm_entry["modules"][self.name] = {
@@ -362,7 +370,8 @@ class StormCastModule(AnalysisModule):
                 "forecast_cones": result.forecast_cones,
                 "forecast_polygons": result.forecast_polygons,
                 "polygon_0_30m": result.polygon_0_30m,
-                "status": "success"
+                "status": "success",
+                "can_generate_alerts": can_generate_alerts
             }
             
         except Exception as e:
@@ -377,11 +386,11 @@ class StormCastModule(AnalysisModule):
     def alerts(self, storm_entry: Dict[str, Any]) -> Optional[List[AlertPayload]]:
         """
         Build an alert from the 0-30m forecast polygon if the module ran
-        successfully.
+        successfully and the cell has been tracked for at least 15 minutes.
         """
         result = storm_entry.get("modules", {}).get(self.name, {})
 
-        if result.get("status") != "success":
+        if result.get("status") != "success" or not result.get("can_generate_alerts"):
             return None
 
         polygon = result.get("polygon_0_30m")
