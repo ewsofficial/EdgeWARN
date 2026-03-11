@@ -152,43 +152,17 @@ Returns the stormcell list for that timestamp:
 **GET** `/api/v2/features/alerts/official`
 **GET** `/api/v2/features/alerts/edgewarn`
 
-Returns alert data (either Official NWS alerts or EdgeWARN internal alerts). Supports three modes of operation based on query parameters.
+Returns a list of available alert timestamps (either Official NWS alerts or EdgeWARN internal alerts).
 
-#### Query Parameters
+#### Response
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `timestamp` | string | Conditional | Format: `YYYYMMDD-HHMMSS`. Returns active alerts at this time. Mutually exclusive with `id` |
-| `id` | string | Conditional | Alert ID to fetch specific alert. Mutually exclusive with `timestamp` |
-
-**Note:** `timestamp` and `id` cannot be specified at the same time.
-
-#### Response (no parameters)
-
-Returns a list of available timestamps and all current alerts:
+Returns a simple list of available timestamps:
 
 ```json
-{
-  "success": true,
-  "data": {
-    "timestamps": [
-      "20260123-150000",
-      "20260123-143000"
-    ],
-    "alerts": [
-      {
-        "id": "urn:oid:...",
-        "first_seen": "2026-02-23T02:00:00Z",
-        "last_seen": "2026-02-23T03:40:00Z",
-        "expires": "2026-02-23T04:00:00Z",
-        "feature": { ... }
-      }
-    ]
-  },
-  "meta": {
-    "timestamp": "2026-03-10T12:00:00.000Z"
-  }
-}
+[
+  "20260123-150000",
+  "20260123-143000"
+]
 ```
 
 #### Response (with timestamp)
@@ -214,33 +188,8 @@ Returns the active alerts for that timestamp:
 }
 ```
 
-#### Response (with id)
-
-Returns the specific alert:
-
-```json
-{
-  "success": true,
-  "data": {
-    "id": "urn:oid:2.49.0.1.840.0.2406210827.1",
-    "first_seen": "2026-02-23T02:00:00Z",
-    "last_seen": "2026-02-23T03:40:00Z",
-    "expires": "2026-02-23T04:00:00Z",
-    "feature": {
-      "id": "https://api.weather.gov/alerts/urn:oid:...",
-      "event": "Severe Thunderstorm Warning"
-    }
-  },
-  "meta": {
-    "timestamp": "2026-03-10T12:00:20.000Z"
-  }
-}
-```
-
 #### Error Responses
 
-- `400 Bad Request` - Invalid parameters, mutually exclusive parameters, formatting issues
-- `404 Not Found` - Timestamp or alert ID not found
 - `500 Internal Server Error` - Server error
 
 ---
