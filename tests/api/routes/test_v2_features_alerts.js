@@ -111,14 +111,14 @@ describe('API v2 Features Alerts Route', () => {
             );
         });
 
-        it('should return timestamps and all alerts when no modifiers given', async () => {
+        it('should return timestamps only when no modifiers given', async () => {
             const response = await request(app)
                 .get('/api/v2/features/alerts/official')
                 .expect(200);
 
             expect(response.body.success).toBe(true);
             expect(response.body.data.timestamps).toHaveLength(2);
-            expect(response.body.data.alerts.length).toBe(2);
+            expect(response.body.data.alerts).toBeUndefined();
         });
 
         it('should return single alert when id modifier is given', async () => {
@@ -144,8 +144,8 @@ describe('API v2 Features Alerts Route', () => {
             expect(response.headers['cache-control']).toContain('max-age=60');
         });
 
-        it('should return active alerts for specific timestamp (legacy static fallback)', async () => {
-            // Timestamp is 2026-03-09 12:00:00 Z and there is no snapshot file.
+        it('should return active alert IDs for specific timestamp (legacy static fallback)', async () => {
+            // Timestamp is 2026-03-09 13:00:00 Z and there is no snapshot file.
             // Only alert 123 is active at this time
             const response = await request(app)
                 .get('/api/v2/features/alerts/official?timestamp=20260309-130000')
@@ -153,7 +153,7 @@ describe('API v2 Features Alerts Route', () => {
 
             expect(response.body.success).toBe(true);
             expect(response.body.data).toHaveLength(1);
-            expect(response.body.data[0].id).toBe("urn:oid:123");
+            expect(response.body.data[0]).toBe("urn:oid:123");
             expect(response.headers['cache-control']).toContain('max-age=60');
         });
 
@@ -191,7 +191,9 @@ describe('API v2 Features Alerts Route', () => {
 
             expect(response.body.success).toBe(true);
             expect(response.body.data).toHaveLength(3);
-            expect(response.body.data[0].id).toBe("urn:oid:snapshot1");
+            expect(response.body.data[0]).toBe("urn:oid:snapshot1");
+            expect(response.body.data[1]).toBe("urn:oid:snapshot2");
+            expect(response.body.data[2]).toBe("urn:oid:snapshot3");
             expect(response.body.meta.count).toBe(3);
             expect(response.body.meta.total).toBe(3);
             expect(response.headers['cache-control']).toContain('max-age=60');
@@ -226,14 +228,14 @@ describe('API v2 Features Alerts Route', () => {
             );
         });
 
-        it('should return timestamps and all alerts when no modifiers given', async () => {
+        it('should return timestamps only when no modifiers given', async () => {
             const response = await request(app)
                 .get('/api/v2/features/alerts/edgewarn')
                 .expect(200);
 
             expect(response.body.success).toBe(true);
             expect(response.body.data.timestamps).toHaveLength(2);
-            expect(response.body.data.alerts).toHaveLength(2);
+            expect(response.body.data.alerts).toBeUndefined();
         });
 
         it('should return single alert when id modifier is given', async () => {
@@ -245,14 +247,14 @@ describe('API v2 Features Alerts Route', () => {
             expect(response.body.data.alert_type).toBe('severe_weather');
         });
 
-        it('should filter correctly based on timestamp modifier', async () => {
+        it('should filter correctly based on timestamp modifier and return IDs only', async () => {
             const response = await request(app)
                 .get('/api/v2/features/alerts/edgewarn?timestamp=20260309-120000')
                 .expect(200);
 
             expect(response.body.success).toBe(true);
             expect(response.body.data).toHaveLength(1);
-            expect(response.body.data[0].alert_type).toBe('severe_weather');
+            expect(response.body.data[0]).toBe('id:severe_weather:2026.03.09.11.00.00');
         });
     });
 });
