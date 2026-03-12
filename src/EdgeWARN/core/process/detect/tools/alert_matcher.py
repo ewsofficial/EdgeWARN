@@ -29,41 +29,74 @@ CONVECTIVE_FLOOD_EVENTS = {
     "Tornado Watch",
     "Severe Thunderstorm Watch",
     "Special Weather Statement",
+    "Severe Weather Statement",
     # Flood events
     "Flash Flood Warning",
-    "Flood Warning",
-    "Flash Flood Watch",
-    "Flood Watch",
-    "Flood Advisory",
-    "Flash Flood Emergency",
 }
 
 
-def load_active_alerts(registry_path: Path) -> List[Dict[str, Any]]:
+def load_active_alerts(registry_dir: Path, target_timestamp: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Load active alerts from the AlertRegistry.
+    Load active alerts from the AlertRegistry directory.
+    Uses the closest snapshot in 'timestamps/' before or equal to the target_timestamp,
+    and loads the corresponding feature files from 'ids/'.
     
     Args:
-        registry_path: Path to the alerts_registry.json file
+        registry_dir: Path to the official alerts directory containing ids/ and timestamps/
+        target_timestamp: Optional ISO datetime string to find alerts active at that time.
+                          If None, uses the latest snapshot.
         
     Returns:
         List of alert feature dictionaries
     """
-    if not registry_path.exists():
+    ts_dir = registry_dir / "timestamps"
+    ids_dir = registry_dir / "ids"
+    
+    if not ts_dir.exists() or not ids_dir.exists():
         return []
     
     try:
-        with open(registry_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        ts_files = sorted([f for f in ts_dir.glob("*.json") if not f.name.startswith(".tmp")])
+        if not ts_files:
+            return []
+            
+        selected_file = ts_files[-1]
         
-        alerts = data.get("alerts", {})
-        return [
-            alert_data["feature"]
-            for alert_data in alerts.values()
-            if "feature" in alert_data
-        ]
+        if target_timestamp:
+            # Parse target_timestamp
+            from datetime import datetime
+            try:
+                target_dt = datetime.fromisoformat(target_timestamp.replace('Z', '+00:00'))
+                target_str = target_dt.strftime("%Y%m%d-%H%M%S")
+            except Exception:
+                target_str = target_timestamp.replace(":", "").replace("-", "").replace("T", "-").replace("Z", "")
+                
+            # Find closest file <= target
+            valid_files = [f for f in ts_files if f.stem <= target_str]
+            if valid_files:
+                selected_file = valid_files[-1]
+                
+        with open(selected_file, 'r', encoding='utf-8') as f:
+            ts_data = json.load(f)
+            
+        active_ids = ts_data.get("alerts", [])
+        features = []
+        
+        for alert_id in active_ids:
+            safe_id = alert_id.replace(":", "_").replace("/", "_") + ".json"
+            feature_path = ids_dir / safe_id
+            if feature_path.exists():
+                try:
+                    with open(feature_path, 'r', encoding='utf-8') as f:
+                        alert_data = json.load(f)
+                        if "feature" in alert_data:
+                            features.append(alert_data["feature"])
+                except Exception:
+                    continue
+        return features
+        
     except Exception as e:
-        io_manager.write_warning(f"Failed to load alerts from registry: {e}")
+        io_manager.write_warning(f"Failed to load alerts from registry directory: {e}")
         return []
 
 
@@ -134,6 +167,10 @@ def _get_alert_polygon(alert: Dict[str, Any]) -> Optional[Polygon]:
     Returns:
         shapely Polygon or None if invalid
     """
+    def _normalize_coords(coords):
+        """Convert [-180, 180] coords to [0, 360] to match radar space."""
+        return [[c[0] % 360, c[1]] for c in coords]
+    
     # Check for GeoMapper's Polygon field
     if "Polygon" in alert:
         poly_data = alert["Polygon"]
@@ -142,7 +179,7 @@ def _get_alert_polygon(alert: Dict[str, Any]) -> Optional[Polygon]:
             coords = poly_data[0]
             if len(coords) >= 3:
                 try:
-                    return Polygon(coords)
+                    return Polygon(_normalize_coords(coords))
                 except Exception:
                     pass
     
@@ -152,7 +189,7 @@ def _get_alert_polygon(alert: Dict[str, Any]) -> Optional[Polygon]:
         coords = geom.get("coordinates", [])
         if coords and len(coords[0]) >= 3:
             try:
-                return Polygon(coords[0])
+                return Polygon(_normalize_coords(coords[0]))
             except Exception:
                 pass
     
@@ -251,7 +288,8 @@ def match_alerts_to_cell(cell: Dict[str, Any], prepped_alerts: List[tuple]) -> L
 
 def match_alerts_to_cells(
     cell_entries: List[Dict[str, Any]],
-    registry_path: Path
+    registry_dir: Path,
+    target_timestamp: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Match active convective/flood alerts to each cell entry.
@@ -260,7 +298,8 @@ def match_alerts_to_cells(
     
     Args:
         cell_entries: List of cell entry dictionaries
-        registry_path: Path to the alerts_registry.json file
+        registry_dir: Path to the alerts registry directory
+        target_timestamp: Optional timestamp of the cell detection to use for matching
         
     Returns:
         Cell entries with "alerts" key added to each
@@ -269,7 +308,7 @@ def match_alerts_to_cells(
         return []
     
     # Load and filter alerts
-    all_alerts = load_active_alerts(registry_path)
+    all_alerts = load_active_alerts(registry_dir, target_timestamp)
     filtered_alerts = filter_convective_flood_alerts(all_alerts)
     
     if not filtered_alerts:
