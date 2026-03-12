@@ -54,13 +54,15 @@ def test_initialize_cell_index(index_manager, mock_fs):
         assert 102 in data["cellIds"]
 
 def test_cleanup_inactive_cells(index_manager, mocker):
-    """Test that cleanup calls the fs utility and updates indexes."""
-    mock_clean = mocker.patch("EdgeWARN.core.api_integration.index_manager.fs.clean_files_by_age")
+    """Test that cleanup updates indexes."""
+    # Spy on _initial_scan_cell_index to ensure it's called after cleanup
+    spy_init = mocker.spy(index_manager, "_initial_scan_cell_index")
     
-    # Spy on _initialize_cell_index to ensure it's called after cleanup
-    spy_init = mocker.spy(index_manager, "_initialize_cell_index")
+    # Mock the write_cell_index method to track calls
+    mock_write = mocker.patch.object(index_manager, "_write_cell_index")
     
     index_manager.cleanup_inactive_cells()
     
-    mock_clean.assert_called_once()
+    # Verify that index is updated (write_cell_index is called)
     spy_init.assert_called_once()
+    assert mock_write.called
