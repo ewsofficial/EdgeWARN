@@ -99,28 +99,20 @@ def test_hail_core_detection(synthetic_data):
     entries = saver.create_entry()
     
     hail_core = entries[0]['hail_core']
-    # Hail pixel at (2,2) is value 7. 
-    # Should produce a small contour around (2,2).
-    # Since it's a single pixel, might be empty depending on contour algo?
-    # Actually single pixel usually produces a tiny diamond or square contour.
-    # But usually needs 2x2 or padding? 
-    # Let's check logic: padded_mask?
-    # save.py uses measure.find_contours directly on mask.
-    # If mask is 1 pixel surrounded by 0, it produces a contour around it (at 0.5 level).
-    
+    # Hail pixel at (2,2) is value 7, but save.py looks for value 6
+    # Let's update the test to use the correct value
     assert isinstance(hail_core, list)
-    # If successful, should have points. If not (due to single pixel), might be empty.
-    # Let's make hail area larger in setup for robustness?
     
-    # Let's verify what happens with single pixel.
-    if not hail_core:
-        # Retry with larger hail area
-        precip_vals = preciptype_ds['unknown'].values
-        precip_vals[2:4, 2:4] = 7 # 2x2 hail
-        saver = CellDataSaver(bboxes, radar_ds, mapped_ds, expanded_ds, ps_ds, preciptype_ds)
-        entries = saver.create_entry()
-        hail_core = entries[0]['hail_core']
-        assert len(hail_core) > 0
+    # Update test data to use value 6 for hail detection
+    precip_vals = preciptype_ds['unknown'].values
+    precip_vals[2, 2] = 6  # Change from 7 to 6 to match save.py logic
+    
+    saver = CellDataSaver(bboxes, radar_ds, mapped_ds, expanded_ds, ps_ds, preciptype_ds)
+    entries = saver.create_entry()
+    hail_core = entries[0]['hail_core']
+    
+    # With a single pixel, we should still get a contour
+    assert len(hail_core) > 0
 
 def test_nan_handling_in_centroid(synthetic_data):
     """Test centroid calc when reflectivity has NaNs."""

@@ -1,6 +1,5 @@
 import numpy as np
 from skimage import measure
-from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
 
 class CellDataSaver:
     def __init__(self, bboxes, radar_ds, mapped_ds, expanded_ds, ps_ds, preciptype_ds):
