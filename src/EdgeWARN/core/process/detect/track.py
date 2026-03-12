@@ -126,6 +126,10 @@ class StormCellTracker:
         # Detect lineage events
         result = detector.detect(old_cells, new_cells)
         
+        # End scan to increment scan number for next detection cycle
+        if stormcell_dir is not None:
+            self._lineage_buffer.end_scan(stormcell_dir)
+        
         return result
     
     def update_cells(
@@ -609,5 +613,5 @@ class StormCellTracker:
     def save_lineage_buffer(self, stormcell_dir: Path) -> bool:
         if self._lineage_buffer is None: return False
         self._lineage_buffer.clear_confirmed_events()
-        self._lineage_buffer.end_scan(stormcell_dir)
+        self._lineage_buffer.save(stormcell_dir)
         return True
