@@ -204,6 +204,9 @@ class StormCellTracker:
                 merged_entry['parent_ids'] = merge.parent_ids
                 merged_entry['split_from'] = None
                 
+                # Track which cells were merged into this one (non-dominant parents)
+                merged_entry['merged_cells'] = [pid for pid in merge.parent_ids if pid != merge.dominant_parent]
+                
                 # Kalman Update (observe under dominant parent's KF)
                 self._update_kalman_with_observation(merged_entry, merge.dominant_parent)
                 
@@ -217,15 +220,28 @@ class StormCellTracker:
                 
                 self._reset_prediction_state(child_id)
                 
-                # Clean up KF/prediction entries for non-dominant parents
+                # Clean up KF/prediction entries for non-dominant parents and mark them as merged_to
                 for pid in merge.parent_ids:
-                    if pid != merge.dominant_parent and pid != child_id:
-                        self._kalman_filters.pop(pid, None)
-                        self._prediction_states.pop(pid, None)
+                    if pid != merge.dominant_parent:
+                        # Find the original entry for the non-dominant parent to create a dissipated record
+                        parent_orig = self._find_entry(entries, pid)
+                        if parent_orig:
+                            merged_out_entry = copy.deepcopy(parent_orig)
+                            merged_out_entry['event_type'] = LineageEvent.DISSIPATED.value
+                            merged_out_entry['tracking_mode'] = 'dissipated'
+                            merged_out_entry['merged_to'] = child_id
+                            if timestamp:
+                                merged_out_entry['timestamp'] = timestamp
+                            updated_entries.append(merged_out_entry)
+                            processed_old_ids.add(pid)
+
+                        if pid != child_id:
+                            self._kalman_filters.pop(pid, None)
+                            self._prediction_states.pop(pid, None)
                 
                 updated_entries.append(merged_entry)
                 
-                processed_old_ids.update(merge.parent_ids)
+                processed_old_ids.add(merge.dominant_parent)
                 processed_new_ids.add(child_id)
                 stats['merges'] += 1
 
@@ -385,6 +401,10 @@ class StormCellTracker:
                     updated_entries.append(track)
                     stats['predicted'] += 1
                 elif track:
+                    track['event_type'] = LineageEvent.DISSIPATED.value
+                    track['tracking_mode'] = 'dissipated'
+                    if timestamp: track['timestamp'] = timestamp
+                    updated_entries.append(track)
                     stats['terminated'] += 1
             
             # Remaining Unmatched Detections -> New Cells
@@ -412,6 +432,10 @@ class StormCellTracker:
                     updated_entries.append(track)
                     stats['predicted'] += 1
                 else:
+                    track['event_type'] = LineageEvent.DISSIPATED.value
+                    track['tracking_mode'] = 'dissipated'
+                    if timestamp: track['timestamp'] = timestamp
+                    updated_entries.append(track)
                     stats['terminated'] += 1
             
             # Unmatched Detections -> New Cells
