@@ -41,7 +41,7 @@ def test_update_cells_updates_existing(tracker):
     assert cell_101["timestamp"] == "2023-10-15T12:00:00"
 
 def test_update_cells_removes_missing(tracker):
-    """Test that cells not in updated_data are removed."""
+    """Test that cells not in updated_data are marked as DISSIPATED."""
     entries = [
         {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)},
         {"id": 102, "num_gates": 30, "centroid": [36.0, -96.0], "max_refl": 45, "bbox": _bbox(36.0, -96.0)},
@@ -55,8 +55,10 @@ def test_update_cells_removes_missing(tracker):
     
     result = tracker.update_cells(entries, updated_data)
     
-    assert len(result) == 1
-    assert result[0]["id"] == 101
+    # Now returns 3: 101 (active) + 102 (dissipated) + 103 (dissipated)
+    assert len(result) == 3
+    assert any(c["id"] == 102 and c["event_type"] == "DISSIPATED" for c in result)
+    assert any(c["id"] == 103 and c["event_type"] == "DISSIPATED" for c in result)
 
 def test_update_cells_adds_new(tracker):
     """Test that new cells from updated_data are appended."""
@@ -106,7 +108,7 @@ def test_update_cells_empty_entries(tracker):
     assert result[0]["id"] == 101
 
 def test_update_cells_empty_updated_data(tracker):
-    """Test updating with empty updated_data (all cells removed)."""
+    """Test updating with empty updated_data (all cells marked as DISSIPATED)."""
     entries = [
         {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)},
         {"id": 102, "num_gates": 30, "centroid": [36.0, -96.0], "max_refl": 45, "bbox": _bbox(36.0, -96.0)}
@@ -114,7 +116,9 @@ def test_update_cells_empty_updated_data(tracker):
     
     result = tracker.update_cells(entries, [])
     
-    assert len(result) == 0
+    # Should now return all cells as DISSIPATED
+    assert len(result) == 2
+    assert all(c["event_type"] == "DISSIPATED" for c in result)
 
 def test_update_cells_no_timestamp(tracker):
     """Test updating without providing a timestamp."""
@@ -130,3 +134,51 @@ def test_update_cells_no_timestamp(tracker):
     
     # Should not add timestamp key
     assert "timestamp" not in result[0] or result[0].get("timestamp") is None
+
+def test_update_cells_handles_merge_with_links(tracker):
+    """Test that merge events correctly populate merged_cells and merged_to keys."""
+    from EdgeWARN.core.process.detect.lineage import LineageResult, MergeEvent
+    
+    entries = [
+        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)},
+        {"id": 102, "num_gates": 30, "centroid": [35.1, -97.1], "max_refl": 45, "bbox": _bbox(35.1, -97.1)}
+    ]
+    
+    # 101 and 102 merge into a new detection with ID 101 (101 is dominant)
+    updated_data = [
+        {"id": 101, "num_gates": 80, "centroid": [35.05, -97.05], "max_refl": 58, "bbox": _bbox(35.05, -97.05)}
+    ]
+    
+    lineage = LineageResult()
+    lineage.merges.append(MergeEvent(child_id=101, parent_ids=[101, 102], dominant_parent=101))
+    
+    result = tracker.update_cells(entries, updated_data, timestamp="2023-10-15T12:00:00", lineage=lineage)
+    
+    # Should have 2 entries: the child (101) and the dissipated parent (102)
+    assert len(result) == 2
+    
+    child = next(c for c in result if c["id"] == 101 and c["event_type"] == "MERGE")
+    dissipated = next(c for c in result if c["id"] == 102 and c["event_type"] == "DISSIPATED")
+    
+    assert child["merged_cells"] == [102]
+    assert dissipated["merged_to"] == 101
+    assert dissipated["timestamp"] == "2023-10-15T12:00:00"
+
+def test_update_cells_handles_natural_dissipation(tracker):
+    """Test that unmatched cells are marked as DISSIPATED if they don't enter prediction."""
+    entries = [
+        {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)}
+    ]
+    
+    # Empty updated data means 101 is unmatched
+    updated_data = []
+    
+    # Mock _handle_unmatched_cell to return False (termination)
+    tracker._handle_unmatched_cell = MagicMock(return_value=False)
+    
+    result = tracker.update_cells(entries, updated_data, timestamp="2023-10-15T12:00:00")
+    
+    assert len(result) == 1
+    assert result[0]["id"] == 101
+    assert result[0]["event_type"] == "DISSIPATED"
+    assert result[0]["tracking_mode"] == "dissipated"

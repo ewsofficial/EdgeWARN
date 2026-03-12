@@ -5,6 +5,7 @@
 ### Added
 - **Predictive Storm Tracking**: Implemented a core Kalman Filter motion tracking system to continuously predict and associate storm cells over time, replacing static overlap tracking. Includes configurable state dynamics to handle missed scans and a 6-minute Time-To-Live (TTL) for predictions.
 - **Storm Lineage Detection Engine**: Introduced a storm merge/split tracking module to maintain continuity when storm cells intersect or fragment. Supported by comprehensive unit and integration tests.
+- **Lineage Tracking Links**: Added `merged_cells` and `merged_to` keys to storm cell output to explicitly track which cells combined during merge events. Dissipated cells are now preserved in their final state with these links.
 - **API v2**: New RESTful API endpoints for improved developer experience:
   - `GET /api/v2/features/cells` - List available cells or get specific cell data
   - `GET /api/v2/features/timestamps` - List available timestamps or get stormcell data
