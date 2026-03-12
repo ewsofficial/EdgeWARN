@@ -184,7 +184,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             cell["timestamp"] = json_ts
 
         # Match convective/flood alerts to cells
-        entries = match_alerts_to_cells(entries, fs.NWS_REGISTRY_PATH)
+        entries = match_alerts_to_cells(entries, fs.MRMS_NWS_DIR, target_timestamp=json_ts)
 
         output_data = saver.create_json_structure(json_ts, entries)
         
@@ -331,7 +331,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
 
     # Match convective/flood alerts to cells
     perf_tracker.start("Detection - Alert Matching")
-    entries = match_alerts_to_cells(entries, fs.NWS_REGISTRY_PATH)
+    entries = match_alerts_to_cells(entries, fs.MRMS_NWS_DIR, target_timestamp=json_ts)
     perf_tracker.stop("Detection - Alert Matching")
 
     perf_tracker.start("Detection - Save")

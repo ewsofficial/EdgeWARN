@@ -53,9 +53,11 @@ def prepped_alerts(sample_convective_alert, sample_flood_alert):
 
 @pytest.fixture
 def temp_registry(tmp_path):
-    """Create a temporary registry file with test alerts."""
-    registry_path = tmp_path / "alerts_registry.json"
-    return registry_path
+    """Create a temporary registry directory structure for alerts."""
+    registry_dir = tmp_path / "alerts"
+    (registry_dir / "ids").mkdir(parents=True)
+    (registry_dir / "timestamps").mkdir(parents=True)
+    return registry_dir
 
 
 @pytest.fixture
@@ -66,7 +68,7 @@ def sample_convective_alert():
         "type": "Feature",
         "geometry": {
             "type": "Polygon",
-            "coordinates": [[[-97.0, 35.0], [-97.0, 36.0], [-96.0, 36.0], [-96.0, 35.0], [-97.0, 35.0]]]
+            "coordinates": [[[263.0, 35.0], [263.0, 36.0], [264.0, 36.0], [264.0, 35.0], [263.0, 35.0]]]
         },
         "properties": {
             "event": "Severe Thunderstorm Warning",
@@ -74,7 +76,7 @@ def sample_convective_alert():
             "effective": "2026-02-23T21:00:00Z",
             "expires": "2026-02-23T22:00:00Z",
         },
-        "Polygon": [[[-97.0, 35.0], [-97.0, 36.0], [-96.0, 36.0], [-96.0, 35.0], [-97.0, 35.0]]]
+        "Polygon": [[[263.0, 35.0], [263.0, 36.0], [264.0, 36.0], [264.0, 35.0], [263.0, 35.0]]]
     }
 
 
@@ -86,7 +88,7 @@ def sample_flood_alert():
         "type": "Feature",
         "geometry": {
             "type": "Polygon",
-            "coordinates": [[[-98.0, 34.0], [-98.0, 35.0], [-97.0, 35.0], [-97.0, 34.0], [-98.0, 34.0]]]
+            "coordinates": [[[262.0, 34.0], [262.0, 35.0], [263.0, 35.0], [263.0, 34.0], [262.0, 34.0]]]
         },
         "properties": {
             "event": "Flash Flood Warning",
@@ -94,7 +96,7 @@ def sample_flood_alert():
             "effective": "2026-02-23T21:30:00Z",
             "expires": "2026-02-23T22:30:00Z",
         },
-        "Polygon": [[[-98.0, 34.0], [-98.0, 35.0], [-97.0, 35.0], [-97.0, 34.0], [-98.0, 34.0]]]
+        "Polygon": [[[262.0, 34.0], [262.0, 35.0], [263.0, 35.0], [263.0, 34.0], [262.0, 34.0]]]
     }
 
 
@@ -106,7 +108,7 @@ def sample_non_convective_alert():
         "type": "Feature",
         "geometry": {
             "type": "Polygon",
-            "coordinates": [[[-96.5, 35.5], [-96.5, 35.7], [-96.3, 35.7], [-96.3, 35.5], [-96.5, 35.5]]]
+            "coordinates": [[[263.5, 35.5], [263.5, 35.7], [263.7, 35.7], [263.7, 35.5], [263.5, 35.5]]]
         },
         "properties": {
             "event": "Gale Watch",
@@ -114,7 +116,7 @@ def sample_non_convective_alert():
             "effective": "2026-02-23T21:00:00Z",
             "expires": "2026-02-23T23:00:00Z",
         },
-        "Polygon": [[[-96.5, 35.5], [-96.5, 35.7], [-96.3, 35.7], [-96.3, 35.5], [-96.5, 35.5]]]
+        "Polygon": [[[263.5, 35.5], [263.5, 35.7], [263.7, 35.7], [263.7, 35.5], [263.5, 35.5]]]
     }
 
 
@@ -123,8 +125,8 @@ def sample_cell_inside_storm():
     """Create a cell entry inside the storm alert polygon."""
     return {
         "id": 1,
-        "centroid": [35.5, -96.5],  # Inside the -97 to -96, 35 to 36 box
-        "bbox": [[35.4, -96.6], [35.4, -96.4], [35.6, -96.4], [35.6, -96.6]],
+        "centroid": [35.5, 263.5],  # Inside the 263 to 264, 35 to 36 box
+        "bbox": [[35.4, 263.4], [35.4, 263.6], [35.6, 263.6], [35.6, 263.4]],
         "num_gates": 100,
         "max_refl": 55.0,
     }
@@ -135,8 +137,8 @@ def sample_cell_outside_storm():
     """Create a cell entry outside all alert polygons."""
     return {
         "id": 2,
-        "centroid": [33.0, -99.0],  # Outside all test polygons
-        "bbox": [[32.9, -99.1], [32.9, -98.9], [33.1, -98.9], [33.1, -99.1]],
+        "centroid": [33.0, 261.0],  # Outside all test polygons
+        "bbox": [[32.9, 260.9], [32.9, 261.1], [33.1, 261.1], [33.1, 260.9]],
         "num_gates": 50,
         "max_refl": 40.0,
     }
@@ -155,13 +157,12 @@ class TestEventTypeFiltering:
         assert "Severe Thunderstorm Warning" in CONVECTIVE_FLOOD_EVENTS
         assert "Tornado Watch" in CONVECTIVE_FLOOD_EVENTS
         assert "Severe Thunderstorm Watch" in CONVECTIVE_FLOOD_EVENTS
+        assert "Special Weather Statement" in CONVECTIVE_FLOOD_EVENTS
+        assert "Severe Weather Statement" in CONVECTIVE_FLOOD_EVENTS
         
     def test_flood_events_included(self):
         """Verify flood events are in the whitelist."""
         assert "Flash Flood Warning" in CONVECTIVE_FLOOD_EVENTS
-        assert "Flood Warning" in CONVECTIVE_FLOOD_EVENTS
-        assert "Flash Flood Watch" in CONVECTIVE_FLOOD_EVENTS
-        assert "Flood Advisory" in CONVECTIVE_FLOOD_EVENTS
         
     def test_non_convective_events_excluded(self):
         """Verify non-convective events are NOT in the whitelist."""
@@ -251,8 +252,8 @@ class TestSpatialMatching:
         # Create a cell that overlaps both alert polygons
         cell = {
             "id": 3,
-            "centroid": [35.0, -97.0],  # On the boundary
-            "bbox": [[34.9, -97.1], [34.9, -96.9], [35.1, -96.9], [35.1, -97.1]],
+            "centroid": [35.0, 263.0],  # On the boundary
+            "bbox": [[34.9, 262.9], [34.9, 263.1], [35.1, 263.1], [35.1, 262.9]],
         }
         
         matching_ids = match_alerts_to_cell(cell, prepped_alerts)
@@ -262,12 +263,12 @@ class TestSpatialMatching:
 
     def test_cell_bbox_intersection(self, sample_convective_alert):
         """Verify cell matches via bbox even if centroid is outside."""
-        # Alert is -97 to -96, 35 to 36
-        # Cell centroid is at -97.05 (outside), but bbox extends to -96.95 (inside)
+        # Alert is 263 to 264, 35 to 36
+        # Cell centroid is at 262.95 (outside), but bbox extends to 263.05 (inside)
         cell = {
             "id": 5,
-            "centroid": [35.5, -97.05], 
-            "bbox": [[35.4, -97.1], [35.4, -96.95], [35.6, -96.95], [35.6, -97.1]],
+            "centroid": [35.5, 262.95], 
+            "bbox": [[35.4, 262.9], [35.4, 263.05], [35.6, 263.05], [35.6, 262.9]],
         }
         
         alert_id = _extract_alert_id(sample_convective_alert)
@@ -286,7 +287,7 @@ class TestSpatialMatching:
         """Verify cell without centroid but with bbox still matches."""
         cell = {
             "id": 4, 
-            "bbox": [[35.4, -96.6], [35.4, -96.4], [35.6, -96.4], [35.6, -96.6]]
+            "bbox": [[35.4, 263.4], [35.4, 263.6], [35.6, 263.6], [35.6, 263.4]]
         }
         matching_ids = match_alerts_to_cell(cell, prepped_alerts)
         assert "urn:oid:2.49.0.1.840.0.2406210827.1" in matching_ids
@@ -301,20 +302,26 @@ class TestLoadActiveAlerts:
     
     def test_loads_from_registry_file(self, temp_registry, sample_convective_alert):
         """Verify alerts are loaded from registry file."""
-        registry_data = {
-            "last_updated": "2026-02-23T21:00:00Z",
-            "alerts": {
-                "urn:oid:2.49.0.1.840.0.2406210827.1": {
-                    "id": sample_convective_alert["id"],
-                    "first_seen": "2026-02-23T21:00:00Z",
-                    "last_seen": "2026-02-23T21:00:00Z",
-                    "feature": sample_convective_alert
-                }
-            }
-        }
+        alert_id = "urn:oid:2.49.0.1.840.0.2406210827.1"
+        safe_id = alert_id.replace(":", "_").replace("/", "_") + ".json"
         
-        with open(temp_registry, 'w') as f:
-            json.dump(registry_data, f)
+        # Write individual feature
+        with open(temp_registry / "ids" / safe_id, 'w') as f:
+            json.dump({
+                "id": sample_convective_alert["id"],
+                "first_seen": "2026-02-23T21:00:00Z",
+                "last_seen": "2026-02-23T21:00:00Z",
+                "feature": sample_convective_alert
+            }, f)
+            
+        # Write timestamp snapshot
+        ts_data = {
+            "timestamp": "2026-02-23T21:00:00Z",
+            "count": 1,
+            "alerts": [alert_id]
+        }
+        with open(temp_registry / "timestamps" / "20260223-210000.json", 'w') as f:
+            json.dump(ts_data, f)
         
         alerts = load_active_alerts(temp_registry)
         
@@ -323,13 +330,13 @@ class TestLoadActiveAlerts:
         
     def test_returns_empty_for_missing_file(self, tmp_path):
         """Verify empty list returned when registry doesn't exist."""
-        nonexistent_path = tmp_path / "nonexistent.json"
+        nonexistent_path = tmp_path / "nonexistent"
         alerts = load_active_alerts(nonexistent_path)
         assert alerts == []
         
     def test_returns_empty_for_malformed_registry(self, temp_registry):
         """Verify empty list returned when registry is malformed."""
-        with open(temp_registry, 'w') as f:
+        with open(temp_registry / "timestamps" / "20260223-210000.json", 'w') as f:
             f.write("not valid json")
         
         alerts = load_active_alerts(temp_registry)
@@ -343,23 +350,37 @@ class TestLoadActiveAlerts:
 class TestMatchAlertsToCells:
     """Tests for match_alerts_to_cells function."""
     
+    def _write_registry_data(self, temp_registry, timestamp_str, file_ts, alerts_dict):
+        """Helper to write registry snapshot and ids files."""
+        # Write individual features
+        active_ids = []
+        for alert_id, alert_data in alerts_dict.items():
+            active_ids.append(alert_id)
+            safe_id = alert_id.replace(":", "_").replace("/", "_") + ".json"
+            with open(temp_registry / "ids" / safe_id, 'w') as f:
+                json.dump(alert_data, f)
+                
+        # Write timestamp snapshot
+        ts_data = {
+            "timestamp": timestamp_str,
+            "count": len(active_ids),
+            "alerts": active_ids
+        }
+        with open(temp_registry / "timestamps" / f"{file_ts}.json", 'w') as f:
+            json.dump(ts_data, f)
+
     def test_adds_alerts_key_to_all_cells(self, temp_registry, sample_convective_alert, 
                                           sample_cell_inside_storm, sample_cell_outside_storm):
         """Verify all cells get an 'alerts' key."""
-        registry_data = {
-            "last_updated": "2026-02-23T21:00:00Z",
-            "alerts": {
-                "urn:oid:2.49.0.1.840.0.2406210827.1": {
-                    "id": sample_convective_alert["id"],
-                    "first_seen": "2026-02-23T21:00:00Z",
-                    "last_seen": "2026-02-23T21:00:00Z",
-                    "feature": sample_convective_alert
-                }
+        alerts_dict = {
+            "urn:oid:2.49.0.1.840.0.2406210827.1": {
+                "id": sample_convective_alert["id"],
+                "first_seen": "2026-02-23T21:00:00Z",
+                "last_seen": "2026-02-23T21:00:00Z",
+                "feature": sample_convective_alert
             }
         }
-        
-        with open(temp_registry, 'w') as f:
-            json.dump(registry_data, f)
+        self._write_registry_data(temp_registry, "2026-02-23T21:00:00Z", "20260223-210000", alerts_dict)
         
         cells = [sample_cell_inside_storm, sample_cell_outside_storm]
         result = match_alerts_to_cells(cells, temp_registry)
@@ -377,26 +398,21 @@ class TestMatchAlertsToCells:
     def test_filters_out_non_convective_alerts(self, temp_registry, sample_convective_alert,
                                                sample_non_convective_alert, sample_cell_inside_storm):
         """Verify non-convective alerts are filtered out."""
-        registry_data = {
-            "last_updated": "2026-02-23T21:00:00Z",
-            "alerts": {
-                "urn:oid:2.49.0.1.840.0.2406210827.1": {
-                    "id": sample_convective_alert["id"],
-                    "first_seen": "2026-02-23T21:00:00Z",
-                    "last_seen": "2026-02-23T21:00:00Z",
-                    "feature": sample_convective_alert
-                },
-                "urn:oid:2.49.0.1.840.0.2406210829.1": {
-                    "id": sample_non_convective_alert["id"],
-                    "first_seen": "2026-02-23T21:00:00Z",
-                    "last_seen": "2026-02-23T21:00:00Z",
-                    "feature": sample_non_convective_alert
-                }
+        alerts_dict = {
+            "urn:oid:2.49.0.1.840.0.2406210827.1": {
+                "id": sample_convective_alert["id"],
+                "first_seen": "2026-02-23T21:00:00Z",
+                "last_seen": "2026-02-23T21:00:00Z",
+                "feature": sample_convective_alert
+            },
+            "urn:oid:2.49.0.1.840.0.2406210829.1": {
+                "id": sample_non_convective_alert["id"],
+                "first_seen": "2026-02-23T21:00:00Z",
+                "last_seen": "2026-02-23T21:00:00Z",
+                "feature": sample_non_convective_alert
             }
         }
-        
-        with open(temp_registry, 'w') as f:
-            json.dump(registry_data, f)
+        self._write_registry_data(temp_registry, "2026-02-23T21:00:00Z", "20260223-210000", alerts_dict)
         
         cells = [sample_cell_inside_storm]
         result = match_alerts_to_cells(cells, temp_registry)
@@ -409,3 +425,27 @@ class TestMatchAlertsToCells:
         """Verify empty cells list returns empty list."""
         result = match_alerts_to_cells([], temp_registry)
         assert result == []
+
+    def test_loads_closest_timestamp_snapshot(self, temp_registry, sample_convective_alert,
+                                              sample_cell_inside_storm):
+        """Verify that the target_timestamp is respected to find the active alerts at that time."""
+        # Setup two snapshots: one at 21:00 (active alert), one at 22:00 (alert expired, empty snapshot)
+        self._write_registry_data(temp_registry, "2026-02-23T21:00:00Z", "20260223-210000", {
+            "urn:oid:2.49.0.1.840.0.2406210827.1": {
+                "id": sample_convective_alert["id"],
+                "first_seen": "2026-02-23T21:00:00Z",
+                "last_seen": "2026-02-23T21:00:00Z",
+                "feature": sample_convective_alert
+            }
+        })
+        self._write_registry_data(temp_registry, "2026-02-23T22:00:00Z", "20260223-220000", {})
+        
+        # Match with target timestamp 21:15 - should use the 21:00 snapshot
+        cells = [sample_cell_inside_storm.copy()]
+        result1 = match_alerts_to_cells(cells, temp_registry, target_timestamp="2026-02-23T21:15:00Z")
+        assert len(result1[0]["alerts"]) == 1
+        
+        # Match with target timestamp 22:15 - should use the 22:00 snapshot (empty)
+        cells = [sample_cell_inside_storm.copy()]
+        result2 = match_alerts_to_cells(cells, temp_registry, target_timestamp="2026-02-23T22:15:00Z")
+        assert len(result2[0]["alerts"]) == 0
