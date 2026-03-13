@@ -172,3 +172,27 @@ def test_integrate_rap_empty_datasets(mock_io_manager, storm_cells):
         
     # Should return unchanged
     assert results == storm_cells
+
+
+def test_integrate_rap_derived_rejects_unsafe_formula(monkeypatch, mock_io_manager, storm_cells):
+    """Unsafe formula syntax should be rejected and produce None."""
+    from EdgeWARN.core.process.integrate import integrate_rap as rap_module
+
+    def mock_config():
+        return {
+            "products": [
+                {"key": "temp_2m", "transform": "kelvin_to_celsius"},
+            ],
+            "derived": [
+                {"formula": "__import__(\"os\").system(\"echo pwned\")", "key": "unsafe"}
+            ],
+        }
+
+    monkeypatch.setattr(rap_module, "get_rap_products", mock_config)
+
+    with patch("EdgeWARN.core.process.integrate.integrate_rap.RAPPointExtractor") as MockExtractor:
+        mock_instance = MockExtractor.return_value
+        mock_instance.extract_batch.return_value = {"temp_2m": {1: 300.0}}
+        results = rap_module.integrate_rap(storm_cells, "dummy_path.grib2", mock_io_manager)
+
+    assert results[0]["properties"]["unsafe"] is None

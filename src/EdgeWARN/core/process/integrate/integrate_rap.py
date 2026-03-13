@@ -2,6 +2,11 @@
 Config-driven RAP integration.
 Optimized: Zero-grid-memory extraction via eccodes RAPPointExtractor.
 """
+from __future__ import annotations
+
+import ast
+import operator
+
 from .config import get_rap_products
 from util.grib_loader import RAPPointExtractor
 
@@ -9,6 +14,60 @@ from util.grib_loader import RAPPointExtractor
 TRANSFORMS = {
     "kelvin_to_celsius": lambda x: x - 273.15,
 }
+
+_ALLOWED_BINARY_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Pow: operator.pow,
+}
+
+_ALLOWED_UNARY_OPS = {
+    ast.UAdd: operator.pos,
+    ast.USub: operator.neg,
+}
+
+
+def _safe_eval_formula(formula: str, variables: dict[str, object]) -> float:
+    """Safely evaluate simple arithmetic formulas using AST.
+
+    Supported syntax:
+    - Numeric constants
+    - Variable names (from ``variables``)
+    - Binary ops: +, -, *, /, **
+    - Unary ops: +, -
+    """
+
+    def _eval(node: ast.AST) -> float:
+        if isinstance(node, ast.Expression):
+            return _eval(node.body)
+
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+
+        if isinstance(node, ast.Name):
+            value = variables.get(node.id)
+            if not isinstance(value, (int, float)):
+                raise ValueError(f"Unsupported value for '{node.id}': {value!r}")
+            return float(value)
+
+        if isinstance(node, ast.BinOp):
+            op_fn = _ALLOWED_BINARY_OPS.get(type(node.op))
+            if op_fn is None:
+                raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+            return op_fn(_eval(node.left), _eval(node.right))
+
+        if isinstance(node, ast.UnaryOp):
+            op_fn = _ALLOWED_UNARY_OPS.get(type(node.op))
+            if op_fn is None:
+                raise ValueError(f"Unsupported unary operator: {type(node.op).__name__}")
+            return op_fn(_eval(node.operand))
+
+        raise ValueError(f"Unsupported formula node: {type(node).__name__}")
+
+    parsed = ast.parse(formula, mode="eval")
+    return _eval(parsed)
 
 
 def integrate_rap(storm_cells, rap_file_path, io_manager):
@@ -36,11 +95,8 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
 
     # Run batch extraction
     try:
-        print(">>> [DEBUG] Before RAPPointExtractor initialization", flush=True)
         extractor = RAPPointExtractor(rap_file_path)
-        print(">>> [DEBUG] After RAPPointExtractor initialization, before extract_batch", flush=True)
         extracted_data = extractor.extract_batch(products, cell_coords)
-        print(">>> [DEBUG] After extract_batch", flush=True)
         io_manager.write_debug(f"Extracted {len(extracted_data)} keys from RAP")
     except Exception as e:
         io_manager.write_error(f"Failed to extract RAP data: {e}")
@@ -108,6 +164,6 @@ def _calculate_derived(storm_cells, formula, key):
     for cell in storm_cells:
         props = cell.get("properties", {})
         try:
-            props[key] = round(eval(formula, {"__builtins__": {}}, props), 2)
+            props[key] = round(_safe_eval_formula(formula, props), 2)
         except Exception:
             props[key] = None
