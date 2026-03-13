@@ -172,3 +172,33 @@ def test_integrate_rap_empty_datasets(mock_io_manager, storm_cells):
         
     # Should return unchanged
     assert results == storm_cells
+
+
+def test_safe_eval_rejects_unsafe_formula(mock_io_manager, storm_cells):
+    """Ensure unsupported expressions are rejected and set to None."""
+    with patch("EdgeWARN.core.process.integrate.integrate_rap.get_rap_products") as mock_products, \
+         patch("EdgeWARN.core.process.integrate.integrate_rap.RAPPointExtractor") as MockExtractor:
+        mock_products.return_value = {
+            "products": [],
+            "derived": [{"formula": "__import__('os').system('echo hi')", "key": "unsafe"}]
+        }
+        MockExtractor.return_value.extract_batch.return_value = {}
+
+        results = integrate_rap(storm_cells, "dummy_path.grib2", mock_io_manager)
+
+    assert results[0]["properties"]["unsafe"] is None
+
+
+def test_safe_eval_handles_missing_input_value(mock_io_manager, storm_cells):
+    """Ensure missing variables in formulas do not crash integration."""
+    with patch("EdgeWARN.core.process.integrate.integrate_rap.get_rap_products") as mock_products, \
+         patch("EdgeWARN.core.process.integrate.integrate_rap.RAPPointExtractor") as MockExtractor:
+        mock_products.return_value = {
+            "products": [],
+            "derived": [{"formula": "temp_2m - dewpoint_2m", "key": "dewpoint_depression"}]
+        }
+        MockExtractor.return_value.extract_batch.return_value = {}
+
+        results = integrate_rap(storm_cells, "dummy_path.grib2", mock_io_manager)
+
+    assert results[0]["properties"]["dewpoint_depression"] is None
