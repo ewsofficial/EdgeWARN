@@ -2,12 +2,30 @@
 Config-driven RAP integration.
 Optimized: Zero-grid-memory extraction via eccodes RAPPointExtractor.
 """
+import ast
+import operator
+
 from .config import get_rap_products
 from util.grib_loader import RAPPointExtractor
 
 # Transformation functions
 TRANSFORMS = {
     "kelvin_to_celsius": lambda x: x - 273.15,
+}
+
+_BINARY_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+
+_UNARY_OPERATORS = {
+    ast.UAdd: operator.pos,
+    ast.USub: operator.neg,
 }
 
 
@@ -36,11 +54,8 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
 
     # Run batch extraction
     try:
-        print(">>> [DEBUG] Before RAPPointExtractor initialization", flush=True)
         extractor = RAPPointExtractor(rap_file_path)
-        print(">>> [DEBUG] After RAPPointExtractor initialization, before extract_batch", flush=True)
         extracted_data = extractor.extract_batch(products, cell_coords)
-        print(">>> [DEBUG] After extract_batch", flush=True)
         io_manager.write_debug(f"Extracted {len(extracted_data)} keys from RAP")
     except Exception as e:
         io_manager.write_error(f"Failed to extract RAP data: {e}")
@@ -108,6 +123,50 @@ def _calculate_derived(storm_cells, formula, key):
     for cell in storm_cells:
         props = cell.get("properties", {})
         try:
-            props[key] = round(eval(formula, {"__builtins__": {}}, props), 2)
+            value = _safe_eval_formula(formula, props)
+            props[key] = round(value, 2)
         except Exception:
             props[key] = None
+
+
+def _safe_eval_formula(formula, variables):
+    """Evaluate arithmetic formulas using a restricted AST parser."""
+    expression = ast.parse(formula, mode="eval")
+    return _evaluate_node(expression.body, variables)
+
+
+def _evaluate_node(node, variables):
+    """Recursively evaluate an expression node with strict operator support."""
+    if isinstance(node, ast.BinOp):
+        operator_fn = _BINARY_OPERATORS.get(type(node.op))
+        if operator_fn is None:
+            raise ValueError("Unsupported binary operator")
+
+        left = _evaluate_node(node.left, variables)
+        right = _evaluate_node(node.right, variables)
+        if left is None or right is None:
+            raise ValueError("Cannot evaluate formula with missing values")
+
+        return operator_fn(left, right)
+
+    if isinstance(node, ast.UnaryOp):
+        operator_fn = _UNARY_OPERATORS.get(type(node.op))
+        if operator_fn is None:
+            raise ValueError("Unsupported unary operator")
+
+        operand = _evaluate_node(node.operand, variables)
+        if operand is None:
+            raise ValueError("Cannot evaluate formula with missing values")
+
+        return operator_fn(operand)
+
+    if isinstance(node, ast.Name):
+        value = variables.get(node.id)
+        if isinstance(value, (int, float)):
+            return float(value)
+        raise ValueError(f"Invalid variable value for '{node.id}'")
+
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return float(node.value)
+
+    raise ValueError("Unsupported expression in derived formula")
