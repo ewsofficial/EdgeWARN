@@ -5,6 +5,7 @@ from EdgeWARN.core.ingest.mrms.https_client import HttpsFileFinder, HttpsFileDow
 from EdgeWARN.core.ingest.mrms.parse import parse_mrms_bucket_path, parse_goes_bucket_path
 from EdgeWARN.core.ingest.mrms.utils import merge_glm_files, extract_timestamp
 from util.io import IOManager
+import util.file as fs
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
 import aioboto3
@@ -16,6 +17,36 @@ from util.performance import tracker as perf_tracker
 import uuid
 
 io_manager = IOManager("[Ingest]")
+
+
+def _cleanup_goes_outdir_sync(product, outdir, max_age_minutes=60):
+    """Run pre-download cleanup for a GOES product output directory (sync path)."""
+    try:
+        io_manager.write_debug(
+            f"[GOES:{product}] Running pre-download cleanup in {outdir} "
+            f"(max_age_minutes={max_age_minutes})"
+        )
+        fs.clean_old_files(outdir, max_age_minutes=max_age_minutes)
+        io_manager.write_debug(f"[GOES:{product}] Pre-download cleanup completed for {outdir}")
+    except Exception as e:
+        io_manager.write_warning(f"[GOES:{product}] Pre-download cleanup failed for {outdir}: {e}")
+
+
+async def _cleanup_goes_outdir_async(product, outdir, trace_id, max_age_minutes=60):
+    """Run pre-download cleanup for a GOES product output directory (async path)."""
+    try:
+        io_manager.write_debug(
+            f"[{trace_id}] [GOES:{product}] Running async pre-download cleanup in {outdir} "
+            f"(max_age_minutes={max_age_minutes})"
+        )
+        await fs.async_clean_old_files(outdir, max_age_minutes=max_age_minutes)
+        io_manager.write_debug(
+            f"[{trace_id}] [GOES:{product}] Async pre-download cleanup completed for {outdir}"
+        )
+    except Exception as e:
+        io_manager.write_warning(
+            f"[{trace_id}] [GOES:{product}] Async pre-download cleanup failed for {outdir}: {e}"
+        )
 
 async def download_all_files_async_internal(dt, max_entries, target_modifiers=None):
     """Internal async function that handles the actual download operations"""
@@ -227,6 +258,8 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
     # dt = dt.replace(second=0, microsecond=0) # Allow seconds for sliding window
     
     # Increase max_entries to ensure we find files in the past (GLM has ~180 files/hour)
+    _cleanup_goes_outdir_sync(product, outdir, max_age_minutes=60)
+
     search_max_entries = max(max_entries, 300)
     finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
     downloader = FileDownloader(dt, goes_bucket, io_manager)
@@ -327,6 +360,8 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
     Internal async function for downloading a single GOES product using aioboto3.
     """
     trace_id = parent_trace_id or f"GOES-{uuid.uuid4().hex[:8]}"
+
+    await _cleanup_goes_outdir_async(product, outdir, trace_id, max_age_minutes=60)
     
     # Increase max_entries to ensure we find files in the past
     search_max_entries = max(max_entries, 300)
@@ -500,4 +535,3 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
                 io_manager.write_debug(f"[{trace_id}] Successfully downloaded {len(result)} files")
         
         io_manager.write_info(f"[{trace_id}] Async GOES-19 downloads completed")
-
