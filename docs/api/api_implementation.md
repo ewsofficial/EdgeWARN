@@ -1,284 +1,181 @@
 # EdgeWARN API v2 Technical Implementation
 
-This document describes the technical implementation of the EdgeWARN API v2, including the server architecture, middleware, routing, and utility functions.
+This document describes the current implementation in `src/EdgeWARN/api`.
 
 ## Server Architecture
 
-The EdgeWARN API is built with Node.js and Express.js, using a modular architecture. The server is designed to be scalable, secure, and efficient.
+The API is an Express.js service with clustered workers (up to 4), file-backed data access, and defensive request validation.
 
 ### File Structure
 
 ```
 src/EdgeWARN/api/
-├── server.js                    # Main server entry point
-├── config.js                    # Configuration and directory setup
-├── robots.txt                   # Robots.txt for search engines
+├── server.js
+├── config.js
+├── robots.txt
 ├── routes/
-│   ├── health.js                # Health check route
+│   ├── health.js
 │   └── v2/
-│       ├── index.js             # API v2 router
+│       ├── index.js
 │       ├── features/
-│       │   ├── cells.js         # Cells endpoint
-│       │   ├── alerts.js        # Alerts endpoint
-│       │   └── timestamps.js    # Timestamps endpoint
+│       │   ├── cells.js
+│       │   ├── alerts.js
+│       │   └── timestamps.js
 │       └── data/
-│           └── metar.js         # METAR endpoint
+│           └── metar.js
 └── utils/
-    ├── fileReader.js            # File reading and caching utilities
-    └── validation.js            # Input validation utilities
+    ├── fileReader.js
+    └── validation.js
 ```
 
-## Server Configuration
+## Request Lifecycle
 
-### server.js
+1. `server.js` loads environment variables (`dotenv`) and config.
+2. If process is primary, Node cluster forks up to 4 workers.
+3. Each worker applies middleware:
+   - `helmet`
+   - `compression`
+   - `cors` (allowlist from `ALLOWED_ORIGINS`)
+   - `express.json()`
+   - `express-rate-limit`
+4. Worker mounts routes:
+   - `/`
+   - `/health`
+   - `/api/v2`
+   - legacy guards for `/features/*` and `/data/*` returning `410`
+5. File-backed routes fetch JSON from configured data directories using safe readers.
 
-The main server entry point that sets up the Express application with all middleware and routes.
+## Configuration (`config.js`)
 
-**Key Features**:
-- Cluster support for multi-core processing
-- Security middleware (Helmet)
-- Compression middleware
-- CORS configuration
-- Rate limiting
-- Error handling
-- Route mounting
+`config.js` resolves `BASE_DIR` in this order:
 
-**Cluster Configuration**:
-The server uses Node.js clustering to take advantage of multiple CPU cores. By default, it forks up to 4 workers.
+1. CLI arg: `--base-dir` / `--base-dir=...`
+2. `EDGEWARN_BASE_DIR`
+3. Platform defaults (including `~/EdgeWARN_input` on non-Windows)
 
-```javascript
-const numCPUs = Math.min(os.cpus().length, 4);
-```
+It then builds `DATA_DIR` subpaths (cells, stormcells, METAR, alerts, etc.) and creates missing directories at startup.
 
-### config.js
+It also supports debug mode via `--debug_server`:
 
-Handles application configuration, including:
-- Base directory detection
-- Directory paths for data storage
-- Debug server mode
-- Port configuration
-- Directory validation and creation
-
-**Base Directory Detection Order**:
-1. CLI argument `--base-dir`
-2. Environment variable `EDGEWARN_BASE_DIR`
-3. Platform-specific defaults:
-   - Windows: `C:\EdgeWARN_input`
-   - Linux/macOS: User home directory, then common locations
+- default port: `5000`
+- debug port: `3001`
 
 ## Routing
 
-### v2/index.js
+### `routes/v2/index.js`
 
-The main API v2 router that mounts all feature and data routes.
+Mounts:
 
-```javascript
-import express from 'express';
-import cellsRouter from './features/cells.js';
-import timestampsRouter from './features/timestamps.js';
-import alertsRouter from './features/alerts.js';
-import metarRouter from './data/metar.js';
+- `/features/cells`
+- `/features/timestamps`
+- `/features/alerts`
+- `/data/metar`
 
-const router = express.Router();
+And provides `GET /api/v2` endpoint metadata.
 
-router.use('/features/cells', cellsRouter);
-router.use('/features/timestamps', timestampsRouter);
-router.use('/features/alerts', alertsRouter);
-router.use('/data/metar', metarRouter);
-```
+### `routes/v2/features/cells.js`
 
-### Feature Routes
+- `GET /api/v2/features/cells`
+- Optional query: `id`
+- Reads `cell_index.json` for list mode.
+- Reads `{id}.json` for single-cell mode.
+- Validates positive integer IDs.
 
-#### cells.js
+### `routes/v2/features/timestamps.js`
 
-Handles cell data retrieval.
+- `GET /api/v2/features/timestamps`
+- Optional query: `timestamp` (`YYYYMMDD-HHMMSS`)
+- Reads `stormcell_index.json` for list mode.
+- Reads `stormcells_{timestamp}.json` for snapshot mode.
 
-**Key Functions**:
-- `GET /api/v2/features/cells` - Returns cell IDs or specific cell data
-- Validates cell ID parameter
-- Caches cell data for 60 seconds
-- Reads data from `cell_index.json` and individual cell files
+### `routes/v2/features/alerts.js`
 
-#### alerts.js
+- `GET /api/v2/features/alerts/official`
+- `GET /api/v2/features/alerts/edgewarn`
+- Supports mutually exclusive query params: `id` or `timestamp`
+- ID mode resolves filename-safe IDs in `ids/`
+- Timestamp mode reads `{timestamp}.json` from `timestamps/`
+- List mode scans timestamp files and returns sorted timestamp keys
 
-Handles alert data retrieval for both official NWS alerts and EdgeWARN alerts.
+### `routes/v2/data/metar.js`
 
-**Key Functions**:
-- `GET /api/v2/features/alerts/official` - Returns official NWS alerts
-- `GET /api/v2/features/alerts/edgewarn` - Returns EdgeWARN alerts
-- Handles both `id` and `timestamp` query parameters
-- Validates input parameters
-- Caches alert data for 60 seconds
+- `GET /api/v2/data/metar`
+- Optional query: `timestamp`
+- List mode scans `METAR_YYYYMMDD-HHz.json`
+- Timestamp mode maps request to hourly METAR file and wraps result as `{ type, timestamp, data }`
 
-#### timestamps.js
+### `routes/health.js`
 
-Handles timestamp data retrieval and storm cell data by timestamp.
+- `GET /health` returns service status and server timestamp.
 
-**Key Functions**:
-- `GET /api/v2/features/timestamps` - Returns available timestamps
-- `GET /api/v2/features/timestamps?timestamp={YYYYMMDD-HHMMSS}` - Returns storm cell data for specific timestamp
-- Reads from `stormcell_index.json`
-- Caches data for 5 seconds (timestamps) or 1 hour (stormcell data)
+## Utilities
 
-### Data Routes
+### `utils/fileReader.js`
 
-#### metar.js
+Provides:
 
-Handles METAR weather observation retrieval.
+- `isSafeFilename(name)` filename hardening
+- `readJsonFileSafe(dir, name, options)` safe JSON file reads with traversal protection
+- `readIndexFile(path)` index-file reads with short cache TTL
 
-**Key Functions**:
-- `GET /api/v2/data/metar` - Returns available timestamps
-- `GET /api/v2/data/metar?timestamp={YYYYMMDD-HHMMSS}` - Returns METAR data for specific timestamp
-- Handles hourly METAR files
-- Formats timestamps from `YYYYMMDD-HH` to `YYYYMMDD-HHMMSS`
+Caching uses `lru-cache`:
 
-### Health Route
+- max entries: `500`
+- default TTL: `60s`
+- max worker cache size: `40MB`
+- index TTL override: `5s`
 
-#### health.js
+### `utils/validation.js`
 
-Simple health check endpoint.
+Centralized validation helpers for:
 
-```javascript
-router.get('/', (req, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString()
-  });
-});
-```
+- resource type checks
+- timestamp validation
+- mutually exclusive query params
+- cell ID and alert ID validation
 
-## Utility Functions
+## Middleware Details
 
-### fileReader.js
+### Security
 
-Provides safe file reading with path traversal protection and caching.
-
-**Key Functions**:
-- `isSafeFilename(name)` - Validates filename to prevent path traversal
-- `readJsonFileSafe(dir, name, options)` - Reads JSON file with traversal protection
-- `readIndexFile(indexPath)` - Reads index files with shorter cache TTL
-
-**Caching**:
-Uses `lru-cache` with:
-- Max 500 items
-- Default TTL: 1 minute (60,000 ms)
-- Max size: 40 MB per worker
-
-Index files (cell_index.json, stormcell_index.json) have a shorter TTL of 5 seconds.
-
-### validation.js
-
-Provides input validation utilities.
-
-**Key Functions**:
-- `validateResourceType(type)` - Validates resource type
-- `validateTimestamp(timestamp)` and `validateTimestampV2(timestamp)` - Validates timestamp format
-- `validateMutualExclusion(params, key1, key2)` - Ensures parameters are mutually exclusive
-- `validateCellId(id)` - Validates cell ID is a positive integer
-- `validateAlertId(id)` - Validates alert ID format and prevents prototype pollution
-
-## Middleware
-
-### Security (Helmet)
-
-```javascript
-app.use(helmet({
-  hsts: {
-    maxAge: 31536000, // 1 year
-    includeSubDomains: true
-  },
-  contentSecurityPolicy: {
-    useDefaults: true,
-    directives: {
-      "default-src": ["'self'"],
-    }
-  }
-}));
-```
+`helmet` is enabled with HSTS and CSP defaults.
 
 ### CORS
 
-```javascript
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-  : (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3000', 'http://localhost:8080']);
-
-app.use(cors({
-  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
-  credentials: true,
-  methods: ['GET', 'HEAD', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-```
+- In non-production without env override: localhost allowlist
+- In production: requires explicit `ALLOWED_ORIGINS`, otherwise cross-origin requests are blocked
 
 ### Rate Limiting
 
-```javascript
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60 * 1000, // 1 minute
-  max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 60, // 60 requests
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later' },
-  // Skip rate limiting for health checks from internal monitoring
-  skip: (req) => {
-    return req.path === '/health' && req.headers['x-internal-check'] === 'true';
-  },
-  // Custom key generator to handle proxy environments
-  keyGenerator: (req) => {
-    // ...
-  }
-});
-```
+`express-rate-limit` defaults:
 
-## Performance Optimizations
+- `RATE_LIMIT_WINDOW_MS`: `60000`
+- `RATE_LIMIT_MAX`: `60`
 
-1. **Clustering**: Takes advantage of multi-core processors
-2. **Caching**: LRU cache for frequent requests
-3. **Compression**: Gzip compression for responses
-4. **Efficient File Reading**: Optimized with fs.promises and cache
-5. **Path Traversal Protection**: Validates filenames and paths
+Special cases:
+
+- Optional skip for `/health` with `x-internal-check: true`
+- Custom key generation handles proxy/non-proxy deployments
 
 ## Error Handling
 
-```javascript
-app.use((err, req, res, next) => {
-  const isDev = process.env.NODE_ENV !== 'production';
-  console.error(isDev ? err.stack : `Error: ${err.message}`);
-  res.status(500).json({
-    error: isDev ? err.message : 'Internal server error'
-  });
-});
-```
-
-Error responses are sanitized in production to prevent information leakage.
+- Route-level handlers return `400/404/500` as appropriate.
+- Global error middleware sanitizes output in production (`Internal server error`).
+- Legacy v1 paths return `410 Gone` and include migration guidance.
 
 ## Environment Variables
 
-Key environment variables:
-- `PORT`: Server port
-- `NODE_ENV`: Environment (development/production)
-- `ALLOWED_ORIGINS`: CORS allowed origins
-- `RATE_LIMIT_WINDOW_MS`: Rate limit window
-- `RATE_LIMIT_MAX`: Rate limit maximum requests
-- `TRUST_PROXY`: Whether to trust proxy headers
-- `TRUST_PROXY_IPS`: Specific proxy IPs to trust
-- `EDGEWARN_BASE_DIR`: Base directory for data
+- `PORT`
+- `NODE_ENV`
+- `ALLOWED_ORIGINS`
+- `RATE_LIMIT_WINDOW_MS`
+- `RATE_LIMIT_MAX`
+- `TRUST_PROXY`
+- `TRUST_PROXY_IPS`
+- `EDGEWARN_BASE_DIR`
 
-## Debug Server Mode
+## Runtime Modes
 
-The server can be run in debug mode using:
-
-```bash
-npm run debug
-```
-
-Debug mode uses port 3001 instead of 5000 and provides more detailed error messages.
-
-## Deployment
-
-The API can be deployed using:
-
-1. **Production**: `npm start`
-2. **Development**: `npm run dev` (with watch mode)
-3. **Debug**: `npm run debug`
+- **Production**: `npm start`
+- **Development watch**: `npm run dev`
+- **Debug**: `npm run debug`

@@ -1,31 +1,37 @@
-# EdgeWARN API v2 Documentation
+# EdgeWARN API v2 Endpoints
 
-This document describes the EdgeWARN API v2 endpoints, their parameters, and responses. The API provides access to storm cell data, alerts, and METAR observations.
+This document describes the currently implemented API routes in `src/EdgeWARN/api`.
 
 ## API Overview
 
 - **Base URL**: `/api/v2`
-- **Version**: 2.0.0
+- **Version string**:
+  - `2.x` when `NODE_ENV=production`
+  - `2.0.0-alpha` otherwise
 - **Protocol**: HTTP/HTTPS
-- **Response Format**: JSON
+- **Response format**: JSON
 
-## Root Endpoint
+## Root Endpoints
+
+### GET /
+
+Returns the backend API banner.
+
+```json
+{
+  "message": "EdgeWARN Backend API",
+  "version": "2.0.0-alpha"
+}
+```
 
 ### GET /api/v2
 
-Returns information about the API version and available endpoints.
+Returns API v2 metadata and endpoint map.
 
-**Example Request**:
-```http
-GET /api/v2 HTTP/1.1
-Host: api.edgewarn.com
-```
-
-**Response**:
 ```json
 {
   "message": "EdgeWARN API v2",
-  "version": "2.0.0",
+  "version": "2.0.0-alpha",
   "endpoints": {
     "features": {
       "cells": "/api/v2/features/cells[?id={int}]",
@@ -44,249 +50,120 @@ Host: api.edgewarn.com
 
 ## Features Endpoints
 
-### Cells
+### GET /api/v2/features/cells
 
-#### GET /api/v2/features/cells
+Query parameters:
 
-Returns storm cell data.
+- `id` (optional): positive integer
 
-**Query Parameters**:
-- `id` (optional): Integer - Cell ID to fetch specific cell data
+Behavior:
 
-**Responses**:
+- Without `id`, returns an array of available cell IDs from `cell_index.json`.
+- With `id`, returns that cell JSON (`{id}.json`).
 
-1. Without `id` parameter: Returns array of available cell IDs
+Common errors:
 
-```http
-GET /api/v2/features/cells HTTP/1.1
-Host: api.edgewarn.com
-```
+- `400` invalid `id`
+- `404` cell not found
+- `500` file read/server error
 
-```json
-[12345, 12346, 12347]
-```
+Cache headers:
 
-2. With `id` parameter: Returns specific cell data
+- `max-age=5` (index list)
+- `max-age=60` (single cell)
 
-```http
-GET /api/v2/features/cells?id=12345 HTTP/1.1
-Host: api.edgewarn.com
-```
+### GET /api/v2/features/timestamps
 
-```json
-{
-  "id": 12345,
-  "type": "Feature",
-  "geometry": {
-    "type": "Polygon",
-    "coordinates": [...]
-  },
-  "properties": {
-    "centroid": [35.0, -97.0],
-    "max_refl": 55,
-    "num_gates": 25,
-    "timestamp": "2023-10-01T12:00:00Z",
-    "velocity": {
-      "u": 5.0,
-      "v": 3.0,
-      "speed": 5.83,
-      "bearing": 59.0
-    },
-    "confidence": 0.95,
-    "tracking_mode": "active",
-    "event_type": "ACTIVE",
-    "alerts": ["TOR", "HAIL"]
-  }
-}
-```
+Query parameters:
 
-### Timestamps
+- `timestamp` (optional): `YYYYMMDD-HHMMSS`
 
-#### GET /api/v2/features/timestamps
+Behavior:
 
-Returns available timestamps or storm cell data for a specific timestamp.
+- Without `timestamp`, returns available timestamps from `stormcell_index.json`.
+- With `timestamp`, returns `stormcells_{timestamp}.json`.
 
-**Query Parameters**:
-- `timestamp` (optional): String - Timestamp in `YYYYMMDD-HHMMSS` format
+Common errors:
 
-**Responses**:
+- `400` invalid timestamp
+- `404` timestamp file not found
+- `500` file read/server error
 
-1. Without `timestamp` parameter: Returns array of available timestamps
+Cache headers:
 
-```http
-GET /api/v2/features/timestamps HTTP/1.1
-Host: api.edgewarn.com
-```
+- `max-age=5` (timestamp index)
+- `max-age=3600` (stormcell snapshot)
 
-```json
-["20231001-120000", "20231001-115800", "20231001-115600"]
-```
+### GET /api/v2/features/alerts/official
 
-2. With `timestamp` parameter: Returns storm cell data for that timestamp
+### GET /api/v2/features/alerts/edgewarn
 
-```http
-GET /api/v2/features/timestamps?timestamp=20231001-120000 HTTP/1.1
-Host: api.edgewarn.com
-```
+Query parameters (mutually exclusive):
 
-```json
-{
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "id": 12345,
-      "type": "Feature",
-      "geometry": {...},
-      "properties": {...}
-    }
-  ],
-  "latest_timestamp": "2023-10-01T12:00:00Z"
-}
-```
+- `timestamp` (optional): `YYYYMMDD-HHMMSS`
+- `id` (optional): alert ID string
 
-### Alerts
+Behavior:
 
-#### GET /api/v2/features/alerts/official
+- Without params: returns available snapshot timestamps from the alerts timestamp directory.
+- With `timestamp`: returns list of alert IDs for that timestamp (`[]` if snapshot missing).
+- With `id`: returns full alert feature payload for that ID.
 
-Returns official NWS alerts.
+Validation and errors:
 
-**Query Parameters**:
-- `id` (optional): String - Alert ID (URN format: `urn:oid:12345`)
-- `timestamp` (optional): String - Timestamp in `YYYYMMDD-HHMMSS` format
+- `400` if both `id` and `timestamp` are supplied
+- `400` invalid `id` or `timestamp`
+- `404` unknown alert `id`
+- `500` server error
 
-**Responses**:
+Notes:
 
-1. Without parameters: Returns array of available timestamps
+- Alert error responses are wrapped in `{ success: false, error: { code, message } }`.
+- Alert IDs are resolved from filename-safe transformations (`:` and `/` replaced with `_`).
 
-```http
-GET /api/v2/features/alerts/official HTTP/1.1
-Host: api.edgewarn.com
-```
+Cache headers:
 
-```json
-["20231001-120000", "20231001-115800", "20231001-115600"]
-```
-
-2. With `timestamp` parameter: Returns alert IDs for that timestamp
-
-```http
-GET /api/v2/features/alerts/official?timestamp=20231001-120000 HTTP/1.1
-Host: api.edgewarn.com
-```
-
-```json
-["urn:oid:12345", "urn:oid:12346"]
-```
-
-3. With `id` parameter: Returns specific alert data
-
-```http
-GET /api/v2/features/alerts/official?id=urn:oid:12345 HTTP/1.1
-Host: api.edgewarn.com
-```
-
-```json
-{
-  "id": "urn:oid:12345",
-  "type": "Feature",
-  "geometry": {
-    "type": "Polygon",
-    "coordinates": [...]
-  },
-  "properties": {
-    "event": "Tornado Warning",
-    "severity": "Severe",
-    "sender": "NWS",
-    "sent": "2023-10-01T12:00:00Z",
-    "effective": "2023-10-01T12:00:00Z",
-    "expires": "2023-10-01T12:30:00Z",
-    "headline": "Tornado Warning issued for Westchester County"
-  }
-}
-```
-
-#### GET /api/v2/features/alerts/edgewarn
-
-Returns EdgeWARN generated alerts (same interface as official alerts).
-
-**Query Parameters**:
-- `id` (optional): String - Alert ID
-- `timestamp` (optional): String - Timestamp in `YYYYMMDD-HHMMSS` format
-
-**Responses**:
-Same format as official alerts endpoint.
+- `max-age=5` (timestamp listing)
+- `max-age=60` (`id` and `timestamp` lookups)
 
 ## Data Endpoints
 
-### METAR
+### GET /api/v2/data/metar
 
-#### GET /api/v2/data/metar
+Query parameters:
 
-Returns METAR weather observations.
+- `timestamp` (optional): `YYYYMMDD-HHMMSS`
 
-**Query Parameters**:
-- `timestamp` (optional): String - Timestamp in `YYYYMMDD-HHMMSS` format
+Behavior:
 
-**Responses**:
-
-1. Without `timestamp` parameter: Returns array of available timestamps
-
-```http
-GET /api/v2/data/metar HTTP/1.1
-Host: api.edgewarn.com
-```
-
-```json
-["20231001-120000", "20231001-110000", "20231001-100000"]
-```
-
-2. With `timestamp` parameter: Returns METAR data for that timestamp
-
-```http
-GET /api/v2/data/metar?timestamp=20231001-120000 HTTP/1.1
-Host: api.edgewarn.com
-```
+- Without `timestamp`, returns available METAR timestamps derived from files matching `METAR_YYYYMMDD-HHz.json`.
+- With `timestamp`, returns:
 
 ```json
 {
   "type": "metar",
-  "timestamp": "20231001-120000",
-  "data": [
-    {
-      "station": "KJFK",
-      "name": "John F. Kennedy International Airport",
-      "latitude": 40.64,
-      "longitude": -73.78,
-      "observation_time": "2023-10-01T12:00:00Z",
-      "temperature": 20.0,
-      "dewpoint": 15.0,
-      "wind": {
-        "direction": 180,
-        "speed": 10,
-        "gust": null
-      },
-      "visibility": 10,
-      "pressure": 1013,
-      "sky_conditions": "Few clouds at 3000ft",
-      "flight_category": "VFR"
-    }
-  ]
+  "timestamp": "YYYYMMDD-HHMMSS",
+  "data": []
 }
 ```
 
-## Health Check
+Common errors:
 
-#### GET /health
+- `400` invalid timestamp
+- `404` METAR file not found
+- `500` file read/server error
 
-Returns server health status.
+Cache headers:
 
-**Example Request**:
-```http
-GET /health HTTP/1.1
-Host: api.edgewarn.com
-```
+- `max-age=5` (timestamp listing)
+- `max-age=60` (timestamp file)
 
-**Response**:
+## Other Routes
+
+### GET /health
+
+Returns service health:
+
 ```json
 {
   "status": "OK",
@@ -294,35 +171,20 @@ Host: api.edgewarn.com
 }
 ```
 
-## Error Handling
+### GET /robots.txt
 
-The API returns appropriate HTTP status codes for errors:
+Serves `src/EdgeWARN/api/robots.txt`.
 
-- **400 Bad Request**: Invalid parameters or input
-- **404 Not Found**: Resource not found
-- **500 Internal Server Error**: Server-side error
+### Legacy v1 routes
 
-**Example Error Response**:
-```json
-{
-  "error": "Invalid id parameter. Must be a positive integer"
-}
-```
+- `/features/*`
+- `/data/*`
 
-## Caching
+Return `410 Gone` with guidance to use `/api/v2`.
 
-The API uses caching to improve performance:
+## Security and Platform Behavior
 
-- Cell data: 60 seconds
-- Alert data: 60 seconds
-- Metar data: 60 seconds
-- Timestamps: 5 seconds
-- Index files: 5 seconds
-
-## Rate Limiting
-
-The API is rate limited to 60 requests per minute per IP address by default. This can be configured via environment variables.
-
-## Cross-Origin Resource Sharing (CORS)
-
-CORS is configured to allow requests from specific origins. In development, this includes `http://localhost:3000` and `http://localhost:8080`. In production, origins must be explicitly configured via the `ALLOWED_ORIGINS` environment variable.
+- Rate limiting is enabled globally via `express-rate-limit` (defaults: 60 requests / minute / client key).
+- CORS is allowlist-based via `ALLOWED_ORIGINS`.
+- Helmet security headers and compression are enabled.
+- In production, detailed version strings are intentionally hidden (`2.x`).
