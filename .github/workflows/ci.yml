@@ -45,4 +45,4 @@ jobs:
 
       - name: Run Python tests
         shell: bash -el {0}
-        run: pytest tests -q
+        run: python -m pytest
