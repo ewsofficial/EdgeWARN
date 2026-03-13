@@ -310,8 +310,7 @@ class LineageDetector:
         results = []
         new_cells_data = new_index.get('cells_data', {})
         for new_id, new_data in new_cells_data.items():
-            if new_id == old_id:
-                continue
+            # Don't skip same-ID here - we need to detect splits where parent keeps same ID
             if not bounds_overlap(old_bounds, new_data):
                 continue
             # Key: old_bbox as first arg = denominator is old cell area
