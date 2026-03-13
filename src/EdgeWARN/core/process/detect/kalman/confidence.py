@@ -49,24 +49,28 @@ class ConfidenceCalculator:
         max_time_seconds = self.config.max_prediction_time_minutes * 60
         time_factor = max(0.0, 1.0 - (time_predicted_seconds / max_time_seconds) * 0.3)
         
-        # Motion consistency factor (lower variance = higher confidence)
+        # Motion consistency factor (lower variance = higher confidence).
+        # Keep this penalty gentle so a newly predicted track with a valid
+        # Kalman state is not dropped immediately on the first missed scan.
         motion_factor = 1.0
         if velocity_variance is not None:
             var_u, var_v = velocity_variance
-            # High velocity variance indicates uncertain motion
+            # High velocity variance indicates uncertain motion.
             total_var = var_u + var_v
             if total_var > 0:
-                # Normalize: variance of 100 (m/s)² gives factor of 0.8
-                motion_factor = max(0.5, 1.0 - total_var / 500.0)
+                motion_factor = 1.0 / (1.0 + total_var / 2500.0)
+                motion_factor = max(0.8, motion_factor)
         
-        # Position uncertainty factor
+        # Position uncertainty factor. Use a soft decay to preserve continuity
+        # across temporary detection dropouts while still reducing confidence
+        # as uncertainty grows.
         position_factor = 1.0
         if position_uncertainty_km is not None:
             std_lat, std_lon = position_uncertainty_km
             avg_std = (std_lat + std_lon) / 2
-            # Higher uncertainty reduces confidence
             if avg_std > 5.0:  # km
-                position_factor = max(0.5, 1.0 - (avg_std - 5.0) / 20.0)
+                position_factor = 1.0 / (1.0 + (avg_std - 5.0) / 30.0)
+                position_factor = max(0.8, position_factor)
         
         # Combine factors
         confidence = scan_confidence * time_factor * motion_factor * position_factor
