@@ -35,8 +35,10 @@
 
 ### Fixed
 - **Lineage Buffer Scan Termination**: Corrected logic for ending scans in the lineage buffer to ensure monotonic scan numbering.
+- **Split Tracking State Alignment**: Corrected dominant-child split processing order so child observation fields are applied before Kalman updates, preventing stale parent-centroid state carryover on split scans.
 - **Alert Matching Accuracy**: Improved alert-to-cell matching using high-precision polygon-to-polygon intersection (with `shapely.prepared`).
 - **NWS Alert Deduplication**: Addressed code review issues within NWS data feed logic to accurately filter redundant event alerts.
+- **EdgeWARN Alert Retention Safety**: Updated alert cleanup to prioritize semantic `expires` timestamps over filesystem age, preventing premature deletion of still-active long-duration alerts while preserving mtime fallback for malformed/no-expiry files.
 - **StormCast Dropout Prevention**: Modified history mechanics to load historical state directly from persistent files.
 - **TimingTracker Race Condition**: Resolved a thread-safety race condition within concurrent system tracking instances.
 - **Precipitation Flag Logic**: Corrected hail core mask to use `PrecipFlag` 6 (Hail) instead of 7 (Snow).

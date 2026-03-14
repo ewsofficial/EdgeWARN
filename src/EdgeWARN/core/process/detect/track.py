@@ -268,6 +268,12 @@ class StormCellTracker:
                         new_entry['id'] = child_id
                         new_entry['event_type'] = LineageEvent.ACTIVE.value
                         new_entry['split_from'] = split.parent_id
+
+                        # Apply child observation BEFORE KF update so the
+                        # dominant child's filter is corrected to child geometry
+                        # in this same scan.
+                        self._update_cell_fields(new_entry, child_data, timestamp)
+
                         # Kalman Update on parent track
                         self._update_kalman_with_observation(new_entry, split.parent_id)
 
@@ -286,8 +292,7 @@ class StormCellTracker:
                         new_entry['parent_ids'] = []
                         # Init new KF
                         self._update_kalman_with_observation(new_entry, child_id)
-
-                    self._update_cell_fields(new_entry, child_data, timestamp)
+                        self._update_cell_fields(new_entry, child_data, timestamp)
                     updated_entries.append(new_entry)
                     processed_new_ids.add(child_id)
                     stats['splits'] += 1

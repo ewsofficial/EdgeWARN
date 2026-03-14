@@ -182,3 +182,37 @@ def test_update_cells_handles_natural_dissipation(tracker):
     assert result[0]["id"] == 101
     assert result[0]["event_type"] == "DISSIPATED"
     assert result[0]["tracking_mode"] == "dissipated"
+
+
+def test_update_cells_split_dominant_updates_kf_with_child_observation(tracker):
+    """Dominant split child should carry a KF state updated toward child centroid."""
+    from EdgeWARN.core.process.detect.lineage import LineageResult, SplitEvent
+
+    entries = [
+        {"id": 101, "num_gates": 80, "centroid": [35.0, -97.0], "max_refl": 58, "bbox": _bbox(35.0, -97.0)}
+    ]
+
+    updated_data = [
+        {"id": 201, "num_gates": 55, "centroid": [35.3, -97.3], "max_refl": 60, "bbox": _bbox(35.3, -97.3)},
+        {"id": 202, "num_gates": 30, "centroid": [34.9, -96.8], "max_refl": 47, "bbox": _bbox(34.9, -96.8)},
+    ]
+
+    lineage = LineageResult()
+    lineage.splits.append(SplitEvent(parent_id=101, child_ids=[201, 202], dominant_child=201))
+
+    result = tracker.update_cells(entries, updated_data, timestamp="2023-10-15T12:00:00", lineage=lineage)
+
+    dominant_child = next(c for c in result if c["id"] == 201)
+    assert dominant_child["split_from"] == 101
+
+    # KF should have migrated from parent_id -> dominant child id
+    assert 101 not in tracker._kalman_filters
+    assert 201 in tracker._kalman_filters
+
+    kf_state = tracker._kalman_filters[201].state
+    parent_lat, parent_lon = 35.0, -97.0
+    child_lat, child_lon = 35.3, -97.3
+
+    # Regression check: state must move toward child centroid in same scan.
+    assert abs(kf_state.lat - child_lat) < abs(kf_state.lat - parent_lat)
+    assert abs(kf_state.lon - child_lon) < abs(kf_state.lon - parent_lon)
