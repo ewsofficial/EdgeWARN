@@ -1,7 +1,8 @@
 import pytest
 import json
+import os
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import util.file as fs
 from EdgeWARN.core.alerts.schema import AlertPayload
@@ -208,8 +209,7 @@ class TestAlertManager:
 
     def test_cleanup_expired_removes_old_files(self, override_alerts_dir):
         """cleanup_expired should remove files with expires < now."""
-        from datetime import timezone
-        
+
         # 1. Active alert
         now = datetime.now(timezone.utc)
         active_eff = now - timedelta(minutes=10)
@@ -241,3 +241,59 @@ class TestAlertManager:
         remaining_files = list(override_alerts_dir.glob("*.json"))
         assert len(remaining_files) == 1
         assert "cell_active" in remaining_files[0].name
+
+    def test_cleanup_expired_keeps_future_expiry_even_if_file_is_old(self, override_alerts_dir):
+        """Future-expiring alerts must not be deleted solely due to stale mtime."""
+        now = datetime.now(timezone.utc)
+        effective = now - timedelta(minutes=30)
+        future_expiry = now + timedelta(hours=4)
+
+        alert = AlertPayload(
+            "severe_weather", "StormCast", "cell_long_lived",
+            [(35.0, -97.0)], effective, future_expiry
+        )
+        AlertManager.publish(alert)
+
+        alert_file = override_alerts_dir / f"{alert.id.replace(':', '_').replace('/', '_')}.json"
+        assert alert_file.exists()
+
+        old_ts = (now - timedelta(hours=3)).timestamp()
+        os.utime(alert_file, (old_ts, old_ts))
+
+        deleted = AlertManager.cleanup_expired(max_age_minutes=120)
+        assert deleted == 0
+        assert alert_file.exists()
+
+    def test_cleanup_expired_deletes_old_file_without_expiry(self, override_alerts_dir):
+        """Fallback mtime policy should delete stale files with missing expires."""
+        data = {
+            "id": "id:severe_weather:StormCast:cell_no_expiry:2026.03.04.12.00.00",
+            "alert_type": "severe_weather",
+            "source": "StormCast",
+            "cell_id": "cell_no_expiry",
+            "effective": datetime.now(timezone.utc).isoformat(),
+            "geometry": [[35.0, -97.0]],
+            "threats": {},
+        }
+        alert_file = override_alerts_dir / "id_severe_weather_StormCast_cell_no_expiry_2026.03.04.12.00.00.json"
+        with open(alert_file, "w") as f:
+            json.dump(data, f)
+
+        old_ts = (datetime.now(timezone.utc) - timedelta(hours=3)).timestamp()
+        os.utime(alert_file, (old_ts, old_ts))
+
+        deleted = AlertManager.cleanup_expired(max_age_minutes=120)
+        assert deleted == 1
+        assert not alert_file.exists()
+
+    def test_cleanup_expired_deletes_malformed_old_file_by_mtime_fallback(self, override_alerts_dir):
+        """Malformed files should be cleaned up by fallback age policy."""
+        bad_file = override_alerts_dir / "malformed.json"
+        bad_file.write_text("{ this is invalid json", encoding="utf-8")
+
+        old_ts = (datetime.now(timezone.utc) - timedelta(hours=3)).timestamp()
+        os.utime(bad_file, (old_ts, old_ts))
+
+        deleted = AlertManager.cleanup_expired(max_age_minutes=120)
+        assert deleted == 1
+        assert not bad_file.exists()

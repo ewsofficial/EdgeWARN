@@ -271,25 +271,27 @@ class AlertManager:
                     continue
 
                 should_delete = False
-                
-                # Safety check: file is too old
-                if cutoff_ts is not None and path.stat().st_mtime < cutoff_ts:
-                    should_delete = True
-                else:
-                    try:
-                        with open(path, "r") as f:
-                            data = json.load(f)
-                        
-                        expires_str = data.get("expires")
-                        if expires_str:
-                            expires_dt = datetime.fromisoformat(expires_str)
-                            if expires_dt.tzinfo is None:
-                                expires_dt = expires_dt.replace(tzinfo=timezone.utc)
-                            if expires_dt < now:
-                                should_delete = True
-                    except Exception as e:
-                        io_manager.write_warning(f"Failed to read/parse {path.name} during cleanup: {e}")
-                        pass
+
+                try:
+                    with open(path, "r") as f:
+                        data = json.load(f)
+
+                    expires_str = data.get("expires")
+                    if expires_str:
+                        # Semantic expiry takes precedence over file mtime.
+                        expires_dt = datetime.fromisoformat(expires_str)
+                        if expires_dt.tzinfo is None:
+                            expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                        if expires_dt < now:
+                            should_delete = True
+                    elif cutoff_ts is not None and path.stat().st_mtime < cutoff_ts:
+                        # Fallback for files that cannot provide semantic expiry.
+                        should_delete = True
+                except Exception as e:
+                    io_manager.write_warning(f"Failed to read/parse {path.name} during cleanup: {e}")
+                    # If unreadable/malformed, fall back to mtime policy.
+                    if cutoff_ts is not None and path.stat().st_mtime < cutoff_ts:
+                        should_delete = True
 
                 if should_delete:
                     try:
