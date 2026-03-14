@@ -295,8 +295,11 @@ class StormCellTracker:
                 processed_old_ids.add(split.parent_id)
 
                 # H1 Fix: Clean up parent KF after split processing
-                self._kalman_filters.pop(split.parent_id, None)
-                self._prediction_states.pop(split.parent_id, None)
+                # Only remove parent state when dominant child uses a different ID.
+                # If dominant child keeps parent_id, that state remains the live track.
+                if split.parent_id != split.dominant_child:
+                    self._kalman_filters.pop(split.parent_id, None)
+                    self._prediction_states.pop(split.parent_id, None)
 
         # Process Normal Matches (Overlap)
         for cell in entries:
