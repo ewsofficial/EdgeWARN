@@ -81,12 +81,15 @@ if (cluster.isPrimary) {
   }
 
   // Rate Limiting - configurable via environment variables
-  const rateLimitWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60 * 1000; // 1 minute default
-  const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX, 10) || 60; // 60 requests per window default
+  const rateLimitWindowMsSec = parseInt(process.env.RATE_LIMIT_WINDOW_MS_SEC, 10) || 1000; // 1 second default
+  const rateLimitMaxSec = parseInt(process.env.RATE_LIMIT_MAX_SEC, 10) || 40; // 40 requests per second default
 
-  const limiter = rateLimit({
-    windowMs: rateLimitWindowMs,
-    max: rateLimitMax,
+  const rateLimitWindowMsMin = parseInt(process.env.RATE_LIMIT_WINDOW_MS_MIN, 10) || 60 * 1000; // 1 minute default
+  const rateLimitMaxMin = parseInt(process.env.RATE_LIMIT_MAX_MIN, 10) || 2000; // 2000 requests per minute default
+
+  const limiterSec = rateLimit({
+    windowMs: rateLimitWindowMsSec,
+    max: rateLimitMaxSec,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later' },
@@ -95,24 +98,41 @@ if (cluster.isPrimary) {
       return req.path === '/health' && req.headers['x-internal-check'] === 'true';
     },
     keyGenerator: (req) => {
-      // Use custom key generator to avoid validation errors when X-Forwarded-For is present
-      // but trust proxy is false
       let clientIp;
       if (trustProxy) {
         clientIp = req.ip;
       } else {
-        // When trust proxy is false, use the direct remote address instead of X-Forwarded-For
         clientIp = req.connection.remoteAddress || req.socket.remoteAddress ||
           (req.connection.socket ? req.connection.socket.remoteAddress : null);
       }
-
-      // Use ipKeyGenerator to handle IPv6 addresses correctly
       return ipKeyGenerator(clientIp);
     }
   });
 
-  // Apply the rate limiting middleware to all requests
-  app.use(limiter);
+  const limiterMin = rateLimit({
+    windowMs: rateLimitWindowMsMin,
+    max: rateLimitMaxMin,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later' },
+    skip: (req) => {
+      return req.path === '/health' && req.headers['x-internal-check'] === 'true';
+    },
+    keyGenerator: (req) => {
+      let clientIp;
+      if (trustProxy) {
+        clientIp = req.ip;
+      } else {
+        clientIp = req.connection.remoteAddress || req.socket.remoteAddress ||
+          (req.connection.socket ? req.connection.socket.remoteAddress : null);
+      }
+      return ipKeyGenerator(clientIp);
+    }
+  });
+
+  // Apply the rate limiting middleware to all requests (both per-second and per-minute)
+  app.use(limiterSec);
+  app.use(limiterMin);
 
   // Routes
   app.get('/', (req, res) => {
