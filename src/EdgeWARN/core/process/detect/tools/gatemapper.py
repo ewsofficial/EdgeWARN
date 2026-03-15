@@ -167,7 +167,12 @@ class GateMapper:
             else:
                 min_thresh = 40.0
                 
-            cell_thresh = max(min_thresh, max_refl - self.drop_offset)
+            # Dynamic threshold: cap max_refl for high-reflectivity storms
+            # to capture more of the storm extent, not just the core
+            # For storms >= 52 dBZ, cap the reflectivity at 52 dBZ for threshold calculation
+            capped_max_refl = min(max_refl, 52.0) if max_refl >= 52.0 else max_refl
+            
+            cell_thresh = max(min_thresh, capped_max_refl - self.drop_offset)
             dyn_thresh[cell_id] = cell_thresh
             
             # Incorporate cell's valid area into the composite mask
