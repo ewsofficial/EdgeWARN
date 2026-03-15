@@ -332,6 +332,31 @@ class TestPersistence:
         assert (temp_registry_dir / "ids").exists()
         assert (temp_registry_dir / "timestamps").exists()
 
+    def test_save_writes_enriched_timestamp_snapshot(self, temp_registry_dir, sample_feature):
+        """Test timestamp snapshots include precomputed official alert summaries."""
+        current_time = datetime(2026, 2, 23, 21, 0, tzinfo=timezone.utc)
+
+        registry = AlertRegistry(temp_registry_dir)
+        registry.process_alert(sample_feature, current_time)
+        registry.save()
+
+        snapshot_path = temp_registry_dir / "timestamps" / "20260223-210000.json"
+        with open(snapshot_path, 'r', encoding='utf-8') as f:
+            snapshot_data = json.load(f)
+
+        assert snapshot_data["count"] == 1
+        assert snapshot_data["alerts"] == [{
+            "id": "urn:oid:2.49.0.1.840.0.2406210827.1",
+            "name": "Severe Thunderstorm Warning",
+            "urn_oid": "urn:oid:2.49.0.1.840.0.2406210827.1",
+            "effective": "2026-02-23T21:00:00Z",
+            "expires": "2026-02-23T22:00:00Z",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[-97.0, 35.0], [-97.0, 36.0], [-96.0, 36.0], [-96.0, 35.0], [-97.0, 35.0]]]
+            }
+        }]
+
     def test_load_corrupted_file(self, temp_registry_dir):
         """Test handling of corrupted registry file."""
         # Write invalid JSON
