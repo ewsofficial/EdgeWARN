@@ -149,13 +149,21 @@ Query parameters (mutually exclusive):
 Behavior:
 
 - Without params: returns available snapshot timestamps from the alerts timestamp directory.
-- With `timestamp`: returns list of alert IDs for that timestamp (`[]` if snapshot missing).
+- With `timestamp` on [`/api/v2/features/alerts/official`](docs/api/api_endpoints.md):152: returns an array of official alert summaries for that timestamp, including alert name, `urn:oid`, effective/expiry times, and geometry (`[]` if snapshot missing).
+- With `timestamp` on [`/api/v2/features/alerts/edgewarn`](docs/api/api_endpoints.md):153: returns list of alert IDs for that timestamp (`[]` if snapshot missing).
 - With `id`: returns full alert feature payload for that ID.
 
 Response keys:
 
 - Success (no params): array of timestamps (`string[]`, format `YYYYMMDD-HHMMSS`).
-- Success (`timestamp`): array of alert IDs (`string[]`).
+- Success (`timestamp`) for [`/api/v2/features/alerts/official`](docs/api/api_endpoints.md):158: array of alert summary objects with:
+  - `id` (string): alert identifier.
+  - `name` (string|null): alert name, typically from the CAP `event` field.
+  - `urn_oid` (string): `urn:oid` for the alert.
+  - `effective` (string|null): ISO 8601 effective timestamp.
+  - `expires` (string|null): ISO 8601 expiry timestamp.
+  - `geometry` (object|null): GeoJSON geometry for the alert polygon.
+- Success (`timestamp`) for [`/api/v2/features/alerts/edgewarn`](docs/api/api_endpoints.md):165: array of alert IDs (`string[]`).
 - Success (`id`): alert payload JSON (returns `alert.feature` when present, otherwise full alert object; schema depends on stored alert data).
 - Error `400/404/500`:
   - `success` (boolean, always `false`)
@@ -174,6 +182,7 @@ Notes:
 
 - Alert error responses are wrapped in `{ success: false, error: { code, message } }`.
 - Alert IDs are resolved from filename-safe transformations (`:` and `/` replaced with `_`).
+- Official alert timestamp responses are precomputed during NWS ingest and served directly from timestamp snapshot files.
 
 Cache headers:
 

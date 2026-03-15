@@ -1,6 +1,5 @@
 import express from 'express';
 import fs from 'fs/promises';
-import path from 'path';
 import apiConfig from '../../../config.js';
 import { readJsonFileSafe } from '../../../utils/fileReader.js';
 import { validateTimestampV2, validateMutualExclusion, validateAlertId } from '../../../utils/validation.js';
@@ -34,10 +33,14 @@ async function getTimestamps(tsDir) {
   }
 }
 
+function toSafeAlertFilename(id) {
+  return id.replace(/:/g, '_').replace(/\//g, '_') + '.json';
+}
+
 /**
  * Standard GET handler logic for both endpoints
  */
-async function handleAlertsRequest(req, res, idsDir, tsDir, typeStr) {
+async function handleAlertsRequest(req, res, idsDir, tsDir) {
   const { timestamp, id } = req.query;
 
   // Validate mutual exclusion
@@ -64,7 +67,7 @@ async function handleAlertsRequest(req, res, idsDir, tsDir, typeStr) {
     }
 
     try {
-      const safeId = id.replace(/:/g, "_").replace(/\//g, "_") + ".json";
+      const safeId = toSafeAlertFilename(id);
       let alert = null;
       try {
         alert = await readJsonFileSafe(idsDir, safeId, { useCache: true });
@@ -112,9 +115,9 @@ async function handleAlertsRequest(req, res, idsDir, tsDir, typeStr) {
       const filename = `${timestamp}.json`;
       try {
         const snapshotData = await readJsonFileSafe(tsDir, filename, { useCache: false });
-        const alertIds = Array.isArray(snapshotData.alerts) ? snapshotData.alerts : [];
+        const snapshotAlerts = Array.isArray(snapshotData.alerts) ? snapshotData.alerts : [];
 
-        return res.json(alertIds);
+        return res.json(snapshotAlerts);
       } catch (fileErr) {
         if (fileErr.code === 'ENOENT') {
           // Gracefully fallback to empty array if the snapshot file doesn't exist yet/anymore
@@ -156,8 +159,7 @@ router.get('/official', async (req, res) => {
     req,
     res,
     apiConfig.OFFICIAL_ALERTS_IDS_DIR,
-    apiConfig.OFFICIAL_ALERTS_TS_DIR,
-    'official'
+    apiConfig.OFFICIAL_ALERTS_TS_DIR
   );
 });
 
@@ -169,8 +171,7 @@ router.get('/edgewarn', async (req, res) => {
     req,
     res,
     apiConfig.EDGEWARN_ALERTS_IDS_DIR,
-    apiConfig.EDGEWARN_ALERTS_TS_DIR,
-    'edgewarn'
+    apiConfig.EDGEWARN_ALERTS_TS_DIR
   );
 });
 

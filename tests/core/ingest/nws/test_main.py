@@ -158,3 +158,43 @@ class TestDownloadAlerts:
             download_alerts(datetime(2023, 10, 15, 14, 30))
             
             assert custom_dir.exists()
+
+    def test_download_writes_enriched_timestamp_snapshot(self, mock_io, tmp_path):
+        """Test download persists precomputed official snapshot summaries for the API."""
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({
+            "features": [
+                {
+                    "id": "https://api.weather.gov/alerts/urn:oid:test-alert-1",
+                    "type": "Feature",
+                    "properties": {
+                        "event": "Severe Thunderstorm Warning",
+                        "effective": "2023-10-15T14:00:00Z",
+                        "expires": "2023-10-15T15:00:00Z",
+                        "geocode": {"SAME": ["048121"]}
+                    },
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]
+                    }
+                }
+            ]
+        }).encode('utf-8')
+        mock_response.__enter__.return_value = mock_response
+
+        with patch('EdgeWARN.core.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
+             patch('urllib.request.urlopen', return_value=mock_response):
+
+            download_alerts(datetime(2023, 10, 15, 14, 30, tzinfo=timezone.utc))
+
+            snapshot_path = tmp_path / 'timestamps' / '20231015-143000.json'
+            with open(snapshot_path, 'r', encoding='utf-8') as f:
+                snapshot_data = json.load(f)
+
+            assert snapshot_data['count'] == 1
+            assert snapshot_data['alerts'][0]['id'] == 'urn:oid:test-alert-1'
+            assert snapshot_data['alerts'][0]['name'] == 'Severe Thunderstorm Warning'
+            assert snapshot_data['alerts'][0]['urn_oid'] == 'urn:oid:test-alert-1'
+            assert snapshot_data['alerts'][0]['effective'] == '2023-10-15T14:00:00Z'
+            assert snapshot_data['alerts'][0]['expires'] == '2023-10-15T15:00:00Z'
+            assert snapshot_data['alerts'][0]['geometry']['type'] == 'Polygon'
