@@ -83,15 +83,33 @@ describe('API v2 Features Alerts Route', () => {
             alerts: {
                 "urn:oid:123": {
                     id: "urn:oid:123",
-                    alert_type: "severe_weather",
-                    effective: "2026-03-09T11:00:00Z",
-                    expires: "2026-03-09T13:00:00Z"
+                    feature: {
+                        type: 'Feature',
+                        properties: {
+                            event: 'Severe Thunderstorm Warning',
+                            effective: "2026-03-09T11:00:00Z",
+                            expires: "2026-03-09T13:00:00Z"
+                        },
+                        geometry: {
+                            type: 'Polygon',
+                            coordinates: [[[-97.0, 35.0], [-96.0, 35.0], [-96.0, 36.0], [-97.0, 36.0], [-97.0, 35.0]]]
+                        }
+                    }
                 },
                 "urn:oid:456": {
                     id: "urn:oid:456",
-                    alert_type: "flash_flood",
-                    effective: "2026-03-09T10:00:00Z",
-                    expires: "2026-03-09T11:30:00Z"
+                    feature: {
+                        type: 'Feature',
+                        properties: {
+                            event: 'Flash Flood Warning',
+                            effective: "2026-03-09T10:00:00Z",
+                            expires: "2026-03-09T11:30:00Z"
+                        },
+                        geometry: {
+                            type: 'Polygon',
+                            coordinates: [[[-95.0, 34.0], [-94.0, 34.0], [-94.0, 35.0], [-95.0, 35.0], [-95.0, 34.0]]]
+                        }
+                    }
                 }
             }
         };
@@ -138,7 +156,7 @@ describe('API v2 Features Alerts Route', () => {
                 .get('/api/v2/features/alerts/official?id=urn:oid:456')
                 .expect(200);
 
-            expect(response.body.alert_type).toBe('flash_flood');
+            expect(response.body.properties.event).toBe('Flash Flood Warning');
         });
 
         it('should return 404 for unknown id modifier', async () => {
@@ -160,27 +178,44 @@ describe('API v2 Features Alerts Route', () => {
             const specialSnapshot = {
                 count: 3,
                 alerts: [
-                    "urn:oid:snapshot1",
-                    "urn:oid:snapshot2",
-                    "urn:oid:snapshot3"
+                    {
+                        id: 'urn:oid:snapshot1',
+                        name: 'Tornado Warning',
+                        urn_oid: 'urn:oid:snapshot1',
+                        effective: '2026-03-09T11:05:00Z',
+                        expires: '2026-03-09T11:35:00Z',
+                        geometry: {
+                            type: 'Polygon',
+                            coordinates: [[[-98.0, 35.0], [-97.5, 35.0], [-97.5, 35.5], [-98.0, 35.5], [-98.0, 35.0]]]
+                        }
+                    },
+                    {
+                        id: 'urn:oid:snapshot2',
+                        name: 'Severe Thunderstorm Warning',
+                        urn_oid: 'urn:oid:snapshot2',
+                        effective: '2026-03-09T11:00:00Z',
+                        expires: '2026-03-09T11:45:00Z',
+                        geometry: {
+                            type: 'Polygon',
+                            coordinates: [[[-97.0, 34.5], [-96.5, 34.5], [-96.5, 35.0], [-97.0, 35.0], [-97.0, 34.5]]]
+                        }
+                    },
+                    {
+                        id: 'urn:oid:snapshot3',
+                        name: 'Flash Flood Warning',
+                        urn_oid: 'urn:oid:snapshot3',
+                        effective: '2026-03-09T10:55:00Z',
+                        expires: '2026-03-09T12:15:00Z',
+                        geometry: {
+                            type: 'Polygon',
+                            coordinates: [[[-96.0, 34.0], [-95.5, 34.0], [-95.5, 34.5], [-96.0, 34.5], [-96.0, 34.0]]]
+                        }
+                    }
                 ]
             };
             await fs.promises.writeFile(
                 path.join(tempVars.tempOfficialTsDir, '20260309-110000.json'),
                 JSON.stringify(specialSnapshot)
-            );
-
-            await fs.promises.writeFile(
-                path.join(tempVars.tempOfficialIdsDir, 'urn_oid_snapshot1.json'),
-                JSON.stringify({ id: "urn:oid:snapshot1" })
-            );
-            await fs.promises.writeFile(
-                path.join(tempVars.tempOfficialIdsDir, 'urn_oid_snapshot2.json'),
-                JSON.stringify({ id: "urn:oid:snapshot2" })
-            );
-            await fs.promises.writeFile(
-                path.join(tempVars.tempOfficialIdsDir, 'urn_oid_snapshot3.json'),
-                JSON.stringify({ id: "urn:oid:snapshot3" })
             );
 
             const response = await request(app)
@@ -189,10 +224,81 @@ describe('API v2 Features Alerts Route', () => {
 
             expect(Array.isArray(response.body)).toBe(true);
             expect(response.body).toHaveLength(3);
-            expect(response.body[0]).toBe("urn:oid:snapshot1");
-            expect(response.body[1]).toBe("urn:oid:snapshot2");
-            expect(response.body[2]).toBe("urn:oid:snapshot3");
+            expect(response.body[0]).toEqual({
+                id: 'urn:oid:snapshot1',
+                name: 'Tornado Warning',
+                urn_oid: 'urn:oid:snapshot1',
+                effective: '2026-03-09T11:05:00Z',
+                expires: '2026-03-09T11:35:00Z',
+                geometry: {
+                    type: 'Polygon',
+                    coordinates: [[[-98.0, 35.0], [-97.5, 35.0], [-97.5, 35.5], [-98.0, 35.5], [-98.0, 35.0]]]
+                }
+            });
+            expect(response.body[1]).toMatchObject({
+                id: 'urn:oid:snapshot2',
+                name: 'Severe Thunderstorm Warning',
+                urn_oid: 'urn:oid:snapshot2',
+                effective: '2026-03-09T11:00:00Z',
+                expires: '2026-03-09T11:45:00Z'
+            });
+            expect(response.body[2]).toMatchObject({
+                id: 'urn:oid:snapshot3',
+                name: 'Flash Flood Warning',
+                urn_oid: 'urn:oid:snapshot3',
+                effective: '2026-03-09T10:55:00Z',
+                expires: '2026-03-09T12:15:00Z'
+            });
             expect(response.headers['cache-control']).toContain('max-age=60');
+        });
+
+        it('should return ingest-produced official snapshot summaries without reading id files', async () => {
+            await fs.promises.writeFile(
+                path.join(tempVars.tempOfficialTsDir, '20260309-120000.json'),
+                JSON.stringify({
+                    count: 2,
+                    alerts: [
+                        {
+                            id: 'urn:oid:123',
+                            name: 'Severe Thunderstorm Warning',
+                            urn_oid: 'urn:oid:123',
+                            effective: '2026-03-09T11:00:00Z',
+                            expires: '2026-03-09T13:00:00Z',
+                            geometry: null
+                        },
+                        {
+                            id: 'urn:oid:missing',
+                            name: 'Missing Backing File Warning',
+                            urn_oid: 'urn:oid:missing',
+                            effective: '2026-03-09T12:00:00Z',
+                            expires: '2026-03-09T13:00:00Z',
+                            geometry: null
+                        }
+                    ]
+                })
+            );
+
+            await fs.promises.rm(path.join(tempVars.tempOfficialIdsDir, 'urn_oid_123.json'));
+
+            const response = await request(app)
+                .get('/api/v2/features/alerts/official?timestamp=20260309-120000')
+                .expect(200);
+
+            expect(response.body).toHaveLength(2);
+            expect(response.body[0]).toMatchObject({
+                id: 'urn:oid:123',
+                name: 'Severe Thunderstorm Warning',
+                urn_oid: 'urn:oid:123',
+                effective: '2026-03-09T11:00:00Z',
+                expires: '2026-03-09T13:00:00Z'
+            });
+            expect(response.body[1]).toMatchObject({
+                id: 'urn:oid:missing',
+                name: 'Missing Backing File Warning',
+                urn_oid: 'urn:oid:missing',
+                effective: '2026-03-09T12:00:00Z',
+                expires: '2026-03-09T13:00:00Z'
+            });
         });
     });
 
