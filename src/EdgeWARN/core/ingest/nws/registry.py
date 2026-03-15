@@ -153,7 +153,10 @@ class AlertRegistry:
         snapshot_data = {
             "timestamp": current_time_str,
             "count": len(self._registry["alerts"]),
-            "alerts": list(self._registry["alerts"].keys())
+            "alerts": [
+                self._build_snapshot_alert(alert_id, alert_data)
+                for alert_id, alert_data in self._registry["alerts"].items()
+            ]
         }
         
         fd, temp_path = tempfile.mkstemp(dir=self.ts_dir, prefix=".tmp_ts_")
@@ -189,6 +192,20 @@ class AlertRegistry:
                     file_path.unlink()
                 except OSError:
                     pass
+
+    def _build_snapshot_alert(self, alert_id: str, alert_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Build the lightweight official alert representation stored in timestamp snapshots."""
+        feature = alert_data.get("feature") or {}
+        properties = feature.get("properties") or {}
+
+        return {
+            "id": alert_id,
+            "name": properties.get("event") or properties.get("headline") or properties.get("name"),
+            "urn_oid": alert_id,
+            "effective": properties.get("effective") or alert_data.get("effective"),
+            "expires": properties.get("expires") or alert_data.get("expires"),
+            "geometry": feature.get("geometry") or alert_data.get("geometry")
+        }
     
     def _extract_alert_id(self, feature: Dict) -> Optional[str]:
         """
