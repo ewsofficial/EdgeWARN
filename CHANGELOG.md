@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0-rc1] - 2026-03-15
+
+### Changed
+- Promoted 2.0.0-alpha features to Release Candidate 1.
+- Stabilized core tracking and integration modules.
+- Updated documentation and API examples for RC1.
+
 ## [2.0.0-alpha] - 2026-03-12
 
 ### Added
