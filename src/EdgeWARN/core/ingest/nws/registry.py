@@ -162,7 +162,7 @@ class AlertRegistry:
         fd, temp_path = tempfile.mkstemp(dir=self.ts_dir, prefix=".tmp_ts_")
         try:
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                json.dump(snapshot_data, f, indent=2)
+                json.dump(snapshot_data, f, cls=DecimalEncoder, indent=2)
             os.replace(temp_path, snapshot_path)
         except Exception as e:
             if os.path.exists(temp_path):
@@ -197,14 +197,25 @@ class AlertRegistry:
         """Build the lightweight official alert representation stored in timestamp snapshots."""
         feature = alert_data.get("feature") or {}
         properties = feature.get("properties") or {}
-
+        
+        # Get geometry - check both 'geometry' (GeoJSON) and 'Polygon' (GeoMapper)
+        geometry = feature.get("geometry") or alert_data.get("geometry")
+        polygon = feature.get("Polygon") or alert_data.get("Polygon")
+        
+        # If we have Polygon but no geometry, convert Polygon to GeoJSON format
+        if polygon and not geometry:
+            geometry = {
+                "type": "Polygon",
+                "coordinates": polygon
+            }
+        
         return {
             "id": alert_id,
             "name": properties.get("event") or properties.get("headline") or properties.get("name"),
             "urn_oid": alert_id,
             "effective": properties.get("effective") or alert_data.get("effective"),
             "expires": properties.get("expires") or alert_data.get("expires"),
-            "geometry": feature.get("geometry") or alert_data.get("geometry")
+            "geometry": geometry
         }
     
     def _extract_alert_id(self, feature: Dict) -> Optional[str]:
