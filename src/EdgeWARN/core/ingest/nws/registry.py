@@ -209,12 +209,16 @@ class AlertRegistry:
                 "coordinates": polygon
             }
         
+        # Get severity from NWS alert properties
+        severity = properties.get("severity") or alert_data.get("severity")
+        
         return {
             "id": alert_id,
             "name": properties.get("event") or properties.get("headline") or properties.get("name"),
             "urn_oid": alert_id,
             "effective": properties.get("effective") or alert_data.get("effective"),
             "expires": properties.get("expires") or alert_data.get("expires"),
+            "severity": severity,
             "geometry": geometry
         }
     
