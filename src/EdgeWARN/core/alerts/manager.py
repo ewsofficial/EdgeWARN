@@ -188,7 +188,7 @@ class AlertManager:
 
         fs.EDGEWARN_ALERTS_TS_DIR.mkdir(parents=True, exist_ok=True)
         
-        active_ids = []
+        active_alerts = []
         
         # We need to parse timestamp back to a naive datetime for comparison
         try:
@@ -225,7 +225,10 @@ class AlertManager:
                     if exp_dt.tzinfo is None: exp_dt = exp_dt.replace(tzinfo=timezone.utc)
                     
                     if eff_dt <= scan_dt <= exp_dt:
-                        active_ids.append(data.get("id"))
+                        active_alerts.append({
+                            "id": data.get("id"),
+                            "severity": data.get("severity", "warning")
+                        })
             except Exception as e:
                 pass
         
@@ -236,8 +239,8 @@ class AlertManager:
             with open(snapshot_file, "w") as f:
                 json.dump({
                     "timestamp": scan_dt.isoformat(),
-                    "count": len(active_ids),
-                    "alerts": active_ids
+                    "count": len(active_alerts),
+                    "alerts": active_alerts
                 }, f, indent=4)
             return True
         except Exception as e:
