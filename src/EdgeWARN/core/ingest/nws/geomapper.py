@@ -67,7 +67,7 @@ def round_coords(coords: List[List[float]], precision: int = 4) -> List[List[flo
     """Round coordinates to a specified precision."""
     return [[round(float(c[0]), precision), round(float(c[1]), precision)] for c in coords]
 
-def extract_exterior_polygon(polygons: List[List], tolerance: float = 0.001) -> List:
+def extract_exterior_polygon(polygons: List[List], tolerance: float = 0.03) -> List:
     """
     Compute the union of multiple polygons, simplify geometry, 
     and return only exterior coordinates with rounded precision.
@@ -127,15 +127,21 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
     props = feature.get("properties", {})
     
     # Check for original geometry (e.g. storm-based warnings)
-    has_original_geometry = False
+    has_geometry_to_skip = False
     if feature.get("geometry") and feature.get("geometry", {}).get("coordinates"):
         # Round existing geometry coordinates but DO NOT simplify
         feature["geometry"] = round_geojson_coords(feature["geometry"])
-        has_original_geometry = True
+        has_geometry_to_skip = True
     
-    # If original geometry exists, skip the zone-to-polygon mapping 
+    # Check if we already have a zone-mapped Polygon (prevents double simplification/mapping)
+    if feature.get("Polygon"):
+        # Coordinate rounding for safety
+        feature["Polygon"] = [round_coords(p) for p in feature["Polygon"]]
+        has_geometry_to_skip = True
+
+    # If geometry exists, skip the zone-to-polygon mapping 
     # (prevents simplification of precise polygons into zone boundaries)
-    if has_original_geometry:
+    if has_geometry_to_skip:
         props.pop("geocode", None)
         for key in JUNK_KEYS:
             props.pop(key, None)
