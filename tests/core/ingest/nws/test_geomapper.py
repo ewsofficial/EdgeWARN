@@ -151,7 +151,7 @@ class TestExtractExteriorPolygon:
         
         # Without simplification (tolerance=0)
         result_no_sim = extract_exterior_polygon(polygons, tolerance=0)
-        # With default simplification (tolerance=0.001)
+        # With new default simplification (tolerance=0.03)
         result_sim = extract_exterior_polygon(polygons)
         
         assert len(result_no_sim[0]) > len(result_sim[0])
@@ -231,7 +231,8 @@ class TestProcessWarning:
         result = process_warning(feature)
         
         assert result["properties"]["event"] == "Severe Thunderstorm Warning"
-        assert result["geometry"] == feature["geometry"]
+        # Original geometry should be preserved (only rounded)
+        assert result["geometry"]["type"] == "Polygon"
 
     def test_process_warning_cleans_properties(self):
         """Test that junk keys are removed from properties"""
@@ -299,4 +300,33 @@ class TestProcessWarning:
             assert rounded_point == [0.1235, 0.6543]
             
             # 4. geocode should still be popped for cleanliness
+            assert "geocode" not in result["properties"]
+
+    def test_process_warning_skips_mapping_if_polygon_key_exists(self, tmp_path):
+        """Test that zone mapping is skipped if Polygon key already exists"""
+        # Feature with existing Polygon key (from a previous mapping run)
+        existing_polygon = [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]
+        
+        feature = {
+            "properties": {
+                "event": "Tornado Warning",
+                "geocode": {
+                    "UGC": ["TXC121"]
+                }
+            },
+            "Polygon": existing_polygon
+        }
+        
+        # Mock ZoneLookup to ensure it's NOT called
+        with patch.object(ZoneLookup, 'get_polygon') as mock_get_poly:
+            result = process_warning(feature)
+            
+            # 1. Zone mapping should be skipped
+            mock_get_poly.assert_not_called()
+            
+            # 2. Existing Polygon should still exist (and be rounded)
+            assert "Polygon" in result
+            assert result["Polygon"] == existing_polygon
+            
+            # 3. geocode should be popped
             assert "geocode" not in result["properties"]
