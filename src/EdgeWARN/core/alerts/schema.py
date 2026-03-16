@@ -46,12 +46,18 @@ class AlertPayload:
     # ------------------------------------------------------------------
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-serialisable dictionary."""
+        # Round geometry coordinates to 4 decimal places to reduce file size
+        rounded_geometry = [
+            (round(float(lat), 4), round(float(lon), 4)) 
+            for lat, lon in self.geometry
+        ]
+        
         return {
             "alert_type": self.alert_type,
             "source": self.source,
             "id": self.id,
             "cell_id": self.cell_id,
-            "geometry": self.geometry,
+            "geometry": rounded_geometry,
             "effective": self.effective_time.isoformat(),
             "expires": self.expiry_time.isoformat(),
             "severity": self.severity,

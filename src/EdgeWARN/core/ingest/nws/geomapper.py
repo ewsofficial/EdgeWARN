@@ -63,8 +63,15 @@ class ZoneLookup:
         except Exception:
             cls._cache[state_code] = {}
 
-def extract_exterior_polygon(polygons: List[List]) -> List:
-    """Compute the union of multiple polygons and return only exterior coordinates."""
+def round_coords(coords: List[List[float]], precision: int = 4) -> List[List[float]]:
+    """Round coordinates to a specified precision."""
+    return [[round(float(c[0]), precision), round(float(c[1]), precision)] for c in coords]
+
+def extract_exterior_polygon(polygons: List[List], tolerance: float = 0.03) -> List:
+    """
+    Compute the union of multiple polygons, simplify geometry, 
+    and return only exterior coordinates with rounded precision.
+    """
     if not polygons:
         return []
     
@@ -87,20 +94,60 @@ def extract_exterior_polygon(polygons: List[List]) -> List:
         unified = unary_union(shapely_polys)
         unified = unified.buffer(0)
         
+        # Simplify geometry to reduce point count (especially for coastlines/rivers)
+        if tolerance > 0:
+            unified = unified.simplify(tolerance=tolerance, preserve_topology=True)
+        
         if unified.geom_type == 'Polygon':
-            return [list(unified.exterior.coords)]
+            return [round_coords(list(unified.exterior.coords))]
         elif unified.geom_type == 'MultiPolygon':
-            return [list(p.exterior.coords) for p in unified.geoms]
+            return [round_coords(list(p.exterior.coords)) for p in unified.geoms]
         else:
             return []
     except Exception:
         return []
 
+def round_geojson_coords(geometry: Dict[str, Any], precision: int = 4) -> Dict[str, Any]:
+    """Round coordinates in a GeoJSON geometry object."""
+    if not geometry or 'coordinates' not in geometry:
+        return geometry
+    
+    def _round_recursive(coords):
+        if isinstance(coords, (int, float)):
+            return round(float(coords), precision)
+        elif isinstance(coords, (list, tuple)):
+            return [_round_recursive(c) for c in coords]
+        return coords
+    
+    geometry['coordinates'] = _round_recursive(geometry['coordinates'])
+    return geometry
+
 def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
     """Process a single NWS warning feature (Map Geocodes + Clean Props)."""
     props = feature.get("properties", {})
     
-    # Extract geocodes
+    # Check for original geometry (e.g. storm-based warnings)
+    has_geometry_to_skip = False
+    if feature.get("geometry") and feature.get("geometry", {}).get("coordinates"):
+        # Round existing geometry coordinates but DO NOT simplify
+        feature["geometry"] = round_geojson_coords(feature["geometry"])
+        has_geometry_to_skip = True
+    
+    # Check if we already have a zone-mapped Polygon (prevents double simplification/mapping)
+    if feature.get("Polygon"):
+        # Coordinate rounding for safety
+        feature["Polygon"] = [round_coords(p) for p in feature["Polygon"]]
+        has_geometry_to_skip = True
+
+    # If geometry exists, skip the zone-to-polygon mapping 
+    # (prevents simplification of precise polygons into zone boundaries)
+    if has_geometry_to_skip:
+        props.pop("geocode", None)
+        for key in JUNK_KEYS:
+            props.pop(key, None)
+        return feature
+
+    # Extract geocodes for zone mapping
     geocodes = []
     geocode_data = props.get("geocode", {})
     

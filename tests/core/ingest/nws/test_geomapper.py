@@ -119,6 +119,45 @@ class TestExtractExteriorPolygon:
         
         assert len(result) >= 1
 
+    def test_coordinate_rounding(self):
+        """Test that coordinates are rounded to 4 decimal places"""
+        polygons = [
+            [[0.123456, 0.654321], [0.123456, 1.654321], [1.123456, 1.654321], [1.123456, 0.654321], [0.123456, 0.654321]]
+        ]
+        
+        # Call with tolerance=0 to focus on rounding
+        result = extract_exterior_polygon(polygons, tolerance=0)
+        
+        assert len(result) == 1
+        for coord in result[0]:
+            assert len(str(coord[0]).split('.')[-1]) <= 4
+            assert len(str(coord[1]).split('.')[-1]) <= 4
+            assert coord[0] == 0.1235 or coord[0] == 1.1235
+            assert coord[1] == 0.6543 or coord[1] == 1.6543
+
+    def test_polygon_simplification(self):
+        """Test that polygon simplification reduces point count for clustered points"""
+        # A polygon with many redundant points along a line (simulating a detailed coastline/river)
+        # We'll add many points between (0,0) and (1,0) that are very close to each other.
+        detailed_boundary = [[0, 0]]
+        for i in range(1, 100):
+            # Points slightly off the line but very close
+            x = i / 100.0
+            y = 0.00001 if i % 2 == 0 else 0
+            detailed_boundary.append([x, y])
+        detailed_boundary.extend([[1, 0], [1, 1], [0, 1], [0, 0]])
+        
+        polygons = [detailed_boundary]
+        
+        # Without simplification (tolerance=0)
+        result_no_sim = extract_exterior_polygon(polygons, tolerance=0)
+        # With new default simplification (tolerance=0.03)
+        result_sim = extract_exterior_polygon(polygons)
+        
+        assert len(result_no_sim[0]) > len(result_sim[0])
+        # The simplified one should have significantly fewer points
+        assert len(result_sim[0]) < 10 # Should be around 5 (square-ish)
+
     def test_empty_input(self):
         """Test with empty input"""
         result = extract_exterior_polygon([])
@@ -192,7 +231,8 @@ class TestProcessWarning:
         result = process_warning(feature)
         
         assert result["properties"]["event"] == "Severe Thunderstorm Warning"
-        assert result["geometry"] == feature["geometry"]
+        # Original geometry should be preserved (only rounded)
+        assert result["geometry"]["type"] == "Polygon"
 
     def test_process_warning_cleans_properties(self):
         """Test that junk keys are removed from properties"""
@@ -224,3 +264,69 @@ class TestProcessWarning:
         # Valid keys should remain
         assert result["properties"]["event"] == "Tornado Warning"
         assert result["properties"]["severity"] == "Extreme"
+
+    def test_process_warning_skips_mapping_if_geometry_exists(self, tmp_path):
+        """Test that zone mapping is skipped if geometry already exists (prevents simplification)"""
+        # Detailed geometry that shouldn't be simplified
+        detailed_coords = [[[0.123456, 0.654321], [0.123456, 1.654321], [1.123456, 1.654321], [1.123456, 0.654321], [0.123456, 0.654321]]]
+        
+        feature = {
+            "properties": {
+                "event": "Severe Thunderstorm Warning",
+                "geocode": {
+                    "UGC": ["TXC121"]
+                }
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": detailed_coords
+            }
+        }
+        
+        # Mock ZoneLookup to ensure it's NOT called
+        with patch.object(ZoneLookup, 'get_polygon') as mock_get_poly:
+            result = process_warning(feature)
+            
+            # 1. Zone mapping should be skipped
+            mock_get_poly.assert_not_called()
+            assert "Polygon" not in result
+            
+            # 2. Original geometry should be rounded but NOT simplified (point count remains same)
+            assert result["geometry"]["type"] == "Polygon"
+            assert len(result["geometry"]["coordinates"][0]) == 5
+            
+            # 3. Check rounding
+            rounded_point = result["geometry"]["coordinates"][0][0]
+            assert rounded_point == [0.1235, 0.6543]
+            
+            # 4. geocode should still be popped for cleanliness
+            assert "geocode" not in result["properties"]
+
+    def test_process_warning_skips_mapping_if_polygon_key_exists(self, tmp_path):
+        """Test that zone mapping is skipped if Polygon key already exists"""
+        # Feature with existing Polygon key (from a previous mapping run)
+        existing_polygon = [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]
+        
+        feature = {
+            "properties": {
+                "event": "Tornado Warning",
+                "geocode": {
+                    "UGC": ["TXC121"]
+                }
+            },
+            "Polygon": existing_polygon
+        }
+        
+        # Mock ZoneLookup to ensure it's NOT called
+        with patch.object(ZoneLookup, 'get_polygon') as mock_get_poly:
+            result = process_warning(feature)
+            
+            # 1. Zone mapping should be skipped
+            mock_get_poly.assert_not_called()
+            
+            # 2. Existing Polygon should still exist (and be rounded)
+            assert "Polygon" in result
+            assert result["Polygon"] == existing_polygon
+            
+            # 3. geocode should be popped
+            assert "geocode" not in result["properties"]
