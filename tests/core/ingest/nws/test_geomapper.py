@@ -263,3 +263,40 @@ class TestProcessWarning:
         # Valid keys should remain
         assert result["properties"]["event"] == "Tornado Warning"
         assert result["properties"]["severity"] == "Extreme"
+
+    def test_process_warning_skips_mapping_if_geometry_exists(self, tmp_path):
+        """Test that zone mapping is skipped if geometry already exists (prevents simplification)"""
+        # Detailed geometry that shouldn't be simplified
+        detailed_coords = [[[0.123456, 0.654321], [0.123456, 1.654321], [1.123456, 1.654321], [1.123456, 0.654321], [0.123456, 0.654321]]]
+        
+        feature = {
+            "properties": {
+                "event": "Severe Thunderstorm Warning",
+                "geocode": {
+                    "UGC": ["TXC121"]
+                }
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": detailed_coords
+            }
+        }
+        
+        # Mock ZoneLookup to ensure it's NOT called
+        with patch.object(ZoneLookup, 'get_polygon') as mock_get_poly:
+            result = process_warning(feature)
+            
+            # 1. Zone mapping should be skipped
+            mock_get_poly.assert_not_called()
+            assert "Polygon" not in result
+            
+            # 2. Original geometry should be rounded but NOT simplified (point count remains same)
+            assert result["geometry"]["type"] == "Polygon"
+            assert len(result["geometry"]["coordinates"][0]) == 5
+            
+            # 3. Check rounding
+            rounded_point = result["geometry"]["coordinates"][0][0]
+            assert rounded_point == [0.1235, 0.6543]
+            
+            # 4. geocode should still be popped for cleanliness
+            assert "geocode" not in result["properties"]

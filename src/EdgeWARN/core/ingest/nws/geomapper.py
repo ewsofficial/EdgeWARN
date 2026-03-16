@@ -126,11 +126,22 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
     """Process a single NWS warning feature (Map Geocodes + Clean Props)."""
     props = feature.get("properties", {})
     
-    # Round existing geometry coordinates if present
-    if feature.get("geometry"):
+    # Check for original geometry (e.g. storm-based warnings)
+    has_original_geometry = False
+    if feature.get("geometry") and feature.get("geometry", {}).get("coordinates"):
+        # Round existing geometry coordinates but DO NOT simplify
         feature["geometry"] = round_geojson_coords(feature["geometry"])
+        has_original_geometry = True
     
-    # Extract geocodes
+    # If original geometry exists, skip the zone-to-polygon mapping 
+    # (prevents simplification of precise polygons into zone boundaries)
+    if has_original_geometry:
+        props.pop("geocode", None)
+        for key in JUNK_KEYS:
+            props.pop(key, None)
+        return feature
+
+    # Extract geocodes for zone mapping
     geocodes = []
     geocode_data = props.get("geocode", {})
     
