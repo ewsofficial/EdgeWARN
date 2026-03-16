@@ -119,6 +119,45 @@ class TestExtractExteriorPolygon:
         
         assert len(result) >= 1
 
+    def test_coordinate_rounding(self):
+        """Test that coordinates are rounded to 4 decimal places"""
+        polygons = [
+            [[0.123456, 0.654321], [0.123456, 1.654321], [1.123456, 1.654321], [1.123456, 0.654321], [0.123456, 0.654321]]
+        ]
+        
+        # Call with tolerance=0 to focus on rounding
+        result = extract_exterior_polygon(polygons, tolerance=0)
+        
+        assert len(result) == 1
+        for coord in result[0]:
+            assert len(str(coord[0]).split('.')[-1]) <= 4
+            assert len(str(coord[1]).split('.')[-1]) <= 4
+            assert coord[0] == 0.1235 or coord[0] == 1.1235
+            assert coord[1] == 0.6543 or coord[1] == 1.6543
+
+    def test_polygon_simplification(self):
+        """Test that polygon simplification reduces point count for clustered points"""
+        # A polygon with many redundant points along a line (simulating a detailed coastline/river)
+        # We'll add many points between (0,0) and (1,0) that are very close to each other.
+        detailed_boundary = [[0, 0]]
+        for i in range(1, 100):
+            # Points slightly off the line but very close
+            x = i / 100.0
+            y = 0.00001 if i % 2 == 0 else 0
+            detailed_boundary.append([x, y])
+        detailed_boundary.extend([[1, 0], [1, 1], [0, 1], [0, 0]])
+        
+        polygons = [detailed_boundary]
+        
+        # Without simplification (tolerance=0)
+        result_no_sim = extract_exterior_polygon(polygons, tolerance=0)
+        # With default simplification (tolerance=0.001)
+        result_sim = extract_exterior_polygon(polygons)
+        
+        assert len(result_no_sim[0]) > len(result_sim[0])
+        # The simplified one should have significantly fewer points
+        assert len(result_sim[0]) < 10 # Should be around 5 (square-ish)
+
     def test_empty_input(self):
         """Test with empty input"""
         result = extract_exterior_polygon([])

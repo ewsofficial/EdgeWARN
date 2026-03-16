@@ -354,7 +354,7 @@ def _mask_to_polygon(
             # Point, LineString, GeometryCollection, etc. — not valid
             return []
 
-        return [[round(c[0], 5), round(c[1], 5)] for c in coords]
+        return [[round(c[0], 4), round(c[1], 4)] for c in coords]
 
     except ImportError:
         return _fallback_polygon(mask, lat_coords, lon_coords)
@@ -386,4 +386,4 @@ def _fallback_polygon(
         return []
 
     coords = list(hull.exterior.coords)
-    return [[round(c[0], 5), round(c[1], 5)] for c in coords]
+    return [[round(c[0], 4), round(c[1], 4)] for c in coords]
