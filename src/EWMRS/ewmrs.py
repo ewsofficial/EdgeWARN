@@ -17,7 +17,7 @@ from common.ingest.mrms.main import download_all_files
 from common.ingest.wpc.main import run_wpc_ingest
 from EWMRS.render.tools import TransformUtils
 from EWMRS.render.render import GUILayerRenderer
-from EWMRS.render.config import file_list
+from EWMRS.render.config import file_list, get_file_list
 import util.file as fs
 from util.io import IOManager, TimestampedOutput, QueueWriter
 from EWMRS.scheduler import MRMSUpdateChecker
@@ -241,9 +241,10 @@ def run_render_pipeline(dt, max_entries: int = 10, download: bool = True) -> Dic
             io_manager.write_error(f"Download step failed: {e}")
 
     # Render layers in parallel using separate processes (true multi-core)
-    io_manager.write_info(f"Rendering {len(file_list)} layers across 4 CPU cores...")
+    layers = get_file_list()
+    io_manager.write_info(f"Rendering {len(layers)} layers across 4 CPU cores...")
     with ProcessPoolExecutor(max_workers=4) as executor:
-        futures = {executor.submit(_render_layer, layer): layer for layer in file_list}
+        futures = {executor.submit(_render_layer, layer): layer for layer in layers}
         for future in as_completed(futures):
             name, png_path = future.result()
             results[name] = png_path
@@ -252,6 +253,34 @@ def run_render_pipeline(dt, max_entries: int = 10, download: bool = True) -> Dic
     cleanup_old_gui_files(max_age_minutes=120)
 
     return results
+
+
+def run_ewmrs_pipeline(dt, max_entries: int = 10) -> Dict[str, Optional[Path]]:
+    """Run the EWMRS rendering pipeline using locally staged files only."""
+    return run_render_pipeline(dt, max_entries=max_entries, download=False)
+
+
+def ewmrs_tandem_worker(log_queue, shared_state, ewmrs_ready_event, dt, max_entries: int = 10):
+    """Process target for staged EWMRS rendering within the tandem runner."""
+    sys.stdout = QueueWriter(log_queue)
+    sys.stderr = QueueWriter(log_queue)
+
+    def log(msg: str):
+        log_queue.put(str(msg))
+
+    try:
+        log(f"INFO: EWMRS worker waiting for render inputs for {dt}")
+        ewmrs_ready_event.wait()
+
+        if not shared_state.get("ewmrs_inputs_ready", False):
+            log("ERROR: EWMRS inputs were not staged successfully; skipping render")
+            return
+
+        log("INFO: Starting EWMRS render phase")
+        results = run_ewmrs_pipeline(dt, max_entries=max_entries)
+        log(f"INFO: EWMRS render completed: {results}")
+    except Exception as exc:
+        log(f"ERROR: EWMRS tandem worker failed - {exc}")
 
 
 # ----------------- Scheduler-style loop (download + render only) -----------------
@@ -273,13 +302,6 @@ def pipeline(log_queue, dt, max_entries=10):
             log("INFO: Download completed")
         except Exception as e:
             log(f"ERROR: Download failed - {e}")
-
-        # Run WPC Ingest
-        log("INFO: Starting WPC Ingest")
-        try:
-            run_wpc_ingest(log_queue)
-        except Exception as e:
-            log(f"ERROR: WPC Ingest failed - {e}")
 
         # Render using local files (download step above populates them)
         log("INFO: Starting Render step")
@@ -303,6 +325,7 @@ def main(watch: bool = True, poll_interval: float = 15.0):
     """If `watch` is True, poll MRMS sources and WPC sources for new data.
     Spawns multiprocessing child processes to run pipelines when new data appears.
     """
+    io_manager.write_warning("Standalone EWMRS scheduler is retained for backward compatibility; tandem execution is now coordinated from src/run.py")
     print("Scheduler started. Press CTRL+C to exit.")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed = None

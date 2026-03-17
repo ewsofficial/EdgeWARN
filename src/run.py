@@ -1,6 +1,6 @@
 import sys
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import time
 import multiprocessing
 import asyncio
@@ -8,7 +8,11 @@ import asyncio
 import util.file as fs
 import common.ingest.nws.main as nws_ingest
 import common.ingest.metar as metar_ingest
-from EdgeWARN import initialize_runtime, realtime_pipeline
+from common.ingest.wpc.main import run_wpc_ingest
+from common.pipeline.coordinator import run_tandem_ingest_cycle
+from EdgeWARN import initialize_runtime
+from EdgeWARN.pipeline import edgewarn_tandem_worker
+from EWMRS.ewmrs import ewmrs_tandem_worker
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from common.ingest.mrms.config import get_check_modifiers
 import EdgeWARN.ui.monitor_app as monitor_app
@@ -25,23 +29,46 @@ lon_limits = tuple(args.lon_limits)
 
 initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
 
+
+def _queue_log(log_queue, message):
+    timestamp = datetime.now(timezone.utc).isoformat()
+    log_queue.put(f"[{timestamp}] {message}")
+
+
+def _drain_log_queue(log_queue):
+    while not log_queue.empty():
+        print(log_queue.get())
+
+
+def _guard_ui_process(ui_process=None):
+    if ui_process and not ui_process.is_alive():
+        print("GUI closed. Exiting.")
+        sys.exit(0)
+
+
+def _sleep_with_ui_guard(total_seconds, ui_process=None, interval=1.0):
+    end_time = time.time() + total_seconds
+    while time.time() < end_time:
+        _guard_ui_process(ui_process)
+        time.sleep(min(interval, max(0.0, end_time - time.time())))
+
+
+def _sleep_until_boundary(minutes, ui_process=None):
+    now = datetime.now(timezone.utc)
+    minutes_to_next = minutes - (now.minute % minutes)
+    if minutes_to_next == 0 and now.second == 0 and now.microsecond == 0:
+        minutes_to_next = minutes
+    next_run = now.replace(second=0, microsecond=0) + timedelta(minutes=minutes_to_next)
+    sleep_seconds = max(0.0, (next_run - now).total_seconds())
+    if sleep_seconds > 0:
+        _sleep_with_ui_guard(sleep_seconds, ui_process=ui_process, interval=1.0)
+
 def metar_loop(ui_process=None):
-    from datetime import timedelta
     while True:
-        if ui_process and not ui_process.is_alive():
-            sys.exit(0)
-            
-        now = datetime.now(timezone.utc)
-        minutes_to_next = 5 - (now.minute % 5)
-        next_run = now.replace(second=0, microsecond=0) + timedelta(minutes=minutes_to_next)
-        sleep_seconds = (next_run - now).total_seconds()
-        
-        if sleep_seconds > 0:
-            time.sleep(sleep_seconds)
-            
-        if ui_process and not ui_process.is_alive():
-             sys.exit(0)
-             
+        _guard_ui_process(ui_process)
+        _sleep_until_boundary(5, ui_process=ui_process)
+        _guard_ui_process(ui_process)
+
         try:
             asyncio.run(metar_ingest.ingest_metars_async())
         except Exception as e:
@@ -49,23 +76,112 @@ def metar_loop(ui_process=None):
 
 def nws_loop(ui_process=None):
     while True:
-        if ui_process and not ui_process.is_alive():
-            sys.exit(0)
-            
+        _guard_ui_process(ui_process)
         try:
             asyncio.run(nws_ingest.download_alerts_async(datetime.now(timezone.utc)))
         except Exception as e:
             print(f"[NWS Loop] Error: {e}")
-            
-        for _ in range(120):
-             if ui_process and not ui_process.is_alive():
-                 sys.exit(0)
-             time.sleep(1)
+
+        _sleep_with_ui_guard(120, ui_process=ui_process, interval=1.0)
+
+
+def wpc_loop(ui_process=None):
+    while True:
+        _guard_ui_process(ui_process)
+        _sleep_until_boundary(15, ui_process=ui_process)
+        _guard_ui_process(ui_process)
+
+        try:
+            run_wpc_ingest()
+        except Exception as e:
+            print(f"[WPC Loop] Error: {e}")
+
+
+def _run_tandem_cycle(dt, ui_process=None):
+    log_queue = multiprocessing.Queue()
+    manager = multiprocessing.Manager()
+    shared_state = manager.dict(
+        {
+            "detection_inputs_ready": False,
+            "ewmrs_inputs_ready": False,
+            "edgewarn_integration_inputs_ready": False,
+            "edgewarn_generated_file": "",
+            "errors": {},
+        }
+    )
+
+    detection_ready_event = multiprocessing.Event()
+    ewmrs_ready_event = multiprocessing.Event()
+    integration_ready_event = multiprocessing.Event()
+
+    edgewarn_proc = multiprocessing.Process(
+        target=edgewarn_tandem_worker,
+        args=(
+            log_queue,
+            shared_state,
+            detection_ready_event,
+            integration_ready_event,
+            dt,
+            lat_limits,
+            lon_limits,
+            args.profile,
+        ),
+    )
+    ewmrs_proc = multiprocessing.Process(
+        target=ewmrs_tandem_worker,
+        args=(log_queue, shared_state, ewmrs_ready_event, dt),
+    )
+
+    edgewarn_proc.start()
+    ewmrs_proc.start()
+
+    def _sync_state(cycle_state):
+        shared_state["detection_inputs_ready"] = cycle_state.detection_inputs_ready
+        shared_state["ewmrs_inputs_ready"] = cycle_state.ewmrs_inputs_ready
+        shared_state["edgewarn_integration_inputs_ready"] = cycle_state.edgewarn_integration_inputs_ready
+        shared_state["errors"] = dict(cycle_state.errors)
+
+    def _on_detection_ready(cycle_state):
+        _sync_state(cycle_state)
+        detection_ready_event.set()
+
+    def _on_ewmrs_ready(cycle_state):
+        _sync_state(cycle_state)
+        ewmrs_ready_event.set()
+
+    def _on_integration_ready(cycle_state):
+        _sync_state(cycle_state)
+        integration_ready_event.set()
+
+    try:
+        asyncio.run(
+            run_tandem_ingest_cycle(
+                dt,
+                lambda msg: _queue_log(log_queue, msg),
+                on_detection_ready=_on_detection_ready,
+                on_ewmrs_ready=_on_ewmrs_ready,
+                on_edgewarn_integration_ready=_on_integration_ready,
+            )
+        )
+    finally:
+        detection_ready_event.set()
+        ewmrs_ready_event.set()
+        integration_ready_event.set()
+
+    while edgewarn_proc.is_alive() or ewmrs_proc.is_alive() or not log_queue.empty():
+        _guard_ui_process(ui_process)
+        _drain_log_queue(log_queue)
+        time.sleep(1)
+
+    edgewarn_proc.join()
+    ewmrs_proc.join()
+    _drain_log_queue(log_queue)
+    manager.shutdown()
 
 
 
 def main(ui_process=None):
-    """Scheduler: spawn pipeline() every 15s if a new latest_common timestamp is available."""
+    """Scheduler: run a shared ingest cycle and launch EdgeWARN/EWMRS in tandem."""
     print("Scheduler started. Press CTRL+C to exit.")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed = None  # Track last processed timestamp
@@ -92,17 +208,17 @@ def main(ui_process=None):
     except Exception as e:
         print(f"[Scheduler] Failed to initialize last_processed: {e}")
 
-    print("[Scheduler] Starting background loops (METAR, NWS)...")
+    print("[Scheduler] Starting background loops (METAR, NWS, WPC)...")
     metar_proc = multiprocessing.Process(target=metar_loop, args=(ui_process,), daemon=True)
     nws_proc = multiprocessing.Process(target=nws_loop, args=(ui_process,), daemon=True)
+    wpc_proc = multiprocessing.Process(target=wpc_loop, args=(ui_process,), daemon=True)
     metar_proc.start()
     nws_proc.start()
+    wpc_proc.start()
 
     try:
         while True:
-            if ui_process and not ui_process.is_alive():
-                print("GUI closed. Exiting.")
-                sys.exit(0)
+            _guard_ui_process(ui_process)
 
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
@@ -152,30 +268,8 @@ def main(ui_process=None):
                 dt = latest_common
                 last_processed = latest_common
 
-                # Queue to capture logs
-                log_queue = multiprocessing.Queue()
-
-                # Spawn the pipeline process
-                proc = multiprocessing.Process(
-                    target=realtime_pipeline,
-                    args=(log_queue, dt, lat_limits, lon_limits, args.profile),
-                )
-                proc.start()
-                print(f"Spawned pipeline process PID={proc.pid} for {dt}")
-
-                # Wait for process to complete, printing logs in real-time
-                while proc.is_alive() or not log_queue.empty():
-                    if ui_process and not ui_process.is_alive():
-                        print("GUI closed. Terminating pipeline and exiting.")
-                        proc.terminate()
-                        sys.exit(0)
-
-                    while not log_queue.empty():
-                        print(log_queue.get())
-                    time.sleep(1)
-
-                proc.join()
-                print(f"Pipeline process PID={proc.pid} finished")
+                _run_tandem_cycle(dt, ui_process=ui_process)
+                print(f"Tandem cycle for {dt} finished")
 
             else:
                 if not latest_common:
@@ -185,9 +279,7 @@ def main(ui_process=None):
 
             # Wait/Check loop (15 seconds)
             for _ in range(30):
-                if ui_process and not ui_process.is_alive():
-                    print("GUI closed. Exiting.")
-                    sys.exit(0)
+                _guard_ui_process(ui_process)
                 time.sleep(0.5)
 
     except KeyboardInterrupt:

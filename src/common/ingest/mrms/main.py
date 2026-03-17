@@ -20,6 +20,27 @@ io_manager = IOManager("[Ingest]")
 def get_detection_modifiers():
     return ["MergedReflectivityQCComposite_00.50", "PrecipFlag_00.00", None]
 
+
+def get_integration_modifiers():
+    detection_mods = set(get_detection_modifiers())
+    return [mod for _, mod, _ in get_mrms_modifiers() if mod not in detection_mods]
+
+
+def get_ewmrs_modifiers():
+    from EWMRS.render.config import get_file_list
+
+    render_dirs = {item["filepath"] for item in get_file_list()}
+    return [
+        modifier
+        for _, modifier, outdir in get_mrms_modifiers()
+        if outdir in render_dirs
+    ]
+
+
+def get_ewmrs_support_modifiers():
+    detection_mods = set(get_detection_modifiers())
+    return [mod for mod in get_ewmrs_modifiers() if mod not in detection_mods]
+
 async def download_all_files_async(dt, max_entries=10, remove_old_files=True):
     mrms_modifiers = get_mrms_modifiers()
     goes_modifiers = get_goes_modifiers()
@@ -62,7 +83,7 @@ async def download_integration_files_async(dt, max_entries=10, remove_old_files=
     """Downloads MRMS integration products, excluding detection products."""
     mrms_modifiers = get_mrms_modifiers()
     detection_mods = get_detection_modifiers()
-    integration_mods = [mod for _, mod, _ in mrms_modifiers if mod not in detection_mods]
+    integration_mods = get_integration_modifiers()
     cleanup_dirs = get_output_dirs(
         mrms_modifiers,
         exclude_modifiers=detection_mods,
@@ -77,6 +98,28 @@ async def download_integration_files_async(dt, max_entries=10, remove_old_files=
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
         cleanup_message=f"Starting async cleanup for {len(cleanup_dirs)} integration directories...",
+        cleanup_kwargs={"max_age_minutes": 60},
+    )
+
+
+async def download_ewmrs_files_async(dt, max_entries=10, remove_old_files=True):
+    """Downloads the MRMS products required by the EWMRS render pipeline."""
+    mrms_modifiers = get_mrms_modifiers()
+    render_mods = get_ewmrs_support_modifiers()
+    cleanup_dirs = get_output_dirs(
+        mrms_modifiers,
+        include_modifiers=render_mods,
+        include_goes=False,
+    )
+
+    await run_ingestion_pipeline(
+        io_manager=io_manager,
+        async_downloads=[
+            download_all_files_async_internal(dt, max_entries, target_modifiers=render_mods),
+        ],
+        cleanup_dirs=cleanup_dirs if remove_old_files else (),
+        cleanup_async=fs.async_clean_old_files,
+        cleanup_message=f"Starting async cleanup for {len(cleanup_dirs)} EWMRS directories...",
         cleanup_kwargs={"max_age_minutes": 60},
     )
 
