@@ -10,12 +10,9 @@ import EdgeWARN.process.detect.main as detect
 import EdgeWARN.process.integrate.main as integration
 import util.file as fs
 import common.ingest.mrms.main as ingest_main
+from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.api_integration.index_manager import APIIndexManager
-from common.ingest.mrms.downloader import (
-    download_all_goes_files,
-    download_all_goes_files_async,
-)
-from common.ingest.synoptic.main import download_rap, download_rap_async
+from common.ingest.synoptic.main import download_rap
 from util.io import IOManager, QueueWriter
 from util.performance import tracker as perf_tracker
 
@@ -79,6 +76,94 @@ def _prepare_realtime_detection_inputs(log):
         )
 
 
+def run_edgewarn_detection_phase(log, lat_limits, lon_limits, output_path=Path("stormcell_test.json")):
+    """Run only the realtime detection phase using already-ingested local files."""
+    try:
+        detection_inputs = _prepare_realtime_detection_inputs(log)
+    except Exception as exc:
+        log(f"ERROR: Failed to prepare detection inputs: {exc}")
+        return None
+
+    if detection_inputs is None:
+        log("ERROR: Detection inputs are unavailable")
+        return None
+
+    generated_file, _ = detect.main(
+        *detection_inputs,
+        lat_limits,
+        lon_limits,
+        output_path,
+    )
+    return generated_file
+
+
+def run_edgewarn_integration_phase(log, generated_file, remove_old_cells=True):
+    """Run only the integration phase from an existing detection artifact."""
+    if not generated_file:
+        log("WARN: No detection artifact was produced; skipping integration")
+        return False
+
+    integration.main(generated_file, remove_old_cells=remove_old_cells)
+    return True
+
+
+def edgewarn_tandem_worker(
+    log_queue,
+    shared_state,
+    detection_ready_event,
+    integration_ready_event,
+    dt,
+    lat_limits,
+    lon_limits,
+    profile=False,
+):
+    """Process target for staged EdgeWARN execution within the tandem runner."""
+    sys.stdout = QueueWriter(log_queue)
+    sys.stderr = QueueWriter(log_queue)
+
+    def log(message):
+        log_queue.put(message)
+
+    perf_tracker.reset()
+    perf_tracker.start("Total Pipeline")
+
+    try:
+        log(f"INFO: EdgeWARN worker waiting for detection inputs for {dt}")
+        detection_ready_event.wait()
+
+        if not shared_state.get("detection_inputs_ready", False):
+            log("ERROR: Detection inputs were not staged successfully; skipping EdgeWARN pipeline")
+            return
+
+        perf_tracker.start("Detection")
+        generated_file = run_edgewarn_detection_phase(log, lat_limits, lon_limits)
+        perf_tracker.stop("Detection")
+        shared_state["edgewarn_generated_file"] = str(generated_file) if generated_file else ""
+
+        log("INFO: EdgeWARN detection phase complete; waiting for integration inputs")
+        integration_ready_event.wait()
+
+        if not shared_state.get("edgewarn_integration_inputs_ready", False):
+            log("ERROR: EdgeWARN integration inputs were not staged successfully; skipping integration")
+            return
+
+        perf_tracker.start("Integration")
+        run_edgewarn_integration_phase(log, shared_state.get("edgewarn_generated_file") or None)
+        perf_tracker.stop("Integration")
+        log("INFO: EdgeWARN worker completed successfully")
+    except Exception as exc:
+        log(f"ERROR: EdgeWARN tandem worker failed: {exc}")
+        log(traceback.format_exc())
+    finally:
+        try:
+            perf_tracker.stop("Total Pipeline")
+        except Exception:
+            pass
+
+        if profile:
+            _write_profile_summary(log)
+
+
 def _find_historical_file(directory, target_dt, io_manager):
     directory_path = Path(directory)
     if not directory_path.exists():
@@ -116,88 +201,64 @@ def realtime_pipeline(log_queue, dt, lat_limits, lon_limits, profile=False):
     perf_tracker.start("Total Pipeline")
 
     async def run_pipeline_async():
-        log(f"INFO: Starting Async Data Ingestion for timestamp {dt}")
+        detection_ready = asyncio.Event()
+        integration_ready = asyncio.Event()
+        cycle_state_holder = {}
 
-        async def safe_ingest(task_name, async_func, sync_fallback, *args):
-            try:
-                await async_func(*args)
-                log(f"INFO: Async {task_name} ingestion successful")
-                return True
-            except Exception as exc:
-                log(f"WARN: Async {task_name} ingestion failed: {exc}. Falling back to sync.")
-                try:
-                    sync_fallback(*args)
-                    log(f"INFO: Sync fallback for {task_name} successful")
-                    return True
-                except Exception as fallback_exc:
-                    log(
-                        "ERROR: Both async and sync ingestion failed for "
-                        f"{task_name}: {fallback_exc}"
-                    )
-                    return False
+        def on_detection_ready(state):
+            cycle_state_holder["state"] = state
+            detection_ready.set()
 
-        perf_tracker.start("Ingestion - Detection Files")
-        detection_task = asyncio.create_task(
-            safe_ingest(
-                "MRMS Detection",
-                ingest_main.download_detection_files_async,
-                ingest_main.download_all_files,
+        def on_integration_ready(state):
+            cycle_state_holder["state"] = state
+            integration_ready.set()
+
+        perf_tracker.start("Ingestion - Shared Cycle")
+        cycle_task = asyncio.create_task(
+            run_tandem_ingest_cycle(
                 dt,
+                log,
+                on_detection_ready=on_detection_ready,
+                on_edgewarn_integration_ready=on_integration_ready,
             )
         )
 
-        integration_tasks = [
-            asyncio.create_task(
-                safe_ingest(
-                    "MRMS Integration",
-                    ingest_main.download_integration_files_async,
-                    ingest_main.download_all_files,
-                    dt,
-                )
-            ),
-            asyncio.create_task(
-                safe_ingest("GOES", download_all_goes_files_async, download_all_goes_files, dt, 10, 3)
-            ),
-            asyncio.create_task(safe_ingest("RAP", download_rap_async, download_rap, dt)),
-        ]
+        await detection_ready.wait()
+        cycle_state = cycle_state_holder.get("state")
 
-        await detection_task
-        perf_tracker.stop("Ingestion - Detection Files")
+        if not cycle_state.detection_inputs_ready:
+            log("ERROR: Detection ingest did not complete successfully, skipping EdgeWARN pipeline")
+            await cycle_task
+            perf_tracker.stop("Ingestion - Shared Cycle")
+            return
 
         log("INFO: Starting Storm Cell Detection")
         perf_tracker.start("Detection")
-
-        def run_detect_sync():
-            try:
-                detection_inputs = _prepare_realtime_detection_inputs(log)
-            except Exception as exc:
-                log(f"ERROR: Failed to prepare detection inputs: {exc}")
-                return None
-
-            if detection_inputs is None:
-                return None
-
-            generated_file, _ = detect.main(
-                *detection_inputs,
-                lat_limits,
-                lon_limits,
-                Path("stormcell_test.json"),
-            )
-            return generated_file
-
-        generated_file = await asyncio.to_thread(run_detect_sync)
+        generated_file = await asyncio.to_thread(
+            run_edgewarn_detection_phase,
+            log,
+            lat_limits,
+            lon_limits,
+        )
         perf_tracker.stop("Detection")
 
         if not generated_file:
             log("ERROR: Detection failed to generate a file, skipping integration.")
+            await cycle_task
+            perf_tracker.stop("Ingestion - Shared Cycle")
             return
 
-        perf_tracker.start("Ingestion - Integration Files (Wait)")
-        await asyncio.gather(*integration_tasks, return_exceptions=True)
-        perf_tracker.stop("Ingestion - Integration Files (Wait)")
+        await integration_ready.wait()
+        cycle_state = cycle_state_holder.get("state", cycle_state)
+        await cycle_task
+        perf_tracker.stop("Ingestion - Shared Cycle")
+
+        if not cycle_state.edgewarn_integration_inputs_ready:
+            log("ERROR: Integration ingest did not complete successfully, skipping integration.")
+            return
 
         perf_tracker.start("Integration")
-        await asyncio.to_thread(integration.main, generated_file)
+        await asyncio.to_thread(run_edgewarn_integration_phase, log, generated_file)
         perf_tracker.stop("Integration")
 
     try:
