@@ -1,4 +1,4 @@
-import util.ewmrs_file as fs
+import util.file as fs
 
 # Tile configuration constants
 TILE_SIZE = 250  # pixels
