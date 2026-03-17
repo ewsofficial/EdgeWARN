@@ -153,9 +153,26 @@ class StormCellTracker:
         Returns:
             Updated list of cell entries
         """
+        # Filter out entries without 'id' field to prevent KeyError
+        valid_entries = [cell for cell in entries if 'id' in cell]
+        if len(valid_entries) < len(entries):
+            self.io_manager.write_warning(f"Filtered out {len(entries) - len(valid_entries)} entries without 'id' field")
+        entries = valid_entries
+        
         self.io_manager.write_debug("Entries in update_cells:")
         for cell in entries:
-            self.io_manager.write_debug(f"  Entry ID: {cell['id']}, Tracking Mode: {cell.get('tracking_mode', 'N/A')}")
+            cell_id = cell.get('id')
+            if cell_id is None:
+                self.io_manager.write_warning("Skipping entry without 'id' field")
+                continue
+            self.io_manager.write_debug(f"  Entry ID: {cell_id}, Tracking Mode: {cell.get('tracking_mode', 'N/A')}")
+        
+        # Filter updated_data to ensure all entries have 'id' field
+        valid_updated = [cell for cell in updated_data if 'id' in cell]
+        if len(valid_updated) < len(updated_data):
+            self.io_manager.write_warning(f"Filtered out {len(updated_data) - len(valid_updated)} updated cells without 'id' field")
+        updated_data = valid_updated
+        
         self.io_manager.write_debug("Updated data:")
         for cell in updated_data:
             self.io_manager.write_debug(f"  Updated cell ID: {cell['id']}, Centroid: {cell['centroid']}")
