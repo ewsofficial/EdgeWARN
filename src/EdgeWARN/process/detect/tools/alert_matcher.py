@@ -83,6 +83,12 @@ def load_active_alerts(registry_dir: Path, target_timestamp: Optional[str] = Non
         features = []
         
         for alert_id in active_ids:
+            if isinstance(alert_id, dict):
+                alert_id = alert_id.get("id") or alert_id.get("urn_oid")
+
+            if not isinstance(alert_id, str):
+                continue
+
             safe_id = alert_id.replace(":", "_").replace("/", "_") + ".json"
             feature_path = ids_dir / safe_id
             if feature_path.exists():

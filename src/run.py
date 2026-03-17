@@ -63,56 +63,78 @@ def _sleep_until_boundary(minutes, ui_process=None):
     if sleep_seconds > 0:
         _sleep_with_ui_guard(sleep_seconds, ui_process=ui_process, interval=1.0)
 
-def metar_loop(ui_process=None):
-    while True:
-        _guard_ui_process(ui_process)
-        _sleep_until_boundary(5, ui_process=ui_process)
-        _guard_ui_process(ui_process)
 
-        try:
-            asyncio.run(metar_ingest.ingest_metars_async())
-        except Exception as e:
-            print(f"[METAR Loop] Error: {e}")
+def metar_loop(ui_process=None):
+    try:
+        while True:
+            _guard_ui_process(ui_process)
+            _sleep_until_boundary(5, ui_process=ui_process)
+            _guard_ui_process(ui_process)
+
+            try:
+                asyncio.run(metar_ingest.ingest_metars_async())
+            except Exception as e:
+                print(f"[METAR Loop] Error: {e}")
+    except KeyboardInterrupt:
+        return
+
 
 def nws_loop(ui_process=None):
-    while True:
-        _guard_ui_process(ui_process)
-        try:
-            asyncio.run(nws_ingest.download_alerts_async(datetime.now(timezone.utc)))
-        except Exception as e:
-            print(f"[NWS Loop] Error: {e}")
+    try:
+        while True:
+            _guard_ui_process(ui_process)
+            try:
+                asyncio.run(nws_ingest.download_alerts_async(datetime.now(timezone.utc)))
+            except Exception as e:
+                print(f"[NWS Loop] Error: {e}")
 
-        _sleep_with_ui_guard(120, ui_process=ui_process, interval=1.0)
+            _sleep_with_ui_guard(120, ui_process=ui_process, interval=1.0)
+    except KeyboardInterrupt:
+        return
 
 
 def wpc_loop(ui_process=None):
-    while True:
-        _guard_ui_process(ui_process)
-        _sleep_until_boundary(15, ui_process=ui_process)
-        _guard_ui_process(ui_process)
+    try:
+        while True:
+            _guard_ui_process(ui_process)
+            _sleep_until_boundary(15, ui_process=ui_process)
+            _guard_ui_process(ui_process)
 
-        try:
-            run_wpc_ingest()
-        except Exception as e:
-            print(f"[WPC Loop] Error: {e}")
-
+            try:
+                run_wpc_ingest()
+            except Exception as e:
+                print(f"[WPC Loop] Error: {e}")
+    except KeyboardInterrupt:
+        return
 
 def _run_tandem_cycle(dt, ui_process=None):
     log_queue = multiprocessing.Queue()
     manager = multiprocessing.Manager()
-    shared_state = manager.dict(
-        {
-            "detection_inputs_ready": False,
-            "ewmrs_inputs_ready": False,
-            "edgewarn_integration_inputs_ready": False,
-            "edgewarn_generated_file": "",
-            "errors": {},
-        }
-    )
+    shared_state = manager.dict()
 
     detection_ready_event = multiprocessing.Event()
     ewmrs_ready_event = multiprocessing.Event()
     integration_ready_event = multiprocessing.Event()
+
+    try:
+        cycle_state = asyncio.run(
+            run_tandem_ingest_cycle(
+                dt,
+                lambda msg: _queue_log(log_queue, msg),
+            )
+        )
+    finally:
+        pass
+
+    shared_state["detection_inputs_ready"] = cycle_state.detection_inputs_ready
+    shared_state["ewmrs_inputs_ready"] = cycle_state.ewmrs_inputs_ready
+    shared_state["edgewarn_integration_inputs_ready"] = cycle_state.edgewarn_integration_inputs_ready
+    shared_state["edgewarn_generated_file"] = ""
+    shared_state["errors"] = dict(cycle_state.errors)
+
+    detection_ready_event.set()
+    ewmrs_ready_event.set()
+    integration_ready_event.set()
 
     edgewarn_proc = multiprocessing.Process(
         target=edgewarn_tandem_worker,
@@ -134,39 +156,6 @@ def _run_tandem_cycle(dt, ui_process=None):
 
     edgewarn_proc.start()
     ewmrs_proc.start()
-
-    def _sync_state(cycle_state):
-        shared_state["detection_inputs_ready"] = cycle_state.detection_inputs_ready
-        shared_state["ewmrs_inputs_ready"] = cycle_state.ewmrs_inputs_ready
-        shared_state["edgewarn_integration_inputs_ready"] = cycle_state.edgewarn_integration_inputs_ready
-        shared_state["errors"] = dict(cycle_state.errors)
-
-    def _on_detection_ready(cycle_state):
-        _sync_state(cycle_state)
-        detection_ready_event.set()
-
-    def _on_ewmrs_ready(cycle_state):
-        _sync_state(cycle_state)
-        ewmrs_ready_event.set()
-
-    def _on_integration_ready(cycle_state):
-        _sync_state(cycle_state)
-        integration_ready_event.set()
-
-    try:
-        asyncio.run(
-            run_tandem_ingest_cycle(
-                dt,
-                lambda msg: _queue_log(log_queue, msg),
-                on_detection_ready=_on_detection_ready,
-                on_ewmrs_ready=_on_ewmrs_ready,
-                on_edgewarn_integration_ready=_on_integration_ready,
-            )
-        )
-    finally:
-        detection_ready_event.set()
-        ewmrs_ready_event.set()
-        integration_ready_event.set()
 
     while edgewarn_proc.is_alive() or ewmrs_proc.is_alive() or not log_queue.empty():
         _guard_ui_process(ui_process)
@@ -208,7 +197,7 @@ def main(ui_process=None):
     except Exception as e:
         print(f"[Scheduler] Failed to initialize last_processed: {e}")
 
-    print("[Scheduler] Starting background loops (METAR, NWS, WPC)...")
+    print("[Scheduler] Starting background accessory ingests (METAR, NWS, WPC)...")
     metar_proc = multiprocessing.Process(target=metar_loop, args=(ui_process,), daemon=True)
     nws_proc = multiprocessing.Process(target=nws_loop, args=(ui_process,), daemon=True)
     wpc_proc = multiprocessing.Process(target=wpc_loop, args=(ui_process,), daemon=True)

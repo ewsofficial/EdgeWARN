@@ -17,10 +17,6 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch):
         await asyncio.sleep(0.03)
         call_order.append("mrms_integration")
 
-    async def fake_ewmrs(dt, max_entries=10, remove_old_files=True):
-        await asyncio.sleep(0.02)
-        call_order.append("ewmrs")
-
     async def fake_goes(dt, max_entries=10, hour_lookback=3):
         await asyncio.sleep(0.04)
         call_order.append("goes")
@@ -31,7 +27,6 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch):
 
     monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files_async", fake_detection)
     monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
-    monkeypatch.setattr(coordinator.mrms_ingest, "download_ewmrs_files_async", fake_ewmrs)
     monkeypatch.setattr(coordinator, "download_all_goes_files_async", fake_goes)
     monkeypatch.setattr(coordinator, "download_rap_async", fake_rap)
 
@@ -62,7 +57,7 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch):
         )
     )
 
-    assert call_order == ["detection", "ewmrs", "mrms_integration", "goes", "rap"]
+    assert call_order == ["detection", "mrms_integration", "goes", "rap"]
     assert [name for name, *_ in callbacks] == ["detection", "ewmrs", "integration"]
     assert callbacks[0] == ("detection", True, False, False)
     assert callbacks[1] == ("ewmrs", True, True, False)

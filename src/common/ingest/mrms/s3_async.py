@@ -162,7 +162,7 @@ class AsyncFileDownloader:
             zipped_path = local_path
             unzipped_path = local_path.with_suffix("") if local_path.suffix == ".gz" else local_path
             if zipped_path.exists() or unzipped_path.exists():
-                existing_file = zipped_path if zipped_path.exists() else unzipped_path
+                existing_file = unzipped_path if unzipped_path.exists() else zipped_path
                 self.io_manager.write_debug(f"File already exists, skipping: {existing_file}")
                 return existing_file
 
@@ -225,7 +225,7 @@ class AsyncFileDownloader:
                 zipped_path = local_path
                 unzipped_path = local_path.with_suffix("") if local_path.suffix == ".gz" else local_path
                 if zipped_path.exists() or unzipped_path.exists():
-                    existing_file = zipped_path if zipped_path.exists() else unzipped_path
+                    existing_file = unzipped_path if unzipped_path.exists() else zipped_path
                     self.io_manager.write_debug(f"File already exists, skipping: {existing_file}")
                     downloaded_files.append(existing_file)
                     continue
@@ -260,6 +260,10 @@ class AsyncFileDownloader:
         output_path = gz_path.with_suffix("")
 
         if output_path.exists():
+            try:
+                await aiofiles.os.remove(gz_path)
+            except FileNotFoundError:
+                pass
             self.io_manager.write_debug(f"Decompressed target already exists, skipping: {output_path}")
             return output_path
 

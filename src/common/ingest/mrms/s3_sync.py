@@ -180,9 +180,9 @@ class FileDownloader:
             unzipped_path = local_path.with_suffix("") if local_path.suffix == ".gz" else local_path
             
             if zipped_path.exists() or unzipped_path.exists():
-                existing_file = str(zipped_path) if zipped_path.exists() else str(unzipped_path)
+                existing_file = str(unzipped_path) if unzipped_path.exists() else str(zipped_path)
                 self.io_manager.write_debug(f"File already exists, skipping download: {existing_file}")
-                return zipped_path if zipped_path.exists() else unzipped_path
+                return unzipped_path if unzipped_path.exists() else zipped_path
 
             # Log the download attempt
             self.io_manager.write_info(f"Downloading matching file: {target_file_path}")
@@ -247,9 +247,9 @@ class FileDownloader:
                 unzipped_path = local_path.with_suffix("") if local_path.suffix == ".gz" else local_path
                 
                 if zipped_path.exists() or unzipped_path.exists():
-                    existing_file = str(zipped_path) if zipped_path.exists() else str(unzipped_path)
+                    existing_file = str(unzipped_path) if unzipped_path.exists() else str(zipped_path)
                     self.io_manager.write_debug(f"File already exists, skipping download: {existing_file}")
-                    downloaded_files.append(zipped_path if zipped_path.exists() else unzipped_path)
+                    downloaded_files.append(unzipped_path if unzipped_path.exists() else zipped_path)
                     continue
 
                 # Log the download attempt
@@ -287,6 +287,7 @@ class FileDownloader:
             output_path = gz_path.with_suffix("")
 
             if output_path.exists():
+                gz_path.unlink(missing_ok=True)
                 self.io_manager.write_debug(f"Decompressed target already exists, skipping: {output_path}")
                 return output_path
 

@@ -1,11 +1,12 @@
 import xarray as xr
 import json
+import os
 from datetime import datetime
 from util.io import IOManager
 from pathlib import Path
 import re
 import numpy as np
-from pyproj import Transformer
+from pyproj import Transformer, datadir as pyproj_datadir
 
 try:
     from util.grib_loader import load_grib_fast
@@ -13,6 +14,14 @@ except Exception:
     load_grib_fast = None
 
 io_manager = IOManager("[Transform]")
+
+try:
+    proj_data_dir = pyproj_datadir.get_data_dir()
+    if proj_data_dir:
+        os.environ.setdefault("PROJ_DATA", proj_data_dir)
+        os.environ.setdefault("PROJ_LIB", proj_data_dir)
+except Exception:
+    proj_data_dir = None
 
 # Cached transformer for EPSG:4326 to EPSG:3857 (thread-safe per pyproj docs)
 _TRANSFORMER_4326_TO_3857 = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
@@ -31,6 +40,10 @@ class TransformUtils:
         """
         
         io_manager.write_debug(f"Opening file: {ds_path} ...")
+
+        ds_path = Path(ds_path)
+        if ds_path.suffix == ".gz" and ds_path.with_suffix("").exists():
+            ds_path = ds_path.with_suffix("")
 
         try:
             if str(ds_path).endswith(".grib2") or str(ds_path).endswith(".grib"):

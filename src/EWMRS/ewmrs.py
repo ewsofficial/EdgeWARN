@@ -13,7 +13,6 @@ from typing import Dict, Optional
 if __name__ == "__main__" and __package__ is None:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from common.ingest.mrms.main import download_all_files
 from common.ingest.wpc.main import run_wpc_ingest
 from EWMRS.render.tools import TransformUtils
 from EWMRS.render.render import GUILayerRenderer
@@ -234,11 +233,10 @@ def run_render_pipeline(dt, max_entries: int = 10, download: bool = True) -> Dic
     results: Dict[str, Optional[Path]] = {}
 
     if download:
-        io_manager.write_info(f"Starting ingest downloads for dt={dt} (max_entries={max_entries})")
-        try:
-            download_all_files(dt, max_entries=max_entries)
-        except Exception as e:
-            io_manager.write_error(f"Download step failed: {e}")
+        io_manager.write_warning(
+            "EWMRS render pipeline no longer performs direct downloads; "
+            "rendering will use files staged by the shared ingest cycle"
+        )
 
     # Render layers in parallel using separate processes (true multi-core)
     layers = get_file_list()
@@ -286,7 +284,7 @@ def ewmrs_tandem_worker(log_queue, shared_state, ewmrs_ready_event, dt, max_entr
 # ----------------- Scheduler-style loop (download + render only) -----------------
 
 def pipeline(log_queue, dt, max_entries=10):
-    """Run the simplified ingestion + render pipeline once, sending logs to `log_queue`."""
+    """Run the render-only EWMRS pipeline once, sending logs to `log_queue`."""
     # Redirect stdout/stderr to queue writer for the child process
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
@@ -295,15 +293,7 @@ def pipeline(log_queue, dt, max_entries=10):
         log_queue.put(str(msg))
 
     try:
-        log(f"INFO: Starting Data Ingestion for timestamp {dt}")
-        # Download files (blocking)
-        try:
-            download_all_files(dt, max_entries=max_entries)
-            log("INFO: Download completed")
-        except Exception as e:
-            log(f"ERROR: Download failed - {e}")
-
-        # Render using local files (download step above populates them)
+        log(f"INFO: Starting render-only EWMRS pipeline for timestamp {dt}")
         log("INFO: Starting Render step")
         try:
             results = run_render_pipeline(dt, max_entries=max_entries, download=False)
