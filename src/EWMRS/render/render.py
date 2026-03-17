@@ -5,9 +5,9 @@ import numpy as np
 from PIL import Image
 from .tools import TransformUtils
 from .tiler import TileSplitter, save_tile
-from ..util import file as fs
+import util.ewmrs_file as fs
 from xarray import Dataset
-from ..util.io import IOManager
+from util.io import IOManager
 from datetime import datetime
 import threading
 

@@ -4,7 +4,7 @@ from EWMRS.ingest.mrms.s3_async import AsyncFileFinder, AsyncFileDownloader
 from EWMRS.ingest.mrms.https_client import HttpsFileFinder, HttpsFileDownloader
 from EWMRS.ingest.mrms.parse import parse_mrms_bucket_path, parse_goes_bucket_path
 from EWMRS.ingest.mrms.utils import merge_glm_files, extract_timestamp
-from EWMRS.util.io import IOManager
+from util.io import IOManager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
 import aioboto3

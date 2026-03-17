@@ -1,31 +1,80 @@
+from datetime import datetime
+from functools import partial
 from pathlib import Path
+import asyncio
 import platform
 import sys
 
-try:
-    _SRC_DIR = Path(__file__).resolve().parents[1]
-    _src_str = str(_SRC_DIR)
-    if _src_str not in sys.path:
-        sys.path.insert(0, _src_str)
-except Exception:
-    pass
-
-from common.file import (
-    async_clean_files_by_age as _async_clean_files_by_age,
-    async_clean_old_files as _async_clean_old_files,
-    build_edgewarn_paths,
-    clean_files_by_age as _clean_files_by_age,
-    clean_idx_files as _clean_idx_files,
-    clean_old_files as _clean_old_files,
-    latest_files as _latest_files,
-)
-from common.io import IOManager
+from util.io import IOManager
 
 io_manager = IOManager("[Util]")
+BASE_DIR: Path = Path(".")
+
+
+def _log(method, message):
+    if hasattr(io_manager, method):
+        getattr(io_manager, method)(message)
+
+
+def _build_edgewarn_paths(base_path: Path) -> dict:
+    data_dir = base_path / "data"
+    alerts_dir = data_dir / "Alerts"
+    edgewarn_alerts_dir = alerts_dir / "EdgeWARN"
+    official_alerts_dir = alerts_dir / "official"
+    return {
+        "BASE_DIR": base_path,
+        "DATA_DIR": data_dir,
+        "ALERTS_DIR": alerts_dir,
+        "EDGEWARN_ALERTS_DIR": edgewarn_alerts_dir,
+        "EDGEWARN_ALERTS_IDS_DIR": edgewarn_alerts_dir / "ids",
+        "EDGEWARN_ALERTS_TS_DIR": edgewarn_alerts_dir / "timestamps",
+        "MRMS_NWS_RAW_DIR": data_dir / "NWS_Raw",
+        "MRMS_NWS_DIR": official_alerts_dir,
+        "MRMS_NWS_IDS_DIR": official_alerts_dir / "ids",
+        "MRMS_NWS_TS_DIR": official_alerts_dir / "timestamps",
+        "NWS_REGISTRY_PATH": official_alerts_dir / "alerts_registry.json",
+        "MRMS_RALA_DIR": data_dir / "RALA",
+        "MRMS_CGFLASH_DIR": data_dir / "NLDN",
+        "MRMS_NLDN_DIR": data_dir / "NLDN_Density",
+        "MRMS_ECHOTOP18_DIR": data_dir / "EchoTop18",
+        "MRMS_ECHOTOP30_DIR": data_dir / "EchoTop30",
+        "MRMS_QPE_DIR": data_dir / "QPE_01H",
+        "MRMS_RAIN_DIR": data_dir / "WarmRainProbability",
+        "MRMS_PRECIPRATE_DIR": data_dir / "PrecipRate",
+        "MRMS_PROBSEVERE_DIR": data_dir / "ProbSevere",
+        "MRMS_FLASH_CREST_MAXUNIT_DIR": data_dir / "FLASH_CREST_MAXUNIT",
+        "MRMS_FLASH_ARIMAX_DIR": data_dir / "FLASH_ARIMAX",
+        "MRMS_FLASH_ARI30M_DIR": data_dir / "FLASH_ARI30M",
+        "MRMS_FLASH_ARI01H_DIR": data_dir / "FLASH_ARI01H",
+        "MRMS_FLASH_HP_MAXUNIT_DIR": data_dir / "FLASH_HP_MAXUNIT",
+        "MRMS_FLASH_SAC_MAXSOIL_DIR": data_dir / "FLASH_SAC_MAXSOIL",
+        "MRMS_FLASH_FFGMAX_DIR": data_dir / "FLASH_FFGMAX",
+        "MRMS_RQI_DIR": data_dir / "RadarQualityIndex",
+        "MRMS_DVIL_DIR": data_dir / "VILDensity",
+        "MRMS_VIL_DIR": data_dir / "VIL",
+        "MRMS_VII_DIR": data_dir / "VII",
+        "MRMS_AZSHEARLOW_DIR": data_dir / "AzShearLow",
+        "MRMS_AZSHEARMID_DIR": data_dir / "AzShearMid",
+        "MRMS_COMPOSITE_DIR": data_dir / "CompRefQC",
+        "MRMS_REF_0C_DIR": data_dir / "Ref0C",
+        "MRMS_REFM5C_DIR": data_dir / "RefM5C",
+        "MRMS_REFM15C_DIR": data_dir / "RefM15C",
+        "MRMS_RHOHV_DIR": data_dir / "RhoHV",
+        "MRMS_PRECIPTYP_DIR": data_dir / "PrecipFlag",
+        "MRMS_MESH_DIR": data_dir / "MESH",
+        "GOES_GLM_DIR": data_dir / "GLM",
+        "RAP_DIR": data_dir / "RAP",
+        "STORMCELL_DIR": data_dir / "stormcells",
+        "CELL_DIR": data_dir / "cells",
+        "METAR_DIR": data_dir / "METAR",
+        "SURFACE_DIR": data_dir / "surface_features",
+        "FLASH_FLOOD_DIR": data_dir / "FlashFlood",
+    }
 
 
 def _define_paths(base_path):
-    globals().update(build_edgewarn_paths(Path(base_path)))
+    global BASE_DIR
+    globals().update(_build_edgewarn_paths(Path(base_path)))
 
 
 def initialize_filesystem(base_dir=None):
@@ -43,50 +92,111 @@ else:
 
 
 def latest_files(directory, count):
-    return _latest_files(directory, count, io_manager=io_manager, strict=False)
+    directory = Path(directory)
+    if not directory.exists():
+        _log("write_warning", f"{directory} doesn't exist!")
+        return None
+    files = sorted([f for f in directory.glob("*") if f.is_file() and f.suffix.lower() != ".idx"], key=lambda f: f.stat().st_mtime)
+    return [str(f) for f in files[-count:]]
 
 
 def clean_idx_files(folders):
-    return _clean_idx_files(folders, io_manager=io_manager)
+    for folder in folders:
+        folder = Path(folder)
+        if not folder.exists():
+            _log("write_error", f"Folder not found: {folder}")
+            continue
+        idx_files = list(folder.rglob("*.idx"))
+        if not idx_files:
+            _log("write_debug", f"No IDX files in folder: {folder}")
+            continue
+        deleted = 0
+        for file_path in idx_files:
+            try:
+                file_path.unlink()
+                deleted += 1
+            except Exception as e:
+                _log("write_error", f"Failed to delete IDX file {file_path}: {e}")
+        if deleted > 0:
+            _log("write_debug", f"Deleted {deleted} files in {folder}")
+
+
+def _is_safe_directory(directory: Path, allow_logical_inside=False):
+    base_dir = globals().get("BASE_DIR", Path("."))
+    try:
+        if allow_logical_inside:
+            return directory.absolute().is_relative_to(base_dir.absolute()) or directory.resolve().is_relative_to(base_dir.resolve())
+        return directory.resolve().is_relative_to(base_dir.resolve())
+    except Exception:
+        return False
 
 
 def clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
-    return _clean_old_files(
-        directory,
-        base_dir=BASE_DIR,
-        io_manager=io_manager,
-        max_age_minutes=max_age_minutes,
-        max_files=max_files,
-        exclude_idx=True,
-        allow_logical_inside=True,
-    )
+    directory = Path(directory)
+    base_dir = globals().get("BASE_DIR", Path("."))
+    if not _is_safe_directory(directory, allow_logical_inside=True):
+        _log("write_error", f"SAFETY ERROR: Attempting to clean {directory} which is not inside {base_dir}")
+        return
+
+    now = datetime.now().timestamp()
+    cutoff = now - (max_age_minutes * 60)
+    files_deleted = 0
+    kept_files = []
+
+    for file_path in directory.glob("*"):
+        if not file_path.is_file() or file_path.suffix.lower() == ".idx":
+            continue
+        try:
+            mtime = file_path.stat().st_mtime
+            if mtime < cutoff:
+                file_path.unlink()
+                files_deleted += 1
+            else:
+                kept_files.append((file_path, mtime))
+        except Exception as e:
+            _log("write_error", f"Could not process/delete {file_path.name}: {e}")
+
+    if max_files is not None and len(kept_files) > max_files:
+        kept_files.sort(key=lambda item: item[1])
+        for file_path, _ in kept_files[:len(kept_files) - max_files]:
+            try:
+                file_path.unlink()
+                files_deleted += 1
+            except Exception as e:
+                _log("write_error", f"Could not delete {file_path.name}: {e}")
+
+    if files_deleted > 0:
+        _log("write_debug", f"Deleted {files_deleted} files in {directory}")
 
 
 def clean_files_by_age(directory: Path, max_age_minutes=60):
-    return _clean_files_by_age(
-        directory,
-        base_dir=BASE_DIR,
-        io_manager=io_manager,
-        max_age_minutes=max_age_minutes,
-    )
+    directory = Path(directory)
+    base_dir = globals().get("BASE_DIR", Path("."))
+    if not _is_safe_directory(directory):
+        _log("write_error", f"SAFETY ERROR: Attempting to clean {directory} which is not inside {base_dir}")
+        return
+
+    now = datetime.now().timestamp()
+    cutoff = now - (max_age_minutes * 60)
+    files_deleted = 0
+    for file_path in directory.glob("*"):
+        if not file_path.is_file():
+            continue
+        try:
+            if file_path.stat().st_mtime < cutoff:
+                file_path.unlink()
+                files_deleted += 1
+        except Exception as e:
+            _log("write_error", f"Could not process/delete {file_path.name}: {e}")
+    if files_deleted > 0:
+        _log("write_debug", f"Deleted {files_deleted} files in {directory}")
 
 
 async def async_clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
-    return await _async_clean_old_files(
-        directory,
-        base_dir=BASE_DIR,
-        io_manager=io_manager,
-        max_age_minutes=max_age_minutes,
-        max_files=max_files,
-        exclude_idx=True,
-        allow_logical_inside=True,
-    )
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, partial(clean_old_files, directory, max_age_minutes=max_age_minutes, max_files=max_files))
 
 
 async def async_clean_files_by_age(directory: Path, max_age_minutes=60):
-    return await _async_clean_files_by_age(
-        directory,
-        base_dir=BASE_DIR,
-        io_manager=io_manager,
-        max_age_minutes=max_age_minutes,
-    )
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, partial(clean_files_by_age, directory, max_age_minutes=max_age_minutes))

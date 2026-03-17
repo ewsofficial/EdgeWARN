@@ -8,7 +8,7 @@ import asyncio
 import aiofiles
 import aiofiles.os
 from datetime import timedelta
-from EWMRS.util.handler import extract_timestamp
+from util.handler import extract_timestamp
 from EWMRS.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 
 

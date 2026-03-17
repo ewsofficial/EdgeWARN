@@ -1,14 +1,14 @@
 import xarray as xr
 import json
 from datetime import datetime
-from ..util.io import IOManager
+from util.io import IOManager
 from pathlib import Path
 import re
 import numpy as np
 from pyproj import Transformer
 
 try:
-    from ..util.eccodes_loader import load_grib_fast
+    from util.grib_loader import load_grib_fast
 except Exception:
     load_grib_fast = None
 

@@ -10,7 +10,7 @@ import logging
 
 # We'll use the existing IOManager if possible, or fallback to logging
 try:
-    from EWMRS.util.io import IOManager
+    from util.io import IOManager
     io_manager = IOManager("[Ingest-HTTPS]")
 except ImportError:
     logging.basicConfig(level=logging.INFO)

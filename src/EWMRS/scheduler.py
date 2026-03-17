@@ -8,7 +8,7 @@ from EWMRS.ingest.mrms.utils import extract_timestamp
 from EWMRS.ingest.mrms.parse import parse_mrms_bucket_path
 from EWMRS.ingest.mrms.config import bucket
 from EWMRS.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
-from EWMRS.util.io import IOManager
+from util.io import IOManager
 
 io_manager = IOManager("[DataIngestion]")
 
