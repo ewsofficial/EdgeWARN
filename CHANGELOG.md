@@ -1,15 +1,9 @@
 # Changelog
 
-## [2.0.0-rc1] - 2026-03-15
-
-### Changed
-- Promoted 2.0.0-alpha features to Release Candidate 1.
-- Stabilized core tracking and integration modules.
-- Updated documentation and API examples for RC1.
-
-## [2.0.0-alpha] - 2026-03-12
+## [2.0.0] - 2026-03-15
 
 ### Added
+- **EWMRS Porting**: Ported the EWMRS runtime, ingest, and shared utility workflows into EdgeWARN-Core to unify server-side processing under the EdgeWARN package layout.
 - **Predictive Storm Tracking**: Implemented a core Kalman Filter motion tracking system to continuously predict and associate storm cells over time, replacing static overlap tracking. Includes configurable state dynamics to handle missed scans and a 6-minute Time-To-Live (TTL) for predictions.
 - **Storm Lineage Detection Engine**: Introduced a storm merge/split tracking module to maintain continuity when storm cells intersect or fragment. Supported by comprehensive unit and integration tests.
 - **Lineage Tracking Links**: Added `merged_cells` and `merged_to` keys to storm cell output to explicitly track which cells combined during merge events. Dissipated cells are now preserved in their final state with these links.
