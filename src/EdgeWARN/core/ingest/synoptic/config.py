@@ -1,5 +1,4 @@
+import sys as _sys
+import common.ingest.synoptic.config as _impl
 
-
-RAP_BUCKET = "noaa-rap-pds"
-RAP_FILE_PATTERN = "rap.t{hour:02d}z.awp130pgrbf00.grib2"
-RAP_DIR_PATTERN = "rap.{date}"
+_sys.modules[__name__] = _impl
