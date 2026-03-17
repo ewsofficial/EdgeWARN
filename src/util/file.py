@@ -16,65 +16,74 @@ def _log(method, message):
         getattr(io_manager, method)(message)
 
 
-def _build_edgewarn_paths(base_path: Path) -> dict:
+def _define_paths(base_path):
+    global BASE_DIR
+    global DATA_DIR, ALERTS_DIR
+    global EDGEWARN_ALERTS_DIR, EDGEWARN_ALERTS_IDS_DIR, EDGEWARN_ALERTS_TS_DIR
+    global MRMS_NWS_RAW_DIR, MRMS_NWS_DIR, MRMS_NWS_IDS_DIR, MRMS_NWS_TS_DIR, NWS_REGISTRY_PATH
+    global MRMS_RALA_DIR, MRMS_CGFLASH_DIR, MRMS_NLDN_DIR, MRMS_ECHOTOP18_DIR, MRMS_ECHOTOP30_DIR
+    global MRMS_QPE_DIR, MRMS_RAIN_DIR, MRMS_PRECIPRATE_DIR, MRMS_PROBSEVERE_DIR
+    global MRMS_FLASH_CREST_MAXUNIT_DIR, MRMS_FLASH_ARIMAX_DIR, MRMS_FLASH_ARI30M_DIR, MRMS_FLASH_ARI01H_DIR
+    global MRMS_FLASH_HP_MAXUNIT_DIR, MRMS_FLASH_SAC_MAXSOIL_DIR, MRMS_FLASH_FFGMAX_DIR
+    global MRMS_RQI_DIR, MRMS_DVIL_DIR, MRMS_VIL_DIR, MRMS_VII_DIR
+    global MRMS_AZSHEARLOW_DIR, MRMS_AZSHEARMID_DIR, MRMS_COMPOSITE_DIR
+    global MRMS_REF_0C_DIR, MRMS_REFM5C_DIR, MRMS_REFM15C_DIR
+    global MRMS_RHOHV_DIR, MRMS_PRECIPTYP_DIR, MRMS_MESH_DIR
+    global GOES_GLM_DIR, RAP_DIR, STORMCELL_DIR, CELL_DIR, METAR_DIR, SURFACE_DIR, FLASH_FLOOD_DIR
+
+    base_path = Path(base_path)
     data_dir = base_path / "data"
     alerts_dir = data_dir / "Alerts"
     edgewarn_alerts_dir = alerts_dir / "EdgeWARN"
     official_alerts_dir = alerts_dir / "official"
-    return {
-        "BASE_DIR": base_path,
-        "DATA_DIR": data_dir,
-        "ALERTS_DIR": alerts_dir,
-        "EDGEWARN_ALERTS_DIR": edgewarn_alerts_dir,
-        "EDGEWARN_ALERTS_IDS_DIR": edgewarn_alerts_dir / "ids",
-        "EDGEWARN_ALERTS_TS_DIR": edgewarn_alerts_dir / "timestamps",
-        "MRMS_NWS_RAW_DIR": data_dir / "NWS_Raw",
-        "MRMS_NWS_DIR": official_alerts_dir,
-        "MRMS_NWS_IDS_DIR": official_alerts_dir / "ids",
-        "MRMS_NWS_TS_DIR": official_alerts_dir / "timestamps",
-        "NWS_REGISTRY_PATH": official_alerts_dir / "alerts_registry.json",
-        "MRMS_RALA_DIR": data_dir / "RALA",
-        "MRMS_CGFLASH_DIR": data_dir / "NLDN",
-        "MRMS_NLDN_DIR": data_dir / "NLDN_Density",
-        "MRMS_ECHOTOP18_DIR": data_dir / "EchoTop18",
-        "MRMS_ECHOTOP30_DIR": data_dir / "EchoTop30",
-        "MRMS_QPE_DIR": data_dir / "QPE_01H",
-        "MRMS_RAIN_DIR": data_dir / "WarmRainProbability",
-        "MRMS_PRECIPRATE_DIR": data_dir / "PrecipRate",
-        "MRMS_PROBSEVERE_DIR": data_dir / "ProbSevere",
-        "MRMS_FLASH_CREST_MAXUNIT_DIR": data_dir / "FLASH_CREST_MAXUNIT",
-        "MRMS_FLASH_ARIMAX_DIR": data_dir / "FLASH_ARIMAX",
-        "MRMS_FLASH_ARI30M_DIR": data_dir / "FLASH_ARI30M",
-        "MRMS_FLASH_ARI01H_DIR": data_dir / "FLASH_ARI01H",
-        "MRMS_FLASH_HP_MAXUNIT_DIR": data_dir / "FLASH_HP_MAXUNIT",
-        "MRMS_FLASH_SAC_MAXSOIL_DIR": data_dir / "FLASH_SAC_MAXSOIL",
-        "MRMS_FLASH_FFGMAX_DIR": data_dir / "FLASH_FFGMAX",
-        "MRMS_RQI_DIR": data_dir / "RadarQualityIndex",
-        "MRMS_DVIL_DIR": data_dir / "VILDensity",
-        "MRMS_VIL_DIR": data_dir / "VIL",
-        "MRMS_VII_DIR": data_dir / "VII",
-        "MRMS_AZSHEARLOW_DIR": data_dir / "AzShearLow",
-        "MRMS_AZSHEARMID_DIR": data_dir / "AzShearMid",
-        "MRMS_COMPOSITE_DIR": data_dir / "CompRefQC",
-        "MRMS_REF_0C_DIR": data_dir / "Ref0C",
-        "MRMS_REFM5C_DIR": data_dir / "RefM5C",
-        "MRMS_REFM15C_DIR": data_dir / "RefM15C",
-        "MRMS_RHOHV_DIR": data_dir / "RhoHV",
-        "MRMS_PRECIPTYP_DIR": data_dir / "PrecipFlag",
-        "MRMS_MESH_DIR": data_dir / "MESH",
-        "GOES_GLM_DIR": data_dir / "GLM",
-        "RAP_DIR": data_dir / "RAP",
-        "STORMCELL_DIR": data_dir / "stormcells",
-        "CELL_DIR": data_dir / "cells",
-        "METAR_DIR": data_dir / "METAR",
-        "SURFACE_DIR": data_dir / "surface_features",
-        "FLASH_FLOOD_DIR": data_dir / "FlashFlood",
-    }
 
-
-def _define_paths(base_path):
-    global BASE_DIR
-    globals().update(_build_edgewarn_paths(Path(base_path)))
+    BASE_DIR = base_path
+    DATA_DIR = data_dir
+    ALERTS_DIR = alerts_dir
+    EDGEWARN_ALERTS_DIR = edgewarn_alerts_dir
+    EDGEWARN_ALERTS_IDS_DIR = edgewarn_alerts_dir / "ids"
+    EDGEWARN_ALERTS_TS_DIR = edgewarn_alerts_dir / "timestamps"
+    MRMS_NWS_RAW_DIR = data_dir / "NWS_Raw"
+    MRMS_NWS_DIR = official_alerts_dir
+    MRMS_NWS_IDS_DIR = official_alerts_dir / "ids"
+    MRMS_NWS_TS_DIR = official_alerts_dir / "timestamps"
+    NWS_REGISTRY_PATH = official_alerts_dir / "alerts_registry.json"
+    MRMS_RALA_DIR = data_dir / "RALA"
+    MRMS_CGFLASH_DIR = data_dir / "NLDN"
+    MRMS_NLDN_DIR = data_dir / "NLDN_Density"
+    MRMS_ECHOTOP18_DIR = data_dir / "EchoTop18"
+    MRMS_ECHOTOP30_DIR = data_dir / "EchoTop30"
+    MRMS_QPE_DIR = data_dir / "QPE_01H"
+    MRMS_RAIN_DIR = data_dir / "WarmRainProbability"
+    MRMS_PRECIPRATE_DIR = data_dir / "PrecipRate"
+    MRMS_PROBSEVERE_DIR = data_dir / "ProbSevere"
+    MRMS_FLASH_CREST_MAXUNIT_DIR = data_dir / "FLASH_CREST_MAXUNIT"
+    MRMS_FLASH_ARIMAX_DIR = data_dir / "FLASH_ARIMAX"
+    MRMS_FLASH_ARI30M_DIR = data_dir / "FLASH_ARI30M"
+    MRMS_FLASH_ARI01H_DIR = data_dir / "FLASH_ARI01H"
+    MRMS_FLASH_HP_MAXUNIT_DIR = data_dir / "FLASH_HP_MAXUNIT"
+    MRMS_FLASH_SAC_MAXSOIL_DIR = data_dir / "FLASH_SAC_MAXSOIL"
+    MRMS_FLASH_FFGMAX_DIR = data_dir / "FLASH_FFGMAX"
+    MRMS_RQI_DIR = data_dir / "RadarQualityIndex"
+    MRMS_DVIL_DIR = data_dir / "VILDensity"
+    MRMS_VIL_DIR = data_dir / "VIL"
+    MRMS_VII_DIR = data_dir / "VII"
+    MRMS_AZSHEARLOW_DIR = data_dir / "AzShearLow"
+    MRMS_AZSHEARMID_DIR = data_dir / "AzShearMid"
+    MRMS_COMPOSITE_DIR = data_dir / "CompRefQC"
+    MRMS_REF_0C_DIR = data_dir / "Ref0C"
+    MRMS_REFM5C_DIR = data_dir / "RefM5C"
+    MRMS_REFM15C_DIR = data_dir / "RefM15C"
+    MRMS_RHOHV_DIR = data_dir / "RhoHV"
+    MRMS_PRECIPTYP_DIR = data_dir / "PrecipFlag"
+    MRMS_MESH_DIR = data_dir / "MESH"
+    GOES_GLM_DIR = data_dir / "GLM"
+    RAP_DIR = data_dir / "RAP"
+    STORMCELL_DIR = data_dir / "stormcells"
+    CELL_DIR = data_dir / "cells"
+    METAR_DIR = data_dir / "METAR"
+    SURFACE_DIR = data_dir / "surface_features"
+    FLASH_FLOOD_DIR = data_dir / "FlashFlood"
 
 
 def initialize_filesystem(base_dir=None):

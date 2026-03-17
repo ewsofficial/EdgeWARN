@@ -24,57 +24,6 @@ def _find_existing_path(candidates, missing_message=None):
     return Path(candidates[0]) if candidates else Path(".")
 
 
-def _build_ewmrs_paths(base_path: Path) -> dict:
-    data_dir = base_path / "data"
-    gui_dir = base_path / "gui"
-    return {
-        "BASE_DIR": base_path,
-        "DATA_DIR": data_dir,
-        "GUI_DIR": gui_dir,
-        "MRMS_RALA_DIR": data_dir / "RALA",
-        "MRMS_CGFLASH_DIR": data_dir / "NLDN",
-        "MRMS_NLDN_DIR": data_dir / "NLDN_Density",
-        "MRMS_ECHOTOP18_DIR": data_dir / "EchoTop18",
-        "MRMS_ECHOTOP30_DIR": data_dir / "EchoTop30",
-        "MRMS_QPE_DIR": data_dir / "QPE_01H",
-        "MRMS_RAIN_DIR": data_dir / "WarmRainProbability",
-        "MRMS_PRECIPRATE_DIR": data_dir / "PrecipRate",
-        "MRMS_PROBSEVERE_DIR": data_dir / "ProbSevere",
-        "MRMS_FLASH_DIR": data_dir / "FLASH",
-        "MRMS_VIL_DIR": data_dir / "VILDensity",
-        "MRMS_VII_DIR": data_dir / "VII",
-        "MRMS_ROTATIONT_DIR": data_dir / "RotationTrack30min",
-        "MRMS_COMPOSITE_DIR": data_dir / "CompRefQC",
-        "MRMS_RHOHV_DIR": data_dir / "RhoHV",
-        "MRMS_PRECIPTYP_DIR": data_dir / "PrecipFlag",
-        "MRMS_MESH_DIR": data_dir / "MESH",
-        "MRMS_AZSHEARLOW_DIR": data_dir / "AzShearLow",
-        "MRMS_AZSHEARMID_DIR": data_dir / "AzShearMid",
-        "GOES_GLM_DIR": data_dir / "GLM",
-        "STORMCELL_JSON": data_dir / "stormcells.json",
-        "WPC_DIR": base_path / "wpc",
-        "WPC_SFC_DIR": base_path / "wpc" / "surface_analysis",
-        "GUI_RALA_DIR": gui_dir / "RALA",
-        "GUI_NLDN_DIR": gui_dir / "NLDN",
-        "GUI_ECHOTOP18_DIR": gui_dir / "EchoTop18",
-        "GUI_ECHOTOP30_DIR": gui_dir / "EchoTop30",
-        "GUI_QPE_DIR": gui_dir / "QPE_01H",
-        "GUI_AZSHEARLOW_DIR": gui_dir / "AzShearLow",
-        "GUI_AZSHEARMID_DIR": gui_dir / "AzShearMid",
-        "GUI_PRECIPRATE_DIR": gui_dir / "PrecipRate",
-        "GUI_PROBSEVERE_DIR": gui_dir / "ProbSevere",
-        "GUI_FLASH_DIR": gui_dir / "FLASH",
-        "GUI_VIL_DIR": gui_dir / "VILDensity",
-        "GUI_VII_DIR": gui_dir / "VII",
-        "GUI_ROTATIONT_DIR": gui_dir / "RotationTrack30min",
-        "GUI_COMPOSITE_DIR": gui_dir / "CompRefQC",
-        "GUI_RHOHV_DIR": gui_dir / "RhoHV",
-        "GUI_PRECIPTYP_DIR": gui_dir / "PrecipFlag",
-        "GUI_MAP_DIR": gui_dir / "maps",
-        "GUI_MANIFEST_JSON": gui_dir / "overlay_manifest.json",
-    }
-
-
 def _refresh_colormap_path():
     global GUI_COLORMAP_JSON
     GUI_COLORMAP_JSON = _find_existing_path([
@@ -87,8 +36,70 @@ def _refresh_colormap_path():
 
 
 def _init_paths():
-    globals().update(_build_ewmrs_paths(BASE_DIR))
+    _init_paths_base(Path(BASE_DIR))
     _refresh_colormap_path()
+
+
+def _init_paths_base(base_path: Path):
+    global BASE_DIR
+    BASE_DIR = Path(base_path)
+    data_dir = BASE_DIR / "data"
+    gui_dir = BASE_DIR / "gui"
+
+    global DATA_DIR, GUI_DIR
+    global MRMS_RALA_DIR, MRMS_CGFLASH_DIR, MRMS_NLDN_DIR, MRMS_ECHOTOP18_DIR, MRMS_ECHOTOP30_DIR
+    global MRMS_QPE_DIR, MRMS_RAIN_DIR, MRMS_PRECIPRATE_DIR, MRMS_PROBSEVERE_DIR, MRMS_FLASH_DIR
+    global MRMS_VIL_DIR, MRMS_VII_DIR, MRMS_ROTATIONT_DIR, MRMS_COMPOSITE_DIR, MRMS_RHOHV_DIR
+    global MRMS_PRECIPTYP_DIR, MRMS_MESH_DIR, MRMS_AZSHEARLOW_DIR, MRMS_AZSHEARMID_DIR
+    global GOES_GLM_DIR, STORMCELL_JSON, WPC_DIR, WPC_SFC_DIR
+    global GUI_RALA_DIR, GUI_NLDN_DIR, GUI_ECHOTOP18_DIR, GUI_ECHOTOP30_DIR, GUI_QPE_DIR
+    global GUI_AZSHEARLOW_DIR, GUI_AZSHEARMID_DIR, GUI_PRECIPRATE_DIR, GUI_PROBSEVERE_DIR, GUI_FLASH_DIR
+    global GUI_VIL_DIR, GUI_VII_DIR, GUI_ROTATIONT_DIR, GUI_COMPOSITE_DIR, GUI_RHOHV_DIR, GUI_PRECIPTYP_DIR
+    global GUI_MAP_DIR, GUI_MANIFEST_JSON
+
+    DATA_DIR = data_dir
+    GUI_DIR = gui_dir
+    MRMS_RALA_DIR = data_dir / "RALA"
+    MRMS_CGFLASH_DIR = data_dir / "NLDN"
+    MRMS_NLDN_DIR = data_dir / "NLDN_Density"
+    MRMS_ECHOTOP18_DIR = data_dir / "EchoTop18"
+    MRMS_ECHOTOP30_DIR = data_dir / "EchoTop30"
+    MRMS_QPE_DIR = data_dir / "QPE_01H"
+    MRMS_RAIN_DIR = data_dir / "WarmRainProbability"
+    MRMS_PRECIPRATE_DIR = data_dir / "PrecipRate"
+    MRMS_PROBSEVERE_DIR = data_dir / "ProbSevere"
+    MRMS_FLASH_DIR = data_dir / "FLASH"
+    MRMS_VIL_DIR = data_dir / "VILDensity"
+    MRMS_VII_DIR = data_dir / "VII"
+    MRMS_ROTATIONT_DIR = data_dir / "RotationTrack30min"
+    MRMS_COMPOSITE_DIR = data_dir / "CompRefQC"
+    MRMS_RHOHV_DIR = data_dir / "RhoHV"
+    MRMS_PRECIPTYP_DIR = data_dir / "PrecipFlag"
+    MRMS_MESH_DIR = data_dir / "MESH"
+    MRMS_AZSHEARLOW_DIR = data_dir / "AzShearLow"
+    MRMS_AZSHEARMID_DIR = data_dir / "AzShearMid"
+    GOES_GLM_DIR = data_dir / "GLM"
+    STORMCELL_JSON = data_dir / "stormcells.json"
+    WPC_DIR = BASE_DIR / "wpc"
+    WPC_SFC_DIR = WPC_DIR / "surface_analysis"
+    GUI_RALA_DIR = gui_dir / "RALA"
+    GUI_NLDN_DIR = gui_dir / "NLDN"
+    GUI_ECHOTOP18_DIR = gui_dir / "EchoTop18"
+    GUI_ECHOTOP30_DIR = gui_dir / "EchoTop30"
+    GUI_QPE_DIR = gui_dir / "QPE_01H"
+    GUI_AZSHEARLOW_DIR = gui_dir / "AzShearLow"
+    GUI_AZSHEARMID_DIR = gui_dir / "AzShearMid"
+    GUI_PRECIPRATE_DIR = gui_dir / "PrecipRate"
+    GUI_PROBSEVERE_DIR = gui_dir / "ProbSevere"
+    GUI_FLASH_DIR = gui_dir / "FLASH"
+    GUI_VIL_DIR = gui_dir / "VILDensity"
+    GUI_VII_DIR = gui_dir / "VII"
+    GUI_ROTATIONT_DIR = gui_dir / "RotationTrack30min"
+    GUI_COMPOSITE_DIR = gui_dir / "CompRefQC"
+    GUI_RHOHV_DIR = gui_dir / "RhoHV"
+    GUI_PRECIPTYP_DIR = gui_dir / "PrecipFlag"
+    GUI_MAP_DIR = gui_dir / "maps"
+    GUI_MANIFEST_JSON = gui_dir / "overlay_manifest.json"
 
 
 def set_base_dir(path):
