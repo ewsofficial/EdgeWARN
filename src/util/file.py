@@ -149,7 +149,18 @@ def latest_files(directory, count):
     if not directory.exists():
         _log("write_warning", f"{directory} doesn't exist!")
         return None
-    files = sorted([f for f in directory.glob("*") if f.is_file() and f.suffix.lower() != ".idx"], key=lambda f: f.stat().st_mtime)
+
+    files = []
+    for file_path in directory.glob("*"):
+        if not file_path.is_file() or file_path.suffix.lower() == ".idx":
+            continue
+
+        if file_path.suffix.lower() == ".gz" and file_path.with_suffix("").exists():
+            continue
+
+        files.append(file_path)
+
+    files.sort(key=lambda f: (f.stat().st_mtime, f.suffix.lower() == ".gz"))
     return [str(f) for f in files[-count:]]
 
 

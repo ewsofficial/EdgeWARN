@@ -82,16 +82,6 @@ async def run_tandem_ingest_cycle(
             max_entries,
         )
     )
-    ewmrs_task = asyncio.create_task(
-        _safe_ingest(
-            "EWMRS MRMS",
-            log,
-            mrms_ingest.download_ewmrs_files_async,
-            mrms_ingest.download_all_files,
-            dt,
-            max_entries,
-        )
-    )
     mrms_integration_task = asyncio.create_task(
         _safe_ingest(
             "MRMS Integration",
@@ -130,11 +120,11 @@ async def run_tandem_ingest_cycle(
     if on_detection_ready is not None:
         on_detection_ready(state)
 
-    ewmrs_ok = await ewmrs_task
-    if not ewmrs_ok:
-        state.errors["ewmrs_mrms_ingest"] = "EWMRS render MRMS inputs unavailable"
+    mrms_integration_ok = await mrms_integration_task
+    if not mrms_integration_ok:
+        state.errors["mrms_integration_ingest"] = "MRMS integration inputs unavailable"
 
-    state.ewmrs_inputs_ready = detection_ok and ewmrs_ok
+    state.ewmrs_inputs_ready = detection_ok and mrms_integration_ok
     if not state.ewmrs_inputs_ready:
         state.errors.setdefault(
             "ewmrs_ingest",
@@ -142,10 +132,6 @@ async def run_tandem_ingest_cycle(
         )
     if on_ewmrs_ready is not None:
         on_ewmrs_ready(state)
-
-    mrms_integration_ok = await mrms_integration_task
-    if not mrms_integration_ok:
-        state.errors["mrms_integration_ingest"] = "MRMS integration inputs unavailable"
 
     goes_ok, rap_ok = await asyncio.gather(goes_task, rap_task)
     if not goes_ok:

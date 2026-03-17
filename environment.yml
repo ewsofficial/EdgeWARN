@@ -18,6 +18,7 @@ dependencies:
   - rasterio
   - xarray
   - pyproj
+  - proj
   - psutil
   - ijson
   - pip:
