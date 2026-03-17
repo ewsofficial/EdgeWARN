@@ -8,8 +8,8 @@ from typing import Optional, Tuple
 from pathlib import Path
 
 from EWMRS.ingest.wpc.config import WPC_CODED_SFC_BASE_URL, VALID_HOURS
-from EWMRS.util.file import WPC_SFC_DIR
-from EWMRS.util.io import IOManager
+from util.ewmrs_file import WPC_SFC_DIR
+from util.io import IOManager
 
 io_manager = IOManager("[WPC]")
 

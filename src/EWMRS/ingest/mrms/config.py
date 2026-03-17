@@ -1,5 +1,5 @@
 
-import EWMRS.util.file as fs
+import util.ewmrs_file as fs
 
 bucket = "noaa-mrms-pds"
 goes_bucket = "noaa-goes19"

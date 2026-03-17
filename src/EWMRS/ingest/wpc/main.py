@@ -13,7 +13,7 @@ from EWMRS.ingest.wpc.downloader import (
     get_output_filepath,
     get_latest_output_filepath
 )
-from EWMRS.util.io import IOManager
+from util.io import IOManager
 
 io_manager = IOManager("[WPC]")
 
@@ -85,7 +85,7 @@ def run_wpc_ingest(log_queue=None):
         log_queue: Optional multiprocessing Queue for logging
     """
     import sys
-    from EWMRS.util.io import QueueWriter
+    from util.io import QueueWriter
     
     # Redirect output to queue if provided
     if log_queue is not None:

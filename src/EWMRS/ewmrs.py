@@ -18,8 +18,8 @@ from EWMRS.ingest.wpc.main import run_wpc_ingest
 from EWMRS.render.tools import TransformUtils
 from EWMRS.render.render import GUILayerRenderer
 from EWMRS.render.config import file_list
-from EWMRS.util import file as fs
-from EWMRS.util.io import IOManager, TimestampedOutput, QueueWriter
+import util.ewmrs_file as fs
+from util.io import IOManager, TimestampedOutput, QueueWriter
 from EWMRS.scheduler import MRMSUpdateChecker
 from EWMRS.ingest.mrms.config import get_check_modifiers
 check_modifiers = get_check_modifiers()
@@ -53,7 +53,7 @@ def _render_layer(layer):
     """
     from EWMRS.render.tools import TransformUtils
     from EWMRS.render.render import GUILayerRenderer
-    from EWMRS.util.io import IOManager
+    from util.io import IOManager
     
     io_mgr = IOManager("[Pipeline]")
     

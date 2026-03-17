@@ -6,8 +6,8 @@ from EWMRS.ingest.mrms.downloader import (
     download_all_goes_files_async
 )
 from common.ingest.mrms.pipeline import get_output_dirs, run_ingestion_pipeline, run_with_async_fallback
-from EWMRS.util.io import IOManager
-import EWMRS.util.file as fs
+from util.io import IOManager
+import util.ewmrs_file as fs
 
 io_manager = IOManager("[Ingest]")
 
