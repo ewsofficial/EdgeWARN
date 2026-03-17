@@ -18,10 +18,14 @@ from common.ingest.wpc.main import run_wpc_ingest
 from EWMRS.render.tools import TransformUtils
 from EWMRS.render.render import GUILayerRenderer
 from EWMRS.render.config import file_list
-import util.ewmrs_file as fs
+import util.file as fs
 from util.io import IOManager, TimestampedOutput, QueueWriter
 from EWMRS.scheduler import MRMSUpdateChecker
 from common.ingest.mrms.config import get_check_modifiers
+
+EWMRS_COLORMAP_JSON = Path(__file__).resolve().with_name("colormaps.json")
+fs.GUI_COLORMAP_JSON = EWMRS_COLORMAP_JSON
+
 check_modifiers = get_check_modifiers()
 
 # Timestamp outputs globally

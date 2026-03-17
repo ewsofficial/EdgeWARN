@@ -1,6 +1,6 @@
 """Configuration for WPC Surface Analysis ingestion."""
 
-from util.ewmrs_file import BASE_DIR, WPC_DIR, WPC_SFC_DIR
+from util.file import BASE_DIR, WPC_DIR, WPC_SFC_DIR
 
 # Base URL for WPC coded surface data
 WPC_CODED_SFC_BASE_URL = "https://ftp.wpc.ncep.noaa.gov/coded_sfc"

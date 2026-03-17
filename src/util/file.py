@@ -16,6 +16,17 @@ def _log(method, message):
         getattr(io_manager, method)(message)
 
 
+def _find_existing_path(candidates, missing_message=None):
+    for candidate in candidates:
+        candidate_path = Path(candidate)
+        if candidate_path.exists():
+            io_manager.write_debug(f"Using path: {candidate_path}")
+            return candidate_path
+    if missing_message:
+        io_manager.write_warning(missing_message)
+    return Path(candidates[0]) if candidates else Path(".")
+
+
 def _define_paths(base_path):
     global BASE_DIR
     global DATA_DIR, ALERTS_DIR
@@ -30,9 +41,15 @@ def _define_paths(base_path):
     global MRMS_REF_0C_DIR, MRMS_REFM5C_DIR, MRMS_REFM15C_DIR
     global MRMS_RHOHV_DIR, MRMS_PRECIPTYP_DIR, MRMS_MESH_DIR
     global GOES_GLM_DIR, RAP_DIR, STORMCELL_DIR, CELL_DIR, METAR_DIR, SURFACE_DIR, FLASH_FLOOD_DIR
+    global GUI_DIR, GUI_RALA_DIR, GUI_NLDN_DIR, GUI_ECHOTOP18_DIR, GUI_ECHOTOP30_DIR, GUI_QPE_DIR
+    global GUI_AZSHEARLOW_DIR, GUI_AZSHEARMID_DIR, GUI_PRECIPRATE_DIR, GUI_PROBSEVERE_DIR, GUI_FLASH_DIR
+    global GUI_VIL_DIR, GUI_VII_DIR, GUI_ROTATIONT_DIR, GUI_COMPOSITE_DIR, GUI_RHOHV_DIR, GUI_PRECIPTYP_DIR
+    global GUI_MAP_DIR, GUI_MANIFEST_JSON, GUI_COLORMAP_JSON
+    global WPC_DIR, WPC_SFC_DIR, STORMCELL_JSON
 
     base_path = Path(base_path)
     data_dir = base_path / "data"
+    gui_dir = base_path / "gui"
     alerts_dir = data_dir / "Alerts"
     edgewarn_alerts_dir = alerts_dir / "EdgeWARN"
     official_alerts_dir = alerts_dir / "official"
@@ -84,6 +101,33 @@ def _define_paths(base_path):
     METAR_DIR = data_dir / "METAR"
     SURFACE_DIR = data_dir / "surface_features"
     FLASH_FLOOD_DIR = data_dir / "FlashFlood"
+    GUI_DIR = gui_dir
+    GUI_RALA_DIR = gui_dir / "RALA"
+    GUI_NLDN_DIR = gui_dir / "NLDN"
+    GUI_ECHOTOP18_DIR = gui_dir / "EchoTop18"
+    GUI_ECHOTOP30_DIR = gui_dir / "EchoTop30"
+    GUI_QPE_DIR = gui_dir / "QPE_01H"
+    GUI_AZSHEARLOW_DIR = gui_dir / "AzShearLow"
+    GUI_AZSHEARMID_DIR = gui_dir / "AzShearMid"
+    GUI_PRECIPRATE_DIR = gui_dir / "PrecipRate"
+    GUI_PROBSEVERE_DIR = gui_dir / "ProbSevere"
+    GUI_FLASH_DIR = gui_dir / "FLASH"
+    GUI_VIL_DIR = gui_dir / "VILDensity"
+    GUI_VII_DIR = gui_dir / "VII"
+    GUI_ROTATIONT_DIR = gui_dir / "RotationTrack30min"
+    GUI_COMPOSITE_DIR = gui_dir / "CompRefQC"
+    GUI_RHOHV_DIR = gui_dir / "RhoHV"
+    GUI_PRECIPTYP_DIR = gui_dir / "PrecipFlag"
+    GUI_MAP_DIR = gui_dir / "maps"
+    GUI_MANIFEST_JSON = gui_dir / "overlay_manifest.json"
+    WPC_DIR = base_path / "wpc"
+    WPC_SFC_DIR = WPC_DIR / "surface_analysis"
+    STORMCELL_JSON = data_dir / "stormcells.json"
+    GUI_COLORMAP_JSON = _find_existing_path([
+        Path.cwd() / "colormaps.json",
+        Path(__file__).resolve().parents[1] / "EWMRS" / "colormaps.json",
+        gui_dir / "colormaps.json",
+    ], missing_message="colormaps.json not found in common locations; using relative path 'colormaps.json'")
 
 
 def initialize_filesystem(base_dir=None):
