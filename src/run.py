@@ -1,33 +1,18 @@
-import os
 import sys
-import json
 import re
-from pathlib import Path
 from datetime import datetime, timezone
 import time
 import multiprocessing
 import asyncio
-import xarray as xr
-# Suppress cfgrib/xarray compatibility warnings
-xr.set_options(use_new_combine_kwarg_defaults=True)
 
 import util.file as fs
-import EdgeWARN.core.ingest.mrms.main as ingest_main
-from EdgeWARN.core.ingest.mrms.downloader import download_all_goes_files_async, download_all_goes_files
-from EdgeWARN.core.ingest.synoptic.main import download_rap, download_rap_async
-import EdgeWARN.core.ingest.nws.main as nws_ingest
-import EdgeWARN.core.ingest.metar as metar_ingest
-import EdgeWARN.core.process.detect.main as detect
-import EdgeWARN.core.process.integrate.main as integration
+import common.ingest.nws.main as nws_ingest
+import common.ingest.metar as metar_ingest
+from EdgeWARN import initialize_runtime, realtime_pipeline
 from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
-from EdgeWARN.core.ingest.mrms.config import get_check_modifiers
+from common.ingest.mrms.config import get_check_modifiers
 import EdgeWARN.ui.monitor_app as monitor_app
 from util.io import TimestampedOutput, IOManager, QueueWriter
-from EdgeWARN.core.api_integration.index_manager import APIIndexManager
-from util.performance import tracker as perf_tracker
-
-# Remove aiodns - Some users report issues with DNS resolution with it
-sys.modules.pop("aiodns", None)
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
@@ -38,136 +23,7 @@ args = io_manager.get_args()
 lat_limits = tuple(args.lat_limits)
 lon_limits = tuple(args.lon_limits)
 
-# Initialize custom filesystem if provided
-if args.base_dir:
-    fs.initialize_filesystem(args.base_dir)
-
-# Initialize API indexes at startup
-try:
-    index_manager = APIIndexManager(io_manager)
-    index_manager.initialize_indexes()
-except Exception as e:
-    io_manager.write_error(f"Failed to initialize API indexes: {e}")
-
-def pipeline(log_queue, dt, profile=False):
-    """Run the full ingestion → detection → integration pipeline once, logging to queue."""
-    # Redirect stdout/stderr to the queue for this process
-    sys.stdout = QueueWriter(log_queue)
-    sys.stderr = QueueWriter(log_queue)
-
-    def log(msg):
-        log_queue.put(f"{msg}")
-
-    perf_tracker.reset()
-    perf_tracker.start("Total Pipeline")
-
-    async def run_pipeline_async():
-        log(f"INFO: Starting Async Data Ingestion for timestamp {dt}")
-        
-        async def safe_ingest(task_name, async_func, sync_fallback, *args):
-            try:
-                if asyncio.iscoroutinefunction(async_func):
-                    await async_func(*args)
-                else:
-                    await async_func(*args)
-                log(f"INFO: Async {task_name} ingestion successful")
-                return True
-            except Exception as e:
-                log(f"WARN: Async {task_name} ingestion failed: {e}. Falling back to sync.")
-                try:
-                    sync_fallback(*args)
-                    log(f"INFO: Sync fallback for {task_name} successful")
-                    return True
-                except Exception as ef:
-                    log(f"ERROR: Both async and sync ingestion failed for {task_name}: {ef}")
-                    return False
-
-        # 1. Start all downloads concurrently
-        perf_tracker.start("Ingestion - Detection Files")
-        detection_task = asyncio.create_task(
-            safe_ingest("MRMS Detection", ingest_main.download_detection_files_async, ingest_main.download_all_files, dt)
-        )
-        
-        integration_tasks = [
-            asyncio.create_task(safe_ingest("MRMS Integration", ingest_main.download_integration_files_async, ingest_main.download_all_files, dt)),
-            asyncio.create_task(safe_ingest("GOES", download_all_goes_files_async, download_all_goes_files, dt, 10, 3)),
-            asyncio.create_task(safe_ingest("RAP", download_rap_async, download_rap, dt))
-        ]
-
-        # 2. Await strictly necessary detection files
-        await detection_task
-        perf_tracker.stop("Ingestion - Detection Files")
-
-        # 3. Storm Cell Detection (Run in thread to not block async background downloads)
-        log("INFO: Starting Storm Cell Detection")
-        perf_tracker.start("Detection")
-        
-        def run_detect_sync():
-            try:
-                filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2) 
-                ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
-                pt_old, pt_new = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 2)
-            except (RuntimeError, ValueError):
-                io_manager.write_debug("Not enough files for tracking, falling back to single-frame mode")
-                try:
-                    comp_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)
-                    filepath_old = comp_files[-1] if comp_files else None
-                    filepath_new = None
-                    
-                    ps_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
-                    ps_old = ps_files[-1] if ps_files else None
-                    ps_new = None
-                    
-                    pt_files = fs.latest_files(fs.MRMS_PRECIPTYP_DIR, 1)
-                    pt_old = pt_files[-1] if pt_files else None
-                    pt_new = None
-                except Exception as e:
-                    log(f"ERROR: Failed to prepare single-frame fallback: {e}")
-                    return None
-            
-            generated_file, _ = detect.main(filepath_old, filepath_new, ps_old, ps_new, pt_old, pt_new, lat_limits, lon_limits, Path("stormcell_test.json"))
-            return generated_file
-
-        generated_file = await asyncio.to_thread(run_detect_sync)
-        perf_tracker.stop("Detection")
-
-        if not generated_file:
-            log("ERROR: Detection failed to generate a file, skipping integration.")
-            return
-
-        # 4. Await remaining integration files
-        perf_tracker.start("Ingestion - Integration Files (Wait)")
-        await asyncio.gather(*integration_tasks, return_exceptions=True)
-        perf_tracker.stop("Ingestion - Integration Files (Wait)")
-
-        # 5. Integration Phase
-        perf_tracker.start("Integration")
-        await asyncio.to_thread(integration.main, generated_file)
-        perf_tracker.stop("Integration")
-
-    try:
-        asyncio.run(run_pipeline_async())
-        
-        perf_tracker.stop("Total Pipeline")
-        log("Pipeline completed successfully")
-        
-        if profile:
-            import io
-            summary_buffer = io.StringIO()
-            
-            summary_buffer.write("\n" + "="*50 + "\n")
-            summary_buffer.write(f"{'Component':<35} | {'Time (s)':<10}\n")
-            summary_buffer.write("-" * 50 + "\n")
-            for name, duration in perf_tracker.get_timings().items():
-                summary_buffer.write(f"{name:<35} | {duration:.4f}\n")
-            summary_buffer.write("="*50 + "\n")
-            
-            log(summary_buffer.getvalue())
-            
-    except Exception as e:
-        import traceback
-        log(f"Error in pipeline: {e}")
-        log(traceback.format_exc())
+initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
 
 def metar_loop(ui_process=None):
     from datetime import timedelta
@@ -300,7 +156,10 @@ def main(ui_process=None):
                 log_queue = multiprocessing.Queue()
 
                 # Spawn the pipeline process
-                proc = multiprocessing.Process(target=pipeline, args=(log_queue, dt, args.profile))
+                proc = multiprocessing.Process(
+                    target=realtime_pipeline,
+                    args=(log_queue, dt, lat_limits, lon_limits, args.profile),
+                )
                 proc.start()
                 print(f"Spawned pipeline process PID={proc.pid} for {dt}")
 
