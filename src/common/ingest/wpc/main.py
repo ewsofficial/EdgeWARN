@@ -5,10 +5,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, Dict
 
-from EWMRS.ingest.wpc.config import WPC_SFC_DIR
-from EWMRS.ingest.wpc.parser import parse_coded_surface
-from EWMRS.ingest.wpc.converter import parsed_to_geojson, save_geojson
-from EWMRS.ingest.wpc.downloader import (
+from common.ingest.wpc.config import WPC_SFC_DIR
+from common.ingest.wpc.parser import parse_coded_surface
+from common.ingest.wpc.converter import parsed_to_geojson, save_geojson
+from common.ingest.wpc.downloader import (
     download_coded_surface,
     get_output_filepath,
     get_latest_output_filepath

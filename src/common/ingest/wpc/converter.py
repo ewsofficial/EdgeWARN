@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Optional
 
-from EWMRS.ingest.wpc.config import FEATURE_TYPES
+from common.ingest.wpc.config import FEATURE_TYPES
 
 
 def coords_to_geojson_linestring(coords: List[Tuple[float, float]]) -> List[List[float]]:
