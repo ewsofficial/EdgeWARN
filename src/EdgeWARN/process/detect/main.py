@@ -1,11 +1,11 @@
-from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
+from EdgeWARN.process.detect.tools.utils import DetectionDataHandler
 from pathlib import Path
-from EdgeWARN.core.process.detect.tools.save import CellDataSaver
-from EdgeWARN.core.process.detect.tools.vecmath import StormVectorCalculator
-from EdgeWARN.core.process.detect.tools.alert_matcher import match_alerts_to_cells
-from EdgeWARN.core.process.detect.track import StormCellTracker
-from EdgeWARN.core.process.detect.kalman.config import TrackingConfig, AssignmentConfig
-from EdgeWARN.core.process.detect.detect import detect_cells
+from EdgeWARN.process.detect.tools.save import CellDataSaver
+from EdgeWARN.process.detect.tools.vecmath import StormVectorCalculator
+from EdgeWARN.process.detect.tools.alert_matcher import match_alerts_to_cells
+from EdgeWARN.process.detect.track import StormCellTracker
+from EdgeWARN.process.detect.kalman.config import TrackingConfig, AssignmentConfig
+from EdgeWARN.process.detect.detect import detect_cells
 from util.io import IOManager
 import util.file as fs
 import json as js
@@ -347,7 +347,7 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
     
     # Update API stormcell index
     try:
-        from EdgeWARN.core.api_integration.index_manager import APIIndexManager
+        from EdgeWARN.api_integration.index_manager import APIIndexManager
         api_index = APIIndexManager(io_manager)
         api_index.update_stormcell_index(final_ts)
     except Exception as e:

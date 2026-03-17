@@ -15,7 +15,7 @@ Key Components:
 - AssignmentCostCalculator: Cost function for track-detection assignment
 
 Usage:
-    from EdgeWARN.core.process.detect.kalman import KalmanFilter, ConfidenceCalculator
+    from EdgeWARN.process.detect.kalman import KalmanFilter, ConfidenceCalculator
     
     # Initialize filter from storm cell
     kf = KalmanFilter()
@@ -25,7 +25,7 @@ Usage:
     predicted_state = kf.predict(dt=120.0)  # 2 minutes
     
     # Update with observation
-    from EdgeWARN.core.process.detect.kalman import KalmanObservation
+    from EdgeWARN.process.detect.kalman import KalmanObservation
     obs = KalmanObservation(lat=33.5, lon=-97.2)
     updated_state = kf.update(obs)
     

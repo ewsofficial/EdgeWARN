@@ -116,7 +116,7 @@ class CellDataSaver:
         
         Now includes Eager Scalar Extraction for MorphoWind metrics.
         """
-        from EdgeWARN.core.process.detect.tools.morphology import MorphologyEngine
+        from EdgeWARN.process.detect.tools.morphology import MorphologyEngine
         
         # CRITICAL: Use expanded_ds (the watershed result) for all attribute calculations
         polygon_grid = self.expanded_ds['PolygonID'].values

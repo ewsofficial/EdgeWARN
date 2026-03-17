@@ -1,12 +1,12 @@
 import util.file as fs
-from EdgeWARN.core.process.integrate.integrate import StormCellIntegrator
-from EdgeWARN.core.process.integrate.integrate_glm import integrate_glm
-from EdgeWARN.core.process.integrate.integrate_rap import integrate_rap
-from EdgeWARN.core.process.integrate.utils import StatFileHandler
-from EdgeWARN.core.process.detect.tools.save import CellDataSaver
+from EdgeWARN.process.integrate.integrate import StormCellIntegrator
+from EdgeWARN.process.integrate.integrate_glm import integrate_glm
+from EdgeWARN.process.integrate.integrate_rap import integrate_rap
+from EdgeWARN.process.integrate.utils import StatFileHandler
+from EdgeWARN.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
 import json
-from EdgeWARN.core.process.integrate.config import get_datasets_config
+from EdgeWARN.process.integrate.config import get_datasets_config
 from util.performance import tracker as perf_tracker
 io_manager = IOManager("[CellIntegration]")
 
@@ -114,7 +114,7 @@ def main(json_path=None, remove_old_cells=True):
     
     # Run CTAM modules (StormCast, etc.)
     try:
-        from EdgeWARN.core.ctam.run import run_ctam
+        from EdgeWARN.ctam.run import run_ctam
         io_manager.write_info(f"Running CTAM modules for {len(result_cells)} cells")
         perf_tracker.start("Integration - CTAM")
         result_cells = run_ctam(result_cells, timestamp=timestamp)
@@ -141,7 +141,7 @@ def main(json_path=None, remove_old_cells=True):
     
     # Update API indexes
     try:
-        from EdgeWARN.core.api_integration.index_manager import APIIndexManager
+        from EdgeWARN.api_integration.index_manager import APIIndexManager
         api_index = APIIndexManager(io_manager, remove_old_cells=remove_old_cells)
         
         # Update cell index with active cells (those that have timestamps)

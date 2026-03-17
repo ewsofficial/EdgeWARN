@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
-from EdgeWARN.core.ctam.interface import GridAnalysisModule
-from EdgeWARN.core.alerts.schema import AlertPayload
+from EdgeWARN.ctam.interface import GridAnalysisModule
+from EdgeWARN.alerts.schema import AlertPayload
 
 from .engine import compute_threat_grid
 from .regions import extract_regions

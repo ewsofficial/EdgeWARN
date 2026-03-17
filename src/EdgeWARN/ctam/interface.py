@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 
-from EdgeWARN.core.alerts.schema import AlertPayload
+from EdgeWARN.alerts.schema import AlertPayload
 
 
 class AnalysisModule(ABC):
