@@ -3,11 +3,11 @@ import datetime
 import time
 import concurrent.futures
 from pathlib import Path
-from EWMRS.ingest.mrms.s3_sync import FileFinder
-from EWMRS.ingest.mrms.utils import extract_timestamp
-from EWMRS.ingest.mrms.parse import parse_mrms_bucket_path
-from EWMRS.ingest.mrms.config import bucket
-from EWMRS.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
+from common.ingest.mrms.s3_sync import FileFinder
+from common.ingest.mrms.utils import extract_timestamp
+from common.ingest.mrms.parse import parse_mrms_bucket_path
+from common.ingest.mrms.config import bucket
+from common.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 from util.io import IOManager
 
 io_manager = IOManager("[DataIngestion]")
@@ -146,7 +146,7 @@ class MRMSUpdateChecker:
         """
         Try to find the common timestamp using HTTPS fallback logic.
         """
-        from EWMRS.ingest.mrms.https_client import HttpsFileFinder
+        from common.ingest.mrms.https_client import HttpsFileFinder
 
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)

@@ -13,15 +13,15 @@ from typing import Dict, Optional
 if __name__ == "__main__" and __package__ is None:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from EWMRS.ingest.mrms.main import download_all_files
-from EWMRS.ingest.wpc.main import run_wpc_ingest
+from common.ingest.mrms.main import download_all_files
+from common.ingest.wpc.main import run_wpc_ingest
 from EWMRS.render.tools import TransformUtils
 from EWMRS.render.render import GUILayerRenderer
 from EWMRS.render.config import file_list
 import util.ewmrs_file as fs
 from util.io import IOManager, TimestampedOutput, QueueWriter
 from EWMRS.scheduler import MRMSUpdateChecker
-from EWMRS.ingest.mrms.config import get_check_modifiers
+from common.ingest.mrms.config import get_check_modifiers
 check_modifiers = get_check_modifiers()
 
 # Timestamp outputs globally
