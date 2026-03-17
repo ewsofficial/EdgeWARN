@@ -5,7 +5,7 @@ Matches storm cells with active NWS alerts based on spatial intersection.
 Only includes convective and flood-related alert types.
 
 Usage:
-    from EdgeWARN.core.process.detect.tools.alert_matcher import match_alerts_to_cells
+    from EdgeWARN.process.detect.tools.alert_matcher import match_alerts_to_cells
     
     # Add alerts to cell entries
     entries_with_alerts = match_alerts_to_cells(cell_entries, registry_path)

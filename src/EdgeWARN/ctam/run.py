@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from .registry import CellModuleRegistry, GridModuleRegistry, ModuleRegistry
 from .engine import initialize_modules
-from EdgeWARN.core.alerts import AlertManager
+from EdgeWARN.alerts import AlertManager
 from .util.history_cache import CellHistoryCache
 
 # Import modules to trigger auto-registration

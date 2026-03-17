@@ -1,6 +1,6 @@
-from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
-from EdgeWARN.core.process.detect.tools.gatemapper import GateMapper
-from EdgeWARN.core.process.detect.tools.save import CellDataSaver
+from EdgeWARN.process.detect.tools.utils import DetectionDataHandler
+from EdgeWARN.process.detect.tools.gatemapper import GateMapper
+from EdgeWARN.process.detect.tools.save import CellDataSaver
 from util.io import IOManager
 import util.file as fs
 import gc

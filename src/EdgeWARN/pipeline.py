@@ -6,11 +6,11 @@ from pathlib import Path
 
 import xarray as xr
 
-import EdgeWARN.core.process.detect.main as detect
-import EdgeWARN.core.process.integrate.main as integration
+import EdgeWARN.process.detect.main as detect
+import EdgeWARN.process.integrate.main as integration
 import util.file as fs
 import common.ingest.mrms.main as ingest_main
-from EdgeWARN.core.api_integration.index_manager import APIIndexManager
+from EdgeWARN.api_integration.index_manager import APIIndexManager
 from common.ingest.mrms.downloader import (
     download_all_goes_files,
     download_all_goes_files_async,

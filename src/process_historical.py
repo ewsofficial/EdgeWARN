@@ -6,7 +6,7 @@ import argparse
 
 import common.ingest.mrms.config as mrms_config
 from EdgeWARN import historical_pipeline, initialize_runtime, parse_utc_time
-from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
+from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
 
 sys.stdout = TimestampedOutput(sys.stdout)

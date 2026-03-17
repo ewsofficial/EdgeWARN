@@ -7,7 +7,7 @@ Adapter for integrating StormCast core into the CTAM framework.
 from typing import Dict, Any, Optional, List
 import dataclasses
 from ...interface import AnalysisModule
-from EdgeWARN.core.alerts.schema import AlertPayload
+from EdgeWARN.alerts.schema import AlertPayload
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -303,7 +303,7 @@ class StormCastModule(AnalysisModule):
             # Extract cell polygon
             current_polygon = None
             try:
-                from EdgeWARN.core.process.integrate.utils import StormIntegrationUtils
+                from EdgeWARN.process.integrate.utils import StormIntegrationUtils
                 polygon_shape = StormIntegrationUtils.create_cell_polygon(storm_entry)
                 if polygon_shape:
                     # Shapely exterior coords are usually (lon, lat) or (lat, lon) depending on usage

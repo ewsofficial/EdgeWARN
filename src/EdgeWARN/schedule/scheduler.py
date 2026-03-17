@@ -2,11 +2,11 @@ import datetime
 import time
 import concurrent.futures
 from pathlib import Path
-from EdgeWARN.core.ingest.mrms.s3_sync import FileFinder
-from EdgeWARN.core.ingest.mrms.utils import extract_timestamp
-from EdgeWARN.core.ingest.mrms.parse import parse_mrms_bucket_path
-from EdgeWARN.core.ingest.mrms.config import bucket
-from EdgeWARN.core.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
+from EdgeWARN.ingest.mrms.s3_sync import FileFinder
+from EdgeWARN.ingest.mrms.utils import extract_timestamp
+from EdgeWARN.ingest.mrms.parse import parse_mrms_bucket_path
+from EdgeWARN.ingest.mrms.config import bucket
+from EdgeWARN.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 from util.io import IOManager, PerformanceTimer
 import uuid
 
@@ -195,7 +195,7 @@ class MRMSUpdateChecker:
         Try to find the common timestamp using HTTPS fallback logic.
         Now runs concurrently.
         """
-        from EdgeWARN.core.ingest.mrms.https_client import HttpsFileFinder
+        from EdgeWARN.ingest.mrms.https_client import HttpsFileFinder
 
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)

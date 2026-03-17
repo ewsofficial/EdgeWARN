@@ -9,7 +9,7 @@ import util.file as fs
 import common.ingest.nws.main as nws_ingest
 import common.ingest.metar as metar_ingest
 from EdgeWARN import initialize_runtime, realtime_pipeline
-from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
+from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from common.ingest.mrms.config import get_check_modifiers
 import EdgeWARN.ui.monitor_app as monitor_app
 from util.io import TimestampedOutput, IOManager, QueueWriter
