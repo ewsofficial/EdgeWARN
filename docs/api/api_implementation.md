@@ -35,9 +35,9 @@ src/EdgeWARN/api/
 3. Each worker applies middleware:
    - `helmet`
    - `compression`
-   - `cors` (allowlist from `ALLOWED_ORIGINS`)
+   - `cors` (explicit allowlist from `ALLOWED_ORIGINS`, otherwise open in non-production and blocked in production)
    - `express.json()`
-   - `express-rate-limit`
+   - dual `express-rate-limit` guards (per-second and per-minute)
 4. Worker mounts routes:
    - `/`
    - `/health`
@@ -142,15 +142,18 @@ Centralized validation helpers for:
 
 ### CORS
 
-- In non-production without env override: localhost allowlist
-- In production: requires explicit `ALLOWED_ORIGINS`, otherwise cross-origin requests are blocked
+- If `ALLOWED_ORIGINS` is set, that comma-separated allowlist is used
+- In non-production without `ALLOWED_ORIGINS`, all origins are allowed for development/testing
+- In production without `ALLOWED_ORIGINS`, cross-origin requests are blocked
 
 ### Rate Limiting
 
 `express-rate-limit` defaults:
 
-- `RATE_LIMIT_WINDOW_MS`: `60000`
-- `RATE_LIMIT_MAX`: `60`
+- `RATE_LIMIT_WINDOW_MS_SEC`: `1000`
+- `RATE_LIMIT_MAX_SEC`: `40`
+- `RATE_LIMIT_WINDOW_MS_MIN`: `60000`
+- `RATE_LIMIT_MAX_MIN`: `2000`
 
 Special cases:
 
@@ -168,14 +171,16 @@ Special cases:
 - `PORT`
 - `NODE_ENV`
 - `ALLOWED_ORIGINS`
-- `RATE_LIMIT_WINDOW_MS`
-- `RATE_LIMIT_MAX`
+- `RATE_LIMIT_WINDOW_MS_SEC`
+- `RATE_LIMIT_MAX_SEC`
+- `RATE_LIMIT_WINDOW_MS_MIN`
+- `RATE_LIMIT_MAX_MIN`
 - `TRUST_PROXY`
 - `TRUST_PROXY_IPS`
 - `EDGEWARN_BASE_DIR`
 
 ## Runtime Modes
 
-- **Production**: `npm start`
-- **Development watch**: `npm run dev`
-- **Debug**: `npm run debug`
+- **Primary API server**: `npm run api:edgewarn`
+- **Debug API server**: `npm run debug:edgewarn`
+- **EWMRS API server**: `npm run api:ewmrs`
