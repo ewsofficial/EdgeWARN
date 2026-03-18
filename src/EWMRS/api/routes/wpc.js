@@ -4,9 +4,9 @@
  * Provides endpoints for accessing WPC surface analysis GeoJSON data.
  */
 
-const express = require('express');
-const fs = require('fs').promises;
-const path = require('path');
+import express from 'express';
+import fs from 'fs/promises';
+import path from 'path';
 const router = express.Router();
 
 // Get BASE_DIR from app.locals (set in server.js)
@@ -123,4 +123,4 @@ router.get('/download', async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;
