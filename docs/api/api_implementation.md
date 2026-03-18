@@ -2,6 +2,8 @@
 
 This document describes the current implementation in `src/EdgeWARN/api`.
 
+For the file-level JSON schemas behind these routes, see `docs/api/data_keys.md`.
+
 ## Server Architecture
 
 The API is an Express.js service with clustered workers (up to 4), file-backed data access, and defensive request validation.

@@ -2,6 +2,8 @@
 
 This document describes the currently implemented API routes in `src/EdgeWARN/api`.
 
+For the backing JSON file schemas, see `docs/api/data_keys.md`.
+
 ## API Overview
 
 - **Base URL**: `/api/v2`
