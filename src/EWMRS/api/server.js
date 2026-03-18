@@ -1,11 +1,15 @@
-const express = require('express');
-const fs = require('fs').promises;
-const path = require('path');
-const cors = require('cors');
-const morgan = require('morgan');
-const helmet = require('helmet');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
+import express from 'express';
+import fs from 'fs/promises';
+import path from 'path';
+import cors from 'cors';
+import morgan from 'morgan';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import os from 'os';
+import rendersRouter from './routes/renders.js';
+import wpcRouter from './routes/wpc.js';
+import colormapsRouter from './routes/colormaps.js';
 
 const app = express();
 app.use(cors());
@@ -52,15 +56,10 @@ if (argBase) {
 } else if (process.platform === 'win32') {
   BASE_DIR = 'C:\\EWMRS';
 } else {
-  const os = require('os');
   BASE_DIR = path.join(os.homedir(), 'EWMRS');
 }
 
 const GUI_DIR = path.join(BASE_DIR, 'gui');
-
-// Export BASE_DIR and GUI_DIR for use in routes
-module.exports.BASE_DIR = BASE_DIR;
-module.exports.GUI_DIR = GUI_DIR;
 
 // Known GUI subdirectories (keeps parity with util/file.py)
 const GUI_SUBDIRS = [
@@ -106,10 +105,7 @@ async function listFilesInDir(dirPath, limit = 50) {
 app.locals.BASE_DIR = BASE_DIR;
 app.locals.GUI_DIR = GUI_DIR;
 
-const rendersRouter = require('./routes/renders');
 app.use('/renders', rendersRouter);
-
-const wpcRouter = require('./routes/wpc');
 app.use('/wpc', wpcRouter);
 
 // Root endpoint to avoid default express 404 "Cannot GET /"
@@ -126,7 +122,6 @@ app.get('/', (req, res) => {
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 // Return colormaps.json
-const colormapsRouter = require('./routes/colormaps');
 app.use('/colormaps', colormapsRouter);
 
 const PORT = process.env.PORT || 3003;

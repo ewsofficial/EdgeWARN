@@ -1,7 +1,7 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const path = require('path');
-const fs = require('fs').promises;
+import path from 'path';
+import fs from 'fs/promises';
 
 // Mapping: User/Folder Product Name -> File Prefix
 // Derived from EWMRS/render/config.py
@@ -262,4 +262,4 @@ router.get('/tile-info', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
