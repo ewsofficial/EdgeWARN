@@ -8,14 +8,15 @@
 ## Installation Instructions
 1. Clone the repository into the local machine by running ``git clone https://www.github.com/ewsofficial/EdgeWARN-Core``
 2. Navigate to the folder where you downloaded ``EdgeWARN-Core``
-3. Install the EdgeWARN environment by running ``conda env create -f environment.yml``
-4. Activate the EdgeWARN environment by running ``conda activate EdgeWARN-dev``
+3. Install Node.js dependencies by running ``npm install`` (or ``pnpm install`` if you prefer pnpm)
+4. Install the EdgeWARN environment by running ``conda env create -f environment.yml``
+5. Activate the EdgeWARN environment by running ``conda activate EdgeWARN-dev``
 
 ## Running EdgeWARN
 
 **NOTE**: If data ingestion cannot reach URLs, try removing ``aiodns`` from your environment
 
-Navigate to the ``src`` folder and follow the instructions below
+Run the API commands from the repository root. Run the Python analysis commands from the ``src`` folder.
 
 ### Real-Time Analysis (``run.py``)
 
@@ -44,8 +45,7 @@ Historical analysis capabilities all the way up to January 1, 2021 using the ``n
 - **``--profile``**: Enable performance profiling
 
 ### Start Data Server
-- ``npm start``
+- ``npm run api:edgewarn``
 
 ### Start Debug Server
-- ``npm run debug``
-
+- ``npm run debug:edgewarn``

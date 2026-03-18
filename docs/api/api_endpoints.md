@@ -272,7 +272,7 @@ Response keys:
 
 ## Security and Platform Behavior
 
-- Rate limiting is enabled globally via `express-rate-limit` (defaults: 60 requests / minute / client key).
-- CORS is allowlist-based via `ALLOWED_ORIGINS`.
+- Rate limiting is enabled globally via `express-rate-limit` with two defaults: `40` requests per second and `2000` requests per minute per client key.
+- CORS uses `ALLOWED_ORIGINS` when set; otherwise it allows all origins in non-production and blocks cross-origin requests in production.
 - Helmet security headers and compression are enabled.
 - In production, detailed version strings are intentionally hidden (`2.x`).
