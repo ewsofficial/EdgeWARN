@@ -47,7 +47,6 @@ class IOManager:
         parser = argparse.ArgumentParser(description="EdgeWARN modifier specification")
         parser.add_argument("--lat_limits", type=float, nargs=2, metavar=("LAT_MIN", "LAT_MAX"), default=[20, 55], help="Latitude limits for processing (default: 20 55)")
         parser.add_argument("--lon_limits", type=float, nargs=2, metavar=("LON_MIN", "LON_MAX"), default=[230, 300], help="Longitude limits for processing (default: 230 300)")
-        parser.add_argument("--nogui", action="store_true", help="Disable the GUI and print output to console")
         parser.add_argument("--base_dir", type=str, default=None, help="Custom base directory for input/output data")
         parser.add_argument("--profile", action="store_true", help="Enable performance profiling")
         args = parser.parse_args()

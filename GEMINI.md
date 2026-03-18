@@ -47,7 +47,6 @@ python src/run.py [options]
 **Options:**
 *   `--lat_limits <min> <max>`: Latitude limits
 *   `--lon_limits <min> <max>`: Longitude limits
-*   `--nogui`: Disable server monitor GUI
 *   `--base_dir <path>`: Output directory (Default: `EdgeWARN_input`)
 
 #### 2. Historical Analysis
