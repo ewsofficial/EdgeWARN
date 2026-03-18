@@ -12,7 +12,7 @@ from common.ingest.wpc.main import run_wpc_ingest
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN import initialize_runtime
 from EdgeWARN.pipeline import edgewarn_tandem_worker
-from EWMRS.ewmrs import ewmrs_tandem_worker
+from EWMRS.pipeline import ewmrs_tandem_worker
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from common.ingest.mrms.config import get_check_modifiers
 import EdgeWARN.ui.monitor_app as monitor_app

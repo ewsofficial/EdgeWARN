@@ -168,7 +168,7 @@ class TransformUtils:
         return ds
 
 
-    # crop_to_reflectivity removed (replaced by efficient downsampling in ewmrs.py)
+    # crop_to_reflectivity removed (replaced by efficient downsampling in pipeline.py)
 
     
 class OverlayManifestUtils:
