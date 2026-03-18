@@ -1,14 +1,22 @@
 
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Sequence, cast
 from shapely.geometry import Polygon, MultiPolygon
 from shapely.ops import unary_union
 
-# NEW: GeoMapper Assets Path
-# Path: src/EdgeWARN/core/ingest/nws/geomapper.py
-# parents[5] = project root (EdgeWARN-Core)
-_ASSETS_DIR = Path(__file__).resolve().parents[5] / "assets" / "nws_zones"
+def _resolve_assets_dir() -> Path:
+    current_file = Path(__file__).resolve()
+
+    for parent in current_file.parents:
+        candidate = parent / "assets" / "nws_zones"
+        if candidate.exists():
+            return candidate
+
+    return current_file.parents[4] / "assets" / "nws_zones"
+
+
+_ASSETS_DIR = _resolve_assets_dir()
 
 # Keys to remove from properties (from GeoMapper)
 JUNK_KEYS = [
@@ -63,7 +71,7 @@ class ZoneLookup:
         except Exception:
             cls._cache[state_code] = {}
 
-def round_coords(coords: List[List[float]], precision: int = 4) -> List[List[float]]:
+def round_coords(coords: Sequence[Any], precision: int = 4) -> List[List[float]]:
     """Round coordinates to a specified precision."""
     return [[round(float(c[0]), precision), round(float(c[1]), precision)] for c in coords]
 
@@ -99,9 +107,11 @@ def extract_exterior_polygon(polygons: List[List], tolerance: float = 0.01) -> L
             unified = unified.simplify(tolerance=tolerance, preserve_topology=True)
         
         if unified.geom_type == 'Polygon':
-            return [round_coords(list(unified.exterior.coords))]
+            polygon = cast(Polygon, unified)
+            return [round_coords(list(polygon.exterior.coords))]
         elif unified.geom_type == 'MultiPolygon':
-            return [round_coords(list(p.exterior.coords)) for p in unified.geoms]
+            multipolygon = cast(MultiPolygon, unified)
+            return [round_coords(list(p.exterior.coords)) for p in multipolygon.geoms]
         else:
             return []
     except Exception:
@@ -122,6 +132,14 @@ def round_geojson_coords(geometry: Dict[str, Any], precision: int = 4) -> Dict[s
     geometry['coordinates'] = _round_recursive(geometry['coordinates'])
     return geometry
 
+
+def polygon_to_geojson(polygon_coords: List[List]) -> Dict[str, Any]:
+    """Convert GeoMapper polygon rings into a GeoJSON geometry object."""
+    return {
+        "type": "Polygon",
+        "coordinates": polygon_coords,
+    }
+
 def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
     """Process a single NWS warning feature (Map Geocodes + Clean Props)."""
     props = feature.get("properties", {})
@@ -137,12 +155,15 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
     if feature.get("Polygon"):
         # Coordinate rounding for safety
         feature["Polygon"] = [round_coords(p) for p in feature["Polygon"]]
+        if not feature.get("geometry"):
+            feature["geometry"] = polygon_to_geojson(feature["Polygon"])
         has_geometry_to_skip = True
 
     # If geometry exists, skip the zone-to-polygon mapping 
     # (prevents simplification of precise polygons into zone boundaries)
     if has_geometry_to_skip:
         props.pop("geocode", None)
+        props.pop("affectedZones", None)
         for key in JUNK_KEYS:
             props.pop(key, None)
         return feature
@@ -176,6 +197,7 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
         exterior = _get_cached_union_exterior(zone_codes_tuple)
         if exterior:
             feature["Polygon"] = exterior
+            feature["geometry"] = polygon_to_geojson(exterior)
             
     # Remove "geocode" if valid geometry exists
     has_geometry = False
@@ -186,6 +208,7 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
         
     if has_geometry:
         props.pop("geocode", None)
+        props.pop("affectedZones", None)
     
     # Remove junk keys from properties
     for key in JUNK_KEYS:
