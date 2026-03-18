@@ -15,8 +15,7 @@ from EdgeWARN.pipeline import edgewarn_tandem_worker
 from EWMRS.pipeline import ewmrs_tandem_worker
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from common.ingest.mrms.config import get_check_modifiers
-import EdgeWARN.ui.monitor_app as monitor_app
-from util.io import TimestampedOutput, IOManager, QueueWriter
+from util.io import TimestampedOutput, IOManager
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
@@ -40,20 +39,13 @@ def _drain_log_queue(log_queue):
         print(log_queue.get())
 
 
-def _guard_ui_process(ui_process=None):
-    if ui_process and not ui_process.is_alive():
-        print("GUI closed. Exiting.")
-        sys.exit(0)
-
-
-def _sleep_with_ui_guard(total_seconds, ui_process=None, interval=1.0):
+def _sleep(total_seconds, interval=1.0):
     end_time = time.time() + total_seconds
     while time.time() < end_time:
-        _guard_ui_process(ui_process)
         time.sleep(min(interval, max(0.0, end_time - time.time())))
 
 
-def _sleep_until_boundary(minutes, ui_process=None):
+def _sleep_until_boundary(minutes):
     now = datetime.now(timezone.utc)
     minutes_to_next = minutes - (now.minute % minutes)
     if minutes_to_next == 0 and now.second == 0 and now.microsecond == 0:
@@ -61,15 +53,13 @@ def _sleep_until_boundary(minutes, ui_process=None):
     next_run = now.replace(second=0, microsecond=0) + timedelta(minutes=minutes_to_next)
     sleep_seconds = max(0.0, (next_run - now).total_seconds())
     if sleep_seconds > 0:
-        _sleep_with_ui_guard(sleep_seconds, ui_process=ui_process, interval=1.0)
+        _sleep(sleep_seconds, interval=1.0)
 
 
-def metar_loop(ui_process=None):
+def metar_loop():
     try:
         while True:
-            _guard_ui_process(ui_process)
-            _sleep_until_boundary(5, ui_process=ui_process)
-            _guard_ui_process(ui_process)
+            _sleep_until_boundary(5)
 
             try:
                 asyncio.run(metar_ingest.ingest_metars_async())
@@ -79,26 +69,23 @@ def metar_loop(ui_process=None):
         return
 
 
-def nws_loop(ui_process=None):
+def nws_loop():
     try:
         while True:
-            _guard_ui_process(ui_process)
             try:
                 asyncio.run(nws_ingest.download_alerts_async(datetime.now(timezone.utc)))
             except Exception as e:
                 print(f"[NWS Loop] Error: {e}")
 
-            _sleep_with_ui_guard(120, ui_process=ui_process, interval=1.0)
+            _sleep(120, interval=1.0)
     except KeyboardInterrupt:
         return
 
 
-def wpc_loop(ui_process=None):
+def wpc_loop():
     try:
         while True:
-            _guard_ui_process(ui_process)
-            _sleep_until_boundary(15, ui_process=ui_process)
-            _guard_ui_process(ui_process)
+            _sleep_until_boundary(15)
 
             try:
                 run_wpc_ingest()
@@ -107,7 +94,7 @@ def wpc_loop(ui_process=None):
     except KeyboardInterrupt:
         return
 
-def _run_tandem_cycle(dt, ui_process=None):
+def _run_tandem_cycle(dt):
     log_queue = multiprocessing.Queue()
     manager = multiprocessing.Manager()
     shared_state = manager.dict()
@@ -158,7 +145,6 @@ def _run_tandem_cycle(dt, ui_process=None):
     ewmrs_proc.start()
 
     while edgewarn_proc.is_alive() or ewmrs_proc.is_alive() or not log_queue.empty():
-        _guard_ui_process(ui_process)
         _drain_log_queue(log_queue)
         time.sleep(1)
 
@@ -169,7 +155,7 @@ def _run_tandem_cycle(dt, ui_process=None):
 
 
 
-def main(ui_process=None):
+def main():
     """Scheduler: run a shared ingest cycle and launch EdgeWARN/EWMRS in tandem."""
     print("Scheduler started. Press CTRL+C to exit.")
     checker = MRMSUpdateChecker(verbose=True)
@@ -198,17 +184,15 @@ def main(ui_process=None):
         print(f"[Scheduler] Failed to initialize last_processed: {e}")
 
     print("[Scheduler] Starting background accessory ingests (METAR, NWS, WPC)...")
-    metar_proc = multiprocessing.Process(target=metar_loop, args=(ui_process,), daemon=True)
-    nws_proc = multiprocessing.Process(target=nws_loop, args=(ui_process,), daemon=True)
-    wpc_proc = multiprocessing.Process(target=wpc_loop, args=(ui_process,), daemon=True)
+    metar_proc = multiprocessing.Process(target=metar_loop, daemon=True)
+    nws_proc = multiprocessing.Process(target=nws_loop, daemon=True)
+    wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True)
     metar_proc.start()
     nws_proc.start()
     wpc_proc.start()
 
     try:
         while True:
-            _guard_ui_process(ui_process)
-
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
             # Pass last_processed to allow StartAfter optimization
@@ -257,7 +241,7 @@ def main(ui_process=None):
                 dt = latest_common
                 last_processed = latest_common
 
-                _run_tandem_cycle(dt, ui_process=ui_process)
+                _run_tandem_cycle(dt)
                 print(f"Tandem cycle for {dt} finished")
 
             else:
@@ -268,7 +252,6 @@ def main(ui_process=None):
 
             # Wait/Check loop (15 seconds)
             for _ in range(30):
-                _guard_ui_process(ui_process)
                 time.sleep(0.5)
 
     except KeyboardInterrupt:
@@ -276,36 +259,10 @@ def main(ui_process=None):
         sys.exit(0)
 
 if __name__ == "__main__":
-    if args.nogui:
-        # No GUI mode: Print directly to console (already set up by default sys.stdout/stderr)
-        try:
-            print(f"Running EdgeWARN v2.0.0-rc1")
-            print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
-            main()
-        except KeyboardInterrupt:
-            print("CTRL+C detected, exiting ...")
-            sys.exit(0)
-    else:
-        # GUI mode: Redirect output to UI queue and spawn UI process
-        
-        # Create a queue for the UI logs
-        ui_queue = multiprocessing.Queue()
-        
-        # Redirect stdout/stderr to the UI queue
-        sys.stdout = QueueWriter(ui_queue)
-        sys.stderr = QueueWriter(ui_queue)
-        
-        # Spawn the UI process
-        ui_process = multiprocessing.Process(target=monitor_app.run, args=(None, ui_queue))
-        ui_process.start()
-        
-        try:
-            print(f"Running EdgeWARN v2.0.0-rc1")
-            print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
-            main(ui_process)
-        except KeyboardInterrupt:
-            print("CTRL+C detected, exiting ...")
-            sys.exit(0)
-        finally:
-            ui_process.terminate()
-            ui_process.join()
+    try:
+        print("Running EdgeWARN v2.0.0-rc1")
+        print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
+        main()
+    except KeyboardInterrupt:
+        print("CTRL+C detected, exiting ...")
+        sys.exit(0)

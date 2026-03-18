@@ -137,7 +137,6 @@ class TestIOManager:
             
             assert args.lat_limits == [20, 55]
             assert args.lon_limits == [230, 300]
-            assert args.nogui is False
             assert args.base_dir is None
 
     def test_get_args_custom_lat_lon(self):
@@ -166,15 +165,6 @@ class TestIOManager:
             
             # -100 should become 260, -80 should become 280
             assert args.lon_limits == [260, 280]
-
-    def test_get_args_nogui_flag(self):
-        """Test --nogui flag"""
-        io = IOManager("[Test]")
-        
-        with patch.object(sys, 'argv', ['script', '--nogui']):
-            args = io.get_args()
-            
-            assert args.nogui is True
 
     def test_get_args_base_dir(self):
         """Test --base_dir argument"""
