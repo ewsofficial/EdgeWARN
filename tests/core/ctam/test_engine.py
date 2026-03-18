@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from EdgeWARN.core.ctam import engine
+from EdgeWARN.ctam import engine
 
 def test_initialize_modules():
     """Test that module namespaces are correctly initialized."""

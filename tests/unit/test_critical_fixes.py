@@ -11,16 +11,16 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from EdgeWARN.core.process.detect.track import StormCellTracker
-from EdgeWARN.core.process.detect.kalman import (
+from EdgeWARN.process.detect.track import StormCellTracker
+from EdgeWARN.process.detect.kalman import (
     KalmanFilter,
     TrackingConfig,
 )
-from EdgeWARN.core.process.detect.kalman.config import (
+from EdgeWARN.process.detect.kalman.config import (
     KalmanConfig,
     AssignmentConfig,
 )
-from EdgeWARN.core.process.detect.lineage.events import (
+from EdgeWARN.process.detect.lineage.events import (
     LineageResult,
     MergeEvent,
     LineageEvent,

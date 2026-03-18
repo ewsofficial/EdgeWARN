@@ -13,7 +13,7 @@ import pytest
 import numpy as np
 from datetime import datetime
 
-from EdgeWARN.core.process.detect.kalman import (
+from EdgeWARN.process.detect.kalman import (
     KalmanFilter,
     KalmanObservation,
     AssignmentConfig,
@@ -21,7 +21,7 @@ from EdgeWARN.core.process.detect.kalman import (
     haversine_distance,
 )
 
-from EdgeWARN.core.process.detect.kalman.assignment import (
+from EdgeWARN.process.detect.kalman.assignment import (
     AssignmentCostCalculator,
     AssignmentResult,
     build_cost_matrix,

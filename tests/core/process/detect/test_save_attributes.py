@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import xarray as xr
-from EdgeWARN.core.process.detect.tools.save import CellDataSaver
+from EdgeWARN.process.detect.tools.save import CellDataSaver
 
 def test_attribute_unification():
     """

@@ -5,7 +5,7 @@ Tests grid type detection, regular grid indexing, and k-d tree indexing.
 """
 import pytest
 import numpy as np
-from EdgeWARN.core.process.integrate.grid_index import (
+from EdgeWARN.process.integrate.grid_index import (
     GridIndex,
     RegularGridIndexer,
     KDTreeGridIndexer,

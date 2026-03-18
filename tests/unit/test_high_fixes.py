@@ -11,15 +11,15 @@ import pytest
 from unittest.mock import MagicMock
 from datetime import datetime
 
-from EdgeWARN.core.process.detect.track import StormCellTracker
-from EdgeWARN.core.process.detect.kalman import KalmanFilter
-from EdgeWARN.core.process.detect.lineage.events import (
+from EdgeWARN.process.detect.track import StormCellTracker
+from EdgeWARN.process.detect.kalman import KalmanFilter
+from EdgeWARN.process.detect.lineage.events import (
     LineageResult,
     SplitEvent,
     LineageEvent,
 )
-from EdgeWARN.core.process.detect.lineage.buffer import LineageBuffer
-from EdgeWARN.core.process.detect.lineage.detector import LineageDetector
+from EdgeWARN.process.detect.lineage.buffer import LineageBuffer
+from EdgeWARN.process.detect.lineage.detector import LineageDetector
 
 
 @pytest.fixture
@@ -256,7 +256,7 @@ class TestH3SplitOverlapDirection:
         detector = LineageDetector(buffer=buffer, overlap_threshold=0.10)
 
         # _find_split_overlaps should compute ratio relative to old cell
-        from EdgeWARN.core.process.detect.lineage.spatial import build_spatial_index
+        from EdgeWARN.process.detect.lineage.spatial import build_spatial_index
         new_index = build_spatial_index([new_child])
 
         overlaps = detector._find_split_overlaps(old_cell, new_index, 0.0)
@@ -345,7 +345,7 @@ class TestH4SpecificExcept:
         def raise_keyboard(*args, **kwargs):
             raise KeyboardInterrupt("simulated")
 
-        import EdgeWARN.core.process.detect.track as track_module
+        import EdgeWARN.process.detect.track as track_module
         old_datetime = track_module.datetime
 
         try:

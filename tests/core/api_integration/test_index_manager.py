@@ -1,14 +1,14 @@
 import pytest
 import json
 from unittest.mock import patch
-from EdgeWARN.core.api_integration.index_manager import APIIndexManager
+from EdgeWARN.api_integration.index_manager import APIIndexManager
 
 @pytest.fixture
 def index_manager(mock_io_manager, mock_fs):
     """Fixture for APIIndexManager pointing to mock fs."""
     # We must patch the fs constants in index_manager to point to our temp paths
-    with patch("EdgeWARN.core.api_integration.index_manager.fs.STORMCELL_DIR", mock_fs / "stormcell"), \
-         patch("EdgeWARN.core.api_integration.index_manager.fs.CELL_DIR", mock_fs / "cell"):
+    with patch("EdgeWARN.api_integration.index_manager.fs.STORMCELL_DIR", mock_fs / "stormcell"), \
+         patch("EdgeWARN.api_integration.index_manager.fs.CELL_DIR", mock_fs / "cell"):
         
         manager = APIIndexManager(mock_io_manager)
         yield manager

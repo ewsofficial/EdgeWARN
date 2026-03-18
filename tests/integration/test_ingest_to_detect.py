@@ -66,9 +66,9 @@ class TestIngestToDetectWorkflow:
         ps_file.write_text(json.dumps(ps_data))
         
         # Mock detection
-        with patch('EdgeWARN.core.process.detect.detect.DetectionDataHandler') as mock_handler, \
-             patch('EdgeWARN.core.process.detect.detect.GateMapper') as mock_mapper, \
-             patch('EdgeWARN.core.process.detect.detect.CellDataSaver') as mock_saver:
+        with patch('EdgeWARN.process.detect.detect.DetectionDataHandler') as mock_handler, \
+             patch('EdgeWARN.process.detect.detect.GateMapper') as mock_mapper, \
+             patch('EdgeWARN.process.detect.detect.CellDataSaver') as mock_saver:
             
             mock_handler_instance = MagicMock()
             mock_handler.return_value = mock_handler_instance
@@ -90,7 +90,7 @@ class TestIngestToDetectWorkflow:
             ]
             
             # Run detection
-            from EdgeWARN.core.process.detect.detect import detect_cells
+            from EdgeWARN.process.detect.detect import detect_cells
             result = detect_cells(
                 str(radar_file), str(ps_file), None, mock_io,
                 30, 40, 260, 270
@@ -123,9 +123,9 @@ class TestIngestToDetectWorkflow:
         nws_file.write_text(json.dumps(nws_data))
         
         # Mock detection
-        with patch('EdgeWARN.core.process.detect.detect.DetectionDataHandler') as mock_handler, \
-             patch('EdgeWARN.core.process.detect.detect.GateMapper') as mock_mapper, \
-             patch('EdgeWARN.core.process.detect.detect.CellDataSaver') as mock_saver:
+        with patch('EdgeWARN.process.detect.detect.DetectionDataHandler') as mock_handler, \
+             patch('EdgeWARN.process.detect.detect.GateMapper') as mock_mapper, \
+             patch('EdgeWARN.process.detect.detect.CellDataSaver') as mock_saver:
             
             mock_handler_instance = MagicMock()
             mock_handler.return_value = mock_handler_instance
@@ -151,7 +151,7 @@ class TestIngestToDetectWorkflow:
             xr.Dataset().to_netcdf(radar_file)
 
             # Run detection
-            from EdgeWARN.core.process.detect.detect import detect_cells
+            from EdgeWARN.process.detect.detect import detect_cells
             result = detect_cells(
                 str(radar_file), str(nws_file), None, mock_io,
                 30, 40, 260, 270

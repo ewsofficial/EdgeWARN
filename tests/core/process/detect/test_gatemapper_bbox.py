@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import xarray as xr
-from EdgeWARN.core.process.detect.tools.gatemapper import GateMapper
+from EdgeWARN.process.detect.tools.gatemapper import GateMapper
 
 class MockIOManager:
     def write_debug(self, msg):

@@ -15,7 +15,7 @@ from pathlib import Path
 import tempfile
 import json
 
-from EdgeWARN.core.process.detect.lineage import (
+from EdgeWARN.process.detect.lineage import (
     LineageEvent,
     LineageResult,
     LineageBuffer,
@@ -26,7 +26,7 @@ from EdgeWARN.core.process.detect.lineage import (
     select_dominant_parent,
     select_dominant_child,
 )
-from EdgeWARN.core.process.detect.lineage.detector import LineageDetector
+from EdgeWARN.process.detect.lineage.detector import LineageDetector
 
 
 class TestOverlapCalculation:
