@@ -67,7 +67,7 @@ def round_coords(coords: List[List[float]], precision: int = 4) -> List[List[flo
     """Round coordinates to a specified precision."""
     return [[round(float(c[0]), precision), round(float(c[1]), precision)] for c in coords]
 
-def extract_exterior_polygon(polygons: List[List], tolerance: float = 0.03) -> List:
+def extract_exterior_polygon(polygons: List[List], tolerance: float = 0.01) -> List:
     """
     Compute the union of multiple polygons, simplify geometry, 
     and return only exterior coordinates with rounded precision.
