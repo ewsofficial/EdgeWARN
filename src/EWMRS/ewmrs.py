@@ -55,10 +55,12 @@ def _render_layer(layer):
     Module-level function for ProcessPoolExecutor compatibility.
     """
     from EWMRS.render.tools import TransformUtils
+    from EWMRS.render.tools import configure_proj_runtime
     from EWMRS.render.render import GUILayerRenderer
     from util.io import IOManager
     
     io_mgr = IOManager("[Pipeline]")
+    configure_proj_runtime()
     
     name = layer.get("name")
     colormap_key = layer.get("colormap_key")
