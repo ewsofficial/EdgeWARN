@@ -4,7 +4,7 @@ import numpy as np
 import xarray as xr
 import shapely.geometry as sg
 from unittest.mock import MagicMock
-from EdgeWARN.core.process.integrate.integrate import StormCellIntegrator
+from EdgeWARN.process.integrate.integrate import StormCellIntegrator
 
 @pytest.fixture
 def mock_io_manager():

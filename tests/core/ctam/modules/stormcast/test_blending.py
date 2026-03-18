@@ -4,13 +4,13 @@ Tests for StormCast blending module
 
 import pytest
 import math
-from EdgeWARN.core.ctam.modules.StormCast.core.blending import (
+from EdgeWARN.ctam.modules.StormCast.core.blending import (
     smooth_observed_motion,
     blend_motion,
     adjust_weights_for_maturity,
     _exponential_filter
 )
-from EdgeWARN.core.ctam.modules.StormCast.core.config import BlendingWeights
+from EdgeWARN.ctam.modules.StormCast.core.config import BlendingWeights
 
 
 class TestExponentialFilter:

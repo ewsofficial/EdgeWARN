@@ -4,8 +4,8 @@ Tests for StormCast Kalman filter module
 
 import pytest
 import numpy as np
-from EdgeWARN.core.ctam.modules.StormCast.core.kalman import StormKalmanFilter
-from EdgeWARN.core.ctam.modules.StormCast.core.config import KALMAN_PARAMS
+from EdgeWARN.ctam.modules.StormCast.core.kalman import StormKalmanFilter
+from EdgeWARN.ctam.modules.StormCast.core.config import KALMAN_PARAMS
 
 
 class TestStormKalmanFilter:

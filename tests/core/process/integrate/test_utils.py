@@ -5,7 +5,7 @@ Tests for integration utilities module
 import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
-from EdgeWARN.core.process.integrate.utils import (
+from EdgeWARN.process.integrate.utils import (
     RAPFileHandler,
     StormIntegrationUtils
 )

@@ -4,12 +4,12 @@ Tests for StormCast uncertainty module
 
 import pytest
 import math
-from EdgeWARN.core.ctam.modules.StormCast.core.uncertainty import (
+from EdgeWARN.ctam.modules.StormCast.core.uncertainty import (
     compute_tracking_uncertainty,
     compute_velocity_covariance,
     propagate_position_uncertainty
 )
-from EdgeWARN.core.ctam.modules.StormCast.core.config import UNCERTAINTY_PARAMS
+from EdgeWARN.ctam.modules.StormCast.core.config import UNCERTAINTY_PARAMS
 
 
 class TestComputeTrackingUncertainty:

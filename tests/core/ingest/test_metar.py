@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
-from EdgeWARN.core.ingest import metar
+from EdgeWARN.ingest import metar
 
 # === Tests for parse_metar ===
 
@@ -91,7 +91,7 @@ KORD 121756Z 27015KT 5SM OVC020 08/06 A2990
 2023/01/12 18:00
 KLAX 121800Z 25010KT 10SM CLR 18/10 A3000
 """
-    with patch("EdgeWARN.core.ingest.metar.get_station_coordinates") as mock_coords:
+    with patch("EdgeWARN.ingest.metar.get_station_coordinates") as mock_coords:
         mock_coords.side_effect = lambda s: [40.0, -90.0]  # Return valid coords inside CONUS
         result = metar.process_content(content)
         
@@ -137,7 +137,7 @@ def test_get_station_coordinates_case_insensitive(mocker):
 def test_save_metar_data_success(mocker, mock_fs, mock_io_manager):
     """Test successful saving of METAR data."""
     metar.io = mock_io_manager
-    mocker.patch("EdgeWARN.core.ingest.metar.fs.METAR_DIR", mock_fs / "metar")
+    mocker.patch("EdgeWARN.ingest.metar.fs.METAR_DIR", mock_fs / "metar")
     
     data = [{"station": "KJFK", "temperature": "M02"}]
     dt = datetime(2023, 1, 12, 17, tzinfo=timezone.utc)

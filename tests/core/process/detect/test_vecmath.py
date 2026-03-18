@@ -1,7 +1,7 @@
 import pytest
 import json
 from unittest.mock import patch, MagicMock
-from EdgeWARN.core.process.detect.tools.vecmath import StormVectorCalculator
+from EdgeWARN.process.detect.tools.vecmath import StormVectorCalculator
 
 @pytest.fixture
 def mock_fs(tmp_path):
@@ -33,7 +33,7 @@ def test_calculate_vectors_basic(mock_fs):
     ]
     
     # Patch fs.CELL_DIR
-    with patch("EdgeWARN.core.process.detect.tools.vecmath.fs.CELL_DIR", mock_fs):
+    with patch("EdgeWARN.process.detect.tools.vecmath.fs.CELL_DIR", mock_fs):
         results = StormVectorCalculator.calculate_vectors(current_entries)
     
     assert len(results) == 1
@@ -58,7 +58,7 @@ def test_calculate_vectors_no_history(mock_fs):
         {"id": 102, "timestamp": "2023-01-01T12:00:00", "centroid": [35.0, -97.0]}
     ]
     
-    with patch("EdgeWARN.core.process.detect.tools.vecmath.fs.CELL_DIR", mock_fs):
+    with patch("EdgeWARN.process.detect.tools.vecmath.fs.CELL_DIR", mock_fs):
         results = StormVectorCalculator.calculate_vectors(current_entries)
         
     cell = results[0]
@@ -76,7 +76,7 @@ def test_calculate_vectors_same_timestamp(mock_fs):
         {"id": 101, "timestamp": t0_str, "centroid": [35.0, -97.0]}
     ]
     
-    with patch("EdgeWARN.core.process.detect.tools.vecmath.fs.CELL_DIR", mock_fs):
+    with patch("EdgeWARN.process.detect.tools.vecmath.fs.CELL_DIR", mock_fs):
         results = StormVectorCalculator.calculate_vectors(current_entries)
         
     assert "dt" not in results[0]
@@ -89,7 +89,7 @@ def test_calculate_vectors_invalid_history(mock_fs):
         {"id": 103, "timestamp": "2023-01-01T12:00:00"}
     ]
     
-    with patch("EdgeWARN.core.process.detect.tools.vecmath.fs.CELL_DIR", mock_fs):
+    with patch("EdgeWARN.process.detect.tools.vecmath.fs.CELL_DIR", mock_fs):
         # Should catch exception and skip
         results = StormVectorCalculator.calculate_vectors(current_entries)
         

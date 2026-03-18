@@ -19,7 +19,7 @@ import sys
 # Ensure src is in path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from EdgeWARN.core.process.integrate.main import main as integrate_main
+from EdgeWARN.process.integrate.main import main as integrate_main
 from util.io import IOManager
 
 def run_benchmark():

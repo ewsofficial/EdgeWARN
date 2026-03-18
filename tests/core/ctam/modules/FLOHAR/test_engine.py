@@ -9,7 +9,7 @@ severity classification.
 import numpy as np
 import pytest
 
-from EdgeWARN.core.ctam.modules.FLOHAR.engine import (
+from EdgeWARN.ctam.modules.FLOHAR.engine import (
     compute_threat_grid,
     classify_severity_scalar,
     _normalize_ari,

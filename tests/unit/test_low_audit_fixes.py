@@ -10,14 +10,14 @@ L4: Collinear polygon guard in overlap calculation
 import pytest
 from math import cos, radians
 
-from EdgeWARN.core.process.detect.lineage.buffer import LineageBuffer
-from EdgeWARN.core.process.detect.kalman.state import CovarianceMatrix
-from EdgeWARN.core.process.detect.kalman.assignment import (
+from EdgeWARN.process.detect.lineage.buffer import LineageBuffer
+from EdgeWARN.process.detect.kalman.state import CovarianceMatrix
+from EdgeWARN.process.detect.kalman.assignment import (
     run_greedy_assignment,
     AssignmentCostCalculator,
 )
-from EdgeWARN.core.process.detect.kalman.filter import KalmanFilter
-from EdgeWARN.core.process.detect.lineage.spatial import calculate_overlap_ratio
+from EdgeWARN.process.detect.kalman.filter import KalmanFilter
+from EdgeWARN.process.detect.lineage.spatial import calculate_overlap_ratio
 
 
 # ─── L1: Buffer Scan Interval ────────────────────────────────────────────────

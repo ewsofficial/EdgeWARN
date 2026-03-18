@@ -4,7 +4,7 @@ Tests for StormCast diagnostics module
 
 import pytest
 import math
-from EdgeWARN.core.ctam.modules.StormCast.core.diagnostics import (
+from EdgeWARN.ctam.modules.StormCast.core.diagnostics import (
     compute_storm_core_height,
     compute_adaptive_steering,
     compute_effective_shear,
@@ -16,7 +16,7 @@ from EdgeWARN.core.ctam.modules.StormCast.core.diagnostics import (
     _gaussian,
     _linear_interpolate
 )
-from EdgeWARN.core.ctam.modules.StormCast.core.types import EnvironmentProfile, MotionVector
+from EdgeWARN.ctam.modules.StormCast.core.types import EnvironmentProfile, MotionVector
 
 
 class TestVectorHelpers:
