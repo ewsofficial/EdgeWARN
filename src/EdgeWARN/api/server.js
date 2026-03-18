@@ -143,7 +143,7 @@ if (cluster.isPrimary) {
   // Routes
   app.get('/', (req, res) => {
     // Only expose detailed version in non-production environments
-    const version = process.env.NODE_ENV === 'production' ? '2.x' : '2.0.0-rc1';
+    const version = process.env.NODE_ENV === 'production' ? '2.x' : '2.0.0';
     res.json({ message: 'EdgeWARN Backend API', version: version });
   });
 

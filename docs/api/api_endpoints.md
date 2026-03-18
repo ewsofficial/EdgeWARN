@@ -7,7 +7,7 @@ This document describes the currently implemented API routes in `src/EdgeWARN/ap
 - **Base URL**: `/api/v2`
 - **Version string**:
   - `2.x` when `NODE_ENV=production`
-  - `2.0.0-rc1` otherwise
+  - `2.0.0` otherwise
 - **Protocol**: HTTP/HTTPS
 - **Response format**: JSON
 
@@ -20,12 +20,12 @@ Returns the backend API banner.
 Response keys:
 
 - `message` (string): API banner text.
-- `version` (string): version label (`2.x` in production, `2.0.0-rc1` otherwise).
+- `version` (string): version label (`2.x` in production, `2.0.0` otherwise).
 
 ```json
 {
   "message": "EdgeWARN Backend API",
-  "version": "2.0.0-rc1"
+  "version": "2.0.0"
 }
 ```
 
@@ -36,7 +36,7 @@ Returns API v2 metadata and endpoint map.
 Response keys:
 
 - `message` (string): API group label.
-- `version` (string): version label (`2.x` in production, `2.0.0-rc1` otherwise).
+- `version` (string): version label (`2.x` in production, `2.0.0` otherwise).
 - `endpoints` (object): route map.
   - `endpoints.features` (object)
     - `endpoints.features.cells` (string)
@@ -50,7 +50,7 @@ Response keys:
 ```json
 {
   "message": "EdgeWARN API v2",
-  "version": "2.0.0-rc1",
+  "version": "2.0.0",
   "endpoints": {
     "features": {
       "cells": "/api/v2/features/cells[?id={int}]",
