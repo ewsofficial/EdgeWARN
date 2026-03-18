@@ -15,13 +15,45 @@ except Exception:
 
 io_manager = IOManager("[Transform]")
 
-try:
-    proj_data_dir = pyproj_datadir.get_data_dir()
-    if proj_data_dir:
-        os.environ.setdefault("PROJ_DATA", proj_data_dir)
-        os.environ.setdefault("PROJ_LIB", proj_data_dir)
-except Exception:
-    proj_data_dir = None
+def configure_proj_runtime() -> str | None:
+    """Force child processes to use the rasterio/GDAL-compatible PROJ database."""
+    try:
+        proj_data_dir = None
+        gdal_data_dir = None
+
+        try:
+            import rasterio._env as rasterio_env
+
+            proj_data_dir = rasterio_env.PROJDataFinder().search()
+            gdal_data_dir = rasterio_env.get_gdal_data()
+        except Exception as exc:
+            io_manager.write_debug(f"Unable to inspect rasterio data directories directly: {exc}")
+
+        if not proj_data_dir:
+            proj_data_dir = pyproj_datadir.get_data_dir()
+
+        if not proj_data_dir:
+            return None
+
+        os.environ["PROJ_DATA"] = proj_data_dir
+        os.environ["PROJ_LIB"] = proj_data_dir
+        if gdal_data_dir:
+            os.environ["GDAL_DATA"] = gdal_data_dir
+
+        try:
+            import rasterio._env as rasterio_env
+
+            rasterio_env.set_proj_data_search_path(proj_data_dir)
+        except Exception as exc:
+            io_manager.write_debug(f"Unable to set rasterio PROJ search path directly: {exc}")
+
+        return proj_data_dir
+    except Exception as exc:
+        io_manager.write_warning(f"Failed to configure PROJ runtime: {exc}")
+        return None
+
+
+PROJ_DATA_DIR = configure_proj_runtime()
 
 # Cached transformer for EPSG:4326 to EPSG:3857 (thread-safe per pyproj docs)
 _TRANSFORMER_4326_TO_3857 = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
