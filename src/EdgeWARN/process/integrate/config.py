@@ -177,6 +177,7 @@ def get_rap_products():
             {
                 "filter": {"typeOfLevel": "isobaricInhPa"},
                 "var": "u",
+                "var_aliases": ["u", "UGRD", "u-component_of_wind_isobaric", "wind_u"],
                 "levels": [
                     1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 
                     675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 
@@ -187,6 +188,7 @@ def get_rap_products():
             {
                 "filter": {"typeOfLevel": "isobaricInhPa"},
                 "var": "v",
+                "var_aliases": ["v", "VGRD", "v-component_of_wind_isobaric", "wind_v"],
                 "levels": [
                     1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 
                     675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 

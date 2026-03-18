@@ -48,17 +48,33 @@ class RAPPointExtractor:
     def __init__(self, filepath: str):
         self.filepath = filepath
 
+    @staticmethod
+    def _get_product_vars(product: dict) -> list[str]:
+        """Return all supported GRIB short-name aliases for a product."""
+        var_aliases = product.get("var_aliases")
+        if var_aliases is not None:
+            return list(var_aliases)
+
+        var = product["var"]
+        if isinstance(var, (list, tuple, set)):
+            return list(var)
+        return [var]
+
     def extract(self, products: list, cell_coords: dict) -> dict:
+        eccodes.codes_grib_multi_support_on()
         wanted = {}
         for product in products:
-            short_name = product["var"]
+            short_names = self._get_product_vars(product)
             type_of_level = product["filter"]["typeOfLevel"]
             filter_level = product["filter"].get("level")
             if "levels" in product:
                 for level in product["levels"]:
-                    wanted[(short_name, type_of_level, level)] = product["key_template"].format(level=level)
+                    output_key = product["key_template"].format(level=level)
+                    for short_name in short_names:
+                        wanted[(short_name, type_of_level, level)] = output_key
             else:
-                wanted[(short_name, type_of_level, filter_level)] = product["key"]
+                for short_name in short_names:
+                    wanted[(short_name, type_of_level, filter_level)] = product["key"]
 
         cell_ids = list(cell_coords.keys())
         lats = np.array([cell_coords[cid][0] for cid in cell_ids])
@@ -110,16 +126,20 @@ class RAPPointExtractor:
     def extract_batch(self, products: list, cell_coords: dict) -> dict:
         from scipy.spatial import cKDTree
 
+        eccodes.codes_grib_multi_support_on()
         wanted = {}
         for product in products:
-            short_name = product["var"]
+            short_names = self._get_product_vars(product)
             type_of_level = product["filter"]["typeOfLevel"]
             filter_level = product["filter"].get("level")
             if "levels" in product:
                 for level in product["levels"]:
-                    wanted[(short_name, type_of_level, level)] = product["key_template"].format(level=level)
+                    output_key = product["key_template"].format(level=level)
+                    for short_name in short_names:
+                        wanted[(short_name, type_of_level, level)] = output_key
             else:
-                wanted[(short_name, type_of_level, filter_level)] = product["key"]
+                for short_name in short_names:
+                    wanted[(short_name, type_of_level, filter_level)] = product["key"]
 
         cell_ids = list(cell_coords.keys())
         cell_lats = np.array([cell_coords[cid][0] for cid in cell_ids])
