@@ -54,9 +54,9 @@ if (argBase) {
 } else if (envBase) {
   BASE_DIR = envBase;
 } else if (process.platform === 'win32') {
-  BASE_DIR = 'C:\\EWMRS';
+  BASE_DIR = 'C:\\EdgeWARN_input';
 } else {
-  BASE_DIR = path.join(os.homedir(), 'EWMRS');
+  BASE_DIR = path.join(os.homedir(), 'EdgeWARN_input');
 }
 
 const GUI_DIR = path.join(BASE_DIR, 'gui');
