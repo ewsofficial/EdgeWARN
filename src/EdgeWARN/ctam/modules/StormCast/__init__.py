@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timedelta
 import util.file as fs
+from util.io import IOManager
 
 # Re-export core components for external use
 from .core import (
@@ -23,6 +24,9 @@ from .core import (
     PRESSURE_LEVELS,
 )
 
+
+
+io_manager = IOManager("[StormCast]")
 
 
 class StormCastModule(AnalysisModule):
@@ -293,6 +297,12 @@ class StormCastModule(AnalysisModule):
                 if p["ts"] not in seen_ts:
                     seen_ts.add(p["ts"])
                     unique_points.append(p)
+
+            duplicate_count = len(historical_points) - len(unique_points)
+            if duplicate_count > 0:
+                io_manager.write_debug(
+                    f"Cell {storm_entry.get('id', 'unknown')}: removed {duplicate_count} duplicate history point(s) by timestamp"
+                )
             
             # Add to engine
             import math
@@ -316,6 +326,10 @@ class StormCastModule(AnalysisModule):
             
             # If we only have 1 point (current), try to use the dx/dy fallback
             if len(unique_points) < 2 and (dx is not None and dy is not None):
+                 io_manager.write_debug(
+                     f"Cell {storm_entry.get('id', 'unknown')}: insufficient history for multi-point StormCast run; "
+                     f"using dx/dy fallback with dt={dt}"
+                 )
                  # Fallback to single-frame logic
                  engine.add_observation(-dx, -dy, dt_seconds=0, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
                  engine.add_observation(0.0, 0.0, dt_seconds=dt, echo_top_30=echo_top_30, echo_top_50=echo_top_50, polygon=current_polygon)
@@ -350,17 +364,30 @@ class StormCastModule(AnalysisModule):
                     )
                     prev_time = curr_time
             
-            # Calculate tracking duration
-            can_generate_alerts = False
+            # Generate forecast
+            result = engine.generate_forecast()
+
+            # Calculate tracking duration for diagnostics only.
+            duration_min = 0.0
             if len(unique_points) >= 2:
                 first_ts = parse_ts(unique_points[0]["ts"])
                 last_ts = parse_ts(unique_points[-1]["ts"])
                 duration_min = (last_ts - first_ts).total_seconds() / 60
-                if duration_min >= 15:
-                    can_generate_alerts = True
-            
-            # Generate forecast
-            result = engine.generate_forecast()
+
+            # Alert eligibility should begin as soon as a valid forecast polygon exists.
+            # Tracking duration is preserved as metadata for downstream consumers/debugging.
+            can_generate_alerts = bool(result.polygon_0_30m)
+
+            io_manager.write_info(
+                f"Cell {storm_entry.get('id', 'unknown')}: history_points={len(historical_points)} unique_points={len(unique_points)} "
+                f"duration_min={duration_min:.2f} polygon_ready={bool(result.polygon_0_30m)} "
+                f"alert_eligible={can_generate_alerts} timestamp={current_ts_str}"
+            )
+
+            if not can_generate_alerts:
+                io_manager.write_info(
+                    f"Cell {storm_entry.get('id', 'unknown')}: suppressing StormCast alert because forecast polygon_0_30m is unavailable"
+                )
             
             
             # Store results
@@ -371,7 +398,8 @@ class StormCastModule(AnalysisModule):
                 "forecast_polygons": result.forecast_polygons,
                 "polygon_0_30m": result.polygon_0_30m,
                 "status": "success",
-                "can_generate_alerts": can_generate_alerts
+                "can_generate_alerts": can_generate_alerts,
+                "tracking_duration_min": round(duration_min, 2)
             }
             
         except Exception as e:
@@ -385,16 +413,23 @@ class StormCastModule(AnalysisModule):
     # ------------------------------------------------------------------
     def alerts(self, storm_entry: Dict[str, Any]) -> Optional[List[AlertPayload]]:
         """
-        Build an alert from the 0-30m forecast polygon if the module ran
-        successfully and the cell has been tracked for at least 15 minutes.
+        Build an alert from the 0-30m forecast polygon once the module has
+        produced a valid forecast polygon for the cell.
         """
         result = storm_entry.get("modules", {}).get(self.name, {})
 
         if result.get("status") != "success" or not result.get("can_generate_alerts"):
+            io_manager.write_debug(
+                f"Cell {storm_entry.get('id', 'unknown')}: no StormCast alert emitted; "
+                f"status={result.get('status')} can_generate_alerts={result.get('can_generate_alerts')}"
+            )
             return None
 
         polygon = result.get("polygon_0_30m")
         if not polygon:
+            io_manager.write_warning(
+                f"Cell {storm_entry.get('id', 'unknown')}: StormCast eligible for alert but polygon_0_30m is missing"
+            )
             return None
 
         # Parse timestamp for effective / expiry calculation
@@ -419,4 +454,3 @@ class StormCastModule(AnalysisModule):
                 expiry_time=expiry,
             )
         ]
-
