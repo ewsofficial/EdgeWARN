@@ -58,12 +58,12 @@ python src/process_historical.py --start <ISO8601> --end <ISO8601> [options]
 #### 3. API Server (v2)
 Start the Node.js backend server:
 ```bash
-npm start
+npm run api:edgewarn
 ```
-*   **Default Port:** 5000 (Production)
-*   **Debug Port:** 3001 (if using `--debug_server` or `npm run debug`)
+*   **Default Port:** 5000
+*   **Debug Port:** 3001 (via `npm run debug:edgewarn`)
 *   **Health Check:** `http://localhost:5000/health`
-*   **Development Mode:** `npm run dev` (uses `--watch`)
+*   **EWMRS API:** `npm run api:ewmrs`
 
 ## Development Conventions
 
@@ -88,9 +88,9 @@ Use the following prefixes:
 *   `BLD`: Build/Tooling
 
 ### Testing
-*   **Python:** Run tests using `pytest`.
+*   **Python:** Run tests using the active Conda environment.
     ```bash
-    pytest
+    python -m pytest tests/
     ```
 *   **Node.js:** Run tests using `jest`.
     ```bash

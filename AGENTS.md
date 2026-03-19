@@ -116,9 +116,9 @@ EdgeWARN is a severe weather nowcasting system developed by the Edgemont Weather
 
 #### Data Server (Node.js)
 ```bash
-npm start                    # Start production server
-npm run dev                  # Start development server with watch mode
-npm run debug                # Start debug server
+npm run api:edgewarn         # Start EdgeWARN API server on the default port
+npm run debug:edgewarn       # Start EdgeWARN API server in debug mode on port 3001
+npm run api:ewmrs            # Start the EWMRS API server
 ```
 
 #### Real-Time Analysis (Python)
@@ -145,7 +145,7 @@ npm run test:coverage        # Run tests with coverage report
 
 #### Python Tests
 ```bash
-pytest tests/                # Run all Python tests
+python -m pytest tests/      # Run all Python tests in the active Conda environment
 ```
 
 ### Key Project Structure
