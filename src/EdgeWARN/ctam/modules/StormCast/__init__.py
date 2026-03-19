@@ -415,6 +415,11 @@ class StormCastModule(AnalysisModule):
         """
         Build an alert from the 0-30m forecast polygon once the module has
         produced a valid forecast polygon for the cell.
+
+        Alert cadence rule:
+        - If no prior StormCast alert exists for the cell, emit immediately.
+        - If a prior StormCast alert exists, wait at least 15 minutes after
+          that alert's effective time before emitting a replacement polygon.
         """
         result = storm_entry.get("modules", {}).get(self.name, {})
 
@@ -432,6 +437,8 @@ class StormCastModule(AnalysisModule):
             )
             return None
 
+        cell_id = storm_entry.get("id", "unknown_cell")
+
         # Parse timestamp for effective / expiry calculation
         ts_str = storm_entry.get("timestamp")
         if ts_str:
@@ -442,13 +449,25 @@ class StormCastModule(AnalysisModule):
         else:
             effective = datetime.now()
 
+        previous_alert = AlertManager.load(self.name, cell_id)
+        if previous_alert is not None:
+            next_allowed_time = previous_alert.effective_time + timedelta(minutes=15)
+            if effective < next_allowed_time:
+                wait_minutes = (next_allowed_time - effective).total_seconds() / 60
+                io_manager.write_info(
+                    f"Cell {cell_id}: suppressing StormCast alert refresh because prior alert effective time "
+                    f"{previous_alert.effective_time.isoformat()} requires 15-minute spacing; "
+                    f"next eligible in {wait_minutes:.2f} min"
+                )
+                return None
+
         expiry = effective + timedelta(minutes=30)
 
         return [
             AlertPayload(
                 alert_type="TSTM",
                 source=self.name,
-                cell_id=storm_entry.get("id", "unknown_cell"),
+                cell_id=cell_id,
                 geometry=polygon,
                 effective_time=effective,
                 expiry_time=expiry,
