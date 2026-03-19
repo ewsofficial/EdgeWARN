@@ -10,7 +10,7 @@ from EdgeWARN.process.integrate.config import get_datasets_config
 from util.performance import tracker as perf_tracker
 io_manager = IOManager("[CellIntegration]")
 
-def main(json_path=None, remove_old_cells=True):
+def main(json_path=None, remove_old_cells=True, disable_ctam=False):
     handler = StatFileHandler(io_manager)
     integrator = StormCellIntegrator(io_manager)
     
@@ -113,15 +113,18 @@ def main(json_path=None, remove_old_cells=True):
         io_manager.write_error(f"Failed to integrate RAP data: {e}")
     
     # Run CTAM modules (StormCast, etc.)
-    try:
-        from EdgeWARN.ctam.run import run_ctam
-        io_manager.write_info(f"Running CTAM modules for {len(result_cells)} cells")
-        perf_tracker.start("Integration - CTAM")
-        result_cells = run_ctam(result_cells, timestamp=timestamp)
-        perf_tracker.stop("Integration - CTAM")
-        io_manager.write_debug("CTAM module execution completed successfully")
-    except Exception as e:
-        io_manager.write_error(f"Failed to run CTAM modules: {e}")
+    if disable_ctam:
+        io_manager.write_info("CTAM module execution disabled via command-line flag")
+    else:
+        try:
+            from EdgeWARN.ctam.run import run_ctam
+            io_manager.write_info(f"Running CTAM modules for {len(result_cells)} cells")
+            perf_tracker.start("Integration - CTAM")
+            result_cells = run_ctam(result_cells, timestamp=timestamp)
+            perf_tracker.stop("Integration - CTAM")
+            io_manager.write_debug("CTAM module execution completed successfully")
+        except Exception as e:
+            io_manager.write_error(f"Failed to run CTAM modules: {e}")
     
     # Save data
     perf_tracker.start("Integration - Save")
