@@ -134,6 +134,10 @@ def _run_tandem_cycle(dt):
             lat_limits,
             lon_limits,
             args.profile,
+            args.disable_ctam,
+            args.refl_threshold,
+            args.min_seed_percentage,
+            args.drop_offset,
         ),
     )
     ewmrs_proc = multiprocessing.Process(
@@ -158,6 +162,14 @@ def _run_tandem_cycle(dt):
 def main():
     """Scheduler: run a shared ingest cycle and launch EdgeWARN/EWMRS in tandem."""
     print("Scheduler started. Press CTRL+C to exit.")
+    if args.disable_ctam:
+        print("[Scheduler] CTAM execution disabled via --disable-ctam")
+    print(
+        "[Scheduler] Detection thresholds: "
+        f"refl_threshold={args.refl_threshold}, "
+        f"min_seed_percentage={args.min_seed_percentage}, "
+        f"drop_offset={args.drop_offset}"
+    )
     checker = MRMSUpdateChecker(verbose=True)
     last_processed = None  # Track last processed timestamp
 

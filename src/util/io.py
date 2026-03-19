@@ -49,6 +49,10 @@ class IOManager:
         parser.add_argument("--lon_limits", type=float, nargs=2, metavar=("LON_MIN", "LON_MAX"), default=[230, 300], help="Longitude limits for processing (default: 230 300)")
         parser.add_argument("--base_dir", type=str, default=None, help="Custom base directory for input/output data")
         parser.add_argument("--profile", action="store_true", help="Enable performance profiling")
+        parser.add_argument("--disable-ctam", action="store_true", help="Skip CTAM module execution during integration")
+        parser.add_argument("--refl-threshold", type=float, default=37.5, help="Override the baseline reflectivity threshold used by storm cell detection (default: 37.5)")
+        parser.add_argument("--min-seed-percentage", type=float, default=0.001, help="Override the minimum polygon seed coverage ratio used during gate expansion (default: 0.001)")
+        parser.add_argument("--drop-offset", type=float, default=10.0, help="Override the dynamic reflectivity drop offset used during gate expansion (default: 10.0)")
         args = parser.parse_args()
 
         if len(args.lat_limits) != 2 or len(args.lon_limits) != 2:
@@ -56,6 +60,9 @@ class IOManager:
             sys.exit(1)
         if args.lat_limits == [0, 0] or args.lon_limits == [0, 0]:
             print("ERROR: lat_limits or lon_limits not specified! They must be two numeric values each.")
+            sys.exit(1)
+        if args.min_seed_percentage < 0:
+            print("ERROR: --min-seed-percentage must be non-negative.")
             sys.exit(1)
 
         args.lon_limits = [lon % 360 for lon in args.lon_limits]

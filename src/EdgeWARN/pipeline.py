@@ -76,7 +76,15 @@ def _prepare_realtime_detection_inputs(log):
         )
 
 
-def run_edgewarn_detection_phase(log, lat_limits, lon_limits, output_path=Path("stormcell_test.json")):
+def run_edgewarn_detection_phase(
+    log,
+    lat_limits,
+    lon_limits,
+    output_path=Path("stormcell_test.json"),
+    refl_threshold=37.5,
+    min_seed_percentage=0.001,
+    drop_offset=10.0,
+):
     """Run only the realtime detection phase using already-ingested local files."""
     try:
         detection_inputs = _prepare_realtime_detection_inputs(log)
@@ -93,17 +101,24 @@ def run_edgewarn_detection_phase(log, lat_limits, lon_limits, output_path=Path("
         lat_limits,
         lon_limits,
         output_path,
+        refl_threshold=refl_threshold,
+        min_seed_percentage=min_seed_percentage,
+        drop_offset=drop_offset,
     )
     return generated_file
 
 
-def run_edgewarn_integration_phase(log, generated_file, remove_old_cells=True):
+def run_edgewarn_integration_phase(log, generated_file, remove_old_cells=True, disable_ctam=False):
     """Run only the integration phase from an existing detection artifact."""
     if not generated_file:
         log("WARN: No detection artifact was produced; skipping integration")
         return False
 
-    integration.main(generated_file, remove_old_cells=remove_old_cells)
+    integration.main(
+        generated_file,
+        remove_old_cells=remove_old_cells,
+        disable_ctam=disable_ctam,
+    )
     return True
 
 
@@ -116,6 +131,10 @@ def edgewarn_tandem_worker(
     lat_limits,
     lon_limits,
     profile=False,
+    disable_ctam=False,
+    refl_threshold=37.5,
+    min_seed_percentage=0.001,
+    drop_offset=10.0,
 ):
     """Process target for staged EdgeWARN execution within the tandem runner."""
     sys.stdout = QueueWriter(log_queue)
@@ -136,7 +155,14 @@ def edgewarn_tandem_worker(
             return
 
         perf_tracker.start("Detection")
-        generated_file = run_edgewarn_detection_phase(log, lat_limits, lon_limits)
+        generated_file = run_edgewarn_detection_phase(
+            log,
+            lat_limits,
+            lon_limits,
+            refl_threshold=refl_threshold,
+            min_seed_percentage=min_seed_percentage,
+            drop_offset=drop_offset,
+        )
         perf_tracker.stop("Detection")
         shared_state["edgewarn_generated_file"] = str(generated_file) if generated_file else ""
 
@@ -148,7 +174,11 @@ def edgewarn_tandem_worker(
             return
 
         perf_tracker.start("Integration")
-        run_edgewarn_integration_phase(log, shared_state.get("edgewarn_generated_file") or None)
+        run_edgewarn_integration_phase(
+            log,
+            shared_state.get("edgewarn_generated_file") or None,
+            disable_ctam=disable_ctam,
+        )
         perf_tracker.stop("Integration")
         log("INFO: EdgeWARN worker completed successfully")
     except Exception as exc:
@@ -281,6 +311,10 @@ def historical_pipeline(
     profile=False,
     cached_objs=(None, None, None),
     io_manager=None,
+    disable_ctam=False,
+    refl_threshold=37.5,
+    min_seed_percentage=0.001,
+    drop_offset=10.0,
 ):
     pipeline_io = io_manager or IOManager("[HistoricalProcess]")
 
@@ -320,13 +354,20 @@ def historical_pipeline(
             radar_old_obj=rad_old_obj,
             ps_old_obj=ps_old_obj,
             pt_old_obj=pt_old_obj,
+            refl_threshold=refl_threshold,
+            min_seed_percentage=min_seed_percentage,
+            drop_offset=drop_offset,
         )
         perf_tracker.stop("Detection")
 
         if generated_file:
             pipeline_io.write_info("Starting Integration")
             perf_tracker.start("Integration")
-            integration.main(generated_file, remove_old_cells=False)
+            integration.main(
+                generated_file,
+                remove_old_cells=False,
+                disable_ctam=disable_ctam,
+            )
             perf_tracker.stop("Integration")
         else:
             pipeline_io.write_warning("Detection failed or produced no output, skipping integration")

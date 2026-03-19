@@ -18,6 +18,9 @@ def detect_cells(
     lon_max,
     *,
     return_probsevere=False,
+    refl_threshold=37.5,
+    min_seed_percentage=0.001,
+    drop_offset=10.0,
     radar_obj=None,
     ps_obj=None,
     preciptype_obj=None,
@@ -59,7 +62,14 @@ def detect_cells(
     if preciptype_ds is None:
          io_manager.write_warning("Failed to load precipitation type data, stratiform discrimination will be limited")
 
-    mapper = GateMapper(radar_ds, ps_ds, io_manager, refl_threshold=37.5, min_seed_percentage=0.001)
+    mapper = GateMapper(
+        radar_ds,
+        ps_ds,
+        io_manager,
+        refl_threshold=refl_threshold,
+        min_seed_percentage=min_seed_percentage,
+        drop_offset=drop_offset,
+    )
     
     perf_tracker.start("Detection - Map Gates")
     mapped_ds = mapper.map_gates_to_polygons()

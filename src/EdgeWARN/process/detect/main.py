@@ -24,6 +24,9 @@ def _detect_with_optional_probsevere(
     lon_min,
     lon_max,
     need_probsevere,
+    refl_threshold=37.5,
+    min_seed_percentage=0.001,
+    drop_offset=10.0,
     radar_obj=None,
     ps_obj=None,
     pt_obj=None,
@@ -39,6 +42,9 @@ def _detect_with_optional_probsevere(
             lon_min,
             lon_max,
             return_probsevere=True,
+            refl_threshold=refl_threshold,
+            min_seed_percentage=min_seed_percentage,
+            drop_offset=drop_offset,
             radar_obj=radar_obj,
             ps_obj=ps_obj,
             preciptype_obj=pt_obj,
@@ -53,14 +59,32 @@ def _detect_with_optional_probsevere(
         lat_max,
         lon_min,
         lon_max,
+        refl_threshold=refl_threshold,
+        min_seed_percentage=min_seed_percentage,
+        drop_offset=drop_offset,
         radar_obj=radar_obj,
         ps_obj=ps_obj,
         preciptype_obj=pt_obj,
     ), None
 
 
-def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple, lon_bounds: tuple, json_output,
-         radar_old_obj=None, ps_old_obj=None, pt_old_obj=None):
+def main(
+    radar_old,
+    radar_new,
+    ps_old,
+    ps_new,
+    pt_old,
+    pt_new,
+    lat_bounds: tuple,
+    lon_bounds: tuple,
+    json_output,
+    radar_old_obj=None,
+    ps_old_obj=None,
+    pt_old_obj=None,
+    refl_threshold=37.5,
+    min_seed_percentage=0.001,
+    drop_offset=10.0,
+):
     fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=120)
     lat_min, lat_max = lat_bounds
     lon_min, lon_max = lon_bounds
@@ -164,6 +188,9 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
             lon_min,
             lon_max,
             need_probsevere=not single_frame,
+            refl_threshold=refl_threshold,
+            min_seed_percentage=min_seed_percentage,
+            drop_offset=drop_offset,
             radar_obj=radar_old_obj, # Pass cached object
             ps_obj=ps_old_obj,
             pt_obj=pt_old_obj,
@@ -252,6 +279,9 @@ def main(radar_old, radar_new, ps_old, ps_new, pt_old, pt_new, lat_bounds: tuple
         lon_min,
         lon_max,
         need_probsevere=True,
+        refl_threshold=refl_threshold,
+        min_seed_percentage=min_seed_percentage,
+        drop_offset=drop_offset,
         radar_obj=radar_new_obj, # Pass preloaded
         ps_obj=ps_new_obj,
         pt_obj=pt_new_obj 
