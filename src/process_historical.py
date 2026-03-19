@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--base_dir", type=str, default=None, help="Custom base directory for input data")
     parser.add_argument("--profile", action="store_true", help="Enable performance profiling")
     parser.add_argument("--disable-ctam", action="store_true", help="Skip CTAM module execution during integration")
+    parser.add_argument("--disable-tracking", action="store_true", help="Skip lineage detection and Kalman tracking in storm cell detection")
     parser.add_argument("--refl-threshold", type=float, default=37.5, help="Override the baseline reflectivity threshold used by storm cell detection (default: 37.5)")
     parser.add_argument("--min-seed-percentage", type=float, default=0.001, help="Override the minimum polygon seed coverage ratio used during gate expansion (default: 0.001)")
     parser.add_argument("--drop-offset", type=float, default=10.0, help="Override the dynamic reflectivity drop offset used during gate expansion (default: 10.0)")
@@ -59,6 +60,8 @@ def main():
     io_manager.write_info(f"Starting historical processing from {start_time} to {end_time}")
     if args.disable_ctam:
         io_manager.write_info("CTAM execution disabled via --disable-ctam")
+    if args.disable_tracking:
+        io_manager.write_info("Tracking disabled via --disable-tracking")
     io_manager.write_info(
         "Detection thresholds: "
         f"refl_threshold={args.refl_threshold}, "
@@ -108,6 +111,7 @@ def main():
                 cached_objs=cached_objs,
                 io_manager=io_manager,
                 disable_ctam=args.disable_ctam,
+                disable_tracking=args.disable_tracking,
                 refl_threshold=args.refl_threshold,
                 min_seed_percentage=args.min_seed_percentage,
                 drop_offset=args.drop_offset,

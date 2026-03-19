@@ -81,6 +81,7 @@ def main(
     radar_old_obj=None,
     ps_old_obj=None,
     pt_old_obj=None,
+    disable_tracking=False,
     refl_threshold=37.5,
     min_seed_percentage=0.001,
     drop_offset=10.0,
@@ -309,50 +310,60 @@ def main(
         perf_tracker.stop("Detection - Load ProbSevere Old")
 
     perf_tracker.start("Detection - Tracking")
-    
-    # Load Kalman configurations
-    tracking_config = TrackingConfig.from_yaml()
-    assignment_config = AssignmentConfig.from_yaml()
-    
-    tracker = StormCellTracker(
-        ps_old_data, 
-        ps_new_data, 
-        io_manager,
-        tracking_config=tracking_config,
-        assignment_config=assignment_config
-    )
     saver = CellDataSaver(None, radar_new, None, None, ps_new_data, None)
-    
-    # Lineage detection (merge/split events)
+
     stormcell_dir = fs.STORMCELL_DIR
     stormcell_dir.mkdir(exist_ok=True)
-    lineage = tracker.detect_lineage_events(entries_old, entries_new, stormcell_dir)
-    
-    # Calculate dt for Kalman filter
-    dt_seconds = 120.0 # Default
-    if old_ts_str:
-        try:
-            old_dt = datetime.fromisoformat(old_ts_str)
-            current_dt = datetime.fromisoformat(json_ts)
-            dt_seconds = (current_dt - old_dt).total_seconds()
-            if dt_seconds <= 0:
-                io_manager.write_warning(f"Calculated dt={dt_seconds}s is non-positive. Defaulting to 120s.")
-                dt_seconds = 120.0
-        except Exception as e:
-            io_manager.write_warning(f"Failed to calculate dt from timestamps: {e}. Defaulting to 120s.")
-            
-    # Pass timestamp, dt, and lineage to tracker
-    entries = tracker.update_cells(
-        entries_old, 
-        entries_new, 
-        timestamp=json_ts, 
-        dt_seconds=dt_seconds,
-        lineage=lineage
-    )
-    
-    # Save lineage buffer state for next scan
-    tracker.save_lineage_buffer(stormcell_dir)
-    
+
+    if disable_tracking:
+        io_manager.write_info("Tracking disabled: skipping lineage detection and Kalman tracking")
+        entries = entries_new
+        for cell in entries:
+            cell["timestamp"] = json_ts
+            cell.setdefault("tracking_mode", "active")
+            cell.setdefault("prediction_count", 0)
+            cell.setdefault("event_type", "active")
+    else:
+        # Load Kalman configurations
+        tracking_config = TrackingConfig.from_yaml()
+        assignment_config = AssignmentConfig.from_yaml()
+
+        tracker = StormCellTracker(
+            ps_old_data,
+            ps_new_data,
+            io_manager,
+            tracking_config=tracking_config,
+            assignment_config=assignment_config
+        )
+
+        # Lineage detection (merge/split events)
+        lineage = tracker.detect_lineage_events(entries_old, entries_new, stormcell_dir)
+
+        # Calculate dt for Kalman filter
+        dt_seconds = 120.0 # Default
+        if old_ts_str:
+            try:
+                old_dt = datetime.fromisoformat(old_ts_str)
+                current_dt = datetime.fromisoformat(json_ts)
+                dt_seconds = (current_dt - old_dt).total_seconds()
+                if dt_seconds <= 0:
+                    io_manager.write_warning(f"Calculated dt={dt_seconds}s is non-positive. Defaulting to 120s.")
+                    dt_seconds = 120.0
+            except Exception as e:
+                io_manager.write_warning(f"Failed to calculate dt from timestamps: {e}. Defaulting to 120s.")
+
+        # Pass timestamp, dt, and lineage to tracker
+        entries = tracker.update_cells(
+            entries_old,
+            entries_new,
+            timestamp=json_ts,
+            dt_seconds=dt_seconds,
+            lineage=lineage
+        )
+
+        # Save lineage buffer state for next scan
+        tracker.save_lineage_buffer(stormcell_dir)
+
     perf_tracker.stop("Detection - Tracking")
     
     perf_tracker.start("Detection - Vector Calc")

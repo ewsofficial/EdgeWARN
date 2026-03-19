@@ -135,6 +135,7 @@ def _run_tandem_cycle(dt):
             lon_limits,
             args.profile,
             args.disable_ctam,
+            args.disable_tracking,
             args.refl_threshold,
             args.min_seed_percentage,
             args.drop_offset,
@@ -164,6 +165,8 @@ def main():
     print("Scheduler started. Press CTRL+C to exit.")
     if args.disable_ctam:
         print("[Scheduler] CTAM execution disabled via --disable-ctam")
+    if args.disable_tracking:
+        print("[Scheduler] Tracking disabled via --disable-tracking")
     print(
         "[Scheduler] Detection thresholds: "
         f"refl_threshold={args.refl_threshold}, "
