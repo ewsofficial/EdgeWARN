@@ -25,8 +25,16 @@ def main():
     parser.add_argument("--output", type=str, default="stormcell_test.json", help="Output JSON file")
     parser.add_argument("--base_dir", type=str, default=None, help="Custom base directory for input data")
     parser.add_argument("--profile", action="store_true", help="Enable performance profiling")
+    parser.add_argument("--disable-ctam", action="store_true", help="Skip CTAM module execution during integration")
+    parser.add_argument("--refl-threshold", type=float, default=37.5, help="Override the baseline reflectivity threshold used by storm cell detection (default: 37.5)")
+    parser.add_argument("--min-seed-percentage", type=float, default=0.001, help="Override the minimum polygon seed coverage ratio used during gate expansion (default: 0.001)")
+    parser.add_argument("--drop-offset", type=float, default=10.0, help="Override the dynamic reflectivity drop offset used during gate expansion (default: 10.0)")
 
     args = parser.parse_args()
+
+    if args.min_seed_percentage < 0:
+        io_manager.write_error("--min-seed-percentage must be non-negative.")
+        return
 
     # Initialize custom filesystem if provided
     initialize_runtime(base_dir=args.base_dir, io_manager=io_manager, initialize_indexes=False)
@@ -49,6 +57,14 @@ def main():
     last_processed_timestamp = None  # Track the actual data timestamp that was processed
     
     io_manager.write_info(f"Starting historical processing from {start_time} to {end_time}")
+    if args.disable_ctam:
+        io_manager.write_info("CTAM execution disabled via --disable-ctam")
+    io_manager.write_info(
+        "Detection thresholds: "
+        f"refl_threshold={args.refl_threshold}, "
+        f"min_seed_percentage={args.min_seed_percentage}, "
+        f"drop_offset={args.drop_offset}"
+    )
     
     cached_objs = (None, None, None) # Initialize cache
 
@@ -91,6 +107,10 @@ def main():
                 profile=args.profile,
                 cached_objs=cached_objs,
                 io_manager=io_manager,
+                disable_ctam=args.disable_ctam,
+                refl_threshold=args.refl_threshold,
+                min_seed_percentage=args.min_seed_percentage,
+                drop_offset=args.drop_offset,
             )
             
             # Update cache for next iteration if valid
