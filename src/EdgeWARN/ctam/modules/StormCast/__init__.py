@@ -424,10 +424,6 @@ class StormCastModule(AnalysisModule):
         result = storm_entry.get("modules", {}).get(self.name, {})
 
         if result.get("status") != "success" or not result.get("can_generate_alerts"):
-            io_manager.write_debug(
-                f"Cell {storm_entry.get('id', 'unknown')}: no StormCast alert emitted; "
-                f"status={result.get('status')} can_generate_alerts={result.get('can_generate_alerts')}"
-            )
             return None
 
         polygon = result.get("polygon_0_30m")
