@@ -81,6 +81,7 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
         # Initialize modules dict
         module_names = list(cell_modules.keys())
         initialize_modules(cell, module_names)
+        pending_cell_alerts = []
         
         # Run each cell-based module
         for module in cell_modules.values():
@@ -102,9 +103,12 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
             try:
                 module_alerts = module.alerts(cell)
                 if module_alerts:
-                    AlertManager.publish_many(module_alerts)
+                    pending_cell_alerts.extend(module_alerts)
             except Exception as e:
                 print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: Alerts from '{module.name}' FAILED: {e}")
+
+        if pending_cell_alerts:
+            AlertManager.publish_many(pending_cell_alerts)
     
     # Step 2: Run grid-based modules
     grid_results = {}
@@ -151,5 +155,4 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
             print(f"[CTAM] Failed to create alert snapshot for {timestamp}: {e}")
 
     return cells
-
 
