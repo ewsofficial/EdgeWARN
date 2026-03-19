@@ -463,6 +463,10 @@ class StormCastModule(AnalysisModule):
 
         expiry = effective + timedelta(minutes=30)
 
+        morphowind_result = storm_entry.get("modules", {}).get("MorphoWind", {})
+        morphowind_severity = morphowind_result.get("severity_index", 0.0)
+        tstm_wind = "true" if morphowind_severity > 0.6 else "false"
+
         return [
             AlertPayload(
                 alert_type="TSTM",
@@ -471,5 +475,8 @@ class StormCastModule(AnalysisModule):
                 geometry=polygon,
                 effective_time=effective,
                 expiry_time=expiry,
+                threats={
+                    "tstm_wind": tstm_wind,
+                },
             )
         ]
