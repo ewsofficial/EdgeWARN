@@ -109,6 +109,43 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
 
         if pending_cell_alerts:
             AlertManager.publish_many(pending_cell_alerts)
+
+    stormcast_status_counts = {}
+    stormcast_alert_eligibility_counts = {
+        True: 0,
+        False: 0,
+        None: 0,
+    }
+
+    for cell in cells:
+        stormcast_result = cell.get("modules", {}).get("StormCast")
+        if not stormcast_result:
+            continue
+
+        status = stormcast_result.get("status", "unknown")
+        stormcast_status_counts[status] = stormcast_status_counts.get(status, 0) + 1
+
+        eligibility = stormcast_result.get("can_generate_alerts")
+        if eligibility is True:
+            stormcast_alert_eligibility_counts[True] += 1
+        elif eligibility is False:
+            stormcast_alert_eligibility_counts[False] += 1
+        else:
+            stormcast_alert_eligibility_counts[None] += 1
+
+    if stormcast_status_counts:
+        status_summary = ", ".join(
+            f"{status}={count}" for status, count in sorted(stormcast_status_counts.items())
+        )
+        eligibility_summary = (
+            f"true={stormcast_alert_eligibility_counts[True]}, "
+            f"false={stormcast_alert_eligibility_counts[False]}, "
+            f"none={stormcast_alert_eligibility_counts[None]}"
+        )
+        print(
+            "[CTAM] StormCast summary: "
+            f"status[{status_summary}] can_generate_alerts[{eligibility_summary}]"
+        )
     
     # Step 2: Run grid-based modules
     grid_results = {}
@@ -155,4 +192,3 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
             print(f"[CTAM] Failed to create alert snapshot for {timestamp}: {e}")
 
     return cells
-
