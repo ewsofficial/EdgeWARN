@@ -10,6 +10,8 @@ import EdgeWARN.process.detect.main as detect
 import EdgeWARN.process.integrate.main as integration
 import util.file as fs
 import common.ingest.mrms.main as ingest_main
+from common.ingest.mrms.config import get_goes_modifiers, get_mrms_modifiers
+from common.ingest.mrms.pipeline import get_output_dirs
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.api_integration.index_manager import APIIndexManager
 from common.ingest.synoptic.main import download_rap
@@ -52,6 +54,29 @@ def _write_profile_summary(log):
         lines.append(f"{name:<35} | {duration:.4f}")
     lines.append("=" * 50)
     log("\n".join(lines))
+
+
+def _cleanup_historical_data_dirs(pipeline_io):
+    protected_dirs = {fs.CELL_DIR.resolve(), fs.STORMCELL_DIR.resolve()}
+    cleanup_dirs = get_output_dirs(
+        get_mrms_modifiers(),
+        goes_modifiers=get_goes_modifiers(),
+    )
+    cleanup_dirs.append(fs.RAP_DIR)
+
+    seen_dirs = set()
+    for directory in cleanup_dirs:
+        resolved_dir = directory.resolve()
+        if resolved_dir in seen_dirs or resolved_dir in protected_dirs:
+            continue
+
+        seen_dirs.add(resolved_dir)
+        fs.clean_old_files(directory, max_files=5)
+
+    pipeline_io.write_debug(
+        "Historical cleanup applied to ingest data directories only; "
+        "cell and stormcell folders were excluded."
+    )
 
 
 def _prepare_realtime_detection_inputs(log):
@@ -329,6 +354,7 @@ def historical_pipeline(
 
         pipeline_io.write_info(f"Starting Data Ingestion for timestamp {dt}")
         perf_tracker.start("Ingestion")
+        _cleanup_historical_data_dirs(pipeline_io)
         ingest_main.download_all_files(dt, remove_old_files=False)
         download_rap(dt)
         perf_tracker.stop("Ingestion")
