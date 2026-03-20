@@ -1,5 +1,7 @@
 import pytest
 import json
+import os
+from datetime import datetime, timedelta
 from unittest.mock import patch
 from EdgeWARN.api_integration.index_manager import APIIndexManager
 
@@ -66,3 +68,19 @@ def test_cleanup_inactive_cells(index_manager, mocker):
     # Verify that index is updated (write_cell_index is called)
     spy_init.assert_called_once()
     assert mock_write.called
+
+
+def test_cleanup_inactive_cells_preserves_files_when_disabled(mock_io_manager, mock_fs):
+    cell_dir = mock_fs / "cell"
+    old_cell_file = cell_dir / "101.json"
+    old_cell_file.write_text("[]")
+
+    old_time = datetime.now() - timedelta(hours=3)
+    os.utime(old_cell_file, (old_time.timestamp(), old_time.timestamp()))
+
+    with patch("EdgeWARN.api_integration.index_manager.fs.STORMCELL_DIR", mock_fs / "stormcell"), \
+         patch("EdgeWARN.api_integration.index_manager.fs.CELL_DIR", cell_dir):
+        manager = APIIndexManager(mock_io_manager, remove_old_cells=False)
+        manager.cleanup_inactive_cells()
+
+    assert old_cell_file.exists()

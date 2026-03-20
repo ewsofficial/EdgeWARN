@@ -386,6 +386,7 @@ def historical_pipeline(
             ps_old_obj=ps_old_obj,
             pt_old_obj=pt_old_obj,
             disable_tracking=disable_tracking,
+            cleanup_stormcells=False,
             refl_threshold=refl_threshold,
             min_seed_percentage=min_seed_percentage,
             drop_offset=drop_offset,

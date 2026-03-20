@@ -33,3 +33,22 @@ def test_historical_cleanup_skips_cells_and_stormcells(tmp_path):
     assert stormcell_dir not in cleaned_dirs
     assert cleaned_dirs.count(composite_dir) == 1
     assert all(max_files == 5 for max_files in cleaned_max_files)
+
+
+def test_historical_pipeline_preserves_cell_and_stormcell_dirs():
+    with patch.object(pipeline, "_cleanup_historical_data_dirs"), \
+         patch.object(pipeline.ingest_main, "download_all_files"), \
+         patch.object(pipeline, "download_rap"), \
+         patch.object(pipeline, "_find_historical_file", side_effect=["radar_new", "ps_new", "pt_new", "radar_old", "ps_old", "pt_old"]), \
+         patch.object(pipeline.detect, "main", return_value=("generated.json", (None, None, None))) as mock_detect, \
+         patch.object(pipeline.integration, "main") as mock_integrate:
+        generated_file, _ = pipeline.historical_pipeline(
+            dt=pipeline.datetime(2024, 1, 1, 12, 0, tzinfo=pipeline.timezone.utc),
+            lat_limits=(20, 55),
+            lon_limits=(-130, -60),
+            json_output="stormcell_test.json",
+        )
+
+    assert generated_file == "generated.json"
+    assert mock_detect.call_args.kwargs["cleanup_stormcells"] is False
+    assert mock_integrate.call_args.kwargs["remove_old_cells"] is False
