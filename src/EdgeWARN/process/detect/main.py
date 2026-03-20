@@ -82,11 +82,13 @@ def main(
     ps_old_obj=None,
     pt_old_obj=None,
     disable_tracking=False,
+    cleanup_stormcells=True,
     refl_threshold=37.5,
     min_seed_percentage=0.001,
     drop_offset=10.0,
 ):
-    fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=120)
+    if cleanup_stormcells:
+        fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=120)
     lat_min, lat_max = lat_bounds
     lon_min, lon_max = lon_bounds
 
