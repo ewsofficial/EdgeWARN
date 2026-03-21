@@ -19,7 +19,8 @@ app.use(compression());
 
 // Rate Limiting
 const limiter = rateLimit({
-  windowMs: 1, // 1 sec
+  // windowMs is in milliseconds. Use 1000 ms for a 1-second window.
+  windowMs: 1000, // 1 sec
   max: 30, // Limit each IP to 30 requests per `window` (here, per 1 sec)
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
