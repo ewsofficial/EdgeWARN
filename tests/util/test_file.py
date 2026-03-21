@@ -33,6 +33,9 @@ class TestDefinePaths:
         assert fs.STORMCELL_DIR == tmp_path / "data" / "stormcells"
         assert fs.CELL_DIR == tmp_path / "data" / "cells"
         assert fs.METAR_DIR == tmp_path / "data" / "METAR"
+        assert fs.GUI_DIR == tmp_path / "gui"
+        assert fs.GUI_RALA_DIR == tmp_path / "gui" / "RALA"
+        assert fs.WPC_SFC_DIR == tmp_path / "wpc" / "surface_analysis"
 
 
 class TestInitializeFilesystem:

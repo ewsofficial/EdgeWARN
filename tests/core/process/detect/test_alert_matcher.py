@@ -14,7 +14,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from shapely.prepared import prep
-from EdgeWARN.core.process.detect.tools.alert_matcher import (
+from EdgeWARN.process.detect.tools.alert_matcher import (
     CONVECTIVE_FLOOD_EVENTS,
     load_active_alerts,
     filter_convective_flood_alerts,

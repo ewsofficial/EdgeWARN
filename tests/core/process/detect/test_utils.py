@@ -8,7 +8,7 @@ import numpy as np
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
-from EdgeWARN.core.process.detect.tools.utils import DetectionDataHandler
+from EdgeWARN.process.detect.tools.utils import DetectionDataHandler
 
 
 class TestDetectionDataHandler:

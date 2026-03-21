@@ -5,17 +5,21 @@ channels:
   - defaults
 dependencies:
   - python=3.13
+  - pyyaml
   - aioboto3
+  - affine
   - boto3
   - cfgrib
   - numpy
   - netcdf4
+  - rioxarray
   - scikit-image
   - scipy
   - shapely
   - rasterio
   - xarray
   - pyproj
+  - proj
   - psutil
   - ijson
   - pip:

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
-from EdgeWARN.core.schedule.scheduler import MRMSUpdateChecker
+from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 
 # Sample Timestamps
 TS_OLD = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -12,7 +12,7 @@ TS_FALLBACK = datetime(2023, 1, 1, 12, 6, 0, tzinfo=timezone.utc)
 @pytest.fixture
 def update_checker(mock_io_manager):
     """Fixture for initialized MRMSUpdateChecker."""
-    with patch("EdgeWARN.core.schedule.scheduler.io_manager", mock_io_manager):
+    with patch("EdgeWARN.schedule.scheduler.io_manager", mock_io_manager):
         yield MRMSUpdateChecker(verbose=True)
 
 def test_fallback_when_no_intersection(update_checker, mocker):

@@ -44,13 +44,13 @@ class TestDetectToIntegrateWorkflow:
 
     def test_detect_creates_valid_cell_structure(self, mock_io):
         """Test that detection produces valid cell structure"""
-        from EdgeWARN.core.process.detect.detect import detect_cells
+        from EdgeWARN.process.detect.detect import detect_cells
         
         # This is a simplified test - in reality would need actual data files
         # For integration test, we mock the dependencies
-        with patch('EdgeWARN.core.process.detect.detect.DetectionDataHandler') as mock_handler, \
-             patch('EdgeWARN.core.process.detect.detect.GateMapper') as mock_mapper, \
-             patch('EdgeWARN.core.process.detect.detect.CellDataSaver') as mock_saver:
+        with patch('EdgeWARN.process.detect.detect.DetectionDataHandler') as mock_handler, \
+             patch('EdgeWARN.process.detect.detect.GateMapper') as mock_mapper, \
+             patch('EdgeWARN.process.detect.detect.CellDataSaver') as mock_saver:
             
             # Setup mocks
             mock_handler_instance = MagicMock()
@@ -88,8 +88,8 @@ class TestDetectToIntegrateWorkflow:
     def test_integrate_glm_adds_flash_data(self, sample_cell_data, tmp_path):
         """Test that GLM integration adds flash count and energy"""
         import xarray as xr
-        from EdgeWARN.core.process.integrate.integrate_glm import integrate_glm
-        from EdgeWARN.core.process.integrate.utils import StormIntegrationUtils
+        from EdgeWARN.process.integrate.integrate_glm import integrate_glm
+        from EdgeWARN.process.integrate.utils import StormIntegrationUtils
         
         # Create synthetic GLM data
         lats = np.array([35.0, 35.01, 36.0, 30.0])
@@ -123,11 +123,11 @@ class TestDetectToIntegrateWorkflow:
 
     def test_integrate_rap_adds_wind_data(self, sample_cell_data):
         """Test that RAP integration adds wind data"""
-        from EdgeWARN.core.process.integrate.integrate_rap import integrate_rap
+        from EdgeWARN.process.integrate.integrate_rap import integrate_rap
         
         mock_io = MagicMock()
         
-        with patch('EdgeWARN.core.process.integrate.integrate_rap.RAPPointExtractor') as MockExtractor:
+        with patch('EdgeWARN.process.integrate.integrate_rap.RAPPointExtractor') as MockExtractor:
             mock_instance = MockExtractor.return_value
             mock_instance.extract_batch.return_value = {
                 "wind_field.u850": {101: 10.0, 102: 10.0},

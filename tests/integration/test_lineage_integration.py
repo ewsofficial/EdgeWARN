@@ -15,7 +15,7 @@ import tempfile
 import json
 import time
 
-from EdgeWARN.core.process.detect.lineage import (
+from EdgeWARN.process.detect.lineage import (
     LineageEvent,
     LineageResult,
     LineageBuffer,
@@ -23,8 +23,8 @@ from EdgeWARN.core.process.detect.lineage import (
     SplitEvent,
     calculate_overlap_ratio,
 )
-from EdgeWARN.core.process.detect.lineage.detector import LineageDetector
-from EdgeWARN.core.process.detect.track import StormCellTracker
+from EdgeWARN.process.detect.lineage.detector import LineageDetector
+from EdgeWARN.process.detect.track import StormCellTracker
 
 
 class MockIOManager:

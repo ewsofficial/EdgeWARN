@@ -10,7 +10,7 @@ import numpy as np
 import sys
 sys.path.insert(0, '/home/yuchenwei/Projects/EdgeWARN-Core/src')
 
-from EdgeWARN.core.process.integrate.grid_index import GridIndex, RegularGridIndexer
+from EdgeWARN.process.integrate.grid_index import GridIndex, RegularGridIndexer
 
 
 def brute_force_precompute_cell_indices(storm_cells, lat_vals, lon_vals):

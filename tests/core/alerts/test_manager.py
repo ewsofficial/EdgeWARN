@@ -5,8 +5,8 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 import util.file as fs
-from EdgeWARN.core.alerts.schema import AlertPayload
-from EdgeWARN.core.alerts.manager import AlertManager
+from EdgeWARN.alerts.schema import AlertPayload
+from EdgeWARN.alerts.manager import AlertManager
 
 
 @pytest.fixture

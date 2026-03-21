@@ -1,0 +1,159 @@
+import util.file as fs
+from EdgeWARN.process.integrate.integrate import StormCellIntegrator
+from EdgeWARN.process.integrate.integrate_glm import integrate_glm
+from EdgeWARN.process.integrate.integrate_rap import integrate_rap
+from EdgeWARN.process.integrate.utils import StatFileHandler
+from EdgeWARN.process.detect.tools.save import CellDataSaver
+from util.io import IOManager
+import json
+from EdgeWARN.process.integrate.config import get_datasets_config
+from util.performance import tracker as perf_tracker
+io_manager = IOManager("[CellIntegration]")
+
+def main(json_path=None, remove_old_cells=True, disable_ctam=False):
+    handler = StatFileHandler(io_manager)
+    integrator = StormCellIntegrator(io_manager)
+    
+    if json_path is None:
+        raise ValueError("json_path must be provided to integration.main")
+    
+    # Check if json_path is a file or just a string, handle strictly as requested
+    # The new pipeline passes a Path object.
+    
+    cells, timestamp = handler.load_json(json_path) # _ is latest_timestamp, we don't need this
+
+    result_cells = cells
+
+    # Integrate datasets grouped by filepath (single pass, no presort/groupby overhead)
+    from collections import defaultdict
+
+    grouped_configs = defaultdict(list)
+    for config in get_datasets_config():
+        grouped_configs[config["filepath"]].append(config)
+
+    for filepath, group_list in grouped_configs.items():
+        name_list = [c["name"] for c in group_list]
+        name_str = ", ".join(name_list)
+        
+        try:
+            latest_files = fs.latest_files(filepath, 1)
+            if not latest_files:
+                io_manager.write_warning(f"No files found for {name_str} at {filepath}, skipping")
+                continue
+                
+            latest_file = latest_files[-1]
+            io_manager.write_debug(f"Using latest file for {name_str}: {latest_file}")
+
+            perf_tracker.start(f"Integration - {name_str}")
+            result_cells = integrator.integrate_multi_stats(
+                latest_file, 
+                result_cells, 
+                group_list
+            )
+            perf_tracker.stop(f"Integration - {name_str}")
+            io_manager.write_debug(f"Integration completed for {name_str}")
+        
+        except Exception as e:
+            # If it failed, stop the timer just in case (though exception might mean it's lost, harmless)
+            # Actually, let's catch and stop if needed, but for now simple structure is okay.
+            if f"Integration - {name_str}" in perf_tracker.active_timers:
+                perf_tracker.stop(f"Integration - {name_str}")
+            io_manager.write_error(f"Failed to integrate {name_str} data: {e}")
+
+    # Integrate ProbSevere
+    try:
+        latest_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
+        if not latest_files:
+            io_manager.write_warning("No ProbSevere files found, skipping ProbSevere integration")
+        else:
+            latest_file = latest_files[-1]
+            with open(latest_file, 'r') as f:
+                probsevere_data = json.load(f)
+            io_manager.write_debug(f"Using latest ProbSevere file: {latest_file}")
+
+            perf_tracker.start("Integration - ProbSevere")
+            result_cells = integrator.integrate_probsevere(probsevere_data, result_cells)
+            perf_tracker.stop("Integration - ProbSevere")
+            io_manager.write_debug(f"Successfully integrated ProbSevere data")
+    
+    except Exception as e:
+        io_manager.write_error(f"Failed to integrate ProbSevere data: {e}")
+    
+    # Integrate GLM
+    try:
+        io_manager.write_info(f"Integrating GLM data for {len(result_cells)} cells")
+        latest_glm_files = fs.latest_files(fs.GOES_GLM_DIR, 1)
+        if latest_glm_files:
+            latest_file = latest_glm_files[-1]
+            io_manager.write_debug(f"Using latest GLM file: {latest_file}")
+            perf_tracker.start("Integration - GLM")
+            result_cells = integrate_glm(result_cells, latest_file)
+            perf_tracker.stop("Integration - GLM")
+            io_manager.write_debug(f"Successfully integrated GLM data")
+        else:
+            io_manager.write_warning("No GLM files found, skipping GLM integration")
+
+    except Exception as e:
+        io_manager.write_error(f"Failed to integrate GLM data: {e}")
+    
+    # Integrate RAP (winds + environment)
+    try:
+        io_manager.write_info(f"Integrating RAP data for {len(result_cells)} cells")
+        latest_rap_files = fs.latest_files(fs.RAP_DIR, 1)
+        if latest_rap_files:
+            latest_file = latest_rap_files[-1]
+            io_manager.write_debug(f"Using latest RAP file: {latest_file}")
+            perf_tracker.start("Integration - RAP")
+            result_cells = integrate_rap(result_cells, latest_file, io_manager)
+            perf_tracker.stop("Integration - RAP")
+            io_manager.write_debug(f"Successfully integrated RAP data")
+        else:
+            io_manager.write_warning("No RAP files found, skipping RAP integration")
+    except Exception as e:
+        io_manager.write_error(f"Failed to integrate RAP data: {e}")
+    
+    # Run CTAM modules (StormCast, etc.)
+    if disable_ctam:
+        io_manager.write_info("CTAM module execution disabled via command-line flag")
+    else:
+        try:
+            from EdgeWARN.ctam.run import run_ctam
+            io_manager.write_info(f"Running CTAM modules for {len(result_cells)} cells")
+            perf_tracker.start("Integration - CTAM")
+            result_cells = run_ctam(result_cells, timestamp=timestamp)
+            perf_tracker.stop("Integration - CTAM")
+            io_manager.write_debug("CTAM module execution completed successfully")
+        except Exception as e:
+            io_manager.write_error(f"Failed to run CTAM modules: {e}")
+    
+    # Save data
+    perf_tracker.start("Integration - Save")
+    data = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, result_cells)
+    handler.write_json(data, json_path)
+    perf_tracker.stop("Integration - Save")
+
+    # Update per-cell history
+    try:
+        from .history import CellHistoryManager
+        history_manager = CellHistoryManager(io_manager)
+        perf_tracker.start("Integration - History")
+        history_manager.update_cell_histories(result_cells, timestamp)
+        perf_tracker.stop("Integration - History")
+    except Exception as e:
+        io_manager.write_error(f"Failed to update cell history: {e}")
+    
+    # Update API indexes
+    try:
+        from EdgeWARN.api_integration.index_manager import APIIndexManager
+        api_index = APIIndexManager(io_manager, remove_old_cells=remove_old_cells)
+        
+        # Update cell index with active cells (those that have timestamps)
+        active_cell_ids = [cell["id"] for cell in result_cells if "timestamp" in cell]
+        perf_tracker.start("Integration - API Index")
+        api_index.update_cell_index(active_cell_ids)
+        
+        # Cleanup inactive cells from index
+        api_index.cleanup_inactive_cells()
+        perf_tracker.stop("Integration - API Index")
+    except Exception as e:
+        io_manager.write_error(f"Failed to update API indexes: {e}")

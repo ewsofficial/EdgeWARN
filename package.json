@@ -1,13 +1,13 @@
 {
   "name": "edgewarn-backend",
-  "version": "2.0.0-rc1",
+  "version": "2.0.0",
   "description": "Node.js backend server for EdgeWARN",
-  "main": "server.js",
+  "main": "src/EdgeWARN/api/server.js",
   "type": "module",
   "scripts": {
-    "start": "node src/EdgeWARN/api/server.js",
-    "dev": "node --watch src/EdgeWARN/api/server.js",
-    "debug": "node src/EdgeWARN/api/server.js --debug_server",
+    "api:edgewarn": "node src/EdgeWARN/api/server.js",
+    "debug:edgewarn": "node src/EdgeWARN/api/server.js --debug_server",
+    "api:ewmrs": "node src/EWMRS/api/server.js",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
@@ -16,14 +16,14 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@google/gemini-cli": "^0.25.0",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
-    "lru-cache": "^11.2.4"
+    "lru-cache": "^11.2.4",
+    "morgan": "^1.10.1"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

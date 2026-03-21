@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from EdgeWARN.core.process.detect.detect import detect_cells
+from EdgeWARN.process.detect.detect import detect_cells
 
 @pytest.fixture
 def mock_dependencies():
@@ -28,9 +28,9 @@ def test_detect_cells_flow(mock_dependencies):
     """Test the main detection flow."""
     handler, mapper, saver, io_manager = mock_dependencies
     
-    with patch("EdgeWARN.core.process.detect.detect.DetectionDataHandler", return_value=handler), \
-         patch("EdgeWARN.core.process.detect.detect.GateMapper", return_value=mapper), \
-         patch("EdgeWARN.core.process.detect.detect.CellDataSaver", return_value=saver):
+    with patch("EdgeWARN.process.detect.detect.DetectionDataHandler", return_value=handler), \
+         patch("EdgeWARN.process.detect.detect.GateMapper", return_value=mapper), \
+         patch("EdgeWARN.process.detect.detect.CellDataSaver", return_value=saver):
          
         entries = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
@@ -59,7 +59,7 @@ def test_detect_cells_load_fail(mock_dependencies):
     handler, mapper, saver, io_manager = mock_dependencies
     handler.load_subset.return_value = None # Fail
     
-    with patch("EdgeWARN.core.process.detect.detect.DetectionDataHandler", return_value=handler):
+    with patch("EdgeWARN.process.detect.detect.DetectionDataHandler", return_value=handler):
          entries = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
             30, 40, -100, -90
@@ -74,9 +74,9 @@ def test_detect_cells_preciptype_fail(mock_dependencies):
     handler, mapper, saver, io_manager = mock_dependencies
     handler.load_preciptype.return_value = None # Fail
     
-    with patch("EdgeWARN.core.process.detect.detect.DetectionDataHandler", return_value=handler), \
-         patch("EdgeWARN.core.process.detect.detect.GateMapper", return_value=mapper), \
-         patch("EdgeWARN.core.process.detect.detect.CellDataSaver", return_value=saver):
+    with patch("EdgeWARN.process.detect.detect.DetectionDataHandler", return_value=handler), \
+         patch("EdgeWARN.process.detect.detect.GateMapper", return_value=mapper), \
+         patch("EdgeWARN.process.detect.detect.CellDataSaver", return_value=saver):
          
         entries = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
@@ -93,9 +93,9 @@ def test_detect_return_probsevere(mock_dependencies):
     ps_ds_mock = MagicMock()
     handler.load_probsevere.return_value = ps_ds_mock
     
-    with patch("EdgeWARN.core.process.detect.detect.DetectionDataHandler", return_value=handler), \
-         patch("EdgeWARN.core.process.detect.detect.GateMapper", return_value=mapper), \
-         patch("EdgeWARN.core.process.detect.detect.CellDataSaver", return_value=saver):
+    with patch("EdgeWARN.process.detect.detect.DetectionDataHandler", return_value=handler), \
+         patch("EdgeWARN.process.detect.detect.GateMapper", return_value=mapper), \
+         patch("EdgeWARN.process.detect.detect.CellDataSaver", return_value=saver):
          
         entries, ps_ds = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,

@@ -9,8 +9,8 @@ import pytest
 from datetime import datetime
 from unittest.mock import Mock, MagicMock
 
-from EdgeWARN.core.process.detect.track import StormCellTracker
-from EdgeWARN.core.process.detect.kalman import (
+from EdgeWARN.process.detect.track import StormCellTracker
+from EdgeWARN.process.detect.kalman import (
     TrackingConfig,
     haversine_distance,
 )
@@ -46,7 +46,7 @@ class TestStormCellTrackerKalman:
         config.confidence_decay_factor = 0.8
         config.confidence_threshold = 0.1  # Lower the threshold so cell doesn't terminate after 2 scans
         
-        from EdgeWARN.core.process.detect.kalman import KalmanConfig
+        from EdgeWARN.process.detect.kalman import KalmanConfig
         kalman_config = KalmanConfig()
         kalman_config.process_noise_acceleration = 1e-12
         kalman_config.process_noise_velocity = 0.0001
@@ -143,7 +143,7 @@ class TestStormCellTrackerKalman:
         ]
         
         # Manually initialize Kalman filters for all active cells
-        from EdgeWARN.core.process.detect.kalman import KalmanFilter
+        from EdgeWARN.process.detect.kalman import KalmanFilter
         for cell in active_cells:
             cell_id = int(cell['id'])
             tracker._kalman_filters[cell_id] = KalmanFilter(config=tracker.kalman_config)
@@ -198,7 +198,7 @@ class TestStormCellTrackerKalman:
         }
         
         # Initialize Kalman filter for this cell
-        from EdgeWARN.core.process.detect.kalman import KalmanFilter, PredictionState
+        from EdgeWARN.process.detect.kalman import KalmanFilter, PredictionState
         kf = KalmanFilter()
         kf.initialize(lat=35.0, lon=-97.0, u=10.0, v=5.0)
         tracker._kalman_filters[1001] = kf

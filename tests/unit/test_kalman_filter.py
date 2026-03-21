@@ -8,7 +8,7 @@ import pytest
 import numpy as np
 from datetime import datetime
 
-from EdgeWARN.core.process.detect.kalman import (
+from EdgeWARN.process.detect.kalman import (
     KalmanFilter,
     KalmanObservation,
     StateVector,

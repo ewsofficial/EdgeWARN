@@ -3,13 +3,13 @@ Tests for StormCast forecast module
 """
 
 import pytest
-from EdgeWARN.core.ctam.modules.StormCast.core.forecast import (
+from EdgeWARN.ctam.modules.StormCast.core.forecast import (
     forecast_position,
     generate_forecast_track,
     forecast_with_uncertainty,
     forecast_motion_cone
 )
-from EdgeWARN.core.ctam.modules.StormCast.core.types import StormState, ForecastPoint
+from EdgeWARN.ctam.modules.StormCast.core.types import StormState, ForecastPoint
 
 
 class TestForecastPosition:

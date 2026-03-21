@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import xarray as xr
 from unittest.mock import MagicMock
-from EdgeWARN.core.process.detect.tools.save import CellDataSaver
+from EdgeWARN.process.detect.tools.save import CellDataSaver
 
 @pytest.fixture
 def synthetic_data():
