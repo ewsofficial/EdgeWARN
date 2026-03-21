@@ -16,6 +16,7 @@ from EWMRS.pipeline import ewmrs_tandem_worker
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from common.ingest.mrms.config import get_check_modifiers
 from util.io import TimestampedOutput, IOManager
+from util.release import get_release_version
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
@@ -110,8 +111,11 @@ def _run_tandem_cycle(dt):
                 lambda msg: _queue_log(log_queue, msg),
             )
         )
-    finally:
-        pass
+    except Exception as exc:
+        _drain_log_queue(log_queue)
+        manager.shutdown()
+        print(f"[Scheduler] Tandem ingest cycle failed for {dt}: {exc}")
+        return False
 
     shared_state["detection_inputs_ready"] = cycle_state.detection_inputs_ready
     shared_state["ewmrs_inputs_ready"] = cycle_state.ewmrs_inputs_ready
@@ -157,6 +161,7 @@ def _run_tandem_cycle(dt):
     ewmrs_proc.join()
     _drain_log_queue(log_queue)
     manager.shutdown()
+    return edgewarn_proc.exitcode == 0 and ewmrs_proc.exitcode == 0
 
 
 
@@ -256,8 +261,11 @@ def main():
                 dt = latest_common
                 last_processed = latest_common
 
-                _run_tandem_cycle(dt)
-                print(f"Tandem cycle for {dt} finished")
+                cycle_ok = _run_tandem_cycle(dt)
+                if cycle_ok:
+                    print(f"Tandem cycle for {dt} finished")
+                else:
+                    print(f"Tandem cycle for {dt} did not complete successfully")
 
             else:
                 if not latest_common:
@@ -275,7 +283,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        print("Running EdgeWARN v2.0.0-rc1")
+        print(f"Running EdgeWARN v{get_release_version()}")
         print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
         main()
     except KeyboardInterrupt:

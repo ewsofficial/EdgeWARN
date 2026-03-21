@@ -47,7 +47,7 @@ python src/run.py [options]
 **Options:**
 *   `--lat_limits <min> <max>`: Latitude limits
 *   `--lon_limits <min> <max>`: Longitude limits
-*   `--base_dir <path>`: Output directory (Default: `EdgeWARN_input`)
+*   `--base_dir <path>` or `--base-dir <path>`: Output directory (Default: `~/EdgeWARN_input`)
 
 #### 2. Historical Analysis
 Process historical data (available back to Jan 1, 2021):

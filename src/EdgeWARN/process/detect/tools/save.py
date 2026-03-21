@@ -1,6 +1,8 @@
 import numpy as np
 from skimage import measure
 
+from util.release import get_release_version
+
 class CellDataSaver:
     def __init__(self, bboxes, radar_ds, mapped_ds, expanded_ds, ps_ds, preciptype_ds):
         self.bboxes = bboxes
@@ -21,7 +23,7 @@ class CellDataSaver:
         return {
             "source": "Edgemont Weather Service",
             "product": "EdgeWARN Storm Cells",
-            "version": "2.0.0-rc1",
+            "version": get_release_version(),
             "latest_timestamp": latest_timestamp,
             "features": features
         }

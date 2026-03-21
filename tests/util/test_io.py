@@ -175,6 +175,15 @@ class TestIOManager:
             
             assert args.base_dir == '/custom/path'
 
+    def test_get_args_base_dir_hyphen_alias(self):
+        """Test --base-dir argument alias"""
+        io = IOManager("[Test]")
+
+        with patch.object(sys, 'argv', ['script', '--base-dir', '/custom/path']):
+            args = io.get_args()
+
+            assert args.base_dir == '/custom/path'
+
     def test_get_args_invalid_lat_limits_count(self):
         """Test validation of lat_limits count"""
         io = IOManager("[Test]")
