@@ -2,12 +2,14 @@
 
 This document describes the currently implemented API routes in `src/EdgeWARN/api`.
 
+For the backing JSON file schemas, see `docs/api/data_keys.md`.
+
 ## API Overview
 
 - **Base URL**: `/api/v2`
 - **Version string**:
   - `2.x` when `NODE_ENV=production`
-  - `2.0.0-rc1` otherwise
+  - `2.0.0` otherwise
 - **Protocol**: HTTP/HTTPS
 - **Response format**: JSON
 
@@ -20,12 +22,12 @@ Returns the backend API banner.
 Response keys:
 
 - `message` (string): API banner text.
-- `version` (string): version label (`2.x` in production, `2.0.0-rc1` otherwise).
+- `version` (string): version label (`2.x` in production, `2.0.0` otherwise).
 
 ```json
 {
   "message": "EdgeWARN Backend API",
-  "version": "2.0.0-rc1"
+  "version": "2.0.0"
 }
 ```
 
@@ -36,7 +38,7 @@ Returns API v2 metadata and endpoint map.
 Response keys:
 
 - `message` (string): API group label.
-- `version` (string): version label (`2.x` in production, `2.0.0-rc1` otherwise).
+- `version` (string): version label (`2.x` in production, `2.0.0` otherwise).
 - `endpoints` (object): route map.
   - `endpoints.features` (object)
     - `endpoints.features.cells` (string)
@@ -50,7 +52,7 @@ Response keys:
 ```json
 {
   "message": "EdgeWARN API v2",
-  "version": "2.0.0-rc1",
+  "version": "2.0.0",
   "endpoints": {
     "features": {
       "cells": "/api/v2/features/cells[?id={int}]",
@@ -272,7 +274,7 @@ Response keys:
 
 ## Security and Platform Behavior
 
-- Rate limiting is enabled globally via `express-rate-limit` (defaults: 60 requests / minute / client key).
-- CORS is allowlist-based via `ALLOWED_ORIGINS`.
+- Rate limiting is enabled globally via `express-rate-limit` with two defaults: `40` requests per second and `2000` requests per minute per client key.
+- CORS uses `ALLOWED_ORIGINS` when set; otherwise it allows all origins in non-production and blocks cross-origin requests in production.
 - Helmet security headers and compression are enabled.
 - In production, detailed version strings are intentionally hidden (`2.x`).

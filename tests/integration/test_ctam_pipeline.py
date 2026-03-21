@@ -4,9 +4,9 @@ Integration tests for CTAM analysis pipeline
 
 import pytest
 from unittest.mock import MagicMock, patch
-from EdgeWARN.core.ctam import engine
-from EdgeWARN.core.ctam.interface import AnalysisModule
-from EdgeWARN.core.ctam.modules.StormCast.core.types import StormState, EnvironmentProfile
+from EdgeWARN.ctam import engine
+from EdgeWARN.ctam.interface import AnalysisModule
+from EdgeWARN.ctam.modules.StormCast.core.types import StormState, EnvironmentProfile
 
 
 class MockAnalysisModule(AnalysisModule):
@@ -213,7 +213,7 @@ class TestCTAMPipeline:
 
     def test_module_registry_integration(self, sample_storm_cells):
         """Test that modules can be registered and retrieved"""
-        from EdgeWARN.core.ctam.registry import ModuleRegistry
+        from EdgeWARN.ctam.registry import ModuleRegistry
         
         # Clear registry
         ModuleRegistry.clear()

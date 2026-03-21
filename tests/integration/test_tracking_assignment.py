@@ -15,8 +15,8 @@ import numpy as np
 from datetime import datetime
 from unittest.mock import Mock, MagicMock
 
-from EdgeWARN.core.process.detect.track import StormCellTracker
-from EdgeWARN.core.process.detect.kalman import (
+from EdgeWARN.process.detect.track import StormCellTracker
+from EdgeWARN.process.detect.kalman import (
     TrackingConfig,
     AssignmentConfig,
     KalmanFilter,
@@ -561,7 +561,7 @@ class TestTrackingContinuity:
         tracker._kalman_filters[1] = kf
         
         # Initialize prediction state
-        from EdgeWARN.core.process.detect.kalman import PredictionState
+        from EdgeWARN.process.detect.kalman import PredictionState
         pred_state = PredictionState(scan_count=5, total_time_seconds=600.0)
         tracker._prediction_states[1] = pred_state
         

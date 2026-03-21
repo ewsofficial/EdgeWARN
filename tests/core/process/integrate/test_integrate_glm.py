@@ -3,7 +3,7 @@ import numpy as np
 import xarray as xr
 from shapely.geometry import Polygon
 from unittest.mock import MagicMock, patch
-from EdgeWARN.core.process.integrate.integrate_glm import integrate_glm
+from EdgeWARN.process.integrate.integrate_glm import integrate_glm
 
 @pytest.fixture
 def mock_io_manager():
@@ -75,8 +75,8 @@ def test_integrate_glm_basic(mock_io_manager, glm_file, storm_cells):
         coords = [(lon, lat) for lat, lon in cell['bbox']] # Shapely uses (lon, lat)
         return Polygon(coords)
     
-    with patch("EdgeWARN.core.process.integrate.integrate_glm.StormIntegrationUtils.create_cell_polygon", side_effect=mock_create_poly), \
-         patch("EdgeWARN.core.process.integrate.integrate_glm.io_manager", mock_io_manager):
+    with patch("EdgeWARN.process.integrate.integrate_glm.StormIntegrationUtils.create_cell_polygon", side_effect=mock_create_poly), \
+         patch("EdgeWARN.process.integrate.integrate_glm.io_manager", mock_io_manager):
         
         results = integrate_glm(storm_cells, glm_file)
         
@@ -103,7 +103,7 @@ def test_integrate_glm_basic(mock_io_manager, glm_file, storm_cells):
 
 def test_integrate_glm_no_file(mock_io_manager, storm_cells):
     """Test behavior when file path is None."""
-    with patch("EdgeWARN.core.process.integrate.integrate_glm.io_manager", mock_io_manager):
+    with patch("EdgeWARN.process.integrate.integrate_glm.io_manager", mock_io_manager):
         results = integrate_glm(storm_cells, None)
     
     mock_io_manager.write_error.assert_called_with("GLM file path not provided to integrate_glm")
@@ -116,7 +116,7 @@ def test_integrate_glm_missing_vars(mock_io_manager, tmp_path, storm_cells):
     path = tmp_path / "bad.nc"
     ds.to_netcdf(path)
     
-    with patch("EdgeWARN.core.process.integrate.integrate_glm.io_manager", mock_io_manager):
+    with patch("EdgeWARN.process.integrate.integrate_glm.io_manager", mock_io_manager):
         results = integrate_glm(storm_cells, str(path))
         
     mock_io_manager.write_error.assert_called()

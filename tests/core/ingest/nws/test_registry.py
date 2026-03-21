@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
-from EdgeWARN.core.ingest.nws.registry import (
+from EdgeWARN.ingest.nws.registry import (
     AlertRegistry,
     get_registry,
     reset_registry,
@@ -351,6 +351,7 @@ class TestPersistence:
             "urn_oid": "urn:oid:2.49.0.1.840.0.2406210827.1",
             "effective": "2026-02-23T21:00:00Z",
             "expires": "2026-02-23T22:00:00Z",
+            "severity": "Severe",
             "geometry": {
                 "type": "Polygon",
                 "coordinates": [[[-97.0, 35.0], [-97.0, 36.0], [-96.0, 36.0], [-96.0, 35.0], [-97.0, 35.0]]]

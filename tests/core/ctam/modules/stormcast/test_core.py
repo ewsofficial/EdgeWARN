@@ -3,12 +3,12 @@ Tests for StormCast core engine
 """
 
 import pytest
-from EdgeWARN.core.ctam.modules.StormCast.core.core import StormCastEngine, ForecastResult
-from EdgeWARN.core.ctam.modules.StormCast.core.types import (
+from EdgeWARN.ctam.modules.StormCast.core.core import StormCastEngine, ForecastResult
+from EdgeWARN.ctam.modules.StormCast.core.types import (
     StormState,
     EnvironmentProfile
 )
-from EdgeWARN.core.ctam.modules.StormCast.core.config import DEFAULT_LEAD_TIMES
+from EdgeWARN.ctam.modules.StormCast.core.config import DEFAULT_LEAD_TIMES
 
 
 class TestStormCastEngine:

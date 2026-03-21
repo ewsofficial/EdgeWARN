@@ -3,8 +3,8 @@ Tests for CTAM module registry
 """
 
 import pytest
-from EdgeWARN.core.ctam.interface import AnalysisModule
-from EdgeWARN.core.ctam.registry import ModuleRegistry
+from EdgeWARN.ctam.interface import AnalysisModule
+from EdgeWARN.ctam.registry import ModuleRegistry
 
 
 class MockModule(AnalysisModule):

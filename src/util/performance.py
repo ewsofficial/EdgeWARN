@@ -51,10 +51,6 @@ class TimingTracker:
                 start_time = self.active_timers.pop(name)
                 duration = time.time() - start_time
                 self.timings[name] = duration
-            else:
-                # Use thread-safe warning
-                import warnings
-                warnings.warn(f"Timer '{name}' stopped but not started.", RuntimeWarning)
 
     def get_timings(self):
         """Return a copy of timings dict. Thread-safe."""

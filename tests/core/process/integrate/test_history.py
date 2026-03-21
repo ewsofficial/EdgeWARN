@@ -1,12 +1,12 @@
 import pytest
 import json
 from unittest.mock import patch
-from EdgeWARN.core.process.integrate.history import CellHistoryManager
+from EdgeWARN.process.integrate.history import CellHistoryManager
 
 @pytest.fixture
 def history_manager(mock_io_manager, mock_fs):
     """Create a CellHistoryManager with mocked dependencies."""
-    with patch("EdgeWARN.core.process.integrate.history.fs.CELL_DIR", mock_fs / "cell"):
+    with patch("EdgeWARN.process.integrate.history.fs.CELL_DIR", mock_fs / "cell"):
         yield CellHistoryManager(mock_io_manager)
 
 # === Tests for update_cell_histories ===

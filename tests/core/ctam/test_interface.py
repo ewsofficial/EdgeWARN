@@ -3,7 +3,7 @@ Tests for CTAM interface module
 """
 
 import pytest
-from EdgeWARN.core.ctam.interface import AnalysisModule
+from EdgeWARN.ctam.interface import AnalysisModule
 
 
 class TestAnalysisModule:

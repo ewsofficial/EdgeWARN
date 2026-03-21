@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from EdgeWARN.core.process.detect.track import StormCellTracker
+from EdgeWARN.process.detect.track import StormCellTracker
 
 # Helper: generate a proper polygon bbox (list of [lat,lon] pairs)
 def _bbox(lat, lon, size=0.1):
@@ -137,7 +137,7 @@ def test_update_cells_no_timestamp(tracker):
 
 def test_update_cells_handles_merge_with_links(tracker):
     """Test that merge events correctly populate merged_cells and merged_to keys."""
-    from EdgeWARN.core.process.detect.lineage import LineageResult, MergeEvent
+    from EdgeWARN.process.detect.lineage import LineageResult, MergeEvent
     
     entries = [
         {"id": 101, "num_gates": 50, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0)},
@@ -186,7 +186,7 @@ def test_update_cells_handles_natural_dissipation(tracker):
 
 def test_update_cells_split_dominant_updates_kf_with_child_observation(tracker):
     """Dominant split child should carry a KF state updated toward child centroid."""
-    from EdgeWARN.core.process.detect.lineage import LineageResult, SplitEvent
+    from EdgeWARN.process.detect.lineage import LineageResult, SplitEvent
 
     entries = [
         {"id": 101, "num_gates": 80, "centroid": [35.0, -97.0], "max_refl": 58, "bbox": _bbox(35.0, -97.0)}

@@ -10,17 +10,17 @@ import copy
 import numpy as np
 from unittest.mock import MagicMock
 
-from EdgeWARN.core.process.detect.kalman import (
+from EdgeWARN.process.detect.kalman import (
     KalmanFilter,
     KalmanConfig,
 )
-from EdgeWARN.core.process.detect.kalman.assignment import (
+from EdgeWARN.process.detect.kalman.assignment import (
     AssignmentCostCalculator,
     AssignmentConfig,
     build_filtered_cost_matrix,
     run_hybrid_assignment,
 )
-from EdgeWARN.core.process.detect.track import StormCellTracker
+from EdgeWARN.process.detect.track import StormCellTracker
 
 
 # ===========================================================================

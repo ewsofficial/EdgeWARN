@@ -4,14 +4,14 @@ import unittest
 from unittest.mock import patch
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
-from EdgeWARN.core.ctam.modules.MorphoWind.morphowind import MorphoWindModule 
-from EdgeWARN.core.ctam.modules.MorphoWind import config as cfg
+from EdgeWARN.ctam.modules.MorphoWind.morphowind import MorphoWindModule 
+from EdgeWARN.ctam.modules.MorphoWind import config as cfg
 
 class TestMorphoWindPhysics(unittest.TestCase):
     def setUp(self):
         self.module = MorphoWindModule()
 
-    @patch('EdgeWARN.core.ctam.util.history.get_cell_history')
+    @patch('EdgeWARN.ctam.util.history.get_cell_history')
     def test_microburst_collapse_logic(self, mock_get_history):
         """
         Test that a rapid drop in VIL/EchoTop triggers the collapse flag.
@@ -57,7 +57,7 @@ class TestMorphoWindPhysics(unittest.TestCase):
         self.assertIn("VIL_COLLAPSE", result['physics_triggers'])
         self.assertEqual(result['risk_type'], "Microburst")
 
-    @patch('EdgeWARN.core.ctam.util.history.get_cell_history')
+    @patch('EdgeWARN.ctam.util.history.get_cell_history')
     def test_rear_inflow_notch(self, mock_get_history):
         """
         Test that a convexity defect aligned with the REAR of the motion vector triggers REAR_INFLOW_NOTCH.
@@ -114,7 +114,7 @@ class TestMorphoWindPhysics(unittest.TestCase):
         }
         
         # Mocking history to empty for this test
-        with patch('EdgeWARN.core.ctam.util.history.get_cell_history', return_value=[]):
+        with patch('EdgeWARN.ctam.util.history.get_cell_history', return_value=[]):
             self.module.run(current_storm)
             
         if 'morphowind' in current_storm['properties']:
@@ -153,7 +153,7 @@ class TestMorphoWindPhysics(unittest.TestCase):
             "dewpoint_depression": 20.0 # High DD -> Dry Air
         }
         
-        with patch('EdgeWARN.core.ctam.util.history.get_cell_history', return_value=[]):
+        with patch('EdgeWARN.ctam.util.history.get_cell_history', return_value=[]):
             self.module.run(current_storm, environment=environment)
             
         if 'morphowind' in current_storm['properties']:
@@ -188,7 +188,7 @@ class TestMorphoWindPhysics(unittest.TestCase):
             }
         }
         
-        with patch('EdgeWARN.core.ctam.util.history.get_cell_history', return_value=[]):
+        with patch('EdgeWARN.ctam.util.history.get_cell_history', return_value=[]):
             self.module.run(current_storm)
             
         if 'morphowind' in current_storm['properties']:
@@ -200,7 +200,7 @@ class TestMorphoWindPhysics(unittest.TestCase):
         
         self.assertNotIn("BOOKEND_VORTEX", result['physics_triggers'])
 
-    @patch('EdgeWARN.core.ctam.util.history.get_cell_history')
+    @patch('EdgeWARN.ctam.util.history.get_cell_history')
     def test_front_notch_ignored(self, mock_get_history):
         mock_get_history.return_value = []
         current_storm = {

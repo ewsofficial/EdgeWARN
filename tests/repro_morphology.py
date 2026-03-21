@@ -6,7 +6,7 @@ import cv2
 # Add src to path
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
-from EdgeWARN.core.process.detect.tools.morphology import MorphologyEngine
+from EdgeWARN.process.detect.tools.morphology import MorphologyEngine
 
 def test_morphology_logic():
     print("Testing MorphologyEngine Logic...")

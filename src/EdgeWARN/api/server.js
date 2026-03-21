@@ -8,29 +8,18 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import compression from 'compression';
 import cluster from 'cluster';
 import os from 'os';
+import { pathToFileURL } from 'url';
 import helmet from 'helmet';
 import config from './config.js';
 
 dotenv.config();
 
-// Use DEBUG_PORT (3001) if --debug_server flag is set, otherwise DEFAULT_PORT (5000)
-const PORT = process.env.PORT || (config.DEBUG_SERVER ? config.DEBUG_PORT : config.DEFAULT_PORT);
-const numCPUs = Math.min(os.cpus().length, 4);
+function getPort(env) {
+  return env.PORT || (config.DEBUG_SERVER ? config.DEBUG_PORT : config.DEFAULT_PORT);
+}
 
-if (cluster.isPrimary) {
-  console.log(`Primary ${process.pid} is running`);
-
-  // Fork workers.
-  for (let i = 0; i < numCPUs; i++) {
-    cluster.fork();
-  }
-
-  cluster.on('exit', (worker, code, signal) => {
-    console.log(`worker ${worker.process.pid} died`);
-    // Restart worker
-    cluster.fork();
-  });
-} else {
+export function createApp(env = process.env, options = {}) {
+  const { beforeErrorHandler } = options;
   const app = express();
 
   // Middleware
@@ -53,17 +42,17 @@ if (cluster.isPrimary) {
 
   // CORS configuration
   // Use ALLOWED_ORIGINS if set, otherwise allow all origins (for development/testing)
-  const hasExplicitOrigins = !!process.env.ALLOWED_ORIGINS;
+  const hasExplicitOrigins = !!env.ALLOWED_ORIGINS;
   const allowedOrigins = hasExplicitOrigins
-    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    ? env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
     : [];
 
   // Determine origin config: explicit origins > otherwise allow all
   const corsOrigin = hasExplicitOrigins
     ? allowedOrigins
-    : (process.env.NODE_ENV === 'production' ? [] : true);
+    : (env.NODE_ENV === 'production' ? [] : true);
 
-  if (process.env.NODE_ENV === 'production' && !hasExplicitOrigins) {
+  if (env.NODE_ENV === 'production' && !hasExplicitOrigins) {
     console.warn('[Security] ALLOWED_ORIGINS not set. CORS requests will be blocked in production.');
   }
 
@@ -77,21 +66,21 @@ if (cluster.isPrimary) {
   app.use(express.json());
 
   // Trust proxy configuration
-  const trustProxy = process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY_IPS ? true : false;
-  if (process.env.TRUST_PROXY === 'false') {
+  const trustProxy = env.TRUST_PROXY === 'true' || !!env.TRUST_PROXY_IPS;
+  if (env.TRUST_PROXY === 'false') {
     app.set('trust proxy', false);
-  } else if (process.env.TRUST_PROXY_IPS) {
-    app.set('trust proxy', process.env.TRUST_PROXY_IPS.split(','));
+  } else if (env.TRUST_PROXY_IPS) {
+    app.set('trust proxy', env.TRUST_PROXY_IPS.split(','));
   } else {
     app.set('trust proxy', false);
   }
 
   // Rate Limiting - configurable via environment variables
-  const rateLimitWindowMsSec = parseInt(process.env.RATE_LIMIT_WINDOW_MS_SEC, 10) || 1000; // 1 second default
-  const rateLimitMaxSec = parseInt(process.env.RATE_LIMIT_MAX_SEC, 10) || 40; // 40 requests per second default
+  const rateLimitWindowMsSec = parseInt(env.RATE_LIMIT_WINDOW_MS_SEC, 10) || 1000; // 1 second default
+  const rateLimitMaxSec = parseInt(env.RATE_LIMIT_MAX_SEC, 10) || 40; // 40 requests per second default
 
-  const rateLimitWindowMsMin = parseInt(process.env.RATE_LIMIT_WINDOW_MS_MIN, 10) || 60 * 1000; // 1 minute default
-  const rateLimitMaxMin = parseInt(process.env.RATE_LIMIT_MAX_MIN, 10) || 2000; // 2000 requests per minute default
+  const rateLimitWindowMsMin = parseInt(env.RATE_LIMIT_WINDOW_MS_MIN, 10) || 60 * 1000; // 1 minute default
+  const rateLimitMaxMin = parseInt(env.RATE_LIMIT_MAX_MIN, 10) || 2000; // 2000 requests per minute default
 
   const limiterSec = rateLimit({
     windowMs: rateLimitWindowMsSec,
@@ -143,7 +132,7 @@ if (cluster.isPrimary) {
   // Routes
   app.get('/', (req, res) => {
     // Only expose detailed version in non-production environments
-    const version = process.env.NODE_ENV === 'production' ? '2.x' : '2.0.0-rc1';
+    const version = env.NODE_ENV === 'production' ? '2.x' : '2.0.0';
     res.json({ message: 'EdgeWARN Backend API', version: version });
   });
 
@@ -179,19 +168,66 @@ if (cluster.isPrimary) {
     });
   });
 
+  if (typeof beforeErrorHandler === 'function') {
+    beforeErrorHandler(app);
+  }
+
   // Error handling middleware
   app.use((err, req, res, next) => {
-    const isDev = process.env.NODE_ENV !== 'production';
+    const isDev = env.NODE_ENV !== 'production';
     // Only log stack traces in development
     console.error(isDev ? err.stack : `Error: ${err.message}`);
     // Only expose error details in development
     res.status(500).json({
-      error: isDev ? err.message : 'Internal server error'
+        error: isDev ? err.message : 'Internal server error'
     });
   });
 
-  // Start server
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Worker ${process.pid} started on http://localhost:${PORT}`);
+  return app;
+}
+
+export function startWorkerServer(options = {}) {
+  const env = options.env || process.env;
+  const port = options.port || getPort(env);
+  const host = options.host || '0.0.0.0';
+  const app = options.app || createApp(env, options);
+  const server = app.listen(port, host, () => {
+    console.log(`Worker ${process.pid} started on http://localhost:${port}`);
   });
+
+  return { app, server, port };
+}
+
+export function startClusteredServer(options = {}) {
+  const env = options.env || process.env;
+  const clusterModule = options.clusterModule || cluster;
+  const osModule = options.osModule || os;
+  const port = options.port || getPort(env);
+  const numCPUs = Math.min(osModule.cpus().length, 4);
+
+  if (clusterModule.isPrimary) {
+    console.log(`Primary ${process.pid} is running`);
+
+    for (let i = 0; i < numCPUs; i++) {
+      clusterModule.fork();
+    }
+
+    clusterModule.on('exit', (worker) => {
+      console.log(`worker ${worker.process.pid} died`);
+      clusterModule.fork();
+    });
+
+    return { mode: 'primary', port, numCPUs };
+  }
+
+  return {
+    mode: 'worker',
+    ...startWorkerServer({ ...options, env, port })
+  };
+}
+
+const entryFileUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
+
+if (entryFileUrl === import.meta.url) {
+  startClusteredServer();
 }
