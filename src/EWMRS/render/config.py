@@ -37,6 +37,24 @@ def get_file_list():
             "outdir": fs.GUI_RALA_DIR
         },
         {
+            "name": "MRMS_ReflectivityAt0C",
+            "colormap_key": "NWS_Reflectivity",
+            "filepath": fs.MRMS_REF_0C_DIR,
+            "outdir": fs.GUI_REF_0C_DIR
+        },
+        {
+            "name": "MRMS_ReflectivityAtM5C",
+            "colormap_key": "NWS_Reflectivity",
+            "filepath": fs.MRMS_REFM5C_DIR,
+            "outdir": fs.GUI_REFM5C_DIR
+        },
+        {
+            "name": "MRMS_ReflectivityAtM15C",
+            "colormap_key": "NWS_Reflectivity",
+            "filepath": fs.MRMS_REFM15C_DIR,
+            "outdir": fs.GUI_REFM15C_DIR
+        },
+        {
             "name": "MRMS_PrecipRate",
             "colormap_key": "PrecipRate",
             "filepath": fs.MRMS_PRECIPRATE_DIR,
