@@ -104,19 +104,38 @@ class LineageDetector:
         # For each new cell, find overlapping old cells
         for new_cell in new_cells:
             new_id = int(new_cell.get('id', 0))
+            same_id_overlap_ratio = 0.0
+            same_id_old = old_index.get('cells_data', {}).get(new_id)
+            if same_id_old:
+                same_id_overlap_ratio = calculate_overlap_ratio(
+                    same_id_old.get('bbox', []),
+                    new_cell.get('bbox', []),
+                )
             
             # Find overlapping old cells
             overlapping = find_overlapping_cells(
                 new_cell, old_index, self.overlap_threshold
             )
-            
-            if len(overlapping) > 1:
+
+            # Same-ID continuation with one or more additional parents is also a merge:
+            # old 1 + old 2 -> new 1 should be treated as a merge into 1.
+            parent_ids = [pid for pid, _ in overlapping]
+            overlap_ratios = {pid: ratio for pid, ratio in overlapping}
+            if (
+                same_id_overlap_ratio >= self.overlap_threshold
+                and len(overlapping) >= 1
+            ):
+                parent_ids = [new_id] + parent_ids
+                overlap_ratios[new_id] = same_id_overlap_ratio
+
+            if len(parent_ids) > 1:
                 # Multiple old cells overlap with this new cell -> potential MERGE
-                parent_ids = [pid for pid, _ in overlapping]
-                overlap_ratios = {pid: ratio for pid, ratio in overlapping}
-                
-                # Select dominant parent
-                dominant_parent = select_dominant_parent(parent_ids, old_index)
+                # If same-ID overlap exists, force same-ID as dominant to preserve
+                # continuity semantics (e.g., 1+2->1 means 2 merged into 1).
+                if same_id_overlap_ratio >= self.overlap_threshold and new_id in parent_ids:
+                    dominant_parent = new_id
+                else:
+                    dominant_parent = select_dominant_parent(parent_ids, old_index)
                 
                 # Record in hysteresis buffer
                 confirmed = self.buffer.record_potential_merge(
@@ -163,14 +182,36 @@ class LineageDetector:
             overlapping = self._find_split_overlaps(
                 old_cell, new_index, self.overlap_threshold
             )
-            
-            if len(overlapping) > 1:
+
+            # Split is driven by different-ID children. same-ID child (if present)
+            # indicates the parent continuity track.
+            same_id_child = None
+            different_id_children = []
+            for cid, ratio in overlapping:
+                if cid == old_id:
+                    same_id_child = (cid, ratio)
+                else:
+                    different_id_children.append((cid, ratio))
+
+            should_process_split = False
+            split_children = []
+            if same_id_child is not None and len(different_id_children) >= 1:
+                should_process_split = True
+                split_children = [same_id_child] + different_id_children
+            elif same_id_child is None and len(different_id_children) > 1:
+                should_process_split = True
+                split_children = different_id_children
+
+            if should_process_split:
                 # Single old cell overlaps multiple new cells -> potential SPLIT
-                child_ids = [cid for cid, _ in overlapping]
-                overlap_ratios = {cid: ratio for cid, ratio in overlapping}
-                
-                # Select dominant child
-                dominant_child = select_dominant_child(child_ids, new_index)
+                child_ids = [cid for cid, _ in split_children]
+                overlap_ratios = {cid: ratio for cid, ratio in split_children}
+
+                # If same-ID child exists, keep parent continuity on same ID.
+                if same_id_child is not None:
+                    dominant_child = old_id
+                else:
+                    dominant_child = select_dominant_child(child_ids, new_index)
                 
                 # Record in hysteresis buffer
                 confirmed = self.buffer.record_potential_split(
@@ -199,10 +240,17 @@ class LineageDetector:
                         if cid == dominant_child:
                             # Dominant child inherits parent ID
                             result.cell_events[cid] = LineageEvent.ACTIVE
-                            result.cell_lineage[cid] = {
-                                'split_from': old_id,
-                                'is_dominant_child': True,
-                            }
+                            if cid == old_id:
+                                # same-ID continuation path
+                                result.cell_lineage[cid] = {
+                                    'split_from': None,
+                                    'is_dominant_child': True,
+                                }
+                            else:
+                                result.cell_lineage[cid] = {
+                                    'split_from': old_id,
+                                    'is_dominant_child': True,
+                                }
                         else:
                             # Secondary children are marked as SPLIT
                             result.cell_events[cid] = LineageEvent.SPLIT
@@ -277,7 +325,7 @@ class LineageDetector:
     def _find_split_overlaps(
         self,
         old_cell: Dict[str, Any],
-        new_index: Dict[int, Dict[str, Any]],
+        new_index: Dict[str, Any],
         threshold: float,
     ) -> List[Tuple[int, float]]:
         """

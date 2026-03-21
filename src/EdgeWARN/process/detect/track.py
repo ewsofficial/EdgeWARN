@@ -284,7 +284,10 @@ class StormCellTracker:
                         new_entry = copy.deepcopy(parent_entry)
                         new_entry['id'] = child_id
                         new_entry['event_type'] = LineageEvent.ACTIVE.value
-                        new_entry['split_from'] = split.parent_id
+                        if child_id == split.parent_id:
+                            new_entry['split_from'] = None
+                        else:
+                            new_entry['split_from'] = split.parent_id
 
                         # Apply child observation BEFORE KF update so the
                         # dominant child's filter is corrected to child geometry

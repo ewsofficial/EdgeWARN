@@ -313,6 +313,44 @@ class TestMergeDetection:
         assert 1 in result.merges[0].parent_ids
         assert 2 in result.merges[0].parent_ids
 
+    def test_merge_into_same_id_detected(self):
+        """When one ID persists, merge into same-ID child should still be detected."""
+        old_cells = [
+            {
+                'id': 1,
+                'bbox': [[35.0, 262.0], [35.0, 262.2], [35.2, 262.2], [35.2, 262.0]],
+                'centroid': [35.1, 262.1],
+                'max_refl': 55.0,
+                'num_gates': 100,
+            },
+            {
+                'id': 2,
+                'bbox': [[35.1, 262.1], [35.1, 262.3], [35.3, 262.3], [35.3, 262.1]],
+                'centroid': [35.2, 262.2],
+                'max_refl': 65.0,
+                'num_gates': 120,
+            },
+        ]
+        new_cells = [
+            {
+                'id': 1,
+                'bbox': [[35.0, 262.0], [35.0, 262.3], [35.3, 262.3], [35.3, 262.0]],
+                'centroid': [35.15, 262.15],
+                'max_refl': 60.0,
+                'num_gates': 200,
+            }
+        ]
+
+        buffer = LineageBuffer(min_confirmations=1)
+        detector = LineageDetector(buffer=buffer, overlap_threshold=0.1)
+        result = detector.detect(old_cells, new_cells)
+
+        assert len(result.merges) == 1
+        merge = result.merges[0]
+        assert merge.child_id == 1
+        assert sorted(merge.parent_ids) == [1, 2]
+        assert merge.dominant_parent == 1
+
 
 class TestSplitDetection:
     """Tests for split event detection."""
@@ -382,6 +420,49 @@ class TestSplitDetection:
         assert result.splits[0].parent_id == 1
         assert 10 in result.splits[0].child_ids
         assert 20 in result.splits[0].child_ids
+
+    def test_split_with_same_id_continuation(self):
+        """Parent ID should continue while different ID child is marked as split."""
+        old_cells = [
+            {
+                'id': 1,
+                'bbox': [[35.0, 262.0], [35.0, 262.4], [35.4, 262.4], [35.4, 262.0]],
+                'centroid': [35.2, 262.2],
+                'max_refl': 60.0,
+                'num_gates': 200,
+            }
+        ]
+        new_cells = [
+            {
+                'id': 1,
+                'bbox': [[35.0, 262.0], [35.0, 262.2], [35.2, 262.2], [35.2, 262.0]],
+                'centroid': [35.1, 262.1],
+                'max_refl': 55.0,
+                'num_gates': 120,
+            },
+            {
+                'id': 2,
+                'bbox': [[35.2, 262.2], [35.2, 262.4], [35.4, 262.4], [35.4, 262.2]],
+                'centroid': [35.3, 262.3],
+                'max_refl': 50.0,
+                'num_gates': 80,
+            },
+        ]
+
+        buffer = LineageBuffer(min_confirmations=1)
+        detector = LineageDetector(buffer=buffer, overlap_threshold=0.1)
+        result = detector.detect(old_cells, new_cells)
+
+        assert len(result.splits) == 1
+        split = result.splits[0]
+        assert split.parent_id == 1
+        assert sorted(split.child_ids) == [1, 2]
+        assert split.dominant_child == 1
+
+        assert result.cell_events[1] == LineageEvent.ACTIVE
+        assert result.cell_events[2] == LineageEvent.SPLIT
+        assert result.cell_lineage[1]['split_from'] is None
+        assert result.cell_lineage[2]['split_from'] == 1
 
 
 class TestLineageResult:
