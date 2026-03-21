@@ -211,4 +211,4 @@ EdgeWARN-Core/
 
 ### Committing Guidelines
 - Always follow the contributing guidelines at CONTRIBUTING.md
-- Ensure that each commit message has a prefix that **MUST** be in CONTRIBUTING.md
+- Ensure that each commit message has a prefix that **MUST** be in CONTRIBUTING.md and followed by a ":" character before the message
