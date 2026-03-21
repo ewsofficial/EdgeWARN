@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--lat", nargs=2, type=float, default=[20, 55], help="Latitude limits (min max)")
     parser.add_argument("--lon", nargs=2, type=float, default=[-130, -60], help="Longitude limits (min max)")
     parser.add_argument("--output", type=str, default="stormcell_test.json", help="Output JSON file")
-    parser.add_argument("--base_dir", type=str, default=None, help="Custom base directory for input data")
+    parser.add_argument("--base_dir", "--base-dir", dest="base_dir", type=str, default=None, help="Custom base directory for input data")
     parser.add_argument("--profile", action="store_true", help="Enable performance profiling")
     parser.add_argument("--disable-ctam", action="store_true", help="Skip CTAM module execution during integration")
     parser.add_argument("--disable-tracking", action="store_true", help="Skip lineage detection and Kalman tracking in storm cell detection")
