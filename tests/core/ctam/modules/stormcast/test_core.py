@@ -92,6 +92,22 @@ class TestStormCastEngine:
         
         assert engine.last_update_time == ts
 
+    def test_add_observation_preserves_last_valid_polygon(self):
+        """Test polygon cache is not cleared by history points without geometry."""
+        engine = StormCastEngine()
+        polygon = [
+            (35.0, -97.0),
+            (35.0, -96.9),
+            (35.1, -96.9),
+            (35.1, -97.0),
+            (35.0, -97.0),
+        ]
+
+        engine.add_observation(0.0, 0.0, 0.0, polygon=polygon)
+        engine.add_observation(200.0, 100.0, 60.0)
+
+        assert engine.current_polygon == polygon
+
     def test_generate_forecast(self):
         """Test forecast generation"""
         engine = StormCastEngine()

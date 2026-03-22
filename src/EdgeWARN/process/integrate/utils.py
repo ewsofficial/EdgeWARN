@@ -245,6 +245,16 @@ class StatFileHandler:
 
 class StormIntegrationUtils:
     @staticmethod
+    def normalize_longitude(lon):
+        """Normalize longitude into the [-180, 180] range."""
+        normalized = float(lon)
+        while normalized > 180.0:
+            normalized -= 360.0
+        while normalized <= -180.0:
+            normalized += 360.0
+        return normalized
+
+    @staticmethod
     def create_coordinate_grids(dataset):
         """
         Extract and create 2D latitude/longitude grids from any dataset.
@@ -285,13 +295,16 @@ class StormIntegrationUtils:
         # Use bbox if available and has enough points
         if 'bbox' in cell and cell['bbox'] and len(cell['bbox']) >= 3:
             # Convert (lat, lon) -> (lon, lat) for shapely
-            coords = [(pt[1], pt[0]) for pt in cell['bbox']]
+            coords = [
+                (StormIntegrationUtils.normalize_longitude(pt[1]), pt[0])
+                for pt in cell['bbox']
+            ]
             polygon = Polygon(coords)
         
         # Fallback: create small box around centroid
         if polygon is None or not polygon.is_valid or polygon.is_empty:
             if 'centroid' in cell and len(cell['centroid']) >= 2:
-                lat, lon = cell['centroid'][0], cell['centroid'][1]
+                lat, lon = cell['centroid'][0], StormIntegrationUtils.normalize_longitude(cell['centroid'][1])
                 d = max(min_size, 0.01)
                 coords = [
                     (lon - d, lat - d),

@@ -50,6 +50,7 @@ class ForecastResult:
     forecast_cones: List[Dict[str, Any]]
     forecast_polygons: List[List[Tuple[float, float]]]
     polygon_0_30m: Optional[List[Tuple[float, float]]] = None
+    forecast_polygon_reason: Optional[str] = None
 
 
 class StormCastEngine:
@@ -103,7 +104,8 @@ class StormCastEngine:
             timestamp: Observation time
             polygon: List of (lat, lon) coordinates defining the storm footprint
         """
-        self.current_polygon = polygon
+        if polygon:
+            self.current_polygon = polygon
         # Extract freezing level if environment is present
         fz_level = None
         if self.environment:
@@ -325,13 +327,20 @@ class StormCastEngine:
             except Exception as e:
                 # Fallback if math fails
                 pass
+
+        forecast_polygon_reason = None
+        if not storm.polygon:
+            forecast_polygon_reason = "missing_current_polygon"
+        elif len(hull_shapes) < 2:
+            forecast_polygon_reason = "insufficient_hull_shapes"
         
         return ForecastResult(
             u=v_final[0],
             v=v_final[1],
             forecast_cones=cones,
             forecast_polygons=polygons,
-            polygon_0_30m=polygon_0_30m
+            polygon_0_30m=polygon_0_30m,
+            forecast_polygon_reason=forecast_polygon_reason,
         )
 
     def _latlon_to_meters_poly(self, poly: List[Tuple[float, float]]) -> List[Tuple[float, float]]:

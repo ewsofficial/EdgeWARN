@@ -7,6 +7,7 @@ Adapter for integrating StormCast core into the CTAM framework.
 from typing import Dict, Any, Optional, List
 import dataclasses
 from ...interface import AnalysisModule
+from EdgeWARN.alerts import AlertManager
 from EdgeWARN.alerts.schema import AlertPayload
 import json
 from pathlib import Path
@@ -277,6 +278,8 @@ class StormCastModule(AnalysisModule):
             if not current_ts_str:
                  # Should have been caught by return earlier, but safe guard
                  current_ts_str = datetime.now().isoformat()
+
+            current_ts_dt = parse_ts(current_ts_str)
                  
             historical_points.append({
                 "ts": current_ts_str,
@@ -288,20 +291,49 @@ class StormCastModule(AnalysisModule):
             })
             
             # Sort
-            historical_points.sort(key=lambda x: x["ts"])
-            
-            # Filter duplicates (by ts)
-            unique_points = []
-            seen_ts = set()
-            for p in historical_points:
-                if p["ts"] not in seen_ts:
-                    seen_ts.add(p["ts"])
-                    unique_points.append(p)
+            historical_points.sort(key=lambda x: parse_ts(x["ts"]))
 
-            duplicate_count = len(historical_points) - len(unique_points)
+            filtered_points = []
+            future_point_count = 0
+            for p in historical_points:
+                point_dt = parse_ts(p["ts"])
+                if point_dt > current_ts_dt and not p.get("is_current"):
+                    future_point_count += 1
+                    continue
+                filtered_points.append(p)
+
+            # Filter duplicates (by ts), preferring the synthetic current point
+            unique_points = []
+            index_by_ts = {}
+            duplicate_count = 0
+            replaced_current_count = 0
+            for p in filtered_points:
+                ts = p["ts"]
+                existing_index = index_by_ts.get(ts)
+                if existing_index is None:
+                    index_by_ts[ts] = len(unique_points)
+                    unique_points.append(p)
+                    continue
+
+                duplicate_count += 1
+                existing_point = unique_points[existing_index]
+                if p.get("is_current") and not existing_point.get("is_current"):
+                    unique_points[existing_index] = p
+                    replaced_current_count += 1
+
+            if future_point_count > 0:
+                io_manager.write_debug(
+                    f"Cell {storm_entry.get('id', 'unknown')}: discarded {future_point_count} future history point(s) newer than current timestamp"
+                )
+
             if duplicate_count > 0:
                 io_manager.write_debug(
                     f"Cell {storm_entry.get('id', 'unknown')}: removed {duplicate_count} duplicate history point(s) by timestamp"
+                )
+
+            if replaced_current_count > 0:
+                io_manager.write_debug(
+                    f"Cell {storm_entry.get('id', 'unknown')}: retained current observation for {replaced_current_count} duplicate timestamp(s)"
                 )
             
             # Add to engine
@@ -318,7 +350,10 @@ class StormCastModule(AnalysisModule):
                 if polygon_shape:
                     # Shapely exterior coords are usually (lon, lat) or (lat, lon) depending on usage
                     # StormIntegrationUtils returns (lon, lat). We need (lat, lon).
-                    current_polygon = [(lat, lon) for lon, lat in polygon_shape.exterior.coords]
+                    current_polygon = [
+                        (lat, StormIntegrationUtils.normalize_longitude(lon))
+                        for lon, lat in polygon_shape.exterior.coords
+                    ]
             except Exception:
                 pass
                 
@@ -377,6 +412,11 @@ class StormCastModule(AnalysisModule):
             # Alert eligibility should begin as soon as a valid forecast polygon exists.
             # Tracking duration is preserved as metadata for downstream consumers/debugging.
             can_generate_alerts = bool(result.polygon_0_30m)
+            alert_blockers = []
+            if not current_polygon:
+                alert_blockers.append("missing_current_polygon")
+            if result.forecast_polygon_reason:
+                alert_blockers.append(result.forecast_polygon_reason)
 
             io_manager.write_info(
                 f"Cell {storm_entry.get('id', 'unknown')}: history_points={len(historical_points)} unique_points={len(unique_points)} "
@@ -388,6 +428,10 @@ class StormCastModule(AnalysisModule):
                 io_manager.write_info(
                     f"Cell {storm_entry.get('id', 'unknown')}: suppressing StormCast alert because forecast polygon_0_30m is unavailable"
                 )
+                if alert_blockers:
+                    io_manager.write_debug(
+                        f"Cell {storm_entry.get('id', 'unknown')}: alert blockers={','.join(dict.fromkeys(alert_blockers))}"
+                    )
             
             
             # Store results
