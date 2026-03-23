@@ -1,6 +1,7 @@
 from datetime import datetime
 from functools import partial
 from pathlib import Path
+import heapq
 import asyncio
 import platform
 import sys
@@ -161,10 +162,19 @@ def latest_files(directory, count):
         if file_path.suffix.lower() == ".gz" and file_path.with_suffix("").exists():
             continue
 
-        files.append(file_path)
+        try:
+            mtime = file_path.stat().st_mtime
+        except Exception:
+            continue
 
-    files.sort(key=lambda f: (f.stat().st_mtime, f.suffix.lower() == ".gz"))
-    return [str(f) for f in files[-count:]]
+        files.append((mtime, file_path.suffix.lower() == ".gz", file_path))
+
+    if count <= 0:
+        return []
+
+    top_files = heapq.nlargest(count, files, key=lambda item: (item[0], item[1]))
+    top_files.sort(key=lambda item: (item[0], item[1]))
+    return [str(item[2]) for item in top_files]
 
 
 def clean_idx_files(folders):
