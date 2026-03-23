@@ -14,13 +14,13 @@ function validateAlertIdBefore(id) {
 }
 
 function benchmark(fn, values, iterations) {
-  const started = process.hrtime.bigint();
+  const startTimeNs = process.hrtime.bigint();
   for (let i = 0; i < iterations; i += 1) {
     for (const value of values) {
       fn(value);
     }
   }
-  return Number(process.hrtime.bigint() - started) / 1_000_000;
+  return Number(process.hrtime.bigint() - startTimeNs) / 1_000_000;
 }
 
 describe('Performance benchmarks for validation helpers', () => {
@@ -37,7 +37,7 @@ describe('Performance benchmarks for validation helpers', () => {
     expect(Number.isFinite(beforeMs)).toBe(true);
     expect(Number.isFinite(afterMs)).toBe(true);
 
-    const improvementPct = ((beforeMs - afterMs) / beforeMs) * 100;
+    const improvementPct = beforeMs > 0 ? ((beforeMs - afterMs) / beforeMs) * 100 : 0;
     console.log(`[benchmark] validateTimestamp before=${beforeMs.toFixed(2)}ms after=${afterMs.toFixed(2)}ms improvement=${improvementPct.toFixed(2)}%`);
   });
 
@@ -54,7 +54,7 @@ describe('Performance benchmarks for validation helpers', () => {
     expect(Number.isFinite(beforeMs)).toBe(true);
     expect(Number.isFinite(afterMs)).toBe(true);
 
-    const improvementPct = ((beforeMs - afterMs) / beforeMs) * 100;
+    const improvementPct = beforeMs > 0 ? ((beforeMs - afterMs) / beforeMs) * 100 : 0;
     console.log(`[benchmark] validateAlertId before=${beforeMs.toFixed(2)}ms after=${afterMs.toFixed(2)}ms improvement=${improvementPct.toFixed(2)}%`);
   });
 });
