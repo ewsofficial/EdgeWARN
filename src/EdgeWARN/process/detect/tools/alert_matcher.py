@@ -15,6 +15,8 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 from shapely.geometry import Polygon, Point
 from shapely.prepared import prep
+from shapely.strtree import STRtree
+import numpy as np
 import json
 
 from util.io import IOManager
@@ -292,6 +294,83 @@ def match_alerts_to_cell(cell: Dict[str, Any], prepped_alerts: List[tuple]) -> L
     return matching_ids
 
 
+def _build_match_geometry(cell: Dict[str, Any]):
+    """Build matching geometry for a cell with precision buffer."""
+    cell_geom = _get_cell_polygon(cell)
+    if cell_geom is None:
+        cell_geom = _get_cell_centroid(cell)
+
+    if cell_geom is None:
+        return None
+
+    try:
+        if isinstance(cell_geom, Polygon):
+            return cell_geom.buffer(0.005)
+        return cell_geom.buffer(0.01)
+    except Exception:
+        return cell_geom
+
+
+def _normalize_tree_query_indices(query_result, geom_id_to_index):
+    """Normalize STRtree query output to a list of integer indices."""
+    if query_result is None:
+        return []
+
+    if isinstance(query_result, np.ndarray):
+        if query_result.size == 0:
+            return []
+        if np.issubdtype(query_result.dtype, np.integer):
+            return query_result.tolist()
+        first_item = query_result[0]
+        if isinstance(first_item, (int, np.integer)):
+            return [int(item) for item in query_result.tolist()]
+        return [geom_id_to_index.get(id(geom)) for geom in query_result if id(geom) in geom_id_to_index]
+
+    if isinstance(query_result, list):
+        if not query_result:
+            return []
+        if isinstance(query_result[0], (int, np.integer)):
+            return [int(idx) for idx in query_result]
+        return [geom_id_to_index.get(id(geom)) for geom in query_result if id(geom) in geom_id_to_index]
+
+    return []
+
+
+def _match_alerts_with_strtree(
+    cell: Dict[str, Any],
+    alert_ids: List[str],
+    alert_polys: List[Polygon],
+    alert_prepared: List[Any],
+    spatial_index: STRtree,
+    geom_id_to_index: Dict[int, int],
+) -> List[str]:
+    """Match alerts using STRtree candidate filtering before precise intersects."""
+    match_geom = _build_match_geometry(cell)
+    if match_geom is None:
+        return []
+
+    try:
+        candidate_query = spatial_index.query(match_geom)
+    except Exception:
+        candidate_query = []
+
+    candidate_indices = _normalize_tree_query_indices(candidate_query, geom_id_to_index)
+    if not candidate_indices:
+        return []
+
+    matching_ids = []
+    for idx in candidate_indices:
+        if idx is None or idx < 0 or idx >= len(alert_polys):
+            continue
+        try:
+            if alert_prepared[idx].intersects(match_geom):
+                matching_ids.append(alert_ids[idx])
+        except Exception:
+            continue
+
+    return matching_ids
+
+
 def match_alerts_to_cells(
     cell_entries: List[Dict[str, Any]],
     registry_dir: Path,
@@ -323,22 +402,46 @@ def match_alerts_to_cells(
             cell["alerts"] = []
         return cell_entries
     
-    # Pre-process alert polygons for efficiency (prep once, check many)
-    prepped_alerts = []
+    # Pre-process alert polygons and build spatial index.
+    alert_ids: List[str] = []
+    alert_polys: List[Polygon] = []
+    alert_prepared = []
     for alert in filtered_alerts:
         alert_id = _extract_alert_id(alert)
         alert_poly = _get_alert_polygon(alert)
         if alert_id and alert_poly:
-            prepped_alerts.append((alert_id, prep(alert_poly)))
-    
-    if not prepped_alerts:
+            alert_ids.append(alert_id)
+            alert_polys.append(alert_poly)
+            alert_prepared.append(prep(alert_poly))
+
+    if not alert_polys:
         for cell in cell_entries:
             cell["alerts"] = []
         return cell_entries
 
+    try:
+        spatial_index = STRtree(alert_polys)
+        geom_id_to_index = {id(geom): idx for idx, geom in enumerate(alert_polys)}
+    except Exception:
+        spatial_index = None
+        geom_id_to_index = {}
+        fallback_alerts = list(zip(alert_ids, alert_prepared))
+    else:
+        fallback_alerts = []
+
     # Match alerts to each cell
     for cell in cell_entries:
-        matching_ids = match_alerts_to_cell(cell, prepped_alerts)
+        if spatial_index is not None:
+            matching_ids = _match_alerts_with_strtree(
+                cell,
+                alert_ids,
+                alert_polys,
+                alert_prepared,
+                spatial_index,
+                geom_id_to_index,
+            )
+        else:
+            matching_ids = match_alerts_to_cell(cell, fallback_alerts)
         cell["alerts"] = matching_ids
     
     total_matches = sum(len(cell.get("alerts", [])) for cell in cell_entries)
