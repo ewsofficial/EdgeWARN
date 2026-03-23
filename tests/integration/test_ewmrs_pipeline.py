@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import EWMRS.pipeline as ewmrs_pipeline
@@ -67,6 +68,36 @@ def test_run_render_pipeline_collects_layer_results(monkeypatch):
     }
     assert fake_executor.max_workers == 4
     assert cleanup_calls == [120]
+
+
+def test_cleanup_old_gui_files_uses_dynamic_render_configuration(monkeypatch, tmp_path):
+    stale_dir = tmp_path / "stale"
+    active_dir = tmp_path / "active"
+    stale_dir.mkdir()
+    active_dir.mkdir()
+
+    old_timestamp = "20260317-180000"
+    active_timestamp_dir = active_dir / old_timestamp
+    active_timestamp_dir.mkdir()
+    (active_timestamp_dir / "tile_0_0.png").write_bytes(b"tile")
+    (active_dir / "index.json").write_text(json.dumps({"timestamps": [old_timestamp]}))
+
+    monkeypatch.setattr(
+        ewmrs_pipeline,
+        "get_file_list",
+        lambda: [{"outdir": active_dir}],
+    )
+    monkeypatch.setattr(
+        ewmrs_pipeline,
+        "file_list",
+        [{"outdir": stale_dir}],
+        raising=False,
+    )
+
+    ewmrs_pipeline.cleanup_old_gui_files(max_age_minutes=0)
+
+    assert not active_timestamp_dir.exists()
+    assert json.loads((active_dir / "index.json").read_text()) == []
 
 
 def test_ewmrs_tandem_worker_skips_render_when_inputs_not_ready(monkeypatch):

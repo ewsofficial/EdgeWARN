@@ -8,7 +8,7 @@ from typing import Dict, Optional
 
 import numpy as np
 
-from EWMRS.render.config import file_list, get_file_list
+from EWMRS.render.config import get_file_list
 import util.file as fs
 from util.io import IOManager, QueueWriter
 
@@ -119,7 +119,7 @@ def cleanup_old_gui_files(max_age_minutes: int = 120):
     max_age_seconds = max_age_minutes * 60
     total_removed = 0
 
-    for layer in file_list:
+    for layer in get_file_list():
         output_path = layer.get("outdir")
         if output_path is None:
             continue
