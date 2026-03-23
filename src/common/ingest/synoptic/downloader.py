@@ -11,21 +11,41 @@ from common.ingest.synoptic.s3_async import AsyncSynopticFileDownloader
 
 io_manager = IOManager("[DataIngestion]")
 
+
+def _build_synoptic_s3_params(dt, file_pattern, dir_pattern, out_dir):
+    """
+    Build the S3 key and local file path for a synoptic download.
+
+    Args:
+        dt: Target datetime.
+        file_pattern (str): ``str.format``-compatible pattern for the filename
+            (receives ``hour=<int>``).
+        dir_pattern (str): ``str.format``-compatible pattern for the S3 directory
+            (receives ``date=<str>``).
+        out_dir (Path): Local output directory.
+
+    Returns:
+        tuple[str, Path]: ``(s3_key, local_path)``
+    """
+    date_str = dt.strftime("%Y%m%d")
+    hour = dt.hour
+
+    dir_name = dir_pattern.format(date=date_str)
+    file_name = file_pattern.format(hour=hour)
+    s3_key = f"{dir_name}/{file_name}"
+
+    local_filename = f"RAP.{date_str}-{hour:02d}z.awp130pgrbf00.grib2"
+    local_path = out_dir / local_filename
+
+    return s3_key, local_path
+
+
 async def download_synoptic_async(dt, bucket, file_pattern, dir_pattern, out_dir):
     """
     Attempt to download a synoptic file asynchronously.
     """
-    date_str = dt.strftime("%Y%m%d")
-    hour = dt.hour
-    
-    dir_name = dir_pattern.format(date=date_str)
-    file_name = file_pattern.format(hour=hour)
-    s3_key = f"{dir_name}/{file_name}"
-    
-    # Save as RAP.YYYYMMDD-HHz.awp130pgrbf00.grib2
-    local_filename = f"RAP.{date_str}-{hour:02d}z.awp130pgrbf00.grib2"
-    local_path = out_dir / local_filename
-    
+    s3_key, local_path = _build_synoptic_s3_params(dt, file_pattern, dir_pattern, out_dir)
+
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         downloader = AsyncSynopticFileDownloader(bucket, io_manager, s3_client=s3)
         return await downloader.async_download_file(s3_key, local_path)
@@ -34,17 +54,8 @@ def download_synoptic_sync(dt, bucket, file_pattern, dir_pattern, out_dir):
     """
     Attempt to download a synoptic file synchronously.
     """
-    date_str = dt.strftime("%Y%m%d")
-    hour = dt.hour
-    
-    dir_name = dir_pattern.format(date=date_str)
-    file_name = file_pattern.format(hour=hour)
-    s3_key = f"{dir_name}/{file_name}"
-    
-    # Save as RAP.YYYYMMDD-HHz.awp130pgrbf00.grib2
-    local_filename = f"RAP.{date_str}-{hour:02d}z.awp130pgrbf00.grib2"
-    local_path = out_dir / local_filename
-    
+    s3_key, local_path = _build_synoptic_s3_params(dt, file_pattern, dir_pattern, out_dir)
+
     downloader = SynopticFileDownloader(bucket, io_manager)
     return downloader.download_file(s3_key, local_path)
 
