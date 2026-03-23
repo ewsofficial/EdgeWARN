@@ -14,7 +14,11 @@ class APIIndexManager:
         self.cell_index_path = fs.CELL_DIR / "cell_index.json"
         self.remove_old_cells = remove_old_cells
         self.cell_timestamps = {}
+        self.stormcell_timestamps = set()
+        self.stormcell_updates_since_resync = 0
+        self.stormcell_resync_interval = 500
         self._initial_scan_done = False
+        self._stormcell_initial_scan_done = False
         
     def initialize_indexes(self):
         """
@@ -47,6 +51,10 @@ class APIIndexManager:
             if name.startswith("stormcells_"):
                 timestamp = name.replace("stormcells_", "")
                 timestamps.append(timestamp)
+
+        self.stormcell_timestamps = set(timestamps)
+        self.stormcell_updates_since_resync = 0
+        self._stormcell_initial_scan_done = True
         
         # Create index
         index_data = {
@@ -105,12 +113,35 @@ class APIIndexManager:
             
     def update_stormcell_index(self, timestamp: str):
         """
-        Update stormcell_index.json by scanning the directory.
-        This ensures the index matches the filesystem (files deleted by main.py are removed).
+        Update stormcell_index.json incrementally for new timestamps.
+        Falls back to full directory resync periodically to reconcile deletions.
         
         Args:
-            timestamp: Unused, kept for compatibility but we scan the dir anyway.
+            timestamp: Timestamp of the latest stormcell output.
         """
+        if not self._stormcell_initial_scan_done:
+            self._initialize_stormcell_index()
+
+        self.stormcell_updates_since_resync += 1
+
+        should_resync = (
+            self.stormcell_updates_since_resync >= self.stormcell_resync_interval
+            or not timestamp
+        )
+
+        timestamp_str = str(timestamp) if timestamp is not None else ""
+        stormcell_file = fs.STORMCELL_DIR / f"stormcells_{timestamp_str}.json"
+
+        if not should_resync and stormcell_file.exists():
+            self.stormcell_timestamps.add(timestamp_str)
+            index_data = {
+                "timestamps": sorted(self.stormcell_timestamps),
+                "lastUpdated": datetime.now(timezone.utc).isoformat()
+            }
+            with open(self.stormcell_index_path, 'w') as f:
+                json.dump(index_data, f, indent=2)
+            return
+
         self._initialize_stormcell_index()
 
     def update_cell_index(self, cell_ids: list):
