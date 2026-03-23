@@ -2,6 +2,9 @@
  * Input validation utilities for API endpoints
  */
 
+const TIMESTAMP_REGEX = /^\d{8}-\d{6}$/;
+const ALERT_ID_REGEX = /^[a-zA-Z0-9_.:-]+$/;
+
 /**
  * Validate resource type parameter
  * @param {string} type - Resource type ("cell" or "list")
@@ -18,9 +21,7 @@ export function validateResourceType(type) {
  */
 export function validateTimestamp(timestamp) {
   if (!timestamp) return false;
-  // Format: YYYYMMDD-HHMMSS
-  const regex = /^\d{8}-\d{6}$/;
-  return regex.test(timestamp);
+  return TIMESTAMP_REGEX.test(timestamp);
 }
 
 /**
@@ -30,9 +31,7 @@ export function validateTimestamp(timestamp) {
  */
 export function validateTimestampV2(timestamp) {
   if (!timestamp) return false;
-  // Format: YYYYMMDD-HHMMSS (same as existing validateTimestamp)
-  const regex = /^\d{8}-\d{6}$/;
-  return regex.test(timestamp);
+  return TIMESTAMP_REGEX.test(timestamp);
 }
 
 /**
@@ -69,5 +68,5 @@ export function validateAlertId(id) {
   // Reject prototype pollution attempts
   if (id === '__proto__' || id === 'constructor' || id === 'prototype') return false;
   // Allow alphanumeric, hyphens, underscores, dots, and colons (for URN-style IDs like urn:oid:...)
-  return /^[a-zA-Z0-9_.:-]+$/.test(id);
+  return ALERT_ID_REGEX.test(id);
 }
