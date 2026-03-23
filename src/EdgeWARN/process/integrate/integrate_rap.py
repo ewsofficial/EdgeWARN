@@ -78,7 +78,7 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
             if key in extracted_data:
                 _apply_to_cells(storm_cells, extracted_data[key], key, transform_fn)
                 
-    # Calculate derived fields
+    # Calculate derived fields (compile formula AST once per field)
     for d in derived:
         _calculate_derived(storm_cells, d["formula"], d["key"])
 
@@ -120,19 +120,26 @@ def _apply_to_cells(storm_cells, cell_values, key, transform_fn):
 
 def _calculate_derived(storm_cells, formula, key):
     """Calculate derived field from existing properties."""
+    try:
+        compiled_expression = ast.parse(formula, mode="eval").body
+    except Exception:
+        for cell in storm_cells:
+            props = cell.get("properties", {})
+            props[key] = None
+        return
+
     for cell in storm_cells:
         props = cell.get("properties", {})
         try:
-            value = _safe_eval_formula(formula, props)
+            value = _safe_eval_formula(compiled_expression, props)
             props[key] = round(value, 2)
         except Exception:
             props[key] = None
 
 
-def _safe_eval_formula(formula, variables):
+def _safe_eval_formula(expression, variables):
     """Evaluate arithmetic formulas using a restricted AST parser."""
-    expression = ast.parse(formula, mode="eval")
-    return _evaluate_node(expression.body, variables)
+    return _evaluate_node(expression, variables)
 
 
 def _evaluate_node(node, variables):
