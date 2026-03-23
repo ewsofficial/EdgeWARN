@@ -3,6 +3,46 @@ import numpy as np
 import shapely.vectorized as sv
 from .utils import StormIntegrationUtils, io_manager
 
+
+_GLM_BIN_SIZE_DEGREES = 1.0
+
+
+def _build_flash_spatial_index(flash_lats, flash_lons, bin_size):
+    """Build a coarse spatial bin index for flash candidate lookup."""
+    spatial_index = {}
+    lat_bins = np.floor(flash_lats / bin_size).astype(np.int64)
+    lon_bins = np.floor(flash_lons / bin_size).astype(np.int64)
+
+    for idx, (lat_bin, lon_bin) in enumerate(zip(lat_bins, lon_bins)):
+        key = (int(lat_bin), int(lon_bin))
+        if key not in spatial_index:
+            spatial_index[key] = []
+        spatial_index[key].append(idx)
+
+    return spatial_index
+
+
+def _candidate_indices_from_bounds(bounds, spatial_index, bin_size):
+    """Collect candidate flash indices for polygon bounds from spatial bins."""
+    minx, miny, maxx, maxy = bounds
+
+    min_lat_bin = int(np.floor(miny / bin_size))
+    max_lat_bin = int(np.floor(maxy / bin_size))
+    min_lon_bin = int(np.floor(minx / bin_size))
+    max_lon_bin = int(np.floor(maxx / bin_size))
+
+    candidates = []
+    for lat_bin in range(min_lat_bin, max_lat_bin + 1):
+        for lon_bin in range(min_lon_bin, max_lon_bin + 1):
+            indices = spatial_index.get((lat_bin, lon_bin))
+            if indices:
+                candidates.extend(indices)
+
+    if not candidates:
+        return None
+
+    return np.array(candidates, dtype=np.int64)
+
 def integrate_glm(storm_cells, glm_file_path=None):
     """
     Integrate GOES GLM flash count and total flash energy into storm cells.
@@ -43,8 +83,18 @@ def integrate_glm(storm_cells, glm_file_path=None):
         # but usually post-processed to J or similar unit. Taking raw values as requested.
         flash_energies = ds["flash_energy"].values
 
-        # No timestamp filtering needed
+        finite_mask = np.isfinite(flash_lats) & np.isfinite(flash_lons)
+        flash_lats = flash_lats[finite_mask]
+        flash_lons = flash_lons[finite_mask]
+
         active_cells = storm_cells
+        flash_energies = flash_energies[finite_mask]
+
+        flash_spatial_index = _build_flash_spatial_index(
+            flash_lats,
+            flash_lons,
+            _GLM_BIN_SIZE_DEGREES,
+        )
 
         io_manager.write_info(f"Integrating GLM data for {len(active_cells)} cells")
 
@@ -62,26 +112,35 @@ def integrate_glm(storm_cells, glm_file_path=None):
                 continue
                 
             try:
-                # Optimized point-in-polygon check
-                # First filter by bounding box
-                minx, miny, maxx, maxy = poly.bounds
-                
-                # Check for flashes within bbox - this is faster than running contains on all points
-                # Note: flash_lat/lon are 1D arrays of shape (number_of_flashes,)
-                
-                bbox_mask = (
-                    (flash_lats >= miny) & (flash_lats <= maxy) &
-                    (flash_lons >= minx) & (flash_lons <= maxx)
+                candidate_idx = _candidate_indices_from_bounds(
+                    poly.bounds,
+                    flash_spatial_index,
+                    _GLM_BIN_SIZE_DEGREES,
                 )
-                
+
+                if candidate_idx is None or candidate_idx.size == 0:
+                    target["GLM_FLASH_COUNT"] = 0
+                    target["GLM_TOTAL_ENERGY"] = 0.0
+                    continue
+
+                subset_lats = flash_lats[candidate_idx]
+                subset_lons = flash_lons[candidate_idx]
+                subset_energies = flash_energies[candidate_idx]
+
+                minx, miny, maxx, maxy = poly.bounds
+                bbox_mask = (
+                    (subset_lats >= miny) & (subset_lats <= maxy) &
+                    (subset_lons >= minx) & (subset_lons <= maxx)
+                )
+
                 if not np.any(bbox_mask):
                     target["GLM_FLASH_COUNT"] = 0
                     target["GLM_TOTAL_ENERGY"] = 0.0
                     continue
 
-                subset_lats = flash_lats[bbox_mask]
-                subset_lons = flash_lons[bbox_mask]
-                subset_energies = flash_energies[bbox_mask]
+                subset_lats = subset_lats[bbox_mask]
+                subset_lons = subset_lons[bbox_mask]
+                subset_energies = subset_energies[bbox_mask]
 
                 # Precise check
                 inside = sv.contains(poly, subset_lons, subset_lats)
