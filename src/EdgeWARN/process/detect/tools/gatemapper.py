@@ -250,9 +250,7 @@ class GateMapper:
         polygon_grid = expanded_ds['PolygonID'].values
         lats = expanded_ds['latitude'].values
         lons = expanded_ds['longitude'].values
-
-        if lats.ndim == 1:
-            lats, lons = np.meshgrid(lats, lons, indexing='ij')
+        coords_are_1d = lats.ndim == 1 and lons.ndim == 1
 
         # Get unique IDs and their bounding box slices
         # range(max_id + 1) to cover all possible IDs
@@ -315,12 +313,16 @@ class GateMapper:
                 c_global = (contour[:, 1] + c_offset).astype(int)
                 
                 # Safety clamp
-                np.clip(r_global, 0, lats.shape[0] - 1, out=r_global)
-                np.clip(c_global, 0, lats.shape[1] - 1, out=c_global)
-                
-                # Vectorized lookup and rounding
-                lat_vals = np.round(lats[r_global, c_global], 3)
-                lon_vals = np.round(lons[r_global, c_global], 3)
+                if coords_are_1d:
+                    np.clip(r_global, 0, lats.shape[0] - 1, out=r_global)
+                    np.clip(c_global, 0, lons.shape[0] - 1, out=c_global)
+                    lat_vals = np.round(lats[r_global], 3)
+                    lon_vals = np.round(lons[c_global], 3)
+                else:
+                    np.clip(r_global, 0, lats.shape[0] - 1, out=r_global)
+                    np.clip(c_global, 0, lats.shape[1] - 1, out=c_global)
+                    lat_vals = np.round(lats[r_global, c_global], 3)
+                    lon_vals = np.round(lons[r_global, c_global], 3)
                 
                 # Create list of tuples
                 bboxes[poly_id] = list(zip(lat_vals.tolist(), lon_vals.tolist()))
@@ -328,4 +330,3 @@ class GateMapper:
                 bboxes[poly_id] = []
 
         return bboxes
-
