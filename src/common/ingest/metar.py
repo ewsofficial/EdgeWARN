@@ -266,7 +266,6 @@ def fetch_metar_cycle(dt):
 
     return None
 
-    return None
 
 async def fetch_metar_cycle_async(dt, session=None):
     """
@@ -359,6 +358,19 @@ def process_content(content):
 
     return parsed_data
 
+def _get_metar_filepath(dt):
+    """Return the Path where METAR data for *dt* should be saved."""
+    filename = f"METAR_{dt.strftime('%Y%m%d-%H')}z.json"
+    return fs.METAR_DIR / filename
+
+
+def _ensure_metar_dir():
+    """Create the METAR output directory if it does not exist."""
+    if not fs.METAR_DIR.exists():
+        io.write_info(f"Creating METAR directory: {fs.METAR_DIR}")
+        fs.METAR_DIR.mkdir(parents=True, exist_ok=True)
+
+
 def save_metar_data(data, dt):
     """
     Saves the parsed METAR data to a JSON file.
@@ -368,12 +380,8 @@ def save_metar_data(data, dt):
         io.write_warning("No METAR data to save.")
         return
 
-    if not fs.METAR_DIR.exists():
-        io.write_info(f"Creating METAR directory: {fs.METAR_DIR}")
-        fs.METAR_DIR.mkdir(parents=True, exist_ok=True)
-
-    filename = f"METAR_{dt.strftime('%Y%m%d-%H')}z.json"
-    filepath = fs.METAR_DIR / filename
+    _ensure_metar_dir()
+    filepath = _get_metar_filepath(dt)
 
     io.write_info(f"Saving {len(data)} METAR records to {filepath}")
 
@@ -417,12 +425,8 @@ async def save_metar_data_async(data, dt):
         io.write_warning("No METAR data to save.")
         return
 
-    if not fs.METAR_DIR.exists():
-        io.write_info(f"Creating METAR directory: {fs.METAR_DIR}")
-        fs.METAR_DIR.mkdir(parents=True, exist_ok=True)
-
-    filename = f"METAR_{dt.strftime('%Y%m%d-%H')}z.json"
-    filepath = fs.METAR_DIR / filename
+    _ensure_metar_dir()
+    filepath = _get_metar_filepath(dt)
 
     io.write_info(f"Saving {len(data)} METAR records to {filepath}")
 

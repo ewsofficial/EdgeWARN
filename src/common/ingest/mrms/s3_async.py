@@ -9,10 +9,7 @@ import aiofiles
 import aiofiles.os
 from datetime import timedelta
 from util.handler import extract_timestamp
-from common.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
-
-
-_DECOMPRESS_CHUNK_SIZE = 1024 * 1024  # 1MB chunks to reduce syscall overhead during gzip copy
+from common.ingest.mrms.s3_common import DECOMPRESS_CHUNK_SIZE, select_target_file
 
 class AsyncFileFinder:
     """Async version of FileFinder using aioboto3 for non-blocking S3 operations"""
@@ -108,32 +105,10 @@ class AsyncFileDownloader:
     def _select_target_file(self, file_list, context: str):
         """
         Select the file that best matches the target datetime.
-        
-        Uses round_to_nearest_even_minute for matching, with debug logging
-        when a non-exact match is selected.
-        """
-        target_rounded = round_to_nearest_even_minute(self.dt)
-        target_key = (target_rounded.year, target_rounded.month, target_rounded.day, 
-                      target_rounded.hour, target_rounded.minute)
-        
-        for s3_path, ts in file_list:
-            ts_rounded = round_to_nearest_even_minute(ts)
-            ts_key = (ts_rounded.year, ts_rounded.month, ts_rounded.day,
-                      ts_rounded.hour, ts_rounded.minute)
-            
-            if ts_key == target_key:
-                # Log if not an exact match (rounding was applied)
-                if ts.minute != target_rounded.minute or ts.hour != target_rounded.hour:
-                    self.io_manager.write_debug(
-                        f"Rounded match: {ts.strftime('%H:%M:%S')} → {target_rounded.strftime('%H:%M')} for {context}"
-                    )
-                return s3_path
 
-        self.io_manager.write_warning(
-            f"No file found matching timestamp {target_rounded} for {context}. Falling back to latest available."
-        )
-        # Fallback to the latest file (first in the list)
-        return file_list[0][0]
+        Delegates to :func:`~common.ingest.mrms.s3_common.select_target_file`.
+        """
+        return select_target_file(self.dt, file_list, self.io_manager, context=context)
 
     async def async_download_matching(self, file_list, outdir: Path):
         """
@@ -271,7 +246,7 @@ class AsyncFileDownloader:
             # Offload synchronous gzip to a worker thread (fast, avoids blocking event loop)
             def _sync_decompress():
                 with gzip.open(gz_path, "rb") as f_in, open(output_path, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out, length=_DECOMPRESS_CHUNK_SIZE)
+                    shutil.copyfileobj(f_in, f_out, length=DECOMPRESS_CHUNK_SIZE)
 
             await asyncio.to_thread(_sync_decompress)
 
