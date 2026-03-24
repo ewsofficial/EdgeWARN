@@ -136,6 +136,12 @@ python process_historical.py --start <YYYY-MM-DDTHH:MM:SS> --end <YYYY-MM-DDTHH:
 
 ### Testing
 
+Always make sure to use the ``EdgeWARN-dev`` conda environment in environment.yml.
+If that environment doesn't exist yet, create it using:
+```bash
+conda env create -f environment.yml
+```
+
 #### Node.js Tests
 ```bash
 npm test                     # Run all tests
