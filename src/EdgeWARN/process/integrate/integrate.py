@@ -2,6 +2,7 @@ from .utils import StormIntegrationUtils
 import xarray as xr
 import numpy as np
 import shapely.vectorized as sv
+from shapely.geometry import Polygon
 import gc
 from util.grib_loader import load_grib_fast
 
@@ -13,18 +14,130 @@ class StormCellIntegrator:
         self.io_manager = io_manager
 
     @staticmethod
-    def _lat_slice_indices(lat_vals, miny, maxy):
-        """Return start/end indices for latitude bounds on ascending or descending grids."""
-        if lat_vals[0] < lat_vals[-1]:
-            start_idx = np.searchsorted(lat_vals, miny)
-            end_idx = np.searchsorted(lat_vals, maxy, side='right')
+    def _axis_slice_indices(coord_vals, min_val, max_val):
+        """Return start/end indices for monotonic 1D coordinate bounds."""
+        if coord_vals[0] < coord_vals[-1]:
+            start_idx = np.searchsorted(coord_vals, min_val)
+            end_idx = np.searchsorted(coord_vals, max_val, side='right')
         else:
-            lat_reversed = lat_vals[::-1]
-            lat_len = len(lat_vals)
-            end_idx = lat_len - np.searchsorted(lat_reversed, miny)
-            start_idx = lat_len - np.searchsorted(lat_reversed, maxy, side='right')
+            reversed_vals = coord_vals[::-1]
+            coord_len = len(coord_vals)
+            end_idx = coord_len - np.searchsorted(reversed_vals, min_val)
+            start_idx = coord_len - np.searchsorted(reversed_vals, max_val, side='right')
 
         return start_idx, end_idx
+
+    @staticmethod
+    def _uses_360_longitude(lon_vals):
+        finite_lons = np.asarray(lon_vals)
+        finite_lons = finite_lons[np.isfinite(finite_lons)]
+        if finite_lons.size == 0:
+            return False
+        return float(np.min(finite_lons)) >= 0.0 and float(np.max(finite_lons)) > 180.0
+
+    @classmethod
+    def _polygon_for_dataset(cls, poly, lon_vals):
+        if poly is None or not cls._uses_360_longitude(lon_vals):
+            return poly
+
+        return Polygon([
+            (lon + 360.0 if lon < 0.0 else lon, lat)
+            for lon, lat in poly.exterior.coords
+        ])
+
+    def _extract_spatial_subset(self, ds, var, is_grib, var_values, lat_name, lon_name, lat_vals, lon_vals, poly):
+        minx, miny, maxx, maxy = poly.bounds
+
+        if lat_vals.ndim == 1 and lon_vals.ndim == 1:
+            lat_start_idx, lat_end_idx = self._axis_slice_indices(lat_vals, miny, maxy)
+            lon_start_idx, lon_end_idx = self._axis_slice_indices(lon_vals, minx, maxx)
+
+            lat_start_idx = max(0, min(lat_start_idx, len(lat_vals)))
+            lat_end_idx = max(0, min(lat_end_idx, len(lat_vals)))
+            lon_start_idx = max(0, min(lon_start_idx, len(lon_vals)))
+            lon_end_idx = max(0, min(lon_end_idx, len(lon_vals)))
+
+            lat_subset = lat_vals[lat_start_idx:lat_end_idx]
+            lon_subset = lon_vals[lon_start_idx:lon_end_idx]
+            if lat_subset.size == 0 or lon_subset.size == 0:
+                return None, None, None
+
+            if is_grib:
+                sub_var = var_values[lat_start_idx:lat_end_idx, lon_start_idx:lon_end_idx]
+            else:
+                lat_dim = ds[lat_name].dims[0]
+                lon_dim = ds[lon_name].dims[0]
+                sub_var = var.isel(
+                    {lat_dim: slice(lat_start_idx, lat_end_idx), lon_dim: slice(lon_start_idx, lon_end_idx)}
+                )
+                extra_dims = {
+                    dim: 0
+                    for dim, size in sub_var.sizes.items()
+                    if dim not in (lat_dim, lon_dim)
+                }
+                for dim, size in sub_var.sizes.items():
+                    if dim not in (lat_dim, lon_dim) and size != 1:
+                        raise ValueError(f"Non-spatial dimension {dim} has size {size}")
+                if extra_dims:
+                    sub_var = sub_var.isel(extra_dims, drop=True)
+                if sub_var.dims != (lat_dim, lon_dim):
+                    sub_var = sub_var.transpose(lat_dim, lon_dim)
+                sub_var = sub_var.compute().values
+
+            sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
+            return np.asarray(sub_var), sub_lat, sub_lon
+
+        if lat_vals.ndim == 2 and lon_vals.ndim == 2:
+            finite_mask = np.isfinite(lat_vals) & np.isfinite(lon_vals)
+            bbox_mask = (
+                finite_mask
+                & (lon_vals >= minx)
+                & (lon_vals <= maxx)
+                & (lat_vals >= miny)
+                & (lat_vals <= maxy)
+            )
+            if not np.any(bbox_mask):
+                return None, None, None
+
+            row_indices, col_indices = np.where(bbox_mask)
+            row_slice = slice(int(row_indices.min()), int(row_indices.max()) + 1)
+            col_slice = slice(int(col_indices.min()), int(col_indices.max()) + 1)
+
+            if is_grib:
+                sub_var = var_values[row_slice, col_slice]
+            else:
+                spatial_dims = ds[lat_name].dims
+                if len(spatial_dims) != 2:
+                    raise ValueError(f"Unsupported coordinate dimensions for {lat_name}: {spatial_dims}")
+                sub_var = var.isel(
+                    {spatial_dims[0]: row_slice, spatial_dims[1]: col_slice}
+                )
+                extra_dims = {
+                    dim: 0
+                    for dim, size in sub_var.sizes.items()
+                    if dim not in spatial_dims
+                }
+                for dim, size in sub_var.sizes.items():
+                    if dim not in spatial_dims and size != 1:
+                        raise ValueError(f"Non-spatial dimension {dim} has size {size}")
+                if extra_dims:
+                    sub_var = sub_var.isel(extra_dims, drop=True)
+                if sub_var.dims != spatial_dims:
+                    sub_var = sub_var.transpose(*spatial_dims)
+                sub_var = sub_var.compute().values
+
+            sub_var = np.asarray(sub_var)
+            sub_lat = lat_vals[row_slice, col_slice]
+            sub_lon = lon_vals[row_slice, col_slice]
+            if sub_var.ndim != 2 or sub_var.shape != sub_lat.shape:
+                raise ValueError(
+                    f"Spatial subset shape mismatch: data={sub_var.shape}, lat={sub_lat.shape}, lon={sub_lon.shape}"
+                )
+            return sub_var, sub_lat, sub_lon
+
+        raise ValueError(
+            f"Unsupported coordinate layout: lat.ndim={lat_vals.ndim}, lon.ndim={lon_vals.ndim}"
+        )
 
     def integrate_ds_via_max(self, dataset_path, storm_cells, output_key):
         if not storm_cells:
@@ -66,6 +179,7 @@ class StormCellIntegrator:
 
         # For GRIB: load all values at once (already in memory from load_grib_fast)
         # For NetCDF: keep var lazy for subset loading
+        var_values = None
         if is_grib:
             var_values = var.values
 
@@ -82,44 +196,12 @@ class StormCellIntegrator:
                 continue
 
             try:
-                minx, miny, maxx, maxy = poly.bounds
+                poly = self._polygon_for_dataset(poly, lon_vals)
+                sub_var, sub_lat, sub_lon = self._extract_spatial_subset(
+                    ds, var, is_grib, var_values, lat_name, lon_name, lat_vals, lon_vals, poly
+                )
 
-                # Optimization: Use searchsorted for O(logN) slicing instead of O(N) boolean masking
-                # This assumes lat_vals and lon_vals are monotonic (standard for GRIB grids)
-                
-                # Handle Latitude (check if ascending or descending)
-                lat_start_idx, lat_end_idx = self._lat_slice_indices(lat_vals, miny, maxy)
-
-                # Handle Longitude (usually ascending 0-360 or -180-180)
-                lon_start_idx = np.searchsorted(lon_vals, minx)
-                lon_end_idx = np.searchsorted(lon_vals, maxx, side='right')
-                
-                # Clamp indices
-                lat_start_idx = max(0, min(lat_start_idx, len(lat_vals)))
-                lat_end_idx = max(0, min(lat_end_idx, len(lat_vals)))
-                lon_start_idx = max(0, min(lon_start_idx, len(lon_vals)))
-                lon_end_idx = max(0, min(lon_end_idx, len(lon_vals)))
-
-                # Create slices
-                lat_subset = lat_vals[lat_start_idx:lat_end_idx]
-                lon_subset = lon_vals[lon_start_idx:lon_end_idx]
-
-                if lat_subset.size == 0 or lon_subset.size == 0:
-                    target[output_key] = 0
-                    continue
-
-                # LAZY LOADING: For NetCDF, only load the subset we need
-                if is_grib:
-                    sub_var = var_values[lat_start_idx:lat_end_idx, lon_start_idx:lon_end_idx]
-                else:
-                    sub_var = var.isel(
-                        {lat_name: slice(lat_start_idx, lat_end_idx),
-                         lon_name: slice(lon_start_idx, lon_end_idx)}
-                    ).compute().values
-
-                sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
-
-                if sub_var.size == 0:
+                if sub_var is None or sub_var.size == 0:
                     target[output_key] = 0
                     continue
 
@@ -208,6 +290,7 @@ class StormCellIntegrator:
 
         # For GRIB: load all values at once (already in memory from load_grib_fast)
         # For NetCDF: keep var lazy for subset loading
+        var_values = None
         if is_grib:
             var_values = var.values
 
@@ -227,42 +310,12 @@ class StormCellIntegrator:
                 continue
 
             try:
-                minx, miny, maxx, maxy = poly.bounds
+                poly = self._polygon_for_dataset(poly, lon_vals)
+                sub_var, sub_lat, sub_lon = self._extract_spatial_subset(
+                    ds, var, is_grib, var_values, lat_name, lon_name, lat_vals, lon_vals, poly
+                )
 
-                # Optimization: Use searchsorted for O(logN) slicing
-                # Handle Latitude
-                lat_start_idx, lat_end_idx = self._lat_slice_indices(lat_vals, miny, maxy)
-
-                # Handle Longitude
-                lon_start_idx = np.searchsorted(lon_vals, minx)
-                lon_end_idx = np.searchsorted(lon_vals, maxx, side='right')
-                
-                # Clamp indices
-                lat_start_idx = max(0, min(lat_start_idx, len(lat_vals)))
-                lat_end_idx = max(0, min(lat_end_idx, len(lat_vals)))
-                lon_start_idx = max(0, min(lon_start_idx, len(lon_vals)))
-                lon_end_idx = max(0, min(lon_end_idx, len(lon_vals)))
-
-                # Create slices
-                lat_subset = lat_vals[lat_start_idx:lat_end_idx]
-                lon_subset = lon_vals[lon_start_idx:lon_end_idx]
-
-                if lat_subset.size == 0 or lon_subset.size == 0:
-                    target.update(zero_results)
-                    continue
-
-                # LAZY LOADING: For NetCDF, only load the subset we need
-                if is_grib:
-                    sub_var = var_values[lat_start_idx:lat_end_idx, lon_start_idx:lon_end_idx]
-                else:
-                    sub_var = var.isel(
-                        {lat_name: slice(lat_start_idx, lat_end_idx),
-                         lon_name: slice(lon_start_idx, lon_end_idx)}
-                    ).compute().values
-
-                sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
-
-                if sub_var.size == 0:
+                if sub_var is None or sub_var.size == 0:
                     target.update(zero_results)
                     continue
 
@@ -300,8 +353,8 @@ class StormCellIntegrator:
                         target[key] = float(res)
 
             except Exception as e:
-                # self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
-                target.update(zero_results) # Default to 0 on error
+                self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
+                target.update(zero_results)
         
         ds.close()
         del ds
