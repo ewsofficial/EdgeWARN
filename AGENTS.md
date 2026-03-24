@@ -1,220 +1,236 @@
-# System Prompt for Coding Agent
+# EdgeWARN-Core
 
-## Purpose
-You are a coding assistant specializing in **Python**, **Node.js/Next.js**, **JavaScript**, and **TypeScript**. Your role is to **write, review, and optimize code** with a focus on **best practices**, **readability**, **maintainability**, **security**, and **performance**.
+## Project Overview
+EdgeWARN-Core is the mixed Python and Node.js backend for the EdgeWARN analysis pipeline and the EWMRS rendering service. The repository ingests operational weather datasets, processes storm-cell products, renders GUI layers, and serves generated artifacts through REST APIs.
 
----
+Current codebase capabilities include:
+- Shared real-time ingest orchestration for EdgeWARN analysis and EWMRS rendering
+- EdgeWARN storm-cell detection, optional tracking/lineage, multi-source integration, CTAM analytics, alert generation, and API index updates
+- EWMRS raster rendering, tile generation, colormap delivery, and WPC surface-analysis serving
+- Historical reprocessing via `src/process_historical.py`
+- Filesystem-first runtime using a configurable base directory, with remote ingestion from NOAA/AWS/HTTP sources
 
-## Coding Guidelines
+The current package version defined in `package.json` is **2.0.1**.
 
-### 1. Readability and Maintainability
-- Write **clean, self-documenting code** with descriptive names for variables, functions, classes, and modules.
-- Use **consistent formatting** according to standard style guides:
-  - Python: PEP 8
-  - JavaScript/TypeScript: Airbnb, StandardJS, or equivalent.
-- Modularize code; functions should do **one thing only** (single responsibility principle).
-- Include comments **only where necessary** to clarify non-obvious logic.
-- Use **type annotations** in Python (PEP 484) and TypeScript for clarity and type safety.
-- Favor **immutability** and predictable state management where applicable.
+## Technology Stack
+- **API Services**: Node.js with Express.js and ES modules
+- **Core Processing**: Python 3.13 in the `EdgeWARN-dev` Conda environment
+- **Scientific/Data Libraries**: NumPy, SciPy, xarray, rasterio/rioxarray, shapely, scikit-image, cfgrib
+- **Storage Model**: Local runtime filesystem (`data/`, `gui/`, `wpc/`) backed by AWS S3, HTTPS, and NOAA feeds for ingestion
+- **Testing**: Jest + Supertest for Node APIs, pytest for Python modules/integration
+- **Package Management**: npm and conda
 
-### 2. Best Practices
-- Follow **language-specific idioms** (Pythonic conventions, JS/TS conventions).
-- Use **modern language features** (ES6+ for JS/TS, async/await, f-strings in Python).
-- Avoid **anti-patterns** and **deprecated APIs**.
-- Write code that is **unit-testable**, and include suggestions for **testing** where relevant.
-- Properly handle errors and exceptions using **try/catch** or **context-appropriate mechanisms**.
+## Environment Setup
 
-### 3. Security
-- Validate and sanitize **all user input**.
-- Avoid **hardcoding secrets**; recommend secure storage (environment variables, secret managers).
-- Prevent common vulnerabilities:
-  - Python: Injection attacks, unsafe deserialization
-  - JS/TS: XSS, CSRF, SQL/NoSQL injection
-- Use **secure dependencies**; prefer well-maintained libraries and regularly check for vulnerabilities.
-- Follow the **principle of least privilege** for access control.
+### Prerequisites
+- Conda or Miniconda
+- npm
+- git-scm
 
-### 4. Performance and Efficiency
-- Optimize for **time and space complexity**; avoid unnecessary loops, redundant computations, or memory-heavy operations.
-- Use **asynchronous programming** where applicable (async/await, Promises).
-- Cache results when beneficial, but avoid premature optimization.
-
-#### Node.js / Next.js
-- Optimize server-side rendering and API routes.
-- Avoid blocking the event loop.
-- Prefer streaming and incremental rendering where appropriate.
-- Minimize synchronous filesystem or CPU-heavy work in request handlers.
-
-#### Python
-- Prefer **built-in functions and standard libraries** because they are usually optimized in C and highly reliable.
-- If a **measurably faster or more scalable alternative** exists (e.g., specialized libraries, vectorized operations, compiled extensions), it may be used when justified.
-- Use **generators and iterators** for large datasets to reduce memory usage.
-- Avoid unnecessary object allocations in performance-critical paths.
-
-### 5. Documentation and Code Examples
-- Provide **clear documentation** for functions, classes, modules, and API endpoints.
-- Include **example usage** for non-trivial functions.
-- Suggest **naming conventions** and folder structures for larger projects.
-
-### 6. Review and Refactoring
-- Identify potential **bugs, inefficiencies, or security risks**.
-- Suggest **refactoring** to improve clarity, maintainability, and performance.
-- Recommend **tests, linters, and type checks** to enforce code quality.
-
----
-
-## Behavior Instructions
-- Prioritize **clarity and maintainability over clever hacks**.
-- When explaining or suggesting code, **justify recommendations** with reasoning.
-- Use **idiomatic language constructs** and patterns native to the target language.
-- Assume the code will be **maintained and scaled by a team**.
-
-# Project-Specific Setup
-
-## EdgeWARN-Core
-
-### Project Overview
-EdgeWARN is a severe weather nowcasting system developed by the Edgemont Weather Service. This repository serves as the core server that processes raw meteorological data and serves it to GUI applications. Key features include:
-- Real-time and historical severe weather analysis
-- Integration of NOAA MRMS datasets, ProbSevere v3, RAP synoptic data, and GOES-19 GLM lightning data
-- Hydrological information integration to fill gaps in threat assessment
-- RESTful API for serving processed data to frontend applications
-
-### Technology Stack
-- **Backend**: Node.js (Express.js)
-- **Data Processing**: Python 3.13+ (with Conda environment)
-- **Data Storage**: Local file system (with AWS S3 integration for historical data)
-- **Testing**: Jest (Node.js), pytest (Python)
-- **Package Management**: npm (Node.js), conda (Python)
-
-### Environment Setup
-
-#### Prerequisites
-- Conda or Miniconda (Python package management)
-- npm (Node.js package management)
-- git-scm (version control)
-
-#### Installation Process
-
-1. **Clone the Repository**
+### Installation Process
+1. **Clone the repository**
    ```bash
    git clone https://www.github.com/ewsofficial/EdgeWARN-Core
    cd EdgeWARN-Core
    ```
 
-2. **Create and Activate Conda Environment**
+2. **Create and activate the Conda environment**
    ```bash
    conda env create -f environment.yml
    conda activate EdgeWARN-dev
    ```
 
-3. **Install Node.js Dependencies**
+3. **Install Node.js dependencies**
    ```bash
    npm install
    ```
 
-### Running the Application
+### Runtime Base Directory
+Most generated data is written outside the repository into a runtime base directory.
 
-#### Data Server (Node.js)
+Default locations are:
+- **Linux/macOS**: `~/EdgeWARN_input`
+- **Windows**: `C:\EdgeWARN_input`
+
+Current components support the following overrides:
+- **Python CLI**: `--base_dir` / `--base-dir`
+- **EdgeWARN API**: `--base-dir` or `EDGEWARN_BASE_DIR`
+- **EWMRS API**: `--base_dir` or `BASE_DIR`
+
+## Running the Application
+
+### Node.js API Services
+Run these commands from the repository root:
+
 ```bash
-npm run api:edgewarn         # Start EdgeWARN API server on the default port
-npm run debug:edgewarn       # Start EdgeWARN API server in debug mode on port 3001
-npm run api:ewmrs            # Start the EWMRS API server
+npm run api:edgewarn   # Start the EdgeWARN API (default port 5000)
+npm run debug:edgewarn # Start the EdgeWARN API in debug mode (port 3001)
+npm run api:ewmrs      # Start the EWMRS API (default port 3003)
 ```
 
-#### Real-Time Analysis (Python)
-Navigate to the `src` directory first:
+### Real-Time Tandem Processing (Python)
+Run from the `src` directory:
+
 ```bash
 cd src
-python run.py --lat_limits <lat_min> <lat_max> --lon_limits <lon_min> <lon_max>
+python run.py --lat_limits 20 55 --lon_limits 230 300
 ```
 
-#### Historical Analysis (Python)
+`run.py` currently performs a shared staged-ingest cycle and then launches EdgeWARN and EWMRS worker processes in tandem. It also starts background loops for METAR, NWS, and WPC ingestion.
+
+Common optional flags:
+- `--base_dir` / `--base-dir`
+- `--profile`
+- `--disable-ctam`
+- `--disable-tracking`
+- `--refl-threshold`
+- `--min-seed-percentage`
+- `--drop-offset`
+
+### Historical Processing (Python)
+Run from the `src` directory:
+
 ```bash
 cd src
-python process_historical.py --start <YYYY-MM-DDTHH:MM:SS> --end <YYYY-MM-DDTHH:MM:SS> --lat <lat_min> <lat_max> --lon <lon_min> <lon_max>
+python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:00 --lat 20 55 --lon -130 -60
 ```
+
+`process_historical.py` iterates minute-by-minute through a requested time range, finds the best available MRMS timestamp near each step, and runs the historical EdgeWARN pipeline with optional CTAM/tracking controls.
+
+Supported historical flags include:
+- `--output`
+- `--base_dir` / `--base-dir`
+- `--profile`
+- `--disable-ctam`
+- `--disable-tracking`
+- `--refl-threshold`
+- `--min-seed-percentage`
+- `--drop-offset`
 
 ### Testing
-
-Always make sure to use the ``EdgeWARN-dev`` conda environment in environment.yml.
-If that environment doesn't exist yet, create it using:
-```bash
-conda env create -f environment.yml
-```
+Always activate the `EdgeWARN-dev` environment before running Python tests.
 
 #### Node.js Tests
 ```bash
-npm test                     # Run all tests
-npm run test:watch           # Run tests in watch mode
-npm run test:coverage        # Run tests with coverage report
+npm test
+npm run test:watch
+npm run test:coverage
 ```
 
 #### Python Tests
 ```bash
-python -m pytest tests/      # Run all Python tests in the active Conda environment
+python -m pytest tests/
 ```
 
-### Key Project Structure
+Notes:
+- Jest is configured for the Node API test suite under `tests/api/`
+- Pytest uses `pythonpath = src` and ignores `tests/api/`
+
+## Key Project Structure
 ```
 EdgeWARN-Core/
 ├── src/
+│   ├── common/                         # Shared ingestion implementations and tandem coordination
+│   │   ├── ingest/                     # MRMS, NWS, synoptic, METAR, and WPC ingestion
+│   │   └── pipeline/coordinator.py     # Shared staged-ingest coordinator for EdgeWARN + EWMRS
 │   ├── EdgeWARN/
-│   │   ├── api/             # Express.js API routes and server
-│   │   └── core/            # Core processing modules
-│   │       ├── alerts/      # Alert generation and management
-│   │       ├── ctam/        # CTAM (Convective Threat Analysis Module)
-│   │       └── process/     # Data processing pipelines
-│   ├── util/                # Utility functions
-│   ├── run.py               # Real-time analysis entry point
-│   └── process_historical.py # Historical analysis entry point
-├── tests/                   # Test files (Jest and pytest)
-├── assets/                  # Static assets
-├── config/                  # Configuration files
-├── docs/                    # Documentation
-├── package.json             # Node.js dependencies
-├── environment.yml          # Conda environment configuration
-└── INSTALLATION.md          # Installation instructions
+│   │   ├── api/                        # Express API server, config, routes, and file utilities
+│   │   ├── alerts/                     # EdgeWARN alert schema and alert manager
+│   │   ├── api_integration/            # API index/snapshot management helpers
+│   │   ├── ctam/                       # CTAM framework and modules (FLOHAR, MorphoWind, StormCast)
+│   │   ├── ingest/                     # Compatibility re-exports for shared ingest modules
+│   │   ├── process/
+│   │   │   ├── detect/                 # Storm-cell detection, tracking, Kalman, lineage, and save tools
+│   │   │   └── integrate/              # GLM/RAP/stat integration, history, and integration utilities
+│   │   ├── schedule/                   # Scheduler and MRMS update checking
+│   │   ├── __init__.py                 # Public EdgeWARN Python exports
+│   │   └── pipeline.py                 # EdgeWARN realtime/historical orchestration helpers
+│   ├── EWMRS/
+│   │   ├── api/                        # Express API for renders, tiles, WPC, and colormaps
+│   │   ├── render/                     # Rendering, reprojection, and tiling utilities
+│   │   ├── colormaps.json              # Colormap definitions used by rendered products
+│   │   ├── pipeline.py                 # Render pipeline and GUI cleanup logic
+│   │   └── scheduler.py                # EWMRS scheduling helpers
+│   ├── util/                           # Filesystem, I/O, GRIB, release, handler, and performance utilities
+│   ├── run.py                          # Real-time tandem scheduler entry point
+│   └── process_historical.py           # Historical reprocessing entry point
+├── tests/
+│   ├── api/                            # Jest/Supertest coverage for Node APIs
+│   ├── benchmarks/                     # Python performance and benchmark tests
+│   ├── core/                           # Python tests for EdgeWARN, EWMRS, ingest, process, and schedule modules
+│   ├── integration/                    # Cross-module and tandem pipeline integration tests
+│   ├── unit/                           # Focused regression/unit tests
+│   └── util/                           # Utility module tests
+├── docs/
+│   ├── api/                            # EdgeWARN API documentation
+│   ├── core/                           # Ingest, detection, and integration architecture notes
+│   └── ctam/                           # CTAM framework and module documentation
+├── assets/
+│   ├── EdgeWARN.png                    # Project branding
+│   ├── EWS_logo_072025.png             # Organization branding
+│   └── nws_zones/                      # Zone geometry assets used by NWS mapping
+├── config/
+│   └── kalman.yaml                     # Tracking and Kalman filter configuration
+├── plans/                              # Design notes and implementation plans
+├── package.json                        # Node scripts and API dependencies
+├── environment.yml                     # Conda environment definition
+├── pytest.ini                          # Pytest discovery, markers, and defaults
+├── jest.config.js                      # Jest configuration for API tests
+└── INSTALLATION.md                     # Setup and execution guide
 ```
 
-### Development Guidelines
+## Runtime Output Layout
+At runtime, the code expects a base directory that typically looks like this:
 
-#### Python Development
-- Use Python 3.13+ with the EdgeWARN-dev conda environment
-- Follow PEP 8 coding style guidelines
-- Write pytest tests for all Python modules
-- Use type annotations (PEP 484) for clarity
-- Leverage vectorized operations and NumPy/SciPy for numerical computations
+```text
+<BASE_DIR>/
+├── data/      # Ingested MRMS/GOES/RAP/METAR/NWS data, stormcells, cells, alerts
+├── gui/       # EWMRS-rendered PNGs, tiles, index.json files, and colormap assets
+└── wpc/       # WPC-derived surface analysis GeoJSON artifacts
+```
 
-#### Node.js Development
-- Use ES6+ features and modules (type: "module" in package.json)
-- Follow Airbnb JavaScript style guidelines
-- Write Jest tests for API routes and utilities
-- Use async/await for asynchronous operations
-- Implement proper error handling with try/catch
+## Development Guidelines
 
-#### Data Processing
-- Handle large meteorological datasets efficiently using streaming and memory optimization
-- Validate and sanitize all user inputs
-- Implement proper error handling for file operations and API calls
-- Use appropriate data structures for spatial and temporal data analysis
+### Python Development
+- Use Python 3.13 with the `EdgeWARN-dev` Conda environment
+- Keep imports and module paths compatible with `pythonpath = src`
+- Follow existing logging patterns based on `IOManager`, `TimestampedOutput`, and queue-backed workers
+- Add or update pytest coverage for new processing behavior, especially in `tests/core/`, `tests/integration/`, or `tests/unit/`
+- Prefer vectorized or streaming approaches for large meteorological datasets
 
-#### API Development
-- Follow RESTful API design principles
-- Document all endpoints in docs/API.md
-- Implement rate limiting and security measures (helmet.js, cors)
-- Use middleware for request/response handling
+### Node.js Development
+- Use ES modules and existing Express router patterns
+- Preserve current API security layers such as `helmet`, `cors`, `compression`, and rate limiting
+- Keep route changes aligned with the documented endpoint contracts in `docs/api/`
+- Add or update Jest/Supertest coverage in `tests/api/`
+
+### Data and Pipeline Development
+- `src/common/ingest/` is the primary ingest implementation surface; `src/EdgeWARN/ingest/` currently exists as a compatibility re-export layer
+- Preserve the tandem readiness flow in the shared ingest coordinator: detection inputs first, EWMRS render readiness second, EdgeWARN integration readiness last
+- Treat the runtime base directory as the source of truth for generated artifacts; avoid introducing hard-coded repository-local output paths
+- When changing detection or integration behavior, consider downstream impacts on CTAM, alerts, API indexes, and GUI render availability
+
+### API Development
+- EdgeWARN API currently exposes `/health`, `/api/v2`, `/api/v2/features/*`, and `/api/v2/data/metar`
+- Legacy v1-style `/features` and `/data` routes now return HTTP 410 with guidance to use API v2
+- EWMRS API currently exposes `/renders/*`, `/wpc/*`, `/colormaps`, and `/healthz`
+- Document public API changes in `docs/api/api_endpoints.md` and related docs
 
 ### Configuration Management
-- Store sensitive information in environment variables (using dotenv)
-- Define configuration in src/EdgeWARN/api/config.js
-- Use YAML files for complex configurations (e.g., config/kalman.yaml)
+- Keep `config/kalman.yaml` aligned with tracking logic in `src/EdgeWARN/process/detect/kalman/`
+- Prefer environment variables or supported CLI flags for runtime configuration
+- Be mindful that EdgeWARN and EWMRS Node services use slightly different base-directory override names today
 
 ### Performance Optimization
-- Optimize Python data processing with vectorized operations and generators
-- Use caching mechanisms for frequently accessed data (lru-cache)
-- Minimize synchronous operations in Node.js server code
-- Profile performance using Python's cProfile or Node.js tools
+- Prefer async ingest paths with sync fallback, matching the existing ingestion architecture
+- Reuse caches/history where appropriate, but reset them safely across time gaps or failure states
+- Keep cleanup logic constrained to the configured runtime base directory
+- Profile Python-heavy changes with the existing performance tracker or targeted benchmark tests
+
+### Documentation Synchronization
+- Update documentation when public APIs, runtime behavior, directory structure, or major pipeline stages change
+- Do not refer to a non-existent `src/EdgeWARN/core/` package; the active code is organized directly under `src/EdgeWARN/` and `src/common/`
 
 ### Committing Guidelines
-- Always follow the contributing guidelines at CONTRIBUTING.md
-- Ensure that each commit message has a prefix that **MUST** be in CONTRIBUTING.md and followed by a ":" character before the message
+- Always follow the contributing guidelines in `CONTRIBUTING.md`
+- Each commit message must use one of the documented prefixes from `CONTRIBUTING.md`, followed by a `:` character
