@@ -50,6 +50,57 @@ def synthetic_dataset(tmp_path):
     ds.to_netcdf(path)
     return str(path)
 
+
+@pytest.fixture
+def synthetic_dataset_360(tmp_path):
+    """Create a synthetic netcdf file with 0-360 longitude coordinates."""
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(264.0, 265.0, 101)
+
+    data = np.zeros((101, 101))
+    data[50, 50] = 100.0
+
+    ds = xr.Dataset(
+        data_vars=dict(
+            test_var=(["latitude", "longitude"], data)
+        ),
+        coords=dict(
+            latitude=(["latitude"], lat),
+            longitude=(["longitude"], lon),
+        ),
+        attrs=dict(description="Synthetic 0-360 Longitude Test Data")
+    )
+
+    path = tmp_path / "synthetic_test_360.nc"
+    ds.to_netcdf(path)
+    return str(path)
+
+
+@pytest.fixture
+def synthetic_dataset_2d_coords(tmp_path):
+    """Create a synthetic netcdf file with 2D latitude/longitude coordinates."""
+    lat_1d = np.linspace(30.0, 31.0, 101)
+    lon_1d = np.linspace(-96.0, -95.0, 101)
+    lon_2d, lat_2d = np.meshgrid(lon_1d, lat_1d)
+
+    data = np.zeros((101, 101))
+    data[50, 50] = 100.0
+
+    ds = xr.Dataset(
+        data_vars=dict(
+            test_var=(["y", "x"], data)
+        ),
+        coords=dict(
+            latitude=(["y", "x"], lat_2d),
+            longitude=(["y", "x"], lon_2d),
+        ),
+        attrs=dict(description="Synthetic 2D Coordinate Test Data")
+    )
+
+    path = tmp_path / "synthetic_test_2d.nc"
+    ds.to_netcdf(path)
+    return str(path)
+
 def test_integrate_multi_stats(integrator, synthetic_dataset):
     """Test integrate_multi_stats with various statistical configs"""
     
@@ -122,6 +173,54 @@ def test_integrate_empty_intersection(integrator, synthetic_dataset):
     
     # Should get 0
     assert result[0]["properties"]["p100Zero"] == 0
+
+
+def test_integrate_multi_stats_with_360_longitudes(integrator, synthetic_dataset_360):
+    """Integration should handle datasets using 0-360 longitude coordinates."""
+    cell = {
+        "id": "test_cell_360",
+        "bbox": [
+            [30.495, 264.495],
+            [30.495, 264.505],
+            [30.505, 264.505],
+            [30.505, 264.495],
+            [30.495, 264.495],
+        ],
+        "centroid": [30.5, 264.5],
+        "properties": {}
+    }
+
+    result = integrator.integrate_multi_stats(
+        synthetic_dataset_360,
+        [cell],
+        [{"key": "p100Test", "method": "max"}]
+    )
+
+    assert result[0]["properties"]["p100Test"] == 100.0
+
+
+def test_integrate_multi_stats_with_2d_coords(integrator, synthetic_dataset_2d_coords):
+    """Integration should handle datasets with 2D latitude/longitude coordinates."""
+    cell = {
+        "id": "test_cell_2d",
+        "bbox": [
+            [30.495, -95.505],
+            [30.495, -95.495],
+            [30.505, -95.495],
+            [30.505, -95.505],
+            [30.495, -95.505],
+        ],
+        "centroid": [30.5, -95.5],
+        "properties": {}
+    }
+
+    result = integrator.integrate_multi_stats(
+        synthetic_dataset_2d_coords,
+        [cell],
+        [{"key": "p100Test", "method": "max"}]
+    )
+
+    assert result[0]["properties"]["p100Test"] == 100.0
 
 def test_integrate_error_handling(integrator):
     """Test handling of invalid file path"""
