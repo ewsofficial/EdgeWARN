@@ -1,16 +1,21 @@
 # Changelog
 
-## [2.0.1] - 2026-03-23
+## [2.0.2] - 2026-03-24
 
 ### Fixed
-- Preserve StormCast polygons during alert generation to prevent data loss.
-- Updated EWMRS GUI cleanup to use the live render configuration so timestamp folders are deleted from the active filesystem root.
+- Fix dataset integration returning zeroes
 
 ### Changed
-- Refactored code to extract shared S3 target-file selection, METAR helpers, and synoptic S3 parameters for better maintainability.
-- Precompiled validation regexes to improve performance.
-- Hardened performance benchmark calculations for more reliable testing.
-- Bumped the application version from `2.0.0` to `2.0.1` across package metadata, API responses, and release tests.
+- Added STRtree filtering for alert matching.
+- Precompiled RAP derived formulas once per field.
+- Added spatial bins for GLM flash lookup.
+- Switched `latest_files` selection to a top-k strategy.
+- Made stormcell index updates incremental.
+- Avoided meshgrid allocation in 1D bounding-box tracing.
+- Refreshed AGENTS documentation for current codebase layout.
+- Reduced per-cell integration hot-loop overhead.
 
 ### Added
-- Added benchmark tests for validation regexes.
+
+### Documentation
+- Updated AGENTS documentation.
