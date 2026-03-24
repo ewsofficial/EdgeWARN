@@ -155,6 +155,21 @@ class StormCellIntegrator:
         if not storm_cells:
             return storm_cells
 
+        stats_specs = [
+            (conf['key'], conf.get('method', 'max'), conf.get('percentile', 90))
+            for conf in stats_config_list
+        ]
+        zero_results = {key: 0 for key, _, _ in stats_specs}
+        unique_percentiles = sorted(
+            {
+                percentile
+                for _, method, percentile in stats_specs
+                if method == 'percentile'
+            }
+        )
+        needs_max = any(method == 'max' for _, method, _ in stats_specs)
+        needs_mean = any(method == 'mean' for _, method, _ in stats_specs)
+
         # Load dataset
         is_grib = dataset_path.endswith(".grib2")
         try:
@@ -196,7 +211,7 @@ class StormCellIntegrator:
         if is_grib:
             var_values = var.values
 
-        keys_str = ", ".join([c['key'] for c in stats_config_list])
+        keys_str = ", ".join([key for key, _, _ in stats_specs])
         self.io_manager.write_info(f"Integrating [{keys_str}] for {len(storm_cells)} cells")
 
         for cell in storm_cells:
@@ -208,8 +223,7 @@ class StormCellIntegrator:
 
             poly = StormIntegrationUtils.create_cell_polygon(cell)
             if poly is None:
-                for conf in stats_config_list:
-                    target[conf['key']] = 0
+                target.update(zero_results)
                 continue
 
             try:
@@ -234,8 +248,7 @@ class StormCellIntegrator:
                 lon_subset = lon_vals[lon_start_idx:lon_end_idx]
 
                 if lat_subset.size == 0 or lon_subset.size == 0:
-                    for conf in stats_config_list:
-                        target[conf['key']] = 0
+                    target.update(zero_results)
                     continue
 
                 # LAZY LOADING: For NetCDF, only load the subset we need
@@ -250,8 +263,7 @@ class StormCellIntegrator:
                 sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
 
                 if sub_var.size == 0:
-                    for conf in stats_config_list:
-                        target[conf['key']] = 0
+                    target.update(zero_results)
                     continue
 
                 inside = sv.contains(poly, sub_lon, sub_lat)
@@ -262,29 +274,24 @@ class StormCellIntegrator:
                 masked_vals = masked_vals[masked_vals >= 0]
 
                 if masked_vals.size == 0:
-                    for conf in stats_config_list:
-                        target[conf['key']] = 0
+                    target.update(zero_results)
                 else:
-                    percentile_methods = [
-                        conf for conf in stats_config_list if conf.get('method') == 'percentile'
-                    ]
                     percentile_cache = {}
-                    if percentile_methods:
-                        unique_percentiles = sorted(
-                            {conf.get('percentile', 90) for conf in percentile_methods}
-                        )
+                    # Optimization: precompute config metadata once per dataset so the hot
+                    # per-cell loop only performs the NumPy reductions it actually needs.
+                    if unique_percentiles:
                         percentile_values = np.percentile(masked_vals, unique_percentiles)
                         percentile_cache = dict(zip(unique_percentiles, percentile_values))
 
-                    for conf in stats_config_list:
-                        method = conf.get('method', 'max')
-                        percentile = conf.get('percentile', 90)
-                        key = conf['key']
+                    max_value = np.max(masked_vals) if needs_max else 0
+                    mean_value = np.mean(masked_vals) if needs_mean else 0
+
+                    for key, method, percentile in stats_specs:
                         
                         if method == "max":
-                            res = np.max(masked_vals)
+                            res = max_value
                         elif method == "mean":
-                            res = np.mean(masked_vals)
+                            res = mean_value
                         elif method == "percentile":
                             res = percentile_cache.get(percentile, 0)
                         else:
@@ -294,8 +301,7 @@ class StormCellIntegrator:
 
             except Exception as e:
                 # self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
-                for conf in stats_config_list:
-                    target[conf['key']] = 0 # Default to 0 on error
+                target.update(zero_results) # Default to 0 on error
         
         ds.close()
         del ds
