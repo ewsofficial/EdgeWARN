@@ -60,6 +60,27 @@ def main(json_path=None, remove_old_cells=True, disable_ctam=False):
                 perf_tracker.stop(f"Integration - {name_str}")
             io_manager.write_error(f"Failed to integrate {name_str} data: {e}")
 
+    # Derive AzShear geometry/alignment support features separately so the
+    # generic dataset integration flow remains unchanged for other products.
+    try:
+        latest_low_files = fs.latest_files(fs.MRMS_AZSHEARLOW_DIR, 1)
+        latest_mid_files = fs.latest_files(fs.MRMS_AZSHEARMID_DIR, 1)
+        if latest_low_files and latest_mid_files:
+            io_manager.write_info(f"Integrating AzShear support features for {len(result_cells)} cells")
+            perf_tracker.start("Integration - AzShear Features")
+            result_cells = integrator.integrate_azshear_features(
+                latest_low_files[-1],
+                latest_mid_files[-1],
+                result_cells,
+            )
+            perf_tracker.stop("Integration - AzShear Features")
+        else:
+            io_manager.write_warning("AzShear feature extraction skipped due to missing low/mid AzShear files")
+    except Exception as e:
+        if "Integration - AzShear Features" in perf_tracker.active_timers:
+            perf_tracker.stop("Integration - AzShear Features")
+        io_manager.write_error(f"Failed to integrate AzShear support features: {e}")
+
     # Integrate ProbSevere
     try:
         latest_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)

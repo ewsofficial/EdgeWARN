@@ -236,3 +236,100 @@ def test_integrate_error_handling(integrator):
     result = integrator.integrate_multi_stats("/invalid/path/test.nc", [cell], stats_config)
     
     assert "p100Err" not in result[0]["properties"]
+
+
+@pytest.fixture
+def synthetic_azshear_dataset_pair(tmp_path):
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(-96.0, -95.0, 101)
+
+    low = np.zeros((101, 101))
+    mid = np.zeros((101, 101))
+
+    # Positioned just east of the storm polygon so buffered AzShear extraction
+    # sees the signature while the raw storm polygon does not.
+    low[49:52, 53:56] = 4.5
+    low[50, 54] = 7.0
+    mid[49:52, 53:56] = 2.8
+    mid[50, 54] = 4.2
+
+    low_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], low)),
+        coords=dict(latitude=( ["latitude"], lat), longitude=( ["longitude"], lon)),
+    )
+    mid_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], mid)),
+        coords=dict(latitude=( ["latitude"], lat), longitude=( ["longitude"], lon)),
+    )
+
+    low_path = tmp_path / "azshear_low.nc"
+    mid_path = tmp_path / "azshear_mid.nc"
+    low_ds.to_netcdf(low_path)
+    mid_ds.to_netcdf(mid_path)
+    return str(low_path), str(mid_path)
+
+
+def test_integrate_azshear_features_uses_buffer_without_affecting_generic_stats(integrator, synthetic_azshear_dataset_pair, synthetic_dataset):
+    low_path, mid_path = synthetic_azshear_dataset_pair
+    cell = {
+        "id": "test_cell_buffered_azshear",
+        "bbox": [
+            [30.49, -95.53],
+            [30.49, -95.49],
+            [30.51, -95.49],
+            [30.51, -95.53],
+            [30.49, -95.53],
+        ],
+        "centroid": [30.5, -95.51],
+        "properties": {"ExistingField": 123.0},
+    }
+
+    stats_result = integrator.integrate_multi_stats(
+        synthetic_dataset,
+        [cell],
+        [{"key": "p100Test", "method": "max"}],
+    )
+    assert stats_result[0]["properties"]["ExistingField"] == 123.0
+
+    result = integrator.integrate_azshear_features(low_path, mid_path, stats_result)
+    props = result[0]["properties"]
+    azshear = props["azshear"]
+
+    assert props["ExistingField"] == 123.0
+    assert props["p100Test"] >= 0.0
+    assert azshear["buffer_km"] == 5.0
+    assert azshear["low"]["peak_value"] == 7.0
+    assert azshear["mid"]["peak_value"] == 4.2
+    assert azshear["alignment"]["paired"] is True
+    assert azshear["alignment"]["is_vertically_aligned"] is True
+
+
+def test_integrate_azshear_features_handles_missing_signal(integrator, tmp_path):
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(-96.0, -95.0, 101)
+    zeros = xr.Dataset(
+        data_vars=dict(unknown=( ["latitude", "longitude"], np.zeros((101, 101)))),
+        coords=dict(latitude=( ["latitude"], lat), longitude=( ["longitude"], lon)),
+    )
+    zero_path = tmp_path / "azshear_zero.nc"
+    zeros.to_netcdf(zero_path)
+
+    cell = {
+        "id": "test_cell_no_azshear",
+        "bbox": [
+            [30.49, -95.53],
+            [30.49, -95.49],
+            [30.51, -95.49],
+            [30.51, -95.53],
+            [30.49, -95.53],
+        ],
+        "centroid": [30.5, -95.51],
+        "properties": {},
+    }
+
+    result = integrator.integrate_azshear_features(str(zero_path), str(zero_path), [cell])
+    azshear = result[0]["properties"]["azshear"]
+
+    assert azshear["low"] is None
+    assert azshear["mid"] is None
+    assert azshear["alignment"]["paired"] is False

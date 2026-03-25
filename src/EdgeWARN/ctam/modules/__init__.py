@@ -7,6 +7,7 @@ Automatically registers all available analysis modules on import.
 from ..registry import ModuleRegistry, GridModuleRegistry
 from .StormCast import StormCastModule
 from .MorphoWind import MorphoWindModule
+from .Mesocyclone import MesocycloneModule
 from .FLOHAR import FLOHARModule
 
 # Register all modules in execution order
@@ -15,6 +16,7 @@ from .FLOHAR import FLOHARModule
 # 2. Main Analysis Modules (Cell-based)
 ModuleRegistry.register(StormCastModule())
 ModuleRegistry.register(MorphoWindModule())
+ModuleRegistry.register(MesocycloneModule())
 
 # 3. Grid-based Modules
 GridModuleRegistry.register(FLOHARModule())
@@ -27,5 +29,6 @@ GridModuleRegistry.register(FLOHARModule())
 __all__ = [
     "StormCastModule",
     "MorphoWindModule",
+    "MesocycloneModule",
     "FLOHARModule",
 ]

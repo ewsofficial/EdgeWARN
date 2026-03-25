@@ -1,10 +1,13 @@
 from .utils import StormIntegrationUtils
-import xarray as xr
+import gc
+
 import numpy as np
 import shapely.vectorized as sv
+import xarray as xr
 from shapely.geometry import Polygon
-import gc
+
 from util.grib_loader import load_grib_fast
+from .integrate_azshear import integrate_azshear_features as _integrate_azshear_features
 
 # Suppress cfgrib/xarray compatibility warnings
 xr.set_options(use_new_combine_kwarg_defaults=True)
@@ -44,6 +47,9 @@ class StormCellIntegrator:
             (lon + 360.0 if lon < 0.0 else lon, lat)
             for lon, lat in poly.exterior.coords
         ])
+
+    def integrate_azshear_features(self, low_dataset_path, mid_dataset_path, storm_cells):
+        return _integrate_azshear_features(self, low_dataset_path, mid_dataset_path, storm_cells)
 
     def _extract_spatial_subset(self, ds, var, is_grib, var_values, lat_name, lon_name, lat_vals, lon_vals, poly):
         minx, miny, maxx, maxy = poly.bounds
