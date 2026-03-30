@@ -248,10 +248,10 @@ def synthetic_azshear_dataset_pair(tmp_path):
 
     # Positioned just east of the storm polygon so buffered AzShear extraction
     # sees the signature while the raw storm polygon does not.
-    low[49:52, 53:56] = 4.5
-    low[50, 54] = 7.0
-    mid[49:52, 53:56] = 2.8
-    mid[50, 54] = 4.2
+    low[49:52, 53:56] = 8.6
+    low[50, 54] = 10.8
+    mid[49:52, 53:56] = 6.4
+    mid[50, 54] = 8.1
 
     low_ds = xr.Dataset(
         data_vars=dict(unknown=(["latitude", "longitude"], low)),
@@ -298,10 +298,21 @@ def test_integrate_azshear_features_uses_buffer_without_affecting_generic_stats(
     assert props["ExistingField"] == 123.0
     assert props["p100Test"] >= 0.0
     assert azshear["buffer_km"] == 5.0
-    assert azshear["low"]["peak_value"] == 7.0
-    assert azshear["mid"]["peak_value"] == 4.2
+    assert azshear["low"]["peak_value"] == 10.8
+    assert azshear["mid"]["peak_value"] == 8.1
+    assert azshear["low"]["area_km2"] > 0.0
+    assert azshear["mid"]["area_km2"] > 0.0
+    assert azshear["low"]["weighted_centroid_lat"] is not None
+    assert azshear["low"]["weighted_centroid_lon"] is not None
+    assert azshear["mid"]["weighted_centroid_lat"] is not None
+    assert azshear["mid"]["weighted_centroid_lon"] is not None
     assert azshear["alignment"]["paired"] is True
     assert azshear["alignment"]["is_vertically_aligned"] is True
+    assert azshear["alignment"]["centroid_distance_km"] is not None
+    assert azshear["alignment"]["overlap_area_km2"] > 0.0
+    assert azshear["alignment"]["overlap_ratio"] > 0.0
+    assert azshear["alignment"]["low_overlap_fraction"] > 0.0
+    assert azshear["alignment"]["mid_overlap_fraction"] > 0.0
 
 
 def test_integrate_azshear_features_handles_missing_signal(integrator, tmp_path):
@@ -333,3 +344,134 @@ def test_integrate_azshear_features_handles_missing_signal(integrator, tmp_path)
     assert azshear["low"] is None
     assert azshear["mid"] is None
     assert azshear["alignment"]["paired"] is False
+    assert azshear["alignment"]["centroid_distance_km"] is None
+    assert azshear["alignment"]["overlap_area_km2"] is None
+
+
+def test_integrate_azshear_features_applies_updated_thresholds(integrator, tmp_path):
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(-96.0, -95.0, 101)
+
+    low = np.zeros((101, 101))
+    mid = np.zeros((101, 101))
+    low[49:52, 53:56] = 7.9
+    mid[49:52, 53:56] = 5.9
+
+    low_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], low)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+    mid_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], mid)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+
+    low_path = tmp_path / "azshear_low_threshold.nc"
+    mid_path = tmp_path / "azshear_mid_threshold.nc"
+    low_ds.to_netcdf(low_path)
+    mid_ds.to_netcdf(mid_path)
+
+    cell = {
+        "id": "test_cell_threshold_gate",
+        "bbox": [
+            [30.49, -95.53],
+            [30.49, -95.49],
+            [30.51, -95.49],
+            [30.51, -95.53],
+            [30.49, -95.53],
+        ],
+        "centroid": [30.5, -95.51],
+        "properties": {},
+    }
+
+    result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
+    azshear = result[0]["properties"]["azshear"]
+
+    assert azshear["low"] is None
+    assert azshear["mid"] is None
+    assert azshear["low_candidate_count"] == 0
+    assert azshear["mid_candidate_count"] == 0
+
+
+def test_integrate_azshear_features_rejects_distant_midlevel_pairing(integrator, tmp_path):
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(-96.0, -95.0, 101)
+
+    low = np.zeros((101, 101))
+    mid = np.zeros((101, 101))
+
+    low[50:53, 50:53] = 8.8
+    low[51, 51] = 9.4
+
+    mid[50:53, 52:55] = 6.4
+    mid[51, 53] = 7.4
+
+    mid[72:75, 72:75] = 8.5
+    mid[73, 73] = 10.2
+
+    low_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], low)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+    mid_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], mid)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+
+    low_path = tmp_path / "azshear_low_pair.nc"
+    mid_path = tmp_path / "azshear_mid_pair.nc"
+    low_ds.to_netcdf(low_path)
+    mid_ds.to_netcdf(mid_path)
+
+    cell = {
+        "id": "test_cell_pairing_gate",
+        "bbox": [
+            [30.47, -95.53],
+            [30.47, -95.43],
+            [30.57, -95.43],
+            [30.57, -95.53],
+            [30.47, -95.53],
+        ],
+        "centroid": [30.52, -95.48],
+        "properties": {},
+    }
+
+    result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
+    azshear = result[0]["properties"]["azshear"]
+
+    assert azshear["low"]["peak_value"] == 9.4
+    assert azshear["mid"]["peak_value"] == 7.4
+    assert azshear["alignment"]["paired"] is True
+    assert azshear["alignment"]["vertical_centroid_sep_km"] < 12.0
+    assert azshear["alignment"]["centroid_distance_km"] < 12.0
+    assert azshear["alignment"]["overlap_area_km2"] > 0.0
+
+
+def test_integrate_azshear_features_uses_independent_default_alignment_objects(integrator, tmp_path):
+    lat = np.linspace(30.0, 31.0, 11)
+    lon = np.linspace(-96.0, -95.0, 11)
+    zeros = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], np.zeros((11, 11)))),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+    zero_path = tmp_path / "azshear_zero_shared.nc"
+    zeros.to_netcdf(zero_path)
+
+    cells = [
+        {
+            "id": "cell_one",
+            "bbox": [[30.4, -95.6], [30.4, -95.5], [30.5, -95.5], [30.5, -95.6], [30.4, -95.6]],
+            "centroid": [30.45, -95.55],
+            "properties": {},
+        },
+        {
+            "id": "cell_two",
+            "bbox": [[30.6, -95.4], [30.6, -95.3], [30.7, -95.3], [30.7, -95.4], [30.6, -95.4]],
+            "centroid": [30.65, -95.35],
+            "properties": {},
+        },
+    ]
+
+    result = integrator.integrate_azshear_features(str(zero_path), str(zero_path), cells)
+
+    assert result[0]["properties"]["azshear"]["alignment"] is not result[1]["properties"]["azshear"]["alignment"]
