@@ -2,9 +2,12 @@
 Tests for CTAM module registry
 """
 
+import importlib
+
 import pytest
 from EdgeWARN.ctam.interface import AnalysisModule
-from EdgeWARN.ctam.registry import ModuleRegistry
+import EdgeWARN.ctam.modules as ctam_modules
+from EdgeWARN.ctam.registry import GridModuleRegistry, ModuleRegistry
 
 
 class MockModule(AnalysisModule):
@@ -172,3 +175,18 @@ class TestModuleRegistry:
         
         assert len(ModuleRegistry._modules) == 1
         assert "module2" in ModuleRegistry._modules
+
+    def test_default_module_registration_excludes_mesocyclone(self):
+        """Test that the active CTAM registry omits Mesocyclone for now."""
+        ModuleRegistry.clear()
+        GridModuleRegistry.clear()
+
+        importlib.reload(ctam_modules)
+
+        cell_module_names = ModuleRegistry.list_names()
+        grid_module_names = GridModuleRegistry.list_names()
+
+        assert "StormCast" in cell_module_names
+        assert "MorphoWind" in cell_module_names
+        assert "Mesocyclone" not in cell_module_names
+        assert "FLOHAR" in grid_module_names
