@@ -1,17 +1,19 @@
 import gc
 import math
+from copy import deepcopy
 
 import numpy as np
 import shapely.vectorized as sv
 import xarray as xr
 from scipy import ndimage
-from shapely.ops import transform
+from shapely.geometry import box
+from shapely.ops import transform, unary_union
 
 from .utils import StormIntegrationUtils
 
 AZSHEAR_BUFFER_KM = 5.0
-AZSHEAR_LOW_THRESHOLD = 1.5
-AZSHEAR_MID_THRESHOLD = 1.0
+AZSHEAR_LOW_THRESHOLD = 8.0
+AZSHEAR_MID_THRESHOLD = 6.0
 AZSHEAR_MAX_PAIR_SEPARATION_KM = 12.0
 
 
@@ -48,6 +50,22 @@ def _buffer_polygon_km(poly, buffer_km):
     return transform(to_geo, buffered)
 
 
+def _distance_km(lat_a, lon_a, lat_b, lon_b):
+    ref_lat = (lat_a + lat_b) / 2.0
+    dlat = (lat_b - lat_a) * 111.32
+    dlon = _normalize_lon_delta(lon_b - lon_a) * 111.32 * max(math.cos(math.radians(ref_lat)), 1e-6)
+    return math.sqrt((dlat ** 2) + (dlon ** 2))
+
+
+def _midpoint_lon(lon_a, lon_b):
+    return lon_a + (_normalize_lon_delta(lon_b - lon_a) / 2.0)
+
+
+def _weighted_lon_mean(lons, ref_lon, weights):
+    lon_offsets = np.array([_normalize_lon_delta(float(lon) - ref_lon) for lon in lons], dtype=float)
+    return ref_lon + float(np.average(lon_offsets, weights=weights))
+
+
 def _grid_spacing_km(lat_vals, lon_vals):
     lat_array = np.asarray(lat_vals)
     lon_array = np.asarray(lon_vals)
@@ -74,18 +92,23 @@ def _grid_spacing_km(lat_vals, lon_vals):
     return dlat * km_per_deg_lat, dlon * km_per_deg_lon
 
 
-def _compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_area_km2):
+def _compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_area_km2, lat_spacing_km, lon_spacing_km):
     rows, cols = np.where(component_mask)
     if rows.size == 0:
         return None
 
-    comp_values = values[component_mask]
-    comp_values = comp_values[np.isfinite(comp_values)]
+    comp_values = np.asarray(values[component_mask], dtype=float)
     if comp_values.size == 0:
         return None
 
-    comp_lats = lat_grid[component_mask]
-    comp_lons = lon_grid[component_mask]
+    finite_mask = np.isfinite(comp_values)
+    if not np.any(finite_mask):
+        return None
+
+    comp_values = comp_values[finite_mask]
+
+    comp_lats = np.asarray(lat_grid[component_mask], dtype=float)[finite_mask]
+    comp_lons = np.asarray(lon_grid[component_mask], dtype=float)[finite_mask]
     peak_index = int(np.nanargmax(comp_values))
     peak_value = float(comp_values[peak_index])
     peak_lat = float(comp_lats[peak_index])
@@ -93,6 +116,16 @@ def _compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel
 
     centroid_lat = float(np.nanmean(comp_lats))
     centroid_lon = float(np.nanmean(comp_lons))
+
+    weights = np.clip(comp_values, 0.0, None)
+    weight_sum = float(np.nansum(weights))
+    if weight_sum > 0.0:
+        weighted_centroid_lat = float(np.average(comp_lats, weights=weights))
+        weighted_centroid_lon = _weighted_lon_mean(comp_lons, centroid_lon, weights)
+    else:
+        weighted_centroid_lat = centroid_lat
+        weighted_centroid_lon = centroid_lon
+
     km_per_deg_lat = 111.32
     km_per_deg_lon = km_per_deg_lat * max(math.cos(math.radians(centroid_lat)), 1e-6)
 
@@ -123,13 +156,15 @@ def _compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel
         ellipticity = float(min(1.0, math.sqrt(max(0.0, 1.0 - (safe_minor / major_axis_km) ** 2))))
 
     return {
-        "pixel_count": int(rows.size),
-        "area_km2": round(float(rows.size * pixel_area_km2), 3),
+        "pixel_count": int(comp_values.size),
+        "area_km2": round(float(comp_values.size * pixel_area_km2), 3),
         "peak_value": round(peak_value, 3),
         "peak_lat": round(peak_lat, 5),
         "peak_lon": round(peak_lon, 5),
         "centroid_lat": round(centroid_lat, 5),
         "centroid_lon": round(centroid_lon, 5),
+        "weighted_centroid_lat": round(weighted_centroid_lat, 5),
+        "weighted_centroid_lon": round(weighted_centroid_lon, 5),
         "major_axis_km": round(max(major_axis_km, 0.0), 3),
         "minor_axis_km": round(max(minor_axis_km, 0.0), 3),
         "width_km": round(max(minor_axis_km, 0.0), 3),
@@ -138,10 +173,15 @@ def _compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel
         "orientation_deg": round(orientation_deg, 2),
         "p95_value": round(float(np.nanpercentile(comp_values, 95)), 3),
         "mean_value": round(float(np.nanmean(comp_values)), 3),
+        "_component_mask": component_mask,
+        "_lat_grid": lat_grid,
+        "_lon_grid": lon_grid,
+        "_lat_spacing_km": float(lat_spacing_km),
+        "_lon_spacing_km": float(lon_spacing_km),
     }
 
 
-def _extract_azshear_candidates(masked_values, lat_grid, lon_grid, threshold, pixel_area_km2):
+def _extract_azshear_candidates(masked_values, lat_grid, lon_grid, threshold, pixel_area_km2, lat_spacing_km, lon_spacing_km):
     binary = np.isfinite(masked_values) & (masked_values >= threshold)
     if not np.any(binary):
         return []
@@ -150,7 +190,15 @@ def _extract_azshear_candidates(masked_values, lat_grid, lon_grid, threshold, pi
     candidates = []
     for label_idx in range(1, count + 1):
         component_mask = labels == label_idx
-        metrics = _compute_component_metrics(component_mask, masked_values, lat_grid, lon_grid, pixel_area_km2)
+        metrics = _compute_component_metrics(
+            component_mask,
+            masked_values,
+            lat_grid,
+            lon_grid,
+            pixel_area_km2,
+            lat_spacing_km,
+            lon_spacing_km,
+        )
         if metrics is None:
             continue
         metrics["component_id"] = int(label_idx)
@@ -161,6 +209,98 @@ def _extract_azshear_candidates(masked_values, lat_grid, lon_grid, threshold, pi
         reverse=True,
     )
     return candidates
+
+
+def _build_component_geometry(component, ref_lat, ref_lon):
+    if component is None:
+        return None
+
+    component_mask = component.get("_component_mask")
+    lat_grid = component.get("_lat_grid")
+    lon_grid = component.get("_lon_grid")
+    lat_spacing_km = component.get("_lat_spacing_km")
+    lon_spacing_km = component.get("_lon_spacing_km")
+
+    if component_mask is None or lat_grid is None or lon_grid is None:
+        return None
+
+    comp_lats = np.asarray(lat_grid[component_mask], dtype=float)
+    comp_lons = np.asarray(lon_grid[component_mask], dtype=float)
+    if comp_lats.size == 0 or comp_lons.size == 0:
+        return None
+
+    lat_half_km = max(float(lat_spacing_km or 0.0) / 2.0, 1e-3)
+    lon_half_km = max(float(lon_spacing_km or 0.0) / 2.0, 1e-3)
+    km_per_deg_lon = 111.32 * max(math.cos(math.radians(ref_lat)), 1e-6)
+
+    pixel_boxes = []
+    for lat, lon in zip(comp_lats, comp_lons):
+        x = _normalize_lon_delta(float(lon) - ref_lon) * km_per_deg_lon
+        y = (float(lat) - ref_lat) * 111.32
+        pixel_boxes.append(box(x - lon_half_km, y - lat_half_km, x + lon_half_km, y + lat_half_km))
+
+    return unary_union(pixel_boxes) if pixel_boxes else None
+
+
+def _build_overlap_metrics(low_component, mid_component):
+    if low_component is None or mid_component is None:
+        return {
+            "centroid_distance_km": None,
+            "overlap_area_km2": None,
+            "overlap_ratio": None,
+            "low_overlap_fraction": None,
+            "mid_overlap_fraction": None,
+        }
+
+    low_weighted_lat = float(low_component.get("weighted_centroid_lat", low_component["centroid_lat"]))
+    low_weighted_lon = float(low_component.get("weighted_centroid_lon", low_component["centroid_lon"]))
+    mid_weighted_lat = float(mid_component.get("weighted_centroid_lat", mid_component["centroid_lat"]))
+    mid_weighted_lon = float(mid_component.get("weighted_centroid_lon", mid_component["centroid_lon"]))
+
+    centroid_distance_km = _distance_km(
+        low_weighted_lat,
+        low_weighted_lon,
+        mid_weighted_lat,
+        mid_weighted_lon,
+    )
+
+    ref_lat = (low_weighted_lat + mid_weighted_lat) / 2.0
+    ref_lon = _midpoint_lon(low_weighted_lon, mid_weighted_lon)
+    low_geom = _build_component_geometry(low_component, ref_lat, ref_lon)
+    mid_geom = _build_component_geometry(mid_component, ref_lat, ref_lon)
+
+    if low_geom is None or mid_geom is None:
+        return {
+            "centroid_distance_km": round(centroid_distance_km, 3),
+            "overlap_area_km2": None,
+            "overlap_ratio": None,
+            "low_overlap_fraction": None,
+            "mid_overlap_fraction": None,
+        }
+
+    overlap_area_km2 = float(low_geom.intersection(mid_geom).area)
+    low_area_km2 = max(float(low_component.get("area_km2", 0.0)), 1e-6)
+    mid_area_km2 = max(float(mid_component.get("area_km2", 0.0)), 1e-6)
+    union_area_km2 = max(low_area_km2 + mid_area_km2 - overlap_area_km2, 1e-6)
+
+    return {
+        "centroid_distance_km": round(centroid_distance_km, 3),
+        "overlap_area_km2": round(max(overlap_area_km2, 0.0), 3),
+        "overlap_ratio": round(max(overlap_area_km2, 0.0) / union_area_km2, 3),
+        "low_overlap_fraction": round(max(overlap_area_km2, 0.0) / low_area_km2, 3),
+        "mid_overlap_fraction": round(max(overlap_area_km2, 0.0) / mid_area_km2, 3),
+    }
+
+
+def _public_component_metrics(component):
+    if component is None:
+        return None
+
+    return {
+        key: value
+        for key, value in component.items()
+        if not key.startswith("_")
+    }
 
 
 def _pair_azshear_components(low_candidates, mid_candidates):
@@ -177,6 +317,8 @@ def _pair_azshear_components(low_candidates, mid_candidates):
                 1e-6,
             )
             centroid_sep_km = math.sqrt(dlat ** 2 + dlon ** 2)
+            if centroid_sep_km > AZSHEAR_MAX_PAIR_SEPARATION_KM:
+                continue
             score = low["peak_value"] + mid["peak_value"] - 0.2 * centroid_sep_km + 0.05 * min(low["area_km2"], mid["area_km2"])
             if best_score is None or score > best_score:
                 best_score = score
@@ -191,9 +333,14 @@ def _build_alignment_metrics(low_component, mid_component):
             "paired": False,
             "vertical_centroid_sep_km": None,
             "vertical_peak_sep_km": None,
+            "centroid_distance_km": None,
             "orientation_diff_deg": None,
             "width_ratio": None,
             "area_ratio": None,
+            "overlap_area_km2": None,
+            "overlap_ratio": None,
+            "low_overlap_fraction": None,
+            "mid_overlap_fraction": None,
             "is_vertically_aligned": False,
         }
 
@@ -216,14 +363,20 @@ def _build_alignment_metrics(low_component, mid_component):
 
     width_ratio = min(low_component["width_km"], mid_component["width_km"]) / max(max(low_component["width_km"], mid_component["width_km"]), 1e-6)
     area_ratio = min(low_component["area_km2"], mid_component["area_km2"]) / max(max(low_component["area_km2"], mid_component["area_km2"]), 1e-6)
+    overlap = _build_overlap_metrics(low_component, mid_component)
 
     return {
         "paired": True,
         "vertical_centroid_sep_km": round(centroid_sep_km, 3),
         "vertical_peak_sep_km": round(peak_sep_km, 3),
+        "centroid_distance_km": overlap["centroid_distance_km"],
         "orientation_diff_deg": round(orientation_diff, 2),
         "width_ratio": round(width_ratio, 3),
         "area_ratio": round(area_ratio, 3),
+        "overlap_area_km2": overlap["overlap_area_km2"],
+        "overlap_ratio": overlap["overlap_ratio"],
+        "low_overlap_fraction": overlap["low_overlap_fraction"],
+        "mid_overlap_fraction": overlap["mid_overlap_fraction"],
         "is_vertically_aligned": centroid_sep_km <= AZSHEAR_MAX_PAIR_SEPARATION_KM,
     }
 
@@ -240,14 +393,22 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
             "paired": False,
             "vertical_centroid_sep_km": None,
             "vertical_peak_sep_km": None,
+            "centroid_distance_km": None,
             "orientation_diff_deg": None,
             "width_ratio": None,
             "area_ratio": None,
+            "overlap_area_km2": None,
+            "overlap_ratio": None,
+            "low_overlap_fraction": None,
+            "mid_overlap_fraction": None,
             "is_vertically_aligned": False,
         },
         "low_candidate_count": 0,
         "mid_candidate_count": 0,
     }
+
+    def empty_output():
+        return deepcopy(zero_output)
 
     try:
         low_ds = xr.open_dataset(low_dataset_path, decode_timedelta=True)
@@ -272,12 +433,14 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
         low_var = low_ds[low_var_name]
         mid_var = mid_ds[mid_var_name]
 
-        lat_spacing_km, lon_spacing_km = _grid_spacing_km(low_lat_vals, low_lon_vals)
-        pixel_area_km2 = max(lat_spacing_km * lon_spacing_km, 0.01)
+        low_lat_spacing_km, low_lon_spacing_km = _grid_spacing_km(low_lat_vals, low_lon_vals)
+        mid_lat_spacing_km, mid_lon_spacing_km = _grid_spacing_km(mid_lat_vals, mid_lon_vals)
+        low_pixel_area_km2 = max(low_lat_spacing_km * low_lon_spacing_km, 0.01)
+        mid_pixel_area_km2 = max(mid_lat_spacing_km * mid_lon_spacing_km, 0.01)
 
         for cell in storm_cells:
             cell.setdefault("properties", {})
-            cell["properties"]["azshear"] = dict(zero_output)
+            cell["properties"]["azshear"] = empty_output()
 
             poly = StormIntegrationUtils.create_cell_polygon(cell)
             if poly is None:
@@ -298,16 +461,32 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
                 if low_subset is None or mid_subset is None:
                     continue
 
-                low_inside = sv.contains(low_poly, low_lon, low_lat)
-                mid_inside = sv.contains(mid_poly, mid_lon, mid_lat)
+                low_inside = sv.contains(low_poly.buffer(1e-9), low_lon, low_lat)
+                mid_inside = sv.contains(mid_poly.buffer(1e-9), mid_lon, mid_lat)
 
                 low_masked = np.where(low_inside, np.asarray(low_subset), np.nan)
                 mid_masked = np.where(mid_inside, np.asarray(mid_subset), np.nan)
                 low_masked[low_masked < 0] = np.nan
                 mid_masked[mid_masked < 0] = np.nan
 
-                low_candidates = _extract_azshear_candidates(low_masked, low_lat, low_lon, AZSHEAR_LOW_THRESHOLD, pixel_area_km2)
-                mid_candidates = _extract_azshear_candidates(mid_masked, mid_lat, mid_lon, AZSHEAR_MID_THRESHOLD, pixel_area_km2)
+                low_candidates = _extract_azshear_candidates(
+                    low_masked,
+                    low_lat,
+                    low_lon,
+                    AZSHEAR_LOW_THRESHOLD,
+                    low_pixel_area_km2,
+                    low_lat_spacing_km,
+                    low_lon_spacing_km,
+                )
+                mid_candidates = _extract_azshear_candidates(
+                    mid_masked,
+                    mid_lat,
+                    mid_lon,
+                    AZSHEAR_MID_THRESHOLD,
+                    mid_pixel_area_km2,
+                    mid_lat_spacing_km,
+                    mid_lon_spacing_km,
+                )
 
                 pair = _pair_azshear_components(low_candidates, mid_candidates)
                 low_component = pair[0] if pair else (low_candidates[0] if low_candidates else None)
@@ -316,15 +495,15 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
 
                 cell["properties"]["azshear"] = {
                     "buffer_km": AZSHEAR_BUFFER_KM,
-                    "low": low_component,
-                    "mid": mid_component,
+                    "low": _public_component_metrics(low_component),
+                    "mid": _public_component_metrics(mid_component),
                     "alignment": alignment,
                     "low_candidate_count": len(low_candidates),
                     "mid_candidate_count": len(mid_candidates),
                 }
             except Exception as e:
                 integrator.io_manager.write_error(f"Process AzShear cell {cell.get('id')}: {e}")
-                cell["properties"]["azshear"] = dict(zero_output)
+                cell["properties"]["azshear"] = empty_output()
     finally:
         low_ds.close()
         mid_ds.close()

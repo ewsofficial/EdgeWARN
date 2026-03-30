@@ -11,6 +11,7 @@ process/integrate/
 ├── grid_index.py         # Grid indexing for spatial data
 ├── history.py            # Integration history management
 ├── integrate.py          # Core integration algorithms
+├── integrate_azshear.py  # Derived AzShear morphology/alignment features
 ├── integrate_glm.py      # GOES-19 GLM lightning integration
 ├── integrate_rap.py      # RAP synoptic data integration
 ├── main.py               # Main integration entry point
@@ -30,6 +31,12 @@ process/integrate/
 - Handles lightning flash density and rate calculations
 - Correlates lightning data with storm cells
 - Enhances storm severity assessment
+
+### AzShear Feature Integration (/process/integrate/integrate_azshear.py)
+- Extracts thresholded low- and mid-level AzShear components around each storm cell
+- Uses 8.0 low-level and 6.0 mid-level thresholds before morphology/alignment calculations
+- Returns per-level width, area, weighted centroid, and peak statistics
+- Returns cross-level alignment metrics including centroid distance and overlap area/fractions
 
 ### RAP Synoptic Integration (/process/integrate/integrate_rap.py)
 - Integrates RAP (Rapid Refresh) model data
@@ -136,7 +143,15 @@ class StormCellIntegrator:
         Returns:
             Updated list of storm cells
         """
-    
+
+    def integrate_azshear_features(self, low_dataset_path, mid_dataset_path, storm_cells):
+        """
+        Derive thresholded AzShear geometry and alignment fields for each storm cell.
+
+        Adds `properties["azshear"]` with low/mid component summaries and
+        overlap/alignment diagnostics.
+        """
+
     def integrate_probsevere(self, probsevere_data, storm_cells):
         """
         Integrate ProbSevere probability data with storm cells by matching IDs.
