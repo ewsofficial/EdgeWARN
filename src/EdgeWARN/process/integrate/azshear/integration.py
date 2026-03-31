@@ -145,9 +145,14 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
                     mid_lon_spacing_km,
                 )
 
-                pair = pair_azshear_components(low_candidates, mid_candidates)
-                low_component = pair[0] if pair else (low_candidates[0] if low_candidates else None)
-                mid_component = pair[1] if pair else (mid_candidates[0] if mid_candidates else None)
+                low_component = low_candidates[0] if low_candidates else None
+                mid_component = mid_candidates[0] if mid_candidates else None
+                pair = pair_azshear_components(
+                    [low_component] if low_component is not None else [],
+                    [mid_component] if mid_component is not None else [],
+                )
+                if pair:
+                    low_component, mid_component = pair
                 alignment = build_alignment_metrics(low_component, mid_component)
 
                 cell["properties"]["azshear"] = {
