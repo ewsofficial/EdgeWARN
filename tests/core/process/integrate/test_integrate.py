@@ -440,7 +440,7 @@ def test_integrate_azshear_features_requires_minimum_gate_count(integrator, tmp_
     assert azshear["alignment"]["paired"] is False
 
 
-def test_integrate_azshear_features_rejects_distant_midlevel_pairing(integrator, tmp_path):
+def test_integrate_azshear_features_uses_only_highest_peak_component_per_level(integrator, tmp_path):
     lat = np.linspace(30.0, 31.0, 101)
     lon = np.linspace(-96.0, -95.0, 101)
 
@@ -453,8 +453,8 @@ def test_integrate_azshear_features_rejects_distant_midlevel_pairing(integrator,
     mid[50:53, 52:55] = 6.4
     mid[51, 53] = 7.4
 
-    mid[72:75, 72:75] = 8.5
-    mid[73, 73] = 10.2
+    mid[61:64, 61:64] = 8.5
+    mid[62, 62] = 10.2
 
     low_ds = xr.Dataset(
         data_vars=dict(unknown=(["latitude", "longitude"], low)),
@@ -473,13 +473,13 @@ def test_integrate_azshear_features_rejects_distant_midlevel_pairing(integrator,
     cell = {
         "id": "test_cell_pairing_gate",
         "bbox": [
-            [30.47, -95.53],
-            [30.47, -95.43],
-            [30.57, -95.43],
-            [30.57, -95.53],
-            [30.47, -95.53],
+            [30.45, -95.55],
+            [30.45, -95.35],
+            [30.65, -95.35],
+            [30.65, -95.55],
+            [30.45, -95.55],
         ],
-        "centroid": [30.52, -95.48],
+        "centroid": [30.55, -95.45],
         "properties": {},
     }
 
@@ -487,11 +487,14 @@ def test_integrate_azshear_features_rejects_distant_midlevel_pairing(integrator,
     azshear = result[0]["properties"]["azshear"]
 
     assert azshear["low"]["peak_value"] == 9.4
-    assert azshear["mid"]["peak_value"] == 7.4
+    assert azshear["mid"]["peak_value"] == 10.2
+    assert azshear["low_candidate_count"] == 1
+    assert azshear["mid_candidate_count"] == 2
     assert azshear["alignment"]["paired"] is True
-    assert azshear["alignment"]["vertical_centroid_sep_km"] < 12.0
-    assert azshear["alignment"]["centroid_distance_km"] < 12.0
-    assert azshear["alignment"]["overlap_area_km2"] > 0.0
+    assert azshear["alignment"]["vertical_centroid_sep_km"] > 12.0
+    assert azshear["alignment"]["centroid_distance_km"] > 12.0
+    assert azshear["alignment"]["overlap_area_km2"] == 0.0
+    assert azshear["alignment"]["is_vertically_aligned"] is False
 
 
 def test_integrate_azshear_features_uses_independent_default_alignment_objects(integrator, tmp_path):
