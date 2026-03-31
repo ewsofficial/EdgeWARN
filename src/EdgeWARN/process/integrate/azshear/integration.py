@@ -4,6 +4,7 @@ from copy import deepcopy
 import numpy as np
 import shapely.vectorized as sv
 import xarray as xr
+from util.grib_loader import load_grib_fast
 
 from ..geometry.cell_polygon import StormIntegrationUtils
 from .constants import (
@@ -21,6 +22,24 @@ from .metrics import (
 from .pairing import pair_azshear_components
 
 
+def _is_grib_path(dataset_path):
+    lower_path = str(dataset_path).lower()
+    return lower_path.endswith((".grib2", ".grib", ".grb2", ".grb"))
+
+
+def _open_azshear_dataset(integrator, dataset_path):
+    is_grib = _is_grib_path(dataset_path)
+    if is_grib:
+        try:
+            return load_grib_fast(dataset_path), True
+        except Exception as exc:
+            integrator.io_manager.write_warning(
+                f"Fast GRIB loader failed for AzShear file {dataset_path}; falling back to xarray: {exc}"
+            )
+
+    return xr.open_dataset(dataset_path, decode_timedelta=True), is_grib
+
+
 def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, storm_cells):
     if not storm_cells or not low_dataset_path or not mid_dataset_path:
         return storm_cells
@@ -31,8 +50,8 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
         return deepcopy(zero_output)
 
     try:
-        low_ds = xr.open_dataset(low_dataset_path, decode_timedelta=True)
-        mid_ds = xr.open_dataset(mid_dataset_path, decode_timedelta=True)
+        low_ds, low_is_grib = _open_azshear_dataset(integrator, low_dataset_path)
+        mid_ds, mid_is_grib = _open_azshear_dataset(integrator, mid_dataset_path)
     except Exception as e:
         integrator.io_manager.write_error(f"Load error for AzShear features: {e}")
         return storm_cells
@@ -52,6 +71,8 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
         mid_var_name = "unknown" if "unknown" in mid_ds.data_vars else list(mid_ds.data_vars)[0]
         low_var = low_ds[low_var_name]
         mid_var = mid_ds[mid_var_name]
+        low_var_values = low_var.values if low_is_grib else None
+        mid_var_values = mid_var.values if mid_is_grib else None
 
         low_lat_spacing_km, low_lon_spacing_km = grid_spacing_km(low_lat_vals, low_lon_vals)
         mid_lat_spacing_km, mid_lon_spacing_km = grid_spacing_km(mid_lat_vals, mid_lon_vals)
@@ -72,10 +93,26 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
                 mid_poly = integrator._polygon_for_dataset(buffered_poly, mid_lon_vals)
 
                 low_subset, low_lat, low_lon = integrator._extract_spatial_subset(
-                    low_ds, low_var, False, None, low_lat_name, low_lon_name, low_lat_vals, low_lon_vals, low_poly
+                    low_ds,
+                    low_var,
+                    low_is_grib,
+                    low_var_values,
+                    low_lat_name,
+                    low_lon_name,
+                    low_lat_vals,
+                    low_lon_vals,
+                    low_poly,
                 )
                 mid_subset, mid_lat, mid_lon = integrator._extract_spatial_subset(
-                    mid_ds, mid_var, False, None, mid_lat_name, mid_lon_name, mid_lat_vals, mid_lon_vals, mid_poly
+                    mid_ds,
+                    mid_var,
+                    mid_is_grib,
+                    mid_var_values,
+                    mid_lat_name,
+                    mid_lon_name,
+                    mid_lat_vals,
+                    mid_lon_vals,
+                    mid_poly,
                 )
 
                 if low_subset is None or mid_subset is None:

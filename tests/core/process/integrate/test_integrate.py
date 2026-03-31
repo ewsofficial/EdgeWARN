@@ -5,6 +5,7 @@ import xarray as xr
 import shapely.geometry as sg
 from unittest.mock import MagicMock
 from EdgeWARN.process.integrate.integrate import StormCellIntegrator
+from EdgeWARN.process.integrate.azshear.integration import _open_azshear_dataset
 
 @pytest.fixture
 def mock_io_manager():
@@ -475,3 +476,94 @@ def test_integrate_azshear_features_uses_independent_default_alignment_objects(i
     result = integrator.integrate_azshear_features(str(zero_path), str(zero_path), cells)
 
     assert result[0]["properties"]["azshear"]["alignment"] is not result[1]["properties"]["azshear"]["alignment"]
+
+
+def test_open_azshear_dataset_uses_fast_grib_loader(monkeypatch):
+    io_manager = MagicMock()
+    integrator = StormCellIntegrator(io_manager)
+
+    expected = xr.Dataset(
+        data_vars={"unknown": (("latitude", "longitude"), np.zeros((1, 1)))},
+        coords={"latitude": [30.0], "longitude": [-95.0]},
+    )
+
+    calls = {"fast": 0, "xarray": 0}
+
+    def fake_fast(path):
+        calls["fast"] += 1
+        return expected
+
+    def fake_open_dataset(*args, **kwargs):
+        calls["xarray"] += 1
+        raise AssertionError("xarray open_dataset should not be called for successful GRIB fast-load")
+
+    monkeypatch.setattr("EdgeWARN.process.integrate.azshear.integration.load_grib_fast", fake_fast)
+    monkeypatch.setattr("EdgeWARN.process.integrate.azshear.integration.xr.open_dataset", fake_open_dataset)
+
+    ds, is_grib = _open_azshear_dataset(integrator, "sample.grib2")
+
+    assert ds is expected
+    assert is_grib is True
+    assert calls["fast"] == 1
+    assert calls["xarray"] == 0
+
+
+def test_open_azshear_dataset_falls_back_when_fast_loader_fails(monkeypatch):
+    io_manager = MagicMock()
+    integrator = StormCellIntegrator(io_manager)
+
+    fallback_ds = xr.Dataset(
+        data_vars={"unknown": (("latitude", "longitude"), np.zeros((1, 1)))},
+        coords={"latitude": [30.0], "longitude": [-95.0]},
+    )
+
+    calls = {"fast": 0, "xarray": 0}
+
+    def fake_fast(path):
+        calls["fast"] += 1
+        raise RuntimeError("forced fast loader failure")
+
+    def fake_open_dataset(path, decode_timedelta=True):
+        calls["xarray"] += 1
+        return fallback_ds
+
+    monkeypatch.setattr("EdgeWARN.process.integrate.azshear.integration.load_grib_fast", fake_fast)
+    monkeypatch.setattr("EdgeWARN.process.integrate.azshear.integration.xr.open_dataset", fake_open_dataset)
+
+    ds, is_grib = _open_azshear_dataset(integrator, "sample.grib2")
+
+    assert ds is fallback_ds
+    assert is_grib is True
+    assert calls["fast"] == 1
+    assert calls["xarray"] == 1
+    assert io_manager.write_warning.called
+
+
+def test_open_azshear_dataset_uses_xarray_for_non_grib(monkeypatch):
+    io_manager = MagicMock()
+    integrator = StormCellIntegrator(io_manager)
+
+    fallback_ds = xr.Dataset(
+        data_vars={"unknown": (("latitude", "longitude"), np.zeros((1, 1)))},
+        coords={"latitude": [30.0], "longitude": [-95.0]},
+    )
+
+    calls = {"fast": 0, "xarray": 0}
+
+    def fake_fast(path):
+        calls["fast"] += 1
+        raise AssertionError("fast loader should not run for non-GRIB path")
+
+    def fake_open_dataset(path, decode_timedelta=True):
+        calls["xarray"] += 1
+        return fallback_ds
+
+    monkeypatch.setattr("EdgeWARN.process.integrate.azshear.integration.load_grib_fast", fake_fast)
+    monkeypatch.setattr("EdgeWARN.process.integrate.azshear.integration.xr.open_dataset", fake_open_dataset)
+
+    ds, is_grib = _open_azshear_dataset(integrator, "sample.nc")
+
+    assert ds is fallback_ds
+    assert is_grib is False
+    assert calls["fast"] == 0
+    assert calls["xarray"] == 1
