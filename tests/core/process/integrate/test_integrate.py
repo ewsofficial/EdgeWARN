@@ -394,6 +394,52 @@ def test_integrate_azshear_features_applies_updated_thresholds(integrator, tmp_p
     assert azshear["mid_candidate_count"] == 0
 
 
+def test_integrate_azshear_features_requires_minimum_gate_count(integrator, tmp_path):
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(-96.0, -95.0, 101)
+
+    low = np.zeros((101, 101))
+    mid = np.zeros((101, 101))
+    low[49:51, 53:55] = 8.6
+    mid[49:51, 53:55] = 6.4
+
+    low_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], low)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+    mid_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], mid)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+
+    low_path = tmp_path / "azshear_low_min_gate.nc"
+    mid_path = tmp_path / "azshear_mid_min_gate.nc"
+    low_ds.to_netcdf(low_path)
+    mid_ds.to_netcdf(mid_path)
+
+    cell = {
+        "id": "test_cell_min_gate_filter",
+        "bbox": [
+            [30.49, -95.53],
+            [30.49, -95.49],
+            [30.51, -95.49],
+            [30.51, -95.53],
+            [30.49, -95.53],
+        ],
+        "centroid": [30.5, -95.51],
+        "properties": {},
+    }
+
+    result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
+    azshear = result[0]["properties"]["azshear"]
+
+    assert azshear["low"] is None
+    assert azshear["mid"] is None
+    assert azshear["low_candidate_count"] == 0
+    assert azshear["mid_candidate_count"] == 0
+    assert azshear["alignment"]["paired"] is False
+
+
 def test_integrate_azshear_features_rejects_distant_midlevel_pairing(integrator, tmp_path):
     lat = np.linspace(30.0, 31.0, 101)
     lon = np.linspace(-96.0, -95.0, 101)

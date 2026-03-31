@@ -3,7 +3,7 @@ import math
 import numpy as np
 from scipy import ndimage
 
-from .constants import AZSHEAR_MAX_PAIR_SEPARATION_KM
+from .constants import AZSHEAR_MAX_PAIR_SEPARATION_KM, AZSHEAR_MIN_GATE_COUNT
 from .geometry import (
     build_component_geometry,
     distance_km,
@@ -121,6 +121,8 @@ def extract_azshear_candidates(masked_values, lat_grid, lon_grid, threshold, pix
             lon_spacing_km,
         )
         if metrics is None:
+            continue
+        if metrics["pixel_count"] < AZSHEAR_MIN_GATE_COUNT:
             continue
         metrics["component_id"] = int(label_idx)
         candidates.append(metrics)
