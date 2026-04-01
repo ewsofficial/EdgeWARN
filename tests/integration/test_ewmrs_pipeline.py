@@ -13,11 +13,14 @@ class _FakeFuture:
 
 
 class _FakeExecutor:
-    def __init__(self, max_workers):
+    def __init__(self, max_workers, initializer=None):
         self.max_workers = max_workers
+        self.initializer = initializer
         self.futures = []
 
     def __enter__(self):
+        if self.initializer is not None:
+            self.initializer()
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -47,7 +50,7 @@ class _FakeEvent:
 
 def test_run_render_pipeline_collects_layer_results(monkeypatch):
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    fake_executor = _FakeExecutor(max_workers=4)
+    created = {}
     cleanup_calls = []
     layers = [
         {"name": "LayerOne"},
@@ -57,17 +60,40 @@ def test_run_render_pipeline_collects_layer_results(monkeypatch):
     monkeypatch.setattr(ewmrs_pipeline, "get_file_list", lambda: layers)
     monkeypatch.setattr(ewmrs_pipeline, "cleanup_old_gui_files", lambda max_age_minutes: cleanup_calls.append(max_age_minutes))
     monkeypatch.setattr(ewmrs_pipeline, "_render_layer", lambda layer: (layer["name"], [f"{layer['name']}.png"]))
-    monkeypatch.setattr("concurrent.futures.ProcessPoolExecutor", lambda max_workers: fake_executor)
+    monkeypatch.setattr(
+        "concurrent.futures.ProcessPoolExecutor",
+        lambda max_workers, initializer=None: created.setdefault("executor", _FakeExecutor(max_workers=max_workers, initializer=initializer)),
+    )
     monkeypatch.setattr("concurrent.futures.as_completed", lambda futures: list(futures))
 
     results = ewmrs_pipeline.run_render_pipeline(dt)
+    fake_executor = created["executor"]
 
     assert results == {
         "LayerOne": ["LayerOne.png"],
         "LayerTwo": ["LayerTwo.png"],
     }
-    assert fake_executor.max_workers == 4
+    assert fake_executor.max_workers == 2
+    assert fake_executor.initializer is ewmrs_pipeline._worker_initializer
     assert cleanup_calls == [120]
+
+
+def test_current_render_paths_returns_cached_tiles_when_complete(tmp_path):
+    out_dir = tmp_path / "gui"
+    tile_dir = out_dir / "20260317-200000"
+    tile_dir.mkdir(parents=True)
+
+    for tile_y in range(14):
+        for tile_x in range(28):
+            (tile_dir / f"tile_{tile_x}_{tile_y}.png").write_bytes(b"tile")
+
+    (out_dir / "index.json").write_text(json.dumps({"timestamps": ["20260317-200000"]}))
+
+    paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
+
+    assert paths is not None
+    assert len(paths) == 392
+    assert paths[0].name == "tile_0_0.png"
 
 
 def test_cleanup_old_gui_files_uses_dynamic_render_configuration(monkeypatch, tmp_path):

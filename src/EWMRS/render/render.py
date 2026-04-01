@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Tuple, List
 import json
@@ -58,10 +59,11 @@ class GUILayerRenderer:
             for source in cmaps_json:
                 for cmap in source.get("colormaps", []):
                     if cmap.get("name") == self.colormap_key:
-                        thresholds = np.array([t["value"] for t in cmap["thresholds"]])
+                        thresholds = np.array([t["value"] for t in cmap["thresholds"]], dtype=np.float32)
                         colors = np.array([t["rgb"] for t in cmap["thresholds"]], dtype=np.float32)
+                        colors_uint8 = colors.astype(np.uint8)
                         interpolate = cmap.get("interpolate", True)
-                        result = (thresholds, colors, interpolate)
+                        result = (thresholds, colors, colors_uint8, interpolate)
                         _COLORMAP_CACHE[self.colormap_key] = result
                         return result
             
@@ -86,36 +88,35 @@ class GUILayerRenderer:
         data = self.ds['unknown'].values
 
         # Step 2: Get colormap
-        thresholds, colors, interpolate = self._get_cmap()
+        thresholds, colors, colors_uint8, interpolate = self._get_cmap()
 
         # Step 2.5: Apply colormap
         # Use ravel() to avoid copy if possible, though digitize/interp might flatten anyway
-        flat_data = data.ravel()
+        flat_data = np.asarray(data, dtype=np.float32).ravel()
 
         # Pre-allocate output array (N, 4) in uint8 to save memory
         N = flat_data.shape[0]
         rgba_flat = np.empty((N, 4), dtype=np.uint8)
+        rgba_flat[:, 3] = 0
+        valid_mask = np.isfinite(flat_data)
+        safe_data = np.where(valid_mask, flat_data, thresholds[0])
 
         if interpolate:
-            # Interpolate directly into the output array channels
-            # Casting to uint8 immediately saves memory compared to keeping full float arrays
-            rgba_flat[:, 0] = np.interp(flat_data, thresholds, colors[:, 0]).astype(np.uint8)
-            rgba_flat[:, 1] = np.interp(flat_data, thresholds, colors[:, 1]).astype(np.uint8)
-            rgba_flat[:, 2] = np.interp(flat_data, thresholds, colors[:, 2]).astype(np.uint8)
+            safe_data = np.clip(safe_data, thresholds[0], thresholds[-1])
+            rgba_flat[:, 0] = np.interp(safe_data, thresholds, colors[:, 0]).astype(np.uint8)
+            rgba_flat[:, 1] = np.interp(safe_data, thresholds, colors[:, 1]).astype(np.uint8)
+            rgba_flat[:, 2] = np.interp(safe_data, thresholds, colors[:, 2]).astype(np.uint8)
         else:
             # Discrete color mapping
-            indices = np.digitize(flat_data, thresholds) - 1
-            indices = np.clip(indices, 0, len(colors) - 1)
-            
-            # Cast colors table to uint8 once
-            colors_uint8 = colors.astype(np.uint8)
+            indices = np.digitize(safe_data, thresholds) - 1
+            indices = np.clip(indices, 0, len(colors_uint8) - 1)
 
             # Map directly into the output array
             rgba_flat[:, :3] = colors_uint8[indices]
 
         # Alpha channel: transparent for values < first threshold OR NaN
         # This ensures that empty space from reprojection is correctly transparent
-        rgba_flat[:, 3] = np.where((flat_data < thresholds[0]) | np.isnan(flat_data), 0, 255).astype(np.uint8)
+        rgba_flat[valid_mask & (flat_data >= thresholds[0]), 3] = 255
 
         # Reshape to original grid
         # Note: Grib data is often (lat, lon), where lat is row (y), lon is col (x)
@@ -139,11 +140,7 @@ class GUILayerRenderer:
         self.outdir.mkdir(parents=True, exist_ok=True)
 
         if tile_output:
-            # Single Image First (exactly like the verified verification plot)
-            img = Image.fromarray(rgba, mode="RGBA")
-            
-            # Tiled output: save tiles to timestamp subdirectory
-            tile_paths = self._save_tiles_from_image(img, timestamp)
+            tile_paths = self._save_tiles_from_array(rgba, timestamp)
             
             # Update index.json with new format
             rows = rgba.shape[0] // TILE_SIZE
@@ -170,18 +167,18 @@ class GUILayerRenderer:
             
             return [png_file], timestamp
     
-    def _save_tiles_from_image(self, img: Image.Image, timestamp: str) -> List[Path]:
-        """Save PIL image as tiles in a timestamp subdirectory.
+    def _save_tiles_from_array(self, rgba: np.ndarray, timestamp: str) -> List[Path]:
+        """Save RGBA array as tiles in a timestamp subdirectory.
         
         Args:
-            img: Large PIL image (e.g. 3500x7000).
+            rgba: Large RGBA array (e.g. 3500x7000x4).
             timestamp: Timestamp string for the subdirectory name.
         
         Returns:
             List of Path objects for all saved tiles.
         """
         from .config import TILE_SIZE
-        width, height = img.size
+        height, width = rgba.shape[:2]
         grid_cols = width // TILE_SIZE
         grid_rows = height // TILE_SIZE
         
@@ -189,7 +186,7 @@ class GUILayerRenderer:
         tile_dir = self.outdir / timestamp
         tile_dir.mkdir(parents=True, exist_ok=True)
         
-        tile_paths = []
+        tile_specs = []
         # Tile Y=0 is at the bottom (South)
         # PIL coordinates: (0, 0) is at the top (North)
         for tile_y in range(grid_rows):
@@ -204,13 +201,15 @@ class GUILayerRenderer:
                 top = (grid_rows - 1 - tile_y) * TILE_SIZE
                 bottom = top + TILE_SIZE
                 
-                tile = img.crop((left, top, right, bottom))
-                
                 tile_filename = f"tile_{tile_x}_{tile_y}.png"
                 tile_path = tile_dir / tile_filename
-                tile.save(tile_path, compress_level=1)
-                tile_paths.append(tile_path)
-        
+                tile_specs.append((rgba[top:bottom, left:right], tile_path))
+
+        max_workers = min(8, len(tile_specs)) or 1
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            list(executor.map(lambda spec: save_tile(spec[0], spec[1]), tile_specs))
+
+        tile_paths = [tile_path for _, tile_path in tile_specs]
         return tile_paths
 
     def _update_index(self, new_timestamp, tile_grid=None):
@@ -263,6 +262,6 @@ class GUILayerRenderer:
                     output_data = timestamps
                 
                 with open(index_file, 'w') as f:
-                    json.dump(output_data, f, indent=2)
+                    json.dump(output_data, f, separators=(",", ":"))
             except Exception as e:
                 io_manager.write_error(f"Failed to update index.json in {self.outdir}: {e}")

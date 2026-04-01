@@ -7,8 +7,12 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import numpy as np
+import rasterio.transform
+import rioxarray  # noqa: F401  Ensures xarray .rio accessor is registered.
+from rasterio.enums import Resampling
 
-from EWMRS.render.config import get_file_list
+from EWMRS.render.config import TILE_GRID_COLS, TILE_GRID_ROWS, get_file_list
+from EWMRS.render.tools import configure_proj_runtime
 import util.file as fs
 from util.io import IOManager, QueueWriter
 
@@ -18,6 +22,12 @@ EWMRS_COLORMAP_JSON = Path(__file__).resolve().with_name("colormaps.json")
 fs.GUI_COLORMAP_JSON = EWMRS_COLORMAP_JSON
 
 io_manager = IOManager("[Pipeline]")
+
+WEB_MERCATOR_BOUNDS = (-14471533.8, 2273030.9, -6679169.5, 7361866.1)
+WEB_MERCATOR_SHAPE = (3500, 7000)
+WEB_MERCATOR_TRANSFORM = rasterio.transform.from_bounds(*WEB_MERCATOR_BOUNDS, WEB_MERCATOR_SHAPE[1], WEB_MERCATOR_SHAPE[0])
+EXPECTED_TILE_COUNT = TILE_GRID_ROWS * TILE_GRID_COLS
+_RUNTIME_CONFIGURED = False
 
 
 def _ensure_dt(dt_in) -> datetime:
@@ -38,11 +48,11 @@ def _ensure_dt(dt_in) -> datetime:
 def _render_layer(layer) -> tuple[str, RenderOutput]:
     """Render a single layer. Returns (name, png_path or None)."""
     from EWMRS.render.render import GUILayerRenderer
-    from EWMRS.render.tools import TransformUtils, configure_proj_runtime
+    from EWMRS.render.tools import TransformUtils
     from util.io import IOManager
 
     io_mgr = IOManager("[Pipeline]")
-    configure_proj_runtime()
+    _ensure_runtime_configured()
 
     name = layer.get("name")
     colormap_key = layer.get("colormap_key")
@@ -63,12 +73,16 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
             io_mgr.write_warning(f"Source directory missing for {name}: {src_dir}")
             return name, None
 
-        candidate_files = [f for f in src_dir.glob("*") if f.is_file() and not f.name.endswith(".idx")]
-        if not candidate_files:
+        latest_file = _latest_source_file(src_dir)
+        if latest_file is None:
             io_mgr.write_warning(f"No source files found for {name} in {src_dir}")
             return name, None
 
-        latest_file = max(candidate_files, key=lambda f: f.stat().st_mtime)
+        timestamp_iso = TransformUtils.find_timestamp(str(latest_file))
+        cached_render = _current_render_paths(out_dir, timestamp_iso)
+        if cached_render is not None:
+            io_mgr.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
+            return name, cached_render
 
         io_mgr.write_info(f"Found latest file for {name}: {latest_file}")
 
@@ -81,24 +95,15 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
             ds = ds.coarsen(latitude=2, longitude=2, boundary="trim", coord_func="mean").reduce(np.max)
             io_mgr.write_info(f"Downsampled {name} to 0.01 deg grid")
 
-        import rasterio.transform
-        import rioxarray
-        from rasterio.enums import Resampling
-
         if "latitude" in ds.coords and "longitude" in ds.coords:
-            west, south = -14471533.8, 2273030.9
-            east, north = -6679169.5, 7361866.1
-
             ds.rio.write_crs("EPSG:4326", inplace=True)
             ds = ds.rio.reproject(
                 "EPSG:3857",
-                shape=(3500, 7000),
-                transform=rasterio.transform.from_bounds(west, south, east, north, 7000, 3500),
+                shape=WEB_MERCATOR_SHAPE,
+                transform=WEB_MERCATOR_TRANSFORM,
                 resampling=Resampling.nearest,
             )
             io_mgr.write_info(f"Reprojected {name} to EPSG:3857 (Crisp nearest-neighbor, Precise bounds)")
-
-        timestamp_iso = TransformUtils.find_timestamp(str(latest_file))
 
         renderer = GUILayerRenderer(ds, out_dir, colormap_key, name, timestamp_iso)
         png_path, px_timestamp = renderer.convert_to_png(tile_output=True)
@@ -108,6 +113,54 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
     except Exception as exc:
         io_mgr.write_error(f"Error processing layer {name}: {exc}")
         return name, None
+
+
+def _ensure_runtime_configured() -> None:
+    global _RUNTIME_CONFIGURED
+    if not _RUNTIME_CONFIGURED:
+        configure_proj_runtime()
+        _RUNTIME_CONFIGURED = True
+
+
+def _worker_initializer() -> None:
+    _ensure_runtime_configured()
+
+
+def _latest_source_file(src_dir: Path) -> Optional[Path]:
+    latest = fs.latest_files(src_dir, 1)
+    if not latest:
+        return None
+    return Path(latest[-1])
+
+
+def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
+    try:
+        timestamp = _normalize_render_timestamp(timestamp_iso)
+        tile_dir = out_dir / timestamp
+        if not tile_dir.exists() or not tile_dir.is_dir():
+            return None
+
+        tile_paths = sorted(tile_dir.glob("tile_*.png"))
+        if len(tile_paths) != EXPECTED_TILE_COUNT:
+            return None
+
+        index_file = out_dir / "index.json"
+        if index_file.exists():
+            with open(index_file, "r") as f:
+                data = json.load(f)
+
+            timestamps = data if isinstance(data, list) else data.get("timestamps", [])
+            if timestamp not in timestamps:
+                return None
+
+        return tile_paths
+    except Exception:
+        return None
+
+
+def _normalize_render_timestamp(timestamp_iso: str) -> str:
+    dt = datetime.fromisoformat(timestamp_iso)
+    return dt.strftime(r"%Y%m%d-%H%M00")
 
 
 def cleanup_old_gui_files(max_age_minutes: int = 120):
@@ -190,8 +243,9 @@ def run_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
     results: Dict[str, RenderOutput] = {}
 
     layers = get_file_list()
-    io_manager.write_info(f"Rendering {len(layers)} layers across 4 CPU cores for {dt.isoformat()}...")
-    with ProcessPoolExecutor(max_workers=4) as executor:
+    max_workers = min(4, max(1, len(layers)))
+    io_manager.write_info(f"Rendering {len(layers)} layers across {max_workers} CPU cores for {dt.isoformat()}...")
+    with ProcessPoolExecutor(max_workers=max_workers, initializer=_worker_initializer) as executor:
         futures = {executor.submit(_render_layer, layer): layer for layer in layers}
         for future in as_completed(futures):
             name, png_path = future.result()

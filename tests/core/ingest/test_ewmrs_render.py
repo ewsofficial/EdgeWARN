@@ -93,13 +93,14 @@ class TestGetCmap:
 
     def test_interpolate_flag_parsed(self):
         renderer = render.GUILayerRenderer(_FakeDataset(np.array([[0]])), Path("/tmp"), "TestCmap", "t", "2026-03-17T20:00:00")
-        thresholds, colors, interpolate = renderer._get_cmap()
+        thresholds, colors, colors_uint8, interpolate = renderer._get_cmap()
         assert interpolate is True
         assert len(thresholds) == 3
+        assert colors_uint8.dtype == np.uint8
 
     def test_discrete_flag_parsed(self):
         renderer = render.GUILayerRenderer(_FakeDataset(np.array([[0]])), Path("/tmp"), "DiscreteCmap", "t", "2026-03-17T20:00:00")
-        thresholds, colors, interpolate = renderer._get_cmap()
+        thresholds, colors, colors_uint8, interpolate = renderer._get_cmap()
         assert interpolate is False
 
 
@@ -300,6 +301,16 @@ class TestConvertToPng:
         paths, ts = r.convert_to_png(tile_output=False)
         assert ts == "20260317-204500"
         assert ts[-2:] == "00"
+
+    def test_tile_output_true_writes_timestamp_directory(self, tmp_path):
+        data = np.linspace(0.0, 100.0, 500 * 500, dtype=np.float32).reshape(500, 500)
+        r = self._make_renderer(data, tmp_path / "out")
+        paths, ts = r.convert_to_png(tile_output=True)
+        assert len(paths) == 4
+        assert (tmp_path / "out" / ts / "tile_0_0.png").exists()
+        idx = json.loads((tmp_path / "out" / "index.json").read_text())
+        assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": 250}
+        assert idx["timestamps"] == [ts]
 
     def test_unknown_data_key_raises(self, tmp_path, monkeypatch):
         class _BrokenDataset:
