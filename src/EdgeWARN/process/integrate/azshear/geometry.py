@@ -38,6 +38,69 @@ def buffer_polygon_km(poly, buffer_km):
     return transform(to_geo, buffered)
 
 
+def _polygon_to_local_km(poly):
+    if poly is None or poly.is_empty:
+        return None, None, None
+
+    centroid = poly.centroid
+    ref_lat = float(centroid.y)
+    ref_lon = float(centroid.x)
+    km_per_deg_lat = 111.32
+    km_per_deg_lon = km_per_deg_lat * max(math.cos(math.radians(ref_lat)), 1e-6)
+
+    def to_local(x, y, z=None):
+        dx = normalize_lon_delta(float(x) - ref_lon) * km_per_deg_lon
+        dy = (float(y) - ref_lat) * km_per_deg_lat
+        return (dx, dy)
+
+    return transform(to_local, poly), ref_lat, ref_lon
+
+
+def polygon_area_km2(poly):
+    local_poly, _, _ = _polygon_to_local_km(poly)
+    if local_poly is None:
+        return 0.0
+    return float(max(local_poly.area, 0.0))
+
+
+def polygon_major_axis_orientation_deg(poly):
+    local_poly, _, _ = _polygon_to_local_km(poly)
+    if local_poly is None:
+        return None
+
+    coords = np.asarray(local_poly.exterior.coords, dtype=float)
+    if coords.shape[0] < 3:
+        return None
+
+    x = coords[:, 0]
+    y = coords[:, 1]
+    finite = np.isfinite(x) & np.isfinite(y)
+    if np.count_nonzero(finite) < 3:
+        return None
+
+    x = x[finite]
+    y = y[finite]
+
+    x_centered = x - np.nanmean(x)
+    y_centered = y - np.nanmean(y)
+    if x_centered.size < 2:
+        return None
+
+    cov = np.cov(np.vstack((x_centered, y_centered)), bias=True)
+    if cov.shape != (2, 2) or not np.all(np.isfinite(cov)):
+        return None
+
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    order = np.argsort(eigvals)[::-1]
+    eigvals = eigvals[order]
+    eigvecs = eigvecs[:, order]
+
+    if eigvals.size == 0 or float(eigvals[0]) <= 0.0:
+        return None
+
+    return float((math.degrees(math.atan2(eigvecs[1, 0], eigvecs[0, 0])) + 360.0) % 180.0)
+
+
 def distance_km(lat_a, lon_a, lat_b, lon_b):
     ref_lat = (lat_a + lat_b) / 2.0
     dlat = (lat_b - lat_a) * 111.32
