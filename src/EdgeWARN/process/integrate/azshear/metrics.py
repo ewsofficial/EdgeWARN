@@ -13,6 +13,178 @@ from .geometry import (
 )
 
 
+def _orientation_diff_deg(a_deg, b_deg):
+    diff = abs(float(a_deg) - float(b_deg)) % 180.0
+    return 180.0 - diff if diff > 90.0 else diff
+
+
+def _pca_terms(x_vals, y_vals):
+    x = np.asarray(x_vals, dtype=float)
+    y = np.asarray(y_vals, dtype=float)
+    finite = np.isfinite(x) & np.isfinite(y)
+    if np.count_nonzero(finite) < 2:
+        return 0.0, 0.0, None
+
+    x = x[finite]
+    y = y[finite]
+    x = x - np.nanmean(x)
+    y = y - np.nanmean(y)
+
+    cov = np.cov(np.vstack((x, y)), bias=True)
+    if cov.shape != (2, 2) or not np.all(np.isfinite(cov)):
+        return 0.0, 0.0, None
+
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    eigvals = np.maximum(eigvals, 0.0)
+    order = np.argsort(eigvals)[::-1]
+    eigvals = eigvals[order]
+    eigvecs = eigvecs[:, order]
+
+    major_var = float(eigvals[0]) if eigvals.size > 0 else 0.0
+    minor_var = float(eigvals[1]) if eigvals.size > 1 else 0.0
+    if major_var <= 0.0:
+        return 0.0, 0.0, None
+
+    orientation_deg = float((math.degrees(math.atan2(eigvecs[1, 0], eigvecs[0, 0])) + 360.0) % 180.0)
+    return major_var, minor_var, orientation_deg
+
+
+def _linearity_ratio_and_score(major_var, minor_var):
+    if major_var <= 0.0:
+        return 0.0, 0.0
+
+    if minor_var <= 1e-8:
+        ratio = 999.0
+    else:
+        ratio = float(math.sqrt(max(major_var, 0.0) / max(minor_var, 1e-8)))
+
+    score = 0.0 if ratio <= 1.0 else float(1.0 - (1.0 / ratio))
+    score = max(0.0, min(1.0, score))
+    return ratio, score
+
+
+def _component_to_local_xy_km(component, lat_values, lon_values):
+    lats = np.asarray(lat_values, dtype=float)
+    lons = np.asarray(lon_values, dtype=float)
+    if lats.size == 0 or lons.size == 0:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    ref_lat = float(np.nanmean(lats))
+    ref_lon = float(np.nanmean(lons))
+    km_per_deg_lon = 111.32 * max(math.cos(math.radians(ref_lat)), 1e-6)
+    x = np.array([normalize_lon_delta(float(lon) - ref_lon) * km_per_deg_lon for lon in lons], dtype=float)
+    y = np.asarray((lats - ref_lat) * 111.32, dtype=float)
+    return x, y
+
+
+def _component_pixel_arrays(component):
+    mask = component.get("_component_mask")
+    lat_grid = component.get("_lat_grid")
+    lon_grid = component.get("_lon_grid")
+    if mask is None or lat_grid is None or lon_grid is None:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    comp_lats = np.asarray(lat_grid[mask], dtype=float)
+    comp_lons = np.asarray(lon_grid[mask], dtype=float)
+    finite = np.isfinite(comp_lats) & np.isfinite(comp_lons)
+    return comp_lats[finite], comp_lons[finite]
+
+
+def _largest_component_compactness(component):
+    if component is None:
+        return 0.0
+
+    ref_lat = float(component.get("centroid_lat", 0.0))
+    ref_lon = float(component.get("centroid_lon", 0.0))
+    geom = build_component_geometry(component, ref_lat, ref_lon)
+    if geom is None:
+        return 0.0
+
+    area_km2 = float(max(geom.area, 0.0))
+    perimeter_km = float(max(geom.length, 0.0))
+    if perimeter_km <= 0.0:
+        return 0.0
+
+    compactness = (4.0 * math.pi * area_km2) / (perimeter_km**2)
+    return float(max(0.0, min(1.0, compactness)))
+
+
+def _centroid_line_fit_score(candidates):
+    if len(candidates) < 2:
+        return 0.0
+
+    centroid_lats = np.array([float(item.get("centroid_lat", np.nan)) for item in candidates], dtype=float)
+    centroid_lons = np.array([float(item.get("centroid_lon", np.nan)) for item in candidates], dtype=float)
+    finite = np.isfinite(centroid_lats) & np.isfinite(centroid_lons)
+    if np.count_nonzero(finite) < 2:
+        return 0.0
+
+    x, y = _component_to_local_xy_km(None, centroid_lats[finite], centroid_lons[finite])
+    major_var, minor_var, _ = _pca_terms(x, y)
+    denom = major_var + minor_var
+    if denom <= 0.0:
+        return 0.0
+
+    return float(max(0.0, min(1.0, major_var / denom)))
+
+
+def _level_pixel_orientation_and_linearity(candidates):
+    if not candidates:
+        return None, 0.0, 0.0
+
+    all_lats = []
+    all_lons = []
+    for component in candidates:
+        comp_lats, comp_lons = _component_pixel_arrays(component)
+        if comp_lats.size == 0 or comp_lons.size == 0:
+            continue
+        all_lats.append(comp_lats)
+        all_lons.append(comp_lons)
+
+    if not all_lats:
+        return None, 0.0, 0.0
+
+    merged_lats = np.concatenate(all_lats)
+    merged_lons = np.concatenate(all_lons)
+    x, y = _component_to_local_xy_km(None, merged_lats, merged_lons)
+    major_var, minor_var, orientation_deg = _pca_terms(x, y)
+    ratio, score = _linearity_ratio_and_score(major_var, minor_var)
+    return orientation_deg, ratio, score
+
+
+def _dominant_component(candidates):
+    if not candidates:
+        return None
+
+    return max(
+        candidates,
+        key=lambda item: (float(item.get("area_km2", 0.0)), float(item.get("peak_value", 0.0))),
+    )
+
+
+def _build_overlap_metrics(low_component, mid_component):
+    centroid_distance = distance_km(
+        float(low_component["centroid_lat"]),
+        float(low_component["centroid_lon"]),
+        float(mid_component["centroid_lat"]),
+        float(mid_component["centroid_lon"]),
+    )
+
+    ref_lat = (float(low_component["centroid_lat"]) + float(mid_component["centroid_lat"])) / 2.0
+    ref_lon = midpoint_lon(float(low_component["centroid_lon"]), float(mid_component["centroid_lon"]))
+    low_geom = build_component_geometry(low_component, ref_lat, ref_lon)
+    mid_geom = build_component_geometry(mid_component, ref_lat, ref_lon)
+
+    if low_geom is None or mid_geom is None:
+        return centroid_distance, 0.0, 0.0
+
+    overlap_area = float(max(low_geom.intersection(mid_geom).area, 0.0))
+    low_area = max(float(low_component.get("area_km2", 0.0)), 1e-6)
+    mid_area = max(float(mid_component.get("area_km2", 0.0)), 1e-6)
+    union_area = max(low_area + mid_area - overlap_area, 1e-6)
+    return centroid_distance, overlap_area, overlap_area / union_area
+
+
 def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_area_km2, lat_spacing_km, lon_spacing_km):
     rows, cols = np.where(component_mask)
     if rows.size == 0:
@@ -27,9 +199,9 @@ def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_
         return None
 
     comp_values = comp_values[finite_mask]
-
     comp_lats = np.asarray(lat_grid[component_mask], dtype=float)[finite_mask]
     comp_lons = np.asarray(lon_grid[component_mask], dtype=float)[finite_mask]
+
     peak_index = int(np.nanargmax(comp_values))
     peak_value = float(comp_values[peak_index])
     peak_lat = float(comp_lats[peak_index])
@@ -47,26 +219,10 @@ def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_
         weighted_centroid_lat = centroid_lat
         weighted_centroid_lon = centroid_lon
 
-    km_per_deg_lat = 111.32
-    km_per_deg_lon = km_per_deg_lat * max(math.cos(math.radians(centroid_lat)), 1e-6)
-
-    x = np.array([normalize_lon_delta(float(lon) - centroid_lon) * km_per_deg_lon for lon in comp_lons])
-    y = (comp_lats - centroid_lat) * km_per_deg_lat
-
-    if x.size >= 2:
-        cov = np.cov(np.vstack((x, y)), bias=True)
-        eigvals, eigvecs = np.linalg.eigh(cov)
-        eigvals = np.maximum(eigvals, 0.0)
-        order = np.argsort(eigvals)[::-1]
-        eigvals = eigvals[order]
-        eigvecs = eigvecs[:, order]
-        major_axis_km = float(4.0 * math.sqrt(eigvals[0])) if eigvals.size else 0.0
-        minor_axis_km = float(4.0 * math.sqrt(eigvals[1])) if eigvals.size > 1 else 0.0
-        orientation_deg = float((math.degrees(math.atan2(eigvecs[1, 0], eigvecs[0, 0])) + 360.0) % 180.0)
-    else:
-        major_axis_km = 0.0
-        minor_axis_km = 0.0
-        orientation_deg = 0.0
+    x, y = _component_to_local_xy_km(None, comp_lats, comp_lons)
+    major_var, minor_var, orientation_deg = _pca_terms(x, y)
+    major_axis_km = float(4.0 * math.sqrt(max(major_var, 0.0))) if major_var > 0.0 else 0.0
+    minor_axis_km = float(4.0 * math.sqrt(max(minor_var, 0.0))) if minor_var > 0.0 else 0.0
 
     if major_axis_km <= 0.0:
         aspect_ratio = 1.0
@@ -78,22 +234,22 @@ def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_
 
     return {
         "pixel_count": int(comp_values.size),
-        "area_km2": round(float(comp_values.size * pixel_area_km2), 3),
-        "peak_value": round(peak_value, 3),
-        "peak_lat": round(peak_lat, 5),
-        "peak_lon": round(peak_lon, 5),
-        "centroid_lat": round(centroid_lat, 5),
-        "centroid_lon": round(centroid_lon, 5),
-        "weighted_centroid_lat": round(weighted_centroid_lat, 5),
-        "weighted_centroid_lon": round(weighted_centroid_lon, 5),
-        "major_axis_km": round(max(major_axis_km, 0.0), 3),
-        "minor_axis_km": round(max(minor_axis_km, 0.0), 3),
-        "width_km": round(max(minor_axis_km, 0.0), 3),
-        "aspect_ratio": round(aspect_ratio, 3),
-        "ellipticity": round(ellipticity, 3),
-        "orientation_deg": round(orientation_deg, 2),
-        "p95_value": round(float(np.nanpercentile(comp_values, 95)), 3),
-        "mean_value": round(float(np.nanmean(comp_values)), 3),
+        "area_km2": float(comp_values.size * pixel_area_km2),
+        "peak_value": peak_value,
+        "peak_lat": peak_lat,
+        "peak_lon": peak_lon,
+        "centroid_lat": centroid_lat,
+        "centroid_lon": centroid_lon,
+        "weighted_centroid_lat": weighted_centroid_lat,
+        "weighted_centroid_lon": weighted_centroid_lon,
+        "major_axis_km": max(major_axis_km, 0.0),
+        "minor_axis_km": max(minor_axis_km, 0.0),
+        "width_km": max(minor_axis_km, 0.0),
+        "aspect_ratio": aspect_ratio,
+        "ellipticity": ellipticity,
+        "orientation_deg": float(orientation_deg if orientation_deg is not None else 0.0),
+        "p95_value": float(np.nanpercentile(comp_values, 95)),
+        "mean_value": float(np.nanmean(comp_values)),
         "_component_mask": component_mask,
         "_lat_grid": lat_grid,
         "_lon_grid": lon_grid,
@@ -128,128 +284,87 @@ def extract_azshear_candidates(masked_values, lat_grid, lon_grid, threshold, pix
         candidates.append(metrics)
 
     candidates.sort(
-        key=lambda item: (item["peak_value"], item["p95_value"], item["area_km2"]),
+        key=lambda item: (float(item.get("area_km2", 0.0)), float(item.get("peak_value", 0.0))),
         reverse=True,
     )
     return candidates
 
 
-def build_overlap_metrics(low_component, mid_component):
+def summarize_level_metrics(candidates, buffered_area_km2, reflectivity_axis_deg):
+    total_area = float(sum(float(item.get("area_km2", 0.0)) for item in candidates))
+    component_count = len(candidates)
+    dominant = _dominant_component(candidates)
+
+    largest_area = float(dominant.get("area_km2", 0.0)) if dominant else 0.0
+    secondary_area = float(candidates[1].get("area_km2", 0.0)) if component_count > 1 else 0.0
+    dominance_ratio = (largest_area / total_area) if total_area > 0.0 else 0.0
+    secondary_core_ratio = (secondary_area / largest_area) if largest_area > 0.0 else 0.0
+
+    compactness = _largest_component_compactness(dominant)
+
+    orientation_deg, linearity_ratio, linearity_score = _level_pixel_orientation_and_linearity(candidates)
+    centroid_line_fit_score = _centroid_line_fit_score(candidates)
+
+    if reflectivity_axis_deg is None or orientation_deg is None:
+        reflectivity_alignment = 0.0
+    else:
+        diff = _orientation_diff_deg(orientation_deg, reflectivity_axis_deg)
+        reflectivity_alignment = max(0.0, 1.0 - (diff / 90.0))
+
+    coverage_fraction = (total_area / buffered_area_km2) if buffered_area_km2 > 0.0 else 0.0
+    fragmentation_index = ((component_count - 1) / (component_count + 1)) if component_count > 0 else 0.0
+
+    return {
+        "core_structure": {
+            "component_count": component_count,
+            "largest_component_area": round(largest_area, 3),
+            "largest_component_compactness": round(compactness, 3),
+            "largest_component_peak_azshear": round(float(dominant.get("peak_value", 0.0)) if dominant else 0.0, 3),
+            "largest_component_mean_azshear": round(float(dominant.get("mean_value", 0.0)) if dominant else 0.0, 3),
+        },
+        "dominance": {
+            "dominance": round(dominance_ratio, 3),
+            "dominance_ratio": round(dominance_ratio, 3),
+            "secondary_core_ratio": round(secondary_core_ratio, 3),
+        },
+        "linearity": {
+            "linearity": round(linearity_score, 3),
+            "centroid_line_fit_score": round(centroid_line_fit_score, 3),
+            "linearity_ratio": round(linearity_ratio, 3),
+            "alignment_with_reflectivity_axis": round(reflectivity_alignment, 3),
+        },
+        "distribution": {
+            "total_azshear_area": round(total_area, 3),
+            "coverage_fraction": round(max(coverage_fraction, 0.0), 3),
+            "fragmentation_index": round(max(fragmentation_index, 0.0), 3),
+        },
+    }, dominant
+
+
+def summarize_cross_layer_metrics(low_component, mid_component, low_level_summary, mid_level_summary, simultaneous_persistence):
     if low_component is None or mid_component is None:
-        return {
-            "centroid_distance_km": None,
-            "overlap_area_km2": None,
-            "overlap_ratio": None,
-            "low_overlap_fraction": None,
-            "mid_overlap_fraction": None,
-        }
+        centroid_distance = None
+        overlap_area = 0.0
+        overlap_ratio = 0.0
+        centroid_alignment = 0.0
+    else:
+        centroid_distance, overlap_area, overlap_ratio = _build_overlap_metrics(low_component, mid_component)
+        centroid_alignment = max(0.0, 1.0 - (centroid_distance / AZSHEAR_MAX_PAIR_SEPARATION_KM))
 
-    low_weighted_lat = float(low_component.get("weighted_centroid_lat", low_component["centroid_lat"]))
-    low_weighted_lon = float(low_component.get("weighted_centroid_lon", low_component["centroid_lon"]))
-    mid_weighted_lat = float(mid_component.get("weighted_centroid_lat", mid_component["centroid_lat"]))
-    mid_weighted_lon = float(mid_component.get("weighted_centroid_lon", mid_component["centroid_lon"]))
+    low_dom = float(low_level_summary.get("dominance", {}).get("dominance_ratio", 0.0))
+    mid_dom = float(mid_level_summary.get("dominance", {}).get("dominance_ratio", 0.0))
+    low_peak = float(low_level_summary.get("core_structure", {}).get("largest_component_peak_azshear", 0.0))
+    mid_peak = float(mid_level_summary.get("core_structure", {}).get("largest_component_peak_azshear", 0.0))
 
-    centroid_distance_km = distance_km(
-        low_weighted_lat,
-        low_weighted_lon,
-        mid_weighted_lat,
-        mid_weighted_lon,
-    )
-
-    ref_lat = (low_weighted_lat + mid_weighted_lat) / 2.0
-    ref_lon = midpoint_lon(low_weighted_lon, mid_weighted_lon)
-    low_geom = build_component_geometry(low_component, ref_lat, ref_lon)
-    mid_geom = build_component_geometry(mid_component, ref_lat, ref_lon)
-
-    if low_geom is None or mid_geom is None:
-        return {
-            "centroid_distance_km": round(centroid_distance_km, 3),
-            "overlap_area_km2": None,
-            "overlap_ratio": None,
-            "low_overlap_fraction": None,
-            "mid_overlap_fraction": None,
-        }
-
-    overlap_area_km2 = float(low_geom.intersection(mid_geom).area)
-    low_area_km2 = max(float(low_component.get("area_km2", 0.0)), 1e-6)
-    mid_area_km2 = max(float(mid_component.get("area_km2", 0.0)), 1e-6)
-    union_area_km2 = max(low_area_km2 + mid_area_km2 - overlap_area_km2, 1e-6)
+    dominance_ratio_ratio = None if mid_dom <= 0.0 else (low_dom / mid_dom)
+    peak_ratio = None if mid_peak <= 0.0 else (low_peak / mid_peak)
 
     return {
-        "centroid_distance_km": round(centroid_distance_km, 3),
-        "overlap_area_km2": round(max(overlap_area_km2, 0.0), 3),
-        "overlap_ratio": round(max(overlap_area_km2, 0.0) / union_area_km2, 3),
-        "low_overlap_fraction": round(max(overlap_area_km2, 0.0) / low_area_km2, 3),
-        "mid_overlap_fraction": round(max(overlap_area_km2, 0.0) / mid_area_km2, 3),
-    }
-
-
-def public_component_metrics(component):
-    if component is None:
-        return None
-
-    return {
-        key: value
-        for key, value in component.items()
-        if not key.startswith("_")
-    }
-
-
-def build_alignment_metrics(low_component, mid_component):
-    if low_component is None or mid_component is None:
-        return {
-            "paired": False,
-            "vertical_centroid_sep_km": None,
-            "vertical_peak_sep_km": None,
-            "centroid_distance_km": None,
-            "orientation_diff_deg": None,
-            "width_ratio": None,
-            "area_ratio": None,
-            "overlap_area_km2": None,
-            "overlap_ratio": None,
-            "low_overlap_fraction": None,
-            "mid_overlap_fraction": None,
-            "is_vertically_aligned": False,
-        }
-
-    centroid_dlat = (mid_component["centroid_lat"] - low_component["centroid_lat"]) * 111.32
-    centroid_dlon = normalize_lon_delta(mid_component["centroid_lon"] - low_component["centroid_lon"]) * 111.32 * max(
-        math.cos(math.radians((mid_component["centroid_lat"] + low_component["centroid_lat"]) / 2.0)),
-        1e-6,
-    )
-    peak_dlat = (mid_component["peak_lat"] - low_component["peak_lat"]) * 111.32
-    peak_dlon = normalize_lon_delta(mid_component["peak_lon"] - low_component["peak_lon"]) * 111.32 * max(
-        math.cos(math.radians((mid_component["peak_lat"] + low_component["peak_lat"]) / 2.0)),
-        1e-6,
-    )
-
-    centroid_sep_km = math.sqrt(centroid_dlat**2 + centroid_dlon**2)
-    peak_sep_km = math.sqrt(peak_dlat**2 + peak_dlon**2)
-    orientation_diff = abs(mid_component["orientation_deg"] - low_component["orientation_deg"])
-    if orientation_diff > 90.0:
-        orientation_diff = 180.0 - orientation_diff
-
-    width_ratio = min(low_component["width_km"], mid_component["width_km"]) / max(
-        max(low_component["width_km"], mid_component["width_km"]),
-        1e-6,
-    )
-    area_ratio = min(low_component["area_km2"], mid_component["area_km2"]) / max(
-        max(low_component["area_km2"], mid_component["area_km2"]),
-        1e-6,
-    )
-    overlap = build_overlap_metrics(low_component, mid_component)
-
-    return {
-        "paired": True,
-        "vertical_centroid_sep_km": round(centroid_sep_km, 3),
-        "vertical_peak_sep_km": round(peak_sep_km, 3),
-        "centroid_distance_km": overlap["centroid_distance_km"],
-        "orientation_diff_deg": round(orientation_diff, 2),
-        "width_ratio": round(width_ratio, 3),
-        "area_ratio": round(area_ratio, 3),
-        "overlap_area_km2": overlap["overlap_area_km2"],
-        "overlap_ratio": overlap["overlap_ratio"],
-        "low_overlap_fraction": overlap["low_overlap_fraction"],
-        "mid_overlap_fraction": overlap["mid_overlap_fraction"],
-        "is_vertically_aligned": centroid_sep_km <= AZSHEAR_MAX_PAIR_SEPARATION_KM,
+        "dominant_component_overlap_area": round(max(overlap_area, 0.0), 3),
+        "dominant_component_overlap_ratio": round(max(overlap_ratio, 0.0), 3),
+        "dominant_component_centroid_distance_km": None if centroid_distance is None else round(centroid_distance, 3),
+        "dominant_component_centroid_alignment": round(max(centroid_alignment, 0.0), 3),
+        "ll_ml_dominance_ratio_ratio": None if dominance_ratio_ratio is None else round(dominance_ratio_ratio, 3),
+        "ll_ml_peak_ratio": None if peak_ratio is None else round(peak_ratio, 3),
+        "simultaneous_persistence": round(max(float(simultaneous_persistence), 0.0), 3),
     }

@@ -5,29 +5,54 @@ AZSHEAR_MIN_GATE_COUNT = 5
 AZSHEAR_MAX_PAIR_SEPARATION_KM = 12.0
 
 
-def empty_alignment_output():
+def empty_level_output():
     return {
-        "paired": False,
-        "vertical_centroid_sep_km": None,
-        "vertical_peak_sep_km": None,
-        "centroid_distance_km": None,
-        "orientation_diff_deg": None,
-        "width_ratio": None,
-        "area_ratio": None,
-        "overlap_area_km2": None,
-        "overlap_ratio": None,
-        "low_overlap_fraction": None,
-        "mid_overlap_fraction": None,
-        "is_vertically_aligned": False,
+        "core_structure": {
+            "component_count": 0,
+            "largest_component_area": 0.0,
+            "largest_component_compactness": 0.0,
+            "largest_component_peak_azshear": 0.0,
+            "largest_component_mean_azshear": 0.0,
+        },
+        "dominance": {
+            "dominance": 0.0,
+            "dominance_ratio": 0.0,
+            "secondary_core_ratio": 0.0,
+        },
+        "linearity": {
+            "linearity": 0.0,
+            "centroid_line_fit_score": 0.0,
+            "linearity_ratio": 0.0,
+            "alignment_with_reflectivity_axis": 0.0,
+        },
+        "persistence": {
+            "dominant_component_persistence": 0.0,
+            "peak_persistence": 0.0,
+        },
+        "distribution": {
+            "total_azshear_area": 0.0,
+            "coverage_fraction": 0.0,
+            "fragmentation_index": 0.0,
+        },
+    }
+
+
+def empty_cross_layer_output():
+    return {
+        "dominant_component_overlap_area": 0.0,
+        "dominant_component_overlap_ratio": 0.0,
+        "dominant_component_centroid_distance_km": None,
+        "dominant_component_centroid_alignment": 0.0,
+        "ll_ml_dominance_ratio_ratio": None,
+        "ll_ml_peak_ratio": None,
+        "simultaneous_persistence": 0.0,
     }
 
 
 def empty_azshear_output():
     return {
         "buffer_km": AZSHEAR_BUFFER_KM,
-        "low": None,
-        "mid": None,
-        "alignment": empty_alignment_output(),
-        "low_candidate_count": 0,
-        "mid_candidate_count": 0,
+        "low": empty_level_output(),
+        "mid": empty_level_output(),
+        "cross_layer": empty_cross_layer_output(),
     }

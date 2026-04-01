@@ -1,8 +1,9 @@
+import json
 
 import pytest
 import numpy as np
 import xarray as xr
-import shapely.geometry as sg
+import util.file as fs
 from unittest.mock import MagicMock
 from EdgeWARN.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.process.integrate.azshear.integration import _open_azshear_dataset
@@ -270,10 +271,9 @@ def synthetic_azshear_dataset_pair(tmp_path):
     return str(low_path), str(mid_path)
 
 
-def test_integrate_azshear_features_uses_buffer_without_affecting_generic_stats(integrator, synthetic_azshear_dataset_pair, synthetic_dataset):
-    low_path, mid_path = synthetic_azshear_dataset_pair
-    cell = {
-        "id": "test_cell_buffered_azshear",
+def _base_azshear_cell(cell_id):
+    return {
+        "id": cell_id,
         "bbox": [
             [30.49, -95.53],
             [30.49, -95.49],
@@ -282,8 +282,14 @@ def test_integrate_azshear_features_uses_buffer_without_affecting_generic_stats(
             [30.49, -95.53],
         ],
         "centroid": [30.5, -95.51],
-        "properties": {"ExistingField": 123.0},
+        "properties": {},
     }
+
+
+def test_integrate_azshear_features_replaces_legacy_schema(integrator, synthetic_azshear_dataset_pair, synthetic_dataset):
+    low_path, mid_path = synthetic_azshear_dataset_pair
+    cell = _base_azshear_cell("test_cell_buffered_azshear")
+    cell["properties"]["ExistingField"] = 123.0
 
     stats_result = integrator.integrate_multi_stats(
         synthetic_dataset,
@@ -299,21 +305,31 @@ def test_integrate_azshear_features_uses_buffer_without_affecting_generic_stats(
     assert props["ExistingField"] == 123.0
     assert props["p100Test"] >= 0.0
     assert azshear["buffer_km"] == 5.0
-    assert azshear["low"]["peak_value"] == 10.8
-    assert azshear["mid"]["peak_value"] == 8.1
-    assert azshear["low"]["area_km2"] > 0.0
-    assert azshear["mid"]["area_km2"] > 0.0
-    assert azshear["low"]["weighted_centroid_lat"] is not None
-    assert azshear["low"]["weighted_centroid_lon"] is not None
-    assert azshear["mid"]["weighted_centroid_lat"] is not None
-    assert azshear["mid"]["weighted_centroid_lon"] is not None
-    assert azshear["alignment"]["paired"] is True
-    assert azshear["alignment"]["is_vertically_aligned"] is True
-    assert azshear["alignment"]["centroid_distance_km"] is not None
-    assert azshear["alignment"]["overlap_area_km2"] > 0.0
-    assert azshear["alignment"]["overlap_ratio"] > 0.0
-    assert azshear["alignment"]["low_overlap_fraction"] > 0.0
-    assert azshear["alignment"]["mid_overlap_fraction"] > 0.0
+    assert "alignment" not in azshear
+    assert "low_candidate_count" not in azshear
+    assert "mid_candidate_count" not in azshear
+
+    low = azshear["low"]
+    mid = azshear["mid"]
+    cross = azshear["cross_layer"]
+
+    assert low["core_structure"]["component_count"] == 1
+    assert low["core_structure"]["largest_component_peak_azshear"] == 10.8
+    assert low["core_structure"]["largest_component_area"] > 0.0
+    assert low["dominance"]["dominance_ratio"] == 1.0
+    assert low["distribution"]["coverage_fraction"] > 0.0
+    assert low["linearity"]["alignment_with_reflectivity_axis"] >= 0.0
+    assert low["persistence"]["dominant_component_persistence"] == 0.0
+
+    assert mid["core_structure"]["component_count"] == 1
+    assert mid["core_structure"]["largest_component_peak_azshear"] == 8.1
+    assert mid["distribution"]["total_azshear_area"] > 0.0
+
+    assert cross["dominant_component_overlap_area"] > 0.0
+    assert cross["dominant_component_overlap_ratio"] > 0.0
+    assert cross["dominant_component_centroid_distance_km"] is not None
+    assert cross["ll_ml_peak_ratio"] > 1.0
+    assert cross["simultaneous_persistence"] == 0.0
 
 
 def test_integrate_azshear_features_handles_missing_signal(integrator, tmp_path):
@@ -326,27 +342,16 @@ def test_integrate_azshear_features_handles_missing_signal(integrator, tmp_path)
     zero_path = tmp_path / "azshear_zero.nc"
     zeros.to_netcdf(zero_path)
 
-    cell = {
-        "id": "test_cell_no_azshear",
-        "bbox": [
-            [30.49, -95.53],
-            [30.49, -95.49],
-            [30.51, -95.49],
-            [30.51, -95.53],
-            [30.49, -95.53],
-        ],
-        "centroid": [30.5, -95.51],
-        "properties": {},
-    }
+    cell = _base_azshear_cell("test_cell_no_azshear")
 
     result = integrator.integrate_azshear_features(str(zero_path), str(zero_path), [cell])
     azshear = result[0]["properties"]["azshear"]
 
-    assert azshear["low"] is None
-    assert azshear["mid"] is None
-    assert azshear["alignment"]["paired"] is False
-    assert azshear["alignment"]["centroid_distance_km"] is None
-    assert azshear["alignment"]["overlap_area_km2"] is None
+    assert azshear["low"]["core_structure"]["component_count"] == 0
+    assert azshear["mid"]["core_structure"]["component_count"] == 0
+    assert azshear["cross_layer"]["dominant_component_overlap_area"] == 0.0
+    assert azshear["cross_layer"]["dominant_component_overlap_ratio"] == 0.0
+    assert azshear["cross_layer"]["dominant_component_centroid_distance_km"] is None
 
 
 def test_integrate_azshear_features_applies_updated_thresholds(integrator, tmp_path):
@@ -372,26 +377,15 @@ def test_integrate_azshear_features_applies_updated_thresholds(integrator, tmp_p
     low_ds.to_netcdf(low_path)
     mid_ds.to_netcdf(mid_path)
 
-    cell = {
-        "id": "test_cell_threshold_gate",
-        "bbox": [
-            [30.49, -95.53],
-            [30.49, -95.49],
-            [30.51, -95.49],
-            [30.51, -95.53],
-            [30.49, -95.53],
-        ],
-        "centroid": [30.5, -95.51],
-        "properties": {},
-    }
+    cell = _base_azshear_cell("test_cell_threshold_gate")
 
     result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
     azshear = result[0]["properties"]["azshear"]
 
-    assert azshear["low"] is None
-    assert azshear["mid"] is None
-    assert azshear["low_candidate_count"] == 0
-    assert azshear["mid_candidate_count"] == 0
+    assert azshear["low"]["core_structure"]["component_count"] == 0
+    assert azshear["mid"]["core_structure"]["component_count"] == 0
+    assert azshear["low"]["distribution"]["total_azshear_area"] == 0.0
+    assert azshear["mid"]["distribution"]["total_azshear_area"] == 0.0
 
 
 def test_integrate_azshear_features_requires_minimum_gate_count(integrator, tmp_path):
@@ -417,44 +411,32 @@ def test_integrate_azshear_features_requires_minimum_gate_count(integrator, tmp_
     low_ds.to_netcdf(low_path)
     mid_ds.to_netcdf(mid_path)
 
-    cell = {
-        "id": "test_cell_min_gate_filter",
-        "bbox": [
-            [30.49, -95.53],
-            [30.49, -95.49],
-            [30.51, -95.49],
-            [30.51, -95.53],
-            [30.49, -95.53],
-        ],
-        "centroid": [30.5, -95.51],
-        "properties": {},
-    }
+    cell = _base_azshear_cell("test_cell_min_gate_filter")
 
     result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
     azshear = result[0]["properties"]["azshear"]
 
-    assert azshear["low"] is None
-    assert azshear["mid"] is None
-    assert azshear["low_candidate_count"] == 0
-    assert azshear["mid_candidate_count"] == 0
-    assert azshear["alignment"]["paired"] is False
+    assert azshear["low"]["core_structure"]["component_count"] == 0
+    assert azshear["mid"]["core_structure"]["component_count"] == 0
+    assert azshear["cross_layer"]["dominant_component_overlap_area"] == 0.0
 
 
-def test_integrate_azshear_features_uses_only_highest_peak_component_per_level(integrator, tmp_path):
+def test_integrate_azshear_features_uses_largest_component_for_core_metrics(integrator, tmp_path):
     lat = np.linspace(30.0, 31.0, 101)
     lon = np.linspace(-96.0, -95.0, 101)
 
     low = np.zeros((101, 101))
     mid = np.zeros((101, 101))
 
-    low[50:53, 50:53] = 8.8
-    low[51, 51] = 9.4
+    low[60:64, 60:64] = 8.7
+    low[61, 61] = 9.2
 
-    mid[50:53, 52:55] = 6.4
-    mid[51, 53] = 7.4
-
-    mid[61:64, 61:64] = 8.5
-    mid[62, 62] = 10.2
+    # Smaller but higher-peak mid component.
+    mid[45:48, 45:48] = 6.4
+    mid[46, 46] = 9.9
+    # Larger but lower-peak mid component (should be dominant by area).
+    mid[60:64, 60:64] = 6.3
+    mid[61, 61] = 6.5
 
     low_ds = xr.Dataset(
         data_vars=dict(unknown=(["latitude", "longitude"], low)),
@@ -471,33 +453,80 @@ def test_integrate_azshear_features_uses_only_highest_peak_component_per_level(i
     mid_ds.to_netcdf(mid_path)
 
     cell = {
-        "id": "test_cell_pairing_gate",
+        "id": "test_cell_largest_component",
         "bbox": [
-            [30.45, -95.55],
-            [30.45, -95.35],
-            [30.65, -95.35],
-            [30.65, -95.55],
-            [30.45, -95.55],
+            [30.4, -95.7],
+            [30.4, -95.2],
+            [30.9, -95.2],
+            [30.9, -95.7],
+            [30.4, -95.7],
         ],
-        "centroid": [30.55, -95.45],
+        "centroid": [30.65, -95.45],
         "properties": {},
     }
 
     result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
     azshear = result[0]["properties"]["azshear"]
 
-    assert azshear["low"]["peak_value"] == 9.4
-    assert azshear["mid"]["peak_value"] == 10.2
-    assert azshear["low_candidate_count"] == 1
-    assert azshear["mid_candidate_count"] == 2
-    assert azshear["alignment"]["paired"] is True
-    assert azshear["alignment"]["vertical_centroid_sep_km"] > 12.0
-    assert azshear["alignment"]["centroid_distance_km"] > 12.0
-    assert azshear["alignment"]["overlap_area_km2"] == 0.0
-    assert azshear["alignment"]["is_vertically_aligned"] is False
+    assert azshear["low"]["core_structure"]["component_count"] == 1
+    assert azshear["mid"]["core_structure"]["component_count"] == 2
+    assert azshear["mid"]["core_structure"]["largest_component_peak_azshear"] == 6.5
+    assert azshear["mid"]["dominance"]["secondary_core_ratio"] > 0.5
+    assert azshear["cross_layer"]["dominant_component_overlap_area"] > 0.0
+    assert azshear["cross_layer"]["ll_ml_peak_ratio"] > 1.0
 
 
-def test_integrate_azshear_features_uses_independent_default_alignment_objects(integrator, tmp_path):
+def test_integrate_azshear_features_computes_history_based_persistence(integrator, synthetic_azshear_dataset_pair, tmp_path, monkeypatch):
+    low_path, mid_path = synthetic_azshear_dataset_pair
+    cell = _base_azshear_cell("test_cell_persistence")
+
+    def _entry(low_count, low_peak, mid_count, mid_peak):
+        return {
+            "properties": {
+                "azshear": {
+                    "low": {
+                        "core_structure": {
+                            "component_count": low_count,
+                            "largest_component_peak_azshear": low_peak,
+                        }
+                    },
+                    "mid": {
+                        "core_structure": {
+                            "component_count": mid_count,
+                            "largest_component_peak_azshear": mid_peak,
+                        }
+                    },
+                }
+            }
+        }
+
+    history = [
+        _entry(1, 8.8, 1, 6.7),  # oldest; excluded by last-5 persistence window
+        _entry(1, 8.5, 1, 6.5),
+        _entry(0, 0.0, 1, 5.5),
+        _entry(1, 7.0, 0, 0.0),
+        _entry(1, 8.2, 1, 6.1),
+        _entry(0, 0.0, 0, 0.0),
+    ]
+
+    history_dir = tmp_path / "cells"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    with open(history_dir / "test_cell_persistence.json", "w") as f:
+        json.dump(history, f)
+
+    monkeypatch.setattr(fs, "CELL_DIR", history_dir)
+
+    result = integrator.integrate_azshear_features(low_path, mid_path, [cell])
+    azshear = result[0]["properties"]["azshear"]
+
+    assert azshear["low"]["persistence"]["dominant_component_persistence"] == 0.6
+    assert azshear["low"]["persistence"]["peak_persistence"] == 0.4
+    assert azshear["mid"]["persistence"]["dominant_component_persistence"] == 0.6
+    assert azshear["mid"]["persistence"]["peak_persistence"] == 0.4
+    assert azshear["cross_layer"]["simultaneous_persistence"] == 0.4
+
+
+def test_integrate_azshear_features_uses_independent_default_output_objects(integrator, tmp_path):
     lat = np.linspace(30.0, 31.0, 11)
     lon = np.linspace(-96.0, -95.0, 11)
     zeros = xr.Dataset(
@@ -524,7 +553,8 @@ def test_integrate_azshear_features_uses_independent_default_alignment_objects(i
 
     result = integrator.integrate_azshear_features(str(zero_path), str(zero_path), cells)
 
-    assert result[0]["properties"]["azshear"]["alignment"] is not result[1]["properties"]["azshear"]["alignment"]
+    assert result[0]["properties"]["azshear"]["low"] is not result[1]["properties"]["azshear"]["low"]
+    assert result[0]["properties"]["azshear"]["cross_layer"] is not result[1]["properties"]["azshear"]["cross_layer"]
 
 
 def test_open_azshear_dataset_uses_fast_grib_loader(monkeypatch):
