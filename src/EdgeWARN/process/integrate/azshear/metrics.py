@@ -207,17 +207,15 @@ def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_
     peak_lat = float(comp_lats[peak_index])
     peak_lon = float(comp_lons[peak_index])
 
-    centroid_lat = float(np.nanmean(comp_lats))
-    centroid_lon = float(np.nanmean(comp_lons))
-
     weights = np.clip(comp_values, 0.0, None)
     weight_sum = float(np.nansum(weights))
+    ref_lon = float(np.nanmean(comp_lons))
     if weight_sum > 0.0:
-        weighted_centroid_lat = float(np.average(comp_lats, weights=weights))
-        weighted_centroid_lon = weighted_lon_mean(comp_lons, centroid_lon, weights)
+        centroid_lat = float(np.average(comp_lats, weights=weights))
+        centroid_lon = weighted_lon_mean(comp_lons, ref_lon, weights)
     else:
-        weighted_centroid_lat = centroid_lat
-        weighted_centroid_lon = centroid_lon
+        centroid_lat = float(np.nanmean(comp_lats))
+        centroid_lon = ref_lon
 
     x, y = _component_to_local_xy_km(None, comp_lats, comp_lons)
     major_var, minor_var, orientation_deg = _pca_terms(x, y)
@@ -240,8 +238,6 @@ def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_
         "peak_lon": peak_lon,
         "centroid_lat": centroid_lat,
         "centroid_lon": centroid_lon,
-        "weighted_centroid_lat": weighted_centroid_lat,
-        "weighted_centroid_lon": weighted_centroid_lon,
         "major_axis_km": max(major_axis_km, 0.0),
         "minor_axis_km": max(minor_axis_km, 0.0),
         "width_km": max(minor_axis_km, 0.0),
