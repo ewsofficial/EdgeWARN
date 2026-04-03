@@ -1,6 +1,5 @@
 import gc
 import json
-from copy import deepcopy
 
 import numpy as np
 import shapely.vectorized as sv
@@ -13,7 +12,6 @@ from .constants import (
     AZSHEAR_BUFFER_KM,
     AZSHEAR_LOW_THRESHOLD,
     AZSHEAR_MID_THRESHOLD,
-    empty_azshear_output,
 )
 from .geometry import (
     buffer_polygon_km,
@@ -80,6 +78,8 @@ def _read_recent_history(cell_id, history_cache):
 def _history_level_presence_and_peak(entry, level_key):
     props = entry.get("properties", {}) if isinstance(entry, dict) else {}
     azshear = props.get("azshear", {}) if isinstance(props, dict) else {}
+    if not isinstance(azshear, dict):
+        return False, 0.0
     level = azshear.get(level_key)
     if not isinstance(level, dict):
         return False, 0.0
@@ -136,12 +136,7 @@ def _compute_simultaneous_persistence(history_entries):
 def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, storm_cells):
     if not storm_cells or not low_dataset_path or not mid_dataset_path:
         return storm_cells
-
-    zero_output = empty_azshear_output()
     history_cache = {}
-
-    def empty_output():
-        return deepcopy(zero_output)
 
     try:
         low_ds, low_is_grib = _open_azshear_dataset(integrator, low_dataset_path)
@@ -176,7 +171,7 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
 
         for cell in storm_cells:
             cell.setdefault("properties", {})
-            cell["properties"]["azshear"] = empty_output()
+            cell["properties"]["azshear"] = None
 
             poly = StormIntegrationUtils.create_cell_polygon(cell)
             if poly is None:
@@ -276,15 +271,22 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
                     simultaneous_persistence,
                 )
 
+                has_low = low_dominant is not None
+                has_mid = mid_dominant is not None
+
+                if not has_low and not has_mid:
+                    cell["properties"]["azshear"] = None
+                    continue
+
                 cell["properties"]["azshear"] = {
                     "buffer_km": AZSHEAR_BUFFER_KM,
-                    "low": low_summary,
-                    "mid": mid_summary,
+                    "low": low_summary if has_low else None,
+                    "mid": mid_summary if has_mid else None,
                     "cross_layer": cross_layer,
                 }
             except Exception as exc:
                 integrator.io_manager.write_error(f"Process AzShear cell {cell.get('id')}: {exc}")
-                cell["properties"]["azshear"] = empty_output()
+                cell["properties"]["azshear"] = None
     finally:
         low_ds.close()
         mid_ds.close()
