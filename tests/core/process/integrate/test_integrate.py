@@ -347,11 +347,7 @@ def test_integrate_azshear_features_handles_missing_signal(integrator, tmp_path)
     result = integrator.integrate_azshear_features(str(zero_path), str(zero_path), [cell])
     azshear = result[0]["properties"]["azshear"]
 
-    assert azshear["low"]["core_structure"]["component_count"] == 0
-    assert azshear["mid"]["core_structure"]["component_count"] == 0
-    assert azshear["cross_layer"]["dominant_component_overlap_area"] == 0.0
-    assert azshear["cross_layer"]["dominant_component_overlap_ratio"] == 0.0
-    assert azshear["cross_layer"]["dominant_component_centroid_distance_km"] is None
+    assert azshear is None
 
 
 def test_integrate_azshear_features_applies_updated_thresholds(integrator, tmp_path):
@@ -382,10 +378,7 @@ def test_integrate_azshear_features_applies_updated_thresholds(integrator, tmp_p
     result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
     azshear = result[0]["properties"]["azshear"]
 
-    assert azshear["low"]["core_structure"]["component_count"] == 0
-    assert azshear["mid"]["core_structure"]["component_count"] == 0
-    assert azshear["low"]["distribution"]["total_azshear_area"] == 0.0
-    assert azshear["mid"]["distribution"]["total_azshear_area"] == 0.0
+    assert azshear is None
 
 
 def test_integrate_azshear_features_requires_minimum_gate_count(integrator, tmp_path):
@@ -416,9 +409,43 @@ def test_integrate_azshear_features_requires_minimum_gate_count(integrator, tmp_
     result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
     azshear = result[0]["properties"]["azshear"]
 
-    assert azshear["low"]["core_structure"]["component_count"] == 0
-    assert azshear["mid"]["core_structure"]["component_count"] == 0
+    assert azshear is None
+
+
+def test_integrate_azshear_features_sets_missing_layer_to_null(integrator, tmp_path):
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(-96.0, -95.0, 101)
+
+    low = np.zeros((101, 101))
+    mid = np.zeros((101, 101))
+    low[49:52, 53:56] = 8.6
+    low[50, 54] = 10.8
+
+    low_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], low)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+    mid_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], mid)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+
+    low_path = tmp_path / "azshear_low_only.nc"
+    mid_path = tmp_path / "azshear_mid_empty.nc"
+    low_ds.to_netcdf(low_path)
+    mid_ds.to_netcdf(mid_path)
+
+    cell = _base_azshear_cell("test_cell_single_layer")
+
+    result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
+    azshear = result[0]["properties"]["azshear"]
+
+    assert azshear is not None
+    assert azshear["low"] is not None
+    assert azshear["low"]["core_structure"]["component_count"] == 1
+    assert azshear["mid"] is None
     assert azshear["cross_layer"]["dominant_component_overlap_area"] == 0.0
+    assert azshear["cross_layer"]["dominant_component_centroid_distance_km"] is None
 
 
 def test_integrate_azshear_features_uses_largest_component_for_core_metrics(integrator, tmp_path):
@@ -526,7 +553,7 @@ def test_integrate_azshear_features_computes_history_based_persistence(integrato
     assert azshear["cross_layer"]["simultaneous_persistence"] == 0.4
 
 
-def test_integrate_azshear_features_uses_independent_default_output_objects(integrator, tmp_path):
+def test_integrate_azshear_features_returns_none_for_independent_empty_cells(integrator, tmp_path):
     lat = np.linspace(30.0, 31.0, 11)
     lon = np.linspace(-96.0, -95.0, 11)
     zeros = xr.Dataset(
@@ -553,8 +580,8 @@ def test_integrate_azshear_features_uses_independent_default_output_objects(inte
 
     result = integrator.integrate_azshear_features(str(zero_path), str(zero_path), cells)
 
-    assert result[0]["properties"]["azshear"]["low"] is not result[1]["properties"]["azshear"]["low"]
-    assert result[0]["properties"]["azshear"]["cross_layer"] is not result[1]["properties"]["azshear"]["cross_layer"]
+    assert result[0]["properties"]["azshear"] is None
+    assert result[1]["properties"]["azshear"] is None
 
 
 def test_open_azshear_dataset_uses_fast_grib_loader(monkeypatch):
