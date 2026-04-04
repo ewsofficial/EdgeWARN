@@ -34,9 +34,10 @@ process/integrate/
 
 ### AzShear Feature Integration (/process/integrate/integrate_azshear.py)
 - Extracts thresholded low- and mid-level AzShear components around each storm cell
+- Uses a fixed 1.5 km search halo and clips extension overlap so neighboring cells do not integrate overlapping AzShear areas
 - Uses 8.0 low-level and 6.0 mid-level thresholds before component summarization
-- Returns per-level grouped metrics for core structure, dominance, linearity, persistence, and distribution
-- Returns cross-layer LL-ML relationship metrics including overlap, centroid alignment, and strength ratios
+- Returns per-level grouped metrics for core structure, dominance, linearity, persistence, and distribution while retaining multi-component context
+- Returns cross-layer LL-ML relationship metrics from the best matched low/mid pair, including overlap, centroid alignment, strength ratios, and pair count
 
 ### RAP Synoptic Integration (/process/integrate/integrate_rap.py)
 - Integrates RAP (Rapid Refresh) model data
@@ -149,7 +150,7 @@ class StormCellIntegrator:
         Derive thresholded AzShear component summaries for each storm cell.
 
         Adds `properties["azshear"]` with grouped low/mid metrics and
-        a cross-layer relationship block.
+        a cross-layer relationship block based on the best matched low/mid pair.
         """
 
     def integrate_probsevere(self, probsevere_data, storm_cells):

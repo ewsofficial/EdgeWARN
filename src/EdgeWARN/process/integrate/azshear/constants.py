@@ -1,4 +1,4 @@
-AZSHEAR_BUFFER_KM = 5.0
+AZSHEAR_BUFFER_KM = 1.5
 AZSHEAR_LOW_THRESHOLD = 8.0
 AZSHEAR_MID_THRESHOLD = 6.0
 AZSHEAR_MIN_GATE_COUNT = 5
@@ -46,6 +46,7 @@ def empty_cross_layer_output():
         "ll_ml_dominance_ratio_ratio": None,
         "ll_ml_peak_ratio": None,
         "simultaneous_persistence": 0.0,
+        "mesocyclone_pair_count": 0,
     }
 
 
