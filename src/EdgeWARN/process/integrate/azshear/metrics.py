@@ -185,6 +185,37 @@ def _build_overlap_metrics(low_component, mid_component):
     return centroid_distance, overlap_area, overlap_area / union_area
 
 
+def find_best_cross_layer_pair(low_candidates, mid_candidates):
+    if not low_candidates or not mid_candidates:
+        return _dominant_component(low_candidates), _dominant_component(mid_candidates), 0
+
+    valid_pairs = []
+    for low_component in low_candidates:
+        for mid_component in mid_candidates:
+            centroid_distance, overlap_area, overlap_ratio = _build_overlap_metrics(low_component, mid_component)
+            if centroid_distance > AZSHEAR_MAX_PAIR_SEPARATION_KM:
+                continue
+
+            combined_area = float(low_component.get("area_km2", 0.0)) + float(mid_component.get("area_km2", 0.0))
+            combined_peak = float(low_component.get("peak_value", 0.0)) + float(mid_component.get("peak_value", 0.0))
+            valid_pairs.append(
+                (
+                    overlap_ratio,
+                    -centroid_distance,
+                    combined_area,
+                    combined_peak,
+                    low_component,
+                    mid_component,
+                )
+            )
+
+    if not valid_pairs:
+        return _dominant_component(low_candidates), _dominant_component(mid_candidates), 0
+
+    _, _, _, _, best_low, best_mid = max(valid_pairs, key=lambda item: item[:4])
+    return best_low, best_mid, len(valid_pairs)
+
+
 def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_area_km2, lat_spacing_km, lon_spacing_km):
     rows, cols = np.where(component_mask)
     if rows.size == 0:
@@ -337,7 +368,14 @@ def summarize_level_metrics(candidates, buffered_area_km2, reflectivity_axis_deg
     }, dominant
 
 
-def summarize_cross_layer_metrics(low_component, mid_component, low_level_summary, mid_level_summary, simultaneous_persistence):
+def summarize_cross_layer_metrics(
+    low_component,
+    mid_component,
+    low_level_summary,
+    mid_level_summary,
+    simultaneous_persistence,
+    mesocyclone_pair_count=0,
+):
     if low_component is None or mid_component is None:
         centroid_distance = None
         overlap_area = 0.0
@@ -349,8 +387,12 @@ def summarize_cross_layer_metrics(low_component, mid_component, low_level_summar
 
     low_dom = float(low_level_summary.get("dominance", {}).get("dominance_ratio", 0.0))
     mid_dom = float(mid_level_summary.get("dominance", {}).get("dominance_ratio", 0.0))
-    low_peak = float(low_level_summary.get("core_structure", {}).get("largest_component_peak_azshear", 0.0))
-    mid_peak = float(mid_level_summary.get("core_structure", {}).get("largest_component_peak_azshear", 0.0))
+    if low_component is None or mid_component is None:
+        low_peak = float(low_level_summary.get("core_structure", {}).get("largest_component_peak_azshear", 0.0))
+        mid_peak = float(mid_level_summary.get("core_structure", {}).get("largest_component_peak_azshear", 0.0))
+    else:
+        low_peak = float(low_component.get("peak_value", 0.0))
+        mid_peak = float(mid_component.get("peak_value", 0.0))
 
     dominance_ratio_ratio = None if mid_dom <= 0.0 else (low_dom / mid_dom)
     peak_ratio = None if mid_peak <= 0.0 else (low_peak / mid_peak)
@@ -363,4 +405,5 @@ def summarize_cross_layer_metrics(low_component, mid_component, low_level_summar
         "ll_ml_dominance_ratio_ratio": None if dominance_ratio_ratio is None else round(dominance_ratio_ratio, 3),
         "ll_ml_peak_ratio": None if peak_ratio is None else round(peak_ratio, 3),
         "simultaneous_persistence": round(max(float(simultaneous_persistence), 0.0), 3),
+        "mesocyclone_pair_count": max(int(mesocyclone_pair_count), 0),
     }

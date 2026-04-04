@@ -6,7 +6,8 @@ import xarray as xr
 import util.file as fs
 from unittest.mock import MagicMock
 from EdgeWARN.process.integrate.integrate import StormCellIntegrator
-from EdgeWARN.process.integrate.azshear.integration import _open_azshear_dataset
+from EdgeWARN.process.integrate.azshear.integration import _build_search_polygons, _open_azshear_dataset
+from EdgeWARN.process.integrate.geometry.cell_polygon import StormIntegrationUtils
 
 @pytest.fixture
 def mock_io_manager():
@@ -248,12 +249,12 @@ def synthetic_azshear_dataset_pair(tmp_path):
     low = np.zeros((101, 101))
     mid = np.zeros((101, 101))
 
-    # Positioned just east of the storm polygon so buffered AzShear extraction
+    # Positioned just east of the storm polygon so the near-cell search halo
     # sees the signature while the raw storm polygon does not.
-    low[49:52, 53:56] = 8.6
-    low[50, 54] = 10.8
-    mid[49:52, 53:56] = 6.4
-    mid[50, 54] = 8.1
+    low[48:53, 52] = 8.6
+    low[50, 52] = 10.8
+    mid[48:53, 52] = 6.4
+    mid[50, 52] = 8.1
 
     low_ds = xr.Dataset(
         data_vars=dict(unknown=(["latitude", "longitude"], low)),
@@ -304,7 +305,7 @@ def test_integrate_azshear_features_replaces_legacy_schema(integrator, synthetic
 
     assert props["ExistingField"] == 123.0
     assert props["p100Test"] >= 0.0
-    assert azshear["buffer_km"] == 5.0
+    assert azshear["buffer_km"] == 1.5
     assert "alignment" not in azshear
     assert "low_candidate_count" not in azshear
     assert "mid_candidate_count" not in azshear
@@ -330,6 +331,71 @@ def test_integrate_azshear_features_replaces_legacy_schema(integrator, synthetic
     assert cross["dominant_component_centroid_distance_km"] is not None
     assert cross["ll_ml_peak_ratio"] > 1.0
     assert cross["simultaneous_persistence"] == 0.0
+    assert cross["mesocyclone_pair_count"] == 1
+
+
+def test_integrate_azshear_features_uses_fallback_buffer_for_centroid_cells(integrator, tmp_path):
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(-96.0, -95.0, 101)
+
+    low = np.zeros((101, 101))
+    mid = np.zeros((101, 101))
+    low[48:53, 51] = 8.6
+    low[50, 51] = 10.4
+    mid[48:53, 51] = 6.4
+    mid[50, 51] = 7.8
+
+    low_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], low)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+    mid_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], mid)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+
+    low_path = tmp_path / "azshear_low_fallback.nc"
+    mid_path = tmp_path / "azshear_mid_fallback.nc"
+    low_ds.to_netcdf(low_path)
+    mid_ds.to_netcdf(mid_path)
+
+    cell = {
+        "id": "test_cell_centroid_fallback",
+        "centroid": [30.5, -95.51],
+        "properties": {},
+    }
+
+    result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
+    azshear = result[0]["properties"]["azshear"]
+
+    assert azshear is not None
+    assert azshear["buffer_km"] == 1.5
+    assert azshear["low"]["core_structure"]["component_count"] == 1
+    assert azshear["mid"]["core_structure"]["component_count"] == 1
+
+
+def test_build_search_polygons_are_disjoint_for_adjacent_cells():
+    cells = [
+        _base_azshear_cell("left_neighbor"),
+        {
+            "id": "right_neighbor",
+            "bbox": [
+                [30.49, -95.48],
+                [30.49, -95.44],
+                [30.51, -95.44],
+                [30.51, -95.48],
+                [30.49, -95.48],
+            ],
+            "centroid": [30.5, -95.46],
+            "properties": {},
+        },
+    ]
+
+    raw_polys = [StormIntegrationUtils.create_cell_polygon(cell) for cell in cells]
+    search_polys = _build_search_polygons(raw_polys)
+
+    assert len(search_polys) == 2
+    assert search_polys[0].intersection(search_polys[1]).area == pytest.approx(0.0, abs=1e-9)
 
 
 def test_integrate_azshear_features_handles_missing_signal(integrator, tmp_path):
@@ -356,8 +422,8 @@ def test_integrate_azshear_features_applies_updated_thresholds(integrator, tmp_p
 
     low = np.zeros((101, 101))
     mid = np.zeros((101, 101))
-    low[49:52, 53:56] = 7.9
-    mid[49:52, 53:56] = 5.9
+    low[48:53, 52] = 7.9
+    mid[48:53, 52] = 5.9
 
     low_ds = xr.Dataset(
         data_vars=dict(unknown=(["latitude", "longitude"], low)),
@@ -387,8 +453,8 @@ def test_integrate_azshear_features_requires_minimum_gate_count(integrator, tmp_
 
     low = np.zeros((101, 101))
     mid = np.zeros((101, 101))
-    low[49:51, 53:55] = 8.6
-    mid[49:51, 53:55] = 6.4
+    low[49:53, 52] = 8.6
+    mid[49:53, 52] = 6.4
 
     low_ds = xr.Dataset(
         data_vars=dict(unknown=(["latitude", "longitude"], low)),
@@ -418,8 +484,8 @@ def test_integrate_azshear_features_sets_missing_layer_to_null(integrator, tmp_p
 
     low = np.zeros((101, 101))
     mid = np.zeros((101, 101))
-    low[49:52, 53:56] = 8.6
-    low[50, 54] = 10.8
+    low[48:53, 52] = 8.6
+    low[50, 52] = 10.8
 
     low_ds = xr.Dataset(
         data_vars=dict(unknown=(["latitude", "longitude"], low)),
@@ -501,6 +567,110 @@ def test_integrate_azshear_features_uses_largest_component_for_core_metrics(inte
     assert azshear["mid"]["dominance"]["secondary_core_ratio"] > 0.5
     assert azshear["cross_layer"]["dominant_component_overlap_area"] > 0.0
     assert azshear["cross_layer"]["ll_ml_peak_ratio"] > 1.0
+
+
+def test_integrate_azshear_features_pairs_best_low_mid_match(integrator, tmp_path):
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(-96.0, -95.0, 101)
+
+    low = np.zeros((101, 101))
+    mid = np.zeros((101, 101))
+
+    low[40:43, 40:43] = 8.8
+    low[41, 41] = 10.0
+    low[60:64, 60:64] = 8.7
+    low[61, 61] = 9.2
+
+    mid[40:44, 40:44] = 6.4
+    mid[41, 41] = 6.8
+    mid[60:63, 60:64] = 6.6
+    mid[61, 61] = 7.2
+
+    low_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], low)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+    mid_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], mid)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+
+    low_path = tmp_path / "azshear_low_best_pair.nc"
+    mid_path = tmp_path / "azshear_mid_best_pair.nc"
+    low_ds.to_netcdf(low_path)
+    mid_ds.to_netcdf(mid_path)
+
+    cell = {
+        "id": "test_cell_best_pair",
+        "bbox": [
+            [30.4, -95.7],
+            [30.4, -95.2],
+            [30.9, -95.2],
+            [30.9, -95.7],
+            [30.4, -95.7],
+        ],
+        "centroid": [30.65, -95.45],
+        "properties": {},
+    }
+
+    result = integrator.integrate_azshear_features(str(low_path), str(mid_path), [cell])
+    azshear = result[0]["properties"]["azshear"]
+    cross = azshear["cross_layer"]
+
+    assert azshear["low"]["core_structure"]["largest_component_peak_azshear"] == 9.2
+    assert azshear["mid"]["core_structure"]["largest_component_peak_azshear"] == 6.8
+    assert cross["mesocyclone_pair_count"] == 2
+    assert cross["dominant_component_overlap_area"] > 0.0
+    assert cross["dominant_component_centroid_distance_km"] < 1.0
+    assert cross["ll_ml_peak_ratio"] == pytest.approx(1.278, abs=0.01)
+
+
+def test_integrate_azshear_features_keeps_signal_with_single_non_overlapping_owner(integrator, tmp_path):
+    lat = np.linspace(30.0, 31.0, 101)
+    lon = np.linspace(-96.0, -95.0, 101)
+
+    low = np.zeros((101, 101))
+    mid = np.zeros((101, 101))
+    low[48:53, 53] = 8.6
+    low[50, 53] = 10.8
+    mid[48:53, 53] = 6.4
+    mid[50, 53] = 8.1
+
+    low_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], low)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+    mid_ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], mid)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+
+    low_path = tmp_path / "azshear_low_owned.nc"
+    mid_path = tmp_path / "azshear_mid_owned.nc"
+    low_ds.to_netcdf(low_path)
+    mid_ds.to_netcdf(mid_path)
+
+    cells = [
+        _base_azshear_cell("left_neighbor"),
+        {
+            "id": "right_owner",
+            "bbox": [
+                [30.49, -95.48],
+                [30.49, -95.44],
+                [30.51, -95.44],
+                [30.51, -95.48],
+                [30.49, -95.48],
+            ],
+            "centroid": [30.5, -95.46],
+            "properties": {},
+        },
+    ]
+
+    result = integrator.integrate_azshear_features(str(low_path), str(mid_path), cells)
+
+    assert result[0]["properties"]["azshear"] is None
+    assert result[1]["properties"]["azshear"] is not None
+    assert result[1]["properties"]["azshear"]["cross_layer"]["mesocyclone_pair_count"] == 1
 
 
 def test_integrate_azshear_features_computes_history_based_persistence(integrator, synthetic_azshear_dataset_pair, tmp_path, monkeypatch):
