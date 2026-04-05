@@ -78,6 +78,14 @@ def _component_to_local_xy_km(component, lat_values, lon_values):
 
 
 def _component_pixel_arrays(component):
+    pixel_lats = component.get("_pixel_lats")
+    pixel_lons = component.get("_pixel_lons")
+    if pixel_lats is not None and pixel_lons is not None:
+        comp_lats = np.asarray(pixel_lats, dtype=float)
+        comp_lons = np.asarray(pixel_lons, dtype=float)
+        finite = np.isfinite(comp_lats) & np.isfinite(comp_lons)
+        return comp_lats[finite], comp_lons[finite]
+
     mask = component.get("_component_mask")
     lat_grid = component.get("_lat_grid")
     lon_grid = component.get("_lon_grid")
@@ -90,9 +98,46 @@ def _component_pixel_arrays(component):
     return comp_lats[finite], comp_lons[finite]
 
 
+def _component_perimeter_km(component_mask, lat_spacing_km, lon_spacing_km):
+    if component_mask.size == 0 or not np.any(component_mask):
+        return 0.0
+
+    padded = np.pad(component_mask.astype(bool, copy=False), 1, mode="constant", constant_values=False)
+    center = padded[1:-1, 1:-1]
+    north = padded[:-2, 1:-1]
+    south = padded[2:, 1:-1]
+    west = padded[1:-1, :-2]
+    east = padded[1:-1, 2:]
+
+    horizontal_edges = int(np.count_nonzero(center & ~north) + np.count_nonzero(center & ~south))
+    vertical_edges = int(np.count_nonzero(center & ~west) + np.count_nonzero(center & ~east))
+    return float((horizontal_edges * lon_spacing_km) + (vertical_edges * lat_spacing_km))
+
+
+def _component_pixel_signature(component):
+    cached_signature = component.get("_pixel_signature")
+    if cached_signature is not None:
+        return cached_signature
+
+    comp_lats, comp_lons = _component_pixel_arrays(component)
+    if comp_lats.size == 0 or comp_lons.size == 0:
+        signature = frozenset()
+    else:
+        signature = frozenset(zip(np.round(comp_lats, 4).tolist(), np.round(comp_lons, 4).tolist()))
+
+    component["_pixel_signature"] = signature
+    return signature
+
+
 def _largest_component_compactness(component):
     if component is None:
         return 0.0
+
+    perimeter_km = float(component.get("_perimeter_km", 0.0) or 0.0)
+    area_km2 = float(max(component.get("area_km2", 0.0), 0.0))
+    if perimeter_km > 0.0 and area_km2 > 0.0:
+        compactness = (4.0 * math.pi * area_km2) / (perimeter_km**2)
+        return float(max(0.0, min(1.0, compactness)))
 
     ref_lat = float(component.get("centroid_lat", 0.0))
     ref_lon = float(component.get("centroid_lon", 0.0))
@@ -170,6 +215,19 @@ def _build_overlap_metrics(low_component, mid_component):
         float(mid_component["centroid_lon"]),
     )
 
+    low_signature = _component_pixel_signature(low_component)
+    mid_signature = _component_pixel_signature(mid_component)
+    if low_signature or mid_signature:
+        overlap_pixels = len(low_signature & mid_signature)
+        low_area = max(float(low_component.get("area_km2", 0.0)), 1e-6)
+        mid_area = max(float(mid_component.get("area_km2", 0.0)), 1e-6)
+        low_pixel_count = max(int(low_component.get("pixel_count", 0)), 1)
+        mid_pixel_count = max(int(mid_component.get("pixel_count", 0)), 1)
+        pixel_area_km2 = min(low_area / low_pixel_count, mid_area / mid_pixel_count)
+        overlap_area = float(overlap_pixels * pixel_area_km2)
+        union_area = max(low_area + mid_area - overlap_area, 1e-6)
+        return centroid_distance, overlap_area, overlap_area / union_area
+
     ref_lat = (float(low_component["centroid_lat"]) + float(mid_component["centroid_lat"])) / 2.0
     ref_lon = midpoint_lon(float(low_component["centroid_lon"]), float(mid_component["centroid_lon"]))
     low_geom = build_component_geometry(low_component, ref_lat, ref_lon)
@@ -229,9 +287,9 @@ def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_
     if not np.any(finite_mask):
         return None
 
-    comp_values = comp_values[finite_mask]
-    comp_lats = np.asarray(lat_grid[component_mask], dtype=float)[finite_mask]
-    comp_lons = np.asarray(lon_grid[component_mask], dtype=float)[finite_mask]
+    comp_values = np.ascontiguousarray(comp_values[finite_mask])
+    comp_lats = np.ascontiguousarray(np.asarray(lat_grid[component_mask], dtype=float)[finite_mask])
+    comp_lons = np.ascontiguousarray(np.asarray(lon_grid[component_mask], dtype=float)[finite_mask])
 
     peak_index = int(np.nanargmax(comp_values))
     peak_value = float(comp_values[peak_index])
@@ -261,6 +319,8 @@ def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_
         aspect_ratio = float(major_axis_km / safe_minor)
         ellipticity = float(min(1.0, math.sqrt(max(0.0, 1.0 - (safe_minor / major_axis_km) ** 2))))
 
+    perimeter_km = _component_perimeter_km(component_mask, lat_spacing_km, lon_spacing_km)
+
     return {
         "pixel_count": int(comp_values.size),
         "area_km2": float(comp_values.size * pixel_area_km2),
@@ -277,9 +337,15 @@ def compute_component_metrics(component_mask, values, lat_grid, lon_grid, pixel_
         "orientation_deg": float(orientation_deg if orientation_deg is not None else 0.0),
         "p95_value": float(np.nanpercentile(comp_values, 95)),
         "mean_value": float(np.nanmean(comp_values)),
-        "_component_mask": component_mask,
-        "_lat_grid": lat_grid,
-        "_lon_grid": lon_grid,
+        "_pixel_lats": comp_lats,
+        "_pixel_lons": comp_lons,
+        "_perimeter_km": perimeter_km,
+        "_pixel_bbox": (
+            float(np.nanmin(comp_lons)),
+            float(np.nanmin(comp_lats)),
+            float(np.nanmax(comp_lons)),
+            float(np.nanmax(comp_lats)),
+        ),
         "_lat_spacing_km": float(lat_spacing_km),
         "_lon_spacing_km": float(lon_spacing_km),
     }
