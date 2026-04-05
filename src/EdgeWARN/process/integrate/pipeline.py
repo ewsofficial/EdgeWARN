@@ -1,5 +1,7 @@
 import json
+import copy
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 import util.file as fs
 from util.io import IOManager
@@ -7,12 +9,14 @@ from util.performance import tracker as perf_tracker
 
 from EdgeWARN.process.detect.tools.save import CellDataSaver
 from EdgeWARN.process.integrate.config import get_datasets_config
+from EdgeWARN.process.integrate.core.integrator import PROBSEVERE_FIELD_MAP
 from EdgeWARN.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.process.integrate.integrate_glm import integrate_glm
-from EdgeWARN.process.integrate.integrate_rap import integrate_rap
+from EdgeWARN.process.integrate.integrate_rap import get_rap_output_roots, integrate_rap
 from EdgeWARN.process.integrate.utils import StatFileHandler
 
 io_manager = IOManager("[CellIntegration]")
+_GLM_OUTPUT_KEYS = {"GLM_FLASH_COUNT", "GLM_TOTAL_ENERGY"}
 
 
 def _run_step(step_name, action):
@@ -138,6 +142,134 @@ def _integrate_rap(cells):
     return cells
 
 
+def _clone_cells_for_worker(cells):
+    return copy.deepcopy(cells)
+
+
+def _stringify_cell_id(cell):
+    cell_id = cell.get("id")
+    if cell_id is None:
+        return None
+    return str(cell_id)
+
+
+def _extract_patch_for_keys(worker_cells, owned_keys):
+    patch = {}
+    for cell in worker_cells:
+        cell_id = _stringify_cell_id(cell)
+        if cell_id is None:
+            continue
+
+        props = cell.get("properties", {})
+        delta = {key: copy.deepcopy(props[key]) for key in owned_keys if key in props}
+        if delta:
+            patch[cell_id] = delta
+
+    return patch
+
+
+def _merge_property_patch(result_cells, patch):
+    if not patch:
+        return result_cells
+
+    cell_index = {}
+    for cell in result_cells:
+        cell_id = _stringify_cell_id(cell)
+        if cell_id is not None:
+            cell_index[cell_id] = cell
+
+    for cell_id, delta in patch.items():
+        target_cell = cell_index.get(cell_id)
+        if target_cell is None:
+            io_manager.write_warning(f"Worker patch returned unknown cell id {cell_id}, ignoring")
+            continue
+
+        target_props = target_cell.setdefault("properties", {})
+        for key, value in delta.items():
+            target_props[key] = copy.deepcopy(value)
+
+    return result_cells
+
+
+def _stats_owned_keys():
+    return {config["key"] for config in get_datasets_config()}
+
+
+def _support_owned_keys():
+    return set(PROBSEVERE_FIELD_MAP.keys()) | set(_GLM_OUTPUT_KEYS) | set(get_rap_output_roots())
+
+
+def _run_enrichment_serial(integrator, cells):
+    result_cells = cells
+    result_cells = _integrate_dataset_groups(integrator, result_cells)
+    result_cells = _integrate_azshear(integrator, result_cells)
+    result_cells = _integrate_probsevere(integrator, result_cells)
+    result_cells = _integrate_glm(result_cells)
+    result_cells = _integrate_rap(result_cells)
+    return result_cells
+
+
+def _run_parallel_enrichment(integrator, cells):
+    if not cells:
+        return cells
+
+    stats_keys = _stats_owned_keys()
+    support_keys = _support_owned_keys()
+
+    def run_stats_worker():
+        worker_cells = _clone_cells_for_worker(cells)
+        worker_result = _run_step(
+            "Integration - Worker Stats",
+            lambda: _integrate_dataset_groups(integrator, worker_cells),
+        )
+        return _extract_patch_for_keys(worker_result, stats_keys)
+
+    def run_azshear_worker():
+        worker_cells = _clone_cells_for_worker(cells)
+        worker_result = _run_step(
+            "Integration - Worker AzShear",
+            lambda: _integrate_azshear(integrator, worker_cells),
+        )
+        return _extract_patch_for_keys(worker_result, {"azshear"})
+
+    def run_support_worker():
+        worker_cells = _clone_cells_for_worker(cells)
+
+        def _run():
+            staged_cells = _integrate_probsevere(integrator, worker_cells)
+            staged_cells = _integrate_glm(staged_cells)
+            return _integrate_rap(staged_cells)
+
+        worker_result = _run_step("Integration - Worker Support", _run)
+        return _extract_patch_for_keys(worker_result, support_keys)
+
+    future_order = ["stats", "azshear", "support"]
+    patches = {name: {} for name in future_order}
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            "stats": executor.submit(run_stats_worker),
+            "azshear": executor.submit(run_azshear_worker),
+            "support": executor.submit(run_support_worker),
+        }
+
+        for worker_name in future_order:
+            try:
+                patches[worker_name] = futures[worker_name].result()
+                io_manager.write_debug(f"[{worker_name}] worker completed")
+            except Exception as exc:
+                io_manager.write_error(f"[{worker_name}] worker failed: {exc}")
+                patches[worker_name] = {}
+
+    def _merge_all():
+        merged_cells = cells
+        for worker_name in future_order:
+            merged_cells = _merge_property_patch(merged_cells, patches[worker_name])
+        return merged_cells
+
+    return _run_step("Integration - Merge", _merge_all)
+
+
 def _run_ctam_if_enabled(cells, timestamp, disable_ctam):
     if disable_ctam:
         io_manager.write_info("CTAM module execution disabled via command-line flag")
@@ -197,13 +329,14 @@ def main(json_path=None, remove_old_cells=True, disable_ctam=False):
     cells, timestamp = handler.load_json(json_path)
     result_cells = cells
 
-    result_cells = _integrate_dataset_groups(integrator, result_cells)
-    result_cells = _integrate_azshear(integrator, result_cells)
-    result_cells = _integrate_probsevere(integrator, result_cells)
-    result_cells = _integrate_glm(result_cells)
-    result_cells = _integrate_rap(result_cells)
+    result_cells = _run_parallel_enrichment(integrator, result_cells)
     result_cells = _run_ctam_if_enabled(result_cells, timestamp, disable_ctam)
 
-    _run_step("Integration - Save", lambda: _save_cells(handler, timestamp, result_cells, json_path))
+    try:
+        _run_step("Integration - Save", lambda: _save_cells(handler, timestamp, result_cells, json_path))
+    except Exception as exc:
+        io_manager.write_error(f"Failed to save integrated stormcells to {json_path}: {exc}")
+        raise
+
     _update_history(result_cells, timestamp)
     _update_api_indexes(result_cells, remove_old_cells)

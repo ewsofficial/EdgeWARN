@@ -29,6 +29,27 @@ _UNARY_OPERATORS = {
 }
 
 
+def get_rap_output_roots(config=None):
+    """Return the top-level property keys populated by RAP integration."""
+    if config is None:
+        config = get_rap_products()
+
+    roots = set()
+
+    for product in config.get("products", []):
+        key = product.get("key") or product.get("key_template")
+        if not key:
+            continue
+        roots.add(key.split(".", 1)[0])
+
+    for derived in config.get("derived", []):
+        key = derived.get("key")
+        if key:
+            roots.add(key.split(".", 1)[0])
+
+    return roots
+
+
 def integrate_rap(storm_cells, rap_file_path, io_manager):
     """
     Integrate RAP data into storm cells.

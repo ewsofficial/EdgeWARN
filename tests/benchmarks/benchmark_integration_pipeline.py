@@ -36,7 +36,7 @@ _step_start_mem: dict[str, float] = {}
 _step_end_mem: dict[str, float] = {}
 _step_durations: dict[str, float] = {}
 
-_active_step: str | None = None
+_active_steps: set[str] = set()
 _sampler_stop = threading.Event()
 _sampler_lock = threading.Lock()
 
@@ -46,8 +46,8 @@ def _memory_sampler():
     while not _sampler_stop.is_set():
         rss_mb = _PROCESS.memory_info().rss / 1024 / 1024
         with _sampler_lock:
-            if _active_step is not None:
-                _step_samples[_active_step].append(rss_mb)
+            for step_name in _active_steps:
+                _step_samples[step_name].append(rss_mb)
         _sampler_stop.wait(_SAMPLE_INTERVAL_S)
 
 
@@ -57,14 +57,12 @@ def _memory_sampler():
 
 def _patched_run_step(step_name: str, action):
     """Replacement for pipeline._run_step that records per-step memory."""
-    global _active_step
-
     gc.collect()
     start_mem = _PROCESS.memory_info().rss / 1024 / 1024
     start_t = time.perf_counter()
 
     with _sampler_lock:
-        _active_step = step_name
+        _active_steps.add(step_name)
         _step_start_mem[step_name] = start_mem
         _step_samples[step_name] = [start_mem]
 
@@ -75,7 +73,7 @@ def _patched_run_step(step_name: str, action):
         end_mem = _PROCESS.memory_info().rss / 1024 / 1024
 
         with _sampler_lock:
-            _active_step = None
+            _active_steps.discard(step_name)
             _step_samples[step_name].append(end_mem)
             _step_end_mem[step_name] = end_mem
             _step_durations[step_name] = end_t - start_t
@@ -149,6 +147,8 @@ def run_benchmark():
     print(f"Using input file: {input_file}")
 
     gc.collect()
+    with _sampler_lock:
+        _active_steps.clear()
 
     # Start background memory sampler
     _sampler_stop.clear()
