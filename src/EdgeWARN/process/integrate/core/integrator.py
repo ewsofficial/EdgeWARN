@@ -15,6 +15,50 @@ from .subset import axis_slice_indices, extract_spatial_subset
 xr.set_options(use_new_combine_kwarg_defaults=True)
 
 
+PROBSEVERE_FIELD_MAP = {
+    "ProbSevere": "ProbSevere",
+    "ProbWind": "ProbWind",
+    "ProbHail": "ProbHail",
+    "ProbTor": "ProbTor",
+    "MLCAPE": "MLCAPE",
+    "MUCAPE": "MUCAPE",
+    "MLCIN": "MLCIN",
+    "DCAPE": "DCAPE",
+    "CAPE_M10M30": "CAPE_M10M30",
+    "LCL": "LCL",
+    "Wetbulb_0C_Hgt": "WETBULB_0C_HGT",
+    "LLLR": "LLLR",
+    "MLLR": "MLLR",
+    "EBShear": "EBSHEAR",
+    "SRH01km": "SRH01KM",
+    "SRH02km": "SRW02KM",
+    "SRW46km": "SRW46KM",
+    "MeanWind_1-3kmAGL": "MEANWIND_1-3kmAGL",
+    "LJA": "LJA",
+    "CompRef": "COMPREF",
+    "Ref10": "REF10",
+    "Ref20": "REF20",
+    "MESH": "MESH",
+    "H50_Above_0C": "H50_Above_0C",
+    "EchoTop50": "EchoTop_50",
+    "VIL": "VIL",
+    "MaxFED": "MaxFED",
+    "MaxFCD": "MaxFCD",
+    "AccumFCD": "AccumFCD",
+    "MinFlashArea": "MinFlashArea",
+    "TE@MaxFCD": "TE@MaxFCD",
+    "FlashRate": "FLASH_RATE",
+    "FlashDensity": "FLASH_DENSITY",
+    "MaxLLAz": "MAXLLAZ",
+    "p98LLAz": "P98LLAZ",
+    "p98MLAz": "P98MLAZ",
+    "MaxRC_Emiss": "MAXRC_EMISS",
+    "ICP": "ICP",
+    "PWAT": "PWAT",
+    "avg_beam_hgt": "AVG_BEAM_HGT",
+}
+
+
 class StormCellIntegrator:
     def __init__(self, io_manager):
         self.io_manager = io_manager
@@ -213,49 +257,6 @@ class StormCellIntegrator:
             for f in features
         }
 
-        field_map = {
-            "ProbSevere": "ProbSevere",
-            "ProbWind": "ProbWind",
-            "ProbHail": "ProbHail",
-            "ProbTor": "ProbTor",
-            "MLCAPE": "MLCAPE",
-            "MUCAPE": "MUCAPE",
-            "MLCIN": "MLCIN",
-            "DCAPE": "DCAPE",
-            "CAPE_M10M30": "CAPE_M10M30",
-            "LCL": "LCL",
-            "Wetbulb_0C_Hgt": "WETBULB_0C_HGT",
-            "LLLR": "LLLR",
-            "MLLR": "MLLR",
-            "EBShear": "EBSHEAR",
-            "SRH01km": "SRH01KM",
-            "SRH02km": "SRW02KM",
-            "SRW46km": "SRW46KM",
-            "MeanWind_1-3kmAGL": "MEANWIND_1-3kmAGL",
-            "LJA": "LJA",
-            "CompRef": "COMPREF",
-            "Ref10": "REF10",
-            "Ref20": "REF20",
-            "MESH": "MESH",
-            "H50_Above_0C": "H50_Above_0C",
-            "EchoTop50": "EchoTop_50",
-            "VIL": "VIL",
-            "MaxFED": "MaxFED",
-            "MaxFCD": "MaxFCD",
-            "AccumFCD": "AccumFCD",
-            "MinFlashArea": "MinFlashArea",
-            "TE@MaxFCD": "TE@MaxFCD",
-            "FlashRate": "FLASH_RATE",
-            "FlashDensity": "FLASH_DENSITY",
-            "MaxLLAz": "MAXLLAZ",
-            "p98LLAz": "P98LLAZ",
-            "p98MLAz": "P98MLAZ",
-            "MaxRC_Emiss": "MAXRC_EMISS",
-            "ICP": "ICP",
-            "PWAT": "PWAT",
-            "avg_beam_hgt": "AVG_BEAM_HGT",
-        }
-
         for cell in storm_cells:
             cell_id = str(cell.get("id"))
 
@@ -266,7 +267,7 @@ class StormCellIntegrator:
             if not match:
                 continue
 
-            for target_key, source_key in field_map.items():
+            for target_key, source_key in PROBSEVERE_FIELD_MAP.items():
                 try:
                     cell["properties"][target_key] = float(match.get(source_key, 0))
                 except (TypeError, ValueError):

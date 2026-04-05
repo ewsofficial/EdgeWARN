@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 
 import numpy as np
 import xarray as xr
@@ -43,8 +45,22 @@ class StatFileHandler:
 
     def write_json(self, data, filepath):
         self.io_manager.write_debug(f"Writing to JSON file {filepath}")
-        with open(filepath, "w") as f:
-            json.dump(data, f, indent=4, default=str)
+        target_path = os.fspath(filepath)
+        target_dir = os.path.dirname(target_path) or "."
+        temp_path = None
+
+        try:
+            with tempfile.NamedTemporaryFile("w", dir=target_dir, delete=False) as f:
+                temp_path = f.name
+                json.dump(data, f, indent=4, default=str)
+                f.flush()
+                os.fsync(f.fileno())
+
+            os.replace(temp_path, target_path)
+        except Exception:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
 
     def find_timestamp(self, filepath):
         return extract_timestamp_from_filepath(
