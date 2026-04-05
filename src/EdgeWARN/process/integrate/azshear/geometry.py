@@ -147,17 +147,23 @@ def build_component_geometry(component, ref_lat, ref_lon):
     if component is None:
         return None
 
-    component_mask = component.get("_component_mask")
-    lat_grid = component.get("_lat_grid")
-    lon_grid = component.get("_lon_grid")
     lat_spacing_km = component.get("_lat_spacing_km")
     lon_spacing_km = component.get("_lon_spacing_km")
 
-    if component_mask is None or lat_grid is None or lon_grid is None:
-        return None
+    pixel_lats = component.get("_pixel_lats")
+    pixel_lons = component.get("_pixel_lons")
+    if pixel_lats is not None and pixel_lons is not None:
+        comp_lats = np.asarray(pixel_lats, dtype=float)
+        comp_lons = np.asarray(pixel_lons, dtype=float)
+    else:
+        component_mask = component.get("_component_mask")
+        lat_grid = component.get("_lat_grid")
+        lon_grid = component.get("_lon_grid")
+        if component_mask is None or lat_grid is None or lon_grid is None:
+            return None
+        comp_lats = np.asarray(lat_grid[component_mask], dtype=float)
+        comp_lons = np.asarray(lon_grid[component_mask], dtype=float)
 
-    comp_lats = np.asarray(lat_grid[component_mask], dtype=float)
-    comp_lons = np.asarray(lon_grid[component_mask], dtype=float)
     if comp_lats.size == 0 or comp_lons.size == 0:
         return None
 

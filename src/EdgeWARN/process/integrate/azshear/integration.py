@@ -183,6 +183,14 @@ def _build_search_polygons(raw_polys):
 
 
 def _candidate_pixel_arrays(candidate):
+    pixel_lats = candidate.get("_pixel_lats")
+    pixel_lons = candidate.get("_pixel_lons")
+    if pixel_lats is not None and pixel_lons is not None:
+        comp_lats = np.asarray(pixel_lats, dtype=float)
+        comp_lons = np.asarray(pixel_lons, dtype=float)
+        finite = np.isfinite(comp_lats) & np.isfinite(comp_lons)
+        return comp_lats[finite], comp_lons[finite]
+
     component_mask = candidate.get("_component_mask")
     lat_grid = candidate.get("_lat_grid")
     lon_grid = candidate.get("_lon_grid")
@@ -196,13 +204,60 @@ def _candidate_pixel_arrays(candidate):
 
 
 def _candidate_pixel_signature(candidate):
+    cached_signature = candidate.get("_pixel_signature")
+    if cached_signature is not None:
+        return cached_signature
+
     comp_lats, comp_lons = _candidate_pixel_arrays(candidate)
     if comp_lats.size == 0 or comp_lons.size == 0:
-        return frozenset()
+        signature = frozenset()
+        candidate["_pixel_signature"] = signature
+        return signature
 
     lat_vals = np.round(comp_lats, 4)
     lon_vals = np.round(comp_lons, 4)
-    return frozenset(zip(lat_vals.tolist(), lon_vals.tolist()))
+    signature = frozenset(zip(lat_vals.tolist(), lon_vals.tolist()))
+    candidate["_pixel_signature"] = signature
+    return signature
+
+
+def _candidate_pixel_bounds(candidate):
+    bounds = candidate.get("_pixel_bbox")
+    if bounds is not None:
+        return bounds
+
+    comp_lats, comp_lons = _candidate_pixel_arrays(candidate)
+    if comp_lats.size == 0 or comp_lons.size == 0:
+        return None
+
+    bounds = (
+        float(np.nanmin(comp_lons)),
+        float(np.nanmin(comp_lats)),
+        float(np.nanmax(comp_lons)),
+        float(np.nanmax(comp_lats)),
+    )
+    candidate["_pixel_bbox"] = bounds
+    return bounds
+
+
+def _bounds_overlap(bounds_a, bounds_b):
+    if bounds_a is None or bounds_b is None:
+        return True
+
+    return not (
+        bounds_a[2] < bounds_b[0]
+        or bounds_b[2] < bounds_a[0]
+        or bounds_a[3] < bounds_b[1]
+        or bounds_b[3] < bounds_a[1]
+    )
+
+
+def _record_signature(record):
+    signature = record.get("signature")
+    if signature is None:
+        signature = _candidate_pixel_signature(record["candidate"])
+        record["signature"] = signature
+    return signature
 
 
 def _candidate_overlap_fraction(signature_a, signature_b):
@@ -231,7 +286,10 @@ def _candidate_records_match(record_a, record_b):
     if record_a["cell_index"] == record_b["cell_index"]:
         return False
 
-    overlap_fraction = _candidate_overlap_fraction(record_a["signature"], record_b["signature"])
+    if not _bounds_overlap(record_a.get("bounds"), record_b.get("bounds")):
+        return False
+
+    overlap_fraction = _candidate_overlap_fraction(_record_signature(record_a), _record_signature(record_b))
     if overlap_fraction >= 0.6:
         return True
 
@@ -286,6 +344,9 @@ def _group_candidate_records(candidate_records):
 
 def _candidate_overlap_area_km2(candidate, poly):
     if poly is None:
+        return 0.0
+
+    if not _bounds_overlap(_candidate_pixel_bounds(candidate), poly.bounds):
         return 0.0
 
     comp_lats, comp_lons = _candidate_pixel_arrays(candidate)
@@ -389,7 +450,7 @@ def _assign_owned_candidates(candidate_map, owner_polygons):
                 {
                     "cell_index": cell_index,
                     "candidate": candidate,
-                    "signature": _candidate_pixel_signature(candidate),
+                    "bounds": _candidate_pixel_bounds(candidate),
                 }
             )
 

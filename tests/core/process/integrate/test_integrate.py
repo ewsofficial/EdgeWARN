@@ -7,6 +7,7 @@ import util.file as fs
 from unittest.mock import MagicMock
 from EdgeWARN.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.process.integrate.azshear.integration import _build_search_polygons, _open_azshear_dataset
+from EdgeWARN.process.integrate.azshear.metrics import compute_component_metrics
 from EdgeWARN.process.integrate.geometry.cell_polygon import StormIntegrationUtils
 
 @pytest.fixture
@@ -843,3 +844,39 @@ def test_open_azshear_dataset_uses_xarray_for_non_grib(monkeypatch):
     assert is_grib is False
     assert calls["fast"] == 0
     assert calls["xarray"] == 1
+
+
+def test_compute_component_metrics_uses_compact_pixel_storage():
+    values = np.array(
+        [
+            [0.0, 8.4, 8.7],
+            [0.0, 9.1, 8.9],
+            [0.0, 0.0, 0.0],
+        ]
+    )
+    component_mask = values >= 8.0
+    lat_grid = np.array(
+        [
+            [30.0, 30.0, 30.0],
+            [30.1, 30.1, 30.1],
+            [30.2, 30.2, 30.2],
+        ]
+    )
+    lon_grid = np.array(
+        [
+            [-96.0, -95.9, -95.8],
+            [-96.0, -95.9, -95.8],
+            [-96.0, -95.9, -95.8],
+        ]
+    )
+
+    metrics = compute_component_metrics(component_mask, values, lat_grid, lon_grid, 1.0, 1.0, 1.0)
+
+    assert metrics is not None
+    assert metrics["pixel_count"] == 4
+    assert metrics["_pixel_lats"].shape == (4,)
+    assert metrics["_pixel_lons"].shape == (4,)
+    assert metrics["_pixel_bbox"] == (-95.9, 30.0, -95.8, 30.1)
+    assert "_component_mask" not in metrics
+    assert "_lat_grid" not in metrics
+    assert "_lon_grid" not in metrics
