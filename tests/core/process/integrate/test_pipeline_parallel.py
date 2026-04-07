@@ -80,6 +80,18 @@ def test_parallel_enrichment_matches_serial_output(sample_cells):
     assert parallel_result[0]["properties"]["existing"] == "keep"
     assert parallel_result[0]["properties"]["wind_field"]["legacy"] == 1
     assert parallel_result[0]["properties"]["wind_field"]["u850"] == 10.0
+    assert "azshear" not in parallel_result[0]["properties"]
+
+
+def test_azshear_support_integration_disabled_bypasses_worker(sample_cells):
+    integrator = MagicMock()
+
+    with patch.object(pipeline, "_AZSHEAR_SUPPORT_ENABLED", False), \
+         patch.object(pipeline, "_run_step", side_effect=lambda _name, action: action()):
+        result = pipeline._integrate_azshear(integrator, copy.deepcopy(sample_cells))
+
+    assert result == sample_cells
+    integrator.integrate_azshear_features.assert_not_called()
 
 
 def test_parallel_enrichment_ignores_unknown_patch_cell(sample_cells):
