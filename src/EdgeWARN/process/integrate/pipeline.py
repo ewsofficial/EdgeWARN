@@ -17,6 +17,7 @@ from EdgeWARN.process.integrate.utils import StatFileHandler
 
 io_manager = IOManager("[CellIntegration]")
 _GLM_OUTPUT_KEYS = {"GLM_FLASH_COUNT", "GLM_TOTAL_ENERGY"}
+_AZSHEAR_SUPPORT_ENABLED = False
 
 
 def _run_step(step_name, action):
@@ -63,6 +64,10 @@ def _integrate_dataset_groups(integrator, cells):
 
 
 def _integrate_azshear(integrator, cells):
+    if not _AZSHEAR_SUPPORT_ENABLED:
+        io_manager.write_info("AzShear support feature integration disabled")
+        return cells
+
     try:
         latest_low_files = fs.latest_files(fs.MRMS_AZSHEARLOW_DIR, 1)
         latest_mid_files = fs.latest_files(fs.MRMS_AZSHEARMID_DIR, 1)
@@ -202,7 +207,8 @@ def _support_owned_keys():
 def _run_enrichment_serial(integrator, cells):
     result_cells = cells
     result_cells = _integrate_dataset_groups(integrator, result_cells)
-    result_cells = _integrate_azshear(integrator, result_cells)
+    if _AZSHEAR_SUPPORT_ENABLED:
+        result_cells = _integrate_azshear(integrator, result_cells)
     result_cells = _integrate_probsevere(integrator, result_cells)
     result_cells = _integrate_glm(result_cells)
     result_cells = _integrate_rap(result_cells)
@@ -243,15 +249,18 @@ def _run_parallel_enrichment(integrator, cells):
         worker_result = _run_step("Integration - Worker Support", _run)
         return _extract_patch_for_keys(worker_result, support_keys)
 
-    future_order = ["stats", "azshear", "support"]
+    future_order = ["stats", "support"]
+    if _AZSHEAR_SUPPORT_ENABLED:
+        future_order.insert(1, "azshear")
     patches = {name: {} for name in future_order}
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=len(future_order)) as executor:
         futures = {
             "stats": executor.submit(run_stats_worker),
-            "azshear": executor.submit(run_azshear_worker),
             "support": executor.submit(run_support_worker),
         }
+        if _AZSHEAR_SUPPORT_ENABLED:
+            futures["azshear"] = executor.submit(run_azshear_worker)
 
         for worker_name in future_order:
             try:
