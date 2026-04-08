@@ -70,6 +70,7 @@ const GUI_SUBDIRS = [
   'EchoTop30',
   'QPE_01H',
   'PrecipRate',
+  'VIL',
   'ProbSevere',
   'FLASH',
   'VILDensity',

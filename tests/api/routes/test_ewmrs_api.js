@@ -81,6 +81,12 @@ describe('GET /renders/get-items', () => {
         expect(res.body).not.toContain('NoProduct');
     });
 
+    it('includes VIL when the product directory exists', async () => {
+        await fs.promises.mkdir(path.join(tempDir, 'gui', 'VIL'));
+        const res = await request(app).get('/renders/get-items').expect(200);
+        expect(res.body).toContain('VIL');
+    });
+
     it('returns empty array when no products exist', async () => {
         const emptyDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ewmrs-empty-'));
         const emptyApp = createApp(emptyDir);
@@ -185,6 +191,18 @@ describe('GET /renders/download', () => {
     it('returns 404 for unknown product', async () => {
         const res = await request(app).get('/renders/download?product=NoSuchProduct&timestamp=20260317-200000').expect(404);
         expect(res.body.error).toContain('Unknown');
+    });
+
+    it('serves VIL files using the MRMS_VIL prefix', async () => {
+        const vilDir = path.join(tempDir, 'gui', 'VIL');
+        await fs.promises.mkdir(vilDir);
+        await fs.promises.writeFile(path.join(vilDir, 'MRMS_VIL_20260317-200000.png'), 'fake png');
+
+        const res = await request(app)
+            .get('/renders/download?product=VIL&timestamp=20260317-200000')
+            .expect(200);
+
+        expect(res.headers['content-type']).toContain('image/png');
     });
 
     it('returns 404 when file does not exist', async () => {

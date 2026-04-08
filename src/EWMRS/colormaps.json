@@ -180,6 +180,35 @@
                 {"value": 15, "rgb": [255, 255, 255]},
                 {"value": 20, "rgb": [0, 255, 255]}
             ]
+        },
+        {
+            "name": "VIL",
+            "description": "Vertically integrated liquid/ice",
+            "type": "VIL/VII",
+            "units": "kg/m^2",
+            "interpolate": true,
+            "range": [0, 70],
+            "thresholds":[
+                {"value": 0, "rgb": [91, 236, 237]},
+                {"value": 1, "rgb": [70, 160, 248]},
+                {"value": 2, "rgb": [251, 100, 49]},
+                {"value": 3, "rgb": [100, 100, 50]},
+                {"value": 4, "rgb": [100, 100, 39]},
+                {"value": 5, "rgb": [101, 100, 28]},
+                {"value": 6, "rgb": [61, 100, 50]},
+                {"value": 7, "rgb": [51, 100, 44]},
+                {"value": 8, "rgb": [35, 100, 48]},
+                {"value": 10, "rgb": [0, 100, 47]},
+                {"value": 12, "rgb": [0, 100, 35]},
+                {"value": 15, "rgb": [297, 100, 50]},
+                {"value": 18, "rgb": [284, 67, 60]},
+                {"value": 25, "rgb": [278, 56, 42]},
+                {"value": 30, "rgb": [0, 0, 100]},
+                {"value": 40, "rgb": [0, 0, 78]},
+                {"value": 50, "rgb": [0, 0, 63]},
+                {"value": 60, "rgb": [0, 0, 50]},
+                {"value": 70, "rgb": [0, 0, 25]}
+            ]
         }
     ]
 }]

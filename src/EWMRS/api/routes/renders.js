@@ -14,6 +14,7 @@ const PRODUCT_MAPPING = {
   'RefM5C': 'MRMS_ReflectivityAtM5C',
   'RefM15C': 'MRMS_ReflectivityAtM15C',
   'PrecipRate': 'MRMS_PrecipRate',
+  'VIL': 'MRMS_VIL',
   'VILDensity': 'MRMS_VILDensity',
   'QPE_01H': 'MRMS_QPE',
   'VII': 'MRMS_VII',
