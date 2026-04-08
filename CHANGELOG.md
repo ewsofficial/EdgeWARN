@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.0.2] - 2026-03-24
+## [2.1.0] - 2026-04-07
 
 ### Fixed
 - Fix dataset integration returning zeroes

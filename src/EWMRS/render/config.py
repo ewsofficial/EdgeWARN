@@ -63,8 +63,8 @@ def get_file_list():
         {
             "name": "MRMS_VILDensity",
             "colormap_key": "VILDensity",
-            "filepath": fs.MRMS_VIL_DIR,
-            "outdir": fs.GUI_VIL_DIR
+            "filepath": fs.MRMS_DVIL_DIR,
+            "outdir": fs.GUI_VILD_DIR
         },
         {
             "name": "MRMS_QPE",
@@ -73,8 +73,14 @@ def get_file_list():
             "outdir": fs.GUI_QPE_DIR
         },
         {
+            "name": "MRMS_VIL",
+            "colormap_key": "VIL",
+            "filepath": fs.MRMS_VIL_DIR,
+            "outdir": fs.GUI_VIL_DIR
+        }
+        {
             "name": "MRMS_VII",
-            "colormap_key": "VILDensity",
+            "colormap_key": "VIL",
             "filepath": fs.MRMS_VII_DIR,
             "outdir": fs.GUI_VII_DIR
         },
