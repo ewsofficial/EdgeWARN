@@ -77,7 +77,7 @@ def get_file_list():
             "colormap_key": "VIL",
             "filepath": fs.MRMS_VIL_DIR,
             "outdir": fs.GUI_VIL_DIR
-        }
+        },
         {
             "name": "MRMS_VII",
             "colormap_key": "VIL",

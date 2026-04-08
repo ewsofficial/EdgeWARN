@@ -57,7 +57,7 @@ class MorphoWindModule(AnalysisModule):
             vil_density = vil / echotop_18
             
         # Freezing Level Correction (Gaussian Smoothed)
-        # Higher FL = deeper warm layer = more evaporative potential = lower VIL threshold
+        # Higher FL = deeper warm layer = more evaporative potential = lower VIL density threshold
         fl_correction = 0.0
         fl_height = None
         if environment and "freezing_level_height" in environment:
