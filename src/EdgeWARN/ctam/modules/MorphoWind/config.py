@@ -46,8 +46,8 @@ MB_ECHOTOP_SIGMA = 2.0
 # Rate of Change Thresholds (per 5 minutes approx)
 # Values below these (negative) indicate rapid collapse.
 
-# VIL Density Collapse Rate (g/m^3 per 5 min)
-# Example: -1.5 means density dropping by 1.5 g/m^3
+# VIL Collapse Rate (kg/m^2 per 5 min)
+# Example: -1.5 means VIL dropping by 1.5 kg/m^2
 COLLAPSE_VIL_RATE_THRESHOLD = -1.0
 
 # Echo Top Collapse Rate (km per 5 min)
@@ -62,7 +62,7 @@ COLLAPSE_ET_RATE_THRESHOLD = -1.5
 # P(correction) = 0.5 * (1 + erf((FL - FL_MEAN) / (FL_SIGMA * sqrt(2))))
 FL_MEAN = 4.0    # Reference freezing level (km) - Standard Mid-Latitude
 FL_SIGMA = 1.5   # Transition width (km)
-FL_MAX_CORRECTION = 1.0  # Maximum VIL mean reduction at high FL (g/m³)
+FL_MAX_CORRECTION = 1.0  # Maximum VIL density mean reduction at high FL (g/m^3)
 
 # Dewpoint Depression Correction (Dry Air Microburst Enhancement)
 # Higher depression = drier sub-cloud layer = stronger evaporative cooling
@@ -70,7 +70,7 @@ FL_MAX_CORRECTION = 1.0  # Maximum VIL mean reduction at high FL (g/m³)
 # DD_SIGMA: Controls how quickly correction ramps up
 DD_MEAN = 12.0   # Dewpoint depression (°C) where P(correction) = 0.5
 DD_SIGMA = 5.0   # Transition width (°C)
-DD_MAX_CORRECTION = 1.0  # Maximum VIL mean reduction for very dry air (g/m³) 
+DD_MAX_CORRECTION = 1.0  # Maximum VIL density mean reduction for very dry air (g/m^3)
 
 # --- Bookend Vortex Logic ---
 BOOKEND_VORTEX_SHEAR_THRESHOLD = 5.0 # High shear requirement

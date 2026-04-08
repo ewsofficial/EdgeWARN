@@ -45,7 +45,7 @@ MB_ECHOTOP_SIGMA = 2.0         # Echo Top sigma
 
 ### Physics Triggers
 ```python
-COLLAPSE_VIL_RATE_THRESHOLD = -1.0  # VIL density collapse rate (g/m³ per 5 min)
+COLLAPSE_VIL_RATE_THRESHOLD = -1.0  # VIL collapse rate (kg/m^2 per 5 min)
 COLLAPSE_ET_RATE_THRESHOLD = -1.5   # Echo Top collapse rate (km per 5 min)
 
 BOOKEND_VORTEX_SHEAR_THRESHOLD = 5.0
@@ -62,7 +62,7 @@ The module extracts and calculates key morphological and physical features:
 1. **Morphology**: Solidity, aspect ratio, rear inflow notch depth/bearing
 2. **Kinematics**: Azimuthal shear, storm motion
 3. **Dynamics**: VIL density, echo top height
-4. **Temporal**: VIL/echo top collapse rates
+4. **Temporal**: VIL and echo top collapse rates
 5. **Environment**: Freezing level height, dewpoint depression
 
 ### Scoring System
@@ -77,7 +77,7 @@ def _gaussian_score(self, value, mean, sigma, invert=False):
 
 ### Physics Triggers
 
-1. **Collapse Detection**: Rapid decreases in VIL density or echo top height
+1. **Collapse Detection**: Rapid decreases in VIL or echo top height
 2. **Rear Inflow Notch**: Kinematic verification based on storm motion
 3. **Bookend Vortex**: High shear, linear, simple structures
 

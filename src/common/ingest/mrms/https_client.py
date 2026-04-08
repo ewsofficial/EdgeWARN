@@ -63,14 +63,10 @@ class HttpsFileFinder:
         # PrecipRate_00.00 -> PrecipRate
         # RadarOnly_QPE_01H_00.00 -> RadarOnly_QPE_01H
         # MergedAzShear_0-2kmAGL_00.50 -> MergedAzShear_0-2kmAGL
-        # VIL_Density_00.50 -> VIL_Density (Wait, index had LVL3_HighResVIL? need to verify) -> No, index has "VILDensity" maybe? 
-        # Actually checking index of /2D/: 
-        # MergedAzShear_0-2kmAGL/ exist
-        # MESH/ exist
-        # PrecipRate/ exist
-        # RadarOnly_QPE_01H/ exist
-        # VIL_Density ?? Checking index again... Not seeing VIL_Density directly. 
-        # Saw: LVL3_HighResVIL/
+        # VIL_Density_00.50 -> VIL_Density
+        # VIL_00.50 -> VIL
+        # The MRMS HTTPS index contains distinct VIL/, VIL_Density/, and
+        # LVL3_HighResVIL/ directories, so keep these products separate.
         
         # Let's map explicitly based on standard MRMS naming conventions
         # Usage instructions: add to this map if NCEP structure changes
@@ -86,7 +82,8 @@ class HttpsFileFinder:
             "RadarOnly_QPE_01H_00.00": "RadarOnly_QPE_01H",
             "MergedAzShear_0-2kmAGL_00.50": "MergedAzShear_0-2kmAGL",
             "MergedAzShear_3-6kmAGL_00.50": "MergedAzShear_3-6kmAGL",
-            "VIL_Density_00.50": "VIL_Density", # Warning: Verify
+            "VIL_Density_00.50": "VIL_Density",
+            "VIL_00.50": "VIL",
             "MergedRhoHV_00.50": "MergedRhoHV",
             "PrecipFlag_00.00": "PrecipFlag",
             "MergedReflectivityAtLowestAltitude_00.50": "MergedReflectivityAtLowestAltitude",
