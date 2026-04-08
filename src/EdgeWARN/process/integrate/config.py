@@ -200,23 +200,27 @@ def get_rap_products():
             {
                 "filter": {"typeOfLevel": "heightAboveGround", "level": 10},
                 "var": "u10",
+                "var_aliases": ["u10", "10u", "u"],
                 "key": "u10m"
             },
             {
                 "filter": {"typeOfLevel": "heightAboveGround", "level": 10},
                 "var": "v10",
+                "var_aliases": ["v10", "10v", "v"],
                 "key": "v10m"
             },
             # === Surface 2m ===
             {
                 "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
                 "var": "t2m",
+                "var_aliases": ["t2m", "2t", "t"],
                 "key": "temp_2m",
                 "transform": "kelvin_to_celsius"
             },
             {
                 "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
                 "var": "d2m",
+                "var_aliases": ["d2m", "2d", "dpt"],
                 "key": "dewpoint_2m",
                 "transform": "kelvin_to_celsius"
             },
