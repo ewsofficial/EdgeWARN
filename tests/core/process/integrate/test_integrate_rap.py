@@ -3,6 +3,7 @@ import numpy as np
 import xarray as xr
 from unittest.mock import MagicMock, patch
 from EdgeWARN.process.integrate.integrate_rap import integrate_rap
+from EdgeWARN.process.integrate.config import get_rap_products
 
 
 @pytest.fixture
@@ -202,3 +203,16 @@ def test_safe_eval_handles_missing_input_value(mock_io_manager, storm_cells):
         results = integrate_rap(storm_cells, "dummy_path.grib2", mock_io_manager)
 
     assert results[0]["properties"]["dewpoint_depression"] is None
+
+
+def test_get_rap_products_includes_surface_short_name_aliases():
+    products_by_key = {
+        product["key"]: product
+        for product in get_rap_products()["products"]
+        if "key" in product
+    }
+
+    assert products_by_key["u10m"]["var_aliases"] == ["u10", "10u", "u"]
+    assert products_by_key["v10m"]["var_aliases"] == ["v10", "10v", "v"]
+    assert products_by_key["temp_2m"]["var_aliases"] == ["t2m", "2t", "t"]
+    assert products_by_key["dewpoint_2m"]["var_aliases"] == ["d2m", "2d", "dpt"]
