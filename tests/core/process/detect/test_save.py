@@ -1,8 +1,23 @@
 import pytest
 import numpy as np
 import xarray as xr
+import types
+import sys
 from unittest.mock import MagicMock
 from EdgeWARN.process.detect.tools.save import CellDataSaver
+
+
+@pytest.fixture(autouse=True)
+def stub_morphology_engine(monkeypatch):
+    morphology_module = types.ModuleType("EdgeWARN.process.detect.tools.morphology")
+
+    class MorphologyEngine:
+        @staticmethod
+        def process_cell(mask_slice, refl_slice):
+            return {}
+
+    morphology_module.MorphologyEngine = MorphologyEngine
+    monkeypatch.setitem(sys.modules, "EdgeWARN.process.detect.tools.morphology", morphology_module)
 
 @pytest.fixture
 def synthetic_data():
@@ -143,3 +158,35 @@ def test_create_json_structure():
     assert output['latest_timestamp'] == "2023-01-01"
     assert output['features'][0]['id'] == 1
     assert output['product'] == "EdgeWARN Storm Cells"
+
+
+def test_polygon_and_hail_core_are_rounded_to_three_decimals():
+    lats = np.array([30.1234, 31.5678])
+    lons = np.array([260.9876, 261.5432])
+
+    radar_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), np.array([[50.0, 45.0], [40.0, 35.0]]))},
+        coords={'latitude': lats, 'longitude': lons}
+    )
+
+    polygon_grid = np.array([[1, 1], [1, 1]], dtype=np.int32)
+    expanded_ds = xr.Dataset({'PolygonID': (('latitude', 'longitude'), polygon_grid)})
+
+    preciptype_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), np.array([[6.0, 6.0], [6.0, 6.0]]))},
+        coords={'latitude': lats, 'longitude': lons}
+    )
+
+    bboxes = {1: [[30.12349, 260.98764], [30.12349, 261.54326], [31.56789, 261.54326], [31.56789, 260.98764]]}
+
+    saver = CellDataSaver(bboxes, radar_ds, expanded_ds, expanded_ds, ps_ds=None, preciptype_ds=preciptype_ds)
+    entry = saver.create_entry()[0]
+
+    assert entry['bbox'] == [
+        [30.123, 260.988],
+        [30.123, 261.543],
+        [31.568, 261.543],
+        [31.568, 260.988],
+    ]
+    assert all(len(str(point[0]).split('.')[-1]) <= 3 for point in entry['hail_core'])
+    assert all(len(str(point[1]).split('.')[-1]) <= 3 for point in entry['hail_core'])
