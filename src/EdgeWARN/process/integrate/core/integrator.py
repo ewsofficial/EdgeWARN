@@ -8,7 +8,7 @@ from util.grib_loader import load_grib_fast
 from ..integrate_azshear import integrate_azshear_features as _integrate_azshear_features
 from ..utils import StormIntegrationUtils
 from .polygon import polygon_for_dataset
-from .stats import prepare_stats_specs, reduce_stats, sanitize_masked_values
+from .stats import OUTPUT_DECIMALS, prepare_stats_specs, reduce_stats, sanitize_masked_values
 from .subset import axis_slice_indices, extract_spatial_subset
 
 # Suppress cfgrib/xarray compatibility warnings
@@ -141,7 +141,7 @@ class StormCellIntegrator:
                 if masked_vals.size == 0:
                     target[output_key] = 0
                 else:
-                    target[output_key] = float(np.nanmax(masked_vals))
+                    target[output_key] = round(float(np.nanmax(masked_vals)), OUTPUT_DECIMALS)
 
             except Exception as e:
                 self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
