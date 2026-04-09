@@ -153,6 +153,89 @@ def test_integrate_multi_stats(integrator, synthetic_dataset):
     # p90 should be close to max if the hotspot dominates, or lower if many pixels
     assert props["p90Test"] <= 100.0
     assert props["p90Test"] > 0.0
+    assert props["MeanTest"] == round(props["MeanTest"], 2)
+    assert props["p90Test"] == round(props["p90Test"], 2)
+
+
+def test_integrate_ds_via_max_rounds_to_two_decimals(integrator, tmp_path):
+    lat = np.array([30.0, 30.01, 30.02])
+    lon = np.array([-95.02, -95.01, -95.0])
+    data = np.array([
+        [1.0, 2.0, 3.0],
+        [4.0, 12.346, 6.0],
+        [7.0, 8.0, 9.0],
+    ])
+
+    ds = xr.Dataset(
+        data_vars=dict(unknown=(["latitude", "longitude"], data)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+
+    path = tmp_path / "synthetic_max_rounding.nc"
+    ds.to_netcdf(path)
+
+    cell = {
+        "id": "test_cell_max_rounding",
+        "bbox": [
+            [30.005, -95.015],
+            [30.005, -95.005],
+            [30.015, -95.005],
+            [30.015, -95.015],
+            [30.005, -95.015],
+        ],
+        "centroid": [30.01, -95.01],
+        "properties": {},
+    }
+
+    result = integrator.integrate_ds_via_max(str(path), [cell], "MaxTest")
+
+    assert result[0]["properties"]["MaxTest"] == 12.35
+
+
+def test_integrate_multi_stats_rounds_to_two_decimals(integrator, tmp_path):
+    lat = np.array([30.0, 30.01, 30.02])
+    lon = np.array([-95.02, -95.01, -95.0])
+    data = np.array([
+        [1.111, 2.222, 3.333],
+        [4.444, 5.556, 6.666],
+        [7.777, 8.888, 9.999],
+    ])
+
+    ds = xr.Dataset(
+        data_vars=dict(test_var=(["latitude", "longitude"], data)),
+        coords=dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon)),
+    )
+
+    path = tmp_path / "synthetic_multi_rounding.nc"
+    ds.to_netcdf(path)
+
+    cell = {
+        "id": "test_cell_multi_rounding",
+        "bbox": [
+            [30.005, -95.015],
+            [30.005, -95.005],
+            [30.015, -95.005],
+            [30.015, -95.015],
+            [30.005, -95.015],
+        ],
+        "centroid": [30.01, -95.01],
+        "properties": {},
+    }
+
+    result = integrator.integrate_multi_stats(
+        str(path),
+        [cell],
+        [
+            {"key": "MaxRounded", "method": "max"},
+            {"key": "MeanRounded", "method": "mean"},
+            {"key": "P90Rounded", "method": "percentile", "percentile": 90},
+        ],
+    )
+
+    props = result[0]["properties"]
+    assert props["MaxRounded"] == 5.56
+    assert props["MeanRounded"] == 5.56
+    assert props["P90Rounded"] == 5.56
 
 def test_integrate_empty_intersection(integrator, synthetic_dataset):
     """Test integration where cell is outside dataset bounds"""
