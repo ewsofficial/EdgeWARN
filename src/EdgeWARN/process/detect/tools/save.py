@@ -28,6 +28,13 @@ class CellDataSaver:
             "features": features
         }
 
+    @staticmethod
+    def __round_polygon_points(points, decimals=3):
+        return [
+            [round(float(lat), decimals), round(float(lon) % 360, decimals)]
+            for lat, lon in points
+        ]
+
 
     def __create_hailcore_polygon(self, poly_id, slice_obj, step=5):
         """
@@ -216,8 +223,8 @@ class CellDataSaver:
                 "id": int(poly_id),
                 "num_gates": int(count),
                 "centroid": centroid,
-                "bbox": [[float(pt[0]), float(pt[1]) % 360] for pt in bbox],
-                "hail_core": [[float(pt[0]), float(pt[1]) % 360] for pt in hail_core],
+                "bbox": self.__round_polygon_points(bbox),
+                "hail_core": self.__round_polygon_points(hail_core),
                 "max_refl": max_refl_val,
                 "event_type": "ACTIVE",
                 "parent_ids": [],
