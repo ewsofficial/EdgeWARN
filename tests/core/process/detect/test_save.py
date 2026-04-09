@@ -190,3 +190,25 @@ def test_polygon_and_hail_core_are_rounded_to_three_decimals():
     ]
     assert all(len(str(point[0]).split('.')[-1]) <= 3 for point in entry['hail_core'])
     assert all(len(str(point[1]).split('.')[-1]) <= 3 for point in entry['hail_core'])
+
+
+def test_centroid_is_rounded_to_three_decimals():
+    lats = np.array([30.1234, 30.5678])
+    lons = np.array([260.9876, 261.5432])
+    refl = np.array([[1.0, 2.0], [3.0, 4.0]])
+
+    radar_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), refl)},
+        coords={'latitude': lats, 'longitude': lons}
+    )
+
+    polygon_grid = np.array([[1, 1], [1, 1]], dtype=np.int32)
+    expanded_ds = xr.Dataset({'PolygonID': (('latitude', 'longitude'), polygon_grid)})
+
+    bboxes = {1: [[30.1234, 260.9876], [30.1234, 261.5432], [30.5678, 261.5432], [30.5678, 260.9876]]}
+
+    saver = CellDataSaver(bboxes, radar_ds, expanded_ds, expanded_ds, ps_ds=None, preciptype_ds=None)
+    entry = saver.create_entry()[0]
+
+    assert entry['centroid'][0] == round(entry['centroid'][0], 3)
+    assert entry['centroid'][1] == round(entry['centroid'][1], 3)
