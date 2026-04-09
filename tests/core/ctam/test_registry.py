@@ -188,5 +188,6 @@ class TestModuleRegistry:
 
         assert "StormCast" in cell_module_names
         assert "MorphoWind" in cell_module_names
+        assert "Classifier" in cell_module_names
         assert "Mesocyclone" not in cell_module_names
         assert "FLOHAR" in grid_module_names

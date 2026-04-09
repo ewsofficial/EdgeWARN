@@ -7,6 +7,7 @@ Automatically registers all available analysis modules on import.
 from ..registry import ModuleRegistry, GridModuleRegistry
 from .StormCast import StormCastModule
 from .MorphoWind import MorphoWindModule
+from .Classifier import ClassifierModule
 from .FLOHAR import FLOHARModule
 
 # Register all modules in execution order
@@ -16,10 +17,11 @@ from .FLOHAR import FLOHARModule
 ModuleRegistry.register(StormCastModule())
 ModuleRegistry.register(MorphoWindModule())
 
-# 3. Grid-based Modules
-GridModuleRegistry.register(FLOHARModule())
+# 3. Post-Analysis Modules (Cell-based)
+ModuleRegistry.register(ClassifierModule())
 
-# 4. Post-Analysis Modules
+# 4. Grid-based Modules
+GridModuleRegistry.register(FLOHARModule())
 
 # GeoMapper is a file processor, not a per-entry module, so we don't register it
 # It's accessed directly via: from EdgeWARN.ingest.nws.geomapper import process_warning
@@ -27,5 +29,6 @@ GridModuleRegistry.register(FLOHARModule())
 __all__ = [
     "StormCastModule",
     "MorphoWindModule",
+    "ClassifierModule",
     "FLOHARModule",
 ]
