@@ -1,6 +1,9 @@
 import numpy as np
 
 
+OUTPUT_DECIMALS = 2
+
+
 def prepare_stats_specs(stats_config_list):
     stats_specs = [
         (conf["key"], conf.get("method", "max"), conf.get("percentile", 90))
@@ -44,6 +47,6 @@ def reduce_stats(masked_vals, stats_specs, unique_percentiles, needs_max, needs_
             value = percentile_cache.get(percentile, 0)
         else:
             value = 0
-        result[key] = float(value)
+        result[key] = round(float(value), OUTPUT_DECIMALS)
 
     return result
