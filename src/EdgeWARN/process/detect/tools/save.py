@@ -210,7 +210,7 @@ class CellDataSaver:
                     lat_centroid = float(np.sum(lat_vals * weights) / sum_weights)
                     lon_centroid = float(np.sum(lon_vals * weights) / sum_weights)
                     lon_centroid = lon_centroid % 360
-                    centroid = (lat_centroid, lon_centroid)
+                    centroid = (round(lat_centroid, 3), round(lon_centroid, 3))
                 else:
                     centroid = (np.nan, np.nan)
             else:
