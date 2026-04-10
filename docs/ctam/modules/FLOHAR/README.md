@@ -1,6 +1,6 @@
 # FLOHAR Module
 
-FLOHAR (FLOod HAzaRds) is a CTAM Grid Module for grid-based flash flood detection using MRMS FLASH products. It operates independently of storm cells to identify flood threat regions from radar-derived rainfall and hydrologic data.
+FLOHAR (FLOod HAzaRds) is a CTAM Grid Module for grid-based flash flood detection using a reduced MRMS FLASH input set. It operates independently of storm cells to identify flood threat regions from radar-derived rainfall and hydrologic data.
 
 ## Overview
 
@@ -59,8 +59,8 @@ MAX_REGIONS = 1000                  # Maximum number of regions to return
 
 The FLOHAR algorithm computes a composite threat score by blending three pillars:
 
-1. **Rainfall Extremity**: Uses ARI (Annual Return Interval) values from MRMS FLASH products
-2. **Hydrologic Response**: Combines streamflow and soil saturation data
+1. **Rainfall Extremity**: Uses ARI max (Annual Return Interval) from MRMS FLASH products
+2. **Hydrologic Response**: Combines CREST streamflow and soil saturation data
 3. **Guidance Exceedance**: Compares FFG (Flash Flood Guidance) ratios
 
 ### Scoring Process
@@ -70,6 +70,16 @@ The FLOHAR algorithm computes a composite threat score by blending three pillars
 3. Compute composite threat score grid
 4. Threshold and extract regions
 5. Polygonize and classify severity
+
+### Runtime Inputs
+
+The reduced-input variant currently requires five aligned grids:
+
+- `ari_max`
+- `crest_streamflow`
+- `soil_sat`
+- `ffg_ratio`
+- `rqi`
 
 ### Alert Generation
 
@@ -83,7 +93,7 @@ The module generates `AlertPayload` objects for regions meeting specific severit
 ### Standalone Execution (for Testing)
 
 ```python
-from EdgeWARN.core.ctam.modules.FLOHAR.main import run_flohar
+from EdgeWARN.ctam.modules.FLOHAR.main import run_flohar
 
 result = run_flohar()
 print(f"FLOHAR processing complete: {result['metadata']}")
@@ -91,7 +101,7 @@ print(f"FLOHAR processing complete: {result['metadata']}")
 
 ### CTAM Integration
 
-The module is registered in `src/EdgeWARN/core/ctam/modules/__init__.py` and automatically included in the CTAM pipeline.
+The module is registered in `src/EdgeWARN/ctam/modules/__init__.py` and automatically included in the CTAM pipeline.
 
 ## Output Format
 
@@ -155,8 +165,7 @@ GeoJSON files are saved to the `FLASH_FLOOD_DIR` directory in the format: `floha
 
 MRMS FLASH products used:
 - CREST Streamflow
-- HP Streamflow
-- ARI (Annual Return Interval)
+- ARI Max (Annual Return Interval)
 - FFG (Flash Flood Guidance) Ratio
 - Soil Saturation
 - RQI (Radar Quality Index)

@@ -2,12 +2,12 @@
 FLOHAR Scoring Engine
 
 Vectorized numpy engine that computes per-pixel composite threat scores
-(0-100) from seven FLASH indicator grids + RQI quality control.
+(0-100) from four FLASH indicator grids + an RQI hard mask.
 
 Three pillars:
-    1. Rainfall Extremity (0.40)  — ARI-based
-    2. Hydrologic Response (0.35) — streamflow + soil saturation
-    3. Guidance Exceedance (0.25) — QPE-to-FFG ratio
+    1. Rainfall Extremity (0.25)  — ARI max
+    2. Hydrologic Response (0.45) — CREST streamflow + soil saturation
+    3. Guidance Exceedance (0.30) — QPE-to-FFG ratio
 
 Performance notes:
     - All intermediate arrays use float32 to halve memory vs float64
@@ -65,9 +65,9 @@ def _normalize_soil_sat(soil: np.ndarray) -> np.ndarray:
 def _normalize_ffg(ratio: np.ndarray) -> np.ndarray:
     """
     Piecewise FFG ratio normalization:
-        < 0.75 → 0
-        0.75 → 1.0  → ramp 0 → 0.5
-        1.0  → 2.0  → ramp 0.5 → 1.0
+        < 0.85 → 0
+        0.85 → 1.25 → ramp 0 → 0.5
+        1.25 → 2.0  → ramp 0.5 → 1.0
         ≥ 2.0       → 1.0
     """
     out = np.zeros_like(ratio, dtype=_DTYPE)
@@ -76,13 +76,13 @@ def _normalize_ffg(ratio: np.ndarray) -> np.ndarray:
     ramp_mid = np.float32(cfg.FFG_RAMP_MID)
     ramp_end = np.float32(cfg.FFG_RAMP_END)
 
-    # Segment 1: 0.75 ≤ ratio < 1.0  →  ramp 0→0.5
+    # Segment 1: 0.85 ≤ ratio < 1.25 → ramp 0→0.5
     mask1 = (ratio >= ramp_start) & (ratio < ramp_mid)
     span1 = ramp_mid - ramp_start
     if span1 > 0:
         out[mask1] = np.float32(0.5) * (ratio[mask1] - ramp_start) / span1
 
-    # Segment 2: 1.0 ≤ ratio < 2.0  →  ramp 0.5→1.0
+    # Segment 2: 1.25 ≤ ratio < 2.0 → ramp 0.5→1.0
     mask2 = (ratio >= ramp_mid) & (ratio < ramp_end)
     span2 = ramp_end - ramp_mid
     if span2 > 0:
@@ -143,8 +143,7 @@ def compute_threat_grid(
     Compute per-pixel threat scores from aligned FLASH grids.
 
     All inputs must be 2D arrays of the same shape. Sentinel values
-    (-999, -9999) and NaN are handled gracefully — weights are
-    redistributed among valid indicators.
+    (-999, -9999) and NaN are handled gracefully.
 
     Uses float32 throughout to halve memory usage vs float64.
     Applies RQI hard mask early to skip computation on invalid pixels.
@@ -185,26 +184,8 @@ def compute_threat_grid(
     # ── Pillar 1: Rainfall Extremity ────────────────────────────────
     ari_max = grids.pop("ari_max")
     ari_max_c = _mask_sentinels(ari_max)
-    ari_max_norm = _normalize_ari(ari_max_c)
+    rainfall_grid = _normalize_ari(ari_max_c)
     del ari_max, ari_max_c
-
-    ari_30m = grids.pop("ari_30m")
-    ari_30m_c = _mask_sentinels(ari_30m)
-    ari_30m_norm = _normalize_ari(ari_30m_c)
-    del ari_30m, ari_30m_c
-
-    ari_01h = grids.pop("ari_01h")
-    ari_01h_c = _mask_sentinels(ari_01h)
-    ari_01h_norm = _normalize_ari(ari_01h_c)
-    del ari_01h, ari_01h_c
-
-    indicators = [
-        (ari_max_norm, cfg.ARI_SUB_WEIGHTS["ari_max"]),
-        (ari_30m_norm, cfg.ARI_SUB_WEIGHTS["ari_30m"]),
-        (ari_01h_norm, cfg.ARI_SUB_WEIGHTS["ari_01h"]),
-    ]
-    rainfall_grid = _weighted_nanmean(indicators, shape)
-    del ari_max_norm, ari_30m_norm, ari_01h_norm
 
     # ── Pillar 2: Hydrologic Response ───────────────────────────────
     crest_streamflow = grids.pop("crest_streamflow")
@@ -212,29 +193,17 @@ def compute_threat_grid(
     crest_norm = _sigmoid(crest_c, cfg.CREST_SIGMOID["x0"], cfg.CREST_SIGMOID["k"])
     del crest_streamflow, crest_c
 
-    hp_streamflow = grids.pop("hp_streamflow")
-    hp_c = np.where(np.isin(hp_streamflow, cfg.SENTINEL_VALUES), np.float32(0.0), hp_streamflow)
-    hp_norm = _sigmoid(hp_c, cfg.HP_SIGMOID["x0"], cfg.HP_SIGMOID["k"])
-    del hp_streamflow, hp_c
-
     # Convert soil saturation from raw percentage to fraction
     soil_sat = grids.pop("soil_sat")
     soil_c = _mask_sentinels(soil_sat) / np.float32(100.0)
     del soil_sat
     soil_norm = _normalize_soil_sat(soil_c)
 
-    stream_indicators = [
-        (crest_norm, cfg.CREST_SUB_WEIGHT),
-        (hp_norm, cfg.HP_SUB_WEIGHT),
-    ]
-    streamflow_blend = _weighted_nanmean(stream_indicators, shape)
-    del crest_norm, hp_norm
-
     hydro_grid = (
-        streamflow_blend * np.float32(cfg.HYDRO_STREAMFLOW_WEIGHT)
+        crest_norm * np.float32(cfg.HYDRO_STREAMFLOW_WEIGHT)
         + soil_norm * np.float32(cfg.HYDRO_SOIL_WEIGHT)
     )
-    del streamflow_blend, soil_norm
+    del crest_norm, soil_norm
 
     # Soil saturation conditioning: boost when soil > 0.85
     soil_boost_threshold = np.float32(cfg.SOIL_BOOST_THRESHOLD)
