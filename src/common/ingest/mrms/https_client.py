@@ -58,7 +58,6 @@ class HttpsFileFinder:
         # EchoTop_30_00.50 -> EchoTop_30 (Yes)
         # FLASH_QPE_FFG01H_00.00 -> FLASH (Maybe? Checking index...) -> FLASH seems to exist
         # MESH_00.50 -> MESH
-        # WarmRainProbability_00.50 -> WarmRainProbability (Need to check if exists, or name differs)
         # NLDN_CG_005min_AvgDensity_00.00 -> NLDN_CG_005min_AvgDensity (Check)
         # PrecipRate_00.00 -> PrecipRate
         # RadarOnly_QPE_01H_00.00 -> RadarOnly_QPE_01H
@@ -76,7 +75,6 @@ class HttpsFileFinder:
             "EchoTop_30_00.50": "EchoTop_30",
             "FLASH_QPE_FFG01H_00.00": "FLASH",
             "MESH_00.50": "MESH",
-            "WarmRainProbability_00.50": "WarmRainProbability", # Verify existence
             "NLDN_CG_005min_AvgDensity_00.00": "NLDN_CG_005min_AvgDensity",
             "PrecipRate_00.00": "PrecipRate",
             "RadarOnly_QPE_01H_00.00": "RadarOnly_QPE_01H",
