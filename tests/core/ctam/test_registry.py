@@ -176,8 +176,8 @@ class TestModuleRegistry:
         assert len(ModuleRegistry._modules) == 1
         assert "module2" in ModuleRegistry._modules
 
-    def test_default_module_registration_excludes_mesocyclone(self):
-        """Test that the active CTAM registry omits Mesocyclone for now."""
+    def test_default_module_registration_includes_mesocyclone(self):
+        """Test that the active CTAM registry includes Mesocyclone as a grid module."""
         ModuleRegistry.clear()
         GridModuleRegistry.clear()
 
@@ -188,5 +188,5 @@ class TestModuleRegistry:
 
         assert "StormCast" in cell_module_names
         assert "MorphoWind" in cell_module_names
-        assert "Mesocyclone" not in cell_module_names
         assert "FLOHAR" in grid_module_names
+        assert "Mesocyclone" in grid_module_names
