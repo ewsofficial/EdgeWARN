@@ -157,12 +157,6 @@ def get_datasets_config():
             "key": "maxVII",
             "method": "max"
         },
-        {
-            "name": "WarmRainProbability",
-            "filepath": fs.MRMS_RAIN_DIR,
-            "key": "WRProb",
-            "method": "max"
-        }
     ]
 
 
