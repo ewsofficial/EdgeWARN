@@ -48,8 +48,8 @@ def test_all_zeros():
     """
     z = _zeros()
     grids = {
-        "ari_max": z.copy(), "ari_30m": z.copy(), "ari_01h": z.copy(),
-        "crest_streamflow": z.copy(), "hp_streamflow": z.copy(),
+        "ari_max": z.copy(),
+        "crest_streamflow": z.copy(),
         "soil_sat": z.copy(), "ffg_ratio": z.copy(), "rqi": _ones()
     }
     threat, r, h, f = compute_threat_grid(grids)
@@ -64,10 +64,7 @@ def test_uniform_extreme():
     """Extreme values across all indicators, with RQI=1, should score ≥ 90."""
     grids = {
         "ari_max": _make_grid(500),
-        "ari_30m": _make_grid(500),
-        "ari_01h": _make_grid(500),
         "crest_streamflow": _make_grid(10),
-        "hp_streamflow": _make_grid(10),
         "soil_sat": _make_grid(95.0),
         "ffg_ratio": _make_grid(500.0),
         "rqi": _ones(),
@@ -84,10 +81,7 @@ def test_ari_only():
     """High ARI with zero streamflow/FFG → moderate rainfall score, low others."""
     grids = {
         "ari_max": _make_grid(200),
-        "ari_30m": _make_grid(200),
-        "ari_01h": _make_grid(200),
         "crest_streamflow": _zeros(),
-        "hp_streamflow": _zeros(),
         "soil_sat": _zeros(),
         "ffg_ratio": _zeros(),
         "rqi": _ones(),
@@ -97,13 +91,33 @@ def test_ari_only():
     assert np.all(r > 0.9), f"Rainfall pillar too low: {r.min()}"
     # FFG should be 0
     assert np.all(f == 0.0)
-    # Final score should be moderate (only 40% weight from rainfall)
-    assert np.all(threat > 0)
-    assert np.all(threat < 80)
+    # Final score should stay modest with rainfall as the only strong pillar.
+    assert np.all(threat >= 25)
+    assert np.all(threat < 40)
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Test 4: FFG ratio edge cases
+# Test 4: CREST-only scenario
+# ─────────────────────────────────────────────────────────────────────
+
+def test_crest_only():
+    """High CREST flow with low rainfall/FFG should raise the hydro pillar."""
+    grids = {
+        "ari_max": _zeros(),
+        "crest_streamflow": _make_grid(8.0),
+        "soil_sat": _zeros(),
+        "ffg_ratio": _zeros(),
+        "rqi": _ones(),
+    }
+    threat, r, h, f = compute_threat_grid(grids)
+    assert np.all(r == 0.0)
+    assert np.all(h > 0.6), f"Hydro pillar too low: {h.min()}"
+    assert np.all(f == 0.0)
+    assert np.all(threat >= 25)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 5: FFG ratio edge cases
 # ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("ratio,expected", [
@@ -132,8 +146,8 @@ def test_nan_handling():
     grid[2, 2] = np.nan  # inject NaN in one pixel
 
     grids = {
-        "ari_max": grid.copy(), "ari_30m": grid.copy(), "ari_01h": grid.copy(),
-        "crest_streamflow": grid.copy(), "hp_streamflow": grid.copy(),
+        "ari_max": grid.copy(),
+        "crest_streamflow": grid.copy(),
         "soil_sat": _make_grid(50.0, shape), "ffg_ratio": grid.copy(),
         "rqi": _ones(shape)
     }
@@ -142,15 +156,15 @@ def test_nan_handling():
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Test 6: All NaN → score 0
+# Test 7: All NaN → score 0
 # ─────────────────────────────────────────────────────────────────────
 
 def test_all_nan():
     """All-NaN inputs should produce all-zero threat scores."""
     nans = _make_grid(np.nan)
     grids = {
-        "ari_max": nans.copy(), "ari_30m": nans.copy(), "ari_01h": nans.copy(),
-        "crest_streamflow": nans.copy(), "hp_streamflow": nans.copy(),
+        "ari_max": nans.copy(),
+        "crest_streamflow": nans.copy(),
         "soil_sat": nans.copy(), "ffg_ratio": nans.copy(), "rqi": nans.copy()
     }
     threat, r, h, f = compute_threat_grid(grids)
@@ -158,17 +172,14 @@ def test_all_nan():
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Test 7: Soil saturation boost
+# Test 8: Soil saturation boost
 # ─────────────────────────────────────────────────────────────────────
 
 def test_soil_saturation_boost():
     """Score should be amplified when soil_sat > 0.85."""
     base_args = dict(
         ari_max=_make_grid(50),
-        ari_30m=_make_grid(50),
-        ari_01h=_make_grid(50),
         crest_streamflow=_make_grid(2.0),
-        hp_streamflow=_make_grid(2.0),
         ffg_ratio=_make_grid(150.0), # 150% ratio
         rqi=_ones(),
     )
@@ -186,7 +197,7 @@ def test_soil_saturation_boost():
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Test 8: Severity tier boundaries
+# Test 9: Severity tier boundaries
 # ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("score,expected_tier", [
@@ -205,7 +216,7 @@ def test_severity_boundaries(score, expected_tier):
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Test 9: RQI quality control
+# Test 10: RQI quality control
 # ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("rqi_val,expected_weight", [
@@ -224,18 +235,17 @@ def test_rqi_quality_control(rqi_val, expected_weight):
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Test 10: Sentinel values treated as NaN
+# Test 11: Sentinel values treated as NaN
 # ─────────────────────────────────────────────────────────────────────
 
 def test_sentinel_handling():
     """Sentinel values (-999, -9999) should be treated as missing data."""
     shape = (3, 3)
     sentinel = _make_grid(-999.0, shape)
-    normal = _make_grid(100.0, shape)
 
     grids = {
-        "ari_max": sentinel.copy(), "ari_30m": sentinel.copy(), "ari_01h": sentinel.copy(),
-        "crest_streamflow": sentinel.copy(), "hp_streamflow": sentinel.copy(),
+        "ari_max": sentinel.copy(),
+        "crest_streamflow": sentinel.copy(),
         "soil_sat": sentinel.copy(), "ffg_ratio": sentinel.copy(),
         "rqi": _ones(shape)
     }

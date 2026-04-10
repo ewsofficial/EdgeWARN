@@ -15,29 +15,18 @@ PILLAR_WEIGHTS = {
 }
 
 # ── Pillar 1: Rainfall Extremity ────────────────────────────────────
+# Single retained rainfall proxy: ARI max
 # ARI log normalization ceiling (years)
 ARI_CEILING_YEARS = 200
 
-# Sub-weights within the rainfall pillar
-ARI_SUB_WEIGHTS = {
-    "ari_max": 0.50,
-    "ari_30m": 0.25,
-    "ari_01h": 0.25,
-}
-
 # ── Pillar 2: Hydrologic Response ───────────────────────────────────
-# Streamflow sigmoid parameters — literature-based defaults.
+# Retained streamflow proxy: CREST max unit streamflow.
 # x0 = midpoint (m³/s/km²), k = steepness
 CREST_SIGMOID = {"x0": 1.5, "k": 2.0}
-HP_SIGMOID = {"x0": 1.5, "k": 2.0}
 
 # Sub-weights within the hydrologic pillar (streamflow vs soil)
 HYDRO_STREAMFLOW_WEIGHT = 0.70
 HYDRO_SOIL_WEIGHT = 0.30
-
-# Streamflow blend sub-weights (within the streamflow portion)
-CREST_SUB_WEIGHT = 0.50
-HP_SUB_WEIGHT = 0.50
 
 # Soil saturation conditioning (confirmed 0–1 fraction from GRIB inspection)
 SOIL_SAT_LOW = 0.40    # below → 0
@@ -87,9 +76,6 @@ SENTINEL_VALUES = [-999.0, -9999.0, -999.9, -9999.9]
 GRID_DIR_MAP = {
     "crest_streamflow": "MRMS_FLASH_CREST_MAXUNIT_DIR",
     "ari_max": "MRMS_FLASH_ARIMAX_DIR",
-    "ari_30m": "MRMS_FLASH_ARI30M_DIR",
-    "ari_01h": "MRMS_FLASH_ARI01H_DIR",
-    "hp_streamflow": "MRMS_FLASH_HP_MAXUNIT_DIR",
     "soil_sat": "MRMS_FLASH_SAC_MAXSOIL_DIR",
     "ffg_ratio": "MRMS_FLASH_FFGMAX_DIR",
     "rqi": "MRMS_RQI_DIR",

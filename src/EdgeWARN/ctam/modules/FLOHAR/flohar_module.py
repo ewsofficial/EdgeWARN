@@ -181,7 +181,7 @@ class FLOHARModule(GridAnalysisModule):
         """
         Load all required FLASH GRIB files and extract 2D arrays.
 
-        Uses ThreadPoolExecutor to load all 8 GRIB files concurrently,
+        Uses ThreadPoolExecutor to load all 5 required GRIB files concurrently,
         since the bottleneck is I/O (disk reads + eccodes parsing).
 
         Returns:
