@@ -1,4 +1,5 @@
 from datetime import timezone
+from time import perf_counter
 from typing import Any, Dict
 
 from EdgeWARN.ctam.interface import GridAnalysisModule
@@ -25,6 +26,7 @@ class MesocycloneModule(GridAnalysisModule):
         return load_latest_inputs()
 
     def run(self) -> Dict[str, Any]:
+        started_at = perf_counter()
         try:
             inputs = self._load_inputs()
         except Exception as exc:
@@ -35,23 +37,56 @@ class MesocycloneModule(GridAnalysisModule):
                 "timestamp": None,
                 "attach_to_stormcells": False,
             }
+        print(f"[Mesocyclone] Input load completed in {perf_counter() - started_at:.3f}s")
 
+        stage_started_at = perf_counter()
         preprocessed = preprocess_inputs(inputs["grids"])
+        print(f"[Mesocyclone] Preprocess completed in {perf_counter() - stage_started_at:.3f}s")
         latitudes = inputs["coordinates"]["latitudes"]
         longitudes = inputs["coordinates"]["longitudes"]
+        reflectivity_latitudes = inputs["coordinates"].get("reflectivity_latitudes", latitudes)
+        reflectivity_longitudes = inputs["coordinates"].get("reflectivity_longitudes", longitudes)
 
+        stage_started_at = perf_counter()
         low_objects = detect_layer_objects(preprocessed["low"], latitudes, longitudes, "low")
         mid_objects = detect_layer_objects(preprocessed["mid"], latitudes, longitudes, "mid")
+        print(
+            f"[Mesocyclone] Detection completed in {perf_counter() - stage_started_at:.3f}s "
+            f"(low={len(low_objects)}, mid={len(mid_objects)})"
+        )
 
-        low_gated = apply_reflectivity_gate(low_objects, preprocessed["reflectivity"], latitudes, longitudes)
-        mid_gated = apply_reflectivity_gate(mid_objects, preprocessed["reflectivity"], latitudes, longitudes)
+        stage_started_at = perf_counter()
+        low_gated = apply_reflectivity_gate(
+            low_objects,
+            preprocessed["reflectivity"],
+            latitudes,
+            longitudes,
+            reflectivity_latitudes,
+            reflectivity_longitudes,
+        )
+        mid_gated = apply_reflectivity_gate(
+            mid_objects,
+            preprocessed["reflectivity"],
+            latitudes,
+            longitudes,
+            reflectivity_latitudes,
+            reflectivity_longitudes,
+        )
+        print(
+            f"[Mesocyclone] Reflectivity gating completed in {perf_counter() - stage_started_at:.3f}s "
+            f"(low={len(low_gated)}, mid={len(mid_gated)})"
+        )
 
+        stage_started_at = perf_counter()
         associated = associate_vertical(low_gated, mid_gated)
         scored = score_detections(associated)
+        print(f"[Mesocyclone] Association/scoring completed in {perf_counter() - stage_started_at:.3f}s")
 
         timestamp = inputs["timestamp"]
         timestamp = timestamp.astimezone(timezone.utc)
+        stage_started_at = perf_counter()
         tracked = self._tracker.update(scored, timestamp)
+        print(f"[Mesocyclone] Tracking completed in {perf_counter() - stage_started_at:.3f}s")
         timestamp_iso = timestamp.isoformat()
         timestamp_token = timestamp.strftime("%Y%m%d-%H%M%S")
 
@@ -69,7 +104,10 @@ class MesocycloneModule(GridAnalysisModule):
         payload = build_payload(timestamp_iso, metadata, detection_records)
         output_path = save_mesocyclone_output(timestamp_token, payload)
 
-        print(f"[Mesocyclone] Persisted {len(detection_records)} detection(s) to {output_path}")
+        print(
+            f"[Mesocyclone] Persisted {len(detection_records)} detection(s) to {output_path} "
+            f"in {perf_counter() - started_at:.3f}s total"
+        )
 
         return {
             "features": {"type": "FeatureCollection", "features": []},

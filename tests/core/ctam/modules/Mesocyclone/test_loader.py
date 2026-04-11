@@ -69,20 +69,12 @@ def test_load_latest_inputs_harmonizes_coarser_reflectivity_to_azshear_grid(monk
 
     result = loader.load_latest_inputs()
 
-    expected_reflectivity = np.array(
-        [
-            [10.0, 10.0, 20.0, 20.0],
-            [10.0, 10.0, 20.0, 20.0],
-            [30.0, 30.0, 40.0, 40.0],
-            [30.0, 30.0, 40.0, 40.0],
-        ],
-        dtype=float,
-    )
-
-    assert result["grids"]["reflectivity"].shape == (4, 4)
-    assert np.array_equal(result["grids"]["reflectivity"], expected_reflectivity)
+    assert result["grids"]["reflectivity"].shape == (2, 2)
+    assert np.array_equal(result["grids"]["reflectivity"], np.array([[10.0, 20.0], [30.0, 40.0]], dtype=float))
     assert np.array_equal(result["coordinates"]["latitudes"], np.array([35.0, 34.6666667, 34.3333333, 34.0], dtype=float))
     assert np.array_equal(result["coordinates"]["longitudes"], np.array([-98.0, -97.6666667, -97.3333333, -97.0], dtype=float))
+    assert np.array_equal(result["coordinates"]["reflectivity_latitudes"], np.array([35.0, 34.0], dtype=float))
+    assert np.array_equal(result["coordinates"]["reflectivity_longitudes"], np.array([-98.0, -97.0], dtype=float))
 
 
 def test_load_latest_inputs_harmonizes_half_cell_shifted_reflectivity_grid(monkeypatch):
@@ -118,17 +110,9 @@ def test_load_latest_inputs_harmonizes_half_cell_shifted_reflectivity_grid(monke
 
     result = loader.load_latest_inputs()
 
-    expected_reflectivity = np.array(
-        [
-            [10.0, 10.0, 20.0, 20.0],
-            [10.0, 10.0, 20.0, 20.0],
-            [30.0, 30.0, 40.0, 40.0],
-            [30.0, 30.0, 40.0, 40.0],
-        ],
-        dtype=float,
-    )
-
-    assert np.array_equal(result["grids"]["reflectivity"], expected_reflectivity)
+    assert np.array_equal(result["grids"]["reflectivity"], np.array([[10.0, 20.0], [30.0, 40.0]], dtype=float))
+    assert np.array_equal(result["coordinates"]["reflectivity_latitudes"], np.array([34.875, 34.625], dtype=float))
+    assert np.array_equal(result["coordinates"]["reflectivity_longitudes"], np.array([-97.875, -97.625], dtype=float))
 
 
 def test_load_latest_inputs_rejects_extent_mismatch(monkeypatch):

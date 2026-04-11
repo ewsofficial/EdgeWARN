@@ -7,12 +7,13 @@ from . import config as cfg
 
 
 def preprocess_azshear_grid(values: np.ndarray) -> np.ndarray:
-    arr = np.asarray(values, dtype=float)
-    arr = np.where(np.isfinite(arr), arr, np.nan)
-    arr = np.where(arr >= cfg.NOISE_FLOOR, arr, 0.0)
+    arr = np.asarray(values, dtype=np.float32).copy()
+    arr[~np.isfinite(arr)] = np.float32(0.0)
+    arr[arr < np.float32(cfg.NOISE_FLOOR)] = np.float32(0.0)
 
-    smoothed = ndimage.gaussian_filter(np.nan_to_num(arr, nan=0.0), sigma=cfg.SMOOTHING_SIGMA)
-    smoothed = np.where(smoothed >= cfg.NOISE_FLOOR, smoothed, 0.0)
+    smoothed = np.empty_like(arr, dtype=np.float32)
+    ndimage.gaussian_filter(arr, sigma=cfg.SMOOTHING_SIGMA, output=smoothed)
+    smoothed[smoothed < np.float32(cfg.NOISE_FLOOR)] = np.float32(0.0)
 
     if not cfg.ENABLE_MORPH_CLEANUP:
         return smoothed
@@ -21,12 +22,13 @@ def preprocess_azshear_grid(values: np.ndarray) -> np.ndarray:
     binary = smoothed >= cfg.DETECTION_THRESHOLD
     binary = ndimage.binary_opening(binary, structure=structure)
     binary = ndimage.binary_closing(binary, structure=structure)
-    return np.where(binary, smoothed, 0.0)
+    smoothed[~binary] = np.float32(0.0)
+    return smoothed
 
 
 def preprocess_inputs(grids: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     return {
         "low": preprocess_azshear_grid(grids["low"]),
         "mid": preprocess_azshear_grid(grids["mid"]),
-        "reflectivity": np.asarray(grids["reflectivity"], dtype=float),
+        "reflectivity": np.asarray(grids["reflectivity"], dtype=np.float32),
     }
