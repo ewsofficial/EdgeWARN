@@ -91,6 +91,9 @@ def load_latest_inputs() -> Dict[str, Any]:
     if timestamp is None:
         timestamp = datetime.now(timezone.utc)
 
+    lat_spacing_deg = float(np.nanmean(np.abs(np.diff(ref_lats)))) if len(ref_lats) > 1 else cfg.AZSHEAR_GRID_SPACING_DEG
+    lon_spacing_deg = float(np.nanmean(np.abs(np.diff(ref_lons)))) if len(ref_lons) > 1 else cfg.AZSHEAR_GRID_SPACING_DEG
+
     return {
         "timestamp": timestamp,
         "timestamp_iso": timestamp.isoformat(),
@@ -111,5 +114,10 @@ def load_latest_inputs() -> Dict[str, Any]:
         "scale_notes": {
             "low": low_grid.get("scale_note"),
             "mid": mid_grid.get("scale_note"),
+        },
+        "grid_spacing_deg": {
+            "lat": lat_spacing_deg,
+            "lon": lon_spacing_deg,
+            "expected": cfg.AZSHEAR_GRID_SPACING_DEG,
         },
     }

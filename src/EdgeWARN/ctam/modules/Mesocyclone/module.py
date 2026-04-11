@@ -64,6 +64,7 @@ class MesocycloneModule(GridAnalysisModule):
             "mid_gated_count": len(mid_gated),
             "input_paths": inputs["paths"],
             "scale_notes": inputs.get("scale_notes", {}),
+            "grid_spacing_deg": inputs.get("grid_spacing_deg", {}),
         }
         payload = build_payload(timestamp_iso, metadata, detection_records)
         output_path = save_mesocyclone_output(timestamp_token, payload)
