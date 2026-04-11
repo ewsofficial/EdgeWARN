@@ -124,6 +124,32 @@ def _harmonize_grid(
     return updated
 
 
+def _validate_grid_alignment(
+    grid_name: str,
+    grid: Dict[str, Any],
+    target_lats: np.ndarray,
+    target_lons: np.ndarray,
+) -> None:
+    src_lats = np.asarray(grid["latitudes"], dtype=float)
+    src_lons = np.asarray(grid["longitudes"], dtype=float)
+
+    if not _is_monotonic(src_lats) or not _is_monotonic(src_lons):
+        raise ValueError(f"{grid_name} coordinates are not monotonic and cannot be aligned")
+
+    lat_tol = _extent_tolerance(src_lats, target_lats)
+    lon_tol = _extent_tolerance(src_lons, target_lons)
+    lat_start_close = np.isclose(src_lats[0], target_lats[0], atol=lat_tol)
+    lat_end_close = np.isclose(src_lats[-1], target_lats[-1], atol=lat_tol)
+    lon_start_close = np.isclose(src_lons[0], target_lons[0], atol=lon_tol)
+    lon_end_close = np.isclose(src_lons[-1], target_lons[-1], atol=lon_tol)
+    if not (lat_start_close and lat_end_close and lon_start_close and lon_end_close):
+        raise ValueError(
+            f"{grid_name} grid extent mismatch: source lat=({src_lats[0]}, {src_lats[-1]}), "
+            f"target lat=({target_lats[0]}, {target_lats[-1]}), "
+            f"source lon=({src_lons[0]}, {src_lons[-1]}), target lon=({target_lons[0]}, {target_lons[-1]})"
+        )
+
+
 def _extract_timestamp_from_name(file_path: str) -> Optional[datetime]:
     name = Path(file_path).name
     for pattern in TIMESTAMP_PATTERNS:
@@ -140,31 +166,31 @@ def _extract_timestamp_from_name(file_path: str) -> Optional[datetime]:
 
 
 def _normalize_azshear_units(values: np.ndarray) -> Tuple[np.ndarray, Optional[str]]:
-    finite = np.asarray(values[np.isfinite(values)], dtype=float)
-    if finite.size == 0:
-        return values.astype(float), None
+    arr = np.asarray(values, dtype=np.float32)
+    if not np.isfinite(arr).any():
+        return arr, None
 
     scale_note = None
-    if float(np.nanmax(np.abs(finite))) > cfg.AZSHEAR_UNIT_SCALE_THRESHOLD:
-        values = values / cfg.AZSHEAR_UNIT_DIVISOR
+    if float(np.nanmax(np.abs(arr))) > cfg.AZSHEAR_UNIT_SCALE_THRESHOLD:
+        arr = arr / np.float32(cfg.AZSHEAR_UNIT_DIVISOR)
         scale_note = f"scaled_by_{int(cfg.AZSHEAR_UNIT_DIVISOR)}"
 
-    return values.astype(float), scale_note
+    return arr, scale_note
 
 
 def _load_grid(file_path: str, normalize_azshear: bool = False) -> Dict[str, Any]:
     ds = load_grib_fast(file_path)
     var_name = "unknown" if "unknown" in ds.data_vars else list(ds.data_vars)[0]
     da = ds[var_name]
-    values = np.asarray(da.values, dtype=float)
+    values = np.asarray(da.values, dtype=np.float32)
     scale_note = None
     if normalize_azshear:
         values, scale_note = _normalize_azshear_units(values)
 
     return {
         "values": values,
-        "latitudes": np.asarray(da.coords["latitude"].values, dtype=float),
-        "longitudes": np.asarray(da.coords["longitude"].values, dtype=float),
+        "latitudes": np.asarray(da.coords["latitude"].values, dtype=np.float32),
+        "longitudes": np.asarray(da.coords["longitude"].values, dtype=np.float32),
         "scale_note": scale_note,
     }
 
@@ -193,7 +219,7 @@ def load_latest_inputs() -> Dict[str, Any]:
     ref_lats = low_grid["latitudes"]
     ref_lons = low_grid["longitudes"]
     mid_grid = _harmonize_grid("mid", mid_grid, ref_shape, ref_lats, ref_lons)
-    ref_grid = _harmonize_grid("reflectivity", ref_grid, ref_shape, ref_lats, ref_lons)
+    _validate_grid_alignment("reflectivity", ref_grid, ref_lats, ref_lons)
 
     timestamp = _extract_timestamp_from_name(ref_path)
     if timestamp is None:
@@ -213,6 +239,8 @@ def load_latest_inputs() -> Dict[str, Any]:
         "coordinates": {
             "latitudes": ref_lats,
             "longitudes": ref_lons,
+            "reflectivity_latitudes": ref_grid["latitudes"],
+            "reflectivity_longitudes": ref_grid["longitudes"],
         },
         "grids": {
             "low": low_grid["values"],

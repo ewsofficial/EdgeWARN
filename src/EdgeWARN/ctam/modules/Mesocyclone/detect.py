@@ -137,7 +137,8 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
                     "min_col": int(cols.min()),
                     "max_col": int(cols.max()),
                 },
-                "component_mask": component_mask,
+                "pixel_rows": rows.astype(np.int32, copy=False),
+                "pixel_cols": cols.astype(np.int32, copy=False),
             }
         )
 
