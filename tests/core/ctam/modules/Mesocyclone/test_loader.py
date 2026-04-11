@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 import numpy as np
+import pytest
 
 from EdgeWARN.ctam.modules.Mesocyclone import loader
 
@@ -31,3 +32,5 @@ def test_load_latest_inputs_uses_composite_reflectivity_timestamp(monkeypatch):
     result = loader.load_latest_inputs()
 
     assert result["timestamp"] == datetime(2024, 1, 1, 0, 1, tzinfo=timezone.utc)
+    assert result["grid_spacing_deg"]["expected"] == 0.005
+    assert result["grid_spacing_deg"]["lat"] == pytest.approx(0.1)

@@ -11,16 +11,20 @@ def _grid_spacing_km(latitudes: np.ndarray, longitudes: np.ndarray) -> Tuple[flo
     if len(latitudes) > 1:
         lat_spacing_deg = float(np.nanmean(np.abs(np.diff(latitudes))))
     else:
-        lat_spacing_deg = 0.01
+        lat_spacing_deg = cfg.AZSHEAR_GRID_SPACING_DEG
     if len(longitudes) > 1:
         lon_spacing_deg = float(np.nanmean(np.abs(np.diff(longitudes))))
     else:
-        lon_spacing_deg = 0.01
+        lon_spacing_deg = cfg.AZSHEAR_GRID_SPACING_DEG
 
     ref_lat = float(np.nanmean(latitudes)) if len(latitudes) else 35.0
     lat_spacing_km = max(lat_spacing_deg * 111.32, 0.01)
     lon_spacing_km = max(lon_spacing_deg * 111.32 * math.cos(math.radians(ref_lat)), 0.01)
     return lat_spacing_km, lon_spacing_km
+
+
+def _native_min_area_km2(reference_lat: float) -> float:
+    return cfg.MIN_OBJECT_PIXELS * cfg.native_pixel_area_km2(reference_lat)
 
 
 def _component_perimeter_km(component_mask: np.ndarray, lat_spacing_km: float, lon_spacing_km: float) -> float:
@@ -81,16 +85,15 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
         return []
 
     labels, count = ndimage.label(binary)
+    reference_lat = float(np.nanmean(latitudes)) if len(latitudes) else 35.0
     lat_spacing_km, lon_spacing_km = _grid_spacing_km(latitudes, longitudes)
     pixel_area_km2 = lat_spacing_km * lon_spacing_km
+    min_area_km2 = _native_min_area_km2(reference_lat)
     detections: List[Dict[str, object]] = []
 
     for label_idx in range(1, count + 1):
         component_mask = labels == label_idx
         pixel_count = int(np.count_nonzero(component_mask))
-        if pixel_count < cfg.MIN_OBJECT_PIXELS:
-            continue
-
         rows, cols = np.where(component_mask)
         component_values = np.asarray(values[component_mask], dtype=float)
         peak_index = int(np.nanargmax(component_values))
@@ -98,6 +101,8 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
         peak_col = int(cols[peak_index])
         perimeter_km = _component_perimeter_km(component_mask, lat_spacing_km, lon_spacing_km)
         area_km2 = float(pixel_count * pixel_area_km2)
+        if area_km2 < min_area_km2:
+            continue
         compactness = 0.0
         if perimeter_km > 0.0:
             compactness = float(max(0.0, min(1.0, (4.0 * math.pi * area_km2) / (perimeter_km ** 2))))
@@ -111,6 +116,11 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
                 "component_id": int(label_idx),
                 "pixel_count": pixel_count,
                 "area_km2": round(area_km2, 3),
+                "native_grid_area_threshold_km2": round(min_area_km2, 3),
+                "grid_spacing_deg": {
+                    "lat": round(lat_spacing_km / 111.32, 6),
+                    "lon": round(lon_spacing_km / max(111.32 * math.cos(math.radians(reference_lat)), 1e-6), 6),
+                },
                 "centroid_lat": float(np.nanmean(latitudes[rows])),
                 "centroid_lon": float(np.nanmean(longitudes[cols])),
                 "max_azshear": float(component_values[peak_index]),

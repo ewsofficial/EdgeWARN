@@ -1,9 +1,11 @@
+import math
 from datetime import timedelta
 
 
 NOISE_FLOOR = 0.0035
 DETECTION_THRESHOLD = 0.006
 MIN_OBJECT_PIXELS = 6
+AZSHEAR_GRID_SPACING_DEG = 0.005
 
 SMOOTHING_SIGMA = 1.0
 ENABLE_MORPH_CLEANUP = True
@@ -38,3 +40,9 @@ CONFIDENCE_WEIGHTS = {
 
 AZSHEAR_UNIT_SCALE_THRESHOLD = 1.0
 AZSHEAR_UNIT_DIVISOR = 1000.0
+
+
+def native_pixel_area_km2(reference_lat: float = 35.0) -> float:
+    lat_spacing_km = AZSHEAR_GRID_SPACING_DEG * 111.32
+    lon_spacing_km = AZSHEAR_GRID_SPACING_DEG * 111.32 * max(math.cos(math.radians(reference_lat)), 1e-6)
+    return lat_spacing_km * lon_spacing_km
