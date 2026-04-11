@@ -57,12 +57,17 @@ def _component_shape_metrics(pixel_rows: np.ndarray, pixel_cols: np.ndarray) -> 
     return eccentricity, (major / max(minor, 1e-6))
 
 
-def _local_maxima(values: np.ndarray, component_mask: np.ndarray, latitudes: np.ndarray, longitudes: np.ndarray) -> List[Dict[str, float]]:
+def _local_maxima(
+    values: np.ndarray,
+    component_mask: np.ndarray,
+    latitudes: np.ndarray,
+    longitudes: np.ndarray,
+    neighborhood: np.ndarray,
+) -> List[Dict[str, float]]:
     masked = np.where(component_mask, values, -np.inf)
     if not np.isfinite(masked).any():
         return []
 
-    neighborhood = ndimage.maximum_filter(masked, size=3, mode="nearest")
     peaks = component_mask & np.isfinite(masked) & (masked == neighborhood)
     rows, cols = np.where(peaks)
     maxima = []
@@ -85,17 +90,32 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
         return []
 
     labels, count = ndimage.label(binary)
+    object_slices = ndimage.find_objects(labels)
+    neighborhood = ndimage.maximum_filter(values, size=3, mode="nearest")
     reference_lat = float(np.nanmean(latitudes)) if len(latitudes) else 35.0
     lat_spacing_km, lon_spacing_km = _grid_spacing_km(latitudes, longitudes)
     pixel_area_km2 = lat_spacing_km * lon_spacing_km
     min_area_km2 = _native_min_area_km2(reference_lat)
     detections: List[Dict[str, object]] = []
 
-    for label_idx in range(1, count + 1):
-        component_mask = labels == label_idx
+    for label_idx, obj_slice in enumerate(object_slices, start=1):
+        if obj_slice is None:
+            continue
+
+        row_slice, col_slice = obj_slice
+        label_window = labels[row_slice, col_slice]
+        component_mask = label_window == label_idx
         pixel_count = int(np.count_nonzero(component_mask))
-        rows, cols = np.where(component_mask)
-        component_values = np.asarray(values[component_mask], dtype=float)
+        if pixel_count == 0:
+            continue
+
+        local_rows, local_cols = np.where(component_mask)
+        row_offset = row_slice.start or 0
+        col_offset = col_slice.start or 0
+        rows = local_rows + row_offset
+        cols = local_cols + col_offset
+        value_window = values[row_slice, col_slice]
+        component_values = np.asarray(value_window[component_mask], dtype=float)
         peak_index = int(np.nanargmax(component_values))
         peak_row = int(rows[peak_index])
         peak_col = int(cols[peak_index])
@@ -108,7 +128,13 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
             compactness = float(max(0.0, min(1.0, (4.0 * math.pi * area_km2) / (perimeter_km ** 2))))
 
         eccentricity, aspect_ratio = _component_shape_metrics(rows, cols)
-        maxima = _local_maxima(values, component_mask, latitudes, longitudes)
+        maxima = _local_maxima(
+            value_window,
+            component_mask,
+            latitudes[row_slice],
+            longitudes[col_slice],
+            neighborhood[row_slice, col_slice],
+        )
 
         detections.append(
             {
@@ -132,10 +158,10 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
                 "aspect_ratio": round(float(aspect_ratio), 3),
                 "maxima": maxima,
                 "bbox": {
-                    "min_row": int(rows.min()),
-                    "max_row": int(rows.max()),
-                    "min_col": int(cols.min()),
-                    "max_col": int(cols.max()),
+                    "min_row": int(row_offset + local_rows.min()),
+                    "max_row": int(row_offset + local_rows.max()),
+                    "min_col": int(col_offset + local_cols.min()),
+                    "max_col": int(col_offset + local_cols.max()),
                 },
                 "pixel_rows": rows.astype(np.int32, copy=False),
                 "pixel_cols": cols.astype(np.int32, copy=False),
