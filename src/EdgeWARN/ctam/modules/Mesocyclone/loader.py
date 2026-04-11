@@ -17,6 +17,113 @@ TIMESTAMP_PATTERNS = (
 )
 
 
+def _axis_spacing(axis: np.ndarray) -> Optional[float]:
+    if len(axis) <= 1:
+        return None
+    diffs = np.diff(np.asarray(axis, dtype=float))
+    finite = diffs[np.isfinite(diffs)]
+    if finite.size == 0:
+        return None
+    return float(np.nanmean(np.abs(finite)))
+
+
+def _grid_diagnostics(name: str, file_path: str, grid: Dict[str, Any]) -> str:
+    latitudes = np.asarray(grid["latitudes"], dtype=float)
+    longitudes = np.asarray(grid["longitudes"], dtype=float)
+    lat_spacing = _axis_spacing(latitudes)
+    lon_spacing = _axis_spacing(longitudes)
+    lat_span = (float(latitudes[0]), float(latitudes[-1])) if latitudes.size else (None, None)
+    lon_span = (float(longitudes[0]), float(longitudes[-1])) if longitudes.size else (None, None)
+    return (
+        f"{name}: path={file_path}, shape={grid['values'].shape}, "
+        f"lat_span={lat_span}, lon_span={lon_span}, "
+        f"lat_spacing={lat_spacing}, lon_spacing={lon_spacing}"
+    )
+
+
+def _extent_tolerance(source_axis: np.ndarray, target_axis: np.ndarray) -> float:
+    source_spacing = _axis_spacing(source_axis) or 0.0
+    target_spacing = _axis_spacing(target_axis) or 0.0
+    return max(source_spacing, target_spacing) * 0.51
+
+
+def _is_monotonic(axis: np.ndarray) -> bool:
+    if len(axis) <= 1:
+        return True
+    diffs = np.diff(np.asarray(axis, dtype=float))
+    return bool(np.all(diffs >= 0) or np.all(diffs <= 0))
+
+
+def _nearest_axis_indices(source_axis: np.ndarray, target_axis: np.ndarray) -> np.ndarray:
+    src = np.asarray(source_axis, dtype=float)
+    tgt = np.asarray(target_axis, dtype=float)
+    descending = len(src) > 1 and src[0] > src[-1]
+    if descending:
+        src = src[::-1]
+
+    positions = np.interp(tgt, src, np.arange(len(src), dtype=float))
+    indices = np.rint(positions).astype(int)
+    indices = np.clip(indices, 0, len(source_axis) - 1)
+
+    if descending:
+        indices = (len(source_axis) - 1) - indices
+
+    return indices
+
+
+def _harmonize_grid(
+    grid_name: str,
+    grid: Dict[str, Any],
+    target_shape: Tuple[int, int],
+    target_lats: np.ndarray,
+    target_lons: np.ndarray,
+) -> Dict[str, Any]:
+    values = np.asarray(grid["values"], dtype=float)
+    src_lats = np.asarray(grid["latitudes"], dtype=float)
+    src_lons = np.asarray(grid["longitudes"], dtype=float)
+
+    if values.shape == target_shape and src_lats.shape == target_lats.shape and src_lons.shape == target_lons.shape:
+        return grid
+
+    if values.ndim != 2:
+        raise ValueError(f"{grid_name} grid must be 2D, got {values.ndim}D")
+    if not _is_monotonic(src_lats) or not _is_monotonic(src_lons):
+        raise ValueError(f"{grid_name} coordinates are not monotonic and cannot be harmonized")
+    if not _is_monotonic(target_lats) or not _is_monotonic(target_lons):
+        raise ValueError(f"target coordinates are not monotonic and cannot be harmonized")
+
+    lat_tol = _extent_tolerance(src_lats, target_lats)
+    lon_tol = _extent_tolerance(src_lons, target_lons)
+    lat_start_close = np.isclose(src_lats[0], target_lats[0], atol=lat_tol)
+    lat_end_close = np.isclose(src_lats[-1], target_lats[-1], atol=lat_tol)
+    lon_start_close = np.isclose(src_lons[0], target_lons[0], atol=lon_tol)
+    lon_end_close = np.isclose(src_lons[-1], target_lons[-1], atol=lon_tol)
+    if not (lat_start_close and lat_end_close and lon_start_close and lon_end_close):
+        raise ValueError(
+            f"{grid_name} grid extent mismatch: source lat=({src_lats[0]}, {src_lats[-1]}), "
+            f"target lat=({target_lats[0]}, {target_lats[-1]}), "
+            f"source lon=({src_lons[0]}, {src_lons[-1]}), target lon=({target_lons[0]}, {target_lons[-1]})"
+        )
+
+    row_indices = _nearest_axis_indices(src_lats, target_lats)
+    col_indices = _nearest_axis_indices(src_lons, target_lons)
+    harmonized = values[np.ix_(row_indices, col_indices)]
+    if harmonized.shape != target_shape:
+        raise ValueError(f"{grid_name} harmonization failed: expected {target_shape}, got {harmonized.shape}")
+
+    print(
+        f"[Mesocyclone] Harmonized {grid_name} grid from {values.shape} to {target_shape} "
+        f"using nearest-neighbor coordinate mapping"
+    )
+
+    updated = dict(grid)
+    updated["values"] = harmonized
+    updated["latitudes"] = np.asarray(target_lats, dtype=float)
+    updated["longitudes"] = np.asarray(target_lons, dtype=float)
+    updated["harmonized_from_shape"] = tuple(values.shape)
+    return updated
+
+
 def _extract_timestamp_from_name(file_path: str) -> Optional[datetime]:
     name = Path(file_path).name
     for pattern in TIMESTAMP_PATTERNS:
@@ -78,14 +185,15 @@ def load_latest_inputs() -> Dict[str, Any]:
     mid_grid = _load_grid(mid_path, normalize_azshear=True)
     ref_grid = _load_grid(ref_path, normalize_azshear=False)
 
+    print(f"[Mesocyclone] Input diagnostics | {_grid_diagnostics('low', low_path, low_grid)}")
+    print(f"[Mesocyclone] Input diagnostics | {_grid_diagnostics('mid', mid_path, mid_grid)}")
+    print(f"[Mesocyclone] Input diagnostics | {_grid_diagnostics('reflectivity', ref_path, ref_grid)}")
+
     ref_shape = low_grid["values"].shape
     ref_lats = low_grid["latitudes"]
     ref_lons = low_grid["longitudes"]
-    for grid_name, grid in (("mid", mid_grid), ("reflectivity", ref_grid)):
-        if grid["values"].shape != ref_shape:
-            raise ValueError(f"{grid_name} grid shape mismatch: expected {ref_shape}, got {grid['values'].shape}")
-        if grid["latitudes"].shape != ref_lats.shape or grid["longitudes"].shape != ref_lons.shape:
-            raise ValueError(f"{grid_name} coordinates do not align with low-level AzShear grid")
+    mid_grid = _harmonize_grid("mid", mid_grid, ref_shape, ref_lats, ref_lons)
+    ref_grid = _harmonize_grid("reflectivity", ref_grid, ref_shape, ref_lats, ref_lons)
 
     timestamp = _extract_timestamp_from_name(ref_path)
     if timestamp is None:
