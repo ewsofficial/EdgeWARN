@@ -8,6 +8,7 @@ from ..registry import ModuleRegistry, GridModuleRegistry
 from .StormCast import StormCastModule
 from .MorphoWind import MorphoWindModule
 from .FLOHAR import FLOHARModule
+from .Mesocyclone import MesocycloneModule
 
 # Register all modules in execution order
 # 1. Base Tracking Features (e.g. History if needed)
@@ -18,6 +19,7 @@ ModuleRegistry.register(MorphoWindModule())
 
 # 3. Grid-based Modules
 GridModuleRegistry.register(FLOHARModule())
+GridModuleRegistry.register(MesocycloneModule())
 
 # 4. Post-Analysis Modules
 
@@ -28,4 +30,5 @@ __all__ = [
     "StormCastModule",
     "MorphoWindModule",
     "FLOHARModule",
+    "MesocycloneModule",
 ]

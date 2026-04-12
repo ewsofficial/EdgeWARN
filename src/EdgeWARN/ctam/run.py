@@ -149,6 +149,7 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
     
     # Step 2: Run grid-based modules
     grid_results = {}
+    attachable_grid_results = {}
     grid_success_count = 0
     grid_error_count = 0
     grid_alert_count = 0
@@ -159,6 +160,8 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
             result = module.run()
             module_elapsed = time.time() - module_start
             grid_results[module.name] = result
+            if result.get("attach_to_stormcells", True):
+                attachable_grid_results[module.name] = result
             grid_success_count += 1
             print(f"[CTAM]   Grid module '{module.name}' completed in {module_elapsed:.3f}s")
             
@@ -175,11 +178,12 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
             grid_error_count += 1
     
     # Attach grid results to first cell (or create placeholder)
-    if cells:
-        cells[0]["modules"]["_grid_outputs"] = grid_results
-    else:
-        # No cells, but grid modules ran - store results separately
-        cells = [{"modules": {"_grid_outputs": grid_results}}]
+    if attachable_grid_results:
+        if cells:
+            cells[0]["modules"]["_grid_outputs"] = attachable_grid_results
+        else:
+            # No cells, but attachable grid modules ran - store results separately
+            cells = [{"modules": {"_grid_outputs": attachable_grid_results}}]
     
     total_elapsed = time.time() - start_time
     print(f"[CTAM] Pipeline complete: {cell_success_count} cell success, {cell_error_count} cell error(s), {grid_success_count} grid success, {grid_error_count} grid error(s), {grid_alert_count} grid alert(s) in {total_elapsed:.3f}s")
