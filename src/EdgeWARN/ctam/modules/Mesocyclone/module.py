@@ -10,7 +10,7 @@ from .detect import detect_layer_objects
 from .gate import apply_reflectivity_gate, build_reflectivity_gate_context
 from .loader import load_latest_inputs
 from .output import build_detection_record, build_payload, save_mesocyclone_output
-from .preprocess import preprocess_inputs
+from .preprocess import preprocess_azshear_grid
 from .score import score_detections
 from .track import MesocycloneTracker
 
@@ -40,56 +40,60 @@ class MesocycloneModule(GridAnalysisModule):
             }
         print(f"[Mesocyclone] Input load completed in {perf_counter() - started_at:.3f}s")
 
-        stage_started_at = perf_counter()
-        preprocessed = preprocess_inputs(inputs["grids"])
-        print(f"[Mesocyclone] Preprocess completed in {perf_counter() - stage_started_at:.3f}s")
+        grids = inputs["grids"]
+        reflectivity_grid = grids["reflectivity"]
         latitudes = inputs["coordinates"]["latitudes"]
         longitudes = inputs["coordinates"]["longitudes"]
         reflectivity_latitudes = inputs["coordinates"].get("reflectivity_latitudes", latitudes)
         reflectivity_longitudes = inputs["coordinates"].get("reflectivity_longitudes", longitudes)
 
-        stage_started_at = perf_counter()
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            low_future = executor.submit(detect_layer_objects, preprocessed["low"], latitudes, longitudes, "low")
-            mid_future = executor.submit(detect_layer_objects, preprocessed["mid"], latitudes, longitudes, "mid")
+        preprocess_started_at = perf_counter()
+        low_preprocessed = preprocess_azshear_grid(grids["low"])
+        grids["low"] = None
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            low_future = executor.submit(detect_layer_objects, low_preprocessed, latitudes, longitudes, "low")
+            mid_preprocessed = preprocess_azshear_grid(grids["mid"])
+            grids["mid"] = None
+            print(f"[Mesocyclone] Preprocess completed in {perf_counter() - preprocess_started_at:.3f}s")
+
+            detect_started_at = perf_counter()
+            mid_objects = detect_layer_objects(mid_preprocessed, latitudes, longitudes, "mid")
             low_objects = low_future.result()
-            mid_objects = mid_future.result()
+
+        del low_preprocessed
+        del mid_preprocessed
         print(
-            f"[Mesocyclone] Detection completed in {perf_counter() - stage_started_at:.3f}s "
+            f"[Mesocyclone] Detection completed in {perf_counter() - detect_started_at:.3f}s "
             f"(low={len(low_objects)}, mid={len(mid_objects)})"
         )
 
         stage_started_at = perf_counter()
         gate_context = build_reflectivity_gate_context(
-            preprocessed["reflectivity"],
+            reflectivity_grid,
             latitudes,
             longitudes,
             reflectivity_latitudes,
             reflectivity_longitudes,
         )
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            low_future = executor.submit(
-                apply_reflectivity_gate,
-                low_objects,
-                preprocessed["reflectivity"],
-                latitudes,
-                longitudes,
-                reflectivity_latitudes,
-                reflectivity_longitudes,
-                gate_context,
-            )
-            mid_future = executor.submit(
-                apply_reflectivity_gate,
-                mid_objects,
-                preprocessed["reflectivity"],
-                latitudes,
-                longitudes,
-                reflectivity_latitudes,
-                reflectivity_longitudes,
-                gate_context,
-            )
-            low_gated = low_future.result()
-            mid_gated = mid_future.result()
+        low_gated = apply_reflectivity_gate(
+            low_objects,
+            reflectivity_grid,
+            latitudes,
+            longitudes,
+            reflectivity_latitudes,
+            reflectivity_longitudes,
+            gate_context,
+        )
+        mid_gated = apply_reflectivity_gate(
+            mid_objects,
+            reflectivity_grid,
+            latitudes,
+            longitudes,
+            reflectivity_latitudes,
+            reflectivity_longitudes,
+            gate_context,
+        )
         print(
             f"[Mesocyclone] Reflectivity gating completed in {perf_counter() - stage_started_at:.3f}s "
             f"(low={len(low_gated)}, mid={len(mid_gated)})"
