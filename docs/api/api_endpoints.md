@@ -42,6 +42,7 @@ Response keys:
 - `endpoints` (object): route map.
   - `endpoints.features` (object)
     - `endpoints.features.cells` (string)
+    - `endpoints.features.mesocyclones` (string)
     - `endpoints.features.timestamps` (string)
     - `endpoints.features.alerts` (object)
       - `endpoints.features.alerts.official` (string)
@@ -56,6 +57,7 @@ Response keys:
   "endpoints": {
     "features": {
       "cells": "/api/v2/features/cells[?id={int}]",
+      "mesocyclones": "/api/v2/features/mesocyclones[?timestamp={YYYYMMDD-HHMMSS}]",
       "timestamps": "/api/v2/features/timestamps[?timestamp={YYYYMMDD-HHMMSS}]",
       "alerts": {
         "official": "/api/v2/features/alerts/official[?id={urn:oid:...}|timestamp={YYYYMMDD-HHMMSS}]",
@@ -138,6 +140,45 @@ Cache headers:
 
 - `max-age=5` (timestamp index)
 - `max-age=3600` (stormcell snapshot)
+
+### GET /api/v2/features/mesocyclones
+
+Query parameters:
+
+- `timestamp` (optional): `YYYYMMDD-HHMMSS`
+
+Behavior:
+
+- Without `timestamp`, returns available mesocyclone timestamps from files matching `mesocyclones_YYYYMMDD-HHMMSS.json`.
+- With `timestamp`, returns `mesocyclones_{timestamp}.json`.
+
+Response keys:
+
+- Success (no `timestamp`): array of timestamps (`string[]`, format `YYYYMMDD-HHMMSS`).
+- Success (with `timestamp`): passthrough JSON object from `mesocyclones_{timestamp}.json`.
+- Error `400` (validation/access):
+  - `error` (string)
+- Error `404` (snapshot not found):
+  - `error` (string)
+  - `timestamp` (string)
+- Error `500`:
+  - `error` (string)
+
+Common errors:
+
+- `400` invalid timestamp
+- `404` timestamp file not found
+- `500` file read/server error
+
+Notes:
+
+- Files are served from `<BASE_DIR>/data/Mesocyclones/`.
+- Producer payload currently includes `type`, `timestamp`, `metadata`, and `detections`.
+
+Cache headers:
+
+- `max-age=5` (timestamp listing)
+- `max-age=60` (mesocyclone snapshot)
 
 ### GET /api/v2/features/alerts/official
 
