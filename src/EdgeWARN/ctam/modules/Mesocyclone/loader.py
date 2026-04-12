@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -207,9 +208,13 @@ def load_latest_inputs() -> Dict[str, Any]:
     mid_path = mid_files[-1]
     ref_path = ref_files[-1]
 
-    low_grid = _load_grid(low_path, normalize_azshear=True)
-    mid_grid = _load_grid(mid_path, normalize_azshear=True)
-    ref_grid = _load_grid(ref_path, normalize_azshear=False)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        low_future = executor.submit(_load_grid, low_path, True)
+        mid_future = executor.submit(_load_grid, mid_path, True)
+        ref_future = executor.submit(_load_grid, ref_path, False)
+        low_grid = low_future.result()
+        mid_grid = mid_future.result()
+        ref_grid = ref_future.result()
 
     print(f"[Mesocyclone] Input diagnostics | {_grid_diagnostics('low', low_path, low_grid)}")
     print(f"[Mesocyclone] Input diagnostics | {_grid_diagnostics('mid', mid_path, mid_grid)}")

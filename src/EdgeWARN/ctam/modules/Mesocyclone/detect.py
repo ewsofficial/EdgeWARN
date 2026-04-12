@@ -62,8 +62,8 @@ def _local_maxima(
     component_mask: np.ndarray,
     latitudes: np.ndarray,
     longitudes: np.ndarray,
-    neighborhood: np.ndarray,
 ) -> List[Dict[str, float]]:
+    neighborhood = ndimage.maximum_filter(values, size=3, mode="nearest")
     masked = np.where(component_mask, values, -np.inf)
     if not np.isfinite(masked).any():
         return []
@@ -91,7 +91,6 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
 
     labels, count = ndimage.label(binary)
     object_slices = ndimage.find_objects(labels)
-    neighborhood = ndimage.maximum_filter(values, size=3, mode="nearest")
     reference_lat = float(np.nanmean(latitudes)) if len(latitudes) else 35.0
     lat_spacing_km, lon_spacing_km = _grid_spacing_km(latitudes, longitudes)
     pixel_area_km2 = lat_spacing_km * lon_spacing_km
@@ -133,7 +132,6 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
             component_mask,
             latitudes[row_slice],
             longitudes[col_slice],
-            neighborhood[row_slice, col_slice],
         )
 
         detections.append(
