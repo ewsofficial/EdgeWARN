@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 
 import numpy as np
@@ -8,7 +7,9 @@ from . import config as cfg
 
 
 def _clean_input(values: np.ndarray) -> np.ndarray:
-    arr = np.asarray(values, dtype=np.float32).copy()
+    arr = np.asarray(values, dtype=np.float32)
+    if not arr.flags.writeable:
+        arr = arr.copy()
     arr[~np.isfinite(arr)] = np.float32(0.0)
     arr[arr < np.float32(cfg.NOISE_FLOOR)] = np.float32(0.0)
     return arr
@@ -84,14 +85,8 @@ def preprocess_azshear_grid(values: np.ndarray) -> np.ndarray:
 
 
 def preprocess_inputs(grids: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        low_future = executor.submit(preprocess_azshear_grid, grids["low"])
-        mid_future = executor.submit(preprocess_azshear_grid, grids["mid"])
-        low = low_future.result()
-        mid = mid_future.result()
-
     return {
-        "low": low,
-        "mid": mid,
+        "low": preprocess_azshear_grid(grids["low"]),
+        "mid": preprocess_azshear_grid(grids["mid"]),
         "reflectivity": np.asarray(grids["reflectivity"], dtype=np.float32),
     }
