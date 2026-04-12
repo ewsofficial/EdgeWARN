@@ -15,6 +15,7 @@ from typing import Dict, Any, List, Optional, Tuple
 
 from EdgeWARN.ctam.interface import GridAnalysisModule
 from EdgeWARN.alerts.schema import AlertPayload
+from util.handler import extract_timestamp
 
 from .engine import compute_threat_grid
 from .regions import extract_regions
@@ -46,7 +47,7 @@ class FLOHARModule(GridAnalysisModule):
                 - 'metadata': Processing metadata
                 - 'timestamp': Analysis timestamp (ISO 8601)
         """
-        timestamp = datetime.utcnow()
+        timestamp = self._resolve_scan_timestamp()
 
         # Load FLASH GRIB files
         grids = self._load_grids()
@@ -250,6 +251,17 @@ class FLOHARModule(GridAnalysisModule):
             grids[grid_key] = arr_2d
 
         return grids
+
+    def _resolve_scan_timestamp(self) -> datetime:
+        """Resolve FLOHAR scan timestamp from latest CompRefQC file."""
+        composite_files = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 1)
+        if composite_files:
+            timestamp = extract_timestamp(composite_files[0], use_timezone_utc=False)
+            if timestamp is not None:
+                return timestamp
+
+        print("[FLOHAR] Could not resolve CompRefQC timestamp; falling back to current UTC time.")
+        return datetime.utcnow()
 
     # ── Output helpers ──────────────────────────────────────────────
 
