@@ -1,59 +1,42 @@
 # EdgeWARN API v2 Endpoints
 
-This document describes the currently implemented API routes in `src/EdgeWARN/api`.
+This document describes the current HTTP routes implemented in `src/EdgeWARN/api`.
 
-For the backing JSON file schemas, see `docs/api/data_keys.md`.
+For backing file schemas, see `docs/api/data_keys.md`.
 
 ## API Overview
 
-- **Base URL**: `/api/v2`
-- **Version string**:
+- Base URL: `/api/v2`
+- Response format: JSON
+- Version behavior:
   - `2.x` when `NODE_ENV=production`
-  - `2.0.0` otherwise
-- **Protocol**: HTTP/HTTPS
-- **Response format**: JSON
+  - `2.1.0` otherwise
 
 ## Root Endpoints
 
 ### GET /
 
-Returns the backend API banner.
+Returns API banner metadata.
 
-Response keys:
-
-- `message` (string): API banner text.
-- `version` (string): version label (`2.x` in production, `2.0.0` otherwise).
+Response:
 
 ```json
 {
   "message": "EdgeWARN Backend API",
-  "version": "2.0.0"
+  "version": "2.1.0"
 }
 ```
 
 ### GET /api/v2
 
-Returns API v2 metadata and endpoint map.
+Returns API metadata and route map.
 
-Response keys:
-
-- `message` (string): API group label.
-- `version` (string): version label (`2.x` in production, `2.0.0` otherwise).
-- `endpoints` (object): route map.
-  - `endpoints.features` (object)
-    - `endpoints.features.cells` (string)
-    - `endpoints.features.mesocyclones` (string)
-    - `endpoints.features.timestamps` (string)
-    - `endpoints.features.alerts` (object)
-      - `endpoints.features.alerts.official` (string)
-      - `endpoints.features.alerts.edgewarn` (string)
-  - `endpoints.data` (object)
-    - `endpoints.data.metar` (string)
+Response:
 
 ```json
 {
   "message": "EdgeWARN API v2",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "endpoints": {
     "features": {
       "cells": "/api/v2/features/cells[?id={int}]",
@@ -71,179 +54,140 @@ Response keys:
 }
 ```
 
-## Features Endpoints
+## Feature Endpoints
 
 ### GET /api/v2/features/cells
 
-Query parameters:
+Query:
 
 - `id` (optional): positive integer
 
 Behavior:
 
-- Without `id`, returns an array of available cell IDs from `cell_index.json`.
-- With `id`, returns that cell JSON (`{id}.json`).
+- Without `id`: returns `cell_index.json` IDs
+- With `id`: returns `cells/{id}.json`
 
-Response keys:
+Responses:
 
-- Success (no `id`): array of cell IDs (`number[]`).
-- Success (with `id`): passthrough JSON object from `{id}.json` (schema depends on producer data).
-- Error `400` (invalid `id`):
-  - `error` (string)
-- Error `404` (cell not found):
-  - `error` (string)
-  - `id` (string)
-- Error `500`:
-  - `error` (string)
+- `200` list mode: `number[]`
+- `200` id mode: JSON object from file (passthrough)
+- `400`: invalid `id` or invalid filename/access
+- `404`: cell file not found
+- `500`: read/server failure
 
-Common errors:
+Cache:
 
-- `400` invalid `id`
-- `404` cell not found
-- `500` file read/server error
-
-Cache headers:
-
-- `max-age=5` (index list)
-- `max-age=60` (single cell)
-
-### GET /api/v2/features/timestamps
-
-Query parameters:
-
-- `timestamp` (optional): `YYYYMMDD-HHMMSS`
-
-Behavior:
-
-- Without `timestamp`, returns available timestamps from `stormcell_index.json`.
-- With `timestamp`, returns `stormcells_{timestamp}.json`.
-
-Response keys:
-
-- Success (no `timestamp`): array of timestamps (`string[]`, format `YYYYMMDD-HHMMSS`).
-- Success (with `timestamp`): passthrough JSON object/array from `stormcells_{timestamp}.json` (schema depends on producer data).
-- Error `400` (validation/access):
-  - `error` (string)
-- Error `404` (snapshot not found):
-  - `error` (string)
-  - `timestamp` (string)
-- Error `500`:
-  - `error` (string)
-
-Common errors:
-
-- `400` invalid timestamp
-- `404` timestamp file not found
-- `500` file read/server error
-
-Cache headers:
-
-- `max-age=5` (timestamp index)
-- `max-age=3600` (stormcell snapshot)
+- list: `Cache-Control: public, max-age=5`
+- id: `Cache-Control: public, max-age=60`
 
 ### GET /api/v2/features/mesocyclones
 
-Query parameters:
+Query:
 
 - `timestamp` (optional): `YYYYMMDD-HHMMSS`
 
 Behavior:
 
-- Without `timestamp`, returns available mesocyclone timestamps from files matching `mesocyclones_YYYYMMDD-HHMMSS.json`.
-- With `timestamp`, returns `mesocyclones_{timestamp}.json`.
+- Without `timestamp`: returns available snapshot timestamps from `mesocyclones_*.json`
+- With `timestamp`: returns `mesocyclones_{timestamp}.json`
 
-Response keys:
+Responses:
 
-- Success (no `timestamp`): array of timestamps (`string[]`, format `YYYYMMDD-HHMMSS`).
-- Success (with `timestamp`): passthrough JSON object from `mesocyclones_{timestamp}.json`.
-- Error `400` (validation/access):
-  - `error` (string)
-- Error `404` (snapshot not found):
-  - `error` (string)
-  - `timestamp` (string)
-- Error `500`:
-  - `error` (string)
+- `200` list mode: `string[]`
+- `200` timestamp mode: mesocyclone payload JSON (passthrough)
+- `400`: invalid timestamp or invalid filename/access
+- `404`: snapshot not found
+- `500`: read/server failure
 
-Common errors:
+Cache:
 
-- `400` invalid timestamp
-- `404` timestamp file not found
-- `500` file read/server error
+- list: `Cache-Control: public, max-age=5`
+- timestamp: `Cache-Control: public, max-age=60`
 
-Notes:
+### GET /api/v2/features/timestamps
 
-- Files are served from `<BASE_DIR>/data/Mesocyclones/`.
-- Producer payload currently includes `type`, `timestamp`, `metadata`, and `detections`.
+Query:
 
-Cache headers:
+- `timestamp` (optional): `YYYYMMDD-HHMMSS`
 
-- `max-age=5` (timestamp listing)
-- `max-age=60` (mesocyclone snapshot)
+Behavior:
+
+- Without `timestamp`: returns `stormcell_index.json` timestamps
+- With `timestamp`: returns `stormcells_{timestamp}.json`
+
+Responses:
+
+- `200` list mode: `string[]`
+- `200` timestamp mode: stormcell JSON payload (passthrough)
+- `400`: invalid timestamp or invalid filename/access
+- `404`: snapshot not found
+- `500`: read/server failure
+
+Cache:
+
+- list: `Cache-Control: public, max-age=5`
+- timestamp: `Cache-Control: public, max-age=3600`
 
 ### GET /api/v2/features/alerts/official
 
 ### GET /api/v2/features/alerts/edgewarn
 
-Query parameters (mutually exclusive):
+Query (mutually exclusive):
 
 - `timestamp` (optional): `YYYYMMDD-HHMMSS`
-- `id` (optional): alert ID string
+- `id` (optional): alert identifier string
 
 Behavior:
 
-- Without params: returns available snapshot timestamps from the alerts timestamp directory.
-- With `timestamp` on [`/api/v2/features/alerts/official`](docs/api/api_endpoints.md):152: returns an array of official alert summaries for that timestamp, including alert name, `urn:oid`, effective/expiry times, and geometry (`[]` if snapshot missing).
-- With `timestamp` on [`/api/v2/features/alerts/edgewarn`](docs/api/api_endpoints.md):153: returns list of alert IDs for that timestamp (`[]` if snapshot missing).
-- With `id`: returns full alert feature payload for that ID.
+- Without params: returns available snapshot timestamps
+- With `timestamp`: returns snapshot `alerts` array from `{timestamp}.json`
+- With `id`: returns a specific alert payload from `ids/{safe_id}.json`
 
-Response keys:
+Responses:
 
-- Success (no params): array of timestamps (`string[]`, format `YYYYMMDD-HHMMSS`).
-- Success (`timestamp`) for [`/api/v2/features/alerts/official`](docs/api/api_endpoints.md):158: array of alert summary objects with:
-  - `id` (string): alert identifier.
-  - `name` (string|null): alert name, typically from the CAP `event` field.
-  - `urn_oid` (string): `urn:oid` for the alert.
-  - `effective` (string|null): ISO 8601 effective timestamp.
-  - `expires` (string|null): ISO 8601 expiry timestamp.
-  - `geometry` (object|null): GeoJSON geometry for the alert polygon.
-- Success (`timestamp`) for [`/api/v2/features/alerts/edgewarn`](docs/api/api_endpoints.md):165: array of alert IDs (`string[]`).
-- Success (`id`): alert payload JSON (returns `alert.feature` when present, otherwise full alert object; schema depends on stored alert data).
-- Error `400/404/500`:
-  - `success` (boolean, always `false`)
-  - `error` (object)
-    - `error.code` (string)
-    - `error.message` (string)
+- `200` list mode: `string[]`
+- `200` timestamp mode (`official`): array of official alert summaries such as:
+  - `id`, `name`, `urn_oid`, `effective`, `expires`, `severity`, `geometry`
+- `200` timestamp mode (`edgewarn`): array of EdgeWARN alert summaries such as:
+  - `id`, `severity`
+- `200` id mode:
+  - `official`: usually returns nested `feature` object when available
+  - `edgewarn`: returns stored alert object
+- `400/404/500` error envelope:
 
-Validation and errors:
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_INPUT",
+    "message": "..."
+  }
+}
+```
 
-- `400` if both `id` and `timestamp` are supplied
-- `400` invalid `id` or `timestamp`
-- `404` unknown alert `id`
-- `500` server error
+Validation:
 
-Notes:
+- `timestamp` and `id` cannot be sent together
+- `timestamp` must match `YYYYMMDD-HHMMSS`
+- `id` must pass alert ID validation
 
-- Alert error responses are wrapped in `{ success: false, error: { code, message } }`.
-- Alert IDs are resolved from filename-safe transformations (`:` and `/` replaced with `_`).
-- Official alert timestamp responses are precomputed during NWS ingest and served directly from timestamp snapshot files.
+Cache:
 
-Cache headers:
-
-- `max-age=5` (timestamp listing)
-- `max-age=60` (`id` and `timestamp` lookups)
+- list: `Cache-Control: public, max-age=5`
+- id/timestamp: `Cache-Control: public, max-age=60`
 
 ## Data Endpoints
 
 ### GET /api/v2/data/metar
 
-Query parameters:
+Query:
 
 - `timestamp` (optional): `YYYYMMDD-HHMMSS`
 
 Behavior:
 
-- Without `timestamp`, returns available METAR timestamps derived from files matching `METAR_YYYYMMDD-HHz.json`.
-- With `timestamp`, returns:
+- Without `timestamp`: lists timestamps derived from `METAR_YYYYMMDD-HHz.json`
+- With `timestamp`: reads matching hourly file and wraps as:
 
 ```json
 {
@@ -253,47 +197,29 @@ Behavior:
 }
 ```
 
-Response keys:
+Responses:
 
-- Success (no `timestamp`): array of timestamps (`string[]`, format `YYYYMMDD-HHMMSS`).
-- Success (with `timestamp`):
-  - `type` (string): always `"metar"`
-  - `timestamp` (string): requested timestamp
-  - `data` (object|array): raw METAR payload from hourly file
-- Error `400` (validation/access):
-  - `error` (string)
-- Error `404` (file missing):
-  - `error` (string)
-  - `timestamp` (string)
-- Error `500`:
-  - `error` (string)
+- `200` list mode: `string[]`
+- `200` timestamp mode: wrapper object above
+- `400`: invalid timestamp or invalid filename/access
+- `404`: hourly METAR file not found
+- `500`: read/server failure
 
-Common errors:
+Cache:
 
-- `400` invalid timestamp
-- `404` METAR file not found
-- `500` file read/server error
-
-Cache headers:
-
-- `max-age=5` (timestamp listing)
-- `max-age=60` (timestamp file)
+- list: `Cache-Control: public, max-age=5`
+- timestamp: `Cache-Control: public, max-age=60`
 
 ## Other Routes
 
 ### GET /health
 
-Returns service health:
-
-Response keys:
-
-- `status` (string): always `"OK"`
-- `timestamp` (string): ISO-8601 server timestamp
+Response:
 
 ```json
 {
   "status": "OK",
-  "timestamp": "2023-10-01T12:00:00.123Z"
+  "timestamp": "2026-01-01T00:00:00.000Z"
 }
 ```
 
@@ -301,21 +227,20 @@ Response keys:
 
 Serves `src/EdgeWARN/api/robots.txt`.
 
-### Legacy v1 routes
+### Legacy v1-style routes
 
 - `/features/*`
 - `/data/*`
 
-Return `410 Gone` with guidance to use `/api/v2`.
-
-Response keys:
-
-- `error` (string)
-- `documentation` (string)
+Both return `410 Gone` with migration guidance to `/api/v2`.
 
 ## Security and Platform Behavior
 
-- Rate limiting is enabled globally via `express-rate-limit` with two defaults: `40` requests per second and `2000` requests per minute per client key.
-- CORS uses `ALLOWED_ORIGINS` when set; otherwise it allows all origins in non-production and blocks cross-origin requests in production.
-- Helmet security headers and compression are enabled.
-- In production, detailed version strings are intentionally hidden (`2.x`).
+- Helmet security headers and compression are enabled
+- CORS behavior:
+  - If `ALLOWED_ORIGINS` is set, that allowlist is used
+  - Without `ALLOWED_ORIGINS`, non-production allows all origins
+  - Without `ALLOWED_ORIGINS`, production blocks cross-origin requests
+- Global rate limiting uses two windows by default:
+  - `40` requests per second
+  - `2000` requests per minute

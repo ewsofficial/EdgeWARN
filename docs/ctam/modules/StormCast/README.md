@@ -121,7 +121,7 @@ result = engine.generate_forecast()
 
 ### CTAM Integration
 
-The module is registered in `src/EdgeWARN/core/ctam/modules/__init__.py` and automatically included in the CTAM pipeline. Results are stored in:
+The module is registered in `src/EdgeWARN/ctam/modules/__init__.py` and automatically included in the CTAM pipeline. Results are stored in:
 ```python
 storm_entry["modules"]["StormCast"]
 ```
