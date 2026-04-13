@@ -12,8 +12,10 @@ import pytest
 import json
 from pathlib import Path
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from shapely.prepared import prep
+from EdgeWARN.process.detect.tools import alert_matcher
 from EdgeWARN.process.detect.tools.alert_matcher import (
     CONVECTIVE_FLOOD_EVENTS,
     load_active_alerts,
@@ -342,6 +344,27 @@ class TestLoadActiveAlerts:
         alerts = load_active_alerts(temp_registry)
         assert alerts == []
 
+    def test_uses_cached_snapshot_on_repeat_load(self, temp_registry, sample_convective_alert):
+        alert_matcher._ALERT_SNAPSHOT_CACHE.clear()
+        alert_matcher._ALERT_GEOMETRY_CACHE.clear()
+
+        alert_id = "urn:oid:2.49.0.1.840.0.2406210827.1"
+        safe_id = alert_id.replace(":", "_").replace("/", "_") + ".json"
+
+        with open(temp_registry / "ids" / safe_id, 'w') as f:
+            json.dump({"feature": sample_convective_alert}, f)
+
+        with open(temp_registry / "timestamps" / "20260223-210000.json", 'w') as f:
+            json.dump({"timestamp": "2026-02-23T21:00:00Z", "count": 1, "alerts": [alert_id]}, f)
+
+        first = load_active_alerts(temp_registry)
+        assert len(first) == 1
+
+        with patch("EdgeWARN.process.detect.tools.alert_matcher.open", side_effect=AssertionError("cache miss")):
+            second = load_active_alerts(temp_registry)
+
+        assert len(second) == 1
+
 
 # =============================================================================
 # Test Full Integration
@@ -427,7 +450,7 @@ class TestMatchAlertsToCells:
         assert result == []
 
     def test_loads_closest_timestamp_snapshot(self, temp_registry, sample_convective_alert,
-                                              sample_cell_inside_storm):
+                                               sample_cell_inside_storm):
         """Verify that the target_timestamp is respected to find the active alerts at that time."""
         # Setup two snapshots: one at 21:00 (active alert), one at 22:00 (alert expired, empty snapshot)
         self._write_registry_data(temp_registry, "2026-02-23T21:00:00Z", "20260223-210000", {
@@ -449,3 +472,24 @@ class TestMatchAlertsToCells:
         cells = [sample_cell_inside_storm.copy()]
         result2 = match_alerts_to_cells(cells, temp_registry, target_timestamp="2026-02-23T22:15:00Z")
         assert len(result2[0]["alerts"]) == 0
+
+    def test_reuses_cached_geometry_preparation(self, temp_registry, sample_convective_alert, sample_cell_inside_storm):
+        alert_matcher._ALERT_SNAPSHOT_CACHE.clear()
+        alert_matcher._ALERT_GEOMETRY_CACHE.clear()
+
+        self._write_registry_data(temp_registry, "2026-02-23T21:00:00Z", "20260223-210000", {
+            "urn:oid:2.49.0.1.840.0.2406210827.1": {
+                "id": sample_convective_alert["id"],
+                "first_seen": "2026-02-23T21:00:00Z",
+                "last_seen": "2026-02-23T21:00:00Z",
+                "feature": sample_convective_alert,
+            }
+        })
+
+        result1 = match_alerts_to_cells([sample_cell_inside_storm.copy()], temp_registry)
+        assert len(result1[0]["alerts"]) == 1
+
+        with patch("EdgeWARN.process.detect.tools.alert_matcher.prep", side_effect=AssertionError("geometry cache miss")):
+            result2 = match_alerts_to_cells([sample_cell_inside_storm.copy()], temp_registry)
+
+        assert len(result2[0]["alerts"]) == 1

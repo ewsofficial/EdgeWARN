@@ -131,10 +131,9 @@ class GateMapper:
                 coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
             )
             
-        # Optimization: Use scipy.ndimage.sum for vectorized counting
-        max_id = unique_ids.max()
-        pixel_counts = scipy.ndimage.sum_labels(np.ones_like(sub_polygon), sub_polygon, index=unique_ids)
-        refl_counts = scipy.ndimage.sum_labels(sub_mask, sub_polygon, index=unique_ids)
+        max_id = int(unique_ids.max())
+        pixel_counts = scipy.ndimage.sum_labels(np.ones_like(sub_polygon, dtype=np.int32), sub_polygon, index=unique_ids)
+        refl_counts = scipy.ndimage.sum_labels(sub_mask.astype(np.int32), sub_polygon, index=unique_ids)
         coverage_ratios = refl_counts / pixel_counts
         
         # Initial Filtering: Trigger expansion for ANY polygon with >= min_seed_percentage coverage
@@ -151,35 +150,25 @@ class GateMapper:
         # 4. Perform Watershed Expansion
         valid_id_mask = np.zeros(max_id + 1, dtype=bool)
         valid_id_mask[valid_ids] = True
-        
-        # Dynamic Thresholding Per Cell
-        dyn_thresh = np.full(max_id + 1, self.refl_threshold, dtype=np.float32)
-        composite_mask = np.zeros_like(sub_mask, dtype=bool)
-        
-        for cell_id in valid_ids:
-            # Find max reflectivity for this cell
-            cell_refl = sub_refl[sub_polygon == cell_id]
-            max_refl = np.max(cell_refl) if len(cell_refl) > 0 else 0.0
-            
-            # User defined dynamic dropping rules
-            if max_refl < 45.0:
-                min_thresh = 37.5
-            else:
-                min_thresh = 40.0
-                
-            # Dynamic threshold: cap max_refl for high-reflectivity storms
-            # to capture more of the storm extent, not just the core
-            # For storms >= 52 dBZ, cap the reflectivity at 52 dBZ for threshold calculation
-            capped_max_refl = min(max_refl, 52.0) if max_refl >= 52.0 else max_refl
-            
-            cell_thresh = max(min_thresh, capped_max_refl - self.drop_offset)
-            dyn_thresh[cell_id] = cell_thresh
-            
-            # Incorporate cell's valid area into the composite mask
-            composite_mask |= (sub_refl >= cell_thresh)
+
+        dyn_thresh = np.full(max_id + 1, np.inf, dtype=np.float32)
+        max_refl_by_id = np.full(max_id + 1, -np.inf, dtype=np.float32)
+        finite_label_mask = (sub_polygon > 0) & np.isfinite(sub_refl)
+        if np.any(finite_label_mask):
+            np.maximum.at(max_refl_by_id, sub_polygon[finite_label_mask], sub_refl[finite_label_mask].astype(np.float32, copy=False))
+
+        valid_max_refl = max_refl_by_id[valid_ids]
+        min_thresh = np.where(valid_max_refl < 45.0, 37.5, 40.0).astype(np.float32, copy=False)
+        capped_max_refl = np.minimum(valid_max_refl, 52.0)
+        dyn_thresh[valid_ids] = np.maximum(min_thresh, capped_max_refl - self.drop_offset)
+
+        # Preserve existing global-union behavior while avoiding a Python loop.
+        min_valid_threshold = float(np.min(dyn_thresh[valid_ids]))
+        composite_mask = np.isfinite(sub_refl) & (sub_refl >= min_valid_threshold)
         
         # Markers are valid polygons intersecting their own logical threshold mask
-        markers = np.where(valid_id_mask[sub_polygon] & (sub_refl >= dyn_thresh[sub_polygon]), sub_polygon, 0)
+        pixel_thresholds = dyn_thresh[np.clip(sub_polygon, 0, max_id)]
+        markers = np.where(valid_id_mask[sub_polygon] & np.isfinite(sub_refl) & (sub_refl >= pixel_thresholds), sub_polygon, 0)
         
         if not np.any(markers > 0):
              return xr.Dataset(
@@ -191,27 +180,24 @@ class GateMapper:
         elevation = -dist.astype(np.float16)
         sub_final = watershed(elevation, markers, mask=composite_mask)
         
-        # Post-Filtering to enforce strict per-cell thresholds against watershed competition leaks
-        for cell_id in np.unique(sub_final):
-            if cell_id > 0:
-                invalid_mask = (sub_final == cell_id) & (sub_refl < dyn_thresh[cell_id])
-                sub_final[invalid_mask] = 0
+        # Post-filtering to enforce strict per-cell thresholds against watershed competition leaks.
+        final_thresholds = dyn_thresh[np.clip(sub_final, 0, max_id)]
+        invalid_mask = (sub_final > 0) & (~np.isfinite(sub_refl) | (sub_refl < final_thresholds))
+        sub_final[invalid_mask] = 0
         
         # 5. Final Size Filter: > 5 gates total in expanded cell
         final_ids = np.unique(sub_final)
         final_ids = final_ids[final_ids > 0]
         
         if len(final_ids) > 0:
-             final_counts = scipy.ndimage.sum_labels(np.ones_like(sub_final), sub_final, index=final_ids)
-             # Map IDs to their counts for filtering
-             id_to_count = dict(zip(final_ids, final_counts))
-             
-             # Zero out small clusters
-             rejected_ids = [fid for fid, count in id_to_count.items() if count <= 5]
-             if rejected_ids:
-                  self.io_manager.write_debug(f"Rejecting small expanded clusters: {rejected_ids}")
-                  reject_mask = np.isin(sub_final, rejected_ids)
-                  sub_final[reject_mask] = 0
+             final_counts = np.bincount(sub_final.ravel(), minlength=int(final_ids.max()) + 1)
+             rejected_ids = np.flatnonzero((final_counts > 0) & (final_counts <= 5))
+             rejected_ids = rejected_ids[rejected_ids > 0]
+             if rejected_ids.size > 0:
+                  self.io_manager.write_debug(f"Rejecting small expanded clusters: {rejected_ids.tolist()}")
+                  reject_lookup = np.zeros(final_counts.shape[0], dtype=bool)
+                  reject_lookup[rejected_ids] = True
+                  sub_final[reject_lookup[sub_final]] = 0
 
         # Place result back into full grid
         final_grid = np.zeros_like(polygon_grid)

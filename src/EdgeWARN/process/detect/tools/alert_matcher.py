@@ -23,6 +23,9 @@ from util.io import IOManager
 
 io_manager = IOManager("[AlertMatcher]")
 
+_ALERT_SNAPSHOT_CACHE: Dict[tuple, List[Dict[str, Any]]] = {}
+_ALERT_GEOMETRY_CACHE: Dict[tuple, tuple] = {}
+
 # Convective and flood-related alert events to include
 CONVECTIVE_FLOOD_EVENTS = {
     # Convective events
@@ -38,6 +41,14 @@ CONVECTIVE_FLOOD_EVENTS = {
 
 
 def load_active_alerts(registry_dir: Path, target_timestamp: Optional[str] = None) -> List[Dict[str, Any]]:
+    features, _ = _load_active_alerts_with_cache(registry_dir, target_timestamp)
+    return features
+
+
+def _load_active_alerts_with_cache(
+    registry_dir: Path,
+    target_timestamp: Optional[str] = None,
+) -> tuple[List[Dict[str, Any]], Optional[tuple]]:
     """
     Load active alerts from the AlertRegistry directory.
     Uses the closest snapshot in 'timestamps/' before or equal to the target_timestamp,
@@ -55,12 +66,12 @@ def load_active_alerts(registry_dir: Path, target_timestamp: Optional[str] = Non
     ids_dir = registry_dir / "ids"
     
     if not ts_dir.exists() or not ids_dir.exists():
-        return []
+        return [], None
     
     try:
         ts_files = sorted([f for f in ts_dir.glob("*.json") if not f.name.startswith(".tmp")])
         if not ts_files:
-            return []
+            return [], None
             
         selected_file = ts_files[-1]
         
@@ -78,12 +89,17 @@ def load_active_alerts(registry_dir: Path, target_timestamp: Optional[str] = Non
             if valid_files:
                 selected_file = valid_files[-1]
                 
+        cache_key = _build_alert_snapshot_cache_key(selected_file, ids_dir)
+        cached_features = _ALERT_SNAPSHOT_CACHE.get(cache_key)
+        if cached_features is not None:
+            return [dict(feature) for feature in cached_features], cache_key
+
         with open(selected_file, 'r', encoding='utf-8') as f:
             ts_data = json.load(f)
-            
+
         active_ids = ts_data.get("alerts", [])
         features = []
-        
+
         for alert_id in active_ids:
             if isinstance(alert_id, dict):
                 alert_id = alert_id.get("id") or alert_id.get("urn_oid")
@@ -101,11 +117,74 @@ def load_active_alerts(registry_dir: Path, target_timestamp: Optional[str] = Non
                             features.append(alert_data["feature"])
                 except Exception:
                     continue
-        return features
+
+        _ALERT_SNAPSHOT_CACHE[cache_key] = features
+        return [dict(feature) for feature in features], cache_key
         
     except Exception as e:
         io_manager.write_warning(f"Failed to load alerts from registry directory: {e}")
-        return []
+        return [], None
+
+
+def _build_alert_snapshot_cache_key(selected_file: Path, ids_dir: Path) -> tuple:
+    stat = selected_file.stat()
+    return (
+        str(selected_file),
+        stat.st_mtime_ns,
+        stat.st_size,
+        str(ids_dir),
+    )
+
+
+def _build_alert_geometry_cache_key(snapshot_cache_key: Optional[tuple], filtered_alerts: List[Dict[str, Any]]) -> tuple:
+    if snapshot_cache_key is not None:
+        return ("snapshot", snapshot_cache_key)
+
+    ids = []
+    for alert in filtered_alerts:
+        ids.append(_extract_alert_id(alert) or str(hash(json.dumps(alert, sort_keys=True))))
+
+    return ("alerts", tuple(ids))
+
+
+def _prepare_alert_geometries(
+    filtered_alerts: List[Dict[str, Any]],
+    snapshot_cache_key: Optional[tuple],
+):
+    geometry_cache_key = _build_alert_geometry_cache_key(snapshot_cache_key, filtered_alerts)
+    cached_geometry = _ALERT_GEOMETRY_CACHE.get(geometry_cache_key)
+    if cached_geometry is not None:
+        return cached_geometry
+
+    alert_ids: List[str] = []
+    alert_polys: List[Polygon] = []
+    alert_prepared = []
+    for alert in filtered_alerts:
+        alert_id = _extract_alert_id(alert)
+        alert_poly = _get_alert_polygon(alert)
+        if alert_id and alert_poly:
+            alert_ids.append(alert_id)
+            alert_polys.append(alert_poly)
+            alert_prepared.append(prep(alert_poly))
+
+    if not alert_polys:
+        prepared = ([], [], [], None, {}, [])
+        _ALERT_GEOMETRY_CACHE[geometry_cache_key] = prepared
+        return prepared
+
+    try:
+        spatial_index = STRtree(alert_polys)
+        geom_id_to_index = {id(geom): idx for idx, geom in enumerate(alert_polys)}
+    except Exception:
+        spatial_index = None
+        geom_id_to_index = {}
+        fallback_alerts = list(zip(alert_ids, alert_prepared))
+    else:
+        fallback_alerts = []
+
+    prepared = (alert_ids, alert_polys, alert_prepared, spatial_index, geom_id_to_index, fallback_alerts)
+    _ALERT_GEOMETRY_CACHE[geometry_cache_key] = prepared
+    return prepared
 
 
 def filter_convective_flood_alerts(alerts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -393,7 +472,7 @@ def match_alerts_to_cells(
         return []
     
     # Load and filter alerts
-    all_alerts = load_active_alerts(registry_dir, target_timestamp)
+    all_alerts, snapshot_cache_key = _load_active_alerts_with_cache(registry_dir, target_timestamp)
     filtered_alerts = filter_convective_flood_alerts(all_alerts)
     
     if not filtered_alerts:
@@ -403,31 +482,19 @@ def match_alerts_to_cells(
         return cell_entries
     
     # Pre-process alert polygons and build spatial index.
-    alert_ids: List[str] = []
-    alert_polys: List[Polygon] = []
-    alert_prepared = []
-    for alert in filtered_alerts:
-        alert_id = _extract_alert_id(alert)
-        alert_poly = _get_alert_polygon(alert)
-        if alert_id and alert_poly:
-            alert_ids.append(alert_id)
-            alert_polys.append(alert_poly)
-            alert_prepared.append(prep(alert_poly))
+    (
+        alert_ids,
+        alert_polys,
+        alert_prepared,
+        spatial_index,
+        geom_id_to_index,
+        fallback_alerts,
+    ) = _prepare_alert_geometries(filtered_alerts, snapshot_cache_key)
 
     if not alert_polys:
         for cell in cell_entries:
             cell["alerts"] = []
         return cell_entries
-
-    try:
-        spatial_index = STRtree(alert_polys)
-        geom_id_to_index = {id(geom): idx for idx, geom in enumerate(alert_polys)}
-    except Exception:
-        spatial_index = None
-        geom_id_to_index = {}
-        fallback_alerts = list(zip(alert_ids, alert_prepared))
-    else:
-        fallback_alerts = []
 
     # Match alerts to each cell
     for cell in cell_entries:

@@ -94,3 +94,21 @@ def test_calculate_vectors_invalid_history(mock_fs):
         results = StormVectorCalculator.calculate_vectors(current_entries)
         
     assert "dx" not in results[0]
+
+
+def test_calculate_vectors_uses_previous_entries_without_history_io(mock_fs):
+    current_entries = [
+        {"id": 101, "timestamp": "2023-01-01T12:05:00", "centroid": [35.1, -96.9]}
+    ]
+    previous_entries = [
+        {"id": 101, "timestamp": "2023-01-01T12:00:00", "centroid": [35.0, -97.0]}
+    ]
+
+    with patch("EdgeWARN.process.detect.tools.vecmath.fs.CELL_DIR", mock_fs), \
+         patch("EdgeWARN.process.detect.tools.vecmath.StormVectorCalculator._load_previous_entry_from_history") as mock_loader:
+        results = StormVectorCalculator.calculate_vectors(current_entries, previous_entries=previous_entries)
+
+    mock_loader.assert_not_called()
+    assert results[0]["dt"] == 300.0
+    assert "dx" in results[0]
+    assert "dy" in results[0]

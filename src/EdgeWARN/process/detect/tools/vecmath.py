@@ -3,6 +3,7 @@ from datetime import datetime
 from math import radians, cos
 import util.file as fs
 
+
 class StormVectorCalculator:
     """
     Calculates storm motion vectors (dx, dy, dt) for storm cells
@@ -10,13 +11,15 @@ class StormVectorCalculator:
     """
 
     @staticmethod
-    def calculate_vectors(entries):
+    def calculate_vectors(entries, previous_entries=None):
         """
         Updates each cell with dx, dy, dt by comparing against 
         the last recorded history entry in CELL_DIR.
         
         entries: list of current cell dictionaries
         """
+        previous_by_id = StormVectorCalculator._build_previous_entry_map(previous_entries)
+
         for cell in entries:
             # Skip if cell has no timestamp (unmatched/inactive)
             if "timestamp" not in cell:
@@ -26,23 +29,12 @@ class StormVectorCalculator:
             if not cell_id:
                 continue
 
-            # Try to load previous history
-            history_path = fs.CELL_DIR / f"{cell_id}.json"
-            if not history_path.exists():
-                # New cell, no history yet
-                continue
+            prev_entry = previous_by_id.get(int(cell_id))
+            if prev_entry is None:
+                prev_entry = StormVectorCalculator._load_previous_entry_from_history(cell_id)
 
-            try:
-                with open(history_path, 'r') as f:
-                    history = json.load(f)
-            except Exception:
+            if prev_entry is None:
                 continue
-
-            if not history:
-                continue
-
-            # Get previous entry (T-1)
-            prev_entry = history[-1]
 
             # Extract timestamps
             # Support both top-level (new) and properties (old)
@@ -88,3 +80,38 @@ class StormVectorCalculator:
             cell['dt'] = dt
 
         return entries
+
+    @staticmethod
+    def _build_previous_entry_map(previous_entries):
+        if not previous_entries:
+            return {}
+
+        previous_by_id = {}
+        for entry in previous_entries:
+            cell_id = entry.get('id')
+            if cell_id is None:
+                continue
+
+            try:
+                previous_by_id[int(cell_id)] = entry
+            except (TypeError, ValueError):
+                continue
+
+        return previous_by_id
+
+    @staticmethod
+    def _load_previous_entry_from_history(cell_id):
+        history_path = fs.CELL_DIR / f"{cell_id}.json"
+        if not history_path.exists():
+            return None
+
+        try:
+            with open(history_path, 'r') as f:
+                history = json.load(f)
+        except Exception:
+            return None
+
+        if not history:
+            return None
+
+        return history[-1]
