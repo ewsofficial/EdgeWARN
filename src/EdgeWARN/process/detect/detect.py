@@ -18,6 +18,7 @@ def detect_cells(
     lon_max,
     *,
     return_probsevere=False,
+    return_datasets=False,
     refl_threshold=37.5,
     min_seed_percentage=0.001,
     drop_offset=10.0,
@@ -46,6 +47,11 @@ def detect_cells(
     
     if radar_ds is None:
         io_manager.write_error(f"Failed to load/subset radar data from {radar_path}")
+        if return_datasets:
+            empty_context = (None, None, None)
+            if return_probsevere:
+                return [], None, empty_context
+            return [], empty_context
         if return_probsevere:
             return [], None
         return []
@@ -97,6 +103,12 @@ def detect_cells(
     entries = saver.create_entry()
     perf_tracker.stop("Detection - Create Entry")
 
+
+    if return_datasets:
+        dataset_context = (radar_ds, ps_ds, preciptype_ds)
+        if return_probsevere:
+            return entries, ps_ds, dataset_context
+        return entries, dataset_context
 
     if return_probsevere:
         return entries, ps_ds

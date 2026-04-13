@@ -101,5 +101,28 @@ def test_detect_return_probsevere(mock_dependencies):
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
             30, 40, -100, -90, return_probsevere=True
         )
-        
+    
     assert ps_ds == ps_ds_mock
+
+
+def test_detect_return_datasets(mock_dependencies):
+    """Test return_datasets flag exposes loaded dataset context."""
+    handler, mapper, saver, io_manager = mock_dependencies
+    radar_ds_mock = MagicMock(name="radar_ds")
+    ps_ds_mock = MagicMock(name="ps_ds")
+    pt_ds_mock = MagicMock(name="pt_ds")
+    handler.load_subset.return_value = radar_ds_mock
+    handler.load_probsevere.return_value = ps_ds_mock
+    handler.load_preciptype.return_value = pt_ds_mock
+
+    with patch("EdgeWARN.process.detect.detect.DetectionDataHandler", return_value=handler), \
+         patch("EdgeWARN.process.detect.detect.GateMapper", return_value=mapper), \
+         patch("EdgeWARN.process.detect.detect.CellDataSaver", return_value=saver):
+
+        entries, dataset_context = detect_cells(
+            "radar.grib2", "ps.json", "pt.grib2", io_manager,
+            30, 40, -100, -90, return_datasets=True
+        )
+
+    assert entries == []
+    assert dataset_context == (radar_ds_mock, ps_ds_mock, pt_ds_mock)

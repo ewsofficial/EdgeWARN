@@ -30,6 +30,7 @@ def _detect_with_optional_probsevere(
     radar_obj=None,
     ps_obj=None,
     pt_obj=None,
+    return_datasets=False,
 ):
     if need_probsevere:
         return detect_cells(
@@ -48,9 +49,10 @@ def _detect_with_optional_probsevere(
             radar_obj=radar_obj,
             ps_obj=ps_obj,
             preciptype_obj=pt_obj,
+            return_datasets=return_datasets,
         )
 
-    return detect_cells(
+    result = detect_cells(
         radar_path,
         ps_path,
         pt_path,
@@ -65,7 +67,14 @@ def _detect_with_optional_probsevere(
         radar_obj=radar_obj,
         ps_obj=ps_obj,
         preciptype_obj=pt_obj,
-    ), None
+        return_datasets=return_datasets,
+    )
+
+    if return_datasets:
+        entries, dataset_context = result
+        return entries, None, dataset_context
+
+    return result, None
 
 
 def main(
@@ -145,15 +154,16 @@ def main(
         # Find the most recent stormcells_*.json file in the stormcell directory
         stormcell_dir = fs.STORMCELL_DIR
         if stormcell_dir.exists():
-            json_files = sorted(stormcell_dir.glob("stormcells_*.json"))
-            if json_files:
-                # Filter out files that are from the future relative to this scan
-                valid_files = [f for f in json_files if f.stem < f"stormcells_{final_ts}"]
-                if valid_files:
-                    latest_json = valid_files[-1]
-                    io_manager.write_debug(f"Loading previous cells from {latest_json}")
-                    with open(latest_json, 'r') as f:
-                        data_old = js.load(f)
+            latest_json = None
+            for candidate in stormcell_dir.glob("stormcells_*.json"):
+                if candidate.stem < f"stormcells_{final_ts}":
+                    if latest_json is None or candidate.stem > latest_json.stem:
+                        latest_json = candidate
+
+            if latest_json is not None:
+                io_manager.write_debug(f"Loading previous cells from {latest_json}")
+                with open(latest_json, 'r') as f:
+                    data_old = js.load(f)
     except Exception as e:
         io_manager.write_error(f"Error loading previous data: {e}")
 
@@ -236,44 +246,7 @@ def main(
     io_manager.write_debug("Detecting cells in new scan ...")
     perf_tracker.start("Detection - New Scan")
     
-    # We need to capture the loaded datasets from this call to return them
-    # detect_cells returns entries, ps_ds.
-    # It does NOT return the radar_ds explicitly unless we change it.
-    # However, we can instantiate a handler here to get them, OR change detect_cells to return more.
-    # Changing detect_cells return signature impacts _detect_with_optional_probsevere.
-    
-    # Alternative: Instantiate Handler here manually for valid caching?
-    # Or just rely on the file system cache in IO?
-    # Our simple persistent strategy is to return the OBJECT.
-    
-    # Let's modify logic: We want to get the loaded radar_ds NEW so we can return it.
-    # But `detect_cells` creates local variables.
-    
-    # Hack: We can just use the fact that if we pass `radar_obj` later, it works.
-    # But we need to EXTRACT `radar_obj` from this run.
-    
-    # Let's create a temporary handler just to load the NEW data, so we have the object reference.
-    # This might seem redundant but `DetectionDataHandler` is thin.
-    # Actually, `detect_cells` does: handler = ...; radar_ds = handler.load_subset();
-    
-    # If we want to return `radar_ds`, we should change `detect_cells` to return it?
-    # That changes signature widely.
-    
-    # Strategy: Just Load it here using handler, then pass it to detect_cells.
-    
-    new_data_handler = DetectionDataHandler(
-        radar_new, ps_new, pt_new, io_manager, 
-        lat_min, lat_max, lon_min, lon_max
-    )
-    
-    perf_tracker.start("Detection - New Scan - Preload")
-    radar_new_obj = new_data_handler.load_subset()
-    # We can also preload PS and PT if we want full persistence
-    ps_new_obj = new_data_handler.load_probsevere()
-    pt_new_obj = new_data_handler.load_preciptype()
-    perf_tracker.stop("Detection - New Scan - Preload")
-    
-    entries_new, ps_new_data = _detect_with_optional_probsevere(
+    entries_new, ps_new_data, dataset_context = _detect_with_optional_probsevere(
         radar_new,
         ps_new,
         pt_new,
@@ -285,10 +258,13 @@ def main(
         refl_threshold=refl_threshold,
         min_seed_percentage=min_seed_percentage,
         drop_offset=drop_offset,
-        radar_obj=radar_new_obj, # Pass preloaded
+        radar_obj=radar_new_obj,
         ps_obj=ps_new_obj,
-        pt_obj=pt_new_obj 
+        pt_obj=pt_new_obj,
+        return_datasets=True,
     )
+
+    radar_new_obj, ps_new_obj, pt_new_obj = dataset_context
     
     perf_tracker.stop("Detection - New Scan")
     io_manager.write_debug(f"Detected {len(entries_new)} cells in new scan")
@@ -369,7 +345,7 @@ def main(
     perf_tracker.stop("Detection - Tracking")
     
     perf_tracker.start("Detection - Vector Calc")
-    entries = StormVectorCalculator.calculate_vectors(entries)
+    entries = StormVectorCalculator.calculate_vectors(entries, previous_entries=entries_old)
     perf_tracker.stop("Detection - Vector Calc")
 
     # Match convective/flood alerts to cells

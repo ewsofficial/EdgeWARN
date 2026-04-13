@@ -11,6 +11,7 @@ class CellDataSaver:
         self.expanded_ds = expanded_ds
         self.ps_ds = ps_ds
         self.preciptype_ds = preciptype_ds
+        self._hail_present = None
     
     def create_json_structure(self, latest_timestamp, features):
         """
@@ -43,6 +44,9 @@ class CellDataSaver:
         avoid full-grid scans.
         """
         if self.preciptype_ds is None:
+            return []
+
+        if self._hail_present is False:
             return []
 
         # Slices are passed from create_entry
@@ -136,6 +140,8 @@ class CellDataSaver:
         lons = self.radar_ds['longitude'].values
         
         is_1d_coords = (lats.ndim == 1)
+        if self.preciptype_ds is not None and self._hail_present is None:
+            self._hail_present = bool(np.any(self.preciptype_ds['unknown'].values == 6))
 
         results = []
         
@@ -180,8 +186,7 @@ class CellDataSaver:
             if refl_vals.size > 0:
                 # Optimize coordinate extraction
                 if is_1d_coords:
-                     combined_mask = mask_slice.copy()
-                     rows, cols = np.where(combined_mask)
+                     rows, cols = np.nonzero(mask_slice)
                      vals = refl_slice[rows, cols]
                      valid = ~np.isnan(vals)
                      valid_rows = rows[valid]
