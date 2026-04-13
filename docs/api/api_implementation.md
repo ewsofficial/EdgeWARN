@@ -2,15 +2,13 @@
 
 This document describes the current implementation in `src/EdgeWARN/api`.
 
-For the file-level JSON schemas behind these routes, see `docs/api/data_keys.md`.
-
 ## Server Architecture
 
-The API is an Express.js service with clustered workers (up to 4), file-backed data access, and defensive request validation.
+The EdgeWARN API is an Express.js service with clustered workers (up to 4), file-backed JSON responses, centralized validation, and safe file reads.
 
 ### File Structure
 
-```
+```text
 src/EdgeWARN/api/
 ├── server.js
 ├── config.js
@@ -21,8 +19,9 @@ src/EdgeWARN/api/
 │       ├── index.js
 │       ├── features/
 │       │   ├── cells.js
-│       │   ├── alerts.js
-│       │   └── timestamps.js
+│       │   ├── mesocyclones.js
+│       │   ├── timestamps.js
+│       │   └── alerts.js
 │       └── data/
 │           └── metar.js
 └── utils/
@@ -32,35 +31,38 @@ src/EdgeWARN/api/
 
 ## Request Lifecycle
 
-1. `server.js` loads environment variables (`dotenv`) and config.
-2. If process is primary, Node cluster forks up to 4 workers.
-3. Each worker applies middleware:
+1. `server.js` loads environment variables via `dotenv`
+2. Primary process forks up to 4 workers (`cluster`)
+3. Worker middleware stack is applied:
    - `helmet`
    - `compression`
-   - `cors` (explicit allowlist from `ALLOWED_ORIGINS`, otherwise open in non-production and blocked in production)
+   - `cors`
    - `express.json()`
-   - dual `express-rate-limit` guards (per-second and per-minute)
-4. Worker mounts routes:
+   - per-second and per-minute `express-rate-limit`
+4. Routes are mounted:
    - `/`
    - `/health`
    - `/api/v2`
    - legacy guards for `/features/*` and `/data/*` returning `410`
-5. File-backed routes fetch JSON from configured data directories using safe readers.
+5. Routes read file-backed JSON using guarded readers in `utils/fileReader.js`
 
 ## Configuration (`config.js`)
 
-`config.js` resolves `BASE_DIR` in this order:
+`BASE_DIR` resolution order:
 
-1. CLI arg: `--base-dir` / `--base-dir=...`
+1. CLI arg: `--base-dir` or `--base-dir=...`
 2. `EDGEWARN_BASE_DIR`
-3. Platform defaults (including `~/EdgeWARN_input` on non-Windows)
+3. Platform fallback defaults
 
-It then builds `DATA_DIR` subpaths (cells, stormcells, METAR, alerts, etc.) and creates missing directories at startup.
+Data directories are derived from `BASE_DIR/data/...`, including `cells`, `stormcells`, `Mesocyclones`, `METAR`, and alert directories.
 
-It also supports debug mode via `--debug_server`:
+At startup, required directories are created if missing.
 
-- default port: `5000`
-- debug port: `3001`
+Debug mode:
+
+- Enabled with `--debug_server`
+- Default port `5000`
+- Debug port `3001`
 
 ## Routing
 
@@ -69,26 +71,34 @@ It also supports debug mode via `--debug_server`:
 Mounts:
 
 - `/features/cells`
+- `/features/mesocyclones`
 - `/features/timestamps`
 - `/features/alerts`
 - `/data/metar`
 
-And provides `GET /api/v2` endpoint metadata.
+Also serves `GET /api/v2` endpoint metadata.
 
 ### `routes/v2/features/cells.js`
 
 - `GET /api/v2/features/cells`
 - Optional query: `id`
-- Reads `cell_index.json` for list mode.
-- Reads `{id}.json` for single-cell mode.
-- Validates positive integer IDs.
+- List mode reads `cell_index.json`
+- ID mode reads `{id}.json`
+- Validates positive integer IDs
+
+### `routes/v2/features/mesocyclones.js`
+
+- `GET /api/v2/features/mesocyclones`
+- Optional query: `timestamp` (`YYYYMMDD-HHMMSS`)
+- List mode scans `mesocyclones_*.json`
+- Timestamp mode reads `mesocyclones_{timestamp}.json`
 
 ### `routes/v2/features/timestamps.js`
 
 - `GET /api/v2/features/timestamps`
 - Optional query: `timestamp` (`YYYYMMDD-HHMMSS`)
-- Reads `stormcell_index.json` for list mode.
-- Reads `stormcells_{timestamp}.json` for snapshot mode.
+- List mode reads `stormcell_index.json`
+- Timestamp mode reads `stormcells_{timestamp}.json`
 
 ### `routes/v2/features/alerts.js`
 
@@ -96,19 +106,19 @@ And provides `GET /api/v2` endpoint metadata.
 - `GET /api/v2/features/alerts/edgewarn`
 - Supports mutually exclusive query params: `id` or `timestamp`
 - ID mode resolves filename-safe IDs in `ids/`
-- Timestamp mode reads `{timestamp}.json` from `timestamps/`
+- Timestamp mode reads `{timestamp}.json` in `timestamps/` and returns `alerts` array
 - List mode scans timestamp files and returns sorted timestamp keys
 
 ### `routes/v2/data/metar.js`
 
 - `GET /api/v2/data/metar`
 - Optional query: `timestamp`
-- List mode scans `METAR_YYYYMMDD-HHz.json`
-- Timestamp mode maps request to hourly METAR file and wraps result as `{ type, timestamp, data }`
+- List mode scans hourly files `METAR_YYYYMMDD-HHz.json`
+- Timestamp mode maps to hourly file and wraps response as `{ type, timestamp, data }`
 
 ### `routes/health.js`
 
-- `GET /health` returns service status and server timestamp.
+- `GET /health` returns `{ status: "OK", timestamp }`
 
 ## Utilities
 
@@ -116,57 +126,57 @@ And provides `GET /api/v2` endpoint metadata.
 
 Provides:
 
-- `isSafeFilename(name)` filename hardening
-- `readJsonFileSafe(dir, name, options)` safe JSON file reads with traversal protection
-- `readIndexFile(path)` index-file reads with short cache TTL
+- `isSafeFilename(name)`
+- `readJsonFileSafe(dir, name, options)` with traversal protection
+- `readIndexFile(indexPath)`
 
-Caching uses `lru-cache`:
+Caching (`lru-cache`):
 
 - max entries: `500`
 - default TTL: `60s`
-- max worker cache size: `40MB`
-- index TTL override: `5s`
+- max cache size per worker: `40MB`
+- index-file TTL override: `5s`
 
 ### `utils/validation.js`
 
-Centralized validation helpers for:
+Provides validators for:
 
-- resource type checks
-- timestamp validation
+- timestamps (`YYYYMMDD-HHMMSS`)
 - mutually exclusive query params
-- cell ID and alert ID validation
+- cell IDs
+- alert IDs
 
-## Middleware Details
+## Middleware and Security
 
-### Security
+### Helmet
 
-`helmet` is enabled with HSTS and CSP defaults.
+- Enabled globally
+- Includes HSTS and default CSP behavior from server config
 
 ### CORS
 
-- If `ALLOWED_ORIGINS` is set, that comma-separated allowlist is used
-- In non-production without `ALLOWED_ORIGINS`, all origins are allowed for development/testing
-- In production without `ALLOWED_ORIGINS`, cross-origin requests are blocked
+- Uses `ALLOWED_ORIGINS` when set
+- Without `ALLOWED_ORIGINS`:
+  - non-production: allows all origins
+  - production: blocks cross-origin requests
 
 ### Rate Limiting
 
-`express-rate-limit` defaults:
+Two global limiters are applied:
 
-- `RATE_LIMIT_WINDOW_MS_SEC`: `1000`
-- `RATE_LIMIT_MAX_SEC`: `40`
-- `RATE_LIMIT_WINDOW_MS_MIN`: `60000`
-- `RATE_LIMIT_MAX_MIN`: `2000`
+- per-second limiter (defaults: `windowMs=1000`, `max=40`)
+- per-minute limiter (defaults: `windowMs=60000`, `max=2000`)
 
-Special cases:
+Special behavior:
 
-- Optional skip for `/health` with `x-internal-check: true`
-- Custom key generation handles proxy/non-proxy deployments
+- `/health` can be skipped when header `x-internal-check: true` is present
+- Key generation supports proxy and non-proxy deployment modes
 
 ## Error Handling
 
-- Route-level handlers return `400/404/500` as appropriate.
-- Global error middleware sanitizes output in production (`Internal server error`).
-- Legacy v1 paths return `410 Gone` and include migration guidance.
+- Route handlers return `400`, `404`, or `500` as appropriate
+- Global error middleware hides stack/detail in production (`Internal server error`)
+- Legacy v1-style routes return `410 Gone`
 
 ## Environment Variables
 
@@ -183,6 +193,6 @@ Special cases:
 
 ## Runtime Modes
 
-- **Primary API server**: `npm run api:edgewarn`
-- **Debug API server**: `npm run debug:edgewarn`
-- **EWMRS API server**: `npm run api:ewmrs`
+- Primary API server: `npm run api:edgewarn`
+- Debug API server: `npm run debug:edgewarn`
+- EWMRS API server: `npm run api:ewmrs`

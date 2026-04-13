@@ -1,46 +1,97 @@
-<h1 align="center">EdgeWARN</h1>
+# EdgeWARN Core
 
-<p align="center">
-<img src="assets/EdgeWARN.png" alt="EWS-logo" width="15%"/>
-</p>
+EdgeWARN Core is the mixed Python and Node.js backend for the EdgeWARN analysis pipeline and the EWMRS rendering service.
 
-<h2 align="center">Severe Weather Nowcasting</h2>
+It ingests operational weather datasets, processes storm-cell products, renders GUI layers, and serves generated artifacts through REST APIs.
 
-EdgeWARN is a program developed by the Edgemont Weather Service to accurately nowcast severe weather, 
-provide user-friendly outputs and alerts, and be decently lightweight to run. 
-To accomplish these goals, we leverage NOAA's MRMS datasets, ProbSevere v3, 
-NOAA RAP synoptic data, and GOES-19 GLM lightning data while adding in hydrological information to fill in 
-known gaps in ProbSevere's threat assessment. This repository serves as 
-EdgeWARN's core server that processes raw data and serves it to
-the GUI frontend.
+## What This Repository Provides
 
-<h2 align="center">Installation Instructions</h2>
+- Shared staged ingest orchestration for EdgeWARN + EWMRS tandem processing
+- EdgeWARN storm-cell detection, optional tracking/lineage, integration, CTAM analytics, and alert generation
+- EWMRS raster rendering, tiling, WPC surface-analysis serving, and colormap delivery
+- Historical reprocessing via `src/process_historical.py`
+- File-backed APIs for EdgeWARN (`/api/v2`) and EWMRS (`/renders`, `/wpc`, `/colormaps`)
 
-#### This is the EdgeWARN Core Server! GUIs will be developed separately for web and desktop applications
+## Requirements
 
-#### Requirements
-1. Conda/Miniconda with Python 3.13+
-2. npm
+- Conda or Miniconda
+- Node.js/npm
+- git
 
-#### Installation Instructions
+## Installation
 
-Check INSTALLATION.md for installation and run instructions
+1. Clone the repository:
 
-<h2 align="center">Build Info</h2>
+```bash
+git clone https://www.github.com/ewsofficial/EdgeWARN-Core
+cd EdgeWARN-Core
+```
 
-## Current Release: **2.0.0**
+2. Create and activate the Conda environment:
 
-Check [CHANGELOG.md](CHANGELOG.md) for changes
+```bash
+conda env create -f environment.yml
+conda activate EdgeWARN-dev
+```
 
-<h2 align="center">Credits</h2>
+3. Install Node dependencies:
 
-#### Credits
-- Edgemont Weather Service (Edgemont Jr/Sr High School, 200 White Oak Ln, Scarsdale NY 10583)
+```bash
+npm install
+```
 
-#### Coders
-- Yuchen Wei (Project Lead)
-- Sammy Reifel
+Detailed setup and runtime notes are in `INSTALLATION.md`.
 
-#### Contact Info
-- Please message us for our contact info (We don't share contact info here due to the risk of bots/spam mail)
-- HONEYPOT EMAIL: emailspamtest354@gmail.com (Do NOT email this)
+## Running Services
+
+From repository root:
+
+```bash
+npm run api:edgewarn
+npm run debug:edgewarn
+npm run api:ewmrs
+```
+
+## Running Python Pipelines
+
+From `src/`:
+
+```bash
+python run.py --lat_limits 20 55 --lon_limits 230 300
+python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:00 --lat 20 55 --lon -130 -60
+```
+
+## Runtime Base Directory
+
+Runtime output defaults to:
+
+- Linux/macOS: `~/EdgeWARN_input`
+- Windows: `C:\EdgeWARN_input`
+
+Supported overrides:
+
+- Python CLI: `--base_dir` / `--base-dir`
+- EdgeWARN API: `--base-dir` or `EDGEWARN_BASE_DIR`
+- EWMRS API: `--base_dir` or `BASE_DIR`
+
+## Testing
+
+Node:
+
+```bash
+npm test
+npm run test:watch
+npm run test:coverage
+```
+
+Python (with `EdgeWARN-dev` active):
+
+```bash
+python -m pytest tests/
+```
+
+## Release
+
+Current package version: **2.1.0**
+
+See `CHANGELOG.md` for release history.
