@@ -245,6 +245,10 @@ def main(
     # === Dual-frame mode ===
     io_manager.write_debug("Detecting cells in new scan ...")
     perf_tracker.start("Detection - New Scan")
+
+    radar_new_obj = None
+    ps_new_obj = None
+    pt_new_obj = None
     
     entries_new, ps_new_data, dataset_context = _detect_with_optional_probsevere(
         radar_new,
