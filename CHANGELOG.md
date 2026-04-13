@@ -1,23 +1,29 @@
 # Changelog
 
-## [2.1.0] - 2026-04-07
+## [2.2.0] - 2026-04-14
 
 ### Added
-- Added modular AzShear mesocyclone analysis and split integration logic into dedicated `azshear`, `core`, `geometry`, `io`, and pipeline modules.
-- Added three-worker parallel integration execution with hardened save boundaries for generated storm-cell outputs.
-- Added EWMRS VIL render exposure in API listings, bundled assets, and colormap metadata.
-- Added benchmark coverage for AzShear integration, the parallel integration pipeline, and EWMRS render performance.
+- Added mesocyclone snapshot serving from API v2.
+- Added NMDA-style mesocyclone CTAM sidecar output.
 
 ### Changed
-- Refined AzShear support feature analysis by tightening morphology inputs, ownership and pairing rules, minimum gate thresholds, and peak-component prioritization.
-- Replaced AzShear support outputs with component summaries, weighted support centroids by gate value, and now return `null` support data when detections are missing.
-- Disabled AzShear support feature integration in the main pipeline while keeping the updated mesocyclone analysis path available.
-- Improved integration throughput with faster GRIB loading, pre-materialized AzShear arrays, and additional support-metric optimizations.
-- Optimized EWMRS tiled rendering to reuse unchanged layers more aggressively.
+- Reduced detection hot-path overhead with caching and vectorization.
+- Lowered mesocyclone RSS with staged azshear processing.
+- Parallelized mesocyclone stages and replaced full-grid gate scans with targeted component scanning.
+- Removed WarmRainProbability integration.
 
 ### Fixed
-- Hardened mesocyclone scoring and per-cell integration handling for missing or incomplete AzShear detections.
-- Corrected EWMRS VIL and VIL Density mappings so each product resolves to the proper render layer.
+- Used CompRefQC scan timestamps for FLOHAR output.
+- Bound mesocyclone detection to component windows.
+- Reduced mesocyclone grid harmonization overhead.
+- Harmonized mesocyclone inputs across staggered MRMS grids.
+- Aligned mesocyclone detection with 0.005 deg AzShear grid.
+- Reduced FLOHAR to the strongest retained inputs.
+- Rounded saved centroids to 3 decimals.
+- Rounded integration stats to 2 decimals.
+- Rounded saved polygon geometry to 3 decimals.
+- Added RAP surface field aliases.
 
-### Documentation
-- Updated integration and MorphoWind documentation to match the AzShear refactor and current runtime behavior.
+### Testing
+- Added coverage for 2-decimal integration rounding.
+- Updated integration benchmark.
