@@ -5,6 +5,7 @@
 ### Added
 - Added mesocyclone snapshot serving from API v2.
 - Added NMDA-style mesocyclone CTAM sidecar output.
+- Added MRMS MESH rendering for EWMRS
 
 ### Changed
 - Reduced detection hot-path overhead with caching and vectorization.
