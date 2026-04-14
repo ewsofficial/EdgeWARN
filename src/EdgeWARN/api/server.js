@@ -132,7 +132,7 @@ export function createApp(env = process.env, options = {}) {
   // Routes
   app.get('/', (req, res) => {
     // Only expose detailed version in non-production environments
-    const version = env.NODE_ENV === 'production' ? '2.x' : '2.1.0';
+    const version = env.NODE_ENV === 'production' ? '2.x' : '2.2.0';
     res.json({ message: 'EdgeWARN Backend API', version: version });
   });
 
