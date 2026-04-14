@@ -35,4 +35,7 @@ def test_mesocyclone_module_writes_sidecar_and_skips_stormcell_attachment(monkey
 
     assert result["attach_to_stormcells"] is False
     assert result["metadata"]["detection_count"] == 1
+    assert "input_paths" not in result["metadata"]
+    assert "scale_notes" not in result["metadata"]
+    assert "grid_spacing_deg" not in result["metadata"]
     assert (tmp_path / "mesocyclones_20240101-000000.json").exists()

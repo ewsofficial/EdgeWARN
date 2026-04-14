@@ -32,8 +32,7 @@ def test_load_latest_inputs_uses_composite_reflectivity_timestamp(monkeypatch):
     result = loader.load_latest_inputs()
 
     assert result["timestamp"] == datetime(2024, 1, 1, 0, 1, tzinfo=timezone.utc)
-    assert result["grid_spacing_deg"]["expected"] == 0.005
-    assert result["grid_spacing_deg"]["lat"] == pytest.approx(0.1)
+    assert result["timestamp_iso"] == "2024-01-01T00:01:00+00:00"
 
 
 def test_load_latest_inputs_harmonizes_coarser_reflectivity_to_azshear_grid(monkeypatch):
