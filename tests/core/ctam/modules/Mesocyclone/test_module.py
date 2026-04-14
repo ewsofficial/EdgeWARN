@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import numpy as np
@@ -38,4 +39,13 @@ def test_mesocyclone_module_writes_sidecar_and_skips_stormcell_attachment(monkey
     assert "input_paths" not in result["metadata"]
     assert "scale_notes" not in result["metadata"]
     assert "grid_spacing_deg" not in result["metadata"]
-    assert (tmp_path / "mesocyclones_20240101-000000.json").exists()
+
+    output_path = tmp_path / "mesocyclones_20240101-000000.json"
+    assert output_path.exists()
+
+    payload = json.loads(output_path.read_text())
+    detection = payload["detections"][0]
+    assert detection["azshear_low"] > 0.0
+    assert detection["azshear_mid"] > 0.0
+    assert "max_azshear_low" not in detection
+    assert "max_azshear_mid" not in detection
