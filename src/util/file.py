@@ -121,6 +121,7 @@ def _define_paths(base_path):
     GUI_REF_0C_DIR = gui_dir / "Ref0C"
     GUI_REFM5C_DIR = gui_dir / "RefM5C"
     GUI_REFM15C_DIR = gui_dir / "RefM15C"
+    GUI_MESH_DIR = gui_dir / "MESH"
     GUI_RHOHV_DIR = gui_dir / "RhoHV"
     GUI_PRECIPTYP_DIR = gui_dir / "PrecipFlag"
     GUI_MAP_DIR = gui_dir / "maps"

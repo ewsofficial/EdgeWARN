@@ -95,6 +95,12 @@ def get_file_list():
             "colormap_key": "AzShear",
             "filepath": fs.MRMS_AZSHEARMID_DIR,
             "outdir": fs.GUI_AZSHEARMID_DIR
+        },
+        {
+            "name": "MRMS_MESH",
+            "colormap_key": "MESH",
+            "filepath": fs.MRMS_MESH_DIR,
+            "outdir": fs.GUI_MESH_DIR
         }
     ]
 
