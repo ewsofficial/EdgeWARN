@@ -209,6 +209,30 @@
                 {"value": 60, "rgb": [0, 0, 50]},
                 {"value": 70, "rgb": [0, 0, 25]}
             ]
+        },
+        {
+            "name": "MESH",
+            "description": "Maximum expected size of hail",
+            "type": "MESH",
+            "units": "mm",
+            "interpolate": true,
+            "range": [0, 100],
+            "thresholds":[
+                {"value": 0, "rgb": [0, 236, 236]},
+                {"value": 1, "rgb": [1, 160, 246]},
+                {"value": 2, "rgb": [0, 0, 246]},
+                {"value": 4, "rgb": [0, 255, 0]},
+                {"value": 6, "rgb": [0, 200, 0]},
+                {"value": 8, "rgb": [0, 144, 0]},
+                {"value": 10, "rgb": [255, 255, 0]},
+                {"value": 15, "rgb": [231, 192, 0]},
+                {"value": 20, "rgb": [255, 144, 0]},
+                {"value": 30, "rgb": [255, 0, 0]},
+                {"value": 40, "rgb": [192, 0, 0]},
+                {"value": 50, "rgb": [255, 0, 255]},
+                {"value": 75, "rgb": [190, 85, 220]},
+                {"value": 100, "rgb": [126, 50, 167]}
+            ]
         }
     ]
 }]
