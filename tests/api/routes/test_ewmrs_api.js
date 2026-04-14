@@ -87,6 +87,12 @@ describe('GET /renders/get-items', () => {
         expect(res.body).toContain('VIL');
     });
 
+    it('includes MESH when the product directory exists', async () => {
+        await fs.promises.mkdir(path.join(tempDir, 'gui', 'MESH'));
+        const res = await request(app).get('/renders/get-items').expect(200);
+        expect(res.body).toContain('MESH');
+    });
+
     it('returns empty array when no products exist', async () => {
         const emptyDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ewmrs-empty-'));
         const emptyApp = createApp(emptyDir);
@@ -200,6 +206,18 @@ describe('GET /renders/download', () => {
 
         const res = await request(app)
             .get('/renders/download?product=VIL&timestamp=20260317-200000')
+            .expect(200);
+
+        expect(res.headers['content-type']).toContain('image/png');
+    });
+
+    it('serves MESH files using the MRMS_MESH prefix', async () => {
+        const meshDir = path.join(tempDir, 'gui', 'MESH');
+        await fs.promises.mkdir(meshDir);
+        await fs.promises.writeFile(path.join(meshDir, 'MRMS_MESH_20260317-200000.png'), 'fake png');
+
+        const res = await request(app)
+            .get('/renders/download?product=MESH&timestamp=20260317-200000')
             .expect(200);
 
         expect(res.headers['content-type']).toContain('image/png');

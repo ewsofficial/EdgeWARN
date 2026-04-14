@@ -16,6 +16,7 @@ const PRODUCT_MAPPING = {
   'PrecipRate': 'MRMS_PrecipRate',
   'VIL': 'MRMS_VIL',
   'VILDensity': 'MRMS_VILDensity',
+  'MESH': 'MRMS_MESH',
   'QPE_01H': 'MRMS_QPE',
   'VII': 'MRMS_VII',
   'AzShearLow': 'MRMS_MergedAzShear_0-2kmAGL',
