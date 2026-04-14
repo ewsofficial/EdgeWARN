@@ -221,8 +221,8 @@ The payload has this top-level structure:
       "lat": 35.12345,
       "lon": -97.12345,
       "motion_vector": {"u": 5.2, "v": 1.4},
-      "max_azshear_low": 0.0279,
-      "max_azshear_mid": 0.0194,
+      "azshear_low": 27.9,
+      "azshear_mid": 19.4,
       "depth_flag": "deep",
       "reflectivity_max": 53.5,
       "strength_rank": 23,
@@ -249,8 +249,8 @@ Each exported detection record contains the following fields:
 | `time` | string | Detection timestamp in ISO 8601 UTC form. |
 | `lat` / `lon` | float | Primary centroid location used for the track record. |
 | `motion_vector` | object | Track motion in m/s with east-west `u` and north-south `v`. |
-| `max_azshear_low` | float | Peak low-level azimuthal shear after input normalization. |
-| `max_azshear_mid` | float | Peak mid-level azimuthal shear after input normalization. |
+| `azshear_low` | float | Peak low-level azimuthal shear exported in units of `0.001 s^-1`. |
+| `azshear_mid` | float | Peak mid-level azimuthal shear exported in units of `0.001 s^-1`. |
 | `depth_flag` | string | Vertical association class: `deep`, `shallow`, or `mid-level`. |
 | `reflectivity_max` | float | Maximum mapped composite reflectivity in dBZ. |
 | `strength_rank` | integer | Strength rank from 1 to 25 derived from peak azimuthal shear. |

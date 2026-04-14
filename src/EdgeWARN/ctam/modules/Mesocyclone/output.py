@@ -5,6 +5,10 @@ from typing import Dict, List
 import util.file as fs
 
 
+def _export_azshear(value_s_inv: object) -> float:
+    return round(float(value_s_inv) * 1000.0, 1)
+
+
 def build_detection_record(detection: Dict[str, object], timestamp_iso: str) -> Dict[str, object]:
     low = detection.get("low")
     mid = detection.get("mid")
@@ -15,8 +19,8 @@ def build_detection_record(detection: Dict[str, object], timestamp_iso: str) -> 
         "lat": round(float(primary["centroid_lat"]), 5),
         "lon": round(float(primary["centroid_lon"]), 5),
         "motion_vector": detection.get("motion_vector", {"u": 0.0, "v": 0.0}),
-        "max_azshear_low": float(detection.get("max_azshear_low", 0.0)),
-        "max_azshear_mid": float(detection.get("max_azshear_mid", 0.0)),
+        "azshear_low": _export_azshear(detection.get("max_azshear_low", 0.0)),
+        "azshear_mid": _export_azshear(detection.get("max_azshear_mid", 0.0)),
         "depth_flag": detection["depth_flag"],
         "reflectivity_max": float(detection.get("reflectivity_max", 0.0)),
         "strength_rank": int(detection.get("strength_rank", 1)),
