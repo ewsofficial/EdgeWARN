@@ -37,6 +37,7 @@ def build_detection_record(detection: Dict[str, object], timestamp_iso: str) -> 
 
 def save_mesocyclone_output(timestamp_token: str, payload: Dict[str, object]) -> Path:
     fs.MESOCYCLONE_DIR.mkdir(parents=True, exist_ok=True)
+    fs.clean_files_by_age(fs.MESOCYCLONE_DIR, max_age_minutes=120)
     output_path = fs.MESOCYCLONE_DIR / f"mesocyclones_{timestamp_token}.json"
     with open(output_path, "w") as file_handle:
         json.dump(payload, file_handle, indent=2)
