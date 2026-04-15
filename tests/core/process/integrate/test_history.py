@@ -51,7 +51,7 @@ def test_update_cell_histories_appends(history_manager, mock_fs):
         assert data[1]["timestamp"] == "2023-10-15T12:02:00"
 
 def test_update_cell_histories_skips_duplicates(history_manager, mock_fs):
-    """Test that duplicate timestamps are not appended."""
+    """Test that duplicate timestamps refresh the latest snapshot in place."""
     cell_dir = mock_fs / "cell"
     file_path = cell_dir / "101.json"
     
@@ -68,7 +68,38 @@ def test_update_cell_histories_skips_duplicates(history_manager, mock_fs):
     
     with open(file_path) as f:
         data = json.load(f)
-        assert len(data) == 1  # Should not have appended
+        assert len(data) == 1
+        assert data[0]["num_gates"] == 55
+
+
+def test_update_cell_histories_replaces_duplicate_timestamp_with_new_fields(history_manager, mock_fs):
+    cell_dir = mock_fs / "cell"
+    file_path = cell_dir / "101.json"
+
+    existing = [{"id": 101, "timestamp": "2023-10-15T12:00:00", "num_gates": 50}]
+    with open(file_path, "w") as f:
+        json.dump(existing, f)
+
+    cells = [
+        {
+            "id": 101,
+            "timestamp": "2023-10-15T12:00:00",
+            "num_gates": 55,
+            "dx": 1200.0,
+            "dy": 800.0,
+            "dt": 120.0,
+        }
+    ]
+
+    history_manager.update_cell_histories(cells)
+
+    with open(file_path) as f:
+        data = json.load(f)
+
+    assert len(data) == 1
+    assert data[0]["dx"] == 1200.0
+    assert data[0]["dy"] == 800.0
+    assert data[0]["dt"] == 120.0
 
 def test_update_cell_histories_skips_no_timestamp(history_manager, mock_fs, mock_io_manager):
     """Test that cells without a timestamp key are skipped."""

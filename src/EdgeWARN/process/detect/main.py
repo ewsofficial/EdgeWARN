@@ -1,5 +1,6 @@
 from EdgeWARN.process.detect.tools.utils import DetectionDataHandler
 from pathlib import Path
+import copy
 from EdgeWARN.process.detect.tools.save import CellDataSaver
 from EdgeWARN.process.detect.tools.vecmath import StormVectorCalculator
 from EdgeWARN.process.detect.tools.alert_matcher import match_alerts_to_cells
@@ -294,6 +295,7 @@ def main(
 
     perf_tracker.start("Detection - Tracking")
     saver = CellDataSaver(None, radar_new, None, None, ps_new_data, None)
+    vector_previous_entries = copy.deepcopy(entries_old) if entries_old else None
 
     stormcell_dir = fs.STORMCELL_DIR
     stormcell_dir.mkdir(exist_ok=True)
@@ -350,7 +352,7 @@ def main(
     perf_tracker.stop("Detection - Tracking")
     
     perf_tracker.start("Detection - Vector Calc")
-    entries = StormVectorCalculator.calculate_vectors(entries, previous_entries=entries_old)
+    entries = StormVectorCalculator.calculate_vectors(entries, previous_entries=vector_previous_entries)
     perf_tracker.stop("Detection - Vector Calc")
 
     # Match convective/flood alerts to cells
