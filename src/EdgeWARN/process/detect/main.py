@@ -217,11 +217,12 @@ def main(
         saver = CellDataSaver(None, radar_old, None, None, ps_old, None)
         # entries = saver.append_storm_history(entries_old, radar_old) # Removed
         entries = entries_old
-        entries = StormVectorCalculator.calculate_vectors(entries)
 
         # Apply timestamp (all cells are "current" in single frame)
         for cell in entries:
             cell["timestamp"] = json_ts
+
+        entries = StormVectorCalculator.calculate_vectors(entries)
 
         # Match convective/flood alerts to cells
         entries = match_alerts_to_cells(entries, fs.MRMS_NWS_DIR, target_timestamp=json_ts)
