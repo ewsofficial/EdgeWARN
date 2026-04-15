@@ -66,8 +66,10 @@ class CellHistoryManager:
                      self.io_manager.write_error(f"Failed to read history for {cell_id}: {e}")
                      history = []
 
-            # Duplicate check
-            is_duplicate = False
+            # If the latest history entry already has this timestamp, replace it
+            # with the current cell snapshot so reprocessing can refresh fields
+            # like dx/dy/dt instead of silently keeping stale data.
+            replace_last_entry = False
             if history:
                 last_entry = history[-1]
                 # Check top-level first, then properties (legacy support)
@@ -75,19 +77,18 @@ class CellHistoryManager:
                 
                 # Compare timestamps
                 if last_ts == ts:
-                    is_duplicate = True
+                    replace_last_entry = True
             
-            if not is_duplicate:
+            if replace_last_entry:
+                history[-1] = cell
+            else:
                 # Append current full cell state
                 history.append(cell)
-                
-                # Write back
-                try:
-                    with open(file_path, 'w') as f:
-                        json.dump(history, f, default=str)
-                    success_count += 1
-                except Exception as e:
-                    self.io_manager.write_error(f"Failed to write history for {cell_id}: {e}")
-            else:
-                # Debug logging for duplicates might be noisy, verify later
-                pass
+
+            # Write back
+            try:
+                with open(file_path, 'w') as f:
+                    json.dump(history, f, default=str)
+                success_count += 1
+            except Exception as e:
+                self.io_manager.write_error(f"Failed to write history for {cell_id}: {e}")
