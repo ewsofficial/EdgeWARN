@@ -13,7 +13,8 @@ Usage:
 
 from typing import Dict, List, Any, Optional
 from pathlib import Path
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon, Point, shape
+from shapely.geometry.base import BaseGeometry
 from shapely.prepared import prep
 from shapely.strtree import STRtree
 import numpy as np
@@ -157,7 +158,7 @@ def _prepare_alert_geometries(
         return cached_geometry
 
     alert_ids: List[str] = []
-    alert_polys: List[Polygon] = []
+    alert_polys: List[BaseGeometry] = []
     alert_prepared = []
     for alert in filtered_alerts:
         alert_id = _extract_alert_id(alert)
@@ -240,7 +241,7 @@ def _extract_alert_id(feature: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _get_alert_polygon(alert: Dict[str, Any]) -> Optional[Polygon]:
+def _get_alert_polygon(alert: Dict[str, Any]) -> Optional[BaseGeometry]:
     """
     Extract polygon geometry from an alert.
     
@@ -252,33 +253,109 @@ def _get_alert_polygon(alert: Dict[str, Any]) -> Optional[Polygon]:
         alert: Alert feature dictionary
         
     Returns:
-        shapely Polygon or None if invalid
+        shapely geometry (Polygon or MultiPolygon) or None if invalid
     """
-    def _normalize_coords(coords):
-        """Convert [-180, 180] coords to [0, 360] to match radar space."""
-        return [[c[0] % 360, c[1]] for c in coords]
+    def _normalize_ring(ring):
+        """Normalize a linear ring to [0, 360] lon coordinates."""
+        normalized = []
+        for point in ring:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                continue
+            try:
+                normalized.append([float(point[0]) % 360, float(point[1])])
+            except Exception:
+                continue
+
+        if len(normalized) < 3:
+            return []
+
+        if normalized[0] != normalized[-1]:
+            normalized.append(normalized[0])
+
+        if len(normalized) < 4:
+            return []
+
+        return normalized
+
+    def _shape_from_geojson(geometry: Dict[str, Any]) -> Optional[BaseGeometry]:
+        """Parse and minimally repair GeoJSON geometry for matcher use."""
+        try:
+            geom = shape(geometry)
+        except Exception:
+            return None
+
+        if geom.is_empty:
+            return None
+
+        if not geom.is_valid:
+            try:
+                geom = geom.buffer(0)
+            except Exception:
+                return None
+            if geom.is_empty or not geom.is_valid:
+                return None
+
+        return geom
     
     # Check for GeoMapper's Polygon field
     if "Polygon" in alert:
         poly_data = alert["Polygon"]
-        if poly_data and len(poly_data) > 0:
-            # Polygon field contains list of rings, take the first one
-            coords = poly_data[0]
-            if len(coords) >= 3:
-                try:
-                    return Polygon(_normalize_coords(coords))
-                except Exception:
-                    pass
+        if isinstance(poly_data, list) and poly_data:
+            rings = []
+            for ring in poly_data:
+                normalized_ring = _normalize_ring(ring)
+                if normalized_ring:
+                    rings.append(normalized_ring)
+
+            if rings:
+                if len(rings) == 1:
+                    geojson = {
+                        "type": "Polygon",
+                        "coordinates": [rings[0]],
+                    }
+                else:
+                    geojson = {
+                        "type": "MultiPolygon",
+                        "coordinates": [[ring] for ring in rings],
+                    }
+
+                geom = _shape_from_geojson(geojson)
+                if geom is not None:
+                    return geom
     
     # Check for standard geometry
     geom = alert.get("geometry")
-    if geom and geom.get("type") == "Polygon":
-        coords = geom.get("coordinates", [])
-        if coords and len(coords[0]) >= 3:
-            try:
-                return Polygon(_normalize_coords(coords[0]))
-            except Exception:
-                pass
+    if isinstance(geom, dict):
+        geom_type = geom.get("type")
+        coords = geom.get("coordinates")
+
+        if geom_type == "Polygon" and isinstance(coords, list):
+            if coords:
+                ring = _normalize_ring(coords[0])
+                if ring:
+                    parsed = _shape_from_geojson({
+                        "type": "Polygon",
+                        "coordinates": [ring],
+                    })
+                    if parsed is not None:
+                        return parsed
+
+        if geom_type == "MultiPolygon" and isinstance(coords, list):
+            polygon_rings = []
+            for polygon_coords in coords:
+                if not isinstance(polygon_coords, list) or not polygon_coords:
+                    continue
+                ring = _normalize_ring(polygon_coords[0])
+                if ring:
+                    polygon_rings.append([ring])
+
+            if polygon_rings:
+                parsed = _shape_from_geojson({
+                    "type": "MultiPolygon",
+                    "coordinates": polygon_rings,
+                })
+                if parsed is not None:
+                    return parsed
     
     return None
 
@@ -418,7 +495,7 @@ def _normalize_tree_query_indices(query_result, geom_id_to_index):
 def _match_alerts_with_strtree(
     cell: Dict[str, Any],
     alert_ids: List[str],
-    alert_polys: List[Polygon],
+    alert_polys: List[BaseGeometry],
     alert_prepared: List[Any],
     spatial_index: STRtree,
     geom_id_to_index: Dict[int, int],
