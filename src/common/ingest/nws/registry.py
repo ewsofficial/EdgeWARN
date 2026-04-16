@@ -217,16 +217,36 @@ class AlertRegistry:
         
         # Get severity from NWS alert properties
         severity = properties.get("severity") or alert_data.get("severity")
+
+        name = self._derive_snapshot_alert_name(properties)
         
         return {
             "id": alert_id,
-            "name": properties.get("event") or properties.get("headline") or properties.get("name"),
+            "name": name,
             "urn_oid": alert_id,
             "effective": properties.get("effective") or alert_data.get("effective"),
             "expires": properties.get("expires") or alert_data.get("expires"),
             "severity": severity,
             "geometry": geometry
         }
+
+    def _derive_snapshot_alert_name(self, properties: Dict[str, Any]) -> Optional[str]:
+        """Normalize official alert labels for snapshot consumers."""
+        event = properties.get("event")
+        if event != "Tornado Warning":
+            return event or properties.get("headline") or properties.get("name")
+
+        description = properties.get("description")
+        if not isinstance(description, str):
+            return event or properties.get("headline") or properties.get("name")
+
+        description_upper = description.upper()
+        if "TORNADO EMERGENCY" in description_upper:
+            return "Tornado Emergency"
+        if "PARTICULARLY DANGEROUS SITUATION" in description_upper:
+            return "PDS Tornado Warning"
+
+        return event or properties.get("headline") or properties.get("name")
     
     def _extract_alert_id(self, feature: Dict) -> Optional[str]:
         """
