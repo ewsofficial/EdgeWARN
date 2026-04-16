@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Sequence, cast
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import Polygon, MultiPolygon, shape
 from shapely.ops import unary_union
 
 def _resolve_assets_dir() -> Path:
@@ -75,6 +75,63 @@ def round_coords(coords: Sequence[Any], precision: int = 4) -> List[List[float]]
     """Round coordinates to a specified precision."""
     return [[round(float(c[0]), precision), round(float(c[1]), precision)] for c in coords]
 
+
+def _normalize_ring(coords: Sequence[Any], precision: int = 4) -> List[List[float]]:
+    """Normalize one linear ring: round, filter bad points, and close ring."""
+    normalized: List[List[float]] = []
+    for point in coords:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        try:
+            lon = round(float(point[0]), precision)
+            lat = round(float(point[1]), precision)
+        except Exception:
+            continue
+        normalized.append([lon, lat])
+
+    if len(normalized) < 3:
+        return []
+
+    if normalized[0] != normalized[-1]:
+        normalized.append(normalized[0])
+
+    if len(normalized) < 4:
+        return []
+
+    return normalized
+
+
+def _geometry_to_polygon_rings(geometry: Dict[str, Any], precision: int = 4) -> List[List[List[float]]]:
+    """Extract exterior polygon rings from Polygon/MultiPolygon GeoJSON geometry."""
+    if not geometry or not isinstance(geometry, dict):
+        return []
+
+    gtype = geometry.get("type")
+    coords = geometry.get("coordinates")
+    if not isinstance(coords, list):
+        return []
+
+    rings: List[List[List[float]]] = []
+
+    if gtype == "Polygon":
+        if not coords:
+            return []
+        ring = _normalize_ring(coords[0], precision=precision)
+        if ring:
+            rings.append(ring)
+        return rings
+
+    if gtype == "MultiPolygon":
+        for polygon_coords in coords:
+            if not isinstance(polygon_coords, list) or not polygon_coords:
+                continue
+            ring = _normalize_ring(polygon_coords[0], precision=precision)
+            if ring:
+                rings.append(ring)
+        return rings
+
+    return []
+
 def extract_exterior_polygon(polygons: List[List], tolerance: float = 0.01) -> List:
     """
     Compute the union of multiple polygons, simplify geometry, 
@@ -134,11 +191,82 @@ def round_geojson_coords(geometry: Dict[str, Any], precision: int = 4) -> Dict[s
 
 
 def polygon_to_geojson(polygon_coords: List[List]) -> Dict[str, Any]:
-    """Convert GeoMapper polygon rings into a GeoJSON geometry object."""
+    """Convert GeoMapper polygon rings into Polygon/MultiPolygon GeoJSON geometry."""
+    rings: List[List[List[float]]] = []
+    for ring in polygon_coords:
+        normalized = _normalize_ring(ring)
+        if normalized:
+            rings.append(normalized)
+
+    if not rings:
+        return {}
+
+    if len(rings) == 1:
+        return {
+            "type": "Polygon",
+            "coordinates": [rings[0]],
+        }
+
     return {
-        "type": "Polygon",
-        "coordinates": polygon_coords,
+        "type": "MultiPolygon",
+        "coordinates": [[ring] for ring in rings],
     }
+
+
+def _repair_generated_geometry(geometry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Validate/repair generated geometry and return normalized GeoJSON output."""
+    if not geometry or "coordinates" not in geometry:
+        return None
+
+    try:
+        geom_obj = shape(geometry)
+    except Exception:
+        return None
+
+    if geom_obj.is_empty:
+        return None
+
+    if not geom_obj.is_valid:
+        try:
+            geom_obj = geom_obj.buffer(0)
+        except Exception:
+            return None
+        if geom_obj.is_empty or not geom_obj.is_valid:
+            return None
+
+    if geom_obj.geom_type == "Polygon":
+        polygon = cast(Polygon, geom_obj)
+        ring = _normalize_ring(list(polygon.exterior.coords))
+        if not ring:
+            return None
+        return {
+            "type": "Polygon",
+            "coordinates": [ring],
+        }
+
+    if geom_obj.geom_type == "MultiPolygon":
+        multipolygon = cast(MultiPolygon, geom_obj)
+        rings: List[List[List[float]]] = []
+        for polygon in multipolygon.geoms:
+            ring = _normalize_ring(list(polygon.exterior.coords))
+            if ring:
+                rings.append(ring)
+
+        if not rings:
+            return None
+
+        if len(rings) == 1:
+            return {
+                "type": "Polygon",
+                "coordinates": [rings[0]],
+            }
+
+        return {
+            "type": "MultiPolygon",
+            "coordinates": [[ring] for ring in rings],
+        }
+
+    return None
 
 def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
     """Process a single NWS warning feature (Map Geocodes + Clean Props)."""
@@ -153,11 +281,28 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
     
     # Check if we already have a zone-mapped Polygon (prevents double simplification/mapping)
     if feature.get("Polygon"):
-        # Coordinate rounding for safety
-        feature["Polygon"] = [round_coords(p) for p in feature["Polygon"]]
-        if not feature.get("geometry"):
-            feature["geometry"] = polygon_to_geojson(feature["Polygon"])
-        has_geometry_to_skip = True
+        normalized_rings = []
+        for ring in feature["Polygon"]:
+            normalized = _normalize_ring(ring)
+            if normalized:
+                normalized_rings.append(normalized)
+
+        if normalized_rings:
+            feature["Polygon"] = normalized_rings
+            if not feature.get("geometry"):
+                geometry = polygon_to_geojson(normalized_rings)
+                repaired_geometry = _repair_generated_geometry(geometry)
+                if repaired_geometry:
+                    feature["geometry"] = repaired_geometry
+                    feature["Polygon"] = _geometry_to_polygon_rings(repaired_geometry)
+                    has_geometry_to_skip = True
+                else:
+                    feature.pop("geometry", None)
+                    feature.pop("Polygon", None)
+            else:
+                has_geometry_to_skip = True
+        else:
+            feature.pop("Polygon", None)
 
     # If geometry exists, skip the zone-to-polygon mapping 
     # (prevents simplification of precise polygons into zone boundaries)
@@ -196,9 +341,12 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
         
         exterior = _get_cached_union_exterior(zone_codes_tuple)
         if exterior:
-            feature["Polygon"] = exterior
-            feature["geometry"] = polygon_to_geojson(exterior)
-            
+            geometry = polygon_to_geojson(exterior)
+            repaired_geometry = _repair_generated_geometry(geometry)
+            if repaired_geometry:
+                feature["geometry"] = repaired_geometry
+                feature["Polygon"] = _geometry_to_polygon_rings(repaired_geometry)
+             
     # Remove "geocode" if valid geometry exists
     has_geometry = False
     if feature.get("geometry") and feature.get("geometry", {}).get("coordinates"):

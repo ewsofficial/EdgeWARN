@@ -204,10 +204,16 @@ class AlertRegistry:
         
         # If we have Polygon but no geometry, convert Polygon to GeoJSON format
         if polygon and not geometry:
-            geometry = {
-                "type": "Polygon",
-                "coordinates": polygon
-            }
+            if isinstance(polygon, list) and len(polygon) > 1:
+                geometry = {
+                    "type": "MultiPolygon",
+                    "coordinates": [[ring] for ring in polygon],
+                }
+            else:
+                geometry = {
+                    "type": "Polygon",
+                    "coordinates": polygon,
+                }
         
         # Get severity from NWS alert properties
         severity = properties.get("severity") or alert_data.get("severity")
