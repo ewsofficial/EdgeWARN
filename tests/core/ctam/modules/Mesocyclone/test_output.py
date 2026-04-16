@@ -19,11 +19,15 @@ def test_build_detection_record_exports_azshear_keys_in_milli_inverse_seconds():
             "compactness": 0.551,
             "strength_label": "violent",
             "association_distance_km": 2.317,
+            "association_overlap_pixels": 8,
+            "association_overlap_ratio": 0.615,
         },
         "2026-04-14T17:00:00+00:00",
     )
 
     assert record["azshear_low"] == 27.9
     assert record["azshear_mid"] == 19.4
+    assert record["association_overlap_pixels"] == 8
+    assert record["association_overlap_ratio"] == 0.615
     assert "max_azshear_low" not in record
     assert "max_azshear_mid" not in record

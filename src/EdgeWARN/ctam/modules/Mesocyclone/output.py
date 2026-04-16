@@ -32,6 +32,8 @@ def build_detection_record(detection: Dict[str, object], timestamp_iso: str) -> 
         "multi_peak_count_low": len(low.get("maxima", [])) if low is not None else 0,
         "multi_peak_count_mid": len(mid.get("maxima", [])) if mid is not None else 0,
         "association_distance_km": detection.get("association_distance_km"),
+        "association_overlap_pixels": detection.get("association_overlap_pixels"),
+        "association_overlap_ratio": detection.get("association_overlap_ratio"),
     }
 
 

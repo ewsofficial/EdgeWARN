@@ -127,6 +127,9 @@ def detect_layer_objects(values: np.ndarray, latitudes: np.ndarray, longitudes: 
             compactness = float(max(0.0, min(1.0, (4.0 * math.pi * area_km2) / (perimeter_km ** 2))))
 
         eccentricity, aspect_ratio = _component_shape_metrics(rows, cols)
+        if aspect_ratio > cfg.MAX_COMPONENT_ASPECT_RATIO:
+            continue
+
         maxima = _local_maxima(
             value_window,
             component_mask,

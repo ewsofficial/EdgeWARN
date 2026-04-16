@@ -1,5 +1,6 @@
 import numpy as np
 
+from EdgeWARN.ctam.modules.Mesocyclone import config as cfg
 from EdgeWARN.ctam.modules.Mesocyclone.detect import detect_layer_objects
 
 
@@ -18,6 +19,7 @@ def test_detect_layer_objects_returns_component_metrics():
     assert detection["pixel_count"] >= 6
     assert detection["area_km2"] > 0.0
     assert detection["eccentricity"] >= 0.0
+    assert detection["aspect_ratio"] <= cfg.MAX_COMPONENT_ASPECT_RATIO
     assert len(detection["maxima"]) >= 1
     assert detection["grid_spacing_deg"]["lat"] == 0.005
 
@@ -32,3 +34,14 @@ def test_detect_layer_objects_uses_native_area_threshold_for_coarser_grid():
 
     assert len(detections) == 1
     assert detections[0]["pixel_count"] == 4
+
+
+def test_detect_layer_objects_rejects_elongated_line_artifacts():
+    grid = np.zeros((12, 12), dtype=float)
+    grid[6, 1:11] = 0.01
+    latitudes = 35.0 - (np.arange(12) * 0.005)
+    longitudes = -98.0 + (np.arange(12) * 0.005)
+
+    detections = detect_layer_objects(grid, latitudes, longitudes, "low")
+
+    assert detections == []

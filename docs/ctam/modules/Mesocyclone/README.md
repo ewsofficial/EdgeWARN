@@ -55,8 +55,11 @@ REFLECTIVITY_THRESHOLD_DBZ = 38.0
 REFLECTIVITY_CORE_DISTANCE_KM = 8.0
 
 VERTICAL_ASSOCIATION_DISTANCE_KM = 7.5
+VERTICAL_ASSOCIATION_MIN_OVERLAP_RATIO = 0.05
 TRACK_MATCH_DISTANCE_KM = 15.0
 TRACK_MEMORY = timedelta(minutes=10)
+
+MAX_COMPONENT_ASPECT_RATIO = 8.0
 
 STRENGTH_BINS = [
     (0.025, "violent"),
@@ -121,7 +124,7 @@ For each object, the module computes:
 - local azimuthal shear maxima (`maxima`)
 - bounding-box and source pixel indices for later gating
 
-Objects smaller than the configured minimum native-grid area are dropped.
+Objects smaller than the configured minimum native-grid area are dropped. Extremely elongated components with `aspect_ratio > 8.0` are also rejected as likely linear shear artifacts before association.
 
 ### 4. Reflectivity Gating
 
@@ -141,10 +144,11 @@ The gating step also adds:
 
 ### 5. Vertical Association
 
-`associate.py` pairs low-level and mid-level detections by centroid distance.
+`associate.py` pairs low-level and mid-level detections by centroid distance and footprint overlap.
 
-- candidate pairs are allowed only within `VERTICAL_ASSOCIATION_DISTANCE_KM` (`7.5 km`)
-- pairs are chosen greedily from the nearest and strongest candidates
+- candidate pairs are allowed only when centroid distance is within `VERTICAL_ASSOCIATION_DISTANCE_KM` (`7.5 km`)
+- candidate pairs must share at least one footprint pixel and meet `VERTICAL_ASSOCIATION_MIN_OVERLAP_RATIO` (`0.05`) relative to the smaller footprint
+- pairs are chosen greedily by highest overlap ratio, then shortest distance, then strongest azimuthal shear signal
 - unmatched low-level detections become `shallow`
 - unmatched mid-level detections become `mid-level`
 - matched low+mid detections become `deep`
@@ -153,6 +157,8 @@ This stage sets:
 
 - `depth_flag`
 - `association_distance_km`
+- `association_overlap_pixels` (deep pairs only)
+- `association_overlap_ratio` (deep pairs only)
 
 ### 6. Scoring and Classification
 
@@ -233,7 +239,9 @@ The payload has this top-level structure:
       "strength_label": "violent",
       "multi_peak_count_low": 1,
       "multi_peak_count_mid": 1,
-      "association_distance_km": 2.317
+      "association_distance_km": 2.317,
+      "association_overlap_pixels": 8,
+      "association_overlap_ratio": 0.615
     }
   ]
 }
@@ -262,6 +270,8 @@ Each exported detection record contains the following fields:
 | `multi_peak_count_low` | integer | Number of local azimuthal shear maxima inside the low-level object. |
 | `multi_peak_count_mid` | integer | Number of local azimuthal shear maxima inside the mid-level object. |
 | `association_distance_km` | float or `null` | Low/mid centroid distance for vertically paired detections; `null` when unpaired. |
+| `association_overlap_pixels` | integer or `null` | Count of overlapping low/mid footprint pixels for deep pairs. |
+| `association_overlap_ratio` | float or `null` | Overlap fraction relative to the smaller low/mid footprint for deep pairs. |
 
 ## CTAM Integration
 
