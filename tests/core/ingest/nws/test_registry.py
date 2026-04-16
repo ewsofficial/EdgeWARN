@@ -185,6 +185,28 @@ class TestProcessAlert:
         assert registry.alert_count == 0
 
 
+class TestSnapshotAlertNaming:
+    """Tests for snapshot alert display-name normalization."""
+
+    def test_snapshot_alert_uses_tornado_emergency_label(self, registry, sample_feature_2):
+        sample_feature_2["properties"]["description"] = (
+            "THIS IS A TORNADO EMERGENCY FOR THE WARNED AREA."
+        )
+
+        snapshot = registry._build_snapshot_alert("urn:oid:test", {"feature": sample_feature_2})
+
+        assert snapshot["name"] == "Tornado Emergency"
+
+    def test_snapshot_alert_uses_pds_tornado_warning_label(self, registry, sample_feature_2):
+        sample_feature_2["properties"]["description"] = (
+            "THIS IS A PARTICULARLY DANGEROUS SITUATION WITH A CONFIRMED TORNADO."
+        )
+
+        snapshot = registry._build_snapshot_alert("urn:oid:test", {"feature": sample_feature_2})
+
+        assert snapshot["name"] == "PDS Tornado Warning"
+
+
 class TestProcessAlerts:
     """Tests for process_alerts method."""
 
