@@ -1,12 +1,12 @@
 # Changelog
 
-## [2.2.1] - 2026-04-15
+## [2.3.0] - TBD
 
 ### Added
 
 ### Changed
 
 ### Fixed
-- Fixed dx, dy, and dt keys not being saved to cell files
+- Added NWS fire zones that were missing from the zone catalog
 
 ### Testing
