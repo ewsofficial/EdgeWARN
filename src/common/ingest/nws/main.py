@@ -10,7 +10,8 @@ Architecture:
     - Filters out non-severe event types (DROPPED_EVENTS blocklist)
     - Applies GeoMapper to map UGC zone codes to actual polygons
     - Stores unique alerts in alerts_registry.json with deduplication
-    - TTL-based cleanup removes alerts not seen within 2 hours
+    - Reconciles saved alerts to the latest active upstream ID set each cycle
+    - TTL/expiration cleanup remains as a secondary safety net
 """
 
 import json
@@ -25,7 +26,7 @@ import aiohttp
 import asyncio
 import tempfile
 import os
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Set, Tuple
 
 # Import GeoMapper logic
 from .geomapper import process_warning
@@ -117,7 +118,10 @@ def download_alerts(dt: datetime):
         
         # Process with registry
         current_time = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-        new_count, updated_count = _process_nws_file_with_registry(temp_path, registry, current_time)
+        new_count, updated_count, seen_ids = _process_nws_file_with_registry(temp_path, registry, current_time)
+
+        # Reconcile registry to exact upstream active ID set from this successful pull
+        reconciled_removed_count = registry.reconcile_with_active_ids(seen_ids, current_time)
         
         # Cleanup expired alerts
         removed_count = registry.cleanup_expired(current_time)
@@ -131,7 +135,8 @@ def download_alerts(dt: datetime):
         total_active = registry.alert_count
         io_manager.write_info(
             f"Registry updated: {new_count} new, {updated_count} updated, "
-            f"{removed_count} removed, {total_active} total active"
+            f"{reconciled_removed_count} reconciled, {removed_count} expired removed, "
+            f"{total_active} total active"
         )
 
     except Exception as e:
@@ -185,13 +190,16 @@ async def download_alerts_async(dt: datetime):
         
         # Run in executor to avoid blocking main loop
         loop = asyncio.get_running_loop()
-        new_count, updated_count = await loop.run_in_executor(
+        new_count, updated_count, seen_ids = await loop.run_in_executor(
             None, 
             _process_nws_file_with_registry, 
             temp_path, 
             registry, 
             current_time
         )
+
+        # Reconcile registry to exact upstream active ID set from this successful pull
+        reconciled_removed_count = registry.reconcile_with_active_ids(seen_ids, current_time)
         
         # 3. Cleanup expired alerts
         removed_count = registry.cleanup_expired(current_time)
@@ -205,7 +213,8 @@ async def download_alerts_async(dt: datetime):
         total_active = registry.alert_count
         io_manager.write_info(
             f"Registry updated (async): {new_count} new, {updated_count} updated, "
-            f"{removed_count} removed, {total_active} total active"
+            f"{reconciled_removed_count} reconciled, {removed_count} expired removed, "
+            f"{total_active} total active"
         )
 
     except Exception as e:
@@ -217,7 +226,7 @@ def _process_nws_file_with_registry(
     input_path: str, 
     registry: AlertRegistry, 
     current_time: datetime
-) -> Tuple[int, int]:
+) -> Tuple[int, int, Set[str]]:
     """
     Process the raw NWS JSON file and update the registry.
     
@@ -229,10 +238,11 @@ def _process_nws_file_with_registry(
         current_time: Current timestamp for tracking
         
     Returns:
-        Tuple of (new_count, updated_count)
+        Tuple of (new_count, updated_count, seen_ids)
     """
     new_count = 0
     updated_count = 0
+    seen_ids: Set[str] = set()
     
     try:
         with open(input_path, 'r', encoding='utf-8') as infile:
@@ -253,12 +263,13 @@ def _process_nws_file_with_registry(
                 is_new, alert_id = registry.process_alert(processed_feature, current_time)
                 
                 if alert_id:
+                    seen_ids.add(alert_id)
                     if is_new:
                         new_count += 1
                     else:
                         updated_count += 1
         
-        return new_count, updated_count
+        return new_count, updated_count, seen_ids
         
     except Exception as e:
         raise e

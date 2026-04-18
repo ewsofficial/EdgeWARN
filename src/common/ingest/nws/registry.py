@@ -15,7 +15,7 @@ import tempfile
 import os
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Iterable
 from decimal import Decimal
 from util.io import IOManager
 
@@ -375,8 +375,42 @@ class AlertRegistry:
         
         # Update last_updated timestamp
         self._registry["last_updated"] = current_time.isoformat()
-        
+
         return new_count, updated_count
+
+    def reconcile_with_active_ids(self, active_ids: Iterable[str], current_time: datetime) -> int:
+        """
+        Remove registry alerts that are not present in the latest active upstream set.
+
+        This enforces the active API payload as source-of-truth for persisted alerts,
+        even when an older local alert has not yet reached its expiration timestamp.
+
+        Args:
+            active_ids: Iterable of alert IDs present in the latest successful ingest pull
+            current_time: Current timestamp for registry bookkeeping
+
+        Returns:
+            Count of removed alerts
+        """
+        active_id_set = {alert_id for alert_id in active_ids if alert_id}
+        alerts_to_remove = [
+            alert_id
+            for alert_id in self._registry["alerts"].keys()
+            if alert_id not in active_id_set
+        ]
+
+        for alert_id in alerts_to_remove:
+            del self._registry["alerts"][alert_id]
+
+        self._registry["last_updated"] = current_time.isoformat()
+
+        if alerts_to_remove:
+            io_manager.write_info(
+                f"Reconciled registry: removed {len(alerts_to_remove)} "
+                "alert(s) absent from latest upstream active feed"
+            )
+
+        return len(alerts_to_remove)
     
     def cleanup_expired(self, current_time: datetime) -> int:
         """

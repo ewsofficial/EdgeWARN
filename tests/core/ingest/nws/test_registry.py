@@ -320,6 +320,45 @@ class TestCleanupExpired:
         assert registry.alert_count == 1
 
 
+class TestReconcileWithActiveIds:
+    """Tests for reconcile_with_active_ids method."""
+
+    def test_reconcile_removes_alerts_not_in_active_set(
+        self,
+        registry,
+        sample_feature,
+        sample_feature_2,
+    ):
+        """Only IDs present in latest upstream active set should remain."""
+        current_time = datetime.now(timezone.utc)
+        registry.process_alert(sample_feature, current_time)
+        registry.process_alert(sample_feature_2, current_time)
+
+        keep_id = registry._extract_alert_id(sample_feature)
+        removed_count = registry.reconcile_with_active_ids([keep_id], current_time)
+
+        assert removed_count == 1
+        assert registry.alert_count == 1
+        assert registry.get_active_ids() == [keep_id]
+
+    def test_reconcile_with_empty_active_set_clears_registry(
+        self,
+        registry,
+        sample_feature,
+        sample_feature_2,
+    ):
+        """An empty successful upstream payload should clear saved active alerts."""
+        current_time = datetime.now(timezone.utc)
+        registry.process_alert(sample_feature, current_time)
+        registry.process_alert(sample_feature_2, current_time)
+
+        removed_count = registry.reconcile_with_active_ids([], current_time)
+
+        assert removed_count == 2
+        assert registry.alert_count == 0
+        assert registry.get_active_ids() == []
+
+
 # =============================================================================
 # Test Persistence
 # =============================================================================
