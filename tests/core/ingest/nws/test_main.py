@@ -145,6 +145,8 @@ class TestDownloadAlerts:
             mock_get_registry.return_value = mock_registry
             download_alerts(datetime(2023, 10, 15, 14, 30))
             
+            # Should reconcile to latest upstream active IDs
+            mock_registry.reconcile_with_active_ids.assert_called_once()
             # Should call cleanup_expired
             mock_registry.cleanup_expired.assert_called_once()
 
@@ -198,3 +200,123 @@ class TestDownloadAlerts:
             assert snapshot_data['alerts'][0]['effective'] == '2023-10-15T14:00:00Z'
             assert snapshot_data['alerts'][0]['expires'] == '2023-10-15T15:00:00Z'
             assert snapshot_data['alerts'][0]['geometry']['type'] == 'Polygon'
+
+    def test_download_reconciles_and_drops_missing_active_alerts(self, mock_io, tmp_path):
+        """Second ingest cycle should drop prior IDs absent from latest active payload."""
+        cycle_one = MagicMock()
+        cycle_one.read.return_value = json.dumps({
+            "features": [
+                {
+                    "id": "https://api.weather.gov/alerts/urn:oid:test-alert-a",
+                    "type": "Feature",
+                    "properties": {
+                        "event": "Severe Thunderstorm Warning",
+                        "effective": "2023-10-15T14:00:00Z",
+                        "expires": "2023-10-15T15:30:00Z",
+                        "geocode": {"SAME": ["048121"]}
+                    },
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]
+                    }
+                },
+                {
+                    "id": "https://api.weather.gov/alerts/urn:oid:test-alert-b",
+                    "type": "Feature",
+                    "properties": {
+                        "event": "Tornado Warning",
+                        "effective": "2023-10-15T14:01:00Z",
+                        "expires": "2023-10-15T15:31:00Z",
+                        "geocode": {"SAME": ["048121"]}
+                    },
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[1, 1], [1, 2], [2, 2], [2, 1], [1, 1]]]
+                    }
+                }
+            ]
+        }).encode('utf-8')
+        cycle_one.__enter__.return_value = cycle_one
+
+        cycle_two = MagicMock()
+        cycle_two.read.return_value = json.dumps({
+            "features": [
+                {
+                    "id": "https://api.weather.gov/alerts/urn:oid:test-alert-b",
+                    "type": "Feature",
+                    "properties": {
+                        "event": "Tornado Warning",
+                        "effective": "2023-10-15T14:02:00Z",
+                        "expires": "2023-10-15T15:31:00Z",
+                        "geocode": {"SAME": ["048121"]}
+                    },
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[1, 1], [1, 2], [2, 2], [2, 1], [1, 1]]]
+                    }
+                }
+            ]
+        }).encode('utf-8')
+        cycle_two.__enter__.return_value = cycle_two
+
+        with patch('EdgeWARN.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
+             patch('urllib.request.urlopen', side_effect=[cycle_one, cycle_two]):
+            download_alerts(datetime(2023, 10, 15, 14, 30, tzinfo=timezone.utc))
+            download_alerts(datetime(2023, 10, 15, 14, 32, tzinfo=timezone.utc))
+
+            registry = _get_registry()
+            active_ids = set(registry.get_active_ids())
+            assert active_ids == {"urn:oid:test-alert-b"}
+
+            latest_snapshot = tmp_path / "timestamps" / "20231015-143200.json"
+            with open(latest_snapshot, 'r', encoding='utf-8') as f:
+                snapshot_data = json.load(f)
+
+            snapshot_ids = {item["id"] for item in snapshot_data["alerts"]}
+            assert snapshot_ids == {"urn:oid:test-alert-b"}
+            assert snapshot_data["count"] == 1
+
+    def test_download_reconciles_empty_successful_payload_to_zero(self, mock_io, tmp_path):
+        """A successful empty payload should remove previously active saved alerts."""
+        cycle_one = MagicMock()
+        cycle_one.read.return_value = json.dumps({
+            "features": [
+                {
+                    "id": "https://api.weather.gov/alerts/urn:oid:test-alert-a",
+                    "type": "Feature",
+                    "properties": {
+                        "event": "Severe Thunderstorm Warning",
+                        "effective": "2023-10-15T14:00:00Z",
+                        "expires": "2023-10-15T15:30:00Z",
+                        "geocode": {"SAME": ["048121"]}
+                    },
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]
+                    }
+                }
+            ]
+        }).encode('utf-8')
+        cycle_one.__enter__.return_value = cycle_one
+
+        cycle_two = MagicMock()
+        cycle_two.read.return_value = json.dumps({
+            "type": "FeatureCollection",
+            "features": []
+        }).encode('utf-8')
+        cycle_two.__enter__.return_value = cycle_two
+
+        with patch('EdgeWARN.ingest.nws.main.fs.MRMS_NWS_DIR', tmp_path), \
+             patch('urllib.request.urlopen', side_effect=[cycle_one, cycle_two]):
+            download_alerts(datetime(2023, 10, 15, 14, 30, tzinfo=timezone.utc))
+            download_alerts(datetime(2023, 10, 15, 14, 32, tzinfo=timezone.utc))
+
+            registry = _get_registry()
+            assert registry.get_active_ids() == []
+
+            latest_snapshot = tmp_path / "timestamps" / "20231015-143200.json"
+            with open(latest_snapshot, 'r', encoding='utf-8') as f:
+                snapshot_data = json.load(f)
+
+            assert snapshot_data["count"] == 0
+            assert snapshot_data["alerts"] == []
