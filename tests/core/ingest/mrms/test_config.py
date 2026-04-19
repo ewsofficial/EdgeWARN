@@ -11,7 +11,9 @@ from common.ingest.mrms.config import (
 def test_get_abi_radc_channel_specs_includes_all_channels():
     specs = get_abi_radc_channel_specs(channel_ids=None)
 
-    assert [spec.channel_id for spec in specs] == [f"C{i:02d}" for i in range(1, 17)]
+    from common.ingest.mrms.config import DEFAULT_ABI_RADC_CHANNEL_IDS
+
+    assert [spec.channel_id for spec in specs] == list(DEFAULT_ABI_RADC_CHANNEL_IDS)
     assert all(spec.product == ABI_RADC_PRODUCT for spec in specs)
     assert all(spec.filename_matcher == rf"(?:_|-)M\d{spec.channel_id}_" for spec in specs)
 

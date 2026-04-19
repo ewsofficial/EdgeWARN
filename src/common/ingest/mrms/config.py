@@ -29,7 +29,6 @@ ABI_RADC_PRODUCT = "ABI-L1b-RadC"
 
 _ABI_CHANNEL_DEFINITIONS = [
     ("C01", "visible_blue", fs.GOES_ABI_VISIBLE_BLUE_DIR),
-    ("C02", "visible_red", fs.GOES_ABI_VISIBLE_RED_DIR),
     ("C03", "veggie", fs.GOES_ABI_VEGGIE_DIR),
     ("C04", "cirrus", fs.GOES_ABI_CIRRUS_DIR),
     ("C05", "snow_ice", fs.GOES_ABI_SNOW_ICE_DIR),
@@ -40,7 +39,6 @@ _ABI_CHANNEL_DEFINITIONS = [
     ("C10", "lower_level_wv", fs.GOES_ABI_LOWER_LEVEL_WV_DIR),
     ("C11", "cld_top_phase", fs.GOES_ABI_CLD_TOP_PHASE_DIR),
     ("C12", "ozone", fs.GOES_ABI_OZONE_DIR),
-    ("C13", "clean_lwir", fs.GOES_ABI_CLEAN_LWIR_DIR),
     ("C14", "longwave_ir", fs.GOES_ABI_LONGWAVE_IR_DIR),
     ("C15", "dirty_lwir", fs.GOES_ABI_DIRTY_LWIR_DIR),
     ("C16", "co2_lwir", fs.GOES_ABI_CO2_LWIR_DIR),

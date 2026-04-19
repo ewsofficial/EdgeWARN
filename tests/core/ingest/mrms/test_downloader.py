@@ -9,10 +9,10 @@ def test_download_goes_product_filters_to_requested_abi_channel(monkeypatch, tmp
     dt = datetime(2026, 4, 19, 0, 10, tzinfo=timezone.utc)
     spec = GoesIngestSpec(
         product="ABI-L1b-RadC",
-        outdir=tmp_path / "VisibleRed",
-        channel_id="C02",
-        channel_name="visible_red",
-        filename_matcher=r"(?:_|-)M\dC02_",
+        outdir=tmp_path / "VisibleBlue",
+        channel_id="C01",
+        channel_name="visible_blue",
+        filename_matcher=r"(?:_|-)M\dC01_",
     )
     captured = {}
 
@@ -23,8 +23,8 @@ def test_download_goes_product_filters_to_requested_abi_channel(monkeypatch, tmp
         def lookup_files(self, prefixes):
             return [
                 ("ABI-L1b-RadC/2026/109/00/OR_ABI-L1b-RadC-M6C05_G19_s20261090008000.nc", dt.replace(minute=8)),
-                ("ABI-L1b-RadC/2026/109/00/OR_ABI-L1b-RadC-M6C02_G19_s20261090010000.nc", dt),
-                ("ABI-L1b-RadC/2026/109/00/OR_ABI-L1b-RadC-M6C02_G19_s20261090000000.nc", dt.replace(minute=0)),
+                ("ABI-L1b-RadC/2026/109/00/OR_ABI-L1b-RadC-M6C01_G19_s20261090010000.nc", dt),
+                ("ABI-L1b-RadC/2026/109/00/OR_ABI-L1b-RadC-M6C01_G19_s20261090000000.nc", dt.replace(minute=0)),
             ]
 
     class DummyDownloader:
@@ -35,7 +35,7 @@ def test_download_goes_product_filters_to_requested_abi_channel(monkeypatch, tmp
             captured["file_list"] = file_list
             captured["outdir"] = outdir
             outdir.mkdir(parents=True, exist_ok=True)
-            target = outdir / "OR_ABI-L1b-RadC-M6C02_G19_s20261090010000.nc"
+            target = outdir / "OR_ABI-L1b-RadC-M6C01_G19_s20261090010000.nc"
             target.write_text("abi")
             return target
 
@@ -52,11 +52,11 @@ def test_download_goes_product_filters_to_requested_abi_channel(monkeypatch, tmp
     result = ingest_downloader.download_goes_product(spec, dt)
 
     assert [path for path, _ in captured["file_list"]] == [
-        "ABI-L1b-RadC/2026/109/00/OR_ABI-L1b-RadC-M6C02_G19_s20261090010000.nc",
-        "ABI-L1b-RadC/2026/109/00/OR_ABI-L1b-RadC-M6C02_G19_s20261090000000.nc",
+        "ABI-L1b-RadC/2026/109/00/OR_ABI-L1b-RadC-M6C01_G19_s20261090010000.nc",
+        "ABI-L1b-RadC/2026/109/00/OR_ABI-L1b-RadC-M6C01_G19_s20261090000000.nc",
     ]
     assert captured["outdir"] == spec.outdir
-    assert result == [spec.outdir / "OR_ABI-L1b-RadC-M6C02_G19_s20261090010000.nc"]
+    assert result == [spec.outdir / "OR_ABI-L1b-RadC-M6C01_G19_s20261090010000.nc"]
 
 
 def test_download_all_goes_files_async_iterates_glm_and_abi_specs(monkeypatch, tmp_path):
@@ -65,10 +65,10 @@ def test_download_all_goes_files_async_iterates_glm_and_abi_specs(monkeypatch, t
         GoesIngestSpec("GLM-L2-LCFA", tmp_path / "GLM"),
         GoesIngestSpec(
             product="ABI-L1b-RadC",
-            outdir=tmp_path / "VisibleRed",
-            channel_id="C02",
-            channel_name="visible_red",
-            filename_matcher=r"(?:_|-)M\dC02_",
+            outdir=tmp_path / "VisibleBlue",
+            channel_id="C01",
+            channel_name="visible_blue",
+            filename_matcher=r"(?:_|-)M\dC01_",
         ),
     ]
     seen = []
@@ -112,7 +112,7 @@ def test_download_all_goes_files_async_iterates_glm_and_abi_specs(monkeypatch, t
 
     assert seen == [
         ("GLM-L2-LCFA", None, dt, 7, 2),
-        ("ABI-L1b-RadC", "C02", dt, 7, 2),
+        ("ABI-L1b-RadC", "C01", dt, 7, 2),
     ]
 
 
@@ -127,13 +127,7 @@ def test_download_all_goes_files_async_uses_shared_abi_lookup(monkeypatch, tmp_p
             channel_name="visible_blue",
             filename_matcher=r"(?:_|-)M\dC01_",
         ),
-        GoesIngestSpec(
-            product="ABI-L1b-RadC",
-            outdir=tmp_path / "VisibleRed",
-            channel_id="C02",
-            channel_name="visible_red",
-            filename_matcher=r"(?:_|-)M\dC02_",
-        ),
+        # Visible red (C02) removed from ingest; only include C01 here
     ]
 
     shared_lookup_result = [("ABI-L1b-RadC/2026/109/00/fake.nc", dt)]
@@ -184,8 +178,7 @@ def test_download_all_goes_files_async_uses_shared_abi_lookup(monkeypatch, tmp_p
     ]
     assert (None, None) in seen_preloaded
     assert ("C01", shared_lookup_result) in seen_preloaded
-    assert ("C02", shared_lookup_result) in seen_preloaded
-    assert len(seen_preloaded) == 3
+    assert len(seen_preloaded) == 2
 
 
 def test_download_all_goes_files_sync_uses_shared_abi_lookup(monkeypatch, tmp_path):
@@ -198,13 +191,6 @@ def test_download_all_goes_files_sync_uses_shared_abi_lookup(monkeypatch, tmp_pa
             channel_id="C01",
             channel_name="visible_blue",
             filename_matcher=r"(?:_|-)M\dC01_",
-        ),
-        GoesIngestSpec(
-            product="ABI-L1b-RadC",
-            outdir=tmp_path / "VisibleRed",
-            channel_id="C02",
-            channel_name="visible_red",
-            filename_matcher=r"(?:_|-)M\dC02_",
         ),
     ]
 
@@ -237,7 +223,6 @@ def test_download_all_goes_files_sync_uses_shared_abi_lookup(monkeypatch, tmp_pa
     assert seen_preloaded == [
         (None, None),
         ("C01", shared_lookup_result),
-        ("C02", shared_lookup_result),
     ]
 
 
