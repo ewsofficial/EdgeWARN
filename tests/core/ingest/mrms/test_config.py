@@ -16,7 +16,7 @@ def test_get_abi_radc_channel_specs_includes_all_channels():
     assert all(spec.filename_matcher == rf"(?:_|-)M\d{spec.channel_id}_" for spec in specs)
 
 
-def test_get_goes_modifiers_defaults_to_glm_plus_severe_nowcasting_channels():
+def test_get_goes_modifiers_defaults_to_glm_plus_all_abi_channels():
     specs = get_goes_modifiers()
 
     assert specs[0] == GoesIngestSpec("GLM-L2-LCFA", specs[0].outdir)

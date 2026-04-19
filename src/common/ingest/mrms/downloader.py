@@ -26,15 +26,23 @@ import uuid
 
 io_manager = IOManager("[Ingest]")
 
+GOES_MAX_ENTRIES = 96
+
 
 def _get_goes_spec_label(goes_spec):
     return goes_spec.label if goes_spec.channel_id else goes_spec.product
 
 
 def _get_goes_search_max_entries(goes_spec, max_entries):
-    if goes_spec.channel_id:
-        return max(max_entries, 1000)
-    return max(max_entries, 300)
+    _ = (goes_spec, max_entries)
+    return GOES_MAX_ENTRIES
+
+
+def _get_goes_bucket_paths(dt, product, hour_lookback):
+    return [
+        parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
+        for hour_offset in range(hour_lookback)
+    ]
 
 
 def _filter_goes_files_for_spec(file_list, goes_spec, trace_id=None):
@@ -282,7 +290,7 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
 
 # ==================== GOES-19 Download Functions ====================
 
-def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3):
+def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3, preloaded_files=None):
     """
     Download a specific GOES-19 product.
     
@@ -311,15 +319,11 @@ def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3):
     downloader = FileDownloader(dt, goes_bucket, io_manager)
     
     try:
-        # Generate list of paths to check
-        bucket_paths = []
-        for hour_offset in range(hour_lookback):
-            bucket_path = parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
-            bucket_paths.append(bucket_path)
-            
-        
-        # Lookup files across all paths (FileFinder handles the loop and max_entries check)
-        all_files = finder.lookup_files(bucket_paths)
+        all_files = preloaded_files
+        if all_files is None:
+            bucket_paths = _get_goes_bucket_paths(dt, product, hour_lookback)
+            # Lookup files across all paths (FileFinder handles the loop and max_entries check)
+            all_files = finder.lookup_files(bucket_paths)
         
         if not all_files:
             io_manager.write_warning(f"No files found for GOES product {label} at {dt}")
@@ -407,7 +411,15 @@ def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3):
         return []
 
 
-async def _download_goes_product_async(goes_spec, dt, max_entries, hour_lookback, s3_client, parent_trace_id=None):
+async def _download_goes_product_async(
+    goes_spec,
+    dt,
+    max_entries,
+    hour_lookback,
+    s3_client,
+    parent_trace_id=None,
+    preloaded_files=None,
+):
     """
     Async version of download_goes_product.
     
@@ -428,18 +440,14 @@ async def _download_goes_product_async(goes_spec, dt, max_entries, hour_lookback
     
     perf_tracker.start(f"Ingest - GOES - {label}")
     try:
-        # Generate list of paths to check
-        bucket_paths = []
-        for hour_offset in range(hour_lookback):
-            bucket_path = parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
-            bucket_paths.append(bucket_path)
-            
-        
-        # Lookup files across all paths (AsyncFileFinder handles the loop and max_entries check)
-        with PerformanceTimer(io_manager, f"Lookup_GOES_{product}", trace_id, threshold_ms=100):
-            perf_tracker.start(f"Ingest - GOES - {label} - Lookup")
-            all_files = await finder.async_lookup_files(bucket_paths)
-            perf_tracker.stop(f"Ingest - GOES - {label} - Lookup")
+        all_files = preloaded_files
+        if all_files is None:
+            bucket_paths = _get_goes_bucket_paths(dt, product, hour_lookback)
+            # Lookup files across all paths (AsyncFileFinder handles the loop and max_entries check)
+            with PerformanceTimer(io_manager, f"Lookup_GOES_{product}", trace_id, threshold_ms=100):
+                perf_tracker.start(f"Ingest - GOES - {label} - Lookup")
+                all_files = await finder.async_lookup_files(bucket_paths)
+                perf_tracker.stop(f"Ingest - GOES - {label} - Lookup")
         
         if not all_files:
             io_manager.write_warning(f"[{trace_id}] No files found for GOES product {label} at {dt}")
@@ -557,10 +565,30 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
     io_manager.write_info("Starting GOES-19 downloads...")
     
     # Use ThreadPoolExecutor for concurrent downloads
-    goes_modifiers_list = get_goes_modifiers()
+    goes_modifiers_list = [normalize_goes_modifier(spec) for spec in get_goes_modifiers()]
+    shared_channel_files_by_product = {}
+
+    for goes_spec in goes_modifiers_list:
+        if not goes_spec.channel_id or goes_spec.product in shared_channel_files_by_product:
+            continue
+
+        search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
+        finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
+        bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
+        shared_channel_files_by_product[goes_spec.product] = finder.lookup_files(bucket_paths)
+
     with ThreadPoolExecutor(max_workers=len(goes_modifiers_list)) as executor:
         futures = [
-            executor.submit(download_goes_product, goes_spec, dt, max_entries, hour_lookback)
+            executor.submit(
+                download_goes_product,
+                goes_spec,
+                dt,
+                max_entries,
+                hour_lookback,
+                shared_channel_files_by_product.get(goes_spec.product)
+                if goes_spec.channel_id
+                else None,
+            )
             for goes_spec in goes_modifiers_list
         ]
         
@@ -587,10 +615,39 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
     trace_id = f"GOES_ALL-{uuid.uuid4().hex[:8]}"
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         io_manager.write_info(f"[{trace_id}] Starting async GOES-19 downloads...")
+        goes_modifiers_list = [normalize_goes_modifier(spec) for spec in get_goes_modifiers()]
+        shared_channel_files_by_product = {}
+
+        for goes_spec in goes_modifiers_list:
+            if not goes_spec.channel_id or goes_spec.product in shared_channel_files_by_product:
+                continue
+
+            search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
+            finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3)
+            bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
+            with PerformanceTimer(
+                io_manager,
+                f"Lookup_GOES_{goes_spec.product}_shared",
+                trace_id,
+                threshold_ms=100,
+            ):
+                shared_channel_files_by_product[goes_spec.product] = await finder.async_lookup_files(bucket_paths)
         
         tasks = [
-            _download_goes_product_async(goes_spec, dt, max_entries, hour_lookback, s3, trace_id)
-            for goes_spec in get_goes_modifiers()
+            _download_goes_product_async(
+                goes_spec,
+                dt,
+                max_entries,
+                hour_lookback,
+                s3,
+                trace_id,
+                preloaded_files=(
+                    shared_channel_files_by_product.get(goes_spec.product)
+                    if goes_spec.channel_id
+                    else None
+                ),
+            )
+            for goes_spec in goes_modifiers_list
         ]
         
         results = await asyncio.gather(*tasks, return_exceptions=True)

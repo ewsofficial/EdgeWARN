@@ -65,3 +65,41 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch):
     assert state.detection_inputs_ready is True
     assert state.ewmrs_inputs_ready is True
     assert state.edgewarn_integration_inputs_ready is True
+
+
+def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch):
+    call_order = []
+
+    async def fake_detection(dt, max_entries=10, remove_old_files=True):
+        await asyncio.sleep(0.01)
+        call_order.append("detection")
+
+    async def fake_mrms_integration(dt, max_entries=10, remove_old_files=True):
+        await asyncio.sleep(0.02)
+        call_order.append("mrms_integration")
+
+    async def fake_goes(dt, max_entries=10, hour_lookback=3):
+        call_order.append("goes")
+
+    async def fake_rap(dt):
+        await asyncio.sleep(0.03)
+        call_order.append("rap")
+
+    monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files_async", fake_detection)
+    monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
+    monkeypatch.setattr(coordinator, "download_all_goes_files_async", fake_goes)
+    monkeypatch.setattr(coordinator, "download_rap_async", fake_rap)
+
+    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
+    state = asyncio.run(
+        run_tandem_ingest_cycle(
+            dt,
+            lambda msg: None,
+            include_goes=False,
+        )
+    )
+
+    assert call_order == ["detection", "mrms_integration", "rap"]
+    assert state.detection_inputs_ready is True
+    assert state.ewmrs_inputs_ready is True
+    assert state.edgewarn_integration_inputs_ready is True

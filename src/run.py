@@ -8,6 +8,7 @@ import asyncio
 import util.file as fs
 import common.ingest.nws.main as nws_ingest
 import common.ingest.metar as metar_ingest
+from common.ingest.mrms.downloader import download_all_goes_files_async, download_all_goes_files
 from common.ingest.wpc.main import run_wpc_ingest
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN import initialize_runtime
@@ -28,6 +29,26 @@ lat_limits = tuple(args.lat_limits)
 lon_limits = tuple(args.lon_limits)
 
 initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
+
+GOES_POLL_SECONDS = 60
+
+
+def goes_loop():
+    try:
+        while True:
+            target_dt = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            try:
+                asyncio.run(download_all_goes_files_async(target_dt))
+            except Exception as exc:
+                print(f"[GOES Loop] Async ingest failed ({target_dt}): {exc}. Falling back to sync.")
+                try:
+                    download_all_goes_files(target_dt)
+                except Exception as fallback_exc:
+                    print(f"[GOES Loop] Sync fallback failed ({target_dt}): {fallback_exc}")
+
+            _sleep(GOES_POLL_SECONDS, interval=1.0)
+    except KeyboardInterrupt:
+        return
 
 
 def _queue_log(log_queue, message):
@@ -55,6 +76,25 @@ def _sleep_until_boundary(minutes):
     sleep_seconds = max(0.0, (next_run - now).total_seconds())
     if sleep_seconds > 0:
         _sleep(sleep_seconds, interval=1.0)
+
+
+def _stop_process(process, name, *, join_timeout=5):
+    if process is None:
+        return
+
+    try:
+        if process.is_alive():
+            print(f"[Scheduler] Stopping {name} process...")
+            process.terminate()
+
+        process.join(timeout=join_timeout)
+
+        if process.is_alive():
+            print(f"[Scheduler] {name} did not stop in time; killing...")
+            process.kill()
+            process.join(timeout=1)
+    except Exception as exc:
+        print(f"[Scheduler] Failed to stop {name} process cleanly: {exc}")
 
 
 def metar_loop():
@@ -109,6 +149,7 @@ def _run_tandem_cycle(dt):
             run_tandem_ingest_cycle(
                 dt,
                 lambda msg: _queue_log(log_queue, msg),
+                include_goes=False,
             )
         )
     except Exception as exc:
@@ -178,6 +219,7 @@ def main():
         f"min_seed_percentage={args.min_seed_percentage}, "
         f"drop_offset={args.drop_offset}"
     )
+    print("[Scheduler] GOES ingest decoupled: running as independent background process")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed = None  # Track last processed timestamp
 
@@ -210,6 +252,15 @@ def main():
     metar_proc.start()
     nws_proc.start()
     wpc_proc.start()
+    goes_proc = multiprocessing.Process(target=goes_loop, daemon=True)
+    goes_proc.start()
+
+    background_processes = [
+        (metar_proc, "METAR"),
+        (nws_proc, "NWS"),
+        (wpc_proc, "WPC"),
+        (goes_proc, "GOES"),
+    ]
 
     try:
         while True:
@@ -279,7 +330,9 @@ def main():
 
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")
-        sys.exit(0)
+    finally:
+        for process, name in background_processes:
+            _stop_process(process, name)
 
 if __name__ == "__main__":
     try:
