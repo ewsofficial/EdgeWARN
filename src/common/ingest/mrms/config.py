@@ -1,8 +1,63 @@
+from dataclasses import dataclass
+from pathlib import Path
 
 import util.file as fs
 
 bucket = "noaa-mrms-pds"
 goes_bucket = "noaa-goes19"
+
+
+@dataclass(frozen=True)
+class GoesIngestSpec:
+    product: str
+    outdir: Path
+    channel_id: str | None = None
+    channel_name: str | None = None
+    filename_matcher: str | None = None
+    max_files: int = 2
+
+    @property
+    def label(self) -> str:
+        return self.channel_name or self.channel_id or self.product
+
+    @property
+    def is_glm(self) -> bool:
+        return self.channel_id is None and "GLM" in self.product
+
+
+ABI_RADC_PRODUCT = "ABI-L1b-RadC"
+
+_ABI_CHANNEL_DEFINITIONS = [
+    ("C01", "visible_blue", fs.GOES_ABI_VISIBLE_BLUE_DIR),
+    ("C02", "visible_red", fs.GOES_ABI_VISIBLE_RED_DIR),
+    ("C03", "veggie", fs.GOES_ABI_VEGGIE_DIR),
+    ("C04", "cirrus", fs.GOES_ABI_CIRRUS_DIR),
+    ("C05", "snow_ice", fs.GOES_ABI_SNOW_ICE_DIR),
+    ("C06", "particle_size", fs.GOES_ABI_PARTICLE_SIZE_DIR),
+    ("C07", "shortwave_ir", fs.GOES_ABI_SHORTWAVE_IR_DIR),
+    ("C08", "upper_level_wv", fs.GOES_ABI_UPPER_LEVEL_WV_DIR),
+    ("C09", "mid_level_wv", fs.GOES_ABI_MID_LEVEL_WV_DIR),
+    ("C10", "lower_level_wv", fs.GOES_ABI_LOWER_LEVEL_WV_DIR),
+    ("C11", "cld_top_phase", fs.GOES_ABI_CLD_TOP_PHASE_DIR),
+    ("C12", "ozone", fs.GOES_ABI_OZONE_DIR),
+    ("C13", "clean_lwir", fs.GOES_ABI_CLEAN_LWIR_DIR),
+    ("C14", "longwave_ir", fs.GOES_ABI_LONGWAVE_IR_DIR),
+    ("C15", "dirty_lwir", fs.GOES_ABI_DIRTY_LWIR_DIR),
+    ("C16", "co2_lwir", fs.GOES_ABI_CO2_LWIR_DIR),
+]
+
+DEFAULT_ABI_RADC_CHANNEL_IDS = (
+    "C02",
+    "C05",
+    "C06",
+    "C07",
+    "C08",
+    "C09",
+    "C10",
+    "C13",
+    "C15",
+    "C16",
+)
 
 def get_mrms_modifiers():
     return [
@@ -53,5 +108,38 @@ def get_check_modifiers():
 
 def get_goes_modifiers():
     return [
-       ("GLM-L2-LCFA", fs.GOES_GLM_DIR)
+        GoesIngestSpec("GLM-L2-LCFA", fs.GOES_GLM_DIR),
+        *get_abi_radc_channel_specs(),
     ]
+
+
+def get_abi_radc_channel_specs(channel_ids=DEFAULT_ABI_RADC_CHANNEL_IDS):
+    selected_channel_ids = set(channel_ids) if channel_ids is not None else None
+    specs = []
+
+    for channel_id, channel_name, outdir in _ABI_CHANNEL_DEFINITIONS:
+        if selected_channel_ids is not None and channel_id not in selected_channel_ids:
+            continue
+
+        specs.append(
+            GoesIngestSpec(
+                product=ABI_RADC_PRODUCT,
+                outdir=outdir,
+                channel_id=channel_id,
+                channel_name=channel_name,
+                filename_matcher=rf"(?:_|-)M\d{channel_id}_",
+            )
+        )
+
+    return specs
+
+
+def normalize_goes_modifier(spec):
+    if isinstance(spec, GoesIngestSpec):
+        return spec
+
+    if isinstance(spec, tuple) and len(spec) == 2:
+        product, outdir = spec
+        return GoesIngestSpec(product=product, outdir=outdir)
+
+    raise TypeError(f"Unsupported GOES modifier specification: {spec!r}")
