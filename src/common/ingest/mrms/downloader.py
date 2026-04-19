@@ -1,4 +1,12 @@
-from common.ingest.mrms.config import get_mrms_modifiers, bucket, get_goes_modifiers, goes_bucket
+import re
+
+from common.ingest.mrms.config import (
+    bucket,
+    get_goes_modifiers,
+    get_mrms_modifiers,
+    goes_bucket,
+    normalize_goes_modifier,
+)
 from common.ingest.mrms.s3_sync import FileFinder, FileDownloader
 from common.ingest.mrms.s3_async import AsyncFileFinder, AsyncFileDownloader
 from common.ingest.mrms.https_client import HttpsFileFinder, HttpsFileDownloader
@@ -19,33 +27,67 @@ import uuid
 io_manager = IOManager("[Ingest]")
 
 
-def _cleanup_goes_outdir_sync(product, outdir, max_age_minutes=60):
+def _get_goes_spec_label(goes_spec):
+    return goes_spec.label if goes_spec.channel_id else goes_spec.product
+
+
+def _get_goes_search_max_entries(goes_spec, max_entries):
+    if goes_spec.channel_id:
+        return max(max_entries, 1000)
+    return max(max_entries, 300)
+
+
+def _filter_goes_files_for_spec(file_list, goes_spec, trace_id=None):
+    if not goes_spec.filename_matcher:
+        return file_list
+
+    matcher = re.compile(goes_spec.filename_matcher)
+    filtered_files = [
+        (s3_path, timestamp)
+        for s3_path, timestamp in file_list
+        if matcher.search(s3_path)
+    ]
+
+    if not filtered_files:
+        prefix = f"[{trace_id}] " if trace_id else ""
+        io_manager.write_warning(
+            f"{prefix}No files matched {goes_spec.channel_id} for GOES product {goes_spec.product}"
+        )
+
+    return filtered_files
+
+
+def _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=60):
     """Run pre-download cleanup for a GOES product output directory (sync path)."""
     try:
+        outdir = goes_spec.outdir
+        label = _get_goes_spec_label(goes_spec)
         io_manager.write_debug(
-            f"[GOES:{product}] Running pre-download cleanup in {outdir} "
-            f"(max_age_minutes={max_age_minutes})"
+            f"[GOES:{label}] Running pre-download cleanup in {outdir} "
+            f"(max_age_minutes={max_age_minutes}, max_files={goes_spec.max_files})"
         )
-        fs.clean_old_files(outdir, max_age_minutes=max_age_minutes)
-        io_manager.write_debug(f"[GOES:{product}] Pre-download cleanup completed for {outdir}")
+        fs.clean_old_files(outdir, max_age_minutes=max_age_minutes, max_files=goes_spec.max_files)
+        io_manager.write_debug(f"[GOES:{label}] Pre-download cleanup completed for {outdir}")
     except Exception as e:
-        io_manager.write_warning(f"[GOES:{product}] Pre-download cleanup failed for {outdir}: {e}")
+        io_manager.write_warning(f"[GOES:{label}] Pre-download cleanup failed for {outdir}: {e}")
 
 
-async def _cleanup_goes_outdir_async(product, outdir, trace_id, max_age_minutes=60):
+async def _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=60):
     """Run pre-download cleanup for a GOES product output directory (async path)."""
     try:
+        outdir = goes_spec.outdir
+        label = _get_goes_spec_label(goes_spec)
         io_manager.write_debug(
-            f"[{trace_id}] [GOES:{product}] Running async pre-download cleanup in {outdir} "
-            f"(max_age_minutes={max_age_minutes})"
+            f"[{trace_id}] [GOES:{label}] Running async pre-download cleanup in {outdir} "
+            f"(max_age_minutes={max_age_minutes}, max_files={goes_spec.max_files})"
         )
-        await fs.async_clean_old_files(outdir, max_age_minutes=max_age_minutes)
+        await fs.async_clean_old_files(outdir, max_age_minutes=max_age_minutes, max_files=goes_spec.max_files)
         io_manager.write_debug(
-            f"[{trace_id}] [GOES:{product}] Async pre-download cleanup completed for {outdir}"
+            f"[{trace_id}] [GOES:{label}] Async pre-download cleanup completed for {outdir}"
         )
     except Exception as e:
         io_manager.write_warning(
-            f"[{trace_id}] [GOES:{product}] Async pre-download cleanup failed for {outdir}: {e}"
+            f"[{trace_id}] [GOES:{label}] Async pre-download cleanup failed for {outdir}: {e}"
         )
 
 async def download_all_files_async_internal(dt, max_entries, target_modifiers=None):
@@ -240,13 +282,12 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
 
 # ==================== GOES-19 Download Functions ====================
 
-def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
+def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3):
     """
     Download a specific GOES-19 product.
     
     Args:
-        product (str): GOES product name (e.g., "GLM-L2-LCFA", "ABI-L2-ACHAC")
-        outdir (Path): Output directory for downloaded files
+        goes_spec: GOES ingest specification or legacy ``(product, outdir)`` tuple
         dt (datetime): Target datetime (UTC, timezone-aware)
         max_entries (int): Maximum number of file entries to retrieve (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3).
@@ -258,9 +299,14 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
     # dt = dt.replace(second=0, microsecond=0) # Allow seconds for sliding window
     
     # Increase max_entries to ensure we find files in the past (GLM has ~180 files/hour)
-    _cleanup_goes_outdir_sync(product, outdir, max_age_minutes=60)
+    goes_spec = normalize_goes_modifier(goes_spec)
+    product = goes_spec.product
+    outdir = goes_spec.outdir
+    label = _get_goes_spec_label(goes_spec)
 
-    search_max_entries = max(max_entries, 300)
+    _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=60)
+
+    search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
     finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
     downloader = FileDownloader(dt, goes_bucket, io_manager)
     
@@ -276,12 +322,20 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
         all_files = finder.lookup_files(bucket_paths)
         
         if not all_files:
-            io_manager.write_warning(f"No files found for GOES product {product} at {dt}")
+            io_manager.write_warning(f"No files found for GOES product {label} at {dt}")
             return None
+
+        all_files = _filter_goes_files_for_spec(all_files, goes_spec)
+        if not all_files:
+            return []
         
         
         # Download all matching files
-        downloaded_files = downloader.download_all_matching(all_files, outdir)
+        if goes_spec.is_glm:
+            downloaded_files = downloader.download_all_matching(all_files, outdir)
+        else:
+            downloaded = downloader.download_matching(all_files, outdir)
+            downloaded_files = [downloaded] if downloaded else []
         
 
         
@@ -299,7 +353,7 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
                     processed_files.append(downloaded)
             
             # Check if we need to merge GLM files
-            if "GLM" in product and len(processed_files) > 1:
+            if goes_spec.is_glm and len(processed_files) > 1:
                 io_manager.write_info(f"Merging {len(processed_files)} GLM files...")
                 merged_ds = merge_glm_files(processed_files, io_manager)
                 
@@ -345,30 +399,34 @@ def download_goes_product(product, outdir, dt, max_entries=10, hour_lookback=3):
 
             return processed_files
         else:
-            io_manager.write_error(f"Failed to download GOES {product} file")
+            io_manager.write_error(f"Failed to download GOES {label} file")
             return []
     
     except Exception as e:
-        io_manager.write_error(f"Failed to process GOES {product} - {e}")
+        io_manager.write_error(f"Failed to process GOES {label} - {e}")
         return []
 
 
-async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lookback, s3_client, parent_trace_id=None):
+async def _download_goes_product_async(goes_spec, dt, max_entries, hour_lookback, s3_client, parent_trace_id=None):
     """
     Async version of download_goes_product.
     
     Internal async function for downloading a single GOES product using aioboto3.
     """
+    goes_spec = normalize_goes_modifier(goes_spec)
+    product = goes_spec.product
+    outdir = goes_spec.outdir
+    label = _get_goes_spec_label(goes_spec)
     trace_id = parent_trace_id or f"GOES-{uuid.uuid4().hex[:8]}"
 
-    await _cleanup_goes_outdir_async(product, outdir, trace_id, max_age_minutes=60)
+    await _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=60)
     
     # Increase max_entries to ensure we find files in the past
-    search_max_entries = max(max_entries, 300)
+    search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
     finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
     
-    perf_tracker.start(f"Ingest - GOES - {product}")
+    perf_tracker.start(f"Ingest - GOES - {label}")
     try:
         # Generate list of paths to check
         bucket_paths = []
@@ -379,21 +437,30 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
         
         # Lookup files across all paths (AsyncFileFinder handles the loop and max_entries check)
         with PerformanceTimer(io_manager, f"Lookup_GOES_{product}", trace_id, threshold_ms=100):
-            perf_tracker.start(f"Ingest - GOES - {product} - Lookup")
+            perf_tracker.start(f"Ingest - GOES - {label} - Lookup")
             all_files = await finder.async_lookup_files(bucket_paths)
-            perf_tracker.stop(f"Ingest - GOES - {product} - Lookup")
+            perf_tracker.stop(f"Ingest - GOES - {label} - Lookup")
         
         if not all_files:
-            io_manager.write_warning(f"[{trace_id}] No files found for GOES product {product} at {dt}")
-            perf_tracker.stop(f"Ingest - GOES - {product}")
+            io_manager.write_warning(f"[{trace_id}] No files found for GOES product {label} at {dt}")
+            perf_tracker.stop(f"Ingest - GOES - {label}")
             return None
+
+        all_files = _filter_goes_files_for_spec(all_files, goes_spec, trace_id=trace_id)
+        if not all_files:
+            perf_tracker.stop(f"Ingest - GOES - {label}")
+            return []
         
         
         # Download all matching files
         with PerformanceTimer(io_manager, f"Download_GOES_{product}", trace_id, threshold_ms=100):
-            perf_tracker.start(f"Ingest - GOES - {product} - Download")
-            downloaded_files = await downloader.async_download_all_matching(all_files, outdir)
-            perf_tracker.stop(f"Ingest - GOES - {product} - Download")
+            perf_tracker.start(f"Ingest - GOES - {label} - Download")
+            if goes_spec.is_glm:
+                downloaded_files = await downloader.async_download_all_matching(all_files, outdir)
+            else:
+                downloaded = await downloader.async_download_matching(all_files, outdir)
+                downloaded_files = [downloaded] if downloaded else []
+            perf_tracker.stop(f"Ingest - GOES - {label} - Download")
         
         if downloaded_files:
             processed_files = []
@@ -402,9 +469,9 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
             # Helper to handle decompression result mapping
             async def _decompress_wrapper(f):
                 if f.suffix == ".gz":
-                    with PerformanceTimer(io_manager, f"Decompress_GOES_{product}", trace_id, threshold_ms=50):
-                        res = await downloader.async_decompress_file(f)
-                        return res if res else f
+                        with PerformanceTimer(io_manager, f"Decompress_GOES_{label}", trace_id, threshold_ms=50):
+                            res = await downloader.async_decompress_file(f)
+                            return res if res else f
                 return f
 
             # Gather all decompression tasks
@@ -412,7 +479,7 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
             processed_files = list(results)
             
             # Check if we need to merge GLM files
-            if "GLM" in product and len(processed_files) > 1:
+            if goes_spec.is_glm and len(processed_files) > 1:
                 io_manager.write_info(f"[{trace_id}] Merging {len(processed_files)} GLM files (Async)...")
                 
                 # merge_glm_files is synchronous, so we offload it to a thread pool
@@ -420,9 +487,9 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
                 # merge_glm_files is synchronous, so we offload it to a thread pool
                 loop = asyncio.get_running_loop()
                 with PerformanceTimer(io_manager, f"Merge_GLM", trace_id):
-                    perf_tracker.start(f"Ingest - GOES - {product} - Merge")
+                    perf_tracker.start(f"Ingest - GOES - {label} - Merge")
                     merged_ds = await loop.run_in_executor(None, merge_glm_files, processed_files, io_manager)
-                    perf_tracker.stop(f"Ingest - GOES - {product} - Merge")
+                    perf_tracker.stop(f"Ingest - GOES - {label} - Merge")
                 
                 if merged_ds:
                     # Find the newest timestamp among the files
@@ -451,31 +518,31 @@ async def _download_goes_product_async(product, outdir, dt, max_entries, hour_lo
                                 io_manager.write_warning(f"[{trace_id}] Failed to delete {f}: {del_e}")
                         io_manager.write_debug(f"[{trace_id}] Deleted {len(processed_files)} individual GLM files")
                         
-                        perf_tracker.stop(f"Ingest - GOES - {product}")
+                        perf_tracker.stop(f"Ingest - GOES - {label}")
                         return [merged_path]
                     except Exception as e:
                         io_manager.write_error(f"[{trace_id}] Failed to save merged GLM file: {e}")
                         merged_ds.close()
-                        perf_tracker.stop(f"Ingest - GOES - {product}")
+                        perf_tracker.stop(f"Ingest - GOES - {label}")
                         return processed_files
                 else:
                     io_manager.write_error(f"[{trace_id}] GLM merge failed, returning individual files")
-                    perf_tracker.stop(f"Ingest - GOES - {product}")
+                    perf_tracker.stop(f"Ingest - GOES - {label}")
                     return processed_files
 
-            perf_tracker.stop(f"Ingest - GOES - {product}")
+            perf_tracker.stop(f"Ingest - GOES - {label}")
             return processed_files
         else:
-            io_manager.write_error(f"[{trace_id}] Failed to download GOES {product} file")
-            perf_tracker.stop(f"Ingest - GOES - {product}")
+            io_manager.write_error(f"[{trace_id}] Failed to download GOES {label} file")
+            perf_tracker.stop(f"Ingest - GOES - {label}")
             return []
     
     except Exception as e:
-        io_manager.write_error(f"[{trace_id}] Failed to process GOES {product} - {e}")
-        perf_tracker.stop(f"Ingest - GOES - {product}")
+        io_manager.write_error(f"[{trace_id}] Failed to process GOES {label} - {e}")
+        perf_tracker.stop(f"Ingest - GOES - {label}")
         return []
 
-    perf_tracker.stop(f"Ingest - GOES - {product}")
+    perf_tracker.stop(f"Ingest - GOES - {label}")
 
 
 def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
@@ -493,8 +560,8 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
     goes_modifiers_list = get_goes_modifiers()
     with ThreadPoolExecutor(max_workers=len(goes_modifiers_list)) as executor:
         futures = [
-            executor.submit(download_goes_product, product, outdir, dt, max_entries, hour_lookback)
-            for product, outdir in goes_modifiers_list
+            executor.submit(download_goes_product, goes_spec, dt, max_entries, hour_lookback)
+            for goes_spec in goes_modifiers_list
         ]
         
         for future in as_completed(futures):
@@ -522,8 +589,8 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
         io_manager.write_info(f"[{trace_id}] Starting async GOES-19 downloads...")
         
         tasks = [
-            _download_goes_product_async(product, outdir, dt, max_entries, hour_lookback, s3, trace_id)
-            for product, outdir in get_goes_modifiers()
+            _download_goes_product_async(goes_spec, dt, max_entries, hour_lookback, s3, trace_id)
+            for goes_spec in get_goes_modifiers()
         ]
         
         results = await asyncio.gather(*tasks, return_exceptions=True)

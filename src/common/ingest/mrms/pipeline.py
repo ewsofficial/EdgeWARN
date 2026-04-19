@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Awaitable, Callable, Iterable, Sequence
 
+from common.ingest.mrms.config import normalize_goes_modifier
+
 
 CleanupFunc = Callable[..., Awaitable[None]]
 
@@ -29,7 +31,7 @@ def get_output_dirs(
         folders.append(outdir)
 
     if include_goes and goes_modifiers:
-        folders.extend(outdir for _, outdir in goes_modifiers)
+        folders.extend(normalize_goes_modifier(spec).outdir for spec in goes_modifiers)
 
     return folders
 
