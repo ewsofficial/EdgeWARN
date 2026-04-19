@@ -46,18 +46,7 @@ _ABI_CHANNEL_DEFINITIONS = [
     ("C16", "co2_lwir", fs.GOES_ABI_CO2_LWIR_DIR),
 ]
 
-DEFAULT_ABI_RADC_CHANNEL_IDS = (
-    "C02",
-    "C05",
-    "C06",
-    "C07",
-    "C08",
-    "C09",
-    "C10",
-    "C13",
-    "C15",
-    "C16",
-)
+DEFAULT_ABI_RADC_CHANNEL_IDS = tuple(channel_id for channel_id, _, _ in _ABI_CHANNEL_DEFINITIONS)
 
 def get_mrms_modifiers():
     return [

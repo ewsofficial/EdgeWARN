@@ -58,6 +58,7 @@ async def run_tandem_ingest_cycle(
     log: LogFunc,
     *,
     max_entries: int = 10,
+    include_goes: bool = True,
     on_detection_ready: Optional[StateCallback] = None,
     on_ewmrs_ready: Optional[StateCallback] = None,
     on_edgewarn_integration_ready: Optional[StateCallback] = None,
@@ -92,17 +93,19 @@ async def run_tandem_ingest_cycle(
             max_entries,
         )
     )
-    goes_task = asyncio.create_task(
-        _safe_ingest(
-            "GOES",
-            log,
-            download_all_goes_files_async,
-            download_all_goes_files,
-            dt,
-            max_entries,
-            3,
+    goes_task = None
+    if include_goes:
+        goes_task = asyncio.create_task(
+            _safe_ingest(
+                "GOES",
+                log,
+                download_all_goes_files_async,
+                download_all_goes_files,
+                dt,
+                max_entries,
+                3,
+            )
         )
-    )
     rap_task = asyncio.create_task(
         _safe_ingest(
             "RAP",
@@ -133,7 +136,13 @@ async def run_tandem_ingest_cycle(
     if on_ewmrs_ready is not None:
         on_ewmrs_ready(state)
 
-    goes_ok, rap_ok = await asyncio.gather(goes_task, rap_task)
+    if goes_task is not None:
+        goes_ok, rap_ok = await asyncio.gather(goes_task, rap_task)
+    else:
+        goes_ok = True
+        rap_ok = await rap_task
+        log("INFO: GOES ingest is decoupled from this cycle; integration readiness does not wait for GOES")
+
     if not goes_ok:
         state.errors["goes_ingest"] = "GOES inputs unavailable"
     if not rap_ok:
