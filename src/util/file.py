@@ -51,6 +51,7 @@ def _define_paths(base_path):
     global GUI_DIR, GUI_RALA_DIR, GUI_NLDN_DIR, GUI_ECHOTOP18_DIR, GUI_ECHOTOP30_DIR, GUI_QPE_DIR
     global GUI_AZSHEARLOW_DIR, GUI_AZSHEARMID_DIR, GUI_PRECIPRATE_DIR, GUI_PROBSEVERE_DIR, GUI_FLASH_DIR
     global GUI_VIL_DIR, GUI_VILD_DIR, GUI_VII_DIR, GUI_ROTATIONT_DIR, GUI_COMPOSITE_DIR, GUI_REF_0C_DIR, GUI_REFM5C_DIR, GUI_REFM15C_DIR, GUI_RHOHV_DIR, GUI_PRECIPTYP_DIR
+    global GUI_GOES_C02_DIR, GUI_GOES_C13_DIR
     global GUI_MAP_DIR, GUI_MANIFEST_JSON, GUI_COLORMAP_JSON
     global WPC_DIR, WPC_SFC_DIR, STORMCELL_JSON
 
@@ -147,6 +148,8 @@ def _define_paths(base_path):
     GUI_MESH_DIR = gui_dir / "MESH"
     GUI_RHOHV_DIR = gui_dir / "RhoHV"
     GUI_PRECIPTYP_DIR = gui_dir / "PrecipFlag"
+    GUI_GOES_C02_DIR = gui_dir / "GOES_ABI_C02"
+    GUI_GOES_C13_DIR = gui_dir / "GOES_ABI_C13"
     GUI_MAP_DIR = gui_dir / "maps"
     GUI_MANIFEST_JSON = gui_dir / "overlay_manifest.json"
     WPC_DIR = base_path / "wpc"

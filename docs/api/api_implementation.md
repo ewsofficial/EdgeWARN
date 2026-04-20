@@ -196,3 +196,8 @@ Special behavior:
 - Primary API server: `npm run api:edgewarn`
 - Debug API server: `npm run debug:edgewarn`
 - EWMRS API server: `npm run api:ewmrs`
+
+See also:
+
+- `docs/api/api_endpoints.md` (EdgeWARN API v2)
+- `docs/api/ewmrs_api_endpoints.md` (EWMRS API)

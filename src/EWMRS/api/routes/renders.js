@@ -21,6 +21,8 @@ const PRODUCT_MAPPING = {
   'VII': 'MRMS_VII',
   'AzShearLow': 'MRMS_MergedAzShear_0-2kmAGL',
   'AzShearMid': 'MRMS_MergedAzShear_3-6kmAGL',
+  'GOES_ABI_C02': 'GOES_ABI_C02_Reflectance',
+  'GOES_ABI_C13': 'GOES_ABI_C13_BrightnessTemp',
 };
 
 // Helper to get GUI_DIR from app.locals (set by server.js)

@@ -93,6 +93,12 @@ describe('GET /renders/get-items', () => {
         expect(res.body).toContain('MESH');
     });
 
+    it('includes GOES_ABI_C02 when the product directory exists', async () => {
+        await fs.promises.mkdir(path.join(tempDir, 'gui', 'GOES_ABI_C02'));
+        const res = await request(app).get('/renders/get-items').expect(200);
+        expect(res.body).toContain('GOES_ABI_C02');
+    });
+
     it('returns empty array when no products exist', async () => {
         const emptyDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ewmrs-empty-'));
         const emptyApp = createApp(emptyDir);
@@ -226,6 +232,30 @@ describe('GET /renders/download', () => {
     it('returns 404 when file does not exist', async () => {
         const res = await request(app).get('/renders/download?product=CompRefQC&timestamp=20260317-000000').expect(404);
         expect(res.body.error).toContain('not found');
+    });
+
+    it('serves GOES_ABI_C02 files using the GOES_ABI_C02_Reflectance prefix', async () => {
+        const goesDir = path.join(tempDir, 'gui', 'GOES_ABI_C02');
+        await fs.promises.mkdir(goesDir);
+        await fs.promises.writeFile(path.join(goesDir, 'GOES_ABI_C02_Reflectance_20260317-200000.png'), 'fake png');
+
+        const res = await request(app)
+            .get('/renders/download?product=GOES_ABI_C02&timestamp=20260317-200000')
+            .expect(200);
+
+        expect(res.headers['content-type']).toContain('image/png');
+    });
+
+    it('serves GOES_ABI_C13 files using the GOES_ABI_C13_BrightnessTemp prefix', async () => {
+        const goesDir = path.join(tempDir, 'gui', 'GOES_ABI_C13');
+        await fs.promises.mkdir(goesDir);
+        await fs.promises.writeFile(path.join(goesDir, 'GOES_ABI_C13_BrightnessTemp_20260317-200000.png'), 'fake png');
+
+        const res = await request(app)
+            .get('/renders/download?product=GOES_ABI_C13&timestamp=20260317-200000')
+            .expect(200);
+
+        expect(res.headers['content-type']).toContain('image/png');
     });
 
     it('serves file when it exists', async () => {
@@ -408,5 +438,21 @@ describe('GET /colormaps/', () => {
         expect(cmap).toBeDefined();
         expect(cmap.interpolate).toBe(true);
         expect(cmap.thresholds.length).toBeGreaterThan(0);
+    });
+
+    it('includes GOES_ABI_C02_Reflectance colormap', async () => {
+        const res = await request(app).get('/colormaps/').expect(200);
+        const cmap = res.body[0].colormaps.find(c => c.name === 'GOES_ABI_C02_Reflectance');
+        expect(cmap).toBeDefined();
+        expect(cmap.interpolate).toBe(true);
+        expect(cmap.units).toBe('1');
+    });
+
+    it('includes GOES_ABI_C13_BrightnessTemp colormap', async () => {
+        const res = await request(app).get('/colormaps/').expect(200);
+        const cmap = res.body[0].colormaps.find(c => c.name === 'GOES_ABI_C13_BrightnessTemp');
+        expect(cmap).toBeDefined();
+        expect(cmap.interpolate).toBe(true);
+        expect(cmap.units).toBe('K');
     });
 });

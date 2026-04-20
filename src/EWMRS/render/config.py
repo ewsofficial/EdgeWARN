@@ -103,7 +103,48 @@ def get_mrms_file_list():
 
 def get_goes_file_list():
     """Return the GOES-backed render configuration list."""
-    return []
+    return [
+        {
+            "name": "GOES_ABI_C02_Reflectance",
+            "colormap_key": "GOES_ABI_C02_Reflectance",
+            "filepath": fs.GOES_ABI_VISIBLE_RED_DIR,
+            "outdir": fs.GUI_GOES_C02_DIR,
+            "source_type": "goes_abi",
+            "variable_name": "CMI",
+            "fallback_variable_names": ["Rad"],
+            "channel_id": "C02",
+            "display_name": "GOES ABI C02 Reflectance",
+            "value_transform": "reflectance_from_rad",
+            "mask_min": {
+                "C02": 0.0,
+                "default": 0.0,
+            },
+            "mask_max": {
+                "C02": 1.2,
+                "default": 1.2,
+            },
+        },
+        {
+            "name": "GOES_ABI_C13_BrightnessTemp",
+            "colormap_key": "GOES_ABI_C13_BrightnessTemp",
+            "filepath": fs.GOES_ABI_CLEAN_LWIR_DIR,
+            "outdir": fs.GUI_GOES_C13_DIR,
+            "source_type": "goes_abi",
+            "variable_name": "CMI",
+            "fallback_variable_names": ["Rad"],
+            "channel_id": "C13",
+            "display_name": "GOES ABI C13 Brightness Temperature",
+            "value_transform": "brightness_temp_from_rad",
+            "mask_min": {
+                "C13": 180.0,
+                "default": 180.0,
+            },
+            "mask_max": {
+                "C13": 330.0,
+                "default": 330.0,
+            },
+        },
+    ]
 
 
 def get_file_list():
