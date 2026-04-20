@@ -18,10 +18,13 @@ src/common/ingest/
 `src/common/pipeline/coordinator.py` drives staged readiness for tandem execution:
 
 1. Detection inputs ready (MRMS detection subset)
-2. EWMRS render inputs ready (detection + MRMS integration subset)
-3. EdgeWARN integration inputs ready (adds GOES + RAP)
+2. EWMRS MRMS inputs ready (detection + MRMS integration subset)
+3. EWMRS GOES inputs ready (separate GOES phase boundary)
+4. EdgeWARN integration inputs ready (adds RAP and, when coupled, GOES)
 
 This ordering preserves low-latency detection while allowing render and integration stages to proceed only when required data are staged.
+
+For realtime tandem execution in `src/run.py`, GOES ingest remains decoupled from the shared MRMS ingest cycle. The runner performs a best-effort local GOES availability check and always releases the GOES render phase so MRMS rendering is never blocked. The GOES EWMRS phase is currently an intentional no-op because no GOES render layers are configured yet.
 
 ## MRMS + GOES
 

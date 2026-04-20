@@ -29,12 +29,22 @@ src/
 ```mermaid
 graph TD
     A[Shared Ingest] --> B[EdgeWARN Detection]
-    A --> C[EWMRS Rendering]
-    B --> D[EdgeWARN Integration]
-    D --> E[CTAM Modules]
-    E --> F[Alert Manager]
-    D --> G[API Index Updates]
+    A --> C[EWMRS MRMS Rendering]
+    A --> D[EWMRS GOES Hook (No-op)]
+    B --> E[EdgeWARN Integration]
+    E --> F[CTAM Modules]
+    F --> G[Alert Manager]
+    E --> H[API Index Updates]
 ```
+
+## Tandem Readiness Stages
+
+- Detection inputs ready
+- EWMRS MRMS inputs ready
+- EWMRS GOES inputs ready
+- EdgeWARN integration inputs ready
+
+The GOES EWMRS stage is currently an explicit no-op hook. Current GUI rendering remains MRMS-only.
 
 ## Scheduling Modes
 
