@@ -5,12 +5,8 @@ TILE_SIZE = 250  # pixels
 TILE_GRID_ROWS = 14  # 3500 / 250
 TILE_GRID_COLS = 28  # 7000 / 250
 
-def get_file_list():
-    """
-    Get the render file configuration list.
-    
-    Returns list at call time to respect dynamic BASE_DIR changes.
-    """
+def get_mrms_file_list():
+    """Return the MRMS-backed render configuration list."""
     return [
         {
             "name": "MRMS_MergedReflectivityQC",
@@ -103,6 +99,16 @@ def get_file_list():
             "outdir": fs.GUI_MESH_DIR
         }
     ]
+
+
+def get_goes_file_list():
+    """Return the GOES-backed render configuration list."""
+    return []
+
+
+def get_file_list():
+    """Return the combined render configuration list."""
+    return get_mrms_file_list() + get_goes_file_list()
 
 # For backward compatibility - returns list at import time (use get_file_list() for dynamic paths)
 file_list = get_file_list()

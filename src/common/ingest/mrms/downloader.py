@@ -553,19 +553,15 @@ async def _download_goes_product_async(
     perf_tracker.stop(f"Ingest - GOES - {label}")
 
 
-def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
-    """
-    Download all configured GOES-19 products.
-    
-    Args:
-        dt (datetime): Target datetime (UTC, timezone-aware)
-        max_entries (int): Maximum number of file entries per product (default: 10)
-        hour_lookback (int): Number of hours to look back (default: 3)
-    """
+def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
+    """Download a specific list of GOES-19 products."""
+    goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
+    if not goes_modifiers_list:
+        return
+
     io_manager.write_info("Starting GOES-19 downloads...")
-    
+
     # Use ThreadPoolExecutor for concurrent downloads
-    goes_modifiers_list = [normalize_goes_modifier(spec) for spec in get_goes_modifiers()]
     shared_channel_files_by_product = {}
 
     for goes_spec in goes_modifiers_list:
@@ -591,7 +587,7 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
             )
             for goes_spec in goes_modifiers_list
         ]
-        
+
         for future in as_completed(futures):
             try:
                 result = future.result()
@@ -599,23 +595,31 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
                     io_manager.write_debug(f"Successfully downloaded {len(result)} files")
             except Exception as e:
                 io_manager.write_error(f"GOES download error: {e}")
-    
+
     io_manager.write_info("GOES-19 downloads completed")
 
 
-async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
+def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
     """
-    Async version: Download all configured GOES-19 products concurrently.
+    Download all configured GOES-19 products.
     
     Args:
         dt (datetime): Target datetime (UTC, timezone-aware)
         max_entries (int): Maximum number of file entries per product (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3)
     """
+    download_goes_specs(get_goes_modifiers(), dt, max_entries=max_entries, hour_lookback=hour_lookback)
+
+
+async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookback=3):
+    """Async version: Download a specific list of GOES-19 products concurrently."""
     trace_id = f"GOES_ALL-{uuid.uuid4().hex[:8]}"
+    goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
+    if not goes_modifiers_list:
+        return
+
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         io_manager.write_info(f"[{trace_id}] Starting async GOES-19 downloads...")
-        goes_modifiers_list = [normalize_goes_modifier(spec) for spec in get_goes_modifiers()]
         shared_channel_files_by_product = {}
 
         for goes_spec in goes_modifiers_list:
@@ -632,7 +636,7 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
                 threshold_ms=100,
             ):
                 shared_channel_files_by_product[goes_spec.product] = await finder.async_lookup_files(bucket_paths)
-        
+
         tasks = [
             _download_goes_product_async(
                 goes_spec,
@@ -649,13 +653,25 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
             )
             for goes_spec in goes_modifiers_list
         ]
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         for result in results:
             if isinstance(result, Exception):
                 io_manager.write_error(f"[{trace_id}] GOES async download error: {result}")
             elif result:
                 io_manager.write_debug(f"[{trace_id}] Successfully downloaded {len(result)} files")
-        
+
         io_manager.write_info(f"[{trace_id}] Async GOES-19 downloads completed")
+
+
+async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
+    """
+    Async version: Download all configured GOES-19 products concurrently.
+    
+    Args:
+        dt (datetime): Target datetime (UTC, timezone-aware)
+        max_entries (int): Maximum number of file entries per product (default: 10)
+        hour_lookback (int): Number of hours to look back (default: 3)
+    """
+    await download_goes_specs_async(get_goes_modifiers(), dt, max_entries=max_entries, hour_lookback=hour_lookback)

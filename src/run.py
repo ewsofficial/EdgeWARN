@@ -1,6 +1,7 @@
 import sys
 import re
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 import time
 import multiprocessing
 import asyncio
@@ -8,14 +9,18 @@ import asyncio
 import util.file as fs
 import common.ingest.nws.main as nws_ingest
 import common.ingest.metar as metar_ingest
-from common.ingest.mrms.downloader import download_all_goes_files_async, download_all_goes_files
+from common.ingest.mrms.config import get_abi_radc_channel_specs, get_check_modifiers, get_goes_modifiers
+from common.ingest.mrms.downloader import (
+    download_goes_product,
+    download_goes_specs,
+    download_goes_specs_async,
+)
 from common.ingest.wpc.main import run_wpc_ingest
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN import initialize_runtime
 from EdgeWARN.pipeline import edgewarn_tandem_worker
 from EWMRS.pipeline import ewmrs_tandem_worker
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
-from common.ingest.mrms.config import get_check_modifiers
 from util.io import TimestampedOutput, IOManager
 from util.release import get_release_version
 
@@ -35,14 +40,15 @@ GOES_POLL_SECONDS = 60
 
 def goes_loop():
     try:
+        abi_specs = get_abi_radc_channel_specs()
         while True:
             target_dt = datetime.now(timezone.utc).replace(second=0, microsecond=0)
             try:
-                asyncio.run(download_all_goes_files_async(target_dt))
+                asyncio.run(download_goes_specs_async(abi_specs, target_dt))
             except Exception as exc:
                 print(f"[GOES Loop] Async ingest failed ({target_dt}): {exc}. Falling back to sync.")
                 try:
-                    download_all_goes_files(target_dt)
+                    download_goes_specs(abi_specs, target_dt)
                 except Exception as fallback_exc:
                     print(f"[GOES Loop] Sync fallback failed ({target_dt}): {fallback_exc}")
 
@@ -76,6 +82,87 @@ def _sleep_until_boundary(minutes):
     sleep_seconds = max(0.0, (next_run - now).total_seconds())
     if sleep_seconds > 0:
         _sleep(sleep_seconds, interval=1.0)
+
+
+def _parse_staged_file_timestamp(filepath):
+    filename = Path(filepath).name
+    patterns = [
+        r"MRMS_MergedReflectivityQC_(\d{8})-(\d{6})",
+        r"(\d{8})-(\d{6})_renamed",
+        r"(\d{8}-\d{6})",
+        r".*(\d{8})-(\d{6}).*",
+        r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, filename)
+        if match is None:
+            continue
+
+        groups = match.groups()
+        try:
+            if len(groups) == 2:
+                date_str, time_str = groups
+                return datetime.strptime(f"{date_str}-{time_str}", "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+
+            if len(groups) == 1:
+                return datetime.strptime(groups[0], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+
+            if len(groups) == 6:
+                year, day_of_year, hour, minute, second, _subsecond = groups
+                return datetime.strptime(
+                    f"{year}{day_of_year}{hour}{minute}{second}",
+                    "%Y%j%H%M%S",
+                ).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+
+    return None
+
+
+def _latest_goes_file_at_or_after(directory, target_dt):
+    latest = fs.latest_files(directory, 1)
+    if not latest:
+        return None
+
+    latest_path = latest[-1]
+    file_dt = _parse_staged_file_timestamp(latest_path)
+    if file_dt is None:
+        return None
+
+    if file_dt >= target_dt:
+        return latest_path
+    return None
+
+
+def _check_local_goes_ready(dt, *, specs=None):
+    candidate_specs = get_goes_modifiers() if specs is None else specs
+    for spec in candidate_specs:
+        latest_path = _latest_goes_file_at_or_after(spec.outdir, dt)
+        if latest_path is not None:
+            return True, latest_path
+
+    return False, None
+
+
+def _check_local_glm_ready(dt):
+    for spec in get_goes_modifiers():
+        if spec.outdir != fs.GOES_GLM_DIR:
+            continue
+
+        latest_path = _latest_goes_file_at_or_after(spec.outdir, dt)
+        if latest_path is not None:
+            return True, latest_path
+
+    return False, None
+
+
+def _download_glm_for_scan(dt):
+    glm_spec = next((spec for spec in get_goes_modifiers() if spec.is_glm), None)
+    if glm_spec is None:
+        return []
+
+    return download_goes_product(glm_spec, dt)
 
 
 def _stop_process(process, name, *, join_timeout=5):
@@ -141,7 +228,8 @@ def _run_tandem_cycle(dt):
     shared_state = manager.dict()
 
     detection_ready_event = multiprocessing.Event()
-    ewmrs_ready_event = multiprocessing.Event()
+    ewmrs_mrms_ready_event = multiprocessing.Event()
+    ewmrs_goes_ready_event = multiprocessing.Event()
     integration_ready_event = multiprocessing.Event()
 
     try:
@@ -158,15 +246,41 @@ def _run_tandem_cycle(dt):
         print(f"[Scheduler] Tandem ingest cycle failed for {dt}: {exc}")
         return False
 
-    shared_state["detection_inputs_ready"] = cycle_state.detection_inputs_ready
-    shared_state["ewmrs_inputs_ready"] = cycle_state.ewmrs_inputs_ready
-    shared_state["edgewarn_integration_inputs_ready"] = cycle_state.edgewarn_integration_inputs_ready
-    shared_state["edgewarn_generated_file"] = ""
-    shared_state["errors"] = dict(cycle_state.errors)
+    try:
+        glm_results = _download_glm_for_scan(dt)
+        if glm_results:
+            _queue_log(log_queue, f"INFO: Scan-time GLM ingest satisfied by {len(glm_results)} file(s)")
+        else:
+            _queue_log(log_queue, f"INFO: Scan-time GLM ingest found no files for {dt.isoformat()}")
+    except Exception as exc:
+        _queue_log(log_queue, f"WARN: Scan-time GLM ingest failed for {dt.isoformat()}: {exc}")
 
-    detection_ready_event.set()
-    ewmrs_ready_event.set()
-    integration_ready_event.set()
+    goes_ready, goes_path = _check_local_goes_ready(dt)
+    glm_ready, glm_path = _check_local_glm_ready(dt)
+    rap_ready = "rap_ingest" not in cycle_state.errors
+    edgewarn_integration_ready = cycle_state.ewmrs_mrms_inputs_ready and glm_ready and rap_ready
+    if not goes_ready:
+        _queue_log(log_queue, f"INFO: No local GOES files staged at or after {dt.isoformat()}; GOES render phase will be skipped")
+    else:
+        _queue_log(log_queue, f"INFO: Local GOES readiness satisfied by {goes_path}")
+    if not glm_ready:
+        _queue_log(log_queue, f"INFO: No local GLM files staged at or after {dt.isoformat()}; EdgeWARN integration will wait for GOES")
+    else:
+        _queue_log(log_queue, f"INFO: Local GLM readiness satisfied by {glm_path}")
+
+    shared_state["detection_inputs_ready"] = cycle_state.detection_inputs_ready
+    shared_state["ewmrs_mrms_inputs_ready"] = cycle_state.ewmrs_mrms_inputs_ready
+    shared_state["ewmrs_goes_inputs_ready"] = goes_ready
+    shared_state["edgewarn_integration_inputs_ready"] = edgewarn_integration_ready
+    shared_state["edgewarn_generated_file"] = ""
+    errors = dict(cycle_state.errors)
+    if not goes_ready:
+        errors.setdefault("ewmrs_goes_ingest", "EWMRS GOES inputs unavailable")
+    if not glm_ready:
+        errors.setdefault("goes_ingest", "GOES inputs unavailable")
+    if not edgewarn_integration_ready:
+        errors.setdefault("edgewarn_integration_ingest", "EdgeWARN integration inputs unavailable")
+    shared_state["errors"] = errors
 
     edgewarn_proc = multiprocessing.Process(
         target=edgewarn_tandem_worker,
@@ -188,11 +302,16 @@ def _run_tandem_cycle(dt):
     )
     ewmrs_proc = multiprocessing.Process(
         target=ewmrs_tandem_worker,
-        args=(log_queue, shared_state, ewmrs_ready_event, dt),
+        args=(log_queue, shared_state, ewmrs_mrms_ready_event, ewmrs_goes_ready_event, dt),
     )
 
     edgewarn_proc.start()
     ewmrs_proc.start()
+
+    detection_ready_event.set()
+    ewmrs_mrms_ready_event.set()
+    ewmrs_goes_ready_event.set()
+    integration_ready_event.set()
 
     while edgewarn_proc.is_alive() or ewmrs_proc.is_alive() or not log_queue.empty():
         _drain_log_queue(log_queue)

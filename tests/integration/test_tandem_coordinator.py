@@ -39,31 +39,43 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch):
             on_detection_ready=lambda current_state: callbacks.append((
                 "detection",
                 current_state.detection_inputs_ready,
-                current_state.ewmrs_inputs_ready,
+                current_state.ewmrs_mrms_inputs_ready,
+                current_state.ewmrs_goes_inputs_ready,
                 current_state.edgewarn_integration_inputs_ready,
             )),
-            on_ewmrs_ready=lambda current_state: callbacks.append((
-                "ewmrs",
+            on_ewmrs_mrms_ready=lambda current_state: callbacks.append((
+                "ewmrs_mrms",
                 current_state.detection_inputs_ready,
-                current_state.ewmrs_inputs_ready,
+                current_state.ewmrs_mrms_inputs_ready,
+                current_state.ewmrs_goes_inputs_ready,
+                current_state.edgewarn_integration_inputs_ready,
+            )),
+            on_ewmrs_goes_ready=lambda current_state: callbacks.append((
+                "ewmrs_goes",
+                current_state.detection_inputs_ready,
+                current_state.ewmrs_mrms_inputs_ready,
+                current_state.ewmrs_goes_inputs_ready,
                 current_state.edgewarn_integration_inputs_ready,
             )),
             on_edgewarn_integration_ready=lambda current_state: callbacks.append((
                 "integration",
                 current_state.detection_inputs_ready,
-                current_state.ewmrs_inputs_ready,
+                current_state.ewmrs_mrms_inputs_ready,
+                current_state.ewmrs_goes_inputs_ready,
                 current_state.edgewarn_integration_inputs_ready,
             )),
         )
     )
 
     assert call_order == ["detection", "mrms_integration", "goes", "rap"]
-    assert [name for name, *_ in callbacks] == ["detection", "ewmrs", "integration"]
-    assert callbacks[0] == ("detection", True, False, False)
-    assert callbacks[1] == ("ewmrs", True, True, False)
-    assert callbacks[2] == ("integration", True, True, True)
+    assert [name for name, *_ in callbacks] == ["detection", "ewmrs_mrms", "ewmrs_goes", "integration"]
+    assert callbacks[0] == ("detection", True, False, False, False)
+    assert callbacks[1] == ("ewmrs_mrms", True, True, False, False)
+    assert callbacks[2] == ("ewmrs_goes", True, True, True, False)
+    assert callbacks[3] == ("integration", True, True, True, True)
     assert state.detection_inputs_ready is True
-    assert state.ewmrs_inputs_ready is True
+    assert state.ewmrs_mrms_inputs_ready is True
+    assert state.ewmrs_goes_inputs_ready is True
     assert state.edgewarn_integration_inputs_ready is True
 
 
@@ -101,5 +113,6 @@ def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch):
 
     assert call_order == ["detection", "mrms_integration", "rap"]
     assert state.detection_inputs_ready is True
-    assert state.ewmrs_inputs_ready is True
-    assert state.edgewarn_integration_inputs_ready is True
+    assert state.ewmrs_mrms_inputs_ready is True
+    assert state.ewmrs_goes_inputs_ready is False
+    assert state.edgewarn_integration_inputs_ready is False

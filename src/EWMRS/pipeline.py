@@ -11,7 +11,13 @@ import rasterio.transform
 import rioxarray  # noqa: F401  Ensures xarray .rio accessor is registered.
 from rasterio.enums import Resampling
 
-from EWMRS.render.config import TILE_GRID_COLS, TILE_GRID_ROWS, get_file_list
+from EWMRS.render.config import (
+    TILE_GRID_COLS,
+    TILE_GRID_ROWS,
+    get_file_list,
+    get_goes_file_list,
+    get_mrms_file_list,
+)
 from EWMRS.render.tools import configure_proj_runtime
 import util.file as fs
 from util.io import IOManager, QueueWriter
@@ -235,16 +241,22 @@ def cleanup_old_gui_files(max_age_minutes: int = 120):
         io_manager.write_info(f"Cleaned up {total_removed} old GUI files/folders (>{max_age_minutes} min)")
 
 
-def run_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
+def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str = "EWMRS") -> Dict[str, RenderOutput]:
     """Render configured EWMRS layers from already staged local files."""
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
     dt = _ensure_dt(dt)
     results: Dict[str, RenderOutput] = {}
 
-    layers = get_file_list()
+    layers = get_file_list() if layers is None else list(layers)
+    if not layers:
+        io_manager.write_info(f"{phase_name} render phase has no configured layers")
+        return results
+
     max_workers = min(4, max(1, len(layers)))
-    io_manager.write_info(f"Rendering {len(layers)} layers across {max_workers} CPU cores for {dt.isoformat()}...")
+    io_manager.write_info(
+        f"Rendering {len(layers)} {phase_name} layers across {max_workers} CPU cores for {dt.isoformat()}..."
+    )
     with ProcessPoolExecutor(max_workers=max_workers, initializer=_worker_initializer) as executor:
         futures = {executor.submit(_render_layer, layer): layer for layer in layers}
         for future in as_completed(futures):
@@ -260,13 +272,45 @@ def run_ewmrs_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
     return run_render_pipeline(dt, max_entries=max_entries)
 
 
+def run_mrms_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
+    """Run the MRMS-backed EWMRS render phase."""
+    return run_render_pipeline(
+        dt,
+        max_entries=max_entries,
+        layers=get_mrms_file_list(),
+        phase_name="MRMS",
+    )
+
+
+def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
+    """Run the GOES-backed EWMRS render phase."""
+    layers = get_goes_file_list()
+    if not layers:
+        io_manager.write_info("GOES render phase is a no-op: no GOES layers configured")
+        return {}
+
+    return run_render_pipeline(
+        dt,
+        max_entries=max_entries,
+        layers=layers,
+        phase_name="GOES",
+    )
+
+
 def _summarize_results(results: Dict[str, RenderOutput]) -> str:
     successful_layers = sum(1 for output_path in results.values() if output_path)
     total_layers = len(results)
     return f"{successful_layers}/{total_layers} layers succeeded"
 
 
-def ewmrs_tandem_worker(log_queue, shared_state, ewmrs_ready_event, dt, max_entries: int = 10):
+def ewmrs_tandem_worker(
+    log_queue,
+    shared_state,
+    ewmrs_mrms_ready_event,
+    ewmrs_goes_ready_event,
+    dt,
+    max_entries: int = 10,
+):
     """Process target for staged EWMRS rendering within the tandem runner."""
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
@@ -275,15 +319,29 @@ def ewmrs_tandem_worker(log_queue, shared_state, ewmrs_ready_event, dt, max_entr
         log_queue.put(str(msg))
 
     try:
-        log(f"INFO: EWMRS worker waiting for render inputs for {dt}")
-        ewmrs_ready_event.wait()
+        log(f"INFO: EWMRS worker waiting for MRMS render inputs for {dt}")
+        ewmrs_mrms_ready_event.wait()
 
-        if not shared_state.get("ewmrs_inputs_ready", False):
-            log("ERROR: EWMRS inputs were not staged successfully; skipping render")
+        mrms_inputs_ready = shared_state.get(
+            "ewmrs_mrms_inputs_ready",
+            False,
+        )
+        if not mrms_inputs_ready:
+            log("ERROR: EWMRS MRMS inputs were not staged successfully; skipping MRMS render")
+        else:
+            log("INFO: Starting EWMRS MRMS render phase")
+            results = run_mrms_render_pipeline(dt, max_entries=max_entries)
+            log(f"INFO: EWMRS MRMS render completed: {_summarize_results(results)}")
+
+        log(f"INFO: EWMRS worker waiting for GOES render inputs for {dt}")
+        ewmrs_goes_ready_event.wait()
+
+        if not shared_state.get("ewmrs_goes_inputs_ready", False):
+            log("INFO: EWMRS GOES inputs were not staged successfully; skipping GOES render")
             return
 
-        log("INFO: Starting EWMRS render phase")
-        results = run_ewmrs_pipeline(dt, max_entries=max_entries)
-        log(f"INFO: EWMRS render completed: {_summarize_results(results)}")
+        log("INFO: Starting EWMRS GOES render phase")
+        results = run_goes_render_pipeline(dt, max_entries=max_entries)
+        log(f"INFO: EWMRS GOES render completed: {_summarize_results(results)}")
     except Exception as exc:
         log(f"ERROR: EWMRS tandem worker failed - {exc}")
