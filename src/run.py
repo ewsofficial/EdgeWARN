@@ -1,7 +1,6 @@
 import sys
 import re
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 import time
 import multiprocessing
 import asyncio
@@ -16,6 +15,11 @@ from common.ingest.mrms.downloader import (
     download_goes_specs_async,
 )
 from common.ingest.wpc.main import run_wpc_ingest
+from common.pipeline.goes_readiness import (
+    check_local_glm_ready as _check_local_glm_ready_impl,
+    check_local_goes_ready as _check_local_goes_ready_impl,
+    get_ewmrs_goes_render_specs as _get_ewmrs_goes_render_specs_impl,
+)
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN import initialize_runtime
 from EdgeWARN.pipeline import edgewarn_tandem_worker
@@ -36,6 +40,10 @@ lon_limits = tuple(args.lon_limits)
 initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
 
 GOES_POLL_SECONDS = 60
+
+
+def _get_ewmrs_goes_render_specs():
+    return _get_ewmrs_goes_render_specs_impl()
 
 
 def goes_loop():
@@ -84,77 +92,13 @@ def _sleep_until_boundary(minutes):
         _sleep(sleep_seconds, interval=1.0)
 
 
-def _parse_staged_file_timestamp(filepath):
-    filename = Path(filepath).name
-    patterns = [
-        r"MRMS_MergedReflectivityQC_(\d{8})-(\d{6})",
-        r"(\d{8})-(\d{6})_renamed",
-        r"(\d{8}-\d{6})",
-        r".*(\d{8})-(\d{6}).*",
-        r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)",
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, filename)
-        if match is None:
-            continue
-
-        groups = match.groups()
-        try:
-            if len(groups) == 2:
-                date_str, time_str = groups
-                return datetime.strptime(f"{date_str}-{time_str}", "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
-
-            if len(groups) == 1:
-                return datetime.strptime(groups[0], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
-
-            if len(groups) == 6:
-                year, day_of_year, hour, minute, second, _subsecond = groups
-                return datetime.strptime(
-                    f"{year}{day_of_year}{hour}{minute}{second}",
-                    "%Y%j%H%M%S",
-                ).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-
-    return None
-
-
-def _latest_goes_file_at_or_after(directory, target_dt):
-    latest = fs.latest_files(directory, 1)
-    if not latest:
-        return None
-
-    latest_path = latest[-1]
-    file_dt = _parse_staged_file_timestamp(latest_path)
-    if file_dt is None:
-        return None
-
-    if file_dt >= target_dt:
-        return latest_path
-    return None
-
-
 def _check_local_goes_ready(dt, *, specs=None):
-    candidate_specs = get_goes_modifiers() if specs is None else specs
-    for spec in candidate_specs:
-        latest_path = _latest_goes_file_at_or_after(spec.outdir, dt)
-        if latest_path is not None:
-            return True, latest_path
-
-    return False, None
+    candidate_specs = _get_ewmrs_goes_render_specs() if specs is None else specs
+    return _check_local_goes_ready_impl(dt, specs=candidate_specs)
 
 
 def _check_local_glm_ready(dt):
-    for spec in get_goes_modifiers():
-        if spec.outdir != fs.GOES_GLM_DIR:
-            continue
-
-        latest_path = _latest_goes_file_at_or_after(spec.outdir, dt)
-        if latest_path is not None:
-            return True, latest_path
-
-    return False, None
+    return _check_local_glm_ready_impl(dt, specs=get_goes_modifiers())
 
 
 def _download_glm_for_scan(dt):
@@ -260,7 +204,10 @@ def _run_tandem_cycle(dt):
     rap_ready = "rap_ingest" not in cycle_state.errors
     edgewarn_integration_ready = cycle_state.ewmrs_mrms_inputs_ready and glm_ready and rap_ready
     if not goes_ready:
-        _queue_log(log_queue, f"INFO: No local GOES files staged at or after {dt.isoformat()}; GOES render phase will be skipped")
+        _queue_log(
+            log_queue,
+            f"INFO: No local GOES ABI render inputs staged at or after {dt.isoformat()}; GOES render phase will be skipped",
+        )
     else:
         _queue_log(log_queue, f"INFO: Local GOES readiness satisfied by {goes_path}")
     if not glm_ready:

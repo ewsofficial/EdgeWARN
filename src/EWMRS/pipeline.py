@@ -54,6 +54,11 @@ def _ensure_dt(dt_in) -> datetime:
 def _render_layer(layer) -> tuple[str, RenderOutput]:
     """Render a single layer. Returns (name, png_path or None)."""
     from EWMRS.render.render import GUILayerRenderer
+    from EWMRS.render.goes_transform import (
+        extract_goes_timestamp_iso,
+        load_goes_abi_render_dataset,
+        reproject_goes_abi_to_web_mercator,
+    )
     from EWMRS.render.tools import TransformUtils
     from util.io import IOManager
 
@@ -64,6 +69,7 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
     colormap_key = layer.get("colormap_key")
     source_path = layer.get("filepath")
     output_path = layer.get("outdir")
+    source_type = str(layer.get("source_type", "mrms")).lower()
 
     if source_path is None or output_path is None:
         io_mgr.write_error(f"Layer {name} is missing filepath/outdir configuration")
@@ -84,7 +90,11 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
             io_mgr.write_warning(f"No source files found for {name} in {src_dir}")
             return name, None
 
-        timestamp_iso = TransformUtils.find_timestamp(str(latest_file))
+        if source_type == "goes_abi":
+            timestamp_iso = extract_goes_timestamp_iso(latest_file)
+        else:
+            timestamp_iso = TransformUtils.find_timestamp(str(latest_file))
+
         cached_render = _current_render_paths(out_dir, timestamp_iso)
         if cached_render is not None:
             io_mgr.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
@@ -92,24 +102,42 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
 
         io_mgr.write_info(f"Found latest file for {name}: {latest_file}")
 
-        ds = TransformUtils.load_ds(latest_file)
-        if ds is None:
-            io_mgr.write_error(f"Failed to load dataset for {latest_file}")
-            return name, None
+        if source_type == "goes_abi":
+            ds = load_goes_abi_render_dataset(latest_file, layer)
+            if ds is None:
+                io_mgr.write_error(f"Failed to load GOES ABI dataset for {latest_file}")
+                return name, None
 
-        if "MergedAzShear" in name and ds.latitude.values.shape[0] > 3510:
-            ds = ds.coarsen(latitude=2, longitude=2, boundary="trim", coord_func="mean").reduce(np.max)
-            io_mgr.write_info(f"Downsampled {name} to 0.01 deg grid")
-
-        if "latitude" in ds.coords and "longitude" in ds.coords:
-            ds.rio.write_crs("EPSG:4326", inplace=True)
-            ds = ds.rio.reproject(
-                "EPSG:3857",
+            ds = reproject_goes_abi_to_web_mercator(
+                ds,
                 shape=WEB_MERCATOR_SHAPE,
                 transform=WEB_MERCATOR_TRANSFORM,
-                resampling=Resampling.nearest,
+                resampling=Resampling.bilinear,
             )
-            io_mgr.write_info(f"Reprojected {name} to EPSG:3857 (Crisp nearest-neighbor, Precise bounds)")
+            if ds is None:
+                io_mgr.write_error(f"Failed to reproject GOES ABI dataset for {latest_file}")
+                return name, None
+
+            io_mgr.write_info(f"Reprojected {name} GOES ABI fixed grid to EPSG:3857")
+        else:
+            ds = TransformUtils.load_ds(latest_file)
+            if ds is None:
+                io_mgr.write_error(f"Failed to load dataset for {latest_file}")
+                return name, None
+
+            if "MergedAzShear" in name and ds.latitude.values.shape[0] > 3510:
+                ds = ds.coarsen(latitude=2, longitude=2, boundary="trim", coord_func="mean").reduce(np.max)
+                io_mgr.write_info(f"Downsampled {name} to 0.01 deg grid")
+
+            if "latitude" in ds.coords and "longitude" in ds.coords:
+                ds.rio.write_crs("EPSG:4326", inplace=True)
+                ds = ds.rio.reproject(
+                    "EPSG:3857",
+                    shape=WEB_MERCATOR_SHAPE,
+                    transform=WEB_MERCATOR_TRANSFORM,
+                    resampling=Resampling.nearest,
+                )
+                io_mgr.write_info(f"Reprojected {name} to EPSG:3857 (Crisp nearest-neighbor, Precise bounds)")
 
         renderer = GUILayerRenderer(ds, out_dir, colormap_key, name, timestamp_iso)
         png_path, px_timestamp = renderer.convert_to_png(tile_output=True)

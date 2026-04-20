@@ -86,6 +86,34 @@ def test_run_goes_render_pipeline_is_explicit_no_op_without_layers(monkeypatch):
     assert results == {}
 
 
+def test_run_goes_render_pipeline_processes_configured_layers(monkeypatch):
+    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
+    captured = {}
+
+    monkeypatch.setattr(
+        ewmrs_pipeline,
+        "get_goes_file_list",
+        lambda: [{"name": "GOES_ABI_C02_Reflectance", "source_type": "goes_abi"}],
+    )
+
+    def fake_run_render_pipeline(dt_arg, max_entries=10, layers=None, phase_name="EWMRS"):
+        captured["dt"] = dt_arg
+        captured["max_entries"] = max_entries
+        captured["layers"] = list(layers or [])
+        captured["phase_name"] = phase_name
+        return {"GOES_ABI_C02_Reflectance": ["tile_0_0.png"]}
+
+    monkeypatch.setattr(ewmrs_pipeline, "run_render_pipeline", fake_run_render_pipeline)
+
+    results = ewmrs_pipeline.run_goes_render_pipeline(dt, max_entries=4)
+
+    assert results == {"GOES_ABI_C02_Reflectance": ["tile_0_0.png"]}
+    assert captured["dt"] == dt
+    assert captured["max_entries"] == 4
+    assert captured["phase_name"] == "GOES"
+    assert captured["layers"] == [{"name": "GOES_ABI_C02_Reflectance", "source_type": "goes_abi"}]
+
+
 def test_current_render_paths_returns_cached_tiles_when_complete(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"

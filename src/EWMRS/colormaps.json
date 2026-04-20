@@ -233,6 +233,47 @@
                 {"value": 75, "rgb": [190, 85, 220]},
                 {"value": 100, "rgb": [126, 50, 167]}
             ]
+        },
+        {
+            "name": "GOES_ABI_C02_Reflectance",
+            "description": "GOES ABI C02 reflectance factor",
+            "type": "GOES_ABI_C02",
+            "units": "1",
+            "interpolate": true,
+            "range": [0.0, 1.2],
+            "thresholds": [
+                {"value": 0.00, "rgb": [0, 0, 0]},
+                {"value": 0.05, "rgb": [9, 20, 48]},
+                {"value": 0.10, "rgb": [16, 40, 84]},
+                {"value": 0.20, "rgb": [28, 72, 126]},
+                {"value": 0.35, "rgb": [52, 112, 160]},
+                {"value": 0.50, "rgb": [86, 150, 184]},
+                {"value": 0.65, "rgb": [135, 188, 204]},
+                {"value": 0.80, "rgb": [186, 220, 224]},
+                {"value": 0.95, "rgb": [230, 236, 236]},
+                {"value": 1.20, "rgb": [255, 255, 255]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C13_BrightnessTemp",
+            "description": "GOES ABI C13 brightness temperature",
+            "type": "GOES_ABI_C13",
+            "units": "K",
+            "interpolate": true,
+            "range": [180.0, 330.0],
+            "thresholds": [
+                {"value": 180.0, "rgb": [255, 255, 255]},
+                {"value": 195.0, "rgb": [185, 235, 255]},
+                {"value": 210.0, "rgb": [120, 205, 255]},
+                {"value": 225.0, "rgb": [70, 170, 250]},
+                {"value": 240.0, "rgb": [40, 135, 225]},
+                {"value": 255.0, "rgb": [24, 105, 185]},
+                {"value": 270.0, "rgb": [42, 132, 78]},
+                {"value": 285.0, "rgb": [198, 176, 58]},
+                {"value": 300.0, "rgb": [230, 124, 42]},
+                {"value": 315.0, "rgb": [194, 72, 36]},
+                {"value": 330.0, "rgb": [136, 28, 28]}
+            ]
         }
     ]
 }]

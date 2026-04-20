@@ -30,7 +30,7 @@ src/
 graph TD
     A[Shared Ingest] --> B[EdgeWARN Detection]
     A --> C[EWMRS MRMS Rendering]
-    A --> D[EWMRS GOES Hook (No-op)]
+    A --> D[EWMRS GOES ABI Rendering]
     B --> E[EdgeWARN Integration]
     E --> F[CTAM Modules]
     F --> G[Alert Manager]
@@ -44,7 +44,7 @@ graph TD
 - EWMRS GOES inputs ready
 - EdgeWARN integration inputs ready
 
-The GOES EWMRS stage is currently an explicit no-op hook. Current GUI rendering remains MRMS-only.
+The GOES EWMRS stage renders configured GOES ABI layers after local ABI readiness is met.
 
 ## Scheduling Modes
 

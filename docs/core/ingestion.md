@@ -19,12 +19,12 @@ src/common/ingest/
 
 1. Detection inputs ready (MRMS detection subset)
 2. EWMRS MRMS inputs ready (detection + MRMS integration subset)
-3. EWMRS GOES inputs ready (separate GOES phase boundary)
+3. EWMRS GOES inputs ready (separate GOES ABI render phase boundary)
 4. EdgeWARN integration inputs ready (adds RAP and, when coupled, GOES)
 
 This ordering preserves low-latency detection while allowing render and integration stages to proceed only when required data are staged.
 
-For realtime tandem execution in `src/run.py`, GOES ingest remains decoupled from the shared MRMS ingest cycle. The runner performs a best-effort local GOES availability check and always releases the GOES render phase so MRMS rendering is never blocked. The GOES EWMRS phase is currently an intentional no-op because no GOES render layers are configured yet.
+For realtime tandem execution in `src/run.py`, GOES ingest remains decoupled from the shared MRMS ingest cycle. The runner performs a best-effort local GOES availability check and always releases the GOES render phase so MRMS rendering is never blocked. EWMRS GOES readiness is tied to configured ABI-renderable layers (currently C02/C13), while EdgeWARN integration readiness still checks GLM availability separately.
 
 ## MRMS + GOES
 
@@ -41,7 +41,7 @@ Key entry points:
 Notes:
 
 - Detection and integration modifiers are staged separately
-- GOES ingestion runs as part of the full ingest cycle
+- GOES ingestion can run as part of the full ingest cycle or as a decoupled background loop in realtime mode
 - Cleanup is constrained to configured runtime directories
 
 ## NWS Alerts
