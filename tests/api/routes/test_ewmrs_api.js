@@ -99,6 +99,12 @@ describe('GET /renders/get-items', () => {
         expect(res.body).toContain('GOES_ABI_C02');
     });
 
+    it('includes GOES_ABI_C16 when the product directory exists', async () => {
+        await fs.promises.mkdir(path.join(tempDir, 'gui', 'GOES_ABI_C16'));
+        const res = await request(app).get('/renders/get-items').expect(200);
+        expect(res.body).toContain('GOES_ABI_C16');
+    });
+
     it('returns empty array when no products exist', async () => {
         const emptyDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ewmrs-empty-'));
         const emptyApp = createApp(emptyDir);
@@ -253,6 +259,30 @@ describe('GET /renders/download', () => {
 
         const res = await request(app)
             .get('/renders/download?product=GOES_ABI_C13&timestamp=20260317-200000')
+            .expect(200);
+
+        expect(res.headers['content-type']).toContain('image/png');
+    });
+
+    it('serves GOES_ABI_C01 files using the GOES_ABI_C01_Reflectance prefix', async () => {
+        const goesDir = path.join(tempDir, 'gui', 'GOES_ABI_C01');
+        await fs.promises.mkdir(goesDir);
+        await fs.promises.writeFile(path.join(goesDir, 'GOES_ABI_C01_Reflectance_20260317-200000.png'), 'fake png');
+
+        const res = await request(app)
+            .get('/renders/download?product=GOES_ABI_C01&timestamp=20260317-200000')
+            .expect(200);
+
+        expect(res.headers['content-type']).toContain('image/png');
+    });
+
+    it('serves GOES_ABI_C12 files using the GOES_ABI_C12_BrightnessTemp prefix', async () => {
+        const goesDir = path.join(tempDir, 'gui', 'GOES_ABI_C12');
+        await fs.promises.mkdir(goesDir);
+        await fs.promises.writeFile(path.join(goesDir, 'GOES_ABI_C12_BrightnessTemp_20260317-200000.png'), 'fake png');
+
+        const res = await request(app)
+            .get('/renders/download?product=GOES_ABI_C12&timestamp=20260317-200000')
             .expect(200);
 
         expect(res.headers['content-type']).toContain('image/png');
@@ -448,9 +478,17 @@ describe('GET /colormaps/', () => {
         expect(cmap.units).toBe('1');
     });
 
-    it('includes GOES_ABI_C13_BrightnessTemp colormap', async () => {
+    it('includes GOES_IR colormap', async () => {
         const res = await request(app).get('/colormaps/').expect(200);
-        const cmap = res.body[0].colormaps.find(c => c.name === 'GOES_ABI_C13_BrightnessTemp');
+        const cmap = res.body[0].colormaps.find(c => c.name === 'GOES_IR');
+        expect(cmap).toBeDefined();
+        expect(cmap.interpolate).toBe(true);
+        expect(cmap.units).toBe('K');
+    });
+
+    it('includes GOES_ABI_C12_BrightnessTemp colormap', async () => {
+        const res = await request(app).get('/colormaps/').expect(200);
+        const cmap = res.body[0].colormaps.find(c => c.name === 'GOES_ABI_C12_BrightnessTemp');
         expect(cmap).toBeDefined();
         expect(cmap.interpolate).toBe(true);
         expect(cmap.units).toBe('K');

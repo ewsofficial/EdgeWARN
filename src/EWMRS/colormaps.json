@@ -255,24 +255,271 @@
             ]
         },
         {
-            "name": "GOES_ABI_C13_BrightnessTemp",
-            "description": "GOES ABI C13 brightness temperature",
-            "type": "GOES_ABI_C13",
+            "name": "GOES_ABI_C01_Reflectance",
+            "description": "GOES ABI C01 blue-band reflectance",
+            "type": "GOES_ABI_C01",
+            "units": "1",
+            "interpolate": true,
+            "range": [0.0, 1.2],
+            "thresholds": [
+                {"value": 0.00, "rgb": [0, 0, 0]},
+                {"value": 0.05, "rgb": [10, 18, 44]},
+                {"value": 0.10, "rgb": [22, 40, 82]},
+                {"value": 0.20, "rgb": [40, 72, 122]},
+                {"value": 0.35, "rgb": [72, 112, 162]},
+                {"value": 0.50, "rgb": [112, 154, 196]},
+                {"value": 0.65, "rgb": [154, 196, 224]},
+                {"value": 0.80, "rgb": [196, 226, 238]},
+                {"value": 0.95, "rgb": [232, 242, 246]},
+                {"value": 1.20, "rgb": [255, 255, 255]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C03_Reflectance",
+            "description": "GOES ABI C03 veggie-band reflectance",
+            "type": "GOES_ABI_C03",
+            "units": "1",
+            "interpolate": true,
+            "range": [0.0, 1.2],
+            "thresholds": [
+                {"value": 0.00, "rgb": [0, 0, 0]},
+                {"value": 0.05, "rgb": [8, 24, 8]},
+                {"value": 0.10, "rgb": [16, 44, 16]},
+                {"value": 0.20, "rgb": [28, 76, 26]},
+                {"value": 0.35, "rgb": [48, 114, 40]},
+                {"value": 0.50, "rgb": [76, 154, 66]},
+                {"value": 0.65, "rgb": [112, 194, 102]},
+                {"value": 0.80, "rgb": [166, 222, 154]},
+                {"value": 0.95, "rgb": [220, 240, 216]},
+                {"value": 1.20, "rgb": [255, 255, 255]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C04_Reflectance",
+            "description": "GOES ABI C04 cirrus-band reflectance",
+            "type": "GOES_ABI_C04",
+            "units": "1",
+            "interpolate": true,
+            "range": [0.0, 1.2],
+            "thresholds": [
+                {"value": 0.00, "rgb": [0, 0, 0]},
+                {"value": 0.05, "rgb": [24, 18, 36]},
+                {"value": 0.10, "rgb": [46, 38, 74]},
+                {"value": 0.20, "rgb": [70, 62, 112]},
+                {"value": 0.35, "rgb": [98, 96, 150]},
+                {"value": 0.50, "rgb": [128, 136, 186]},
+                {"value": 0.65, "rgb": [160, 176, 214]},
+                {"value": 0.80, "rgb": [196, 212, 234]},
+                {"value": 0.95, "rgb": [228, 236, 246]},
+                {"value": 1.20, "rgb": [255, 255, 255]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C05_Reflectance",
+            "description": "GOES ABI C05 snow/ice-band reflectance",
+            "type": "GOES_ABI_C05",
+            "units": "1",
+            "interpolate": true,
+            "range": [0.0, 1.2],
+            "thresholds": [
+                {"value": 0.00, "rgb": [0, 0, 0]},
+                {"value": 0.05, "rgb": [8, 18, 28]},
+                {"value": 0.10, "rgb": [14, 34, 52]},
+                {"value": 0.20, "rgb": [24, 58, 86]},
+                {"value": 0.35, "rgb": [42, 92, 126]},
+                {"value": 0.50, "rgb": [70, 132, 166]},
+                {"value": 0.65, "rgb": [112, 172, 202]},
+                {"value": 0.80, "rgb": [164, 210, 228]},
+                {"value": 0.95, "rgb": [216, 236, 244]},
+                {"value": 1.20, "rgb": [255, 255, 255]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C06_Reflectance",
+            "description": "GOES ABI C06 cloud particle-size-band reflectance",
+            "type": "GOES_ABI_C06",
+            "units": "1",
+            "interpolate": true,
+            "range": [0.0, 1.2],
+            "thresholds": [
+                {"value": 0.00, "rgb": [0, 0, 0]},
+                {"value": 0.05, "rgb": [26, 14, 16]},
+                {"value": 0.10, "rgb": [52, 24, 30]},
+                {"value": 0.20, "rgb": [86, 40, 44]},
+                {"value": 0.35, "rgb": [130, 64, 54]},
+                {"value": 0.50, "rgb": [170, 94, 58]},
+                {"value": 0.65, "rgb": [204, 134, 68]},
+                {"value": 0.80, "rgb": [226, 178, 102]},
+                {"value": 0.95, "rgb": [242, 218, 162]},
+                {"value": 1.20, "rgb": [255, 245, 220]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C07_BrightnessTemp",
+            "description": "GOES ABI C07 shortwave IR brightness temperature",
+            "type": "GOES_ABI_C07",
             "units": "K",
             "interpolate": true,
             "range": [180.0, 330.0],
             "thresholds": [
                 {"value": 180.0, "rgb": [255, 255, 255]},
-                {"value": 195.0, "rgb": [185, 235, 255]},
-                {"value": 210.0, "rgb": [120, 205, 255]},
-                {"value": 225.0, "rgb": [70, 170, 250]},
-                {"value": 240.0, "rgb": [40, 135, 225]},
-                {"value": 255.0, "rgb": [24, 105, 185]},
-                {"value": 270.0, "rgb": [42, 132, 78]},
-                {"value": 285.0, "rgb": [198, 176, 58]},
-                {"value": 300.0, "rgb": [230, 124, 42]},
-                {"value": 315.0, "rgb": [194, 72, 36]},
-                {"value": 330.0, "rgb": [136, 28, 28]}
+                {"value": 200.0, "rgb": [214, 174, 255]},
+                {"value": 220.0, "rgb": [124, 96, 255]},
+                {"value": 240.0, "rgb": [44, 154, 255]},
+                {"value": 260.0, "rgb": [0, 226, 204]},
+                {"value": 275.0, "rgb": [255, 244, 0]},
+                {"value": 290.0, "rgb": [255, 154, 0]},
+                {"value": 305.0, "rgb": [186, 98, 52]},
+                {"value": 320.0, "rgb": [96, 96, 96]},
+                {"value": 330.0, "rgb": [16, 16, 16]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C08_BrightnessTemp",
+            "description": "GOES ABI C08 upper-level water vapor brightness temperature",
+            "type": "GOES_ABI_C08",
+            "units": "K",
+            "interpolate": true,
+            "range": [180.0, 300.0],
+            "thresholds": [
+                {"value": 180.0, "rgb": [255, 255, 255]},
+                {"value": 195.0, "rgb": [168, 234, 255]},
+                {"value": 210.0, "rgb": [86, 186, 255]},
+                {"value": 225.0, "rgb": [46, 118, 234]},
+                {"value": 238.0, "rgb": [120, 80, 202]},
+                {"value": 248.0, "rgb": [190, 78, 146]},
+                {"value": 258.0, "rgb": [236, 128, 78]},
+                {"value": 268.0, "rgb": [232, 206, 72]},
+                {"value": 278.0, "rgb": [120, 170, 84]},
+                {"value": 290.0, "rgb": [56, 56, 56]},
+                {"value": 300.0, "rgb": [16, 16, 16]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C09_BrightnessTemp",
+            "description": "GOES ABI C09 mid-level water vapor brightness temperature",
+            "type": "GOES_ABI_C09",
+            "units": "K",
+            "interpolate": true,
+            "range": [180.0, 310.0],
+            "thresholds": [
+                {"value": 180.0, "rgb": [255, 255, 255]},
+                {"value": 198.0, "rgb": [176, 238, 255]},
+                {"value": 214.0, "rgb": [96, 194, 255]},
+                {"value": 228.0, "rgb": [54, 136, 244]},
+                {"value": 242.0, "rgb": [132, 96, 212]},
+                {"value": 254.0, "rgb": [202, 102, 162]},
+                {"value": 266.0, "rgb": [244, 156, 94]},
+                {"value": 278.0, "rgb": [246, 218, 92]},
+                {"value": 290.0, "rgb": [150, 184, 104]},
+                {"value": 300.0, "rgb": [74, 74, 74]},
+                {"value": 310.0, "rgb": [18, 18, 18]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C10_BrightnessTemp",
+            "description": "GOES ABI C10 lower-level water vapor brightness temperature",
+            "type": "GOES_ABI_C10",
+            "units": "K",
+            "interpolate": true,
+            "range": [185.0, 320.0],
+            "thresholds": [
+                {"value": 185.0, "rgb": [255, 255, 255]},
+                {"value": 202.0, "rgb": [182, 240, 255]},
+                {"value": 218.0, "rgb": [106, 198, 255]},
+                {"value": 234.0, "rgb": [64, 142, 246]},
+                {"value": 248.0, "rgb": [138, 106, 218]},
+                {"value": 262.0, "rgb": [212, 120, 170]},
+                {"value": 276.0, "rgb": [248, 174, 106]},
+                {"value": 290.0, "rgb": [248, 226, 98]},
+                {"value": 302.0, "rgb": [170, 196, 116]},
+                {"value": 312.0, "rgb": [86, 86, 86]},
+                {"value": 320.0, "rgb": [20, 20, 20]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C11_BrightnessTemp",
+            "description": "GOES ABI C11 cloud-top phase brightness temperature",
+            "type": "GOES_ABI_C11",
+            "units": "K",
+            "interpolate": true,
+            "range": [180.0, 330.0],
+            "thresholds": [
+                {"value": 180.0, "rgb": [255, 255, 255]},
+                {"value": 195.0, "rgb": [220, 190, 255]},
+                {"value": 210.0, "rgb": [168, 132, 255]},
+                {"value": 225.0, "rgb": [92, 110, 252]},
+                {"value": 240.0, "rgb": [44, 168, 255]},
+                {"value": 255.0, "rgb": [0, 228, 210]},
+                {"value": 270.0, "rgb": [220, 230, 90]},
+                {"value": 285.0, "rgb": [255, 180, 26]},
+                {"value": 300.0, "rgb": [198, 126, 62]},
+                {"value": 315.0, "rgb": [108, 108, 108]},
+                {"value": 330.0, "rgb": [18, 18, 18]}
+            ]
+        },
+        {
+            "name": "GOES_IR",
+            "description": "GOES ABI infrared brightness temperature with NOAA-style IR enhancement",
+            "type": "GOES_IR",
+            "units": "K",
+            "interpolate": true,
+            "range": [180.0, 330.0],
+            "thresholds": [
+                {"value": 180.0, "rgb": [100, 0, 100]},
+                {"value": 183.15, "rgb": [128, 0, 128]},
+                {"value": 193.15, "rgb": [255, 255, 255]},
+                {"value": 203.15, "rgb": [0, 0, 0]},
+                {"value": 213.15, "rgb": [255, 0, 0]},
+                {"value": 223.15, "rgb": [255, 255, 0]},
+                {"value": 233.15, "rgb": [0, 255, 0]},
+                {"value": 243.15, "rgb": [0, 0, 128]},
+                {"value": 253.15, "rgb": [0, 255, 255]},
+                {"value": 258.15, "rgb": [255, 255, 255]},
+                {"value": 313.15, "rgb": [0, 0, 0]},
+                {"value": 330.0, "rgb": [0, 0, 0]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C12_BrightnessTemp",
+            "description": "GOES ABI C12 ozone brightness temperature",
+            "type": "GOES_ABI_C12",
+            "units": "K",
+            "interpolate": true,
+            "range": [180.0, 330.0],
+            "thresholds": [
+                {"value": 180.0, "rgb": [255, 255, 255]},
+                {"value": 195.0, "rgb": [228, 198, 255]},
+                {"value": 210.0, "rgb": [172, 134, 255]},
+                {"value": 225.0, "rgb": [96, 108, 248]},
+                {"value": 240.0, "rgb": [44, 164, 252]},
+                {"value": 255.0, "rgb": [0, 220, 208]},
+                {"value": 270.0, "rgb": [206, 222, 88]},
+                {"value": 285.0, "rgb": [250, 174, 24]},
+                {"value": 300.0, "rgb": [194, 122, 60]},
+                {"value": 315.0, "rgb": [106, 106, 106]},
+                {"value": 330.0, "rgb": [16, 16, 16]}
+            ]
+        },
+        {
+            "name": "GOES_ABI_C16_BrightnessTemp",
+            "description": "GOES ABI C16 CO2 longwave IR brightness temperature",
+            "type": "GOES_ABI_C16",
+            "units": "K",
+            "interpolate": true,
+            "range": [180.0, 330.0],
+            "thresholds": [
+                {"value": 180.0, "rgb": [255, 255, 255]},
+                {"value": 195.0, "rgb": [222, 194, 255]},
+                {"value": 210.0, "rgb": [162, 128, 252]},
+                {"value": 225.0, "rgb": [88, 100, 242]},
+                {"value": 240.0, "rgb": [42, 154, 244]},
+                {"value": 255.0, "rgb": [0, 210, 198]},
+                {"value": 270.0, "rgb": [188, 212, 84]},
+                {"value": 285.0, "rgb": [242, 164, 20]},
+                {"value": 300.0, "rgb": [184, 114, 56]},
+                {"value": 315.0, "rgb": [96, 96, 96]},
+                {"value": 330.0, "rgb": [14, 14, 14]}
             ]
         }
     ]

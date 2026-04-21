@@ -81,8 +81,22 @@ const GUI_SUBDIRS = [
   'PrecipFlag',
   'AzShearLow',
   'AzShearMid',
+  'GOES_ABI_C01',
   'GOES_ABI_C02',
+  'GOES_ABI_C03',
+  'GOES_ABI_C04',
+  'GOES_ABI_C05',
+  'GOES_ABI_C06',
+  'GOES_ABI_C07',
+  'GOES_ABI_C08',
+  'GOES_ABI_C09',
+  'GOES_ABI_C10',
+  'GOES_ABI_C11',
+  'GOES_ABI_C12',
   'GOES_ABI_C13',
+  'GOES_ABI_C14',
+  'GOES_ABI_C15',
+  'GOES_ABI_C16',
   'maps'
 ];
 

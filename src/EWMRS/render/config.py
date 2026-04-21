@@ -103,48 +103,77 @@ def get_mrms_file_list():
 
 def get_goes_file_list():
     """Return the GOES-backed render configuration list."""
-    return [
-        {
-            "name": "GOES_ABI_C02_Reflectance",
-            "colormap_key": "GOES_ABI_C02_Reflectance",
-            "filepath": fs.GOES_ABI_VISIBLE_RED_DIR,
-            "outdir": fs.GUI_GOES_C02_DIR,
-            "source_type": "goes_abi",
-            "variable_name": "CMI",
-            "fallback_variable_names": ["Rad"],
-            "channel_id": "C02",
-            "display_name": "GOES ABI C02 Reflectance",
-            "value_transform": "reflectance_from_rad",
-            "mask_min": {
-                "C02": 0.0,
-                "default": 0.0,
-            },
-            "mask_max": {
-                "C02": 1.2,
-                "default": 1.2,
-            },
-        },
-        {
-            "name": "GOES_ABI_C13_BrightnessTemp",
-            "colormap_key": "GOES_ABI_C13_BrightnessTemp",
-            "filepath": fs.GOES_ABI_CLEAN_LWIR_DIR,
-            "outdir": fs.GUI_GOES_C13_DIR,
-            "source_type": "goes_abi",
-            "variable_name": "CMI",
-            "fallback_variable_names": ["Rad"],
-            "channel_id": "C13",
-            "display_name": "GOES ABI C13 Brightness Temperature",
-            "value_transform": "brightness_temp_from_rad",
-            "mask_min": {
-                "C13": 180.0,
-                "default": 180.0,
-            },
-            "mask_max": {
-                "C13": 330.0,
-                "default": 330.0,
-            },
-        },
+    reflectance_specs = [
+        ("C01", fs.GOES_ABI_VISIBLE_BLUE_DIR, fs.GUI_GOES_C01_DIR),
+        ("C02", fs.GOES_ABI_VISIBLE_RED_DIR, fs.GUI_GOES_C02_DIR),
+        ("C03", fs.GOES_ABI_VEGGIE_DIR, fs.GUI_GOES_C03_DIR),
+        ("C04", fs.GOES_ABI_CIRRUS_DIR, fs.GUI_GOES_C04_DIR),
+        ("C05", fs.GOES_ABI_SNOW_ICE_DIR, fs.GUI_GOES_C05_DIR),
+        ("C06", fs.GOES_ABI_PARTICLE_SIZE_DIR, fs.GUI_GOES_C06_DIR),
     ]
+    brightness_temp_specs = [
+        ("C07", fs.GOES_ABI_SHORTWAVE_IR_DIR, fs.GUI_GOES_C07_DIR, "GOES_ABI_C07_BrightnessTemp", 180.0, 330.0),
+        ("C08", fs.GOES_ABI_UPPER_LEVEL_WV_DIR, fs.GUI_GOES_C08_DIR, "GOES_ABI_C08_BrightnessTemp", 180.0, 300.0),
+        ("C09", fs.GOES_ABI_MID_LEVEL_WV_DIR, fs.GUI_GOES_C09_DIR, "GOES_ABI_C09_BrightnessTemp", 180.0, 310.0),
+        ("C10", fs.GOES_ABI_LOWER_LEVEL_WV_DIR, fs.GUI_GOES_C10_DIR, "GOES_ABI_C10_BrightnessTemp", 185.0, 320.0),
+        ("C11", fs.GOES_ABI_CLD_TOP_PHASE_DIR, fs.GUI_GOES_C11_DIR, "GOES_ABI_C11_BrightnessTemp", 180.0, 330.0),
+        ("C12", fs.GOES_ABI_OZONE_DIR, fs.GUI_GOES_C12_DIR, "GOES_ABI_C12_BrightnessTemp", 180.0, 330.0),
+        ("C13", fs.GOES_ABI_CLEAN_LWIR_DIR, fs.GUI_GOES_C13_DIR, "GOES_IR", 180.0, 330.0),
+        ("C14", fs.GOES_ABI_LONGWAVE_IR_DIR, fs.GUI_GOES_C14_DIR, "GOES_IR", 180.0, 330.0),
+        ("C15", fs.GOES_ABI_DIRTY_LWIR_DIR, fs.GUI_GOES_C15_DIR, "GOES_IR", 180.0, 330.0),
+        ("C16", fs.GOES_ABI_CO2_LWIR_DIR, fs.GUI_GOES_C16_DIR, "GOES_ABI_C16_BrightnessTemp", 180.0, 330.0),
+    ]
+
+    layers = []
+    for channel_id, filepath, outdir in reflectance_specs:
+        layers.append(
+            {
+                "name": f"GOES_ABI_{channel_id}_Reflectance",
+                "colormap_key": f"GOES_ABI_{channel_id}_Reflectance",
+                "filepath": filepath,
+                "outdir": outdir,
+                "source_type": "goes_abi",
+                "variable_name": "CMI",
+                "fallback_variable_names": ["Rad"],
+                "channel_id": channel_id,
+                "display_name": f"GOES ABI {channel_id} Reflectance",
+                "value_transform": "reflectance_from_rad",
+                "mask_min": {
+                    channel_id: 0.0,
+                    "default": 0.0,
+                },
+                "mask_max": {
+                    channel_id: 1.2,
+                    "default": 1.2,
+                },
+            }
+        )
+
+    for channel_id, filepath, outdir, colormap_key, min_temp, max_temp in brightness_temp_specs:
+        layers.append(
+            {
+                "name": f"GOES_ABI_{channel_id}_BrightnessTemp",
+                "colormap_key": colormap_key,
+                "filepath": filepath,
+                "outdir": outdir,
+                "source_type": "goes_abi",
+                "variable_name": "CMI",
+                "fallback_variable_names": ["Rad"],
+                "channel_id": channel_id,
+                "display_name": f"GOES ABI {channel_id} Brightness Temperature",
+                "value_transform": "brightness_temp_from_rad",
+                "mask_min": {
+                    channel_id: min_temp,
+                    "default": min_temp,
+                },
+                "mask_max": {
+                    channel_id: max_temp,
+                    "default": max_temp,
+                },
+            }
+        )
+
+    return layers
 
 
 def get_file_list():
