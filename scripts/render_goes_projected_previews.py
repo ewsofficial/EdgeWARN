@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from common.ingest.mrms.config import get_abi_radc_channel_specs
-from EWMRS.pipeline import WEB_MERCATOR_SHAPE, WEB_MERCATOR_TRANSFORM
+from EWMRS.pipeline import GOES_WEB_MERCATOR_SHAPE, GOES_WEB_MERCATOR_TRANSFORM
 from EWMRS.render.goes_transform import load_goes_abi_render_dataset, reproject_goes_abi_to_web_mercator
 from EWMRS.render.render import GUILayerRenderer
 from rasterio.enums import Resampling
@@ -112,8 +112,8 @@ def main() -> None:
 
         projected = reproject_goes_abi_to_web_mercator(
             ds,
-            shape=WEB_MERCATOR_SHAPE,
-            transform=WEB_MERCATOR_TRANSFORM,
+            shape=GOES_WEB_MERCATOR_SHAPE,
+            transform=GOES_WEB_MERCATOR_TRANSFORM,
             resampling=Resampling.bilinear,
         )
         if projected is None:
