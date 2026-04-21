@@ -42,7 +42,7 @@ def _latest_non_idx_file(directory: Path) -> Path | None:
 
 def _layer_config_for_channel(channel_id: str) -> dict:
     if channel_id in REFLECTANCE_CHANNELS:
-        colormap_key = "GOES_RGB_Raw" if channel_id in {"C01", "C02", "C03"} else f"GOES_ABI_{channel_id}_Reflectance"
+        colormap_key = "GOES_RGB_Raw" if channel_id in {"C01", "C02", "C03", "C04", "C05", "C06", "C07", "C11", "C12", "C16"} else f"GOES_ABI_{channel_id}_Reflectance"
         return {
             "name": f"GOES_ABI_{channel_id}_Reflectance",
             "colormap_key": colormap_key,

@@ -35,7 +35,26 @@ BRIGHTNESS_TEMP_LIMITS = {
 
 
 def _load_colormaps(colormaps_path: Path) -> dict[str, tuple[np.ndarray, np.ndarray, bool]]:
-    raw = json.loads(colormaps_path.read_text())
+    text = colormaps_path.read_text()
+    try:
+        raw = json.loads(text)
+        # Accept either top-level list of sources or a single object
+        if isinstance(raw, dict):
+            raw = [raw]
+    except Exception:
+        # Fallback: attempt to extract the inner "colormaps" array from the file
+        start = text.find('"colormaps"')
+        if start == -1:
+            raise
+        arr_start = text.find('[', start)
+        arr_end = text.find(']', arr_start)
+        if arr_start == -1 or arr_end == -1:
+            raise
+        arr_text = text[arr_start:arr_end+1]
+        # Remove trailing commas before array/object closes to make it safe for json.loads
+        arr_text = arr_text.replace(',\n]', '\n]').replace(',\n}', '\n}')
+        all_colormaps = json.loads(arr_text)
+        raw = [{"colormaps": all_colormaps}]
     by_name: dict[str, tuple[np.ndarray, np.ndarray, bool]] = {}
 
     for source in raw:
@@ -49,7 +68,7 @@ def _load_colormaps(colormaps_path: Path) -> dict[str, tuple[np.ndarray, np.ndar
 
 
 def _colormap_name_for_channel(channel_id: str) -> str:
-    if channel_id in {"C01", "C02", "C03"}:
+    if channel_id in {"C01", "C02", "C03", "C04", "C05", "C06"}:
         return "GOES_RGB_Raw"
     if channel_id in REFLECTANCE_CHANNELS:
         return f"GOES_ABI_{channel_id}_Reflectance"
