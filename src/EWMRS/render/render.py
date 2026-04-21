@@ -18,6 +18,104 @@ io_manager = IOManager("[Transform]")
 _COLORMAP_CACHE = {}
 _COLORMAP_CACHE_LOCK = threading.Lock()
 
+
+class GUIRGBAWriter:
+    def __init__(self, outdir: Path, file_name: str, timestamp):
+        self.outdir = outdir
+        self.file_name = file_name
+        self.timestamp = timestamp
+
+    def save_rgba(self, rgba: np.ndarray, tile_output: bool = True) -> Tuple[List[Path], str]:
+        from .config import TILE_SIZE
+
+        dt = self._coerce_timestamp(self.timestamp)
+        timestamp = dt.strftime(r"%Y%m%d-%H%M00")
+        self.outdir.mkdir(parents=True, exist_ok=True)
+
+        if tile_output:
+            tile_paths = self._save_tiles_from_array(rgba, timestamp)
+            rows = rgba.shape[0] // TILE_SIZE
+            cols = rgba.shape[1] // TILE_SIZE
+            self._update_index(timestamp, tile_grid={"rows": rows, "cols": cols, "tile_size": TILE_SIZE})
+            io_manager.write_debug(f"Saved {len(tile_paths)} tiles from RGBA image for {self.file_name} at {timestamp}")
+            return tile_paths, timestamp
+
+        png_file = self.outdir / f"{self.file_name}_{timestamp}.png"
+        img = Image.fromarray(rgba, mode="RGBA")
+        img.save(png_file, compress_level=1)
+        self._update_index(timestamp, tile_grid=None)
+        io_manager.write_debug(f"Saved {self.file_name} PNG file to {png_file}")
+        return [png_file], timestamp
+
+    def _coerce_timestamp(self, timestamp) -> datetime:
+        try:
+            return datetime.fromisoformat(timestamp)
+        except ValueError:
+            cleaned_ts = TransformUtils.find_timestamp(timestamp)
+            return datetime.fromisoformat(cleaned_ts)
+
+    def _save_tiles_from_array(self, rgba: np.ndarray, timestamp: str) -> List[Path]:
+        from .config import TILE_SIZE
+
+        height, width = rgba.shape[:2]
+        grid_cols = width // TILE_SIZE
+        grid_rows = height // TILE_SIZE
+
+        tile_dir = self.outdir / timestamp
+        tile_dir.mkdir(parents=True, exist_ok=True)
+
+        tile_specs = []
+        for tile_y in range(grid_rows):
+            for tile_x in range(grid_cols):
+                left = tile_x * TILE_SIZE
+                right = left + TILE_SIZE
+                top = (grid_rows - 1 - tile_y) * TILE_SIZE
+                bottom = top + TILE_SIZE
+                tile_filename = f"tile_{tile_x}_{tile_y}.png"
+                tile_path = tile_dir / tile_filename
+                tile_specs.append((rgba[top:bottom, left:right], tile_path))
+
+        max_workers = min(8, len(tile_specs)) or 1
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            list(executor.map(lambda spec: save_tile(spec[0], spec[1]), tile_specs))
+
+        return [tile_path for _, tile_path in tile_specs]
+
+    def _update_index(self, new_timestamp, tile_grid=None):
+        index_file = self.outdir / "index.json"
+        timestamps = []
+        existing_tile_grid = None
+
+        if index_file.exists():
+            try:
+                with open(index_file, 'r') as f:
+                    data = json.load(f)
+
+                if isinstance(data, list):
+                    timestamps = data
+                else:
+                    timestamps = data.get("timestamps", [])
+                    existing_tile_grid = data.get("tile_grid")
+            except Exception as e:
+                io_manager.write_warning(f"Failed to read index.json in {self.outdir}: {e}. Creating new one.")
+
+        if new_timestamp not in timestamps:
+            timestamps.append(new_timestamp)
+            timestamps.sort(reverse=True)
+
+            try:
+                if tile_grid is not None:
+                    output_data = {"timestamps": timestamps, "tile_grid": tile_grid}
+                elif existing_tile_grid is not None:
+                    output_data = {"timestamps": timestamps, "tile_grid": existing_tile_grid}
+                else:
+                    output_data = timestamps
+
+                with open(index_file, 'w') as f:
+                    json.dump(output_data, f, separators=(",", ":"))
+            except Exception as e:
+                io_manager.write_error(f"Failed to update index.json in {self.outdir}: {e}")
+
 class GUILayerRenderer:
     def __init__(self, dataset: Dataset, outdir: Path, colormap_key, file_name, timestamp):
         """
@@ -123,145 +221,5 @@ class GUILayerRenderer:
         # We want image to be (height, width) which corresponds to (lat, lon) shape
         rgba = rgba_flat.reshape((data.shape[0], data.shape[1], 4))
 
-        # Step 3: Generate and save
-        # Find timestamp
-        try:
-            dt = datetime.fromisoformat(self.timestamp)
-        except ValueError:
-            # Fallback if timestamp is a filename or path?
-            # Assuming callers pass a valid ISO timestamp or we use TransformUtils if it looks like a path
-            cleaned_ts = TransformUtils.find_timestamp(self.timestamp)
-            dt = datetime.fromisoformat(cleaned_ts)
-        
-        # Force seconds to 00 for consistency and fast lookup
-        timestamp = dt.strftime(r"%Y%m%d-%H%M00")
-
-        # Ensure the output directory exists
-        self.outdir.mkdir(parents=True, exist_ok=True)
-
-        if tile_output:
-            tile_paths = self._save_tiles_from_array(rgba, timestamp)
-            
-            # Update index.json with new format
-            rows = rgba.shape[0] // TILE_SIZE
-            cols = rgba.shape[1] // TILE_SIZE
-            self._update_index(timestamp, tile_grid={
-                "rows": rows,
-                "cols": cols,
-                "tile_size": TILE_SIZE
-            })
-            
-            io_manager.write_debug(f"Saved {len(tile_paths)} tiles from reprojected image for {self.file_name} at {timestamp}")
-            return tile_paths, timestamp
-        else:
-            # Single PNG output (backward compatibility)
-            png_file = self.outdir / f"{self.file_name}_{timestamp}.png"
-            
-            img = Image.fromarray(rgba, mode="RGBA")
-            img.save(png_file, compress_level=1)  # Fast compression (1=fastest, 9=smallest)
-            
-            io_manager.write_debug(f"Saved {self.file_name} PNG file to {png_file}")
-            
-            # Update index.json with old format
-            self._update_index(timestamp, tile_grid=None)
-            
-            return [png_file], timestamp
-    
-    def _save_tiles_from_array(self, rgba: np.ndarray, timestamp: str) -> List[Path]:
-        """Save RGBA array as tiles in a timestamp subdirectory.
-        
-        Args:
-            rgba: Large RGBA array (e.g. 3500x7000x4).
-            timestamp: Timestamp string for the subdirectory name.
-        
-        Returns:
-            List of Path objects for all saved tiles.
-        """
-        from .config import TILE_SIZE
-        height, width = rgba.shape[:2]
-        grid_cols = width // TILE_SIZE
-        grid_rows = height // TILE_SIZE
-        
-        # Create timestamp subdirectory
-        tile_dir = self.outdir / timestamp
-        tile_dir.mkdir(parents=True, exist_ok=True)
-        
-        tile_specs = []
-        # Tile Y=0 is at the bottom (South)
-        # PIL coordinates: (0, 0) is at the top (North)
-        for tile_y in range(grid_rows):
-            for tile_x in range(grid_cols):
-                # Calculate pixel box for cropping
-                # y=0 (bottom) -> bottom of image. y=13 (top) -> top of image.
-                # box = (left, top, right, bottom)
-                left = tile_x * TILE_SIZE
-                right = left + TILE_SIZE
-                
-                # invert Y for PIL cropping (which is top-down)
-                top = (grid_rows - 1 - tile_y) * TILE_SIZE
-                bottom = top + TILE_SIZE
-                
-                tile_filename = f"tile_{tile_x}_{tile_y}.png"
-                tile_path = tile_dir / tile_filename
-                tile_specs.append((rgba[top:bottom, left:right], tile_path))
-
-        max_workers = min(8, len(tile_specs)) or 1
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            list(executor.map(lambda spec: save_tile(spec[0], spec[1]), tile_specs))
-
-        tile_paths = [tile_path for _, tile_path in tile_specs]
-        return tile_paths
-
-    def _update_index(self, new_timestamp, tile_grid=None):
-        """
-        Updates the index.json file in the output directory with the new timestamp.
-        Maintains a sorted, unique list of timestamps and optional tile grid info.
-        
-        Args:
-            new_timestamp: The timestamp string to add.
-            tile_grid: Optional dict with rows, cols, tile_size. If None, uses old format.
-        """
-        index_file = self.outdir / "index.json"
-        timestamps = []
-        existing_tile_grid = None
-
-        if index_file.exists():
-            try:
-                with open(index_file, 'r') as f:
-                    data = json.load(f)
-                
-                # Handle both old format (array) and new format (object)
-                if isinstance(data, list):
-                    timestamps = data
-                else:
-                    timestamps = data.get("timestamps", [])
-                    existing_tile_grid = data.get("tile_grid")
-            except Exception as e:
-                io_manager.write_warning(f"Failed to read index.json in {self.outdir}: {e}. Creating new one.")
-
-        if new_timestamp not in timestamps:
-            timestamps.append(new_timestamp)
-            timestamps.sort(reverse=True)  # Newest first
-
-            try:
-                # Build output data
-                if tile_grid is not None:
-                    # New format with tile grid info
-                    output_data = {
-                        "timestamps": timestamps,
-                        "tile_grid": tile_grid
-                    }
-                elif existing_tile_grid is not None:
-                    # Preserve existing tile_grid if not providing new one
-                    output_data = {
-                        "timestamps": timestamps,
-                        "tile_grid": existing_tile_grid
-                    }
-                else:
-                    # Old format (backward compatibility for single PNG mode)
-                    output_data = timestamps
-                
-                with open(index_file, 'w') as f:
-                    json.dump(output_data, f, separators=(",", ":"))
-            except Exception as e:
-                io_manager.write_error(f"Failed to update index.json in {self.outdir}: {e}")
+        writer = GUIRGBAWriter(self.outdir, self.file_name, self.timestamp)
+        return writer.save_rgba(rgba, tile_output=tile_output)

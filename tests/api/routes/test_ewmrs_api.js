@@ -105,6 +105,12 @@ describe('GET /renders/get-items', () => {
         expect(res.body).toContain('GOES_ABI_C16');
     });
 
+    it('includes GOES_RGB_TrueColor when the product directory exists', async () => {
+        await fs.promises.mkdir(path.join(tempDir, 'gui', 'GOES_RGB_TrueColor'));
+        const res = await request(app).get('/renders/get-items').expect(200);
+        expect(res.body).toContain('GOES_RGB_TrueColor');
+    });
+
     it('returns empty array when no products exist', async () => {
         const emptyDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ewmrs-empty-'));
         const emptyApp = createApp(emptyDir);
@@ -288,6 +294,23 @@ describe('GET /renders/download', () => {
         expect(res.headers['content-type']).toContain('image/png');
     });
 
+    it('accepts GOES RGB product mappings for tile requests', async () => {
+        const rgbDir = path.join(tempDir, 'gui', 'GOES_RGB_Sandwich');
+        const tsDir = path.join(rgbDir, '20260317-200000');
+        await fs.promises.mkdir(tsDir, { recursive: true });
+        await fs.promises.writeFile(path.join(tsDir, 'tile_0_0.png'), 'fake tile');
+        await fs.promises.writeFile(
+            path.join(rgbDir, 'index.json'),
+            JSON.stringify({ timestamps: ['20260317-200000'], tile_grid: { rows: 1, cols: 1, tile_size: 350 } })
+        );
+
+        const res = await request(app)
+            .get('/renders/tile?product=GOES_RGB_Sandwich&timestamp=20260317-200000&x=0&y=0')
+            .expect(200);
+
+        expect(res.headers['content-type']).toContain('image/png');
+    });
+
     it('serves file when it exists', async () => {
         const res = await request(app)
             .get('/renders/download?product=CompRefQC&timestamp=20260317-200000')
@@ -445,6 +468,24 @@ describe('GET /renders/tile-info', () => {
         const res = await request(app).get('/renders/tile-info?product=NoSuchProduct').expect(404);
         expect(res.body.error).toContain('Unknown');
     });
+
+    it('returns tile metadata for GOES RGB products', async () => {
+        const productDir = path.join(tempDir, 'gui', 'GOES_RGB_TrueColor');
+        await fs.promises.mkdir(productDir);
+        await fs.promises.writeFile(
+            path.join(productDir, 'index.json'),
+            JSON.stringify({
+                timestamps: ['20260317-200000'],
+                tile_grid: { rows: 10, cols: 20, tile_size: 350 }
+            })
+        );
+
+        const res = await request(app).get('/renders/tile-info?product=GOES_RGB_TrueColor').expect(200);
+        expect(res.body.rows).toBe(10);
+        expect(res.body.cols).toBe(20);
+        expect(res.body.tile_size).toBe(350);
+        expect(res.body.timestamps).toEqual(['20260317-200000']);
+    });
 });
 
 describe('GET /colormaps/', () => {
@@ -470,9 +511,9 @@ describe('GET /colormaps/', () => {
         expect(cmap.thresholds.length).toBeGreaterThan(0);
     });
 
-    it('includes GOES_ABI_C02_Reflectance colormap', async () => {
+    it('includes GOES_RGB_Raw colormap for visible GOES channels', async () => {
         const res = await request(app).get('/colormaps/').expect(200);
-        const cmap = res.body[0].colormaps.find(c => c.name === 'GOES_ABI_C02_Reflectance');
+        const cmap = res.body[0].colormaps.find(c => c.name === 'GOES_RGB_Raw');
         expect(cmap).toBeDefined();
         expect(cmap.interpolate).toBe(true);
         expect(cmap.units).toBe('1');

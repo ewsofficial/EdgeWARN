@@ -97,6 +97,12 @@ const GUI_SUBDIRS = [
   'GOES_ABI_C14',
   'GOES_ABI_C15',
   'GOES_ABI_C16',
+  'GOES_RGB_TrueColor',
+  'GOES_RGB_Airmass',
+  'GOES_RGB_NighttimeMicrophysics',
+  'GOES_RGB_DayCloudPhase',
+  'GOES_RGB_SimpleWaterVapor',
+  'GOES_RGB_Sandwich',
   'maps'
 ];
 
