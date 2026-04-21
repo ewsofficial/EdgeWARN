@@ -1,9 +1,9 @@
 import util.file as fs
 
 # Tile configuration constants
-TILE_SIZE = 250  # pixels
-TILE_GRID_ROWS = 14  # 3500 / 250
-TILE_GRID_COLS = 28  # 7000 / 250
+TILE_SIZE = 350  # pixels
+TILE_GRID_ROWS = 10  # 3500 / 350
+TILE_GRID_COLS = 20  # 7000 / 350
 
 def get_mrms_file_list():
     """Return the MRMS-backed render configuration list."""
