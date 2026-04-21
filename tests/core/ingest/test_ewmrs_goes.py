@@ -181,13 +181,39 @@ def test_goes_config_wires_to_expected_paths_and_metadata():
     layers = get_goes_file_list()
     by_name = {layer["name"]: layer for layer in layers}
 
-    assert "GOES_ABI_C02_Reflectance" in by_name
-    assert "GOES_ABI_C13_BrightnessTemp" in by_name
-    assert by_name["GOES_ABI_C02_Reflectance"]["source_type"] == "goes_abi"
-    assert by_name["GOES_ABI_C02_Reflectance"]["filepath"] == fs.GOES_ABI_VISIBLE_RED_DIR
-    assert by_name["GOES_ABI_C02_Reflectance"]["outdir"] == fs.GUI_GOES_C02_DIR
-    assert by_name["GOES_ABI_C13_BrightnessTemp"]["filepath"] == fs.GOES_ABI_CLEAN_LWIR_DIR
-    assert by_name["GOES_ABI_C13_BrightnessTemp"]["outdir"] == fs.GUI_GOES_C13_DIR
+    expected = {
+        "GOES_ABI_C01_Reflectance": (fs.GOES_ABI_VISIBLE_BLUE_DIR, fs.GUI_GOES_C01_DIR, "reflectance_from_rad"),
+        "GOES_ABI_C02_Reflectance": (fs.GOES_ABI_VISIBLE_RED_DIR, fs.GUI_GOES_C02_DIR, "reflectance_from_rad"),
+        "GOES_ABI_C03_Reflectance": (fs.GOES_ABI_VEGGIE_DIR, fs.GUI_GOES_C03_DIR, "reflectance_from_rad"),
+        "GOES_ABI_C04_Reflectance": (fs.GOES_ABI_CIRRUS_DIR, fs.GUI_GOES_C04_DIR, "reflectance_from_rad"),
+        "GOES_ABI_C05_Reflectance": (fs.GOES_ABI_SNOW_ICE_DIR, fs.GUI_GOES_C05_DIR, "reflectance_from_rad"),
+        "GOES_ABI_C06_Reflectance": (fs.GOES_ABI_PARTICLE_SIZE_DIR, fs.GUI_GOES_C06_DIR, "reflectance_from_rad"),
+        "GOES_ABI_C07_BrightnessTemp": (fs.GOES_ABI_SHORTWAVE_IR_DIR, fs.GUI_GOES_C07_DIR, "brightness_temp_from_rad"),
+        "GOES_ABI_C08_BrightnessTemp": (fs.GOES_ABI_UPPER_LEVEL_WV_DIR, fs.GUI_GOES_C08_DIR, "brightness_temp_from_rad"),
+        "GOES_ABI_C09_BrightnessTemp": (fs.GOES_ABI_MID_LEVEL_WV_DIR, fs.GUI_GOES_C09_DIR, "brightness_temp_from_rad"),
+        "GOES_ABI_C10_BrightnessTemp": (fs.GOES_ABI_LOWER_LEVEL_WV_DIR, fs.GUI_GOES_C10_DIR, "brightness_temp_from_rad"),
+        "GOES_ABI_C11_BrightnessTemp": (fs.GOES_ABI_CLD_TOP_PHASE_DIR, fs.GUI_GOES_C11_DIR, "brightness_temp_from_rad"),
+        "GOES_ABI_C12_BrightnessTemp": (fs.GOES_ABI_OZONE_DIR, fs.GUI_GOES_C12_DIR, "brightness_temp_from_rad"),
+        "GOES_ABI_C13_BrightnessTemp": (fs.GOES_ABI_CLEAN_LWIR_DIR, fs.GUI_GOES_C13_DIR, "brightness_temp_from_rad"),
+        "GOES_ABI_C14_BrightnessTemp": (fs.GOES_ABI_LONGWAVE_IR_DIR, fs.GUI_GOES_C14_DIR, "brightness_temp_from_rad"),
+        "GOES_ABI_C15_BrightnessTemp": (fs.GOES_ABI_DIRTY_LWIR_DIR, fs.GUI_GOES_C15_DIR, "brightness_temp_from_rad"),
+        "GOES_ABI_C16_BrightnessTemp": (fs.GOES_ABI_CO2_LWIR_DIR, fs.GUI_GOES_C16_DIR, "brightness_temp_from_rad"),
+    }
+
+    assert set(by_name) == set(expected)
+    for name, (filepath, outdir, value_transform) in expected.items():
+        layer = by_name[name]
+        assert layer["source_type"] == "goes_abi"
+        assert layer["filepath"] == filepath
+        assert layer["outdir"] == outdir
+        assert layer["value_transform"] == value_transform
+
+    assert by_name["GOES_ABI_C01_Reflectance"]["colormap_key"] == "GOES_ABI_C01_Reflectance"
+    assert by_name["GOES_ABI_C12_BrightnessTemp"]["colormap_key"] == "GOES_ABI_C12_BrightnessTemp"
+    assert by_name["GOES_ABI_C13_BrightnessTemp"]["colormap_key"] == "GOES_IR"
+    assert by_name["GOES_ABI_C14_BrightnessTemp"]["colormap_key"] == "GOES_IR"
+    assert by_name["GOES_ABI_C15_BrightnessTemp"]["colormap_key"] == "GOES_IR"
+    assert by_name["GOES_ABI_C16_BrightnessTemp"]["colormap_key"] == "GOES_ABI_C16_BrightnessTemp"
 
 
 def test_goes_readiness_distinguishes_abi_from_glm_only(monkeypatch, tmp_path):

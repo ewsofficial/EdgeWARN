@@ -21,8 +21,22 @@ const PRODUCT_MAPPING = {
   'VII': 'MRMS_VII',
   'AzShearLow': 'MRMS_MergedAzShear_0-2kmAGL',
   'AzShearMid': 'MRMS_MergedAzShear_3-6kmAGL',
+  'GOES_ABI_C01': 'GOES_ABI_C01_Reflectance',
   'GOES_ABI_C02': 'GOES_ABI_C02_Reflectance',
+  'GOES_ABI_C03': 'GOES_ABI_C03_Reflectance',
+  'GOES_ABI_C04': 'GOES_ABI_C04_Reflectance',
+  'GOES_ABI_C05': 'GOES_ABI_C05_Reflectance',
+  'GOES_ABI_C06': 'GOES_ABI_C06_Reflectance',
+  'GOES_ABI_C07': 'GOES_ABI_C07_BrightnessTemp',
+  'GOES_ABI_C08': 'GOES_ABI_C08_BrightnessTemp',
+  'GOES_ABI_C09': 'GOES_ABI_C09_BrightnessTemp',
+  'GOES_ABI_C10': 'GOES_ABI_C10_BrightnessTemp',
+  'GOES_ABI_C11': 'GOES_ABI_C11_BrightnessTemp',
+  'GOES_ABI_C12': 'GOES_ABI_C12_BrightnessTemp',
   'GOES_ABI_C13': 'GOES_ABI_C13_BrightnessTemp',
+  'GOES_ABI_C14': 'GOES_ABI_C14_BrightnessTemp',
+  'GOES_ABI_C15': 'GOES_ABI_C15_BrightnessTemp',
+  'GOES_ABI_C16': 'GOES_ABI_C16_BrightnessTemp',
 };
 
 // Helper to get GUI_DIR from app.locals (set by server.js)
