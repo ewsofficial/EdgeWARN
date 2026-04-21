@@ -32,6 +32,21 @@ io_manager = IOManager("[Pipeline]")
 WEB_MERCATOR_BOUNDS = (-14471533.8, 2273030.9, -6679169.5, 7361866.1)
 WEB_MERCATOR_SHAPE = (3500, 7000)
 WEB_MERCATOR_TRANSFORM = rasterio.transform.from_bounds(*WEB_MERCATOR_BOUNDS, WEB_MERCATOR_SHAPE[1], WEB_MERCATOR_SHAPE[0])
+
+# GOES previews/renders are clipped to a CONUS-focused Web Mercator extent.
+# Derived from lon/lat bounds: -125.0..-66.5, 24.5..49.5 (EPSG:4326).
+GOES_WEB_MERCATOR_BOUNDS = (
+    -13914936.349159198,
+    2814454.7323097703,
+    -7402746.137752692,
+    6360130.74092142,
+)
+GOES_WEB_MERCATOR_SHAPE = WEB_MERCATOR_SHAPE
+GOES_WEB_MERCATOR_TRANSFORM = rasterio.transform.from_bounds(
+    *GOES_WEB_MERCATOR_BOUNDS,
+    GOES_WEB_MERCATOR_SHAPE[1],
+    GOES_WEB_MERCATOR_SHAPE[0],
+)
 EXPECTED_TILE_COUNT = TILE_GRID_ROWS * TILE_GRID_COLS
 _RUNTIME_CONFIGURED = False
 
@@ -110,15 +125,15 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
 
             ds = reproject_goes_abi_to_web_mercator(
                 ds,
-                shape=WEB_MERCATOR_SHAPE,
-                transform=WEB_MERCATOR_TRANSFORM,
+                shape=GOES_WEB_MERCATOR_SHAPE,
+                transform=GOES_WEB_MERCATOR_TRANSFORM,
                 resampling=Resampling.bilinear,
             )
             if ds is None:
                 io_mgr.write_error(f"Failed to reproject GOES ABI dataset for {latest_file}")
                 return name, None
 
-            io_mgr.write_info(f"Reprojected {name} GOES ABI fixed grid to EPSG:3857")
+            io_mgr.write_info(f"Reprojected {name} GOES ABI fixed grid to EPSG:3857 (CONUS clip)")
         else:
             ds = TransformUtils.load_ds(latest_file)
             if ds is None:
