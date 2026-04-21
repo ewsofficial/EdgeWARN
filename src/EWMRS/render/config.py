@@ -174,7 +174,55 @@ def get_goes_file_list():
             }
         )
 
-    return layers
+    return layers + get_goes_rgb_file_list()
+
+
+def get_goes_rgb_file_list():
+    """Return the GOES RGB render configuration list."""
+    return [
+        {
+            "name": "GOES_RGB_TrueColor",
+            "filepath": fs.GOES_ABI_RADC_DIR,
+            "outdir": fs.GUI_GOES_RGB_TRUE_COLOR_DIR,
+            "source_type": "goes_abi_rgb",
+            "recipe_key": "true_color",
+        },
+        {
+            "name": "GOES_RGB_Airmass",
+            "filepath": fs.GOES_ABI_RADC_DIR,
+            "outdir": fs.GUI_GOES_RGB_AIRMASS_DIR,
+            "source_type": "goes_abi_rgb",
+            "recipe_key": "airmass",
+        },
+        {
+            "name": "GOES_RGB_NighttimeMicrophysics",
+            "filepath": fs.GOES_ABI_RADC_DIR,
+            "outdir": fs.GUI_GOES_RGB_NIGHTTIME_MICROPHYSICS_DIR,
+            "source_type": "goes_abi_rgb",
+            "recipe_key": "nighttime_microphysics",
+        },
+        {
+            "name": "GOES_RGB_DayCloudPhase",
+            "filepath": fs.GOES_ABI_RADC_DIR,
+            "outdir": fs.GUI_GOES_RGB_DAY_CLOUD_PHASE_DIR,
+            "source_type": "goes_abi_rgb",
+            "recipe_key": "day_cloud_phase",
+        },
+        {
+            "name": "GOES_RGB_SimpleWaterVapor",
+            "filepath": fs.GOES_ABI_RADC_DIR,
+            "outdir": fs.GUI_GOES_RGB_SIMPLE_WATER_VAPOR_DIR,
+            "source_type": "goes_abi_rgb",
+            "recipe_key": "simple_water_vapor",
+        },
+        {
+            "name": "GOES_RGB_Sandwich",
+            "filepath": fs.GOES_ABI_RADC_DIR,
+            "outdir": fs.GUI_GOES_RGB_SANDWICH_DIR,
+            "source_type": "goes_abi_rgb",
+            "recipe_key": "sandwich",
+        },
+    ]
 
 
 def get_file_list():

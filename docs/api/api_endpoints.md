@@ -212,6 +212,29 @@ Cache:
 
 ## Other Routes
 
+## EWMRS Render Products
+
+The EWMRS service under `src/EWMRS/api` exposes tiled GUI products through:
+
+- `GET /renders/get-items`
+- `GET /renders/fetch?product={product}`
+- `GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}&x={int}&y={int}`
+- `GET /renders/tile-info?product={product}`
+
+GOES RGB products now exposed through those routes are:
+
+- `GOES_RGB_TrueColor`
+- `GOES_RGB_Airmass`
+- `GOES_RGB_NighttimeMicrophysics`
+- `GOES_RGB_DayCloudPhase`
+- `GOES_RGB_SimpleWaterVapor`
+- `GOES_RGB_Sandwich`
+
+Behavior notes:
+
+- RGB products are generated from staged `ABI-L1b-RadC` channels on the GOES CONUS `EPSG:3857` tile grid.
+- Missing or time-misaligned channels skip only the affected RGB product; other GOES products continue rendering.
+
 ### GET /health
 
 Response:

@@ -37,6 +37,12 @@ const PRODUCT_MAPPING = {
   'GOES_ABI_C14': 'GOES_ABI_C14_BrightnessTemp',
   'GOES_ABI_C15': 'GOES_ABI_C15_BrightnessTemp',
   'GOES_ABI_C16': 'GOES_ABI_C16_BrightnessTemp',
+  'GOES_RGB_TrueColor': 'GOES_RGB_TrueColor',
+  'GOES_RGB_Airmass': 'GOES_RGB_Airmass',
+  'GOES_RGB_NighttimeMicrophysics': 'GOES_RGB_NighttimeMicrophysics',
+  'GOES_RGB_DayCloudPhase': 'GOES_RGB_DayCloudPhase',
+  'GOES_RGB_SimpleWaterVapor': 'GOES_RGB_SimpleWaterVapor',
+  'GOES_RGB_Sandwich': 'GOES_RGB_Sandwich',
 };
 
 // Helper to get GUI_DIR from app.locals (set by server.js)

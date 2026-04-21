@@ -68,7 +68,8 @@ def _ensure_dt(dt_in) -> datetime:
 
 def _render_layer(layer) -> tuple[str, RenderOutput]:
     """Render a single layer. Returns (name, png_path or None)."""
-    from EWMRS.render.render import GUILayerRenderer
+    from EWMRS.render.goes_rgb import compose_goes_rgb, prepare_goes_rgb_render
+    from EWMRS.render.render import GUIRGBAWriter, GUILayerRenderer
     from EWMRS.render.goes_transform import (
         extract_goes_timestamp_iso,
         load_goes_abi_render_dataset,
@@ -99,6 +100,33 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
         if not src_dir.exists():
             io_mgr.write_warning(f"Source directory missing for {name}: {src_dir}")
             return name, None
+
+        if source_type == "goes_abi_rgb":
+            prepared = prepare_goes_rgb_render(layer)
+            if prepared is None:
+                return name, None
+
+            timestamp_iso = prepared["timestamp_iso"]
+            cached_render = _current_render_paths(out_dir, timestamp_iso)
+            if cached_render is not None:
+                io_mgr.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
+                return name, cached_render
+
+            composed = compose_goes_rgb(
+                prepared,
+                web_mercator_shape=GOES_WEB_MERCATOR_SHAPE,
+                web_mercator_transform=GOES_WEB_MERCATOR_TRANSFORM,
+            )
+            if composed is None:
+                return name, None
+
+            rgba, metadata = composed
+            io_mgr.write_info(
+                f"Composited {name} GOES RGB product with channels {', '.join(sorted(metadata['selected_files']))}"
+            )
+            renderer = GUIRGBAWriter(out_dir, name, timestamp_iso)
+            png_path, px_timestamp = renderer.save_rgba(rgba, tile_output=True)
+            return name, png_path
 
         latest_file = _latest_source_file(src_dir)
         if latest_file is None:

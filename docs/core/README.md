@@ -45,6 +45,16 @@ graph TD
 - EdgeWARN integration inputs ready
 
 The GOES EWMRS stage renders configured GOES ABI layers after local ABI readiness is met.
+This now includes six derived RGB composites built from staged `ABI-L1b-RadC` channels:
+
+- `GOES_RGB_TrueColor`
+- `GOES_RGB_Airmass`
+- `GOES_RGB_NighttimeMicrophysics`
+- `GOES_RGB_DayCloudPhase`
+- `GOES_RGB_SimpleWaterVapor`
+- `GOES_RGB_Sandwich`
+
+The RGB path reuses the existing GOES channel normalization and `EPSG:3857` reprojection flow, then writes the same tiled GUI layout and `index.json` contract used by the scalar products. If a required channel is missing or exceeds the allowed timestamp offset, only that RGB recipe is skipped.
 
 ## Scheduling Modes
 
