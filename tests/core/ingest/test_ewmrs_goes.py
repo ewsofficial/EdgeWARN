@@ -208,7 +208,9 @@ def test_goes_config_wires_to_expected_paths_and_metadata():
         assert layer["outdir"] == outdir
         assert layer["value_transform"] == value_transform
 
-    assert by_name["GOES_ABI_C01_Reflectance"]["colormap_key"] == "GOES_ABI_C01_Reflectance"
+    assert by_name["GOES_ABI_C01_Reflectance"]["colormap_key"] == "GOES_RGB_Raw"
+    assert by_name["GOES_ABI_C02_Reflectance"]["colormap_key"] == "GOES_RGB_Raw"
+    assert by_name["GOES_ABI_C03_Reflectance"]["colormap_key"] == "GOES_RGB_Raw"
     assert by_name["GOES_ABI_C12_BrightnessTemp"]["colormap_key"] == "GOES_ABI_C12_BrightnessTemp"
     assert by_name["GOES_ABI_C13_BrightnessTemp"]["colormap_key"] == "GOES_IR"
     assert by_name["GOES_ABI_C14_BrightnessTemp"]["colormap_key"] == "GOES_IR"

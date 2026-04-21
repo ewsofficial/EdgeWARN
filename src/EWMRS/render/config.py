@@ -126,10 +126,11 @@ def get_goes_file_list():
 
     layers = []
     for channel_id, filepath, outdir in reflectance_specs:
+        colormap_key = "GOES_RGB_Raw" if channel_id in {"C01", "C02", "C03"} else f"GOES_ABI_{channel_id}_Reflectance"
         layers.append(
             {
                 "name": f"GOES_ABI_{channel_id}_Reflectance",
-                "colormap_key": f"GOES_ABI_{channel_id}_Reflectance",
+                "colormap_key": colormap_key,
                 "filepath": filepath,
                 "outdir": outdir,
                 "source_type": "goes_abi",
