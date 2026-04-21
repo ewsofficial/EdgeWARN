@@ -17,7 +17,10 @@ from matplotlib.colors import LinearSegmentedColormap
 
 
 def _load_goes_colormaps(colormaps_path: Path) -> list[dict]:
-    raw = json.loads(colormaps_path.read_text())
+    text = colormaps_path.read_text()
+    raw = json.loads(text)
+    if isinstance(raw, dict):
+        raw = [raw]
     if not isinstance(raw, list) or not raw:
         raise ValueError(f"Unexpected colormap schema in {colormaps_path}")
 

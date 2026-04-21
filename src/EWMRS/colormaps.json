@@ -236,7 +236,7 @@
         },
         {
             "name": "GOES_RGB_Raw",
-            "description": "Shared raw grayscale reflectance ramp for GOES ABI C01-C03",
+            "description": "Shared raw grayscale reflectance ramp for GOES ABI C01-C06",
             "type": "GOES_RGB_Raw",
             "units": "1",
             "interpolate": true,
@@ -252,66 +252,6 @@
                 {"value": 0.80, "rgb": [204, 204, 204]},
                 {"value": 0.95, "rgb": [232, 232, 232]},
                 {"value": 1.20, "rgb": [255, 255, 255]}
-            ]
-        },
-        {
-            "name": "GOES_ABI_C04_Reflectance",
-            "description": "GOES ABI C04 cirrus-band reflectance",
-            "type": "GOES_ABI_C04",
-            "units": "1",
-            "interpolate": true,
-            "range": [0.0, 1.2],
-            "thresholds": [
-                {"value": 0.00, "rgb": [0, 0, 0]},
-                {"value": 0.05, "rgb": [18, 18, 18]},
-                {"value": 0.10, "rgb": [34, 34, 34]},
-                {"value": 0.20, "rgb": [58, 58, 58]},
-                {"value": 0.35, "rgb": [92, 92, 92]},
-                {"value": 0.50, "rgb": [128, 128, 128]},
-                {"value": 0.65, "rgb": [166, 166, 166]},
-                {"value": 0.80, "rgb": [204, 204, 204]},
-                {"value": 0.95, "rgb": [232, 232, 232]},
-                {"value": 1.20, "rgb": [255, 255, 255]}
-            ]
-        },
-        {
-            "name": "GOES_ABI_C05_Reflectance",
-            "description": "GOES ABI C05 snow/ice-band reflectance",
-            "type": "GOES_ABI_C05",
-            "units": "1",
-            "interpolate": true,
-            "range": [0.0, 1.2],
-            "thresholds": [
-                {"value": 0.00, "rgb": [0, 0, 0]},
-                {"value": 0.05, "rgb": [8, 18, 28]},
-                {"value": 0.10, "rgb": [14, 34, 52]},
-                {"value": 0.20, "rgb": [24, 58, 86]},
-                {"value": 0.35, "rgb": [42, 92, 126]},
-                {"value": 0.50, "rgb": [70, 132, 166]},
-                {"value": 0.65, "rgb": [112, 172, 202]},
-                {"value": 0.80, "rgb": [164, 210, 228]},
-                {"value": 0.95, "rgb": [216, 236, 244]},
-                {"value": 1.20, "rgb": [255, 255, 255]}
-            ]
-        },
-        {
-            "name": "GOES_ABI_C06_Reflectance",
-            "description": "GOES ABI C06 cloud particle-size-band reflectance",
-            "type": "GOES_ABI_C06",
-            "units": "1",
-            "interpolate": true,
-            "range": [0.0, 1.2],
-            "thresholds": [
-                {"value": 0.00, "rgb": [0, 0, 0]},
-                {"value": 0.05, "rgb": [26, 14, 16]},
-                {"value": 0.10, "rgb": [52, 24, 30]},
-                {"value": 0.20, "rgb": [86, 40, 44]},
-                {"value": 0.35, "rgb": [130, 64, 54]},
-                {"value": 0.50, "rgb": [170, 94, 58]},
-                {"value": 0.65, "rgb": [204, 134, 68]},
-                {"value": 0.80, "rgb": [226, 178, 102]},
-                {"value": 0.95, "rgb": [242, 218, 162]},
-                {"value": 1.20, "rgb": [255, 245, 220]}
             ]
         },
         {
