@@ -24,7 +24,10 @@ from pyproj import Transformer
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
-WEB_MERCATOR_BOUNDS = (-14471533.8, 2273030.9, -6679169.5, 7361866.1)
+try:
+    from EWMRS.pipeline import GOES_WEB_MERCATOR_BOUNDS as WEB_MERCATOR_BOUNDS
+except Exception:
+    WEB_MERCATOR_BOUNDS = (-13914936.349159198, 2814454.7323097703, -7402746.137752692, 6360130.74092142)
 
 
 def _parse_tile_name(tile_path: Path):
@@ -171,8 +174,18 @@ def main():
     parser = argparse.ArgumentParser(description="Reconstruct GOES tiles and overlay CONUS state boundaries")
     parser.add_argument(
         "--product-dir",
-        required=True,
+        default=None,
         help="Path to GOES GUI product directory (for example, ~/EdgeWARN_input/gui/GOES_ABI_C02)",
+    )
+    parser.add_argument(
+        "--base-dir",
+        default=str(Path.home() / "EdgeWARN_input"),
+        help="Runtime base directory containing gui/GOES_ABI_* outputs",
+    )
+    parser.add_argument(
+        "--product",
+        default="GOES_ABI_C02",
+        help="GOES product directory name under <base-dir>/gui when --product-dir is omitted",
     )
     parser.add_argument(
         "--timestamp",
@@ -191,7 +204,11 @@ def main():
     )
     args = parser.parse_args()
 
-    product_dir = Path(args.product_dir).expanduser().resolve()
+    if args.product_dir:
+        product_dir = Path(args.product_dir).expanduser().resolve()
+    else:
+        product_dir = (Path(args.base_dir).expanduser().resolve() / "gui" / args.product)
+
     if not product_dir.exists() or not product_dir.is_dir():
         raise FileNotFoundError(f"Product directory not found: {product_dir}")
 
