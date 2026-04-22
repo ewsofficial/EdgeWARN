@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,11 @@ REFLECTANCE_CHANNELS = {"C01", "C02", "C03", "C04", "C05", "C06"}
 WEB_MERCATOR_RADIUS_METERS = 6378137.0
 TRUE_COLOR_TERMINATOR_START_DEGREES = 80.0
 TRUE_COLOR_TERMINATOR_END_DEGREES = 96.0
+
+_SOLAR_CACHE_LOCK = threading.Lock()
+_SOLAR_LAT_TERMS_CACHE: dict[tuple[int, float, float], tuple[np.ndarray, np.ndarray]] = {}
+_SOLAR_HOUR_ANGLE_CACHE: dict[tuple[int, int, float, float], np.ndarray] = {}
+_MAX_SOLAR_CACHE_ENTRIES = 32
 
 
 @dataclass(frozen=True)
@@ -72,6 +78,10 @@ def _layer_config_for_channel(channel_id: str) -> dict[str, Any]:
     }
 
 
+def layer_config_for_channel(channel_id: str) -> dict[str, Any]:
+    return _layer_config_for_channel(channel_id)
+
+
 def normalize_rgb_channel(
     values: np.ndarray,
     min_value: float,
@@ -102,12 +112,30 @@ def _web_mercator_to_lon_lat(x_coords: np.ndarray, y_coords: np.ndarray) -> tupl
     return lon, lat
 
 
-def compute_solar_zenith_angle(latitude_deg: np.ndarray, longitude_deg: np.ndarray, timestamp: datetime) -> np.ndarray:
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=UTC)
-    else:
-        timestamp = timestamp.astimezone(UTC)
+def _cache_axis_key(values: np.ndarray) -> tuple[int, float, float]:
+    values = np.asarray(values, dtype=np.float32).reshape(-1)
+    if values.size == 0:
+        return (0, 0.0, 0.0)
+    return (
+        int(values.size),
+        float(np.round(values[0], 5)),
+        float(np.round(values[-1], 5)),
+    )
 
+
+def _cache_insert(cache: dict, key: tuple, value: Any) -> None:
+    cache[key] = value
+    if len(cache) > _MAX_SOLAR_CACHE_ENTRIES:
+        cache.pop(next(iter(cache)))
+
+
+def _normalize_utc_timestamp(timestamp: datetime) -> datetime:
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=UTC)
+    return timestamp.astimezone(UTC)
+
+
+def _solar_position_terms(timestamp: datetime) -> tuple[float, float, float]:
     day_of_year = timestamp.timetuple().tm_yday
     hour_utc = timestamp.hour + (timestamp.minute / 60.0) + (timestamp.second / 3600.0)
     fractional_year = (2.0 * np.pi / 365.0) * (day_of_year - 1 + ((hour_utc - 12.0) / 24.0))
@@ -127,7 +155,17 @@ def compute_solar_zenith_angle(latitude_deg: np.ndarray, longitude_deg: np.ndarr
         - 0.014615 * np.cos(2.0 * fractional_year)
         - 0.040849 * np.sin(2.0 * fractional_year)
     )
+    return hour_utc, declination, equation_of_time
 
+
+def _compute_solar_zenith_full_grid(
+    latitude_deg: np.ndarray,
+    longitude_deg: np.ndarray,
+    *,
+    hour_utc: float,
+    declination: float,
+    equation_of_time: float,
+) -> np.ndarray:
     true_solar_time_minutes = (hour_utc * 60.0) + equation_of_time + (4.0 * longitude_deg)
     true_solar_time_minutes = np.mod(true_solar_time_minutes, 1440.0)
     hour_angle_deg = (true_solar_time_minutes / 4.0) - 180.0
@@ -138,6 +176,60 @@ def compute_solar_zenith_angle(latitude_deg: np.ndarray, longitude_deg: np.ndarr
         np.sin(latitude_rad) * np.sin(declination)
         + np.cos(latitude_rad) * np.cos(declination) * np.cos(hour_angle_rad)
     )
+    cos_zenith = np.clip(cos_zenith, -1.0, 1.0)
+    return np.degrees(np.arccos(cos_zenith)).astype(np.float32)
+
+
+def compute_solar_zenith_angle(latitude_deg: np.ndarray, longitude_deg: np.ndarray, timestamp: datetime) -> np.ndarray:
+    timestamp = _normalize_utc_timestamp(timestamp)
+    latitude_grid, longitude_grid = _broadcast_lat_lon(latitude_deg, longitude_deg)
+    hour_utc, declination, equation_of_time = _solar_position_terms(timestamp)
+
+    separable_lat = latitude_grid.ndim == 2 and latitude_grid.shape[1] == 1
+    separable_lon = longitude_grid.ndim == 2 and longitude_grid.shape[0] == 1
+    if not (separable_lat and separable_lon):
+        return _compute_solar_zenith_full_grid(
+            latitude_grid,
+            longitude_grid,
+            hour_utc=hour_utc,
+            declination=declination,
+            equation_of_time=equation_of_time,
+        )
+
+    lat_axis = np.asarray(latitude_grid[:, 0], dtype=np.float32)
+    lon_axis = np.asarray(longitude_grid[0, :], dtype=np.float32)
+
+    lat_key = _cache_axis_key(lat_axis)
+    lon_axis_key = _cache_axis_key(lon_axis)
+    minute_key = int(timestamp.replace(second=0, microsecond=0).timestamp())
+    lon_key = (minute_key, *lon_axis_key)
+
+    with _SOLAR_CACHE_LOCK:
+        lat_terms = _SOLAR_LAT_TERMS_CACHE.get(lat_key)
+    if lat_terms is None:
+        lat_rad = np.radians(lat_axis)
+        lat_terms = (
+            np.sin(lat_rad).astype(np.float32),
+            np.cos(lat_rad).astype(np.float32),
+        )
+        with _SOLAR_CACHE_LOCK:
+            _cache_insert(_SOLAR_LAT_TERMS_CACHE, lat_key, lat_terms)
+
+    with _SOLAR_CACHE_LOCK:
+        hour_angle_cos = _SOLAR_HOUR_ANGLE_CACHE.get(lon_key)
+    if hour_angle_cos is None:
+        true_solar_time_minutes = (hour_utc * 60.0) + equation_of_time + (4.0 * lon_axis)
+        true_solar_time_minutes = np.mod(true_solar_time_minutes, 1440.0)
+        hour_angle_deg = (true_solar_time_minutes / 4.0) - 180.0
+        hour_angle_rad = np.radians(hour_angle_deg)
+        hour_angle_cos = np.cos(hour_angle_rad).astype(np.float32)
+        with _SOLAR_CACHE_LOCK:
+            _cache_insert(_SOLAR_HOUR_ANGLE_CACHE, lon_key, hour_angle_cos)
+
+    sin_lat, cos_lat = lat_terms
+    sin_decl = np.float32(np.sin(declination))
+    cos_decl = np.float32(np.cos(declination))
+    cos_zenith = (sin_lat[:, None] * sin_decl) + (cos_lat[:, None] * cos_decl * hour_angle_cos[None, :])
     cos_zenith = np.clip(cos_zenith, -1.0, 1.0)
     return np.degrees(np.arccos(cos_zenith)).astype(np.float32)
 
@@ -185,12 +277,24 @@ def _colorize(values: np.ndarray, thresholds: np.ndarray, colors: np.ndarray) ->
 
 def _rgb_to_rgba(rgb: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
     rgba = np.empty(rgb.shape[:2] + (4,), dtype=np.uint8)
-    for channel_idx in range(3):
-        channel = np.nan_to_num(rgb[..., channel_idx], nan=0.0)
-        rgba[..., channel_idx] = np.clip(channel * 255.0, 0.0, 255.0).astype(np.uint8)
-    rgba[..., 3] = np.uint8(0)
-    rgba[..., 3][valid_mask] = np.uint8(255)
+    rgba[..., :3] = np.clip(np.nan_to_num(rgb, nan=0.0) * 255.0, 0.0, 255.0).astype(np.uint8)
+    rgba[..., 3] = np.where(valid_mask, np.uint8(255), np.uint8(0))
     return rgba
+
+
+def _goes_registry_key(
+    file_path: Path,
+    channel_id: str,
+    web_mercator_shape: tuple[int, int],
+    web_mercator_transform: Any,
+) -> tuple[Any, ...]:
+    return (
+        str(file_path),
+        channel_id,
+        int(web_mercator_shape[0]),
+        int(web_mercator_shape[1]),
+        tuple(float(value) for value in tuple(web_mercator_transform)),
+    )
 
 
 def _load_goes_ir_colormap(colormaps_file: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -381,25 +485,35 @@ def build_goes_rgb_shared_registry(
     *,
     web_mercator_shape: tuple[int, int],
     web_mercator_transform: Any,
+    cycle_registry: dict[tuple[Any, ...], dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]] | None:
     registry: dict[str, dict[str, Any]] = {}
     for channel_id, file_path in prepared_batch["selected_files"].items():
-        channel_payload = load_reproject_goes_abi_render_array(
-            file_path,
-            _layer_config_for_channel(channel_id),
-            shape=web_mercator_shape,
-            transform=web_mercator_transform,
-            resampling=Resampling.bilinear,
-        )
-        if channel_payload is None:
-            io_manager.write_warning(f"Skipping GOES RGB batch: failed to prepare {channel_id} from {file_path}")
-            return None
-        registry[channel_id] = {
-            "channel_id": channel_id,
-            "file_path": file_path,
-            "timestamp": prepared_batch["timestamp"],
-            **channel_payload,
-        }
+        registry_key = _goes_registry_key(file_path, channel_id, web_mercator_shape, web_mercator_transform)
+        channel_entry = cycle_registry.get(registry_key) if cycle_registry is not None else None
+
+        if channel_entry is None:
+            channel_payload = load_reproject_goes_abi_render_array(
+                file_path,
+                layer_config_for_channel(channel_id),
+                shape=web_mercator_shape,
+                transform=web_mercator_transform,
+                resampling=Resampling.bilinear,
+            )
+            if channel_payload is None:
+                io_manager.write_warning(f"Skipping GOES RGB batch: failed to prepare {channel_id} from {file_path}")
+                return None
+
+            channel_entry = {
+                "channel_id": channel_id,
+                "file_path": file_path,
+                "timestamp": prepared_batch["timestamp"],
+                **channel_payload,
+            }
+            if cycle_registry is not None:
+                cycle_registry[registry_key] = channel_entry
+
+        registry[channel_id] = channel_entry
     return registry
 
 
@@ -586,12 +700,14 @@ def iter_goes_rgb_batch(
     web_mercator_shape: tuple[int, int],
     web_mercator_transform: Any,
     true_color_gamma: float = 2.2,
+    registry: dict[str, dict[str, Any]] | None = None,
 ):
-    registry = build_goes_rgb_shared_registry(
-        prepared_batch,
-        web_mercator_shape=web_mercator_shape,
-        web_mercator_transform=web_mercator_transform,
-    )
+    if registry is None:
+        registry = build_goes_rgb_shared_registry(
+            prepared_batch,
+            web_mercator_shape=web_mercator_shape,
+            web_mercator_transform=web_mercator_transform,
+        )
     if registry is None:
         return
 
