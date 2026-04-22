@@ -59,3 +59,26 @@ def test_check_local_goes_ready_does_not_treat_glm_only_as_ready(tmp_path):
     assert path is None
     assert glm_ready is True
     assert glm_path is not None
+
+
+def test_check_local_goes_ready_requires_full_abi_set(tmp_path):
+    dt = datetime(2026, 4, 22, 16, 0, tzinfo=timezone.utc)
+
+    blue_dir = tmp_path / "VisibleBlue"
+    red_dir = tmp_path / "VisibleRed"
+    blue_dir.mkdir(parents=True)
+    red_dir.mkdir(parents=True)
+
+    blue_file = blue_dir / "OR_ABI-L1b-RadC-M6C01_G19_s20261121556178_e20261121558551_c20261121558596.nc"
+    blue_file.write_bytes(b"abi")
+
+    ready, path = check_local_goes_ready(
+        dt,
+        specs=[
+            {"name": "GOES_ABI_C01_Reflectance", "filepath": blue_dir},
+            {"name": "GOES_ABI_C02_Reflectance", "filepath": red_dir},
+        ],
+    )
+
+    assert ready is False
+    assert path is None

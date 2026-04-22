@@ -15,6 +15,7 @@ _GOES_SCAN_WINDOW_PATTERN = re.compile(
 )
 _GOES_SCAN_START_PATTERN = re.compile(r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)")
 _READINESS_CANDIDATE_COUNT = 5
+_GOES_RENDER_MAX_OFFSET_MINUTES = 20.0
 
 
 def get_ewmrs_goes_render_specs():
@@ -111,13 +112,25 @@ def parse_staged_file_timestamp(filepath):
     return None
 
 
-def latest_goes_file_at_or_after(directory, target_dt):
-    """Return newest staged file if it starts after or spans `target_dt`."""
+def _window_distance_seconds(target_dt, start_dt, end_dt):
+    if start_dt <= target_dt <= end_dt:
+        return 0.0
+    if target_dt < start_dt:
+        return (start_dt - target_dt).total_seconds()
+    return (target_dt - end_dt).total_seconds()
+
+
+def latest_goes_file_near_target(directory, target_dt, *, max_offset_minutes=_GOES_RENDER_MAX_OFFSET_MINUTES):
+    """Return the staged GOES file nearest ``target_dt`` within the allowed offset."""
     latest = fs.latest_files(directory, _READINESS_CANDIDATE_COUNT)
     if not latest:
         return None
 
     target_dt = _normalize_target_dt(target_dt)
+    max_offset_seconds = max(0.0, float(max_offset_minutes)) * 60.0
+    best_path = None
+    best_distance = None
+
     for latest_path in reversed(latest):
         file_window = parse_staged_file_time_window(latest_path)
         if file_window is None:
@@ -127,31 +140,39 @@ def latest_goes_file_at_or_after(directory, target_dt):
         if end_dt < start_dt:
             continue
 
-        if start_dt >= target_dt:
-            return latest_path
+        distance_seconds = _window_distance_seconds(target_dt, start_dt, end_dt)
+        if distance_seconds > max_offset_seconds:
+            continue
 
-        if start_dt <= target_dt <= end_dt:
-            return latest_path
+        if best_distance is None or distance_seconds < best_distance:
+            best_path = latest_path
+            best_distance = distance_seconds
 
-    return None
+    return best_path
 
 
 def check_local_goes_ready(dt, *, specs=None):
-    """Readiness for EWMRS GOES phase: requires configured ABI render inputs."""
+    """Readiness for EWMRS GOES phase: requires the full configured ABI render set."""
     candidate_specs = get_ewmrs_goes_render_specs() if specs is None else specs
     if not candidate_specs:
         return False, None
+
+    matched_paths = []
 
     for spec in candidate_specs:
         source_path = spec.get("filepath") if isinstance(spec, dict) else getattr(spec, "filepath", None)
         if source_path is None:
             continue
 
-        latest_path = latest_goes_file_at_or_after(source_path, dt)
-        if latest_path is not None:
-            return True, latest_path
+        latest_path = latest_goes_file_near_target(source_path, dt)
+        if latest_path is None:
+            return False, None
+        matched_paths.append(latest_path)
 
-    return False, None
+    if not matched_paths:
+        return False, None
+
+    return True, matched_paths[0]
 
 
 def check_local_glm_ready(dt, *, specs):
@@ -165,7 +186,7 @@ def check_local_glm_ready(dt, *, specs):
         if outdir is None:
             continue
 
-        latest_path = latest_goes_file_at_or_after(outdir, dt)
+        latest_path = latest_goes_file_near_target(outdir, dt)
         if latest_path is not None:
             return True, latest_path
 

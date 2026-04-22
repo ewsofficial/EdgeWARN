@@ -42,18 +42,24 @@ initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
 GOES_POLL_SECONDS = 60
 GOES_RENDER_WAIT_SECONDS = 30
 GOES_RENDER_WAIT_INTERVAL_SECONDS = 1.0
+GOES_CYCLE_ACTIVE = multiprocessing.Event()
+GOES_RENDER_ACTIVE = multiprocessing.Event()
 
 
 def _get_ewmrs_goes_render_specs():
     return _get_ewmrs_goes_render_specs_impl()
 
 
-def goes_loop():
+def goes_loop(activity_event, render_active_event):
     try:
         abi_specs = get_abi_radc_channel_specs()
         while True:
+            while render_active_event.is_set():
+                _sleep(1, interval=0.2)
+
             target_dt = datetime.now(timezone.utc).replace(second=0, microsecond=0)
             try:
+                activity_event.set()
                 asyncio.run(download_goes_specs_async(abi_specs, target_dt))
             except Exception as exc:
                 print(f"[GOES Loop] Async ingest failed ({target_dt}): {exc}. Falling back to sync.")
@@ -61,6 +67,8 @@ def goes_loop():
                     download_goes_specs(abi_specs, target_dt)
                 except Exception as fallback_exc:
                     print(f"[GOES Loop] Sync fallback failed ({target_dt}): {fallback_exc}")
+            finally:
+                activity_event.clear()
 
             _sleep(GOES_POLL_SECONDS, interval=1.0)
     except KeyboardInterrupt:
@@ -116,7 +124,7 @@ def _wait_for_local_goes_ready(
 
     while True:
         goes_ready, goes_path = _check_local_goes_ready(dt, specs=candidate_specs)
-        if goes_ready:
+        if goes_ready and not GOES_CYCLE_ACTIVE.is_set():
             return True, goes_path
 
         if time.time() >= deadline:
@@ -286,10 +294,14 @@ def _run_tandem_cycle(dt):
     goes_path = None
     try:
         goes_ready, goes_path = _check_local_goes_ready(dt, specs=goes_specs)
+        if goes_ready and GOES_CYCLE_ACTIVE.is_set():
+            goes_ready = False
+            goes_path = None
+
         if not goes_ready:
             _queue_log(
                 log_queue,
-                f"INFO: Waiting up to {GOES_RENDER_WAIT_SECONDS}s for local GOES ABI render inputs for {dt.isoformat()}",
+                f"INFO: Waiting for background GOES ABI ingest cycle to fully stage render inputs for {dt.isoformat()}",
             )
             goes_ready, goes_path = _wait_for_local_goes_ready(
                 dt,
@@ -301,10 +313,10 @@ def _run_tandem_cycle(dt):
         if not goes_ready:
             _queue_log(
                 log_queue,
-                f"INFO: No local GOES ABI render inputs staged at or after {dt.isoformat()}; GOES render phase will be skipped",
+                f"INFO: Background GOES ABI ingest did not finish staging the full render input set for {dt.isoformat()}; GOES render phase will be skipped",
             )
         else:
-            _queue_log(log_queue, f"INFO: Local GOES readiness satisfied by {goes_path}")
+            _queue_log(log_queue, f"INFO: Full GOES ABI render input set is staged; representative file {goes_path}")
     except Exception as exc:
         _queue_log(log_queue, f"WARN: Local GOES readiness check failed for {dt.isoformat()}: {exc}")
     finally:
@@ -315,6 +327,8 @@ def _run_tandem_cycle(dt):
         else:
             errors.setdefault("ewmrs_goes_ingest", "EWMRS GOES inputs unavailable")
         shared_state["errors"] = errors
+        if goes_ready:
+            GOES_RENDER_ACTIVE.set()
         ewmrs_goes_ready_event.set()
 
     while edgewarn_proc.is_alive() or ewmrs_proc.is_alive() or not log_queue.empty():
@@ -323,6 +337,7 @@ def _run_tandem_cycle(dt):
 
     edgewarn_proc.join()
     ewmrs_proc.join()
+    GOES_RENDER_ACTIVE.clear()
     _drain_log_queue(log_queue)
     manager.shutdown()
     return edgewarn_proc.exitcode == 0 and ewmrs_proc.exitcode == 0
@@ -375,7 +390,7 @@ def main():
     metar_proc.start()
     nws_proc.start()
     wpc_proc.start()
-    goes_proc = multiprocessing.Process(target=goes_loop, daemon=True)
+    goes_proc = multiprocessing.Process(target=goes_loop, args=(GOES_CYCLE_ACTIVE, GOES_RENDER_ACTIVE), daemon=True)
     goes_proc.start()
 
     background_processes = [
