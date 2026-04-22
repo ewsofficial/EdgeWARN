@@ -40,6 +40,8 @@ lon_limits = tuple(args.lon_limits)
 initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
 
 GOES_POLL_SECONDS = 60
+GOES_RENDER_WAIT_SECONDS = 30
+GOES_RENDER_WAIT_INTERVAL_SECONDS = 1.0
 
 
 def _get_ewmrs_goes_render_specs():
@@ -95,6 +97,32 @@ def _sleep_until_boundary(minutes):
 def _check_local_goes_ready(dt, *, specs=None):
     candidate_specs = _get_ewmrs_goes_render_specs() if specs is None else specs
     return _check_local_goes_ready_impl(dt, specs=candidate_specs)
+
+
+def _wait_for_local_goes_ready(
+    dt,
+    *,
+    specs=None,
+    timeout_seconds=GOES_RENDER_WAIT_SECONDS,
+    interval_seconds=GOES_RENDER_WAIT_INTERVAL_SECONDS,
+):
+    candidate_specs = _get_ewmrs_goes_render_specs() if specs is None else specs
+    if not candidate_specs:
+        return False, None
+
+    timeout_seconds = max(0.0, float(timeout_seconds))
+    interval_seconds = max(0.1, float(interval_seconds))
+    deadline = time.time() + timeout_seconds
+
+    while True:
+        goes_ready, goes_path = _check_local_goes_ready(dt, specs=candidate_specs)
+        if goes_ready:
+            return True, goes_path
+
+        if time.time() >= deadline:
+            return False, None
+
+        _sleep(min(interval_seconds, max(0.0, deadline - time.time())), interval=0.2)
 
 
 def _check_local_glm_ready(dt):
@@ -199,17 +227,10 @@ def _run_tandem_cycle(dt):
     except Exception as exc:
         _queue_log(log_queue, f"WARN: Scan-time GLM ingest failed for {dt.isoformat()}: {exc}")
 
-    goes_ready, goes_path = _check_local_goes_ready(dt)
+    goes_specs = _get_ewmrs_goes_render_specs()
     glm_ready, glm_path = _check_local_glm_ready(dt)
     rap_ready = "rap_ingest" not in cycle_state.errors
     edgewarn_integration_ready = cycle_state.ewmrs_mrms_inputs_ready and glm_ready and rap_ready
-    if not goes_ready:
-        _queue_log(
-            log_queue,
-            f"INFO: No local GOES ABI render inputs staged at or after {dt.isoformat()}; GOES render phase will be skipped",
-        )
-    else:
-        _queue_log(log_queue, f"INFO: Local GOES readiness satisfied by {goes_path}")
     if not glm_ready:
         _queue_log(log_queue, f"INFO: No local GLM files staged at or after {dt.isoformat()}; EdgeWARN integration will wait for GOES")
     else:
@@ -217,12 +238,14 @@ def _run_tandem_cycle(dt):
 
     shared_state["detection_inputs_ready"] = cycle_state.detection_inputs_ready
     shared_state["ewmrs_mrms_inputs_ready"] = cycle_state.ewmrs_mrms_inputs_ready
-    shared_state["ewmrs_goes_inputs_ready"] = goes_ready
+    shared_state["ewmrs_goes_inputs_ready"] = False
     shared_state["edgewarn_integration_inputs_ready"] = edgewarn_integration_ready
     shared_state["edgewarn_generated_file"] = ""
-    errors = dict(cycle_state.errors)
-    if not goes_ready:
-        errors.setdefault("ewmrs_goes_ingest", "EWMRS GOES inputs unavailable")
+    errors = {
+        key: value
+        for key, value in dict(cycle_state.errors).items()
+        if key not in {"goes_ingest", "ewmrs_goes_ingest", "edgewarn_integration_ingest"}
+    }
     if not glm_ready:
         errors.setdefault("goes_ingest", "GOES inputs unavailable")
     if not edgewarn_integration_ready:
@@ -257,8 +280,42 @@ def _run_tandem_cycle(dt):
 
     detection_ready_event.set()
     ewmrs_mrms_ready_event.set()
-    ewmrs_goes_ready_event.set()
     integration_ready_event.set()
+
+    goes_ready = False
+    goes_path = None
+    try:
+        goes_ready, goes_path = _check_local_goes_ready(dt, specs=goes_specs)
+        if not goes_ready:
+            _queue_log(
+                log_queue,
+                f"INFO: Waiting up to {GOES_RENDER_WAIT_SECONDS}s for local GOES ABI render inputs for {dt.isoformat()}",
+            )
+            goes_ready, goes_path = _wait_for_local_goes_ready(
+                dt,
+                specs=goes_specs,
+                timeout_seconds=GOES_RENDER_WAIT_SECONDS,
+                interval_seconds=GOES_RENDER_WAIT_INTERVAL_SECONDS,
+            )
+
+        if not goes_ready:
+            _queue_log(
+                log_queue,
+                f"INFO: No local GOES ABI render inputs staged at or after {dt.isoformat()}; GOES render phase will be skipped",
+            )
+        else:
+            _queue_log(log_queue, f"INFO: Local GOES readiness satisfied by {goes_path}")
+    except Exception as exc:
+        _queue_log(log_queue, f"WARN: Local GOES readiness check failed for {dt.isoformat()}: {exc}")
+    finally:
+        shared_state["ewmrs_goes_inputs_ready"] = goes_ready
+        errors = dict(shared_state.get("errors", {}))
+        if goes_ready:
+            errors.pop("ewmrs_goes_ingest", None)
+        else:
+            errors.setdefault("ewmrs_goes_ingest", "EWMRS GOES inputs unavailable")
+        shared_state["errors"] = errors
+        ewmrs_goes_ready_event.set()
 
     while edgewarn_proc.is_alive() or ewmrs_proc.is_alive() or not log_queue.empty():
         _drain_log_queue(log_queue)

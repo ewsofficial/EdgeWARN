@@ -9,6 +9,14 @@ from pathlib import Path
 import util.file as fs
 
 
+_GOES_SCAN_WINDOW_PATTERN = re.compile(
+    r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)"
+    r"_e(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)"
+)
+_GOES_SCAN_START_PATTERN = re.compile(r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)")
+_READINESS_CANDIDATE_COUNT = 5
+
+
 def get_ewmrs_goes_render_specs():
     """Return configured GOES ABI render layers with local source directories."""
     from EWMRS.render.config import get_goes_file_list
@@ -30,6 +38,46 @@ def get_ewmrs_goes_render_specs():
     return specs
 
 
+def _parse_goes_token(groups):
+    year, day_of_year, hour, minute, second, _subsecond = groups
+    return datetime.strptime(
+        f"{year}{day_of_year}{hour}{minute}{second}",
+        "%Y%j%H%M%S",
+    ).replace(tzinfo=timezone.utc)
+
+
+def _normalize_target_dt(target_dt):
+    if target_dt.tzinfo is None:
+        return target_dt.replace(tzinfo=timezone.utc)
+    return target_dt.astimezone(timezone.utc)
+
+
+def parse_staged_file_time_window(filepath):
+    """Parse staged filename into `(start_dt, end_dt)` bounds in UTC.
+
+    GOES ABI filenames encode an explicit scan start/end window as `s..._e...`.
+    Readiness checks should treat that whole window as valid for a target cycle.
+    Non-windowed filenames are interpreted as a point timestamp `(dt, dt)`.
+    """
+    filename = Path(filepath).name
+
+    window_match = _GOES_SCAN_WINDOW_PATTERN.search(filename)
+    if window_match is not None:
+        groups = window_match.groups()
+        try:
+            start_dt = _parse_goes_token(groups[:6])
+            end_dt = _parse_goes_token(groups[6:])
+            return start_dt, end_dt
+        except ValueError:
+            pass
+
+    file_dt = parse_staged_file_timestamp(filepath)
+    if file_dt is None:
+        return None
+
+    return file_dt, file_dt
+
+
 def parse_staged_file_timestamp(filepath):
     """Parse MRMS/GOES-style staged file timestamps into UTC datetimes."""
     filename = Path(filepath).name
@@ -38,7 +86,7 @@ def parse_staged_file_timestamp(filepath):
         r"(\d{8})-(\d{6})_renamed",
         r"(\d{8}-\d{6})",
         r".*(\d{8})-(\d{6}).*",
-        r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)",
+        _GOES_SCAN_START_PATTERN.pattern,
     ]
 
     for pattern in patterns:
@@ -56,11 +104,7 @@ def parse_staged_file_timestamp(filepath):
                 return datetime.strptime(groups[0], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
 
             if len(groups) == 6:
-                year, day_of_year, hour, minute, second, _subsecond = groups
-                return datetime.strptime(
-                    f"{year}{day_of_year}{hour}{minute}{second}",
-                    "%Y%j%H%M%S",
-                ).replace(tzinfo=timezone.utc)
+                return _parse_goes_token(groups)
         except ValueError:
             continue
 
@@ -68,18 +112,26 @@ def parse_staged_file_timestamp(filepath):
 
 
 def latest_goes_file_at_or_after(directory, target_dt):
-    """Return the newest staged file path in directory if timestamp is >= target_dt."""
-    latest = fs.latest_files(directory, 1)
+    """Return newest staged file if it starts after or spans `target_dt`."""
+    latest = fs.latest_files(directory, _READINESS_CANDIDATE_COUNT)
     if not latest:
         return None
 
-    latest_path = latest[-1]
-    file_dt = parse_staged_file_timestamp(latest_path)
-    if file_dt is None:
-        return None
+    target_dt = _normalize_target_dt(target_dt)
+    for latest_path in reversed(latest):
+        file_window = parse_staged_file_time_window(latest_path)
+        if file_window is None:
+            continue
 
-    if file_dt >= target_dt:
-        return latest_path
+        start_dt, end_dt = file_window
+        if end_dt < start_dt:
+            continue
+
+        if start_dt >= target_dt:
+            return latest_path
+
+        if start_dt <= target_dt <= end_dt:
+            return latest_path
 
     return None
 
