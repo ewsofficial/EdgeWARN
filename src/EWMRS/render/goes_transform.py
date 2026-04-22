@@ -299,3 +299,39 @@ def reproject_goes_abi_to_web_mercator(
     except Exception as exc:
         io_manager.write_error(f"Failed GOES reprojection to EPSG:3857: {exc}")
         return None
+
+
+def load_reproject_goes_abi_render_array(
+    path: Path,
+    layer_config: dict,
+    *,
+    shape: tuple[int, int],
+    transform,
+    resampling: Resampling = Resampling.bilinear,
+) -> dict[str, np.ndarray] | None:
+    """Load and reproject a GOES ABI channel to a shared array/x/y payload."""
+    ds = load_goes_abi_render_dataset(path, layer_config)
+    if ds is None:
+        return None
+
+    ds = reproject_goes_abi_to_web_mercator(
+        ds,
+        shape=shape,
+        transform=transform,
+        resampling=resampling,
+    )
+    if ds is None:
+        return None
+
+    try:
+        data = np.asarray(ds["unknown"].values, dtype=np.float32)
+        x_coords = np.asarray(ds["x"].values, dtype=np.float64)
+        y_coords = np.asarray(ds["y"].values, dtype=np.float64)
+        return {
+            "data": data,
+            "x": x_coords,
+            "y": y_coords,
+        }
+    except Exception as exc:
+        io_manager.write_error(f"Failed to extract GOES reprojection arrays for {path}: {exc}")
+        return None

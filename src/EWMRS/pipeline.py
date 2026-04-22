@@ -312,7 +312,7 @@ def cleanup_old_gui_files(max_age_minutes: int = 120):
         io_manager.write_info(f"Cleaned up {total_removed} old GUI files/folders (>{max_age_minutes} min)")
 
 
-def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str = "EWMRS") -> Dict[str, RenderOutput]:
+def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str = "EWMRS", cleanup_after: bool = True) -> Dict[str, RenderOutput]:
     """Render configured EWMRS layers from already staged local files."""
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -324,7 +324,7 @@ def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str 
         io_manager.write_info(f"{phase_name} render phase has no configured layers")
         return results
 
-    max_workers = min(4, max(1, len(layers)))
+    max_workers = min(2, max(1, len(layers)))
     io_manager.write_info(
         f"Rendering {len(layers)} {phase_name} layers across {max_workers} CPU cores for {dt.isoformat()}..."
     )
@@ -334,7 +334,8 @@ def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str 
             name, png_path = future.result()
             results[name] = png_path
 
-    cleanup_old_gui_files(max_age_minutes=120)
+    if cleanup_after:
+        cleanup_old_gui_files(max_age_minutes=120)
     return results
 
 
@@ -355,17 +356,90 @@ def run_mrms_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutpu
 
 def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
     """Run the GOES-backed EWMRS render phase."""
+    from EWMRS.render.goes_rgb import iter_goes_rgb_batch, prepare_goes_rgb_batch
+    from EWMRS.render.render import GUIRGBAWriter
+
     layers = get_goes_file_list()
     if not layers:
         io_manager.write_info("GOES render phase is a no-op: no GOES layers configured")
         return {}
 
-    return run_render_pipeline(
-        dt,
-        max_entries=max_entries,
-        layers=layers,
-        phase_name="GOES",
-    )
+    single_channel_layers = [layer for layer in layers if str(layer.get("source_type", "")).lower() != "goes_abi_rgb"]
+    rgb_layers = [layer for layer in layers if str(layer.get("source_type", "")).lower() == "goes_abi_rgb"]
+
+    results: Dict[str, RenderOutput] = {}
+
+    if single_channel_layers:
+        results.update(
+            run_render_pipeline(
+                dt,
+                max_entries=max_entries,
+                layers=single_channel_layers,
+                phase_name="GOES",
+                cleanup_after=False,
+            )
+        )
+
+    if rgb_layers:
+        _ensure_runtime_configured()
+        prepared_batch = prepare_goes_rgb_batch(rgb_layers)
+        if prepared_batch is not None:
+            pending_recipes = []
+            pending_selected_files: dict[str, Path] = {}
+            rgb_layer_outdirs = {str(layer["name"]): Path(layer["outdir"]) for layer in rgb_layers}
+
+            for prepared in prepared_batch["recipes"]:
+                layer = prepared["layer"]
+                name = str(layer["name"])
+                out_dir = Path(layer["outdir"])
+                timestamp_iso = prepared["timestamp_iso"]
+                cached_render = _current_render_paths(out_dir, timestamp_iso)
+                if cached_render is not None:
+                    io_manager.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
+                    results[name] = cached_render
+                    continue
+
+                pending_recipes.append(prepared)
+                for channel_id, file_path in prepared["selected_files"].items():
+                    pending_selected_files.setdefault(channel_id, file_path)
+
+            rendered_rgb_layers: set[str] = set()
+            if pending_recipes:
+                pending_batch = {
+                    **prepared_batch,
+                    "recipes": pending_recipes,
+                    "selected_files": pending_selected_files,
+                }
+                for layer_name, rgba, metadata in iter_goes_rgb_batch(
+                    pending_batch,
+                    web_mercator_shape=GOES_WEB_MERCATOR_SHAPE,
+                    web_mercator_transform=GOES_WEB_MERCATOR_TRANSFORM,
+                ) or ():
+                    out_dir = rgb_layer_outdirs[layer_name]
+                    timestamp_iso = metadata["timestamp_iso"]
+                    io_manager.write_info(
+                        f"Composited {layer_name} GOES RGB product with channels {', '.join(sorted(metadata['selected_files']))}"
+                    )
+                    renderer = GUIRGBAWriter(out_dir, layer_name, timestamp_iso)
+                    png_path, _px_timestamp = renderer.save_rgba(rgba, tile_output=True)
+                    results[layer_name] = png_path
+                    rendered_rgb_layers.add(layer_name)
+                    del rgba
+
+            for layer in rgb_layers:
+                name = str(layer["name"])
+                if name in results:
+                    continue
+                if name not in rendered_rgb_layers:
+                    results.setdefault(name, None)
+                    continue
+        else:
+            for layer in rgb_layers:
+                results.setdefault(str(layer["name"]), None)
+
+    cleanup_old_gui_files(max_age_minutes=120)
+
+    return results
 
 
 def _summarize_results(results: Dict[str, RenderOutput]) -> str:

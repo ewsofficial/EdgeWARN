@@ -14,7 +14,7 @@ from common.ingest.mrms.config import get_abi_radc_channel_specs
 from common.ingest.mrms.utils import extract_timestamp
 from util.io import IOManager
 
-from .goes_transform import load_goes_abi_render_dataset, reproject_goes_abi_to_web_mercator
+from .goes_transform import load_reproject_goes_abi_render_array
 
 io_manager = IOManager("[GOES RGB]")
 
@@ -142,12 +142,24 @@ def compute_solar_zenith_angle(latitude_deg: np.ndarray, longitude_deg: np.ndarr
     return np.degrees(np.arccos(cos_zenith)).astype(np.float32)
 
 
+def _broadcast_lat_lon(latitude_deg: np.ndarray, longitude_deg: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    latitude_deg = np.asarray(latitude_deg, dtype=np.float32)
+    longitude_deg = np.asarray(longitude_deg, dtype=np.float32)
+
+    if latitude_deg.ndim == 1:
+        latitude_deg = latitude_deg[:, None]
+    if longitude_deg.ndim == 1:
+        longitude_deg = longitude_deg[None, :]
+    return latitude_deg, longitude_deg
+
+
 def compute_true_color_night_blend(
     c07_kelvin: np.ndarray,
     latitude_deg: np.ndarray,
     longitude_deg: np.ndarray,
     timestamp: datetime,
 ) -> tuple[np.ndarray, np.ndarray]:
+    latitude_deg, longitude_deg = _broadcast_lat_lon(latitude_deg, longitude_deg)
     solar_zenith = compute_solar_zenith_angle(latitude_deg, longitude_deg, timestamp)
     night_weight = normalize_rgb_channel(
         solar_zenith,
@@ -155,22 +167,30 @@ def compute_true_color_night_blend(
         TRUE_COLOR_TERMINATOR_END_DEGREES,
     )
     night_luminance = normalize_rgb_channel(c07_kelvin, 190.0, 300.0, invert=True)
-    night_rgb = np.dstack((night_luminance, night_luminance, night_luminance)).astype(np.float32)
+    night_rgb = np.empty(c07_kelvin.shape + (3,), dtype=np.float32)
+    night_rgb[..., 0] = night_luminance
+    night_rgb[..., 1] = night_luminance
+    night_rgb[..., 2] = night_luminance
     return night_rgb, night_weight.astype(np.float32)
 
 
 def _colorize(values: np.ndarray, thresholds: np.ndarray, colors: np.ndarray) -> np.ndarray:
     safe = np.clip(values, thresholds[0], thresholds[-1])
-    red = np.interp(safe, thresholds, colors[:, 0])
-    green = np.interp(safe, thresholds, colors[:, 1])
-    blue = np.interp(safe, thresholds, colors[:, 2])
-    return np.dstack((red, green, blue)).astype(np.float32)
+    rgb = np.empty(values.shape + (3,), dtype=np.float32)
+    rgb[..., 0] = np.interp(safe, thresholds, colors[:, 0]).astype(np.float32)
+    rgb[..., 1] = np.interp(safe, thresholds, colors[:, 1]).astype(np.float32)
+    rgb[..., 2] = np.interp(safe, thresholds, colors[:, 2]).astype(np.float32)
+    return rgb
 
 
 def _rgb_to_rgba(rgb: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
-    rgb_uint8 = np.clip(np.nan_to_num(rgb, nan=0.0) * 255.0, 0.0, 255.0).astype(np.uint8)
-    alpha = np.where(valid_mask, 255, 0).astype(np.uint8)
-    return np.dstack((rgb_uint8, alpha))
+    rgba = np.empty(rgb.shape[:2] + (4,), dtype=np.uint8)
+    for channel_idx in range(3):
+        channel = np.nan_to_num(rgb[..., channel_idx], nan=0.0)
+        rgba[..., channel_idx] = np.clip(channel * 255.0, 0.0, 255.0).astype(np.uint8)
+    rgba[..., 3] = np.uint8(0)
+    rgba[..., 3][valid_mask] = np.uint8(255)
+    return rgba
 
 
 def _load_goes_ir_colormap(colormaps_file: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -285,38 +305,150 @@ def prepare_goes_rgb_render(layer_config: dict[str, Any], *, max_offset_minutes:
     return prepared
 
 
-def _align_to_reference_grid(datasets: dict[str, Any]) -> dict[str, np.ndarray]:
-    reference_channel = "C13" if "C13" in datasets else min(
-        datasets,
-        key=lambda key: int(datasets[key]["unknown"].sizes["y"]) * int(datasets[key]["unknown"].sizes["x"]),
-    )
-    ref_da = datasets[reference_channel]["unknown"]
-    ref_x = ref_da["x"]
-    ref_y = ref_da["y"]
+def prepare_goes_rgb_batch(
+    layers: list[dict[str, Any]],
+    *,
+    max_offset_minutes: float = 20.0,
+    requested_timestamp: datetime | None = None,
+) -> dict[str, Any] | None:
+    if not layers:
+        return None
 
-    aligned: dict[str, np.ndarray] = {}
-    for channel_id, ds in datasets.items():
-        da = ds["unknown"]
-        if da.sizes == ref_da.sizes and np.array_equal(da["x"].values, ref_x.values) and np.array_equal(da["y"].values, ref_y.values):
-            aligned[channel_id] = np.asarray(da.values, dtype=np.float32)
+    source_root = Path(layers[0].get("filepath") or fs.GOES_ABI_RADC_DIR)
+    channel_dir_names = {spec.channel_id: spec.outdir.name for spec in get_abi_radc_channel_specs() if spec.channel_id}
+
+    recipe_keys: list[str] = []
+    required_channels: set[str] = set()
+    for layer in layers:
+        recipe_key = str(layer.get("recipe_key", "")).strip()
+        if not recipe_key:
             continue
+        recipe = _get_recipe(recipe_key)
+        recipe_keys.append(recipe.key)
+        required_channels.update(recipe.required_channels)
 
-        interp_da = da.interp(x=ref_x, y=ref_y, method="linear")
-        aligned[channel_id] = np.asarray(interp_da.values, dtype=np.float32)
+    if not recipe_keys:
+        return None
 
-    return aligned
+    files_by_channel: dict[str, list[tuple[datetime, Path]]] = {}
+    for channel_id in sorted(required_channels):
+        channel_dir_name = channel_dir_names.get(channel_id)
+        if not channel_dir_name:
+            files_by_channel[channel_id] = []
+            continue
+        files_by_channel[channel_id] = _list_channel_files(source_root / channel_dir_name)
+
+    batch_timestamp = requested_timestamp
+    if batch_timestamp is None:
+        latest_per_channel = [files_by_channel[channel_id][-1][0] for channel_id in required_channels if files_by_channel[channel_id]]
+        if not latest_per_channel:
+            return None
+        batch_timestamp = min(latest_per_channel)
+
+    prepared_recipes: list[dict[str, Any]] = []
+    for layer in layers:
+        prepared = select_recipe_channel_files(
+            str(layer.get("recipe_key", "")).strip(),
+            files_by_channel,
+            max_offset_minutes=max_offset_minutes,
+            requested_timestamp=batch_timestamp,
+        )
+        if prepared is None:
+            continue
+        prepared["layer"] = layer
+        prepared["source_root"] = source_root
+        prepared_recipes.append(prepared)
+
+    if not prepared_recipes:
+        return None
+
+    selected_files: dict[str, Path] = {}
+    for prepared in prepared_recipes:
+        for channel_id, file_path in prepared["selected_files"].items():
+            selected_files.setdefault(channel_id, file_path)
+
+    return {
+        "timestamp": batch_timestamp,
+        "timestamp_iso": batch_timestamp.replace(tzinfo=None).isoformat(),
+        "source_root": source_root,
+        "recipes": prepared_recipes,
+        "selected_files": selected_files,
+    }
 
 
-def _reference_lon_lat_grids(datasets: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
-    reference_channel = "C13" if "C13" in datasets else min(
-        datasets,
-        key=lambda key: int(datasets[key]["unknown"].sizes["y"]) * int(datasets[key]["unknown"].sizes["x"]),
+def build_goes_rgb_shared_registry(
+    prepared_batch: dict[str, Any],
+    *,
+    web_mercator_shape: tuple[int, int],
+    web_mercator_transform: Any,
+) -> dict[str, dict[str, Any]] | None:
+    registry: dict[str, dict[str, Any]] = {}
+    for channel_id, file_path in prepared_batch["selected_files"].items():
+        channel_payload = load_reproject_goes_abi_render_array(
+            file_path,
+            _layer_config_for_channel(channel_id),
+            shape=web_mercator_shape,
+            transform=web_mercator_transform,
+            resampling=Resampling.bilinear,
+        )
+        if channel_payload is None:
+            io_manager.write_warning(f"Skipping GOES RGB batch: failed to prepare {channel_id} from {file_path}")
+            return None
+        registry[channel_id] = {
+            "channel_id": channel_id,
+            "file_path": file_path,
+            "timestamp": prepared_batch["timestamp"],
+            **channel_payload,
+        }
+    return registry
+
+
+def _channel_data_from_registry(registry: dict[str, dict[str, Any]], channel_ids: tuple[str, ...]) -> dict[str, np.ndarray]:
+    return {channel_id: np.asarray(registry[channel_id]["data"], dtype=np.float32) for channel_id in channel_ids}
+
+
+def _reference_lon_lat_coords(registry: dict[str, dict[str, Any]], channel_ids: tuple[str, ...]) -> tuple[np.ndarray, np.ndarray]:
+    reference_channel = "C13" if "C13" in channel_ids else channel_ids[0]
+    payload = registry[reference_channel]
+    longitude_deg, latitude_deg = _web_mercator_to_lon_lat(payload["x"], payload["y"])
+    return latitude_deg, longitude_deg
+
+
+def _compose_prepared_goes_rgb_recipe(
+    prepared: dict[str, Any],
+    registry: dict[str, dict[str, Any]],
+    *,
+    goes_ir_thresholds: np.ndarray,
+    goes_ir_colors: np.ndarray,
+    web_mercator_shape: tuple[int, int],
+    true_color_gamma: float,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    recipe = prepared["recipe"]
+    channel_data = _channel_data_from_registry(registry, recipe.required_channels)
+    latitude_deg = longitude_deg = None
+    if recipe.key == "true_color":
+        latitude_deg, longitude_deg = _reference_lon_lat_coords(registry, recipe.required_channels)
+
+    rgb, valid_mask = compute_goes_rgb_product(
+        prepared["recipe_key"],
+        channel_data,
+        goes_ir_thresholds=goes_ir_thresholds,
+        goes_ir_colors=goes_ir_colors,
+        true_color_gamma=true_color_gamma,
+        timestamp=prepared["timestamp"],
+        latitude_deg=latitude_deg,
+        longitude_deg=longitude_deg,
     )
-    ref_da = datasets[reference_channel]["unknown"]
-    x_coords = np.asarray(ref_da["x"].values, dtype=np.float64)
-    y_coords = np.asarray(ref_da["y"].values, dtype=np.float64)
-    grid_x, grid_y = np.meshgrid(x_coords, y_coords)
-    return _web_mercator_to_lon_lat(grid_x, grid_y)
+    rgba = _rgb_to_rgba(rgb, valid_mask)
+    metadata = {
+        "recipe_key": prepared["recipe_key"],
+        "recipe_name": recipe.display_name,
+        "timestamp_iso": prepared["timestamp_iso"],
+        "selected_files": {channel_id: str(registry[channel_id]["file_path"]) for channel_id in recipe.required_channels},
+        "projection": "EPSG:3857",
+        "shape": list(web_mercator_shape),
+    }
+    return rgba, metadata
 
 
 def compute_goes_rgb_product(
@@ -338,13 +470,10 @@ def compute_goes_rgb_product(
         c03 = channel_data["C03"]
         c07 = channel_data["C07"]
         green_syn = 0.45 * c02 + 0.10 * c03 + 0.45 * c01
-        day_rgb = np.dstack(
-            (
-                normalize_rgb_channel(c02, 0.0, 1.0, gamma=true_color_gamma),
-                normalize_rgb_channel(green_syn, 0.0, 1.0, gamma=true_color_gamma),
-                normalize_rgb_channel(c01, 0.0, 1.0, gamma=true_color_gamma),
-            )
-        ).astype(np.float32)
+        day_rgb = np.empty(c01.shape + (3,), dtype=np.float32)
+        day_rgb[..., 0] = normalize_rgb_channel(c02, 0.0, 1.0, gamma=true_color_gamma)
+        day_rgb[..., 1] = normalize_rgb_channel(green_syn, 0.0, 1.0, gamma=true_color_gamma)
+        day_rgb[..., 2] = normalize_rgb_channel(c01, 0.0, 1.0, gamma=true_color_gamma)
         if timestamp is None or latitude_deg is None or longitude_deg is None:
             raise ValueError("True Color RGB requires timestamp, latitude_deg, and longitude_deg for terminator blending")
         night_rgb, night_weight = compute_true_color_night_blend(c07, latitude_deg, longitude_deg, timestamp)
@@ -357,13 +486,10 @@ def compute_goes_rgb_product(
         c10_c = _to_celsius(channel_data["C10"])
         c12_c = _to_celsius(channel_data["C12"])
         c13_c = _to_celsius(channel_data["C13"])
-        rgb = np.dstack(
-            (
-                normalize_rgb_channel(c08_c - c10_c, -26.2, 0.6),
-                normalize_rgb_channel(c12_c - c13_c, -43.2, 6.7),
-                normalize_rgb_channel(c08_c, -64.65, -29.25, invert=True),
-            )
-        ).astype(np.float32)
+        rgb = np.empty(c08_c.shape + (3,), dtype=np.float32)
+        rgb[..., 0] = normalize_rgb_channel(c08_c - c10_c, -26.2, 0.6)
+        rgb[..., 1] = normalize_rgb_channel(c12_c - c13_c, -43.2, 6.7)
+        rgb[..., 2] = normalize_rgb_channel(c08_c, -64.65, -29.25, invert=True)
         mask = np.isfinite(c08_c) & np.isfinite(c10_c) & np.isfinite(c12_c) & np.isfinite(c13_c)
         return rgb, mask
 
@@ -371,13 +497,10 @@ def compute_goes_rgb_product(
         c07_c = _to_celsius(channel_data["C07"])
         c13_c = _to_celsius(channel_data["C13"])
         c15_c = _to_celsius(channel_data["C15"])
-        rgb = np.dstack(
-            (
-                normalize_rgb_channel(c15_c - c13_c, -6.7, 2.6),
-                normalize_rgb_channel(c13_c - c07_c, -3.1, 5.2),
-                normalize_rgb_channel(c13_c, -29.6, 19.5),
-            )
-        ).astype(np.float32)
+        rgb = np.empty(c07_c.shape + (3,), dtype=np.float32)
+        rgb[..., 0] = normalize_rgb_channel(c15_c - c13_c, -6.7, 2.6)
+        rgb[..., 1] = normalize_rgb_channel(c13_c - c07_c, -3.1, 5.2)
+        rgb[..., 2] = normalize_rgb_channel(c13_c, -29.6, 19.5)
         mask = np.isfinite(c15_c) & np.isfinite(c13_c) & np.isfinite(c07_c)
         return rgb, mask
 
@@ -385,13 +508,10 @@ def compute_goes_rgb_product(
         c02 = channel_data["C02"]
         c05 = channel_data["C05"]
         c13_c = _to_celsius(channel_data["C13"])
-        rgb = np.dstack(
-            (
-                normalize_rgb_channel(c13_c, -53.5, 7.5, invert=True),
-                normalize_rgb_channel(c02 * 100.0, 0.0, 78.0),
-                normalize_rgb_channel(c05 * 100.0, 1.0, 59.0),
-            )
-        ).astype(np.float32)
+        rgb = np.empty(c02.shape + (3,), dtype=np.float32)
+        rgb[..., 0] = normalize_rgb_channel(c13_c, -53.5, 7.5, invert=True)
+        rgb[..., 1] = normalize_rgb_channel(c02 * 100.0, 0.0, 78.0)
+        rgb[..., 2] = normalize_rgb_channel(c05 * 100.0, 1.0, 59.0)
         mask = np.isfinite(c13_c) & np.isfinite(c02) & np.isfinite(c05)
         return rgb, mask
 
@@ -399,13 +519,10 @@ def compute_goes_rgb_product(
         c08_c = _to_celsius(channel_data["C08"])
         c10_c = _to_celsius(channel_data["C10"])
         c13_c = _to_celsius(channel_data["C13"])
-        rgb = np.dstack(
-            (
-                normalize_rgb_channel(c13_c, -70.86, 5.81, invert=True),
-                normalize_rgb_channel(c08_c, -58.49, -30.48, invert=True),
-                normalize_rgb_channel(c10_c, -28.03, -12.12, invert=True),
-            )
-        ).astype(np.float32)
+        rgb = np.empty(c08_c.shape + (3,), dtype=np.float32)
+        rgb[..., 0] = normalize_rgb_channel(c13_c, -70.86, 5.81, invert=True)
+        rgb[..., 1] = normalize_rgb_channel(c08_c, -58.49, -30.48, invert=True)
+        rgb[..., 2] = normalize_rgb_channel(c10_c, -28.03, -12.12, invert=True)
         mask = np.isfinite(c13_c) & np.isfinite(c08_c) & np.isfinite(c10_c)
         return rgb, mask
 
@@ -414,7 +531,10 @@ def compute_goes_rgb_product(
         c13_k = channel_data["C13"]
         c13_c = _to_celsius(c13_k)
         vis = normalize_rgb_channel(c02, 0.0, 1.0, gamma=true_color_gamma)
-        vis_rgb = np.dstack((vis, vis, vis)).astype(np.float32)
+        vis_rgb = np.empty(c02.shape + (3,), dtype=np.float32)
+        vis_rgb[..., 0] = vis
+        vis_rgb[..., 1] = vis
+        vis_rgb[..., 2] = vis
         ir_rgb = _colorize(c13_k, goes_ir_thresholds, goes_ir_colors)
         overlay_alpha = normalize_rgb_channel(c13_c, -70.0, -10.0, invert=True)
         overlay_alpha = np.where(c13_c < -5.0, overlay_alpha, 0.0).astype(np.float32) * 0.9
@@ -432,46 +552,84 @@ def compose_goes_rgb(
     web_mercator_transform: Any,
     true_color_gamma: float = 2.2,
 ) -> tuple[np.ndarray, dict[str, Any]] | None:
-    datasets: dict[str, Any] = {}
-    for channel_id, file_path in prepared["selected_files"].items():
-        ds = load_goes_abi_render_dataset(file_path, _layer_config_for_channel(channel_id))
-        if ds is None:
-            io_manager.write_warning(f"Skipping {prepared['recipe'].display_name}: failed to load {channel_id} from {file_path}")
-            return None
+    prepared_batch = {
+        "timestamp": prepared["timestamp"],
+        "selected_files": prepared["selected_files"],
+    }
+    registry = build_goes_rgb_shared_registry(
+        prepared_batch,
+        web_mercator_shape=web_mercator_shape,
+        web_mercator_transform=web_mercator_transform,
+    )
+    if registry is None:
+        return None
 
-        ds = reproject_goes_abi_to_web_mercator(
-            ds,
-            shape=web_mercator_shape,
-            transform=web_mercator_transform,
-            resampling=Resampling.bilinear,
-        )
-        if ds is None:
-            io_manager.write_warning(
-                f"Skipping {prepared['recipe'].display_name}: failed to reproject {channel_id} to EPSG:3857"
-            )
-            return None
-        datasets[channel_id] = ds
-
-    aligned_channel_data = _align_to_reference_grid(datasets)
-    latitude_deg, longitude_deg = _reference_lon_lat_grids(datasets)
+    recipe = _get_recipe(prepared["recipe_key"])
     goes_ir_thresholds, goes_ir_colors = _load_goes_ir_colormap(Path(fs.GUI_COLORMAP_JSON))
-    rgb, valid_mask = compute_goes_rgb_product(
-        prepared["recipe_key"],
-        aligned_channel_data,
+    rgba, metadata = _compose_prepared_goes_rgb_recipe(
+        {
+            **prepared,
+            "recipe": recipe,
+        },
+        registry,
         goes_ir_thresholds=goes_ir_thresholds,
         goes_ir_colors=goes_ir_colors,
+        web_mercator_shape=web_mercator_shape,
         true_color_gamma=true_color_gamma,
-        timestamp=prepared["timestamp"],
-        latitude_deg=latitude_deg,
-        longitude_deg=longitude_deg,
     )
-    rgba = _rgb_to_rgba(rgb, valid_mask)
-    metadata = {
-        "recipe_key": prepared["recipe_key"],
-        "recipe_name": prepared["recipe"].display_name,
-        "timestamp_iso": prepared["timestamp_iso"],
-        "selected_files": {channel_id: str(path) for channel_id, path in prepared["selected_files"].items()},
-        "projection": "EPSG:3857",
-        "shape": list(web_mercator_shape),
-    }
     return rgba, metadata
+
+
+def iter_goes_rgb_batch(
+    prepared_batch: dict[str, Any],
+    *,
+    web_mercator_shape: tuple[int, int],
+    web_mercator_transform: Any,
+    true_color_gamma: float = 2.2,
+):
+    registry = build_goes_rgb_shared_registry(
+        prepared_batch,
+        web_mercator_shape=web_mercator_shape,
+        web_mercator_transform=web_mercator_transform,
+    )
+    if registry is None:
+        return
+
+    goes_ir_thresholds, goes_ir_colors = _load_goes_ir_colormap(Path(fs.GUI_COLORMAP_JSON))
+
+    for prepared in prepared_batch["recipes"]:
+        try:
+            rgba, metadata = _compose_prepared_goes_rgb_recipe(
+                prepared,
+                registry,
+                goes_ir_thresholds=goes_ir_thresholds,
+                goes_ir_colors=goes_ir_colors,
+                web_mercator_shape=web_mercator_shape,
+                true_color_gamma=true_color_gamma,
+            )
+        except Exception as exc:
+            io_manager.write_warning(f"Skipping {prepared['recipe'].display_name}: failed during RGB composition ({exc})")
+            continue
+
+        yield str(prepared["layer"]["name"]), rgba, metadata
+        del rgba
+
+
+def compose_goes_rgb_batch(
+    prepared_batch: dict[str, Any],
+    *,
+    web_mercator_shape: tuple[int, int],
+    web_mercator_transform: Any,
+    true_color_gamma: float = 2.2,
+) -> dict[str, tuple[np.ndarray, dict[str, Any]]]:
+    rendered: dict[str, tuple[np.ndarray, dict[str, Any]]] = {}
+
+    for layer_name, rgba, metadata in iter_goes_rgb_batch(
+        prepared_batch,
+        web_mercator_shape=web_mercator_shape,
+        web_mercator_transform=web_mercator_transform,
+        true_color_gamma=true_color_gamma,
+    ) or ():
+        rendered[layer_name] = (rgba, metadata)
+
+    return rendered
