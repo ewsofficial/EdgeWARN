@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import hashlib
 import json
 import os
 import tempfile
@@ -30,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 import psutil
 
 import EWMRS.pipeline as ewmrs_pipeline
@@ -173,6 +175,94 @@ def _channel_from_layer_config(layer_config: Any) -> str:
 
 def _avg(values: list[float]) -> float:
     return float(sum(values) / len(values)) if values else 0.0
+
+
+def _percentile(values: list[float], p: float) -> float:
+    if not values:
+        return 0.0
+    return float(np.percentile(np.asarray(values, dtype=np.float64), p))
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _layer_output_manifest(layers: list[dict[str, Any]]) -> dict[str, Any]:
+    manifest: dict[str, Any] = {}
+    for layer in layers:
+        layer_name = str(layer["name"])
+        out_dir = Path(layer["outdir"])
+        layer_manifest: dict[str, Any] = {
+            "tile_count": 0,
+            "tile_sha256": {},
+            "index_sha256": None,
+        }
+
+        index_file = out_dir / "index.json"
+        if index_file.exists():
+            try:
+                parsed = json.loads(index_file.read_text())
+                canonical = json.dumps(parsed, sort_keys=True, separators=(",", ":"))
+                layer_manifest["index_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+            except Exception:
+                layer_manifest["index_sha256"] = _sha256_file(index_file)
+
+        tile_hashes: dict[str, str] = {}
+        if out_dir.exists():
+            for timestamp_dir in sorted(path for path in out_dir.iterdir() if path.is_dir()):
+                for tile_file in sorted(timestamp_dir.glob("tile_*.png")):
+                    rel_path = f"{timestamp_dir.name}/{tile_file.name}"
+                    tile_hashes[rel_path] = _sha256_file(tile_file)
+
+        layer_manifest["tile_count"] = len(tile_hashes)
+        layer_manifest["tile_sha256"] = tile_hashes
+        manifest[layer_name] = layer_manifest
+
+    return manifest
+
+
+def _compare_manifests(reference: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    layer_names = sorted(set(reference) | set(candidate))
+    mismatched_layers = []
+    index_parity_ok = True
+    tile_count_parity_ok = True
+    checksum_parity_ok = True
+
+    for layer_name in layer_names:
+        ref_layer = reference.get(layer_name, {})
+        cand_layer = candidate.get(layer_name, {})
+
+        index_equal = ref_layer.get("index_sha256") == cand_layer.get("index_sha256")
+        tile_count_equal = ref_layer.get("tile_count") == cand_layer.get("tile_count")
+        checksum_equal = ref_layer.get("tile_sha256") == cand_layer.get("tile_sha256")
+
+        if not index_equal:
+            index_parity_ok = False
+        if not tile_count_equal:
+            tile_count_parity_ok = False
+        if not checksum_equal:
+            checksum_parity_ok = False
+
+        if not (index_equal and tile_count_equal and checksum_equal):
+            mismatched_layers.append(
+                {
+                    "layer": layer_name,
+                    "index_match": index_equal,
+                    "tile_count_match": tile_count_equal,
+                    "checksum_match": checksum_equal,
+                }
+            )
+
+    return {
+        "index_parity": index_parity_ok,
+        "tile_count_parity": tile_count_parity_ok,
+        "checksum_parity": checksum_parity_ok,
+        "layer_mismatches": mismatched_layers,
+    }
 
 
 @contextmanager
@@ -342,12 +432,20 @@ def run_detailed_single_process_benchmark(
 
     avg_mem = _avg(sampler.pipeline_samples_mb)
     peak_mem = max(sampler.pipeline_samples_mb) if sampler.pipeline_samples_mb else 0.0
+    layer_latencies = [
+        layer_info.get("layer", {}).get("duration_s", 0.0)
+        for layer_info in summary.values()
+        if layer_info.get("layer")
+    ]
 
     return {
         "mode": "detailed_single_process",
         "total_duration_s": total_s,
         "avg_memory_mb": avg_mem,
         "peak_memory_mb": peak_mem,
+        "latency_p50_s": _percentile(layer_latencies, 50),
+        "latency_p95_s": _percentile(layer_latencies, 95),
+        "layer_latencies_s": layer_latencies,
         "layer_count": len(layers),
         "layers": summary,
     }
@@ -379,15 +477,51 @@ def run_parallel_pipeline_benchmark(
     avg_mem = _avg(sampler.pipeline_samples_mb)
     peak_mem = max(sampler.pipeline_samples_mb) if sampler.pipeline_samples_mb else 0.0
     successful_layers = sum(1 for rendered in results.values() if rendered)
+    total_tiles_written = sum(len(rendered) for rendered in results.values() if rendered)
+    throughput_tiles_per_s = (total_tiles_written / total_s) if total_s > 0 else 0.0
 
     return {
         "mode": "parallel_pipeline",
         "total_duration_s": total_s,
         "avg_memory_mb": avg_mem,
         "peak_memory_mb": peak_mem,
+        "total_tiles_written": total_tiles_written,
+        "throughput_tiles_per_s": throughput_tiles_per_s,
         "layer_count": len(layers),
         "successful_layers": successful_layers,
         "failed_layers": len(layers) - successful_layers,
+    }
+
+
+def _aggregate_runs(run_reports: list[dict[str, Any]]) -> dict[str, Any]:
+    all_latencies: list[float] = []
+    throughputs: list[float] = []
+    peak_memories: list[float] = []
+
+    for run_report in run_reports:
+        detailed = run_report["detailed_single_process"]
+        parallel = run_report["parallel_pipeline"]
+        all_latencies.extend(detailed.get("layer_latencies_s", []))
+        throughputs.append(float(parallel.get("throughput_tiles_per_s", 0.0)))
+        peak_memories.append(float(parallel.get("peak_memory_mb", 0.0)))
+
+    return {
+        "latency_per_render_s": {
+            "p50": _percentile(all_latencies, 50),
+            "p95": _percentile(all_latencies, 95),
+            "samples": len(all_latencies),
+        },
+        "throughput_tiles_per_s": {
+            "p50": _percentile(throughputs, 50),
+            "p95": _percentile(throughputs, 95),
+            "samples": len(throughputs),
+        },
+        "peak_memory_mb": {
+            "p50": _percentile(peak_memories, 50),
+            "p95": _percentile(peak_memories, 95),
+            "max": max(peak_memories) if peak_memories else 0.0,
+            "samples": len(peak_memories),
+        },
     }
 
 
@@ -396,33 +530,40 @@ def _print_console_summary(report: dict[str, Any]) -> None:
     print("GOES RENDER PIPELINE BENCHMARK")
     print("=" * 90)
 
-    detailed = report["detailed_single_process"]
-    print("\nDetailed Per-Step Pass (single process)")
-    print(f"  Total Duration: {detailed['total_duration_s']:.2f}s")
-    print(f"  Avg Memory:     {detailed['avg_memory_mb']:.1f} MB")
-    print(f"  Peak Memory:    {detailed['peak_memory_mb']:.1f} MB")
-    print(f"  Layers:         {detailed['layer_count']}")
+    aggregate = report["aggregate_metrics"]
+    correctness = report["correctness_parity"]
+    print(f"\nRuns: {report['runs']}")
+    print("\nMandatory Metrics")
+    print(
+        f"  Latency per render (layer_total): "
+        f"p50={aggregate['latency_per_render_s']['p50']:.2f}s, "
+        f"p95={aggregate['latency_per_render_s']['p95']:.2f}s"
+    )
+    print(
+        f"  Throughput (tiles/sec): "
+        f"p50={aggregate['throughput_tiles_per_s']['p50']:.2f}, "
+        f"p95={aggregate['throughput_tiles_per_s']['p95']:.2f}"
+    )
+    print(
+        f"  Peak memory (MB): "
+        f"p50={aggregate['peak_memory_mb']['p50']:.1f}, "
+        f"p95={aggregate['peak_memory_mb']['p95']:.1f}, "
+        f"max={aggregate['peak_memory_mb']['max']:.1f}"
+    )
 
-    print("\nPer-layer totals")
-    print(f"{'Layer':<46} {'Time (s)':>10} {'Avg MB':>10} {'Peak MB':>10} {'Status':>10}")
-    print("-" * 90)
-    for layer_name, layer_info in sorted(detailed["layers"].items()):
-        layer_meta = layer_info.get("layer", {})
-        steps = layer_info.get("steps", [])
-        avg_mem = _avg([s["avg_memory_mb"] for s in steps])
-        peak_mem = max((s["peak_memory_mb"] for s in steps), default=0.0)
-        status = "ok" if layer_meta.get("success") else "skip/fail"
-        print(
-            f"{layer_name:<46} {layer_meta.get('duration_s', 0.0):>10.2f} "
-            f"{avg_mem:>10.1f} {peak_mem:>10.1f} {status:>10}"
-        )
+    print("\nCorrectness Parity")
+    print(f"  index.json parity:   {correctness['index_parity_all_runs']}")
+    print(f"  tile count parity:   {correctness['tile_count_parity_all_runs']}")
+    print(f"  tile checksum parity:{correctness['checksum_parity_all_runs']}")
 
-    parallel = report["parallel_pipeline"]
-    print("\nEnd-to-End GOES Pipeline (parallel executor)")
-    print(f"  Total Duration:   {parallel['total_duration_s']:.2f}s")
-    print(f"  Avg Memory:       {parallel['avg_memory_mb']:.1f} MB")
-    print(f"  Peak Memory:      {parallel['peak_memory_mb']:.1f} MB")
-    print(f"  Successful Layers:{parallel['successful_layers']}/{parallel['layer_count']}")
+    baseline = report["run_reports"][0]
+    detailed = baseline["detailed_single_process"]
+    parallel = baseline["parallel_pipeline"]
+    print("\nBaseline Run (run 1)")
+    print(f"  Detailed total duration: {detailed['total_duration_s']:.2f}s")
+    print(f"  Parallel total duration: {parallel['total_duration_s']:.2f}s")
+    print(f"  Parallel throughput:     {parallel['throughput_tiles_per_s']:.2f} tiles/sec")
+    print(f"  Parallel peak memory:    {parallel['peak_memory_mb']:.1f} MB")
 
 
 def main() -> None:
@@ -434,6 +575,12 @@ def main() -> None:
         help="Memory sampling interval in seconds (default: 0.1)",
     )
     parser.add_argument(
+        "--runs",
+        type=int,
+        default=5,
+        help="Number of repeated benchmark runs (default: 5)",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -441,19 +588,67 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    runs = max(1, int(args.runs))
+    run_reports: list[dict[str, Any]] = []
+    parity_checks: list[dict[str, Any]] = []
+    reference_manifest: dict[str, Any] | None = None
+
     with tempfile.TemporaryDirectory(prefix="goes_render_benchmark_") as tmp_dir:
         out_root = Path(tmp_dir)
-        detailed_layers = _build_temp_goes_layers(out_root / "detailed")
-        parallel_layers = _build_temp_goes_layers(out_root / "parallel")
+        for run_idx in range(1, runs + 1):
+            run_dir = out_root / f"run_{run_idx}"
+            detailed_layers = _build_temp_goes_layers(run_dir / "detailed")
+            parallel_layers = _build_temp_goes_layers(run_dir / "parallel")
 
-        detailed = run_detailed_single_process_benchmark(detailed_layers, args.sample_interval)
-        parallel = run_parallel_pipeline_benchmark(parallel_layers, args.sample_interval)
+            detailed = run_detailed_single_process_benchmark(detailed_layers, args.sample_interval)
+            parallel = run_parallel_pipeline_benchmark(parallel_layers, args.sample_interval)
+
+            manifest = _layer_output_manifest(parallel_layers)
+            if reference_manifest is None:
+                reference_manifest = manifest
+                parity = {
+                    "index_parity": True,
+                    "tile_count_parity": True,
+                    "checksum_parity": True,
+                    "layer_mismatches": [],
+                }
+            else:
+                parity = _compare_manifests(reference_manifest, manifest)
+
+            run_reports.append(
+                {
+                    "run": run_idx,
+                    "detailed_single_process": detailed,
+                    "parallel_pipeline": parallel,
+                    "correctness_parity": parity,
+                }
+            )
+            parity_checks.append(parity)
+
+    aggregate_metrics = _aggregate_runs(run_reports)
+    correctness_parity = {
+        "index_parity_all_runs": all(check.get("index_parity", False) for check in parity_checks),
+        "tile_count_parity_all_runs": all(check.get("tile_count_parity", False) for check in parity_checks),
+        "checksum_parity_all_runs": all(check.get("checksum_parity", False) for check in parity_checks),
+        "run_mismatches": [
+            {
+                "run": run_report["run"],
+                "layer_mismatches": run_report["correctness_parity"].get("layer_mismatches", []),
+            }
+            for run_report in run_reports
+            if run_report["correctness_parity"].get("layer_mismatches")
+        ],
+    }
 
     report = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "sample_interval_s": args.sample_interval,
-        "detailed_single_process": detailed,
-        "parallel_pipeline": parallel,
+        "runs": runs,
+        "run_reports": run_reports,
+        "aggregate_metrics": aggregate_metrics,
+        "correctness_parity": correctness_parity,
+        "detailed_single_process": run_reports[0]["detailed_single_process"],
+        "parallel_pipeline": run_reports[0]["parallel_pipeline"],
     }
 
     _print_console_summary(report)

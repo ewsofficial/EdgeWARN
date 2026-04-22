@@ -10,6 +10,7 @@ import rioxarray  # noqa: F401  Ensures xarray .rio accessor is registered.
 import xarray as xr
 from pyproj import CRS
 from rasterio.enums import Resampling
+from rasterio.warp import reproject
 
 from common.ingest.mrms.utils import extract_timestamp
 from util.io import IOManager
@@ -189,8 +190,8 @@ def _apply_layer_transform(
     return data.astype(np.float32)
 
 
-def load_goes_abi_render_dataset(path: Path, layer_config: dict) -> xr.Dataset | None:
-    """Load ABI fixed-grid data and normalize to the EWMRS renderer contract."""
+def _load_goes_abi_render_payload(path: Path, layer_config: dict) -> dict | None:
+    """Load GOES ABI source data and metadata into ndarray payload form."""
     try:
         with xr.open_dataset(path, decode_timedelta=True) as source_ds:
             if "x" not in source_ds.coords or "y" not in source_ds.coords:
@@ -255,30 +256,85 @@ def load_goes_abi_render_dataset(path: Path, layer_config: dict) -> xr.Dataset |
             y_res_abs = abs(y_resolution)
             left = float(x_coords[0] - x_res_abs / 2.0)
             top = float(y_coords[0] + y_res_abs / 2.0)
-            transform = rasterio.transform.from_origin(left, top, x_res_abs, y_res_abs)
+            source_transform = rasterio.transform.from_origin(left, top, x_res_abs, y_res_abs)
 
             data_values = np.asarray(data_var.values, dtype=np.float32)
 
-            normalized = xr.Dataset(
-                data_vars={"unknown": (("y", "x"), data_values)},
-                coords={
-                    "y": y_coords.astype(np.float64),
-                    "x": x_coords.astype(np.float64),
-                },
-                attrs={
-                    "source_type": "goes_abi",
-                    "source_variable": source_var_name,
-                },
-            )
-
-            normalized = normalized.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=False)
-            normalized = normalized.rio.write_crs(crs, inplace=False)
-            normalized = normalized.rio.write_transform(transform, inplace=False)
-            return normalized
+            return {
+                "data": data_values,
+                "x": x_coords.astype(np.float64),
+                "y": y_coords.astype(np.float64),
+                "transform": source_transform,
+                "crs": crs,
+                "source_type": "goes_abi",
+                "source_variable": source_var_name,
+            }
 
     except Exception as exc:
         io_manager.write_error(f"Failed to normalize GOES ABI dataset {path}: {exc}")
         return None
+
+
+def _target_coordinates(shape: tuple[int, int], transform) -> tuple[np.ndarray, np.ndarray]:
+    height, width = shape
+    x_coords = transform.c + transform.a * (np.arange(width, dtype=np.float64) + 0.5)
+    y_coords = transform.f + transform.e * (np.arange(height, dtype=np.float64) + 0.5)
+    return x_coords.astype(np.float64), y_coords.astype(np.float64)
+
+
+def _reproject_goes_payload_to_web_mercator(
+    payload: dict,
+    *,
+    shape: tuple[int, int],
+    transform,
+    resampling: Resampling,
+) -> dict[str, np.ndarray] | None:
+    try:
+        destination = np.empty(shape, dtype=np.float32)
+        destination.fill(np.nan)
+        reproject(
+            source=np.asarray(payload["data"], dtype=np.float32),
+            destination=destination,
+            src_transform=payload["transform"],
+            src_crs=payload["crs"],
+            dst_transform=transform,
+            dst_crs="EPSG:3857",
+            src_nodata=np.nan,
+            dst_nodata=np.nan,
+            resampling=resampling,
+        )
+        x_coords, y_coords = _target_coordinates(shape, transform)
+        return {
+            "data": destination,
+            "x": x_coords,
+            "y": y_coords,
+        }
+    except Exception as exc:
+        io_manager.write_error(f"Failed GOES reprojection to EPSG:3857: {exc}")
+        return None
+
+
+def load_goes_abi_render_dataset(path: Path, layer_config: dict) -> xr.Dataset | None:
+    """Load ABI fixed-grid data and normalize to the EWMRS renderer contract."""
+    payload = _load_goes_abi_render_payload(path, layer_config)
+    if payload is None:
+        return None
+
+    normalized = xr.Dataset(
+        data_vars={"unknown": (("y", "x"), payload["data"])},
+        coords={
+            "y": payload["y"],
+            "x": payload["x"],
+        },
+        attrs={
+            "source_type": str(payload.get("source_type", "goes_abi")),
+            "source_variable": str(payload.get("source_variable", "unknown")),
+        },
+    )
+    normalized = normalized.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=False)
+    normalized = normalized.rio.write_crs(payload["crs"], inplace=False)
+    normalized = normalized.rio.write_transform(payload["transform"], inplace=False)
+    return normalized
 
 
 def reproject_goes_abi_to_web_mercator(
@@ -289,6 +345,42 @@ def reproject_goes_abi_to_web_mercator(
     resampling: Resampling = Resampling.bilinear,
 ) -> xr.Dataset | None:
     """Reproject normalized GOES dataset to the EWMRS EPSG:3857 target grid."""
+    source_variable = "unknown"
+    try:
+        source_crs = ds.rio.crs
+        source_transform = ds.rio.transform(recalc=False)
+        if source_crs is not None:
+            source_variable = str(ds.attrs.get("source_variable", "unknown"))
+            payload = {
+                "data": np.asarray(ds["unknown"].values, dtype=np.float32),
+                "transform": source_transform,
+                "crs": CRS.from_user_input(source_crs),
+            }
+            projected = _reproject_goes_payload_to_web_mercator(
+                payload,
+                shape=shape,
+                transform=transform,
+                resampling=resampling,
+            )
+            if projected is not None:
+                projected_ds = xr.Dataset(
+                    data_vars={"unknown": (("y", "x"), projected["data"])},
+                    coords={
+                        "y": projected["y"],
+                        "x": projected["x"],
+                    },
+                    attrs={
+                        "source_type": "goes_abi",
+                        "source_variable": source_variable,
+                    },
+                )
+                projected_ds = projected_ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=False)
+                projected_ds = projected_ds.rio.write_crs("EPSG:3857", inplace=False)
+                projected_ds = projected_ds.rio.write_transform(transform, inplace=False)
+                return projected_ds
+    except Exception:
+        pass
+
     try:
         return ds.rio.reproject(
             "EPSG:3857",
@@ -310,27 +402,24 @@ def load_reproject_goes_abi_render_array(
     resampling: Resampling = Resampling.bilinear,
 ) -> dict[str, np.ndarray] | None:
     """Load and reproject a GOES ABI channel to a shared array/x/y payload."""
-    ds = load_goes_abi_render_dataset(path, layer_config)
-    if ds is None:
+    payload = _load_goes_abi_render_payload(path, layer_config)
+    if payload is None:
         return None
 
-    ds = reproject_goes_abi_to_web_mercator(
-        ds,
+    projected = _reproject_goes_payload_to_web_mercator(
+        payload,
         shape=shape,
         transform=transform,
         resampling=resampling,
     )
-    if ds is None:
+    if projected is None:
         return None
 
     try:
-        data = np.asarray(ds["unknown"].values, dtype=np.float32)
-        x_coords = np.asarray(ds["x"].values, dtype=np.float64)
-        y_coords = np.asarray(ds["y"].values, dtype=np.float64)
         return {
-            "data": data,
-            "x": x_coords,
-            "y": y_coords,
+            "data": np.asarray(projected["data"], dtype=np.float32),
+            "x": np.asarray(projected["x"], dtype=np.float64),
+            "y": np.asarray(projected["y"], dtype=np.float64),
         }
     except Exception as exc:
         io_manager.write_error(f"Failed to extract GOES reprojection arrays for {path}: {exc}")

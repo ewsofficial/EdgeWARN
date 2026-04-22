@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Tuple, List
 import json
+import os
 import numpy as np
 from PIL import Image
 from .tools import TransformUtils
@@ -17,6 +18,75 @@ io_manager = IOManager("[Transform]")
 # Colormap cache to avoid re-reading JSON on every render
 _COLORMAP_CACHE = {}
 _COLORMAP_CACHE_LOCK = threading.Lock()
+
+
+def _get_cached_cmap(colormap_key: str):
+    if colormap_key in _COLORMAP_CACHE:
+        return _COLORMAP_CACHE[colormap_key]
+
+    with _COLORMAP_CACHE_LOCK:
+        if colormap_key in _COLORMAP_CACHE:
+            return _COLORMAP_CACHE[colormap_key]
+
+        with open(fs.GUI_COLORMAP_JSON, 'r') as f:
+            cmaps_json = json.load(f)
+
+        for source in cmaps_json:
+            for cmap in source.get("colormaps", []):
+                if cmap.get("name") == colormap_key:
+                    thresholds = np.array([t["value"] for t in cmap["thresholds"]], dtype=np.float32)
+                    colors = np.array([t["rgb"] for t in cmap["thresholds"]], dtype=np.float32)
+                    colors_uint8 = colors.astype(np.uint8)
+                    interpolate = cmap.get("interpolate", True)
+                    result = (thresholds, colors, colors_uint8, interpolate)
+                    _COLORMAP_CACHE[colormap_key] = result
+                    return result
+
+        raise ValueError(f"Colormap '{colormap_key}' not found in {fs.GUI_COLORMAP_JSON}")
+
+
+def _scalar_data_to_rgba(
+    data: np.ndarray,
+    thresholds: np.ndarray,
+    colors: np.ndarray,
+    colors_uint8: np.ndarray,
+    interpolate: bool,
+) -> np.ndarray:
+    flat_data = np.asarray(data, dtype=np.float32).ravel()
+
+    rgba_flat = np.empty((flat_data.shape[0], 4), dtype=np.uint8)
+    rgba_flat[:, 3] = 0
+    valid_mask = np.isfinite(flat_data)
+    safe_data = np.where(valid_mask, flat_data, thresholds[0])
+
+    if interpolate:
+        safe_data = np.clip(safe_data, thresholds[0], thresholds[-1])
+        rgba_flat[:, 0] = np.interp(safe_data, thresholds, colors[:, 0]).astype(np.uint8)
+        rgba_flat[:, 1] = np.interp(safe_data, thresholds, colors[:, 1]).astype(np.uint8)
+        rgba_flat[:, 2] = np.interp(safe_data, thresholds, colors[:, 2]).astype(np.uint8)
+    else:
+        indices = np.digitize(safe_data, thresholds) - 1
+        indices = np.clip(indices, 0, len(colors_uint8) - 1)
+        rgba_flat[:, :3] = colors_uint8[indices]
+
+    rgba_flat[valid_mask & (flat_data >= thresholds[0]), 3] = 255
+    return rgba_flat.reshape((data.shape[0], data.shape[1], 4))
+
+
+def _resolve_tile_workers(tile_count: int) -> int:
+    if tile_count <= 1:
+        return 1
+
+    env_value = os.environ.get("EWMRS_TILE_THREADS")
+    if env_value:
+        try:
+            configured_cap = max(1, int(env_value))
+            return min(tile_count, configured_cap)
+        except ValueError:
+            pass
+
+    cpu_cap = max(1, os.cpu_count() or 1)
+    return min(tile_count, 8, cpu_cap)
 
 
 class GUIRGBAWriter:
@@ -75,7 +145,7 @@ class GUIRGBAWriter:
                 tile_path = tile_dir / tile_filename
                 tile_specs.append((rgba[top:bottom, left:right], tile_path))
 
-        max_workers = min(8, len(tile_specs)) or 1
+        max_workers = _resolve_tile_workers(len(tile_specs))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             list(executor.map(lambda spec: save_tile(spec[0], spec[1]), tile_specs))
 
@@ -141,32 +211,7 @@ class GUILayerRenderer:
             colors (np.ndarray): array of RGB colors corresponding to thresholds
             interpolate (bool): whether to interpolate between colors
         """
-        # Check cache first
-        if self.colormap_key in _COLORMAP_CACHE:
-            return _COLORMAP_CACHE[self.colormap_key]
-        
-        with _COLORMAP_CACHE_LOCK:
-            # Double-check after acquiring lock
-            if self.colormap_key in _COLORMAP_CACHE:
-                return _COLORMAP_CACHE[self.colormap_key]
-            
-            with open(fs.GUI_COLORMAP_JSON, 'r') as f:
-                cmaps_json = json.load(f)
-
-            # Iterate through all colormaps to find the matching key
-            for source in cmaps_json:
-                for cmap in source.get("colormaps", []):
-                    if cmap.get("name") == self.colormap_key:
-                        thresholds = np.array([t["value"] for t in cmap["thresholds"]], dtype=np.float32)
-                        colors = np.array([t["rgb"] for t in cmap["thresholds"]], dtype=np.float32)
-                        colors_uint8 = colors.astype(np.uint8)
-                        interpolate = cmap.get("interpolate", True)
-                        result = (thresholds, colors, colors_uint8, interpolate)
-                        _COLORMAP_CACHE[self.colormap_key] = result
-                        return result
-            
-            # If key not found, raise an error with the path we tried
-            raise ValueError(f"Colormap '{self.colormap_key}' not found in {fs.GUI_COLORMAP_JSON}")
+        return _get_cached_cmap(self.colormap_key)
 
     def convert_to_png(self, tile_output: bool = True) -> Tuple[List[Path], str]:
         """
@@ -179,8 +224,6 @@ class GUILayerRenderer:
         Returns:
             Tuple of (list of tile paths or [single png path], timestamp string).
         """
-        from .config import TILE_SIZE
-
         # Step 1: No Reprojection needed for 1km/pixel raw render
         # We will resize the output image based on physical domain size later
         data = self.ds['unknown'].values
@@ -188,38 +231,22 @@ class GUILayerRenderer:
         # Step 2: Get colormap
         thresholds, colors, colors_uint8, interpolate = self._get_cmap()
 
-        # Step 2.5: Apply colormap
-        # Use ravel() to avoid copy if possible, though digitize/interp might flatten anyway
-        flat_data = np.asarray(data, dtype=np.float32).ravel()
+        rgba = _scalar_data_to_rgba(data, thresholds, colors, colors_uint8, interpolate)
 
-        # Pre-allocate output array (N, 4) in uint8 to save memory
-        N = flat_data.shape[0]
-        rgba_flat = np.empty((N, 4), dtype=np.uint8)
-        rgba_flat[:, 3] = 0
-        valid_mask = np.isfinite(flat_data)
-        safe_data = np.where(valid_mask, flat_data, thresholds[0])
+        writer = GUIRGBAWriter(self.outdir, self.file_name, self.timestamp)
+        return writer.save_rgba(rgba, tile_output=tile_output)
 
-        if interpolate:
-            safe_data = np.clip(safe_data, thresholds[0], thresholds[-1])
-            rgba_flat[:, 0] = np.interp(safe_data, thresholds, colors[:, 0]).astype(np.uint8)
-            rgba_flat[:, 1] = np.interp(safe_data, thresholds, colors[:, 1]).astype(np.uint8)
-            rgba_flat[:, 2] = np.interp(safe_data, thresholds, colors[:, 2]).astype(np.uint8)
-        else:
-            # Discrete color mapping
-            indices = np.digitize(safe_data, thresholds) - 1
-            indices = np.clip(indices, 0, len(colors_uint8) - 1)
 
-            # Map directly into the output array
-            rgba_flat[:, :3] = colors_uint8[indices]
+class GUIArrayRenderer:
+    def __init__(self, values: np.ndarray, outdir: Path, colormap_key, file_name: str, timestamp):
+        self.values = np.asarray(values, dtype=np.float32)
+        self.outdir = outdir
+        self.colormap_key = colormap_key
+        self.file_name = file_name
+        self.timestamp = timestamp
 
-        # Alpha channel: transparent for values < first threshold OR NaN
-        # This ensures that empty space from reprojection is correctly transparent
-        rgba_flat[valid_mask & (flat_data >= thresholds[0]), 3] = 255
-
-        # Reshape to original grid
-        # Note: Grib data is often (lat, lon), where lat is row (y), lon is col (x)
-        # We want image to be (height, width) which corresponds to (lat, lon) shape
-        rgba = rgba_flat.reshape((data.shape[0], data.shape[1], 4))
-
+    def convert_to_png(self, tile_output: bool = True) -> Tuple[List[Path], str]:
+        thresholds, colors, colors_uint8, interpolate = _get_cached_cmap(self.colormap_key)
+        rgba = _scalar_data_to_rgba(self.values, thresholds, colors, colors_uint8, interpolate)
         writer = GUIRGBAWriter(self.outdir, self.file_name, self.timestamp)
         return writer.save_rgba(rgba, tile_output=tile_output)
