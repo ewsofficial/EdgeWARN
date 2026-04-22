@@ -97,11 +97,12 @@ def test_run_goes_render_pipeline_processes_configured_layers(monkeypatch):
         lambda: [{"name": "GOES_ABI_C02_Reflectance", "source_type": "goes_abi"}],
     )
 
-    def fake_run_render_pipeline(dt_arg, max_entries=10, layers=None, phase_name="EWMRS"):
+    def fake_run_render_pipeline(dt_arg, max_entries=10, layers=None, phase_name="EWMRS", cleanup_after=True):
         captured["dt"] = dt_arg
         captured["max_entries"] = max_entries
         captured["layers"] = list(layers or [])
         captured["phase_name"] = phase_name
+        captured["cleanup_after"] = cleanup_after
         return {"GOES_ABI_C02_Reflectance": ["tile_0_0.png"]}
 
     monkeypatch.setattr(ewmrs_pipeline, "run_render_pipeline", fake_run_render_pipeline)
@@ -112,6 +113,7 @@ def test_run_goes_render_pipeline_processes_configured_layers(monkeypatch):
     assert captured["dt"] == dt
     assert captured["max_entries"] == 4
     assert captured["phase_name"] == "GOES"
+    assert captured["cleanup_after"] is False
     assert captured["layers"] == [{"name": "GOES_ABI_C02_Reflectance", "source_type": "goes_abi"}]
 
 
@@ -129,20 +131,33 @@ def test_run_goes_render_pipeline_writes_all_rgb_products(monkeypatch, tmp_path)
     monkeypatch.setattr(ewmrs_pipeline, "get_goes_file_list", lambda: rgb_layers)
     monkeypatch.setattr(ewmrs_pipeline, "cleanup_old_gui_files", lambda max_age_minutes: cleanup_calls.append(max_age_minutes))
     monkeypatch.setattr(
-        "concurrent.futures.ProcessPoolExecutor",
-        lambda max_workers, initializer=None: created.setdefault("executor", _FakeExecutor(max_workers=max_workers, initializer=initializer)),
+        "EWMRS.render.goes_rgb.prepare_goes_rgb_batch",
+        lambda layers, max_offset_minutes=20.0, requested_timestamp=None: {
+            "timestamp_iso": timestamp_iso,
+            "recipes": [
+                {
+                    "layer": layer,
+                    "recipe_key": layer["recipe_key"],
+                    "recipe": type("Recipe", (), {"display_name": layer["recipe_key"], "required_channels": ("C02",)})(),
+                    "timestamp_iso": timestamp_iso,
+                    "timestamp": dt,
+                    "selected_files": {"C02": tmp_path / "c02.nc"},
+                }
+                for layer in layers
+            ],
+            "selected_files": {"C02": tmp_path / "c02.nc"},
+        },
     )
-    monkeypatch.setattr("concurrent.futures.as_completed", lambda futures: list(futures))
     monkeypatch.setattr(
-        "EWMRS.render.goes_rgb.prepare_goes_rgb_render",
-        lambda layer, max_offset_minutes=20.0: {"timestamp_iso": timestamp_iso, "recipe": type("Recipe", (), {"display_name": layer["recipe_key"]})(), "selected_files": {"C02": tmp_path / "c02.nc"}},
-    )
-    monkeypatch.setattr(
-        "EWMRS.render.goes_rgb.compose_goes_rgb",
-        lambda prepared, web_mercator_shape, web_mercator_transform, true_color_gamma=2.2: (
-            __import__("numpy").zeros((700, 700, 4), dtype=__import__("numpy").uint8),
-            {"selected_files": {"C02": str(tmp_path / "c02.nc")}},
-        ),
+        "EWMRS.render.goes_rgb.iter_goes_rgb_batch",
+        lambda prepared_batch, web_mercator_shape, web_mercator_transform, true_color_gamma=2.2: [
+            (
+                prepared["layer"]["name"],
+                __import__("numpy").zeros((700, 700, 4), dtype=__import__("numpy").uint8),
+                {"selected_files": {"C02": str(tmp_path / "c02.nc")}, "timestamp_iso": timestamp_iso},
+            )
+            for prepared in prepared_batch["recipes"]
+        ],
     )
 
     results = ewmrs_pipeline.run_goes_render_pipeline(dt)

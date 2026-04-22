@@ -148,3 +148,61 @@ def test_compute_sandwich_recipe_uses_ir_overlay_when_clouds_are_cold():
 
     assert mask[0, 0]
     assert not np.allclose(rgb[0, 0], np.array([0.8, 0.8, 0.8], dtype=np.float32))
+
+
+def test_non_true_color_recipe_does_not_require_solar_geometry_inputs():
+    rgb, mask = goes_rgb.compute_goes_rgb_product(
+        "simple_water_vapor",
+        {
+            "C08": np.full((2, 2), 230.0, dtype=np.float32),
+            "C10": np.full((2, 2), 245.0, dtype=np.float32),
+            "C13": np.full((2, 2), 250.0, dtype=np.float32),
+        },
+        goes_ir_thresholds=np.array([180.0, 330.0], dtype=np.float32),
+        goes_ir_colors=np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], dtype=np.float32),
+    )
+
+    assert rgb.shape == (2, 2, 3)
+    assert mask.shape == (2, 2)
+    assert np.all(mask)
+
+
+def test_prepare_goes_rgb_batch_uses_shared_timestamp_for_all_recipes(tmp_path):
+    files_by_channel = {
+        "C01": [(datetime(2026, 4, 21, 18, 2, tzinfo=UTC), tmp_path / "c01.nc")],
+        "C02": [(datetime(2026, 4, 21, 18, 3, tzinfo=UTC), tmp_path / "c02.nc")],
+        "C03": [(datetime(2026, 4, 21, 18, 4, tzinfo=UTC), tmp_path / "c03.nc")],
+        "C05": [(datetime(2026, 4, 21, 18, 5, tzinfo=UTC), tmp_path / "c05.nc")],
+        "C07": [(datetime(2026, 4, 21, 18, 1, tzinfo=UTC), tmp_path / "c07.nc")],
+        "C08": [(datetime(2026, 4, 21, 18, 6, tzinfo=UTC), tmp_path / "c08.nc")],
+        "C10": [(datetime(2026, 4, 21, 18, 7, tzinfo=UTC), tmp_path / "c10.nc")],
+        "C12": [(datetime(2026, 4, 21, 18, 8, tzinfo=UTC), tmp_path / "c12.nc")],
+        "C13": [(datetime(2026, 4, 21, 18, 9, tzinfo=UTC), tmp_path / "c13.nc")],
+        "C15": [(datetime(2026, 4, 21, 18, 10, tzinfo=UTC), tmp_path / "c15.nc")],
+    }
+
+    original_specs = goes_rgb.get_abi_radc_channel_specs
+    original_list_channel_files = goes_rgb._list_channel_files
+    try:
+        goes_rgb.get_abi_radc_channel_specs = lambda: [
+            type("Spec", (), {"channel_id": channel_id, "outdir": type("OutDir", (), {"name": channel_id})()})()
+            for channel_id in files_by_channel
+        ]
+        goes_rgb._list_channel_files = lambda channel_dir: files_by_channel[channel_dir.name]
+
+        prepared = goes_rgb.prepare_goes_rgb_batch(
+            [
+                {"recipe_key": "true_color", "filepath": tmp_path, "name": "GOES_RGB_TrueColor"},
+                {"recipe_key": "airmass", "filepath": tmp_path, "name": "GOES_RGB_Airmass"},
+            ]
+        )
+    finally:
+        goes_rgb.get_abi_radc_channel_specs = original_specs
+        goes_rgb._list_channel_files = original_list_channel_files
+
+    assert prepared is not None
+    assert prepared["timestamp_iso"] == "2026-04-21T18:01:00"
+    assert len(prepared["recipes"]) == 2
+    assert prepared["recipes"][0]["timestamp_iso"] == "2026-04-21T18:01:00"
+    assert prepared["recipes"][1]["timestamp_iso"] == "2026-04-21T18:01:00"
+    assert sorted(prepared["selected_files"]) == ["C01", "C02", "C03", "C07", "C08", "C10", "C12", "C13"]
