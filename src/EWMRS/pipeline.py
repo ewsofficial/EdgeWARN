@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -50,6 +51,9 @@ GOES_WEB_MERCATOR_TRANSFORM = rasterio.transform.from_bounds(
 )
 EXPECTED_TILE_COUNT = TILE_GRID_ROWS * TILE_GRID_COLS
 _RUNTIME_CONFIGURED = False
+_GOES_CLEANUP_MIN_INTERVAL_SECONDS = max(0.0, float(os.environ.get("EWMRS_GOES_CLEANUP_MIN_INTERVAL_SECONDS", "300")))
+_LAST_GOES_GUI_CLEANUP_S = 0.0
+_LAST_GOES_GUI_CLEANUP_FUNC_ID: int | None = None
 
 
 def _ensure_dt(dt_in) -> datetime:
@@ -405,9 +409,11 @@ def _load_goes_registry_entry(
 ) -> dict[str, object] | None:
     from EWMRS.render.goes_transform import extract_goes_timestamp_iso, load_reproject_goes_abi_render_array
 
+    load_start_s = time.perf_counter()
     registry_key = _goes_cycle_registry_key(file_path, channel_id)
     cached = cycle_registry.get(registry_key)
     if cached is not None:
+        io_manager.write_info(f"Reusing shared GOES registry entry for {channel_id} from {file_path}")
         return cached
 
     payload = load_reproject_goes_abi_render_array(
@@ -429,7 +435,30 @@ def _load_goes_registry_entry(
         "y": payload["y"],
     }
     cycle_registry[registry_key] = entry
+    io_manager.write_info(
+        f"Built shared GOES registry entry for {channel_id} in {time.perf_counter() - load_start_s:.3f}s"
+    )
     return entry
+
+
+def _maybe_cleanup_goes_gui_files(max_age_minutes: int = 120) -> None:
+    global _LAST_GOES_GUI_CLEANUP_S, _LAST_GOES_GUI_CLEANUP_FUNC_ID
+
+    now_s = time.perf_counter()
+    current_cleanup_func_id = id(cleanup_old_gui_files)
+    if (
+        _LAST_GOES_GUI_CLEANUP_FUNC_ID == current_cleanup_func_id
+        and _GOES_CLEANUP_MIN_INTERVAL_SECONDS > 0
+        and (now_s - _LAST_GOES_GUI_CLEANUP_S) < _GOES_CLEANUP_MIN_INTERVAL_SECONDS
+    ):
+        io_manager.write_debug(
+            f"Skipping GOES GUI cleanup: last run was {(now_s - _LAST_GOES_GUI_CLEANUP_S):.1f}s ago"
+        )
+        return
+
+    cleanup_old_gui_files(max_age_minutes=max_age_minutes)
+    _LAST_GOES_GUI_CLEANUP_S = now_s
+    _LAST_GOES_GUI_CLEANUP_FUNC_ID = current_cleanup_func_id
 
 
 def _run_goes_unified_cycle(
@@ -442,8 +471,11 @@ def _run_goes_unified_cycle(
 
     results: Dict[str, RenderOutput] = {}
     _ensure_runtime_configured()
+    cycle_start_s = time.perf_counter()
 
+    prepare_rgb_start_s = time.perf_counter()
     prepared_batch = prepare_goes_rgb_batch(rgb_layers)
+    prepare_rgb_batch_s = time.perf_counter() - prepare_rgb_start_s
     pending_recipes = []
     pending_selected_files: dict[str, Path] = {}
     rgb_layer_outdirs = {str(layer["name"]): Path(layer["outdir"]) for layer in rgb_layers}
@@ -513,40 +545,32 @@ def _run_goes_unified_cycle(
         )
 
     cycle_registry: dict[tuple[str, str, tuple[int, int], tuple[float, ...]], dict[str, object]] = {}
+    single_registry_preload_s = 0.0
+    rgb_registry_preload_s = 0.0
+    rgb_composition_s = 0.0
+
+    io_manager.write_info(
+        f"Starting unified GOES render cycle: {len(pending_single)} pending single-channel layer(s), "
+        f"{len(pending_recipes)} pending RGB recipe(s), rgb_batch_prepare={prepare_rgb_batch_s:.3f}s"
+    )
 
     for pending in pending_single:
+        name = str(pending["name"])
+        load_start_s = time.perf_counter()
         entry = _load_goes_registry_entry(
             cycle_registry,
             file_path=Path(pending["file_path"]),
             channel_id=str(pending["channel_id"]),
             layer_config=dict(pending["layer"]),
         )
-        if entry is None:
-            results[str(pending["name"])] = None
-
-    for channel_id, file_path in pending_selected_files.items():
-        entry = _load_goes_registry_entry(
-            cycle_registry,
-            file_path=file_path,
-            channel_id=str(channel_id),
-            layer_config=layer_config_for_channel(str(channel_id)),
-        )
-        if entry is None:
-            io_manager.write_warning(f"Skipping GOES RGB channel {channel_id}: failed to build shared registry entry")
-
-    for pending in pending_single:
-        name = str(pending["name"])
-        if name in results:
-            continue
-
-        registry_key = _goes_cycle_registry_key(Path(pending["file_path"]), str(pending["channel_id"]))
-        entry = cycle_registry.get(registry_key)
+        single_registry_preload_s += time.perf_counter() - load_start_s
         if entry is None:
             results[name] = None
             continue
 
         layer = dict(pending["layer"])
         out_dir = Path(layer["outdir"])
+        render_timing_context = {"render_start_s": time.perf_counter(), "cycle_start_s": cycle_start_s}
         renderer = GUIArrayRenderer(
             np.asarray(entry["data"], dtype=np.float32),
             out_dir,
@@ -554,8 +578,29 @@ def _run_goes_unified_cycle(
             name,
             str(pending["timestamp_iso"]),
         )
-        png_path, _px_timestamp = renderer.convert_to_png(tile_output=True)
+        png_path, _px_timestamp = renderer.convert_to_png(tile_output=True, timing_context=render_timing_context)
         results[name] = png_path
+
+    io_manager.write_info(
+        f"GOES unified cycle single-channel precompute completed in {single_registry_preload_s:.3f}s"
+    )
+
+    for channel_id, file_path in pending_selected_files.items():
+        load_start_s = time.perf_counter()
+        entry = _load_goes_registry_entry(
+            cycle_registry,
+            file_path=file_path,
+            channel_id=str(channel_id),
+            layer_config=layer_config_for_channel(str(channel_id)),
+        )
+        rgb_registry_preload_s += time.perf_counter() - load_start_s
+        if entry is None:
+            io_manager.write_warning(f"Skipping GOES RGB channel {channel_id}: failed to build shared registry entry")
+
+    if pending_selected_files:
+        io_manager.write_info(
+            f"GOES unified cycle RGB shared-channel preload completed in {rgb_registry_preload_s:.3f}s"
+        )
 
     rendered_rgb_layers: set[str] = set()
     if pending_recipes and prepared_batch is not None:
@@ -579,6 +624,7 @@ def _run_goes_unified_cycle(
                 "recipes": pending_recipes,
                 "selected_files": pending_selected_files,
             }
+            rgb_comp_start_s = time.perf_counter()
             for layer_name, rgba, metadata in iter_goes_rgb_batch(
                 pending_batch,
                 web_mercator_shape=GOES_WEB_MERCATOR_SHAPE,
@@ -591,10 +637,16 @@ def _run_goes_unified_cycle(
                     f"Composited {layer_name} GOES RGB product with channels {', '.join(sorted(metadata['selected_files']))}"
                 )
                 renderer = GUIRGBAWriter(out_dir, layer_name, timestamp_iso)
-                png_path, _px_timestamp = renderer.save_rgba(rgba, tile_output=True)
+                png_path, _px_timestamp = renderer.save_rgba(
+                    rgba,
+                    tile_output=True,
+                    timing_context={"render_start_s": time.perf_counter(), "cycle_start_s": cycle_start_s},
+                )
                 results[layer_name] = png_path
                 rendered_rgb_layers.add(layer_name)
                 del rgba
+            rgb_composition_s = time.perf_counter() - rgb_comp_start_s
+            io_manager.write_info(f"GOES unified cycle RGB composition completed in {rgb_composition_s:.3f}s")
 
     for layer in rgb_layers:
         name = str(layer["name"])
@@ -603,6 +655,11 @@ def _run_goes_unified_cycle(
         if name not in rendered_rgb_layers:
             results.setdefault(name, None)
 
+    io_manager.write_info(
+        f"Unified GOES render cycle completed in {time.perf_counter() - cycle_start_s:.3f}s "
+        f"(single_precompute={single_registry_preload_s:.3f}s, rgb_preload={rgb_registry_preload_s:.3f}s, "
+        f"rgb_comp={rgb_composition_s:.3f}s)"
+    )
     return results
 
 
@@ -616,6 +673,8 @@ def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutpu
         io_manager.write_info("GOES render phase is a no-op: no GOES layers configured")
         return {}
 
+    pipeline_start_s = time.perf_counter()
+
     single_channel_layers = [layer for layer in layers if str(layer.get("source_type", "")).lower() != "goes_abi_rgb"]
     rgb_layers = [layer for layer in layers if str(layer.get("source_type", "")).lower() == "goes_abi_rgb"]
 
@@ -623,7 +682,8 @@ def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutpu
 
     if single_channel_layers and rgb_layers:
         results.update(_run_goes_unified_cycle(single_channel_layers, rgb_layers))
-        cleanup_old_gui_files(max_age_minutes=120)
+        _maybe_cleanup_goes_gui_files(max_age_minutes=120)
+        io_manager.write_info(f"GOES render pipeline completed in {time.perf_counter() - pipeline_start_s:.3f}s")
         return results
 
     if single_channel_layers:
@@ -694,7 +754,9 @@ def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutpu
             for layer in rgb_layers:
                 results.setdefault(str(layer["name"]), None)
 
-    cleanup_old_gui_files(max_age_minutes=120)
+    _maybe_cleanup_goes_gui_files(max_age_minutes=120)
+
+    io_manager.write_info(f"GOES render pipeline completed in {time.perf_counter() - pipeline_start_s:.3f}s")
 
     return results
 
@@ -712,7 +774,7 @@ def ewmrs_tandem_worker(
     ewmrs_goes_ready_event,
     dt,
     max_entries: int = 10,
-):
+): 
     """Process target for staged EWMRS rendering within the tandem runner."""
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
@@ -734,16 +796,22 @@ def ewmrs_tandem_worker(
             log("INFO: Starting EWMRS MRMS render phase")
             results = run_mrms_render_pipeline(dt, max_entries=max_entries)
             log(f"INFO: EWMRS MRMS render completed: {_summarize_results(results)}")
+        log("INFO: EWMRS GOES render is decoupled from the tandem worker")
+    except Exception as exc:
+        log(f"ERROR: EWMRS tandem worker failed - {exc}")
 
-        log(f"INFO: EWMRS worker waiting for GOES render inputs for {dt}")
-        ewmrs_goes_ready_event.wait()
 
-        if not shared_state.get("ewmrs_goes_inputs_ready", False):
-            log("INFO: EWMRS GOES inputs were not staged successfully; skipping GOES render")
-            return
+def ewmrs_goes_worker(log_queue, dt, max_entries: int = 10):
+    """Process target for decoupled GOES rendering outside tandem completion."""
+    sys.stdout = QueueWriter(log_queue)
+    sys.stderr = QueueWriter(log_queue)
 
-        log("INFO: Starting EWMRS GOES render phase")
+    def log(msg: str):
+        log_queue.put(str(msg))
+
+    try:
+        log(f"INFO: Starting EWMRS GOES render phase for {dt}")
         results = run_goes_render_pipeline(dt, max_entries=max_entries)
         log(f"INFO: EWMRS GOES render completed: {_summarize_results(results)}")
     except Exception as exc:
-        log(f"ERROR: EWMRS tandem worker failed - {exc}")
+        log(f"ERROR: EWMRS GOES worker failed - {exc}")

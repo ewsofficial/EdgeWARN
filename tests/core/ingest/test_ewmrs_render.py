@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 
 import EWMRS.render.render as render_module
 import EWMRS.render.render as render
+from EWMRS.render.config import TILE_SIZE
 import util.file as fs
 
 
@@ -303,13 +304,14 @@ class TestConvertToPng:
         assert ts[-2:] == "00"
 
     def test_tile_output_true_writes_timestamp_directory(self, tmp_path):
-        data = np.linspace(0.0, 100.0, 500 * 500, dtype=np.float32).reshape(500, 500)
+        side = TILE_SIZE * 2
+        data = np.linspace(0.0, 100.0, side * side, dtype=np.float32).reshape(side, side)
         r = self._make_renderer(data, tmp_path / "out")
         paths, ts = r.convert_to_png(tile_output=True)
         assert len(paths) == 4
         assert (tmp_path / "out" / ts / "tile_0_0.png").exists()
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
-        assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": 250}
+        assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
         assert idx["timestamps"] == [ts]
 
     def test_unknown_data_key_raises(self, tmp_path, monkeypatch):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timezone
 from pathlib import Path
+import time
 from typing import Optional
 
 import numpy as np
@@ -192,6 +193,8 @@ def _apply_layer_transform(
 
 def _load_goes_abi_render_payload(path: Path, layer_config: dict) -> dict | None:
     """Load GOES ABI source data and metadata into ndarray payload form."""
+    channel_id = str(layer_config.get("channel_id", "unknown"))
+    stage_start_s = time.perf_counter()
     try:
         with xr.open_dataset(path, decode_timedelta=True) as source_ds:
             if "x" not in source_ds.coords or "y" not in source_ds.coords:
@@ -202,6 +205,8 @@ def _load_goes_abi_render_payload(path: Path, layer_config: dict) -> dict | None
             if data_var is None or source_var_name is None:
                 io_manager.write_error(f"No GOES render variable found in file: {path}")
                 return None
+
+            open_select_s = time.perf_counter() - stage_start_s
 
             data_var = data_var.squeeze(drop=True)
             if "x" not in data_var.dims or "y" not in data_var.dims:
@@ -221,8 +226,11 @@ def _load_goes_abi_render_payload(path: Path, layer_config: dict) -> dict | None
                 io_manager.write_error(f"Could not determine GOES geostationary CRS metadata for {path}")
                 return None
 
+            transform_start_s = time.perf_counter()
             data_var = _apply_layer_transform(source_ds, data_var, source_var_name, layer_config)
+            value_transform_s = time.perf_counter() - transform_start_s
 
+            output_start_s = time.perf_counter()
             x_coords = np.asarray(source_ds["x"].values, dtype=np.float64)
             y_coords = np.asarray(source_ds["y"].values, dtype=np.float64)
             if x_coords.ndim != 1 or y_coords.ndim != 1 or x_coords.size < 2 or y_coords.size < 2:
@@ -259,6 +267,14 @@ def _load_goes_abi_render_payload(path: Path, layer_config: dict) -> dict | None
             source_transform = rasterio.transform.from_origin(left, top, x_res_abs, y_res_abs)
 
             data_values = np.asarray(data_var.values, dtype=np.float32)
+            output_extraction_s = time.perf_counter() - output_start_s
+            total_s = time.perf_counter() - stage_start_s
+
+            io_manager.write_info(
+                f"GOES ABI payload normalized for {channel_id} in {total_s:.3f}s "
+                f"(open/select={open_select_s:.3f}s, value_transform={value_transform_s:.3f}s, "
+                f"output_extract={output_extraction_s:.3f}s)"
+            )
 
             return {
                 "data": data_values,
@@ -289,6 +305,7 @@ def _reproject_goes_payload_to_web_mercator(
     transform,
     resampling: Resampling,
 ) -> dict[str, np.ndarray] | None:
+    reproject_start_s = time.perf_counter()
     try:
         destination = np.empty(shape, dtype=np.float32)
         destination.fill(np.nan)
@@ -303,7 +320,14 @@ def _reproject_goes_payload_to_web_mercator(
             dst_nodata=np.nan,
             resampling=resampling,
         )
+        reprojection_s = time.perf_counter() - reproject_start_s
+        output_start_s = time.perf_counter()
         x_coords, y_coords = _target_coordinates(shape, transform)
+        output_extraction_s = time.perf_counter() - output_start_s
+        io_manager.write_info(
+            f"GOES ABI reprojection completed in {reprojection_s:.3f}s "
+            f"(output_extract={output_extraction_s:.3f}s)"
+        )
         return {
             "data": destination,
             "x": x_coords,
@@ -402,6 +426,8 @@ def load_reproject_goes_abi_render_array(
     resampling: Resampling = Resampling.bilinear,
 ) -> dict[str, np.ndarray] | None:
     """Load and reproject a GOES ABI channel to a shared array/x/y payload."""
+    channel_id = str(layer_config.get("channel_id", "unknown"))
+    total_start_s = time.perf_counter()
     payload = _load_goes_abi_render_payload(path, layer_config)
     if payload is None:
         return None
@@ -416,11 +442,19 @@ def load_reproject_goes_abi_render_array(
         return None
 
     try:
-        return {
+        extract_start_s = time.perf_counter()
+        extracted = {
             "data": np.asarray(projected["data"], dtype=np.float32),
             "x": np.asarray(projected["x"], dtype=np.float64),
             "y": np.asarray(projected["y"], dtype=np.float64),
         }
+        output_extract_s = time.perf_counter() - extract_start_s
+        total_s = time.perf_counter() - total_start_s
+        io_manager.write_info(
+            f"GOES ABI channel {channel_id} ready for rendering in {total_s:.3f}s "
+            f"(final_extract={output_extract_s:.3f}s)"
+        )
+        return extracted
     except Exception as exc:
         io_manager.write_error(f"Failed to extract GOES reprojection arrays for {path}: {exc}")
         return None
