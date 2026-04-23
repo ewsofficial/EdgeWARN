@@ -16,7 +16,7 @@ describe('API server', () => {
 
     expect(response.body).toEqual({
       message: 'EdgeWARN Backend API',
-      version: '2.2.1'
+      version: '2.3.0'
     });
   });
 
