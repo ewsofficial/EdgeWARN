@@ -28,22 +28,22 @@ class GoesIngestSpec:
 ABI_RADC_PRODUCT = "ABI-L1b-RadC"
 
 _ABI_CHANNEL_DEFINITIONS = [
-    ("C01", "visible_blue", fs.GOES_ABI_VISIBLE_BLUE_DIR),
-    ("C02", "visible_red", fs.GOES_ABI_VISIBLE_RED_DIR),
-    ("C03", "veggie", fs.GOES_ABI_VEGGIE_DIR),
-    ("C04", "cirrus", fs.GOES_ABI_CIRRUS_DIR),
-    ("C05", "snow_ice", fs.GOES_ABI_SNOW_ICE_DIR),
-    ("C06", "particle_size", fs.GOES_ABI_PARTICLE_SIZE_DIR),
-    ("C07", "shortwave_ir", fs.GOES_ABI_SHORTWAVE_IR_DIR),
-    ("C08", "upper_level_wv", fs.GOES_ABI_UPPER_LEVEL_WV_DIR),
-    ("C09", "mid_level_wv", fs.GOES_ABI_MID_LEVEL_WV_DIR),
-    ("C10", "lower_level_wv", fs.GOES_ABI_LOWER_LEVEL_WV_DIR),
-    ("C11", "cld_top_phase", fs.GOES_ABI_CLD_TOP_PHASE_DIR),
-    ("C12", "ozone", fs.GOES_ABI_OZONE_DIR),
-    ("C13", "clean_lwir", fs.GOES_ABI_CLEAN_LWIR_DIR),
-    ("C14", "longwave_ir", fs.GOES_ABI_LONGWAVE_IR_DIR),
-    ("C15", "dirty_lwir", fs.GOES_ABI_DIRTY_LWIR_DIR),
-    ("C16", "co2_lwir", fs.GOES_ABI_CO2_LWIR_DIR),
+    ("C01", "visible_blue", "GOES_ABI_VISIBLE_BLUE_DIR"),
+    ("C02", "visible_red", "GOES_ABI_VISIBLE_RED_DIR"),
+    ("C03", "veggie", "GOES_ABI_VEGGIE_DIR"),
+    ("C04", "cirrus", "GOES_ABI_CIRRUS_DIR"),
+    ("C05", "snow_ice", "GOES_ABI_SNOW_ICE_DIR"),
+    ("C06", "particle_size", "GOES_ABI_PARTICLE_SIZE_DIR"),
+    ("C07", "shortwave_ir", "GOES_ABI_SHORTWAVE_IR_DIR"),
+    ("C08", "upper_level_wv", "GOES_ABI_UPPER_LEVEL_WV_DIR"),
+    ("C09", "mid_level_wv", "GOES_ABI_MID_LEVEL_WV_DIR"),
+    ("C10", "lower_level_wv", "GOES_ABI_LOWER_LEVEL_WV_DIR"),
+    ("C11", "cld_top_phase", "GOES_ABI_CLD_TOP_PHASE_DIR"),
+    ("C12", "ozone", "GOES_ABI_OZONE_DIR"),
+    ("C13", "clean_lwir", "GOES_ABI_CLEAN_LWIR_DIR"),
+    ("C14", "longwave_ir", "GOES_ABI_LONGWAVE_IR_DIR"),
+    ("C15", "dirty_lwir", "GOES_ABI_DIRTY_LWIR_DIR"),
+    ("C16", "co2_lwir", "GOES_ABI_CO2_LWIR_DIR"),
 ]
 
 DEFAULT_ABI_RADC_CHANNEL_IDS = tuple(channel_id for channel_id, _, _ in _ABI_CHANNEL_DEFINITIONS)
@@ -106,9 +106,11 @@ def get_abi_radc_channel_specs(channel_ids=DEFAULT_ABI_RADC_CHANNEL_IDS):
     selected_channel_ids = set(channel_ids) if channel_ids is not None else None
     specs = []
 
-    for channel_id, channel_name, outdir in _ABI_CHANNEL_DEFINITIONS:
+    for channel_id, channel_name, outdir_attr in _ABI_CHANNEL_DEFINITIONS:
         if selected_channel_ids is not None and channel_id not in selected_channel_ids:
             continue
+
+        outdir = getattr(fs, outdir_attr)
 
         specs.append(
             GoesIngestSpec(
