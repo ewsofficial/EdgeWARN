@@ -200,4 +200,5 @@ Special behavior:
 See also:
 
 - `docs/api/api_endpoints.md` (EdgeWARN API v2)
-- `docs/api/ewmrs_api_endpoints.md` (EWMRS API)
+- `docs/api/ewmrs_api_endpoints.md` (EWMRS API routes and product mapping)
+- `docs/core/goes_pipeline.md` (GOES ingest, readiness, rendering, and GUI output flow)

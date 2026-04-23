@@ -218,22 +218,22 @@ The EWMRS service under `src/EWMRS/api` exposes tiled GUI products through:
 
 - `GET /renders/get-items`
 - `GET /renders/fetch?product={product}`
+- `GET /renders/download?product={product}&timestamp={YYYYMMDD-HHMMSS}`
 - `GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}&x={int}&y={int}`
 - `GET /renders/tile-info?product={product}`
 
-GOES RGB products now exposed through those routes are:
+GOES products exposed through those routes include:
 
-- `GOES_RGB_TrueColor`
-- `GOES_RGB_Airmass`
-- `GOES_RGB_NighttimeMicrophysics`
-- `GOES_RGB_DayCloudPhase`
-- `GOES_RGB_SimpleWaterVapor`
-- `GOES_RGB_Sandwich`
+- scalar ABI folders `GOES_ABI_C01` through `GOES_ABI_C16`
+- RGB folders `GOES_RGB_TrueColor`, `GOES_RGB_Airmass`, `GOES_RGB_NighttimeMicrophysics`, `GOES_RGB_DayCloudPhase`, `GOES_RGB_SimpleWaterVapor`, and `GOES_RGB_Sandwich`
 
 Behavior notes:
 
-- RGB products are generated from staged `ABI-L1b-RadC` channels on the GOES CONUS `EPSG:3857` tile grid.
-- Missing or time-misaligned channels skip only the affected RGB product; other GOES products continue rendering.
+- ABI single-channel products and RGB composites are generated from staged `ABI-L1b-RadC` channels on the GOES CONUS `EPSG:3857` tile grid.
+- Missing or time-misaligned channels skip only the affected layer or RGB product; other GOES products continue rendering.
+- Current GOES renders are tile-first; `/renders/download` only resolves the legacy flat PNG naming contract when such files exist.
+
+See `docs/api/ewmrs_api_endpoints.md` for the full EWMRS route contracts and `docs/core/goes_pipeline.md` for the ingest-to-render flow.
 
 ### GET /health
 
