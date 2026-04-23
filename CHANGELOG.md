@@ -10,5 +10,6 @@
 
 ### Fixed
 - Added NWS fire zones that were missing from the zone catalog
+- Tightened CTAM mesocyclone vertical association with footprint-overlap checks and filtered elongated azshear artifacts from detections and output records
 
 ### Testing
