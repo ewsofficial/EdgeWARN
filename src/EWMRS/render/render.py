@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Tuple, List
 import json
 import os
+import time
 import numpy as np
 from PIL import Image
 from .tools import TransformUtils
@@ -95,18 +96,30 @@ class GUIRGBAWriter:
         self.file_name = file_name
         self.timestamp = timestamp
 
-    def save_rgba(self, rgba: np.ndarray, tile_output: bool = True) -> Tuple[List[Path], str]:
+    def save_rgba(
+        self,
+        rgba: np.ndarray,
+        tile_output: bool = True,
+        *,
+        timing_context: dict | None = None,
+    ) -> Tuple[List[Path], str]:
         from .config import TILE_SIZE
 
+        render_start_s = time.perf_counter()
         dt = self._coerce_timestamp(self.timestamp)
         timestamp = dt.strftime(r"%Y%m%d-%H%M00")
         self.outdir.mkdir(parents=True, exist_ok=True)
 
         if tile_output:
-            tile_paths = self._save_tiles_from_array(rgba, timestamp)
+            tile_paths = self._save_tiles_from_array(rgba, timestamp, timing_context=timing_context)
             rows = rgba.shape[0] // TILE_SIZE
             cols = rgba.shape[1] // TILE_SIZE
             self._update_index(timestamp, tile_grid={"rows": rows, "cols": cols, "tile_size": TILE_SIZE})
+            total_render_s = time.perf_counter() - render_start_s
+            io_manager.write_info(
+                f"Render output for {self.file_name} completed in {total_render_s:.3f}s "
+                f"({len(tile_paths)} tiles, timestamp={timestamp})"
+            )
             io_manager.write_debug(f"Saved {len(tile_paths)} tiles from RGBA image for {self.file_name} at {timestamp}")
             return tile_paths, timestamp
 
@@ -124,9 +137,16 @@ class GUIRGBAWriter:
             cleaned_ts = TransformUtils.find_timestamp(timestamp)
             return datetime.fromisoformat(cleaned_ts)
 
-    def _save_tiles_from_array(self, rgba: np.ndarray, timestamp: str) -> List[Path]:
+    def _save_tiles_from_array(
+        self,
+        rgba: np.ndarray,
+        timestamp: str,
+        *,
+        timing_context: dict | None = None,
+    ) -> List[Path]:
         from .config import TILE_SIZE
 
+        tile_schedule_start_s = time.perf_counter()
         height, width = rgba.shape[:2]
         grid_cols = width // TILE_SIZE
         grid_rows = height // TILE_SIZE
@@ -145,9 +165,55 @@ class GUIRGBAWriter:
                 tile_path = tile_dir / tile_filename
                 tile_specs.append((rgba[top:bottom, left:right], tile_path))
 
+        tile_schedule_s = time.perf_counter() - tile_schedule_start_s
+        io_manager.write_info(
+            f"Prepared tile schedule for {self.file_name} in {tile_schedule_s:.3f}s "
+            f"({len(tile_specs)} tiles)"
+        )
+
         max_workers = _resolve_tile_workers(len(tile_specs))
+        tile_write_start_s = time.perf_counter()
+        first_tile_lock = threading.Lock()
+        first_tile_logged = False
+
+        def _write_tile(spec):
+            nonlocal first_tile_logged
+            tile_data, tile_path = spec
+            save_tile(tile_data, tile_path)
+            completed_s = time.perf_counter()
+            with first_tile_lock:
+                if not first_tile_logged:
+                    first_tile_logged = True
+                    first_tile_latency_s = completed_s - tile_write_start_s
+                    if timing_context is not None:
+                        timing_context["tile_schedule_s"] = tile_schedule_s
+                        timing_context["first_tile_latency_s"] = first_tile_latency_s
+                        render_start_s = timing_context.get("render_start_s")
+                        if render_start_s is not None:
+                            timing_context["render_start_to_first_tile_s"] = completed_s - float(render_start_s)
+                    render_start_s = None if timing_context is None else timing_context.get("render_start_s")
+                    if render_start_s is not None:
+                        render_to_first_tile_s = completed_s - float(render_start_s)
+                        io_manager.write_info(
+                            f"First tile written for {self.file_name}: {tile_path} "
+                            f"({first_tile_latency_s:.3f}s tile-write latency, "
+                            f"{render_to_first_tile_s:.3f}s from render start)"
+                        )
+                    else:
+                        io_manager.write_info(
+                            f"First tile written for {self.file_name}: {tile_path} "
+                            f"({first_tile_latency_s:.3f}s tile-write latency)"
+                        )
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            list(executor.map(lambda spec: save_tile(spec[0], spec[1]), tile_specs))
+            list(executor.map(_write_tile, tile_specs))
+
+        tile_write_s = time.perf_counter() - tile_write_start_s
+        if timing_context is not None:
+            timing_context["tile_write_s"] = tile_write_s
+        io_manager.write_info(
+            f"Tile writes for {self.file_name} completed in {tile_write_s:.3f}s using {max_workers} worker(s)"
+        )
 
         return [tile_path for _, tile_path in tile_specs]
 
@@ -213,7 +279,11 @@ class GUILayerRenderer:
         """
         return _get_cached_cmap(self.colormap_key)
 
-    def convert_to_png(self, tile_output: bool = True) -> Tuple[List[Path], str]:
+    def _update_index(self, new_timestamp, tile_grid=None):
+        writer = GUIRGBAWriter(self.outdir, self.file_name, self.timestamp)
+        writer._update_index(new_timestamp, tile_grid=tile_grid)
+
+    def convert_to_png(self, tile_output: bool = True, *, timing_context: dict | None = None) -> Tuple[List[Path], str]:
         """
         Converts dataset to tiled PNG files or a single PNG file.
         
@@ -231,10 +301,15 @@ class GUILayerRenderer:
         # Step 2: Get colormap
         thresholds, colors, colors_uint8, interpolate = self._get_cmap()
 
+        rgba_start_s = time.perf_counter()
         rgba = _scalar_data_to_rgba(data, thresholds, colors, colors_uint8, interpolate)
+        scalar_to_rgba_s = time.perf_counter() - rgba_start_s
+        if timing_context is not None:
+            timing_context["scalar_to_rgba_s"] = scalar_to_rgba_s
+        io_manager.write_info(f"Scalar-to-RGBA for {self.file_name} completed in {scalar_to_rgba_s:.3f}s")
 
         writer = GUIRGBAWriter(self.outdir, self.file_name, self.timestamp)
-        return writer.save_rgba(rgba, tile_output=tile_output)
+        return writer.save_rgba(rgba, tile_output=tile_output, timing_context=timing_context)
 
 
 class GUIArrayRenderer:
@@ -245,8 +320,13 @@ class GUIArrayRenderer:
         self.file_name = file_name
         self.timestamp = timestamp
 
-    def convert_to_png(self, tile_output: bool = True) -> Tuple[List[Path], str]:
+    def convert_to_png(self, tile_output: bool = True, *, timing_context: dict | None = None) -> Tuple[List[Path], str]:
         thresholds, colors, colors_uint8, interpolate = _get_cached_cmap(self.colormap_key)
+        rgba_start_s = time.perf_counter()
         rgba = _scalar_data_to_rgba(self.values, thresholds, colors, colors_uint8, interpolate)
+        scalar_to_rgba_s = time.perf_counter() - rgba_start_s
+        if timing_context is not None:
+            timing_context["scalar_to_rgba_s"] = scalar_to_rgba_s
+        io_manager.write_info(f"Scalar-to-RGBA for {self.file_name} completed in {scalar_to_rgba_s:.3f}s")
         writer = GUIRGBAWriter(self.outdir, self.file_name, self.timestamp)
-        return writer.save_rgba(rgba, tile_output=tile_output)
+        return writer.save_rgba(rgba, tile_output=tile_output, timing_context=timing_context)

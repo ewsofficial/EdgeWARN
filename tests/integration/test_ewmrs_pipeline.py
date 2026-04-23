@@ -251,11 +251,11 @@ def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monke
     )
 
     assert mrms_ready_event.wait_calls == 1
-    assert goes_ready_event.wait_calls == 1
+    assert goes_ready_event.wait_calls == 0
     assert len(mrms_calls) == 1
     assert goes_calls == []
     assert any("Starting EWMRS MRMS render phase" in message for message in queue.messages)
-    assert any("skipping GOES render" in message for message in queue.messages)
+    assert any("GOES render is decoupled" in message for message in queue.messages)
 
 
 def test_ewmrs_tandem_worker_skips_mrms_when_inputs_not_ready(monkeypatch):
@@ -280,12 +280,12 @@ def test_ewmrs_tandem_worker_skips_mrms_when_inputs_not_ready(monkeypatch):
     )
 
     assert mrms_ready_event.wait_calls == 1
-    assert goes_ready_event.wait_calls == 1
+    assert goes_ready_event.wait_calls == 0
     assert mrms_calls == []
     assert any("skipping MRMS render" in message for message in queue.messages)
 
 
-def test_ewmrs_tandem_worker_runs_both_phases_when_inputs_ready(monkeypatch):
+def test_ewmrs_tandem_worker_runs_only_mrms_phase_when_inputs_ready(monkeypatch):
     queue = _FakeQueue()
     mrms_ready_event = _FakeEvent()
     goes_ready_event = _FakeEvent()
@@ -297,26 +297,39 @@ def test_ewmrs_tandem_worker_runs_both_phases_when_inputs_ready(monkeypatch):
         captured["mrms_max_entries"] = max_entries
         return {"LayerOne": ["LayerOne.png"], "LayerTwo": None}
 
-    def fake_run_goes_render_pipeline(dt, max_entries=10):
-        captured["goes_dt"] = dt
-        captured["goes_max_entries"] = max_entries
-        return {}
-
     monkeypatch.setattr(ewmrs_pipeline, "run_mrms_render_pipeline", fake_run_mrms_render_pipeline)
-    monkeypatch.setattr(ewmrs_pipeline, "run_goes_render_pipeline", fake_run_goes_render_pipeline)
 
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
     ewmrs_pipeline.ewmrs_tandem_worker(queue, shared_state, mrms_ready_event, goes_ready_event, dt, max_entries=3)
 
     assert mrms_ready_event.wait_calls == 1
-    assert goes_ready_event.wait_calls == 1
+    assert goes_ready_event.wait_calls == 0
     assert captured == {
         "mrms_dt": dt,
         "mrms_max_entries": 3,
-        "goes_dt": dt,
-        "goes_max_entries": 3,
     }
     assert any("Starting EWMRS MRMS render phase" in message for message in queue.messages)
     assert any("1/2 layers succeeded" in message for message in queue.messages)
+    assert any("GOES render is decoupled" in message for message in queue.messages)
+
+
+def test_ewmrs_goes_worker_runs_goes_phase(monkeypatch):
+    queue = _FakeQueue()
+    captured = {}
+
+    def fake_run_goes_render_pipeline(dt, max_entries=10):
+        captured["goes_dt"] = dt
+        captured["goes_max_entries"] = max_entries
+        return {}
+
+    monkeypatch.setattr(ewmrs_pipeline, "run_goes_render_pipeline", fake_run_goes_render_pipeline)
+
+    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
+    ewmrs_pipeline.ewmrs_goes_worker(queue, dt, max_entries=3)
+
+    assert captured == {
+        "goes_dt": dt,
+        "goes_max_entries": 3,
+    }
     assert any("Starting EWMRS GOES render phase" in message for message in queue.messages)
     assert any("0/0 layers succeeded" in message for message in queue.messages)

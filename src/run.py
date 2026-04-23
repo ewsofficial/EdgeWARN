@@ -1,5 +1,7 @@
 import sys
 import re
+import queue
+import os
 from datetime import datetime, timezone, timedelta
 import time
 import multiprocessing
@@ -23,7 +25,7 @@ from common.pipeline.goes_readiness import (
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN import initialize_runtime
 from EdgeWARN.pipeline import edgewarn_tandem_worker
-from EWMRS.pipeline import ewmrs_tandem_worker
+from EWMRS.pipeline import ewmrs_goes_worker, ewmrs_tandem_worker
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
 from util.release import get_release_version
@@ -44,6 +46,12 @@ GOES_RENDER_WAIT_SECONDS = 30
 GOES_RENDER_WAIT_INTERVAL_SECONDS = 1.0
 GOES_CYCLE_ACTIVE = multiprocessing.Event()
 GOES_RENDER_ACTIVE = multiprocessing.Event()
+GOES_PAUSE_INGEST_DURING_RENDER = os.environ.get("EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 def _get_ewmrs_goes_render_specs():
@@ -54,7 +62,7 @@ def goes_loop(activity_event, render_active_event):
     try:
         abi_specs = get_abi_radc_channel_specs()
         while True:
-            while render_active_event.is_set():
+            while GOES_PAUSE_INGEST_DURING_RENDER and render_active_event.is_set():
                 _sleep(1, interval=0.2)
 
             target_dt = datetime.now(timezone.utc).replace(second=0, microsecond=0)
@@ -83,6 +91,58 @@ def _queue_log(log_queue, message):
 def _drain_log_queue(log_queue):
     while not log_queue.empty():
         print(log_queue.get())
+
+
+def goes_render_loop(task_queue, log_queue, render_active_event):
+    try:
+        while True:
+            task = task_queue.get()
+            if task is None:
+                render_active_event.clear()
+                return
+
+            latest_task = task
+            dropped_tasks = 0
+            saw_shutdown = False
+            while True:
+                try:
+                    queued_task = task_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+                if queued_task is None:
+                    saw_shutdown = True
+                    continue
+
+                latest_task = queued_task
+                dropped_tasks += 1
+
+            if dropped_tasks > 0:
+                _queue_log(log_queue, f"INFO: Dropped {dropped_tasks} stale queued GOES render task(s); latest-wins scheduling applied")
+
+            if isinstance(latest_task, tuple) and len(latest_task) >= 2:
+                dt, max_entries = latest_task[:2]
+                queued_at_iso = latest_task[2] if len(latest_task) > 2 else None
+            else:
+                dt, max_entries = latest_task
+                queued_at_iso = None
+
+            if queued_at_iso:
+                try:
+                    queue_lag_s = (datetime.now(timezone.utc) - datetime.fromisoformat(str(queued_at_iso))).total_seconds()
+                    _queue_log(log_queue, f"INFO: Starting freshest queued GOES render for {dt.isoformat()} after {queue_lag_s:.1f}s queue lag")
+                except Exception:
+                    pass
+
+            render_active_event.set()
+            ewmrs_goes_worker(log_queue, dt, max_entries=max_entries)
+
+            render_active_event.clear()
+            if saw_shutdown:
+                return
+    except KeyboardInterrupt:
+        render_active_event.clear()
+        return
 
 
 def _sleep(total_seconds, interval=1.0):
@@ -202,7 +262,7 @@ def wpc_loop():
     except KeyboardInterrupt:
         return
 
-def _run_tandem_cycle(dt):
+def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue):
     log_queue = multiprocessing.Queue()
     manager = multiprocessing.Manager()
     shared_state = manager.dict()
@@ -317,6 +377,28 @@ def _run_tandem_cycle(dt):
             )
         else:
             _queue_log(log_queue, f"INFO: Full GOES ABI render input set is staged; representative file {goes_path}")
+            dropped_render_tasks = 0
+            saw_shutdown = False
+            while True:
+                try:
+                    queued_task = goes_render_task_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+                if queued_task is None:
+                    saw_shutdown = True
+                    continue
+                dropped_render_tasks += 1
+
+            goes_render_task_queue.put((dt, 10, datetime.now(timezone.utc).isoformat()))
+            if saw_shutdown:
+                goes_render_task_queue.put(None)
+            if dropped_render_tasks > 0:
+                _queue_log(
+                    log_queue,
+                    f"INFO: Replaced {dropped_render_tasks} stale queued GOES render task(s) with latest ready cycle {dt.isoformat()}",
+                )
+            _queue_log(log_queue, f"INFO: Queued decoupled EWMRS GOES render for {dt.isoformat()}")
     except Exception as exc:
         _queue_log(log_queue, f"WARN: Local GOES readiness check failed for {dt.isoformat()}: {exc}")
     finally:
@@ -327,18 +409,17 @@ def _run_tandem_cycle(dt):
         else:
             errors.setdefault("ewmrs_goes_ingest", "EWMRS GOES inputs unavailable")
         shared_state["errors"] = errors
-        if goes_ready:
-            GOES_RENDER_ACTIVE.set()
         ewmrs_goes_ready_event.set()
 
     while edgewarn_proc.is_alive() or ewmrs_proc.is_alive() or not log_queue.empty():
         _drain_log_queue(log_queue)
+        _drain_log_queue(goes_render_log_queue)
         time.sleep(1)
 
     edgewarn_proc.join()
     ewmrs_proc.join()
-    GOES_RENDER_ACTIVE.clear()
     _drain_log_queue(log_queue)
+    _drain_log_queue(goes_render_log_queue)
     manager.shutdown()
     return edgewarn_proc.exitcode == 0 and ewmrs_proc.exitcode == 0
 
@@ -387,21 +468,31 @@ def main():
     metar_proc = multiprocessing.Process(target=metar_loop, daemon=True)
     nws_proc = multiprocessing.Process(target=nws_loop, daemon=True)
     wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True)
+    goes_render_task_queue = multiprocessing.Queue()
+    goes_render_log_queue = multiprocessing.Queue()
+    goes_render_proc = multiprocessing.Process(
+        target=goes_render_loop,
+        args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
+        daemon=True,
+    )
     metar_proc.start()
     nws_proc.start()
     wpc_proc.start()
     goes_proc = multiprocessing.Process(target=goes_loop, args=(GOES_CYCLE_ACTIVE, GOES_RENDER_ACTIVE), daemon=True)
     goes_proc.start()
+    goes_render_proc.start()
 
     background_processes = [
         (metar_proc, "METAR"),
         (nws_proc, "NWS"),
         (wpc_proc, "WPC"),
         (goes_proc, "GOES"),
+        (goes_render_proc, "GOES Render"),
     ]
 
     try:
         while True:
+            _drain_log_queue(goes_render_log_queue)
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
             # Pass last_processed to allow StartAfter optimization
@@ -450,7 +541,7 @@ def main():
                 dt = latest_common
                 last_processed = latest_common
 
-                cycle_ok = _run_tandem_cycle(dt)
+                cycle_ok = _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue)
                 if cycle_ok:
                     print(f"Tandem cycle for {dt} finished")
                 else:
@@ -469,6 +560,10 @@ def main():
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")
     finally:
+        try:
+            goes_render_task_queue.put(None)
+        except Exception:
+            pass
         for process, name in background_processes:
             _stop_process(process, name)
 

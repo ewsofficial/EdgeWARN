@@ -28,6 +28,9 @@ _SOLAR_CACHE_LOCK = threading.Lock()
 _SOLAR_LAT_TERMS_CACHE: dict[tuple[int, float, float], tuple[np.ndarray, np.ndarray]] = {}
 _SOLAR_HOUR_ANGLE_CACHE: dict[tuple[int, int, float, float], np.ndarray] = {}
 _MAX_SOLAR_CACHE_ENTRIES = 32
+_GOES_IR_COLORMAP_CACHE: tuple[np.ndarray, np.ndarray] | None = None
+_GOES_IR_COLORMAP_PATH: str | None = None
+_GOES_IR_COLORMAP_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -298,15 +301,28 @@ def _goes_registry_key(
 
 
 def _load_goes_ir_colormap(colormaps_file: Path) -> tuple[np.ndarray, np.ndarray]:
-    raw = json.loads(colormaps_file.read_text())
-    sources = raw if isinstance(raw, list) else [raw]
-    for source in sources:
-        for cmap in source.get("colormaps", []):
-            if str(cmap.get("name", "")) != "GOES_IR":
-                continue
-            thresholds = np.array([item["value"] for item in cmap["thresholds"]], dtype=np.float32)
-            colors = np.array([item["rgb"] for item in cmap["thresholds"]], dtype=np.float32) / 255.0
-            return thresholds, colors
+    global _GOES_IR_COLORMAP_CACHE, _GOES_IR_COLORMAP_PATH
+
+    colormap_path = str(colormaps_file)
+    if _GOES_IR_COLORMAP_CACHE is not None and _GOES_IR_COLORMAP_PATH == colormap_path:
+        return _GOES_IR_COLORMAP_CACHE
+
+    with _GOES_IR_COLORMAP_LOCK:
+        if _GOES_IR_COLORMAP_CACHE is not None and _GOES_IR_COLORMAP_PATH == colormap_path:
+            return _GOES_IR_COLORMAP_CACHE
+
+        raw = json.loads(colormaps_file.read_text())
+        sources = raw if isinstance(raw, list) else [raw]
+        for source in sources:
+            for cmap in source.get("colormaps", []):
+                if str(cmap.get("name", "")) != "GOES_IR":
+                    continue
+                thresholds = np.array([item["value"] for item in cmap["thresholds"]], dtype=np.float32)
+                colors = np.array([item["rgb"] for item in cmap["thresholds"]], dtype=np.float32) / 255.0
+                _GOES_IR_COLORMAP_CACHE = (thresholds, colors)
+                _GOES_IR_COLORMAP_PATH = colormap_path
+                return _GOES_IR_COLORMAP_CACHE
+
     raise ValueError(f"GOES_IR colormap not found in {colormaps_file}")
 
 

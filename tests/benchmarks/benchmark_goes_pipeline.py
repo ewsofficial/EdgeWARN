@@ -36,6 +36,7 @@ import psutil
 
 import EWMRS.pipeline as ewmrs_pipeline
 import EWMRS.render.goes_rgb as goes_rgb
+import EWMRS.render.tiler as tiler_module
 import EWMRS.render.goes_transform as goes_transform
 import EWMRS.render.render as render_module
 from EWMRS.pipeline import _render_layer
@@ -459,12 +460,119 @@ def run_parallel_pipeline_benchmark(
 
     original_get_goes_file_list = ewmrs_pipeline.get_goes_file_list
     original_cleanup_old_gui_files = ewmrs_pipeline.cleanup_old_gui_files
+    original_unified_cycle = ewmrs_pipeline._run_goes_unified_cycle
+    original_load_registry_entry = ewmrs_pipeline._load_goes_registry_entry
+    original_load_reproject = goes_transform.load_reproject_goes_abi_render_array
+    original_load_payload = goes_transform._load_goes_abi_render_payload
+    original_reproject_payload = goes_transform._reproject_goes_payload_to_web_mercator
+    original_save_tiles_from_array = render_module.GUIRGBAWriter._save_tiles_from_array
+    original_render_save_tile = render_module.save_tile
+    original_tiler_save_tile = tiler_module.save_tile
+
+    benchmark_state = {
+        "pipeline_start_s": None,
+        "unified_cycle_s": [],
+        "registry_build_s": [],
+        "registry_build_events": [],
+        "registry_by_channel_s": defaultdict(list),
+        "payload_by_channel_s": defaultdict(list),
+        "reprojection_by_channel_s": defaultdict(list),
+        "tile_batch_s": [],
+        "tile_save_s": [],
+        "first_tile_latency_s": None,
+        "first_tile_finished_s": None,
+    }
+    benchmark_channel = threading.local()
+
+    def _current_channel() -> str:
+        return getattr(benchmark_channel, "channel_id", "unknown")
+
+    @functools.wraps(original_unified_cycle)
+    def wrapped_unified_cycle(*args, **kwargs):
+        start_s = time.perf_counter()
+        try:
+            return original_unified_cycle(*args, **kwargs)
+        finally:
+            benchmark_state["unified_cycle_s"].append(time.perf_counter() - start_s)
+
+    @functools.wraps(original_load_registry_entry)
+    def wrapped_load_registry_entry(*args, **kwargs):
+        channel_id = str(kwargs.get("channel_id", "unknown"))
+        start_s = time.perf_counter()
+        try:
+            return original_load_registry_entry(*args, **kwargs)
+        finally:
+            end_s = time.perf_counter()
+            elapsed = end_s - start_s
+            benchmark_state["registry_build_s"].append(elapsed)
+            benchmark_state["registry_build_events"].append({
+                "channel_id": channel_id,
+                "start_s": start_s,
+                "end_s": end_s,
+                "duration_s": elapsed,
+            })
+            benchmark_state["registry_by_channel_s"][channel_id].append(elapsed)
+
+    @functools.wraps(original_load_reproject)
+    def wrapped_load_reproject(path, layer_config, *args, **kwargs):
+        previous_channel = getattr(benchmark_channel, "channel_id", None)
+        benchmark_channel.channel_id = _channel_from_layer_config(layer_config)
+        try:
+            return original_load_reproject(path, layer_config, *args, **kwargs)
+        finally:
+            benchmark_channel.channel_id = previous_channel
+
+    @functools.wraps(original_load_payload)
+    def wrapped_load_payload(*args, **kwargs):
+        channel_id = _current_channel()
+        start_s = time.perf_counter()
+        try:
+            return original_load_payload(*args, **kwargs)
+        finally:
+            benchmark_state["payload_by_channel_s"][channel_id].append(time.perf_counter() - start_s)
+
+    @functools.wraps(original_reproject_payload)
+    def wrapped_reproject_payload(*args, **kwargs):
+        channel_id = _current_channel()
+        start_s = time.perf_counter()
+        try:
+            return original_reproject_payload(*args, **kwargs)
+        finally:
+            benchmark_state["reprojection_by_channel_s"][channel_id].append(time.perf_counter() - start_s)
+
+    @functools.wraps(original_save_tiles_from_array)
+    def wrapped_save_tiles_from_array(self, rgba, timestamp, *args, **kwargs):
+        start_s = time.perf_counter()
+        try:
+            return original_save_tiles_from_array(self, rgba, timestamp, *args, **kwargs)
+        finally:
+            benchmark_state["tile_batch_s"].append(time.perf_counter() - start_s)
+
+    def wrapped_save_tile(tile_data, output_path):
+        start_s = time.perf_counter()
+        try:
+            return original_tiler_save_tile(tile_data, output_path)
+        finally:
+            finished_s = time.perf_counter()
+            benchmark_state["tile_save_s"].append(finished_s - start_s)
+            if benchmark_state["first_tile_latency_s"] is None and benchmark_state["pipeline_start_s"] is not None:
+                benchmark_state["first_tile_latency_s"] = finished_s - float(benchmark_state["pipeline_start_s"])
+                benchmark_state["first_tile_finished_s"] = finished_s
 
     ewmrs_pipeline.get_goes_file_list = lambda: layers
     ewmrs_pipeline.cleanup_old_gui_files = lambda max_age_minutes=120: None
+    ewmrs_pipeline._run_goes_unified_cycle = wrapped_unified_cycle
+    ewmrs_pipeline._load_goes_registry_entry = wrapped_load_registry_entry
+    goes_transform.load_reproject_goes_abi_render_array = wrapped_load_reproject
+    goes_transform._load_goes_abi_render_payload = wrapped_load_payload
+    goes_transform._reproject_goes_payload_to_web_mercator = wrapped_reproject_payload
+    render_module.GUIRGBAWriter._save_tiles_from_array = wrapped_save_tiles_from_array
+    render_module.save_tile = wrapped_save_tile
+    tiler_module.save_tile = wrapped_save_tile
 
     sampler.start()
     start_s = time.perf_counter()
+    benchmark_state["pipeline_start_s"] = start_s
     results = {}
     try:
         results = ewmrs_pipeline.run_goes_render_pipeline(datetime.now(timezone.utc), max_entries=10)
@@ -473,12 +581,43 @@ def run_parallel_pipeline_benchmark(
         sampler.stop()
         ewmrs_pipeline.get_goes_file_list = original_get_goes_file_list
         ewmrs_pipeline.cleanup_old_gui_files = original_cleanup_old_gui_files
+        ewmrs_pipeline._run_goes_unified_cycle = original_unified_cycle
+        ewmrs_pipeline._load_goes_registry_entry = original_load_registry_entry
+        goes_transform.load_reproject_goes_abi_render_array = original_load_reproject
+        goes_transform._load_goes_abi_render_payload = original_load_payload
+        goes_transform._reproject_goes_payload_to_web_mercator = original_reproject_payload
+        render_module.GUIRGBAWriter._save_tiles_from_array = original_save_tiles_from_array
+        render_module.save_tile = original_render_save_tile
+        tiler_module.save_tile = original_tiler_save_tile
 
     avg_mem = _avg(sampler.pipeline_samples_mb)
     peak_mem = max(sampler.pipeline_samples_mb) if sampler.pipeline_samples_mb else 0.0
     successful_layers = sum(1 for rendered in results.values() if rendered)
     total_tiles_written = sum(len(rendered) for rendered in results.values() if rendered)
     throughput_tiles_per_s = (total_tiles_written / total_s) if total_s > 0 else 0.0
+
+    def _summarize_channel_timings(values_by_channel: dict[str, list[float]]) -> dict[str, Any]:
+        summary: dict[str, Any] = {}
+        for channel_id, samples in sorted(values_by_channel.items()):
+            if not samples:
+                continue
+            summary[channel_id] = {
+                "calls": len(samples),
+                "total_duration_s": sum(samples),
+                "avg_duration_s": _avg(samples),
+                "max_duration_s": max(samples),
+            }
+        return summary
+
+    first_tile_finished_s = benchmark_state["first_tile_finished_s"]
+    if first_tile_finished_s is None:
+        registry_before_first_output_s = 0.0
+    else:
+        registry_before_first_output_s = sum(
+            float(event["duration_s"])
+            for event in benchmark_state["registry_build_events"]
+            if float(event["end_s"]) <= float(first_tile_finished_s)
+        )
 
     return {
         "mode": "parallel_pipeline",
@@ -487,6 +626,15 @@ def run_parallel_pipeline_benchmark(
         "peak_memory_mb": peak_mem,
         "total_tiles_written": total_tiles_written,
         "throughput_tiles_per_s": throughput_tiles_per_s,
+        "render_start_to_first_tile_s": float(benchmark_state["first_tile_latency_s"] or 0.0),
+        "registry_build_before_first_output_s": registry_before_first_output_s,
+        "unified_cycle_total_s": sum(benchmark_state["unified_cycle_s"]),
+        "tile_write_total_s": sum(benchmark_state["tile_batch_s"]),
+        "avg_tile_save_s": _avg(benchmark_state["tile_save_s"]),
+        "reprojection_by_channel": _summarize_channel_timings(benchmark_state["reprojection_by_channel_s"]),
+        "payload_load_by_channel": _summarize_channel_timings(benchmark_state["payload_by_channel_s"]),
+        "registry_build_by_channel": _summarize_channel_timings(benchmark_state["registry_by_channel_s"]),
+        "queue_lag_s": None,
         "layer_count": len(layers),
         "successful_layers": successful_layers,
         "failed_layers": len(layers) - successful_layers,
@@ -497,6 +645,9 @@ def _aggregate_runs(run_reports: list[dict[str, Any]]) -> dict[str, Any]:
     all_latencies: list[float] = []
     throughputs: list[float] = []
     peak_memories: list[float] = []
+    first_tile_latencies: list[float] = []
+    registry_precompute: list[float] = []
+    total_phase_times: list[float] = []
 
     for run_report in run_reports:
         detailed = run_report["detailed_single_process"]
@@ -504,6 +655,9 @@ def _aggregate_runs(run_reports: list[dict[str, Any]]) -> dict[str, Any]:
         all_latencies.extend(detailed.get("layer_latencies_s", []))
         throughputs.append(float(parallel.get("throughput_tiles_per_s", 0.0)))
         peak_memories.append(float(parallel.get("peak_memory_mb", 0.0)))
+        first_tile_latencies.append(float(parallel.get("render_start_to_first_tile_s", 0.0)))
+        registry_precompute.append(float(parallel.get("registry_build_before_first_output_s", 0.0)))
+        total_phase_times.append(float(parallel.get("total_duration_s", 0.0)))
 
     return {
         "latency_per_render_s": {
@@ -515,6 +669,21 @@ def _aggregate_runs(run_reports: list[dict[str, Any]]) -> dict[str, Any]:
             "p50": _percentile(throughputs, 50),
             "p95": _percentile(throughputs, 95),
             "samples": len(throughputs),
+        },
+        "render_start_to_first_tile_s": {
+            "p50": _percentile(first_tile_latencies, 50),
+            "p95": _percentile(first_tile_latencies, 95),
+            "samples": len(first_tile_latencies),
+        },
+        "registry_build_before_first_output_s": {
+            "p50": _percentile(registry_precompute, 50),
+            "p95": _percentile(registry_precompute, 95),
+            "samples": len(registry_precompute),
+        },
+        "total_goes_phase_s": {
+            "p50": _percentile(total_phase_times, 50),
+            "p95": _percentile(total_phase_times, 95),
+            "samples": len(total_phase_times),
         },
         "peak_memory_mb": {
             "p50": _percentile(peak_memories, 50),
@@ -540,9 +709,24 @@ def _print_console_summary(report: dict[str, Any]) -> None:
         f"p95={aggregate['latency_per_render_s']['p95']:.2f}s"
     )
     print(
+        f"  Render start to first tile: "
+        f"p50={aggregate['render_start_to_first_tile_s']['p50']:.2f}s, "
+        f"p95={aggregate['render_start_to_first_tile_s']['p95']:.2f}s"
+    )
+    print(
+        f"  Registry precompute before first output: "
+        f"p50={aggregate['registry_build_before_first_output_s']['p50']:.2f}s, "
+        f"p95={aggregate['registry_build_before_first_output_s']['p95']:.2f}s"
+    )
+    print(
         f"  Throughput (tiles/sec): "
         f"p50={aggregate['throughput_tiles_per_s']['p50']:.2f}, "
         f"p95={aggregate['throughput_tiles_per_s']['p95']:.2f}"
+    )
+    print(
+        f"  Total GOES phase: "
+        f"p50={aggregate['total_goes_phase_s']['p50']:.2f}s, "
+        f"p95={aggregate['total_goes_phase_s']['p95']:.2f}s"
     )
     print(
         f"  Peak memory (MB): "
@@ -562,8 +746,19 @@ def _print_console_summary(report: dict[str, Any]) -> None:
     print("\nBaseline Run (run 1)")
     print(f"  Detailed total duration: {detailed['total_duration_s']:.2f}s")
     print(f"  Parallel total duration: {parallel['total_duration_s']:.2f}s")
+    print(f"  First tile latency:      {parallel['render_start_to_first_tile_s']:.2f}s")
+    print(f"  Registry precompute:     {parallel['registry_build_before_first_output_s']:.2f}s")
     print(f"  Parallel throughput:     {parallel['throughput_tiles_per_s']:.2f} tiles/sec")
     print(f"  Parallel peak memory:    {parallel['peak_memory_mb']:.1f} MB")
+    if parallel.get("reprojection_by_channel"):
+        slowest_channel = max(
+            parallel["reprojection_by_channel"].items(),
+            key=lambda item: item[1].get("total_duration_s", 0.0),
+        )
+        print(
+            f"  Slowest reprojection:    {slowest_channel[0]} "
+            f"({slowest_channel[1]['total_duration_s']:.2f}s total)"
+        )
 
 
 def main() -> None:
