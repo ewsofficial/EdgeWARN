@@ -24,7 +24,7 @@ src/common/ingest/
 
 This ordering preserves low-latency detection while allowing render and integration stages to proceed only when required data are staged.
 
-For realtime tandem execution in `src/run.py`, GOES ingest remains decoupled from the shared MRMS ingest cycle. The runner performs a best-effort local GOES availability check and always releases the GOES render phase so MRMS rendering is never blocked. EWMRS GOES readiness is tied to configured ABI-renderable layers (currently C02/C13), while EdgeWARN integration readiness still checks GLM availability separately.
+For realtime tandem execution in `src/run.py`, GOES ingest remains decoupled from the shared MRMS ingest cycle. The runner performs a best-effort local GOES availability check and always releases the GOES render phase so MRMS rendering is never blocked. EWMRS GOES readiness is tied to the full configured ABI scalar render set, currently `GOES_ABI_C01` through `GOES_ABI_C16`, while EdgeWARN integration readiness still checks GLM availability separately.
 
 ## MRMS + GOES
 
@@ -42,7 +42,11 @@ Notes:
 
 - Detection and integration modifiers are staged separately
 - GOES ingestion can run as part of the full ingest cycle or as a decoupled background loop in realtime mode
+- GOES ABI staging uses `ABI-L1b-RadC` channel files from `noaa-goes19`; GLM staging remains a separate modifier path
+- RGB render products are derived later from the staged ABI channel set and do not have separate remote ingest definitions
 - Cleanup is constrained to configured runtime directories
+
+See `docs/core/goes_pipeline.md` for the end-to-end GOES readiness and render flow.
 
 ## NWS Alerts
 
