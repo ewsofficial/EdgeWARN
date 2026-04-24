@@ -7,6 +7,7 @@
 
 ### Changed
 - Reconcile NWS alerts with alerts from the NWS API
+- Modified EWMRS tiles to be 350 x 350 pixels
 
 ### Fixed
 - Added NWS fire zones that were missing from the zone catalog
