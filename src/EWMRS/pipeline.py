@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -14,8 +15,6 @@ import rioxarray  # noqa: F401  Ensures xarray .rio accessor is registered.
 from rasterio.enums import Resampling
 
 from EWMRS.render.config import (
-    TILE_GRID_COLS,
-    TILE_GRID_ROWS,
     get_file_list,
     get_goes_file_list,
     get_mrms_file_list,
@@ -49,11 +48,11 @@ GOES_WEB_MERCATOR_TRANSFORM = rasterio.transform.from_bounds(
     GOES_WEB_MERCATOR_SHAPE[1],
     GOES_WEB_MERCATOR_SHAPE[0],
 )
-EXPECTED_TILE_COUNT = TILE_GRID_ROWS * TILE_GRID_COLS
 _RUNTIME_CONFIGURED = False
 _GOES_CLEANUP_MIN_INTERVAL_SECONDS = max(0.0, float(os.environ.get("EWMRS_GOES_CLEANUP_MIN_INTERVAL_SECONDS", "300")))
 _LAST_GOES_GUI_CLEANUP_S = 0.0
 _LAST_GOES_GUI_CLEANUP_FUNC_ID: int | None = None
+_TILE_FILENAME_RE = re.compile(r"^tile_(\d+)_(\d+)\.png$")
 
 
 def _ensure_dt(dt_in) -> datetime:
@@ -254,11 +253,8 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
         if not tile_dir.exists() or not tile_dir.is_dir():
             return None
 
-        tile_paths = sorted(tile_dir.glob("tile_*.png"))
-        if len(tile_paths) != EXPECTED_TILE_COUNT:
-            return None
-
         index_file = out_dir / "index.json"
+        tile_grid = None
         if index_file.exists():
             with open(index_file, "r") as f:
                 data = json.load(f)
@@ -266,8 +262,31 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
             timestamps = data if isinstance(data, list) else data.get("timestamps", [])
             if timestamp not in timestamps:
                 return None
+            if not isinstance(data, list):
+                tile_grid = data.get("tile_grid")
 
-        return tile_paths
+        tile_paths: list[tuple[int, int, Path]] = []
+        for child in tile_dir.iterdir():
+            if not child.is_file():
+                continue
+
+            match = _TILE_FILENAME_RE.fullmatch(child.name)
+            if match is None:
+                continue
+
+            tile_x = int(match.group(1))
+            tile_y = int(match.group(2))
+            if tile_grid is not None:
+                rows = tile_grid.get("rows")
+                cols = tile_grid.get("cols")
+                if isinstance(rows, int) and isinstance(cols, int):
+                    if tile_x < 0 or tile_x >= cols or tile_y < 0 or tile_y >= rows:
+                        continue
+
+            tile_paths.append((tile_y, tile_x, child))
+
+        tile_paths.sort(key=lambda item: (item[0], item[1]))
+        return [path for _, _, path in tile_paths]
     except Exception:
         return None
 
@@ -762,7 +781,7 @@ def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutpu
 
 
 def _summarize_results(results: Dict[str, RenderOutput]) -> str:
-    successful_layers = sum(1 for output_path in results.values() if output_path)
+    successful_layers = sum(1 for output_path in results.values() if output_path is not None)
     total_layers = len(results)
     return f"{successful_layers}/{total_layers} layers succeeded"
 

@@ -4,6 +4,7 @@ from typing import Tuple, List
 import json
 import os
 import time
+import re
 import numpy as np
 from PIL import Image
 from .tools import TransformUtils
@@ -15,6 +16,7 @@ from datetime import datetime
 import threading
 
 io_manager = IOManager("[Transform]")
+_TILE_FILENAME_RE = re.compile(r"^tile_\d+_\d+\.png$")
 
 # Colormap cache to avoid re-reading JSON on every render
 _COLORMAP_CACHE = {}
@@ -154,7 +156,12 @@ class GUIRGBAWriter:
         tile_dir = self.outdir / timestamp
         tile_dir.mkdir(parents=True, exist_ok=True)
 
+        for existing_tile in tile_dir.iterdir():
+            if existing_tile.is_file() and _TILE_FILENAME_RE.fullmatch(existing_tile.name):
+                existing_tile.unlink()
+
         tile_specs = []
+        total_grid_tiles = grid_rows * grid_cols
         for tile_y in range(grid_rows):
             for tile_x in range(grid_cols):
                 left = tile_x * TILE_SIZE
@@ -163,12 +170,14 @@ class GUIRGBAWriter:
                 bottom = top + TILE_SIZE
                 tile_filename = f"tile_{tile_x}_{tile_y}.png"
                 tile_path = tile_dir / tile_filename
-                tile_specs.append((rgba[top:bottom, left:right], tile_path))
+                tile_data = rgba[top:bottom, left:right]
+                if np.any(tile_data[..., 3] != 0):
+                    tile_specs.append((tile_data, tile_path))
 
         tile_schedule_s = time.perf_counter() - tile_schedule_start_s
         io_manager.write_info(
             f"Prepared tile schedule for {self.file_name} in {tile_schedule_s:.3f}s "
-            f"({len(tile_specs)} tiles)"
+            f"({len(tile_specs)}/{total_grid_tiles} non-transparent tiles)"
         )
 
         max_workers = _resolve_tile_workers(len(tile_specs))
@@ -205,14 +214,16 @@ class GUIRGBAWriter:
                             f"({first_tile_latency_s:.3f}s tile-write latency)"
                         )
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            list(executor.map(_write_tile, tile_specs))
+        if tile_specs:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                list(executor.map(_write_tile, tile_specs))
 
         tile_write_s = time.perf_counter() - tile_write_start_s
         if timing_context is not None:
             timing_context["tile_write_s"] = tile_write_s
         io_manager.write_info(
-            f"Tile writes for {self.file_name} completed in {tile_write_s:.3f}s using {max_workers} worker(s)"
+            f"Tile writes for {self.file_name} completed in {tile_write_s:.3f}s using {max_workers} worker(s) "
+            f"({len(tile_specs)}/{total_grid_tiles} non-transparent tiles written)"
         )
 
         return [tile_path for _, tile_path in tile_specs]

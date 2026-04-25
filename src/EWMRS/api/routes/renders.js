@@ -3,6 +3,9 @@ const router = express.Router();
 import path from 'path';
 import fs from 'fs/promises';
 
+const DEFAULT_TILE_GRID = { rows: 10, cols: 20, tile_size: 350 };
+const TILE_FILENAME_RE = /^tile_(\d+)_(\d+)\.png$/;
+
 // Mapping: User/Folder Product Name -> File Prefix
 // Derived from EWMRS/render/config.py
 const PRODUCT_MAPPING = {
@@ -48,6 +51,30 @@ const PRODUCT_MAPPING = {
 // Helper to get GUI_DIR from app.locals (set by server.js)
 function getGuiDir(req) {
   return req.app.locals.GUI_DIR;
+}
+
+async function loadProductIndex(productDir) {
+  const indexFile = path.join(productDir, 'index.json');
+
+  try {
+    const data = await fs.readFile(indexFile, 'utf8');
+    const indexData = JSON.parse(data);
+
+    return {
+      exists: true,
+      timestamps: Array.isArray(indexData) ? indexData : (indexData.timestamps || []),
+      tileGrid: Array.isArray(indexData) ? DEFAULT_TILE_GRID : (indexData.tile_grid || DEFAULT_TILE_GRID),
+    };
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return {
+        exists: false,
+        timestamps: [],
+        tileGrid: DEFAULT_TILE_GRID,
+      };
+    }
+    throw err;
+  }
 }
 
 // GET /get-items
@@ -168,10 +195,16 @@ router.get('/download', async (req, res) => {
 router.get('/tile', async (req, res) => {
   const { product, timestamp, x, y } = req.query;
   const GUI_DIR = getGuiDir(req);
+  const hasX = x !== undefined;
+  const hasY = y !== undefined;
 
   // 1. Validate required parameters (same pattern as /download)
-  if (!product || !timestamp || x === undefined || y === undefined) {
-    return res.status(400).json({ error: 'Missing required parameters: product, timestamp, x, y' });
+  if (!product || !timestamp) {
+    return res.status(400).json({ error: 'Missing required parameters: product, timestamp' });
+  }
+
+  if (hasX !== hasY) {
+    return res.status(400).json({ error: 'Missing required parameters: x and y must both be provided together' });
   }
 
   // 2. Security: Prevent directory traversal (same pattern as /download)
@@ -187,43 +220,87 @@ router.get('/tile', async (req, res) => {
     return res.status(404).json({ error: 'Unknown product or no mapping found' });
   }
 
-  // 4. Validate x, y are integers
-  const xInt = parseInt(x, 10);
-  const yInt = parseInt(y, 10);
-  if (isNaN(xInt) || isNaN(yInt)) {
-    return res.status(400).json({ error: 'x and y must be integers' });
-  }
-
-  // 5. Get tile grid info from index.json for bounds checking
-  const indexFile = path.join(GUI_DIR, product, 'index.json');
-  let gridInfo = { rows: 14, cols: 28, tile_size: 250 }; // defaults
+  const productDir = path.join(GUI_DIR, product);
   try {
-    const data = await fs.readFile(indexFile, 'utf8');
-    const indexData = JSON.parse(data);
-    if (indexData.tile_grid) {
-      gridInfo = indexData.tile_grid;
+    const indexData = await loadProductIndex(productDir);
+    const gridInfo = indexData.tileGrid;
+
+    if (!hasX && !hasY) {
+      if (indexData.exists && !indexData.timestamps.includes(timestamp)) {
+        return res.status(404).json({ error: 'Timestamp not found' });
+      }
+
+      const tileDir = path.join(productDir, timestamp);
+      let entries;
+      try {
+        entries = await fs.readdir(tileDir, { withFileTypes: true });
+      } catch (err) {
+        if (err.code === 'ENOENT') {
+          return res.status(404).json({ error: 'Timestamp directory not found' });
+        }
+        throw err;
+      }
+
+      const tiles = entries
+        .filter((entry) => entry.isFile())
+        .map((entry) => {
+          const match = entry.name.match(TILE_FILENAME_RE);
+          if (!match) {
+            return null;
+          }
+
+          const tileX = parseInt(match[1], 10);
+          const tileY = parseInt(match[2], 10);
+          if (tileX < 0 || tileX >= gridInfo.cols || tileY < 0 || tileY >= gridInfo.rows) {
+            return null;
+          }
+
+          return [tileX, tileY];
+        })
+        .filter((tile) => tile !== null)
+        .sort((left, right) => {
+          if (left[1] !== right[1]) {
+            return left[1] - right[1];
+          }
+          return left[0] - right[0];
+        });
+
+      return res.json({
+        product,
+        timestamp,
+        tile_grid: gridInfo,
+        tiles,
+      });
     }
-  } catch (e) {
-    // Use defaults if index.json not found
-  }
 
-  // 6. Bounds check
-  if (xInt < 0 || xInt >= gridInfo.cols || yInt < 0 || yInt >= gridInfo.rows) {
-    return res.status(400).json({
-      error: `Tile coordinates out of bounds. Valid range: x=[0,${gridInfo.cols - 1}], y=[0,${gridInfo.rows - 1}]`
-    });
-  }
+    // 4. Validate x, y are integers
+    const xInt = parseInt(x, 10);
+    const yInt = parseInt(y, 10);
+    if (isNaN(xInt) || isNaN(yInt)) {
+      return res.status(400).json({ error: 'x and y must be integers' });
+    }
 
-  // 7. Construct tile path (follows new folder structure)
-  const tileFilename = `tile_${xInt}_${yInt}.png`;
-  const tilePath = path.join(GUI_DIR, product, timestamp, tileFilename);
+    // 5. Bounds check
+    if (xInt < 0 || xInt >= gridInfo.cols || yInt < 0 || yInt >= gridInfo.rows) {
+      return res.status(400).json({
+        error: `Tile coordinates out of bounds. Valid range: x=[0,${gridInfo.cols - 1}], y=[0,${gridInfo.rows - 1}]`
+      });
+    }
 
-  // 8. Send file (same pattern as /download)
-  try {
-    await fs.access(tilePath);
-    res.sendFile(tilePath);
+    // 6. Construct tile path (follows new folder structure)
+    const tileFilename = `tile_${xInt}_${yInt}.png`;
+    const tilePath = path.join(GUI_DIR, product, timestamp, tileFilename);
+
+    // 7. Send file (same pattern as /download)
+    try {
+      await fs.access(tilePath);
+      res.sendFile(tilePath);
+    } catch (err) {
+      res.status(404).json({ error: 'Tile not found' });
+    }
   } catch (err) {
-    res.status(404).json({ error: 'Tile not found' });
+    console.error(`Error handling tile request for ${product}:`, err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -248,24 +325,8 @@ router.get('/tile-info', async (req, res) => {
     return res.status(404).json({ error: 'Unknown product or no mapping found' });
   }
 
-  const indexFile = path.join(GUI_DIR, product, 'index.json');
-
   try {
-    const data = await fs.readFile(indexFile, 'utf8');
-    const indexData = JSON.parse(data);
-
-    // Handle both old format (array) and new format (object with tile_grid)
-    let timestamps = [];
-    let tileGrid = { rows: 14, cols: 28, tile_size: 250 };
-
-    if (Array.isArray(indexData)) {
-      // Old format: just an array of timestamps
-      timestamps = indexData;
-    } else {
-      // New format: object with timestamps and tile_grid
-      timestamps = indexData.timestamps || [];
-      tileGrid = indexData.tile_grid || tileGrid;
-    }
+    const { timestamps, tileGrid } = await loadProductIndex(path.join(GUI_DIR, product));
 
     res.json({
       product: product,
@@ -278,9 +339,9 @@ router.get('/tile-info', async (req, res) => {
     if (err.code === 'ENOENT') {
       return res.json({
         product: product,
-        rows: 14,
-        cols: 28,
-        tile_size: 250,
+        rows: DEFAULT_TILE_GRID.rows,
+        cols: DEFAULT_TILE_GRID.cols,
+        tile_size: DEFAULT_TILE_GRID.tile_size,
         timestamps: []
       });
     }

@@ -85,15 +85,22 @@ Resolves a rendered PNG in the legacy non-tiled naming format when that file exi
 
 Current GOES and MRMS renderers write tile-first GUI output and update `index.json`, so tile-aware clients should prefer `/renders/tile` and `/renders/tile-info`.
 
+Transparent tiles are skipped at write time. A timestamp may therefore have fewer tile PNGs than the declared `tile_grid`, or even zero tile PNGs for a fully transparent render.
+
 Responses:
 
 - `200`: PNG image
 - `400`: missing/invalid parameters
 - `404`: unknown product or file not found
 
-### GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}&x={int}&y={int}
+### GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}[&x={int}&y={int}]
 
-Downloads a tile PNG from:
+Supports two modes:
+
+- image mode when both `x` and `y` are supplied
+- listing mode when both `x` and `y` are omitted
+
+Image mode downloads a tile PNG from:
 
 - `<GUI_DIR>/<product>/<timestamp>/tile_{x}_{y}.png`
 
@@ -105,13 +112,30 @@ Current renderer-written GOES and MRMS products persist:
 - `cols=20`
 - `tile_size=350`
 
-If `index.json` is missing, the route still falls back to legacy defaults `rows=14`, `cols=28`, `tile_size=250`.
+If `index.json` is missing, the route falls back to defaults `rows=10`, `cols=20`, `tile_size=350`.
+
+Listing mode enumerates the timestamp directory, keeps only filenames matching `tile_{x}_{y}.png`, filters out-of-bounds coordinates, sorts by `y` then `x`, and returns the valid existing tile coordinates as `[x, y]` pairs.
+
+Listing response:
+
+```json
+{
+  "product": "CompRefQC",
+  "timestamp": "20260317-200000",
+  "tile_grid": {
+    "rows": 10,
+    "cols": 20,
+    "tile_size": 350
+  },
+  "tiles": [[0, 0], [1, 3], [2, 6]]
+}
+```
 
 Responses:
 
-- `200`: PNG image
-- `400`: missing/invalid/out-of-bounds parameters
-- `404`: unknown product or tile not found
+- `200`: PNG image in image mode, JSON tile listing in listing mode
+- `400`: missing/invalid/out-of-bounds parameters, or only one of `x`/`y` supplied
+- `404`: unknown product, missing tile, missing timestamp directory, or timestamp absent from `index.json`
 
 ### GET /renders/tile-info?product={product}
 
