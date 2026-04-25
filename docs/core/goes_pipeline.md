@@ -114,9 +114,9 @@ GOES products are reprojected from the native ABI fixed grid into a CONUS-focuse
 - output raster shape: `3500 x 7000`
 - tile grid written by the renderer: `10 x 20`
 - tile size: `350` pixels
-- tile count per completed product: `200`
+- tile grid capacity per completed product: `200`
 
-The renderers persist the tile grid into each product `index.json`. The EWMRS API still carries a legacy `14 x 28` / `250px` fallback when `index.json` is missing, so the documented route behavior should distinguish between rendered output metadata and route fallback behavior.
+The renderers persist the tile grid into each product `index.json`. The EWMRS API falls back to the current `10 x 20` / `350px` grid when `index.json` is missing.
 
 ### Single-channel render path
 
@@ -147,7 +147,7 @@ Only the affected recipe is skipped when one RGB dependency is missing or too fa
 
 The unified GOES render cycle avoids redundant work in two ways:
 
-- completed tile sets are reused when the expected tile count already exists for the target timestamp
+- completed tile directories are reused when the timestamp directory exists and its `index.json` entry is valid, even if only a sparse subset of non-transparent tiles was written
 - reprojected channel arrays are cached in a cycle registry so scalar layers and RGB recipes can share the same prepared channel payloads
 
 This is especially important for channels such as `C02` and `C13`, which are used both as standalone products and as RGB inputs.
@@ -194,13 +194,14 @@ The EWMRS API under `src/EWMRS/api` serves GOES products through:
 - `GET /renders/get-items`
 - `GET /renders/fetch?product={product}`
 - `GET /renders/download?product={product}&timestamp={YYYYMMDD-HHMMSS}`
-- `GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}&x={int}&y={int}`
+- `GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}[&x={int}&y={int}]`
 - `GET /renders/tile-info?product={product}`
 
 Notes:
 
 - `product` values are the GUI folder names shown in the tables above
 - tile clients should prefer `/renders/tile` and `/renders/tile-info`
+- omitting `x` and `y` from `/renders/tile` lists the valid existing tile coordinates for the timestamp
 - `/renders/download` resolves the legacy flat PNG naming contract when such files exist, but the current GOES renderer writes tile-first output
 
 See `docs/api/ewmrs_api_endpoints.md` for route-level behavior.

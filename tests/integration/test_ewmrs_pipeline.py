@@ -169,25 +169,63 @@ def test_run_goes_render_pipeline_writes_all_rgb_products(monkeypatch, tmp_path)
         index_data = json.loads((out_dir / "index.json").read_text())
         assert index_data["timestamps"] == ["20260317-200000"]
         assert index_data["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": 350}
-        assert len(list((out_dir / "20260317-200000").glob("tile_*.png"))) == 4
+        assert results[layer["name"]] == []
+        assert len(list((out_dir / "20260317-200000").glob("tile_*.png"))) == 0
 
 
-def test_current_render_paths_returns_cached_tiles_when_complete(tmp_path):
+def test_current_render_paths_returns_sparse_cached_tiles(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
     tile_dir.mkdir(parents=True)
 
-    for tile_y in range(10):
-        for tile_x in range(20):
-            (tile_dir / f"tile_{tile_x}_{tile_y}.png").write_bytes(b"tile")
+    for tile_name in ("tile_1_0.png", "tile_0_0.png", "tile_5_3.png"):
+        (tile_dir / tile_name).write_bytes(b"tile")
 
-    (out_dir / "index.json").write_text(json.dumps({"timestamps": ["20260317-200000"]}))
+    (out_dir / "index.json").write_text(json.dumps({
+        "timestamps": ["20260317-200000"],
+        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+    }))
 
     paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
 
-    assert paths is not None
-    assert len(paths) == 200
-    assert paths[0].name == "tile_0_0.png"
+    assert paths == [
+        tile_dir / "tile_0_0.png",
+        tile_dir / "tile_1_0.png",
+        tile_dir / "tile_5_3.png",
+    ]
+
+
+def test_current_render_paths_accepts_valid_zero_tile_timestamp(tmp_path):
+    out_dir = tmp_path / "gui"
+    tile_dir = out_dir / "20260317-200000"
+    tile_dir.mkdir(parents=True)
+    (out_dir / "index.json").write_text(json.dumps({
+        "timestamps": ["20260317-200000"],
+        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+    }))
+
+    paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
+
+    assert paths == []
+
+
+def test_current_render_paths_filters_invalid_and_out_of_bounds_tiles(tmp_path):
+    out_dir = tmp_path / "gui"
+    tile_dir = out_dir / "20260317-200000"
+    tile_dir.mkdir(parents=True)
+    (tile_dir / "tile_0_0.png").write_bytes(b"tile")
+    (tile_dir / "tile_20_0.png").write_bytes(b"tile")
+    (tile_dir / "tile_0_10.png").write_bytes(b"tile")
+    (tile_dir / "tile_bad.png").write_bytes(b"tile")
+    (out_dir / "index.json").write_text(json.dumps({
+        "timestamps": ["20260317-200000"],
+        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+    }))
+
+    paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
+
+    assert paths == [tile_dir / "tile_0_0.png"]
+    assert ewmrs_pipeline._summarize_results({"A": [], "B": None}) == "1/2 layers succeeded"
 
 
 def test_cleanup_old_gui_files_uses_dynamic_render_configuration(monkeypatch, tmp_path):

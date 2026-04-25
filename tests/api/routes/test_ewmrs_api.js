@@ -167,7 +167,7 @@ describe('GET /renders/fetch', () => {
             path.join(productDir, 'index.json'),
             JSON.stringify({
                 timestamps: ['20260317-200000', '20260317-190000'],
-                tile_grid: { rows: 14, cols: 28, tile_size: 250 }
+                tile_grid: { rows: 10, cols: 20, tile_size: 350 }
             })
         );
         const res = await request(app).get('/renders/fetch?product=CompRefQC').expect(200);
@@ -331,11 +331,13 @@ describe('GET /renders/tile', () => {
         const tsDir = path.join(productDir, '20260317-200000');
         await fs.promises.mkdir(tsDir);
         await fs.promises.writeFile(path.join(tsDir, 'tile_0_0.png'), 'fake tile');
+        await fs.promises.writeFile(path.join(tsDir, 'tile_1_0.png'), 'fake tile');
+        await fs.promises.writeFile(path.join(tsDir, 'tile_2_1.png'), 'fake tile');
         await fs.promises.writeFile(
             path.join(productDir, 'index.json'),
             JSON.stringify({
                 timestamps: ['20260317-200000'],
-                tile_grid: { rows: 14, cols: 28, tile_size: 250 }
+                tile_grid: { rows: 2, cols: 3, tile_size: 350 }
             })
         );
         app = createApp(tempDir);
@@ -345,14 +347,24 @@ describe('GET /renders/tile', () => {
         await fs.promises.rm(tempDir, { recursive: true, force: true });
     });
 
-    it('returns 400 when x is missing', async () => {
-        const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000&y=0').expect(400);
-        expect(res.body.error).toContain('Missing');
+    it('returns a sparse tile list when x and y are both missing', async () => {
+        const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000').expect(200);
+        expect(res.body).toEqual({
+            product: 'CompRefQC',
+            timestamp: '20260317-200000',
+            tile_grid: { rows: 2, cols: 3, tile_size: 350 },
+            tiles: [[0, 0], [1, 0], [2, 1]],
+        });
     });
 
-    it('returns 400 when y is missing', async () => {
+    it('returns 400 when x is missing but y is provided', async () => {
+        const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000&y=0').expect(400);
+        expect(res.body.error).toContain('x and y');
+    });
+
+    it('returns 400 when y is missing but x is provided', async () => {
         const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000&x=0').expect(400);
-        expect(res.body.error).toContain('Missing');
+        expect(res.body.error).toContain('x and y');
     });
 
     it('returns 400 for non-integer x', async () => {
@@ -400,6 +412,45 @@ describe('GET /renders/tile', () => {
             .expect(200);
         expect(res.headers['content-type']).toContain('image/png');
     });
+
+    it('listing mode filters invalid filenames and out-of-bounds tiles', async () => {
+        const tsDir = path.join(tempDir, 'gui', 'CompRefQC', '20260317-200000');
+        await fs.promises.writeFile(path.join(tsDir, 'tile_bad.png'), 'fake tile');
+        await fs.promises.writeFile(path.join(tsDir, 'tile_9_9.png'), 'fake tile');
+
+        const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000').expect(200);
+        expect(res.body.tiles).toEqual([[0, 0], [1, 0], [2, 1]]);
+    });
+
+    it('listing mode returns an empty tile list for a valid zero-tile timestamp', async () => {
+        const productDir = path.join(tempDir, 'gui', 'CompRefQC');
+        const emptyTsDir = path.join(productDir, '20260317-210000');
+        await fs.promises.mkdir(emptyTsDir);
+        await fs.promises.writeFile(
+            path.join(productDir, 'index.json'),
+            JSON.stringify({
+                timestamps: ['20260317-210000', '20260317-200000'],
+                tile_grid: { rows: 2, cols: 3, tile_size: 350 }
+            })
+        );
+
+        const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-210000').expect(200);
+        expect(res.body.tiles).toEqual([]);
+    });
+
+    it('listing mode returns 404 when the timestamp directory is missing', async () => {
+        const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-220000').expect(404);
+        expect(res.body.error).toContain('Timestamp');
+    });
+
+    it('listing mode returns 404 when timestamp is absent from index.json', async () => {
+        const productDir = path.join(tempDir, 'gui', 'CompRefQC');
+        const tsDir = path.join(productDir, '20260317-230000');
+        await fs.promises.mkdir(tsDir);
+
+        const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-230000').expect(404);
+        expect(res.body.error).toContain('Timestamp not found');
+    });
 });
 
 describe('GET /renders/tile-info', () => {
@@ -430,9 +481,9 @@ describe('GET /renders/tile-info', () => {
         const productDir = path.join(tempDir, 'gui', 'CompRefQC');
         await fs.promises.mkdir(productDir);
         const res = await request(app).get('/renders/tile-info?product=CompRefQC').expect(200);
-        expect(res.body.rows).toBe(14);
-        expect(res.body.cols).toBe(28);
-        expect(res.body.tile_size).toBe(250);
+        expect(res.body.rows).toBe(10);
+        expect(res.body.cols).toBe(20);
+        expect(res.body.tile_size).toBe(350);
         expect(res.body.timestamps).toEqual([]);
     });
 
@@ -461,7 +512,7 @@ describe('GET /renders/tile-info', () => {
         );
         const res = await request(app).get('/renders/tile-info?product=CompRefQC').expect(200);
         expect(res.body.timestamps).toEqual(['20260317-200000']);
-        expect(res.body.rows).toBe(14);
+        expect(res.body.rows).toBe(10);
     });
 
     it('returns 404 for unknown product', async () => {

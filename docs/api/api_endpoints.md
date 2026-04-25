@@ -219,8 +219,10 @@ The EWMRS service under `src/EWMRS/api` exposes tiled GUI products through:
 - `GET /renders/get-items`
 - `GET /renders/fetch?product={product}`
 - `GET /renders/download?product={product}&timestamp={YYYYMMDD-HHMMSS}`
-- `GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}&x={int}&y={int}`
+- `GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}[&x={int}&y={int}]`
 - `GET /renders/tile-info?product={product}`
+
+For `/renders/tile`, supplying both `x` and `y` returns a PNG tile; omitting both returns the valid existing tile coordinates for that timestamp.
 
 GOES products exposed through those routes include:
 

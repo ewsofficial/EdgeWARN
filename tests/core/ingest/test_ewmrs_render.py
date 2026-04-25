@@ -314,6 +314,53 @@ class TestConvertToPng:
         assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
         assert idx["timestamps"] == [ts]
 
+    def test_tile_output_true_skips_fully_transparent_tiles(self, tmp_path):
+        side = TILE_SIZE * 2
+        data = np.full((side, side), -1.0, dtype=np.float32)
+        r = self._make_renderer(data, tmp_path / "out")
+
+        paths, ts = r.convert_to_png(tile_output=True)
+
+        assert paths == []
+        assert (tmp_path / "out" / ts).is_dir()
+        assert list((tmp_path / "out" / ts).glob("tile_*.png")) == []
+        idx = json.loads((tmp_path / "out" / "index.json").read_text())
+        assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
+        assert idx["timestamps"] == [ts]
+
+    def test_tile_output_true_writes_only_non_transparent_tiles(self, tmp_path):
+        side = TILE_SIZE * 2
+        data = np.full((side, side), -1.0, dtype=np.float32)
+        data[TILE_SIZE:, :TILE_SIZE] = 50.0
+        data[:TILE_SIZE, TILE_SIZE:] = 75.0
+        r = self._make_renderer(data, tmp_path / "out")
+
+        paths, ts = r.convert_to_png(tile_output=True)
+
+        expected = {
+            tmp_path / "out" / ts / "tile_0_0.png",
+            tmp_path / "out" / ts / "tile_1_1.png",
+        }
+        assert set(paths) == expected
+        assert set((tmp_path / "out" / ts).glob("tile_*.png")) == expected
+
+    def test_rerender_clears_stale_tiles_before_writing(self, tmp_path):
+        side = TILE_SIZE * 2
+        outdir = tmp_path / "out"
+        opaque = np.full((side, side), 50.0, dtype=np.float32)
+        transparent = np.full((side, side), -1.0, dtype=np.float32)
+
+        first_renderer = self._make_renderer(opaque, outdir)
+        first_paths, ts = first_renderer.convert_to_png(tile_output=True)
+        assert len(first_paths) == 4
+
+        second_renderer = self._make_renderer(transparent, outdir)
+        second_paths, second_ts = second_renderer.convert_to_png(tile_output=True)
+
+        assert second_ts == ts
+        assert second_paths == []
+        assert list((outdir / ts).glob("tile_*.png")) == []
+
     def test_unknown_data_key_raises(self, tmp_path, monkeypatch):
         class _BrokenDataset:
             def __getitem__(self, key):
