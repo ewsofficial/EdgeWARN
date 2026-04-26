@@ -83,7 +83,7 @@ Resolves a rendered PNG in the legacy non-tiled naming format when that file exi
 
 - `<GUI_DIR>/<product>/<file_prefix>_{timestamp}.png`
 
-Current GOES and MRMS renderers write tile-first GUI output and update `index.json`, so tile-aware clients should prefer `/renders/tile` and `/renders/tile-info`.
+Current GOES and MRMS renderers write tile-first GUI output, update the product-level `index.json`, and write a timestamp-level `index.json` inside each render folder, so tile-aware clients should prefer `/renders/tile` and `/renders/tile-info`.
 
 Transparent tiles are skipped at write time. A timestamp may therefore have fewer tile PNGs than the declared `tile_grid`, or even zero tile PNGs for a fully transparent render.
 
@@ -104,7 +104,7 @@ Image mode downloads a tile PNG from:
 
 - `<GUI_DIR>/<product>/<timestamp>/tile_{x}_{y}.png`
 
-Tile bounds are validated from `index.json` `tile_grid` when present.
+Tile bounds are validated from the timestamp-level `index.json` `tile_grid` when present, with fallback to the product-level `index.json` `tile_grid`.
 
 Current renderer-written GOES and MRMS products persist:
 
@@ -112,9 +112,22 @@ Current renderer-written GOES and MRMS products persist:
 - `cols=20`
 - `tile_size=350`
 
-If `index.json` is missing, the route falls back to defaults `rows=10`, `cols=20`, `tile_size=350`.
+If product-level `index.json` is missing, the route falls back to defaults `rows=10`, `cols=20`, `tile_size=350` for coordinate validation.
 
-Listing mode enumerates the timestamp directory, keeps only filenames matching `tile_{x}_{y}.png`, filters out-of-bounds coordinates, sorts by `y` then `x`, and returns the valid existing tile coordinates as `[x, y]` pairs.
+Listing mode reads `<GUI_DIR>/<product>/<timestamp>/index.json`, filters invalid or out-of-bounds coordinates, sorts by `y` then `x`, and returns the valid tile coordinates as `[x, y]` pairs. It does not dynamically scan the timestamp directory for tile filenames.
+
+Timestamp-level tile index format:
+
+```json
+{
+  "tiles": [[0, 0], [1, 3], [2, 6]],
+  "tile_grid": {
+    "rows": 10,
+    "cols": 20,
+    "tile_size": 350
+  }
+}
+```
 
 Listing response:
 
@@ -135,7 +148,7 @@ Responses:
 
 - `200`: PNG image in image mode, JSON tile listing in listing mode
 - `400`: missing/invalid/out-of-bounds parameters, or only one of `x`/`y` supplied
-- `404`: unknown product, missing tile, missing timestamp directory, or timestamp absent from `index.json`
+- `404`: unknown product, missing tile, missing timestamp directory, missing timestamp tile index in listing mode, or timestamp absent from product-level `index.json`
 
 ### GET /renders/tile-info?product={product}
 
