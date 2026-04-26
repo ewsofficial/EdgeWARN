@@ -8,6 +8,7 @@
     "api:edgewarn": "node src/EdgeWARN/api/server.js",
     "debug:edgewarn": "node src/EdgeWARN/api/server.js --debug_server",
     "api:ewmrs": "node src/EWMRS/api/server.js",
+    "debug:ewmrs": "node src/EWMRS/api/server.js --debug-server",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
