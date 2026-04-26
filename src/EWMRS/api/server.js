@@ -11,6 +11,9 @@ import rendersRouter from './routes/renders.js';
 import wpcRouter from './routes/wpc.js';
 import colormapsRouter from './routes/colormaps.js';
 
+const DEFAULT_PORT = 3003;
+const DEBUG_PORT = 3004;
+
 const app = express();
 app.use(cors());
 app.use(morgan('tiny'));
@@ -39,6 +42,11 @@ function getBaseDirFromArgs() {
     }
   }
   return null;
+}
+
+function hasDebugServerFlag() {
+  const args = process.argv.slice(2);
+  return args.includes('--debug-server') || args.includes('--debug_server');
 }
 
 // Determine BASE_DIR with parity to Python `util/file.py` behaviour:
@@ -148,7 +156,7 @@ app.get('/healthz', (req, res) => res.json({ ok: true }));
 // Return colormaps.json
 app.use('/colormaps', colormapsRouter);
 
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || (hasDebugServerFlag() ? DEBUG_PORT : DEFAULT_PORT);
 app.listen(PORT, () => {
   console.log(`EWMRS API server listening on port ${PORT}`);
   console.log(`Using BASE_DIR=${BASE_DIR}`);
