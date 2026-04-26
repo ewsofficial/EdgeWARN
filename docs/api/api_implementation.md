@@ -195,7 +195,8 @@ Special behavior:
 
 - Primary API server: `npm run api:edgewarn`
 - Debug API server: `npm run debug:edgewarn`
-- EWMRS API server: `npm run api:ewmrs`
+- EWMRS API server: `npm run api:ewmrs` on port `3003` by default
+- EWMRS debug API server: `npm run debug:ewmrs` passes `--debug-server` and uses port `3004` unless `PORT` is set
 
 See also:
 

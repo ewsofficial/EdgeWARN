@@ -116,7 +116,7 @@ GOES products are reprojected from the native ABI fixed grid into a CONUS-focuse
 - tile size: `350` pixels
 - tile grid capacity per completed product: `200`
 
-The renderers persist the tile grid into each product `index.json`. The EWMRS API falls back to the current `10 x 20` / `350px` grid when `index.json` is missing.
+The renderers persist the tile grid into each product `index.json` and each timestamp folder's `index.json`. The EWMRS API falls back to the current `10 x 20` / `350px` grid when the product-level `index.json` is missing.
 
 ### Single-channel render path
 
@@ -128,7 +128,7 @@ For `source_type="goes_abi"` layers, the pipeline:
 4. converts radiance to reflectance for `C01` through `C06`, or to brightness temperature for `C07` through `C16`
 5. reprojects the normalized array into the GOES Web Mercator target grid
 6. applies the configured colormap
-7. writes tiled GUI PNGs and updates `index.json`
+7. writes tiled GUI PNGs, updates product-level `index.json`, and writes timestamp-level `index.json`
 
 ### RGB render path
 
@@ -139,7 +139,7 @@ For `source_type="goes_abi_rgb"` layers, the pipeline:
 3. rejects a recipe when any required channel is missing or more than `20` minutes away from that batch timestamp
 4. reuses shared per-channel reprojection results through a cycle registry
 5. composes recipe-specific RGB arrays
-6. writes tiled RGBA output and updates `index.json`
+6. writes tiled RGBA output, updates product-level `index.json`, and writes timestamp-level `index.json`
 
 Only the affected recipe is skipped when one RGB dependency is missing or too far from the target timestamp.
 
@@ -147,7 +147,7 @@ Only the affected recipe is skipped when one RGB dependency is missing or too fa
 
 The unified GOES render cycle avoids redundant work in two ways:
 
-- completed tile directories are reused when the timestamp directory exists and its `index.json` entry is valid, even if only a sparse subset of non-transparent tiles was written
+- completed tile directories are reused when the timestamp directory exists, the product-level `index.json` contains the timestamp, and the timestamp-level `index.json` lists valid tiles, even if only a sparse subset of non-transparent tiles was written
 - reprojected channel arrays are cached in a cycle registry so scalar layers and RGB recipes can share the same prepared channel payloads
 
 This is especially important for channels such as `C02` and `C13`, which are used both as standalone products and as RGB inputs.
@@ -163,22 +163,37 @@ Examples:
 ├── 20260423-124000/
 │   ├── tile_0_0.png
 │   ├── ...
-│   └── tile_19_9.png
+│   ├── tile_19_9.png
+│   └── index.json
 └── index.json
 
 <BASE_DIR>/gui/GOES_RGB_TrueColor/
 ├── 20260423-124000/
 │   ├── tile_0_0.png
 │   ├── ...
-│   └── tile_19_9.png
+│   ├── tile_19_9.png
+│   └── index.json
 └── index.json
 ```
 
-Current `index.json` format for rendered products is:
+Current product-level `index.json` format for rendered products is:
 
 ```json
 {
   "timestamps": ["20260423-124000"],
+  "tile_grid": {
+    "rows": 10,
+    "cols": 20,
+    "tile_size": 350
+  }
+}
+```
+
+Current timestamp-level `index.json` format is:
+
+```json
+{
+  "tiles": [[0, 0], [1, 3], [2, 6]],
   "tile_grid": {
     "rows": 10,
     "cols": 20,
@@ -201,7 +216,7 @@ Notes:
 
 - `product` values are the GUI folder names shown in the tables above
 - tile clients should prefer `/renders/tile` and `/renders/tile-info`
-- omitting `x` and `y` from `/renders/tile` lists the valid existing tile coordinates for the timestamp
+- omitting `x` and `y` from `/renders/tile` reads the timestamp-level `index.json` and returns the listed valid tile coordinates
 - `/renders/download` resolves the legacy flat PNG naming contract when such files exist, but the current GOES renderer writes tile-first output
 
 See `docs/api/ewmrs_api_endpoints.md` for route-level behavior.

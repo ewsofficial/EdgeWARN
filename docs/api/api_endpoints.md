@@ -222,7 +222,7 @@ The EWMRS service under `src/EWMRS/api` exposes tiled GUI products through:
 - `GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}[&x={int}&y={int}]`
 - `GET /renders/tile-info?product={product}`
 
-For `/renders/tile`, supplying both `x` and `y` returns a PNG tile; omitting both returns the valid existing tile coordinates for that timestamp.
+For `/renders/tile`, supplying both `x` and `y` returns a PNG tile; omitting both returns the valid tile coordinates listed in the timestamp folder's `index.json`.
 
 GOES products exposed through those routes include:
 
@@ -234,6 +234,7 @@ Behavior notes:
 - ABI single-channel products and RGB composites are generated from staged `ABI-L1b-RadC` channels on the GOES CONUS `EPSG:3857` tile grid.
 - Missing or time-misaligned channels skip only the affected layer or RGB product; other GOES products continue rendering.
 - Current GOES renders are tile-first; `/renders/download` only resolves the legacy flat PNG naming contract when such files exist.
+- Each tile-first timestamp folder includes `index.json` with sparse valid tile coordinates, allowing listing-mode `/renders/tile` requests to avoid scanning tile files.
 
 See `docs/api/ewmrs_api_endpoints.md` for the full EWMRS route contracts and `docs/core/goes_pipeline.md` for the ingest-to-render flow.
 
