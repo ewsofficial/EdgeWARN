@@ -167,8 +167,13 @@ def test_run_goes_render_pipeline_writes_all_rgb_products(monkeypatch, tmp_path)
     for layer in rgb_layers:
         out_dir = layer["outdir"]
         index_data = json.loads((out_dir / "index.json").read_text())
+        tile_index = json.loads((out_dir / "20260317-200000" / "index.json").read_text())
         assert index_data["timestamps"] == ["20260317-200000"]
         assert index_data["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": 350}
+        assert tile_index == {
+            "tiles": [],
+            "tile_grid": {"rows": 2, "cols": 2, "tile_size": 350},
+        }
         assert results[layer["name"]] == []
         assert len(list((out_dir / "20260317-200000").glob("tile_*.png"))) == 0
 
@@ -180,6 +185,10 @@ def test_current_render_paths_returns_sparse_cached_tiles(tmp_path):
 
     for tile_name in ("tile_1_0.png", "tile_0_0.png", "tile_5_3.png"):
         (tile_dir / tile_name).write_bytes(b"tile")
+    (tile_dir / "index.json").write_text(json.dumps({
+        "tiles": [[1, 0], [0, 0], [5, 3]],
+        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+    }))
 
     (out_dir / "index.json").write_text(json.dumps({
         "timestamps": ["20260317-200000"],
@@ -199,6 +208,10 @@ def test_current_render_paths_accepts_valid_zero_tile_timestamp(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
     tile_dir.mkdir(parents=True)
+    (tile_dir / "index.json").write_text(json.dumps({
+        "tiles": [],
+        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+    }))
     (out_dir / "index.json").write_text(json.dumps({
         "timestamps": ["20260317-200000"],
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
@@ -214,9 +227,10 @@ def test_current_render_paths_filters_invalid_and_out_of_bounds_tiles(tmp_path):
     tile_dir = out_dir / "20260317-200000"
     tile_dir.mkdir(parents=True)
     (tile_dir / "tile_0_0.png").write_bytes(b"tile")
-    (tile_dir / "tile_20_0.png").write_bytes(b"tile")
-    (tile_dir / "tile_0_10.png").write_bytes(b"tile")
-    (tile_dir / "tile_bad.png").write_bytes(b"tile")
+    (tile_dir / "index.json").write_text(json.dumps({
+        "tiles": [[0, 0], [20, 0], [0, 10], [1], ["bad", 0], [4, 4]],
+        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+    }))
     (out_dir / "index.json").write_text(json.dumps({
         "timestamps": ["20260317-200000"],
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},

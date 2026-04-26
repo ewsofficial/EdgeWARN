@@ -311,8 +311,13 @@ class TestConvertToPng:
         assert len(paths) == 4
         assert (tmp_path / "out" / ts / "tile_0_0.png").exists()
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
+        tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
         assert idx["timestamps"] == [ts]
+        assert tile_idx == {
+            "tiles": [[0, 0], [1, 0], [0, 1], [1, 1]],
+            "tile_grid": {"rows": 2, "cols": 2, "tile_size": TILE_SIZE},
+        }
 
     def test_tile_output_true_skips_fully_transparent_tiles(self, tmp_path):
         side = TILE_SIZE * 2
@@ -325,8 +330,13 @@ class TestConvertToPng:
         assert (tmp_path / "out" / ts).is_dir()
         assert list((tmp_path / "out" / ts).glob("tile_*.png")) == []
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
+        tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
         assert idx["timestamps"] == [ts]
+        assert tile_idx == {
+            "tiles": [],
+            "tile_grid": {"rows": 2, "cols": 2, "tile_size": TILE_SIZE},
+        }
 
     def test_tile_output_true_writes_only_non_transparent_tiles(self, tmp_path):
         side = TILE_SIZE * 2
@@ -343,6 +353,11 @@ class TestConvertToPng:
         }
         assert set(paths) == expected
         assert set((tmp_path / "out" / ts).glob("tile_*.png")) == expected
+        tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
+        assert tile_idx == {
+            "tiles": [[0, 0], [1, 1]],
+            "tile_grid": {"rows": 2, "cols": 2, "tile_size": TILE_SIZE},
+        }
 
     def test_rerender_clears_stale_tiles_before_writing(self, tmp_path):
         side = TILE_SIZE * 2
@@ -360,6 +375,11 @@ class TestConvertToPng:
         assert second_ts == ts
         assert second_paths == []
         assert list((outdir / ts).glob("tile_*.png")) == []
+        tile_idx = json.loads((outdir / ts / "index.json").read_text())
+        assert tile_idx == {
+            "tiles": [],
+            "tile_grid": {"rows": 2, "cols": 2, "tile_size": TILE_SIZE},
+        }
 
     def test_unknown_data_key_raises(self, tmp_path, monkeypatch):
         class _BrokenDataset:

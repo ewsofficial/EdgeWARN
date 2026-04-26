@@ -92,6 +92,19 @@ def _resolve_tile_workers(tile_count: int) -> int:
     return min(tile_count, 8, cpu_cap)
 
 
+def _normalize_tile_grid(tile_grid: dict | None) -> dict | None:
+    if not isinstance(tile_grid, dict):
+        return None
+
+    rows = tile_grid.get("rows")
+    cols = tile_grid.get("cols")
+    tile_size = tile_grid.get("tile_size")
+    if not isinstance(rows, int) or not isinstance(cols, int) or not isinstance(tile_size, int):
+        return None
+
+    return {"rows": rows, "cols": cols, "tile_size": tile_size}
+
+
 class GUIRGBAWriter:
     def __init__(self, outdir: Path, file_name: str, timestamp):
         self.outdir = outdir
@@ -113,10 +126,16 @@ class GUIRGBAWriter:
         self.outdir.mkdir(parents=True, exist_ok=True)
 
         if tile_output:
-            tile_paths = self._save_tiles_from_array(rgba, timestamp, timing_context=timing_context)
             rows = rgba.shape[0] // TILE_SIZE
             cols = rgba.shape[1] // TILE_SIZE
-            self._update_index(timestamp, tile_grid={"rows": rows, "cols": cols, "tile_size": TILE_SIZE})
+            tile_grid = {"rows": rows, "cols": cols, "tile_size": TILE_SIZE}
+            tile_paths = self._save_tiles_from_array(
+                rgba,
+                timestamp,
+                tile_grid=tile_grid,
+                timing_context=timing_context,
+            )
+            self._update_index(timestamp, tile_grid=tile_grid)
             total_render_s = time.perf_counter() - render_start_s
             io_manager.write_info(
                 f"Render output for {self.file_name} completed in {total_render_s:.3f}s "
@@ -144,14 +163,13 @@ class GUIRGBAWriter:
         rgba: np.ndarray,
         timestamp: str,
         *,
+        tile_grid: dict,
         timing_context: dict | None = None,
     ) -> List[Path]:
-        from .config import TILE_SIZE
-
         tile_schedule_start_s = time.perf_counter()
-        height, width = rgba.shape[:2]
-        grid_cols = width // TILE_SIZE
-        grid_rows = height // TILE_SIZE
+        grid_cols = tile_grid["cols"]
+        grid_rows = tile_grid["rows"]
+        tile_size = tile_grid["tile_size"]
 
         tile_dir = self.outdir / timestamp
         tile_dir.mkdir(parents=True, exist_ok=True)
@@ -164,10 +182,10 @@ class GUIRGBAWriter:
         total_grid_tiles = grid_rows * grid_cols
         for tile_y in range(grid_rows):
             for tile_x in range(grid_cols):
-                left = tile_x * TILE_SIZE
-                right = left + TILE_SIZE
-                top = (grid_rows - 1 - tile_y) * TILE_SIZE
-                bottom = top + TILE_SIZE
+                left = tile_x * tile_size
+                right = left + tile_size
+                top = (grid_rows - 1 - tile_y) * tile_size
+                bottom = top + tile_size
                 tile_filename = f"tile_{tile_x}_{tile_y}.png"
                 tile_path = tile_dir / tile_filename
                 tile_data = rgba[top:bottom, left:right]
@@ -226,7 +244,30 @@ class GUIRGBAWriter:
             f"({len(tile_specs)}/{total_grid_tiles} non-transparent tiles written)"
         )
 
+        self._write_timestamp_index(tile_dir, tile_specs, tile_grid)
+
         return [tile_path for _, tile_path in tile_specs]
+
+    def _write_timestamp_index(self, tile_dir: Path, tile_specs: list[tuple[np.ndarray, Path]], tile_grid: dict) -> None:
+        normalized_tile_grid = _normalize_tile_grid(tile_grid)
+        tiles: list[list[int]] = []
+        for _, tile_path in tile_specs:
+            match = re.fullmatch(r"tile_(\d+)_(\d+)\.png", tile_path.name)
+            if match is None:
+                continue
+            tiles.append([int(match.group(1)), int(match.group(2))])
+
+        tiles.sort(key=lambda item: (item[1], item[0]))
+        output_data = {"tiles": tiles}
+        if normalized_tile_grid is not None:
+            output_data["tile_grid"] = normalized_tile_grid
+
+        index_file = tile_dir / "index.json"
+        try:
+            with open(index_file, "w") as f:
+                json.dump(output_data, f, separators=(",", ":"))
+        except Exception as e:
+            io_manager.write_error(f"Failed to update index.json in {tile_dir}: {e}")
 
     def _update_index(self, new_timestamp, tile_grid=None):
         index_file = self.outdir / "index.json"
