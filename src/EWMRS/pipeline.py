@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -52,7 +51,27 @@ _RUNTIME_CONFIGURED = False
 _GOES_CLEANUP_MIN_INTERVAL_SECONDS = max(0.0, float(os.environ.get("EWMRS_GOES_CLEANUP_MIN_INTERVAL_SECONDS", "300")))
 _LAST_GOES_GUI_CLEANUP_S = 0.0
 _LAST_GOES_GUI_CLEANUP_FUNC_ID: int | None = None
-_TILE_FILENAME_RE = re.compile(r"^tile_(\d+)_(\d+)\.png$")
+
+
+def _load_timestamp_tile_index(tile_dir: Path) -> tuple[list[list[int]], dict | None] | None:
+    index_file = tile_dir / "index.json"
+    if not index_file.exists():
+        return None
+
+    with open(index_file, "r") as f:
+        data = json.load(f)
+
+    if isinstance(data, list):
+        tiles = data
+        tile_grid = None
+    else:
+        tiles = data.get("tiles", [])
+        tile_grid = data.get("tile_grid")
+
+    if not isinstance(tiles, list):
+        return None
+
+    return tiles, tile_grid if isinstance(tile_grid, dict) else None
 
 
 def _ensure_dt(dt_in) -> datetime:
@@ -265,17 +284,23 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
             if not isinstance(data, list):
                 tile_grid = data.get("tile_grid")
 
+        timestamp_index = _load_timestamp_tile_index(tile_dir)
+        if timestamp_index is None:
+            return None
+
+        indexed_tiles, timestamp_tile_grid = timestamp_index
+        if timestamp_tile_grid is not None:
+            tile_grid = timestamp_tile_grid
+
         tile_paths: list[tuple[int, int, Path]] = []
-        for child in tile_dir.iterdir():
-            if not child.is_file():
+        for tile in indexed_tiles:
+            if not isinstance(tile, list) or len(tile) != 2:
                 continue
 
-            match = _TILE_FILENAME_RE.fullmatch(child.name)
-            if match is None:
+            tile_x, tile_y = tile
+            if not isinstance(tile_x, int) or not isinstance(tile_y, int):
                 continue
 
-            tile_x = int(match.group(1))
-            tile_y = int(match.group(2))
             if tile_grid is not None:
                 rows = tile_grid.get("rows")
                 cols = tile_grid.get("cols")
@@ -283,7 +308,11 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
                     if tile_x < 0 or tile_x >= cols or tile_y < 0 or tile_y >= rows:
                         continue
 
-            tile_paths.append((tile_y, tile_x, child))
+            tile_path = tile_dir / f"tile_{tile_x}_{tile_y}.png"
+            if not tile_path.is_file():
+                continue
+
+            tile_paths.append((tile_y, tile_x, tile_path))
 
         tile_paths.sort(key=lambda item: (item[0], item[1]))
         return [path for _, _, path in tile_paths]

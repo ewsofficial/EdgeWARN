@@ -334,6 +334,13 @@ describe('GET /renders/tile', () => {
         await fs.promises.writeFile(path.join(tsDir, 'tile_1_0.png'), 'fake tile');
         await fs.promises.writeFile(path.join(tsDir, 'tile_2_1.png'), 'fake tile');
         await fs.promises.writeFile(
+            path.join(tsDir, 'index.json'),
+            JSON.stringify({
+                tiles: [[0, 0], [1, 0], [2, 1]],
+                tile_grid: { rows: 2, cols: 3, tile_size: 350 }
+            })
+        );
+        await fs.promises.writeFile(
             path.join(productDir, 'index.json'),
             JSON.stringify({
                 timestamps: ['20260317-200000'],
@@ -413,10 +420,15 @@ describe('GET /renders/tile', () => {
         expect(res.headers['content-type']).toContain('image/png');
     });
 
-    it('listing mode filters invalid filenames and out-of-bounds tiles', async () => {
+    it('listing mode filters invalid and out-of-bounds indexed tiles', async () => {
         const tsDir = path.join(tempDir, 'gui', 'CompRefQC', '20260317-200000');
-        await fs.promises.writeFile(path.join(tsDir, 'tile_bad.png'), 'fake tile');
-        await fs.promises.writeFile(path.join(tsDir, 'tile_9_9.png'), 'fake tile');
+        await fs.promises.writeFile(
+            path.join(tsDir, 'index.json'),
+            JSON.stringify({
+                tiles: [[0, 0], [1, 0], [2, 1], ['bad', 0], [9, 9], [1]],
+                tile_grid: { rows: 2, cols: 3, tile_size: 350 }
+            })
+        );
 
         const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000').expect(200);
         expect(res.body.tiles).toEqual([[0, 0], [1, 0], [2, 1]]);
@@ -426,6 +438,13 @@ describe('GET /renders/tile', () => {
         const productDir = path.join(tempDir, 'gui', 'CompRefQC');
         const emptyTsDir = path.join(productDir, '20260317-210000');
         await fs.promises.mkdir(emptyTsDir);
+        await fs.promises.writeFile(
+            path.join(emptyTsDir, 'index.json'),
+            JSON.stringify({
+                tiles: [],
+                tile_grid: { rows: 2, cols: 3, tile_size: 350 }
+            })
+        );
         await fs.promises.writeFile(
             path.join(productDir, 'index.json'),
             JSON.stringify({
@@ -450,6 +469,14 @@ describe('GET /renders/tile', () => {
 
         const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-230000').expect(404);
         expect(res.body.error).toContain('Timestamp not found');
+    });
+
+    it('listing mode returns 404 when the timestamp index is missing', async () => {
+        const tsDir = path.join(tempDir, 'gui', 'CompRefQC', '20260317-200000');
+        await fs.promises.unlink(path.join(tsDir, 'index.json'));
+
+        const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000').expect(404);
+        expect(res.body.error).toContain('tile index');
     });
 });
 

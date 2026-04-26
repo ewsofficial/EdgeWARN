@@ -4,7 +4,6 @@ import path from 'path';
 import fs from 'fs/promises';
 
 const DEFAULT_TILE_GRID = { rows: 10, cols: 20, tile_size: 350 };
-const TILE_FILENAME_RE = /^tile_(\d+)_(\d+)\.png$/;
 
 // Mapping: User/Folder Product Name -> File Prefix
 // Derived from EWMRS/render/config.py
@@ -63,7 +62,7 @@ async function loadProductIndex(productDir) {
     return {
       exists: true,
       timestamps: Array.isArray(indexData) ? indexData : (indexData.timestamps || []),
-      tileGrid: Array.isArray(indexData) ? DEFAULT_TILE_GRID : (indexData.tile_grid || DEFAULT_TILE_GRID),
+      tileGrid: Array.isArray(indexData) ? DEFAULT_TILE_GRID : (normalizeTileGrid(indexData.tile_grid) || DEFAULT_TILE_GRID),
     };
   } catch (err) {
     if (err.code === 'ENOENT') {
@@ -75,6 +74,74 @@ async function loadProductIndex(productDir) {
     }
     throw err;
   }
+}
+
+async function loadTimestampIndex(timestampDir) {
+  const indexFile = path.join(timestampDir, 'index.json');
+
+  try {
+    const data = await fs.readFile(indexFile, 'utf8');
+    const indexData = JSON.parse(data);
+
+    return {
+      exists: true,
+      tiles: Array.isArray(indexData) ? indexData : (indexData.tiles || []),
+      tileGrid: Array.isArray(indexData) ? null : (indexData.tile_grid || null),
+    };
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return {
+        exists: false,
+        tiles: [],
+        tileGrid: null,
+      };
+    }
+    throw err;
+  }
+}
+
+function normalizeTileGrid(tileGrid) {
+  if (!tileGrid || typeof tileGrid !== 'object') {
+    return null;
+  }
+
+  const { rows, cols, tile_size: tileSize } = tileGrid;
+  if (!Number.isInteger(rows) || !Number.isInteger(cols) || !Number.isInteger(tileSize)) {
+    return null;
+  }
+
+  return { rows, cols, tile_size: tileSize };
+}
+
+function normalizeIndexedTiles(tiles, gridInfo) {
+  if (!Array.isArray(tiles)) {
+    return [];
+  }
+
+  return tiles
+    .map((tile) => {
+      if (!Array.isArray(tile) || tile.length !== 2) {
+        return null;
+      }
+
+      const [tileX, tileY] = tile;
+      if (!Number.isInteger(tileX) || !Number.isInteger(tileY)) {
+        return null;
+      }
+
+      if (tileX < 0 || tileX >= gridInfo.cols || tileY < 0 || tileY >= gridInfo.rows) {
+        return null;
+      }
+
+      return [tileX, tileY];
+    })
+    .filter((tile) => tile !== null)
+    .sort((left, right) => {
+      if (left[1] !== right[1]) {
+        return left[1] - right[1];
+      }
+      return left[0] - right[0];
+    });
 }
 
 // GET /get-items
@@ -223,17 +290,17 @@ router.get('/tile', async (req, res) => {
   const productDir = path.join(GUI_DIR, product);
   try {
     const indexData = await loadProductIndex(productDir);
-    const gridInfo = indexData.tileGrid;
+    const timestampDir = path.join(productDir, timestamp);
+    const timestampIndex = await loadTimestampIndex(timestampDir);
+    const gridInfo = normalizeTileGrid(timestampIndex.tileGrid) || indexData.tileGrid;
 
     if (!hasX && !hasY) {
       if (indexData.exists && !indexData.timestamps.includes(timestamp)) {
         return res.status(404).json({ error: 'Timestamp not found' });
       }
 
-      const tileDir = path.join(productDir, timestamp);
-      let entries;
       try {
-        entries = await fs.readdir(tileDir, { withFileTypes: true });
+        await fs.access(timestampDir);
       } catch (err) {
         if (err.code === 'ENOENT') {
           return res.status(404).json({ error: 'Timestamp directory not found' });
@@ -241,29 +308,11 @@ router.get('/tile', async (req, res) => {
         throw err;
       }
 
-      const tiles = entries
-        .filter((entry) => entry.isFile())
-        .map((entry) => {
-          const match = entry.name.match(TILE_FILENAME_RE);
-          if (!match) {
-            return null;
-          }
+      if (!timestampIndex.exists) {
+        return res.status(404).json({ error: 'Timestamp tile index not found' });
+      }
 
-          const tileX = parseInt(match[1], 10);
-          const tileY = parseInt(match[2], 10);
-          if (tileX < 0 || tileX >= gridInfo.cols || tileY < 0 || tileY >= gridInfo.rows) {
-            return null;
-          }
-
-          return [tileX, tileY];
-        })
-        .filter((tile) => tile !== null)
-        .sort((left, right) => {
-          if (left[1] !== right[1]) {
-            return left[1] - right[1];
-          }
-          return left[0] - right[0];
-        });
+      const tiles = normalizeIndexedTiles(timestampIndex.tiles, gridInfo);
 
       return res.json({
         product,
