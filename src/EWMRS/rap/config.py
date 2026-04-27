@@ -17,7 +17,7 @@ def _instability_and_shear_layers() -> list[dict]:
             "filter": {"typeOfLevel": "surface", "level": 0},
             "units": "J kg-1",
             "scale": {"min": 0.0, "max": 6000.0},
-            "outdir": fs.GUI_RAP_DIR / "RAP_CAPE_Surface",
+            "outdir": fs.GUI_RAP_DIR / "CAPE_Surface",
             "description": "RAP surface convective available potential energy",
         },
         {
@@ -26,7 +26,7 @@ def _instability_and_shear_layers() -> list[dict]:
             "filter": {"typeOfLevel": "surface", "level": 0},
             "units": "J kg-1",
             "scale": {"min": -1000.0, "max": 0.0},
-            "outdir": fs.GUI_RAP_DIR / "RAP_CIN_Surface",
+            "outdir": fs.GUI_RAP_DIR / "CIN_Surface",
             "description": "RAP surface convective inhibition",
         },
         {
@@ -35,7 +35,7 @@ def _instability_and_shear_layers() -> list[dict]:
             "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 9000},
             "units": "J kg-1",
             "scale": {"min": 0.0, "max": 6000.0},
-            "outdir": fs.GUI_RAP_DIR / "RAP_MLCAPE",
+            "outdir": fs.GUI_RAP_DIR / "MLCAPE",
             "description": "RAP mixed-layer CAPE from the 90-0 mb above ground layer",
         },
         {
@@ -44,7 +44,7 @@ def _instability_and_shear_layers() -> list[dict]:
             "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 25500},
             "units": "J kg-1",
             "scale": {"min": 0.0, "max": 6000.0},
-            "outdir": fs.GUI_RAP_DIR / "RAP_MUCAPE",
+            "outdir": fs.GUI_RAP_DIR / "MUCAPE",
             "description": "RAP most-unstable CAPE from the 255-0 mb above ground layer",
         },
         {
@@ -53,7 +53,7 @@ def _instability_and_shear_layers() -> list[dict]:
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 3000},
             "units": "m2 s-2",
             "scale": {"min": -500.0, "max": 1000.0},
-            "outdir": fs.GUI_RAP_DIR / "RAP_SRH_0_3km",
+            "outdir": fs.GUI_RAP_DIR / "SRH_0-3km",
             "description": "RAP 0-3 km storm-relative helicity",
         },
         {
@@ -62,7 +62,7 @@ def _instability_and_shear_layers() -> list[dict]:
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 1000},
             "units": "m2 s-2",
             "scale": {"min": -500.0, "max": 1000.0},
-            "outdir": fs.GUI_RAP_DIR / "RAP_SRH_0_1km",
+            "outdir": fs.GUI_RAP_DIR / "SRH-0_1km",
             "description": "RAP 0-1 km storm-relative helicity",
         },
     ]
