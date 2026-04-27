@@ -4,7 +4,7 @@ Tests for Synoptic ingest main module
 
 import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, call, patch, AsyncMock
 from EdgeWARN.ingest.synoptic.main import download_rap, download_rap_async
 
 
@@ -22,8 +22,11 @@ class TestDownloadRapAsync:
                 
                 result = await download_rap_async(datetime(2023, 10, 15, 14, 30))
                 
-                # Should call async_clean_old_files
-                mock_clean.assert_called_once()
+                # Should pre-clean to leave room for the new file, then enforce the final 3-file limit
+                mock_clean.assert_has_awaits([
+                    call(mock_clean.call_args_list[0].args[0], max_age_minutes=90, max_files=2),
+                    call(mock_clean.call_args_list[1].args[0], max_age_minutes=90, max_files=3),
+                ])
                 assert result == "test_file.grib2"
 
     @pytest.mark.asyncio
@@ -53,14 +56,15 @@ class TestDownloadRap:
     def test_download_with_sync_context(self, mock_io):
         """Test download when no event loop exists"""
         with patch('EdgeWARN.ingest.synoptic.main.asyncio.get_running_loop', side_effect=RuntimeError):
-            with patch('EdgeWARN.ingest.synoptic.main.asyncio.run') as mock_run:
-                mock_run.return_value = "success"
-                
-                result = download_rap(datetime(2023, 10, 15, 14, 30))
-                
-                # Should use asyncio.run
-                mock_run.assert_called_once()
-                assert result == "success"
+            with patch('EdgeWARN.ingest.synoptic.main.fs.clean_old_files'):
+                with patch('EdgeWARN.ingest.synoptic.main.asyncio.run') as mock_run:
+                    mock_run.return_value = "success"
+
+                    result = download_rap(datetime(2023, 10, 15, 14, 30))
+
+                    # Should use asyncio.run
+                    mock_run.assert_called_once()
+                    assert result == "success"
 
     def test_download_with_async_context(self, mock_io):
         """Test download when event loop exists"""
@@ -81,8 +85,11 @@ class TestDownloadRap:
             with patch('EdgeWARN.ingest.synoptic.main.asyncio.run'):
                 download_rap(datetime(2023, 10, 15, 14, 30))
                 
-                # Should call clean_old_files
-                mock_clean.assert_called_once()
+                # Should pre-clean to leave room for the new file, then enforce the final 3-file limit
+                mock_clean.assert_has_calls([
+                    call(mock_clean.call_args_list[0].args[0], max_age_minutes=90, max_files=2),
+                    call(mock_clean.call_args_list[1].args[0], max_age_minutes=90, max_files=3),
+                ])
 
     def test_download_with_custom_datetime(self, mock_io):
         """Test download with specific datetime"""
