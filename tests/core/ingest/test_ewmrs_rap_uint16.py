@@ -10,10 +10,60 @@ from EWMRS.rap.uint16_pipeline import run_rap_uint16_pipeline, scale_to_uint16
 
 def test_default_config_defines_rap_uint16_layers():
     layers = get_rap_uint16_layers()
+    layer_by_name = {layer["name"]: layer for layer in layers}
 
-    assert any(layer["name"] == "RAP_Temperature_2m" for layer in layers)
+    assert "RAP_Temperature_2m" in layer_by_name
     assert all("outdir" in layer for layer in layers)
     assert all("scale" in layer for layer in layers)
+
+    expected_instability_layers = {
+        "RAP_CAPE_Surface": {
+            "short_names": ["cape"],
+            "filter": {"typeOfLevel": "surface", "level": 0},
+            "scale": {"min": 0.0, "max": 6000.0},
+        },
+        "RAP_CIN_Surface": {
+            "short_names": ["cin"],
+            "filter": {"typeOfLevel": "surface", "level": 0},
+            "scale": {"min": -1000.0, "max": 0.0},
+        },
+        "RAP_SRH_0_3km": {
+            "short_names": ["hlcy"],
+            "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 3000},
+            "scale": {"min": -500.0, "max": 1000.0},
+        },
+        "RAP_SRH_0_1km": {
+            "short_names": ["hlcy"],
+            "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 1000},
+            "scale": {"min": -500.0, "max": 1000.0},
+        },
+        "RAP_MLCAPE": {
+            "short_names": ["cape"],
+            "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 9000},
+            "scale": {"min": 0.0, "max": 6000.0},
+        },
+        "RAP_MUCAPE": {
+            "short_names": ["cape"],
+            "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 25500},
+            "scale": {"min": 0.0, "max": 6000.0},
+        },
+    }
+    for name, expected in expected_instability_layers.items():
+        layer = layer_by_name[name]
+        assert layer["short_names"] == expected["short_names"]
+        assert layer["filter"] == expected["filter"]
+        assert layer["scale"] == expected["scale"]
+        assert layer["outdir"].name == name
+
+    pressure_levels = (925, 850, 700, 500, 250)
+    for level in pressure_levels:
+        for component, short_name in (("U", "u"), ("V", "v")):
+            name = f"RAP_{component}Wind_{level}mb"
+            layer = layer_by_name[name]
+            assert layer["short_names"] == [short_name]
+            assert layer["filter"] == {"typeOfLevel": "isobaricInhPa", "level": level}
+            assert layer["scale"] == {"min": -80.0, "max": 80.0}
+            assert layer["outdir"].name == name
 
 
 def test_scale_to_uint16_clips_and_reserves_nodata():
