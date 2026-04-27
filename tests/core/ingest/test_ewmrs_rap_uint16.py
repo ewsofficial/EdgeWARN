@@ -15,6 +15,8 @@ def test_default_config_defines_rap_uint16_layers():
     assert "RAP_Temperature_2m" in layer_by_name
     assert all("outdir" in layer for layer in layers)
     assert all("scale" in layer for layer in layers)
+    assert all(not layer["outdir"].name.startswith("RAP_") for layer in layers)
+    assert layer_by_name["RAP_Temperature_2m"]["outdir"].name == "Temperature_2m"
 
     expected_instability_layers = {
         "RAP_CAPE_Surface": {
@@ -42,10 +44,35 @@ def test_default_config_defines_rap_uint16_layers():
             "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 9000},
             "scale": {"min": 0.0, "max": 6000.0},
         },
+        "RAP_MLCIN": {
+            "short_names": ["cin"],
+            "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 9000},
+            "scale": {"min": -1000.0, "max": 0.0},
+        },
         "RAP_MUCAPE": {
             "short_names": ["cape"],
             "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 25500},
             "scale": {"min": 0.0, "max": 6000.0},
+        },
+        "RAP_MUCIN": {
+            "short_names": ["cin"],
+            "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 25500},
+            "scale": {"min": -1000.0, "max": 0.0},
+        },
+        "RAP_CAPE_0_3km": {
+            "short_names": ["cape"],
+            "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 0},
+            "scale": {"min": 0.0, "max": 6000.0},
+        },
+        "RAP_LiftedIndex_Surface_500_1000mb": {
+            "short_names": ["lftx"],
+            "filter": {"typeOfLevel": "isobaricLayer", "level": 500},
+            "scale": {"min": -15.0, "max": 15.0},
+        },
+        "RAP_AbsoluteVorticity_500mb": {
+            "short_names": ["absv"],
+            "filter": {"typeOfLevel": "isobaricInhPa", "level": 500},
+            "scale": {"min": -0.0002, "max": 0.0002},
         },
     }
     for name, expected in expected_instability_layers.items():
@@ -53,17 +80,43 @@ def test_default_config_defines_rap_uint16_layers():
         assert layer["short_names"] == expected["short_names"]
         assert layer["filter"] == expected["filter"]
         assert layer["scale"] == expected["scale"]
-        assert layer["outdir"].name == name
+
+    expected_surface_layers = {
+        "RAP_ThetaE_Surface": {"short_names": ["papt"], "filter": {"typeOfLevel": "surface", "level": 0}},
+        "RAP_SnowDepth_Surface": {"short_names": ["sde"], "filter": {"typeOfLevel": "surface", "level": 0}},
+        "RAP_FreezingRain_Surface": {"short_names": ["frzr"], "filter": {"typeOfLevel": "surface", "level": 0}},
+        "RAP_CategoricalSnow_Surface": {"short_names": ["csnow"], "filter": {"typeOfLevel": "surface", "level": 0}},
+        "RAP_CategoricalIcePellets_Surface": {"short_names": ["cicep"], "filter": {"typeOfLevel": "surface", "level": 0}},
+        "RAP_CategoricalFreezingRain_Surface": {"short_names": ["cfrzr"], "filter": {"typeOfLevel": "surface", "level": 0}},
+        "RAP_CategoricalRain_Surface": {"short_names": ["crain"], "filter": {"typeOfLevel": "surface", "level": 0}},
+        "RAP_WetBulbZeroHeight": {"short_names": ["gh"], "filter": {"typeOfLevel": "lowestLevelWetBulb0", "level": 0}},
+    }
+    for name, expected in expected_surface_layers.items():
+        layer = layer_by_name[name]
+        assert layer["short_names"] == expected["short_names"]
+        assert layer["filter"] == expected["filter"]
 
     pressure_levels = (925, 850, 700, 500, 250)
     for level in pressure_levels:
+        temperature_name = f"RAP_Temperature_{level}mb"
+        temperature_layer = layer_by_name[temperature_name]
+        assert temperature_layer["short_names"] == ["t"]
+        assert temperature_layer["filter"] == {"typeOfLevel": "isobaricInhPa", "level": level}
+        assert temperature_layer["scale"] == {"min": 180.0, "max": 330.0}
+
+        rh_name = f"RAP_RelativeHumidity_{level}mb"
+        rh_layer = layer_by_name[rh_name]
+        assert rh_layer["short_names"] == ["r"]
+        assert rh_layer["filter"] == {"typeOfLevel": "isobaricInhPa", "level": level}
+        assert rh_layer["scale"] == {"min": 0.0, "max": 100.0}
+
         for component, short_name in (("U", "u"), ("V", "v")):
             name = f"RAP_{component}Wind_{level}mb"
             layer = layer_by_name[name]
             assert layer["short_names"] == [short_name]
             assert layer["filter"] == {"typeOfLevel": "isobaricInhPa", "level": level}
             assert layer["scale"] == {"min": -80.0, "max": 80.0}
-            assert layer["outdir"].name == name
+            assert layer["outdir"].name == name.removeprefix("RAP_")
 
 
 def test_scale_to_uint16_clips_and_reserves_nodata():
@@ -84,7 +137,7 @@ def test_rap_uint16_pipeline_writes_entire_grid_array_and_metadata(tmp_path):
         "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
         "units": "K",
         "scale": {"min": 180.0, "max": 330.0},
-        "outdir": tmp_path / "gui" / "RAP" / "RAP_TestLayer",
+        "outdir": tmp_path / "gui" / "RAP" / "TestLayer",
     }
 
     def mock_codes_get_string(gid, key):
@@ -153,7 +206,7 @@ def test_rap_uint16_pipeline_reports_missing_layer_without_failing(tmp_path):
         "short_names": ["2t"],
         "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
         "scale": {"min": 180.0, "max": 330.0},
-        "outdir": tmp_path / "gui" / "RAP" / "RAP_MissingLayer",
+        "outdir": tmp_path / "gui" / "RAP" / "MissingLayer",
     }
 
     with patch("EWMRS.rap.uint16_pipeline.eccodes.codes_grib_multi_support_on"), \
