@@ -57,7 +57,7 @@ def _define_paths(base_path):
     global GUI_GOES_C16_DIR
     global GUI_GOES_RGB_TRUE_COLOR_DIR, GUI_GOES_RGB_AIRMASS_DIR, GUI_GOES_RGB_NIGHTTIME_MICROPHYSICS_DIR
     global GUI_GOES_RGB_DAY_CLOUD_PHASE_DIR, GUI_GOES_RGB_SIMPLE_WATER_VAPOR_DIR, GUI_GOES_RGB_SANDWICH_DIR
-    global GUI_MAP_DIR, GUI_MANIFEST_JSON, GUI_COLORMAP_JSON
+    global GUI_RAP_DIR, GUI_MAP_DIR, GUI_MANIFEST_JSON, GUI_COLORMAP_JSON
     global WPC_DIR, WPC_SFC_DIR, STORMCELL_JSON
 
     base_path = Path(base_path)
@@ -175,6 +175,7 @@ def _define_paths(base_path):
     GUI_GOES_RGB_DAY_CLOUD_PHASE_DIR = gui_dir / "GOES_RGB_DayCloudPhase"
     GUI_GOES_RGB_SIMPLE_WATER_VAPOR_DIR = gui_dir / "GOES_RGB_SimpleWaterVapor"
     GUI_GOES_RGB_SANDWICH_DIR = gui_dir / "GOES_RGB_Sandwich"
+    GUI_RAP_DIR = gui_dir / "RAP"
     GUI_MAP_DIR = gui_dir / "maps"
     GUI_MANIFEST_JSON = gui_dir / "overlay_manifest.json"
     WPC_DIR = base_path / "wpc"
