@@ -237,6 +237,8 @@ def _build_metadata(
             "level": message.get("level"),
         },
     }
+    if layer.get("colormap_key"):
+        metadata["colormap_key"] = layer["colormap_key"]
     if layer.get("description"):
         metadata["description"] = layer["description"]
     return metadata

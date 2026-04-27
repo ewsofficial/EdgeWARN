@@ -188,7 +188,7 @@ Runtime layout:
 <BASE_DIR>/gui/RAP/<LayerFolder>/<YYYYMMDD-HHMMSS>/metadata.json
 ```
 
-`data.u16` contains raw little-endian `uint16` values. The reserved missing/no-data value is `65535`. Clients must fetch `metadata.json` to decode the array shape, scale, units, and GRIB metadata.
+`data.u16` contains raw little-endian `uint16` values. The reserved missing/no-data value is `65535`. Clients must fetch `metadata.json` to decode the array shape, scale, units, GRIB metadata, and `colormap_key`.
 
 Layer names are on-disk folder names, for example `Temperature_2m`, `CAPE_0-3km`, `UWind_925mb`, `SRH-0_1km`, or `BestLiftedIndex_180-0mbAGL`. They are not derived from Python `RAP_` layer identifiers.
 
@@ -247,6 +247,7 @@ Example metadata:
   },
   "missing_value": 65535,
   "units": "K",
+  "colormap_key": "RAP_Temperature_2m",
   "grib": {
     "shortName": "2t",
     "typeOfLevel": "heightAboveGround",
@@ -261,6 +262,8 @@ Responses:
 - `400`: missing/invalid `layer` or `timestamp`
 - `404`: layer folder, timestamp folder, or `metadata.json` not found
 - `500`: JSON parse/read/server failure
+
+`colormap_key` matches the RAP layer identifier configured in the converter and maps directly to a same-named entry from `GET /colormaps`. RAP colormaps use NOAA/SPC/GEMPAK lineage palettes where practical source tables exist, with documented project fallbacks for variables without a usable standard reference.
 
 ### GET /rap/data?layer={layer}&timestamp={YYYYMMDD-HHMMSS}
 
