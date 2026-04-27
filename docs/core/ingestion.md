@@ -67,11 +67,21 @@ Primary entry points:
 ## RAP / Synoptic
 
 `src/common/ingest/synoptic/main.py` stages RAP files for integration.
+When tandem ingest receives a staged RAP path, EWMRS also runs the RAP Uint16Array conversion pipeline for configured layers.
 
 Entry points:
 
 - `download_rap_async(dt)`
 - `download_rap(dt)`
+
+RAP Uint16Array conversion is configured in `src/EWMRS/rap/config.py` and writes one raw little-endian `data.u16` file per configured data layer:
+
+```text
+<BASE_DIR>/gui/RAP/<LayerName>/<YYYYMMDD-HHMM00>/data.u16
+<BASE_DIR>/gui/RAP/<LayerName>/<YYYYMMDD-HHMM00>/metadata.json
+```
+
+Each `data.u16` contains the full `Ni * Nj` grid from one matched RAP GRIB message. Each `metadata.json` records the array shape, grid point count, scale, missing-value sentinel, byte order, units, and source GRIB keys needed to reconstruct values from a browser `Uint16Array`.
 
 ## METAR
 

@@ -809,6 +809,13 @@ def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutpu
     return results
 
 
+def run_rap_uint16_pipeline(rap_file, dt=None):
+    """Run the EWMRS RAP Uint16Array conversion pipeline for one RAP GRIB2 file."""
+    from EWMRS.rap.uint16_pipeline import run_rap_uint16_pipeline as _run_rap_uint16_pipeline
+
+    return _run_rap_uint16_pipeline(rap_file, dt=dt)
+
+
 def _summarize_results(results: Dict[str, RenderOutput]) -> str:
     successful_layers = sum(1 for output_path in results.values() if output_path is not None)
     total_layers = len(results)

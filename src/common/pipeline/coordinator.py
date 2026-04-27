@@ -38,20 +38,38 @@ async def _safe_ingest(
     async_func,
     sync_fallback,
     *args,
+    require_result: bool = False,
 ):
     try:
-        await async_func(*args)
+        result = await async_func(*args)
+        if require_result and not result:
+            raise RuntimeError(f"{task_name} ingestion did not return a staged file path")
         log(f"INFO: Async {task_name} ingestion successful")
-        return True
+        return result if require_result else True
     except Exception as exc:
         log(f"WARN: Async {task_name} ingestion failed: {exc}. Falling back to sync.")
         try:
-            await asyncio.to_thread(sync_fallback, *args)
+            result = await asyncio.to_thread(sync_fallback, *args)
+            if require_result and not result:
+                raise RuntimeError(f"{task_name} sync fallback did not return a staged file path")
             log(f"INFO: Sync fallback for {task_name} successful")
-            return True
+            return result if require_result else True
         except Exception as fallback_exc:
             log(f"ERROR: Both async and sync ingestion failed for {task_name}: {fallback_exc}")
-            return False
+            return None if require_result else False
+
+
+async def _run_rap_uint16_conversion(rap_path, dt: datetime, log: LogFunc) -> bool:
+    try:
+        from EWMRS.pipeline import run_rap_uint16_pipeline
+
+        results = await asyncio.to_thread(run_rap_uint16_pipeline, rap_path, dt)
+        successful_layers = sum(1 for path in results.values() if path is not None)
+        log(f"INFO: EWMRS RAP Uint16Array conversion completed: {successful_layers}/{len(results)} layers succeeded")
+        return True
+    except Exception as exc:
+        log(f"WARN: EWMRS RAP Uint16Array conversion failed: {exc}")
+        return False
 
 
 async def run_tandem_ingest_cycle(
@@ -115,6 +133,7 @@ async def run_tandem_ingest_cycle(
             download_rap_async,
             download_rap,
             dt,
+            require_result=True,
         )
     )
 
@@ -139,16 +158,22 @@ async def run_tandem_ingest_cycle(
         on_ewmrs_mrms_ready(state)
 
     if goes_task is not None:
-        goes_ok, rap_ok = await asyncio.gather(goes_task, rap_task)
+        goes_ok, rap_path = await asyncio.gather(goes_task, rap_task)
     else:
         goes_ok = False
-        rap_ok = await rap_task
+        rap_path = await rap_task
         log("INFO: GOES ingest is decoupled from this cycle; integration readiness does not wait for GOES")
+
+    rap_ok = bool(rap_path)
 
     if not goes_ok:
         state.errors["goes_ingest"] = "GOES inputs unavailable"
     if not rap_ok:
         state.errors["rap_ingest"] = "RAP inputs unavailable"
+    else:
+        rap_array_ok = await _run_rap_uint16_conversion(rap_path, dt, log)
+        if not rap_array_ok:
+            state.errors["ewmrs_rap_uint16"] = "EWMRS RAP Uint16Array conversion failed"
 
     state.ewmrs_goes_inputs_ready = state.ewmrs_mrms_inputs_ready and goes_ok
     if not state.ewmrs_goes_inputs_ready:
