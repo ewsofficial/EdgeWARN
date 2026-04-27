@@ -38,7 +38,9 @@ def _get_cached_cmap(colormap_key: str):
             for cmap in source.get("colormaps", []):
                 if cmap.get("name") == colormap_key:
                     thresholds = np.array([t["value"] for t in cmap["thresholds"]], dtype=np.float32)
-                    colors = np.array([t["rgb"] for t in cmap["thresholds"]], dtype=np.float32)
+                    # Use "rgba" for RAP colormaps, "rgb" for others
+                    color_key = "rgba" if colormap_key.startswith("RAP_") else "rgb"
+                    colors = np.array([t[color_key] for t in cmap["thresholds"]], dtype=np.float32)
                     colors_uint8 = colors.astype(np.uint8)
                     interpolate = cmap.get("interpolate", True)
                     result = (thresholds, colors, colors_uint8, interpolate)

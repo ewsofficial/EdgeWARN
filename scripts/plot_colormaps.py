@@ -56,14 +56,16 @@ def _build_mpl_colormap(colormap_def: dict) -> tuple[LinearSegmentedColormap, fl
     stops: list[tuple[float, tuple[float, float, float]]] = []
     for threshold in thresholds:
         value = float(threshold["value"])
-        rgb = threshold["rgb"]
-        if len(rgb) not in (3, 4):
-            raise ValueError(f"Colormap {colormap_def.get('name')} has non-RGB/RGBA threshold {threshold}")
+        # Use "rgba" for RAP colormaps, "rgb" for others
+        color_key = "rgba" if colormap_def.get('name', '').startswith("RAP_") else "rgb"
+        rgba = threshold[color_key]
+        if len(rgba) not in (3, 4):
+            raise ValueError(f"Colormap {colormap_def.get('name')} has invalid color array {rgba}")
 
         pos = (value - vmin) / (vmax - vmin)
         pos = min(1.0, max(0.0, pos))
         # Use first 3 values (RGB), ignore alpha if present
-        stops.append((pos, (float(rgb[0]) / 255.0, float(rgb[1]) / 255.0, float(rgb[2]) / 255.0)))
+        stops.append((pos, (float(rgba[0]) / 255.0, float(rgba[1]) / 255.0, float(rgba[2]) / 255.0)))
 
     if stops[0][0] > 0.0:
         stops.insert(0, (0.0, stops[0][1]))
