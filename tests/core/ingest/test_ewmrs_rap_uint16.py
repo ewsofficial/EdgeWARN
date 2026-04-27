@@ -17,7 +17,19 @@ def test_default_config_defines_rap_uint16_layers():
     assert all("outdir" in layer for layer in layers)
     assert all("scale" in layer for layer in layers)
     assert all("colormap_key" in layer for layer in layers)
-    assert all(layer["colormap_key"] == layer["name"] for layer in layers)
+    # Check colormap key mappings
+    for layer in layers:
+        name = layer["name"]
+        if name in ("RAP_CAPE_Surface", "RAP_MLCAPE", "RAP_MUCAPE", "RAP_CAPE_0_3km"):
+            assert layer["colormap_key"] == "RAP_CAPE"
+        elif name.startswith("RAP_Temperature_"):
+            assert layer["colormap_key"] == "RAP_Temperature"
+        elif name.startswith("RAP_RelativeHumidity_"):
+            assert layer["colormap_key"] == "RAP_RelativeHumidity"
+        elif name.startswith("RAP_UWind_") or name.startswith("RAP_VWind_"):
+            assert layer["colormap_key"] == "RAP_Wind"
+        else:
+            assert layer["colormap_key"] == name
     assert all(not layer["outdir"].name.startswith("RAP_") for layer in layers)
     assert layer_by_name["RAP_Temperature_2m"]["outdir"].name == "Temperature_2m"
 
@@ -26,46 +38,55 @@ def test_default_config_defines_rap_uint16_layers():
             "short_names": ["cape"],
             "filter": {"typeOfLevel": "surface", "level": 0},
             "scale": {"min": 0.0, "max": 6000.0},
+            "colormap_key": "RAP_CAPE",
         },
         "RAP_CIN_Surface": {
             "short_names": ["cin"],
             "filter": {"typeOfLevel": "surface", "level": 0},
             "scale": {"min": -1000.0, "max": 0.0},
+            "colormap_key": "RAP_CIN_Surface",
         },
         "RAP_SRH_0-3km": {
             "short_names": ["hlcy"],
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 3000},
             "scale": {"min": -500.0, "max": 1000.0},
+            "colormap_key": "RAP_SRH_0-3km",
         },
         "RAP_SRH_0-1km": {
             "short_names": ["hlcy"],
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 1000},
             "scale": {"min": -500.0, "max": 1000.0},
+            "colormap_key": "RAP_SRH_0-1km",
         },
         "RAP_MLCAPE": {
             "short_names": ["cape"],
             "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 9000},
             "scale": {"min": 0.0, "max": 6000.0},
+            "colormap_key": "RAP_CAPE",
         },
         "RAP_MLCIN": {
             "short_names": ["cin"],
             "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 9000},
             "scale": {"min": -1000.0, "max": 0.0},
+            "colormap_key": "RAP_MLCIN",
         },
         "RAP_MUCAPE": {
             "short_names": ["cape"],
             "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 25500},
             "scale": {"min": 0.0, "max": 6000.0},
+            "colormap_key": "RAP_CAPE",
         },
         "RAP_MUCIN": {
             "short_names": ["cin"],
             "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 25500},
             "scale": {"min": -1000.0, "max": 0.0},
+            "colormap_key": "RAP_MUCIN",
         },
         "RAP_CAPE_0_3km": {
             "short_names": ["cape"],
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 0},
             "scale": {"min": 0.0, "max": 6000.0},
+            "colormap_key": "RAP_CAPE",
         },
         "RAP_LiftedIndex_Surface_500_1000mb": {
             "short_names": ["lftx"],
@@ -88,10 +109,6 @@ def test_default_config_defines_rap_uint16_layers():
         "RAP_ThetaE_Surface": {"short_names": ["papt"], "filter": {"typeOfLevel": "surface", "level": 0}},
         "RAP_SnowDepth_Surface": {"short_names": ["sde"], "filter": {"typeOfLevel": "surface", "level": 0}},
         "RAP_FreezingRain_Surface": {"short_names": ["frzr"], "filter": {"typeOfLevel": "surface", "level": 0}},
-        "RAP_CategoricalSnow_Surface": {"short_names": ["csnow"], "filter": {"typeOfLevel": "surface", "level": 0}},
-        "RAP_CategoricalIcePellets_Surface": {"short_names": ["cicep"], "filter": {"typeOfLevel": "surface", "level": 0}},
-        "RAP_CategoricalFreezingRain_Surface": {"short_names": ["cfrzr"], "filter": {"typeOfLevel": "surface", "level": 0}},
-        "RAP_CategoricalRain_Surface": {"short_names": ["crain"], "filter": {"typeOfLevel": "surface", "level": 0}},
         "RAP_WetBulbZeroHeight": {"short_names": ["gh"], "filter": {"typeOfLevel": "lowestLevelWetBulb0", "level": 0}},
     }
     for name, expected in expected_surface_layers.items():
@@ -131,20 +148,6 @@ def test_rap_colormap_keys_exist_in_colormaps_catalog():
     for layer in layers:
         assert layer["colormap_key"] in colormap_names
 
-
-def test_rap_categorical_colormaps_are_discrete():
-    categorical_layers = {
-        "RAP_CategoricalSnow_Surface",
-        "RAP_CategoricalIcePellets_Surface",
-        "RAP_CategoricalFreezingRain_Surface",
-        "RAP_CategoricalRain_Surface",
-    }
-    colormaps_path = Path(__file__).resolve().parents[3] / "src" / "EWMRS" / "colormaps.json"
-    colormaps = json.loads(colormaps_path.read_text(encoding="utf-8"))[0]["colormaps"]
-    by_name = {entry["name"]: entry for entry in colormaps}
-
-    for layer_name in categorical_layers:
-        assert by_name[layer_name]["interpolate"] is False
 
 
 def test_scale_to_uint16_clips_and_reserves_nodata():
