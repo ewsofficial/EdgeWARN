@@ -11,12 +11,20 @@ import os from 'os';
 
 import rendersRouter from '../../../src/EWMRS/api/routes/renders.js';
 import colormapsRouter from '../../../src/EWMRS/api/routes/colormaps.js';
+import rapRouter from '../../../src/EWMRS/api/routes/rap.js';
 
 function createApp(tempDir) {
     const app = express();
     app.locals.GUI_DIR = path.join(tempDir, 'gui');
     app.use('/renders', rendersRouter);
+    app.use('/rap', rapRouter);
     return app;
+}
+
+function parseBinary(res, callback) {
+    const chunks = [];
+    res.on('data', chunk => chunks.push(chunk));
+    res.on('end', () => callback(null, Buffer.concat(chunks)));
 }
 
 describe('EWMRS Root Route', () => {
@@ -31,7 +39,7 @@ describe('EWMRS Root Route', () => {
                 service: 'EWMRS API',
                 base_dir: req.app.locals.BASE_DIR,
                 gui_dir: req.app.locals.GUI_DIR,
-                endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/healthz', '/colormaps']
+                endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
             });
         });
     });
@@ -40,6 +48,7 @@ describe('EWMRS Root Route', () => {
         const res = await request(app).get('/').expect(200);
         expect(res.body.service).toBe('EWMRS API');
         expect(res.body.endpoints).toContain('/renders/get-items');
+        expect(res.body.endpoints).toContain('/rap/data');
     });
 });
 
@@ -563,6 +572,164 @@ describe('GET /renders/tile-info', () => {
         expect(res.body.cols).toBe(20);
         expect(res.body.tile_size).toBe(350);
         expect(res.body.timestamps).toEqual(['20260317-200000']);
+    });
+});
+
+describe('EWMRS RAP Uint16 routes', () => {
+    let app, tempDir, rapDir, tempLayerDir, capeLayerDir, timestampDir;
+
+    const timestamp = '20260427-120000';
+    const metadata = {
+        layer: 'Temperature_2m',
+        timestamp,
+        shape: [2, 3],
+        grid: { ni: 3, nj: 2, point_count: 6 },
+        dtype: 'uint16',
+        byte_order: 'little_endian',
+        scale: { min: 180.0, max: 330.0 },
+        missing_value: 65535,
+        units: 'K',
+        grib: { shortName: '2t', typeOfLevel: 'heightAboveGround', level: 2 }
+    };
+
+    beforeEach(async () => {
+        tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ewmrs-rap-'));
+        const guiDir = path.join(tempDir, 'gui');
+        rapDir = path.join(guiDir, 'RAP');
+        tempLayerDir = path.join(rapDir, 'Temperature_2m');
+        capeLayerDir = path.join(rapDir, 'CAPE_0-3km');
+        timestampDir = path.join(tempLayerDir, timestamp);
+
+        await fs.promises.mkdir(timestampDir, { recursive: true });
+        await fs.promises.mkdir(capeLayerDir, { recursive: true });
+        await fs.promises.writeFile(
+            path.join(tempLayerDir, 'index.json'),
+            JSON.stringify({ timestamps: [timestamp] })
+        );
+        await fs.promises.writeFile(
+            path.join(capeLayerDir, 'index.json'),
+            JSON.stringify(['20260427-110000'])
+        );
+        await fs.promises.writeFile(path.join(timestampDir, 'metadata.json'), JSON.stringify(metadata));
+        await fs.promises.writeFile(path.join(timestampDir, 'data.u16'), Buffer.from([1, 0, 2, 0, 255, 255]));
+
+        app = createApp(tempDir);
+    });
+
+    afterEach(async () => {
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+    });
+
+    it('lists RAP layer folders that contain index.json', async () => {
+        const noIndexDir = path.join(rapDir, 'NoIndex');
+        await fs.promises.mkdir(noIndexDir);
+
+        const res = await request(app).get('/rap/layers').expect(200);
+
+        expect(res.body).toEqual(['CAPE_0-3km', 'Temperature_2m']);
+    });
+
+    it('returns timestamps from object index format', async () => {
+        const res = await request(app).get('/rap/fetch?layer=Temperature_2m').expect(200);
+        expect(res.body).toEqual([timestamp]);
+    });
+
+    it('returns timestamps from array index format', async () => {
+        const res = await request(app).get('/rap/fetch?layer=CAPE_0-3km').expect(200);
+        expect(res.body).toEqual(['20260427-110000']);
+    });
+
+    it('returns an empty timestamp list when an existing layer has no index yet', async () => {
+        const noIndexDir = path.join(rapDir, 'UWind_925mb');
+        await fs.promises.mkdir(noIndexDir);
+
+        const res = await request(app).get('/rap/fetch?layer=UWind_925mb').expect(200);
+        expect(res.body).toEqual([]);
+    });
+
+    it('returns metadata JSON for a RAP layer timestamp', async () => {
+        const res = await request(app)
+            .get(`/rap/metadata?layer=Temperature_2m&timestamp=${timestamp}`)
+            .expect(200);
+
+        expect(res.body).toEqual(metadata);
+    });
+
+    it('serves binary data with Uint16 decode headers', async () => {
+        const res = await request(app)
+            .get(`/rap/data?layer=Temperature_2m&timestamp=${timestamp}`)
+            .buffer(true)
+            .parse(parseBinary)
+            .expect(200);
+
+        expect(Buffer.isBuffer(res.body)).toBe(true);
+        expect(Array.from(res.body)).toEqual([1, 0, 2, 0, 255, 255]);
+        expect(res.headers['content-type']).toContain('application/octet-stream');
+        expect(res.headers['content-disposition']).toBe(`inline; filename="Temperature_2m_${timestamp}.u16"`);
+        expect(res.headers['x-data-type']).toBe('uint16');
+        expect(res.headers['x-byte-order']).toBe('little_endian');
+        expect(res.headers['x-missing-value']).toBe('65535');
+        expect(res.headers['x-grid-ni']).toBe('3');
+        expect(res.headers['x-grid-nj']).toBe('2');
+        expect(res.headers['x-scale-min']).toBe('180');
+        expect(res.headers['x-scale-max']).toBe('330');
+        expect(res.headers['x-units']).toBe('K');
+    });
+
+    it('returns 400 when layer is missing', async () => {
+        const res = await request(app).get('/rap/fetch').expect(400);
+        expect(res.body.error).toContain('Missing layer');
+    });
+
+    it('returns 400 for invalid layer characters', async () => {
+        const res = await request(app).get('/rap/fetch?layer=Bad Layer').expect(400);
+        expect(res.body.error).toContain('Invalid layer');
+    });
+
+    it('returns 400 for layer traversal attempts', async () => {
+        const res = await request(app).get('/rap/fetch?layer=../Temperature_2m').expect(400);
+        expect(res.body.error).toContain('Invalid layer');
+    });
+
+    it('returns 400 for invalid timestamp format', async () => {
+        const res = await request(app)
+            .get('/rap/metadata?layer=Temperature_2m&timestamp=20260427-1200')
+            .expect(400);
+
+        expect(res.body.error).toContain('Invalid timestamp');
+    });
+
+    it('returns 400 for timestamp traversal attempts', async () => {
+        const res = await request(app)
+            .get('/rap/data?layer=Temperature_2m&timestamp=../20260427-120000')
+            .expect(400);
+
+        expect(res.body.error).toContain('Invalid timestamp');
+    });
+
+    it('returns 404 for a missing layer folder', async () => {
+        const res = await request(app).get('/rap/fetch?layer=MissingLayer').expect(404);
+        expect(res.body.error).toContain('Layer not found');
+    });
+
+    it('returns 404 for missing metadata', async () => {
+        await fs.promises.unlink(path.join(timestampDir, 'metadata.json'));
+
+        const res = await request(app)
+            .get(`/rap/metadata?layer=Temperature_2m&timestamp=${timestamp}`)
+            .expect(404);
+
+        expect(res.body.error).toContain('Metadata not found');
+    });
+
+    it('returns 404 for missing data file', async () => {
+        await fs.promises.unlink(path.join(timestampDir, 'data.u16'));
+
+        const res = await request(app)
+            .get(`/rap/data?layer=Temperature_2m&timestamp=${timestamp}`)
+            .expect(404);
+
+        expect(res.body.error).toContain('Data file not found');
     });
 });
 

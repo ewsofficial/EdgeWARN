@@ -5,7 +5,7 @@ This document describes the current HTTP routes implemented in `src/EWMRS/api`.
 ## API Overview
 
 - Base URL: `/`
-- Response format: JSON for metadata/list routes, PNG for render downloads/tiles
+- Response format: JSON for metadata/list routes, PNG for render downloads/tiles, raw binary for RAP Uint16 arrays
 
 ## Root Endpoints
 
@@ -24,6 +24,10 @@ Response:
     "/renders/get-items",
     "/renders/fetch",
     "/renders/download",
+    "/rap/layers",
+    "/rap/fetch",
+    "/rap/metadata",
+    "/rap/data",
     "/healthz",
     "/colormaps"
   ]
@@ -171,6 +175,128 @@ Responses:
 - `400`: invalid product parameter
 - `404`: unknown product
 - `500`: read/server failure
+
+## RAP Uint16 Endpoints
+
+RAP Uint16 outputs are served from `<BASE_DIR>/gui/RAP`. These routes intentionally remain separate from `/renders/*` because RAP outputs are raw arrays plus metadata, not PNG renders or tiles.
+
+Runtime layout:
+
+```text
+<BASE_DIR>/gui/RAP/<LayerFolder>/index.json
+<BASE_DIR>/gui/RAP/<LayerFolder>/<YYYYMMDD-HHMMSS>/data.u16
+<BASE_DIR>/gui/RAP/<LayerFolder>/<YYYYMMDD-HHMMSS>/metadata.json
+```
+
+`data.u16` contains raw little-endian `uint16` values. The reserved missing/no-data value is `65535`. Clients must fetch `metadata.json` to decode the array shape, scale, units, and GRIB metadata.
+
+Layer names are on-disk folder names, for example `Temperature_2m`, `CAPE_0-3km`, `UWind_925mb`, `SRH-0_1km`, or `BestLiftedIndex_180-0mbAGL`. They are not derived from Python `RAP_` layer identifiers.
+
+### GET /rap/layers
+
+Returns available RAP layer folders under `<BASE_DIR>/gui/RAP` that contain an `index.json` file.
+
+Responses:
+
+- `200`: `string[]`
+- `500`: read/server failure
+
+Example:
+
+```json
+["CAPE_0-3km", "Temperature_2m", "UWind_925mb"]
+```
+
+### GET /rap/fetch?layer={layer}
+
+Returns available RAP timestamps for a layer from `<BASE_DIR>/gui/RAP/<layer>/index.json`.
+
+Accepted index formats:
+
+- `string[]`
+- `{ "timestamps": string[] }`
+
+Responses:
+
+- `200`: `string[]`; returns `[]` when the layer folder exists but `index.json` has not been written yet
+- `400`: missing or invalid `layer`
+- `404`: layer folder not found
+- `500`: JSON parse/read/server failure
+
+### GET /rap/metadata?layer={layer}&timestamp={YYYYMMDD-HHMMSS}
+
+Returns parsed `metadata.json` for the selected layer timestamp.
+
+Example metadata:
+
+```json
+{
+  "layer": "Temperature_2m",
+  "timestamp": "20260427-120000",
+  "shape": [337, 451],
+  "grid": {
+    "ni": 451,
+    "nj": 337,
+    "point_count": 151987
+  },
+  "dtype": "uint16",
+  "byte_order": "little_endian",
+  "scale": {
+    "min": 180.0,
+    "max": 330.0
+  },
+  "missing_value": 65535,
+  "units": "K",
+  "grib": {
+    "shortName": "2t",
+    "typeOfLevel": "heightAboveGround",
+    "level": 2
+  }
+}
+```
+
+Responses:
+
+- `200`: metadata JSON payload
+- `400`: missing/invalid `layer` or `timestamp`
+- `404`: layer folder, timestamp folder, or `metadata.json` not found
+- `500`: JSON parse/read/server failure
+
+### GET /rap/data?layer={layer}&timestamp={YYYYMMDD-HHMMSS}
+
+Streams the raw `<BASE_DIR>/gui/RAP/<layer>/<timestamp>/data.u16` bytes exactly as written by the RAP Uint16 converter.
+
+Response headers include:
+
+- `Content-Type: application/octet-stream`
+- `Content-Disposition: inline; filename="{layer}_{timestamp}.u16"`
+- `X-Data-Type: uint16`
+- `X-Byte-Order: little_endian`
+- `X-Missing-Value: 65535`
+
+When `metadata.json` is present, decode headers are also included when available:
+
+- `X-Grid-Ni`
+- `X-Grid-Nj`
+- `X-Scale-Min`
+- `X-Scale-Max`
+- `X-Units`
+
+Responses:
+
+- `200`: raw binary `data.u16` payload
+- `400`: missing/invalid `layer` or `timestamp`
+- `404`: layer folder, timestamp folder, or `data.u16` not found
+- `500`: read/server failure
+
+Decode formula:
+
+```text
+if value == 65535:
+  decoded = missing
+else:
+  decoded = scale.min + (value / 65534) * (scale.max - scale.min)
+```
 
 ## Colormap Endpoint
 

@@ -238,6 +238,17 @@ Behavior notes:
 
 See `docs/api/ewmrs_api_endpoints.md` for the full EWMRS route contracts and `docs/core/goes_pipeline.md` for the ingest-to-render flow.
 
+## EWMRS RAP Uint16 Products
+
+The EWMRS service also exposes RAP Uint16 array outputs from `<BASE_DIR>/gui/RAP` through:
+
+- `GET /rap/layers`
+- `GET /rap/fetch?layer={layer}`
+- `GET /rap/metadata?layer={layer}&timestamp={YYYYMMDD-HHMMSS}`
+- `GET /rap/data?layer={layer}&timestamp={YYYYMMDD-HHMMSS}`
+
+`/rap/data` returns raw little-endian `uint16` bytes with `65535` reserved as no-data. Clients should use the matching `/rap/metadata` response for shape, scale, units, and GRIB metadata. RAP layer names are the on-disk folders under `gui/RAP`, such as `Temperature_2m`, `CAPE_0-3km`, or `UWind_925mb`.
+
 ### GET /health
 
 Response:

@@ -168,7 +168,7 @@ def test_rap_uint16_pipeline_writes_entire_grid_array_and_metadata(tmp_path):
         timings = {}
         results = run_rap_uint16_pipeline(
             rap_file,
-            dt=datetime(2026, 4, 27, 13, 0, tzinfo=timezone.utc),
+            dt=datetime(2026, 4, 27, 14, 0, tzinfo=timezone.utc),
             layers=[layer],
             timings=timings,
         )
@@ -189,6 +189,8 @@ def test_rap_uint16_pipeline_writes_entire_grid_array_and_metadata(tmp_path):
     assert metadata["dtype"] == "uint16"
     assert metadata["byte_order"] == "little_endian"
     assert metadata["grib"] == {"shortName": "2t", "typeOfLevel": "heightAboveGround", "level": 2}
+    assert metadata["timestamp"] == "20260427-130000"
+    assert metadata["source_file"] == rap_file.name
 
     index = json.loads(index_path.read_text())
     assert index["timestamps"] == ["20260427-130000"]

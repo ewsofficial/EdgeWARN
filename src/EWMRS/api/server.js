@@ -10,6 +10,7 @@ import os from 'os';
 import rendersRouter from './routes/renders.js';
 import wpcRouter from './routes/wpc.js';
 import colormapsRouter from './routes/colormaps.js';
+import rapRouter from './routes/rap.js';
 
 const DEFAULT_PORT = 3003;
 const DEBUG_PORT = 3004;
@@ -138,6 +139,7 @@ app.locals.BASE_DIR = BASE_DIR;
 app.locals.GUI_DIR = GUI_DIR;
 
 app.use('/renders', rendersRouter);
+app.use('/rap', rapRouter);
 app.use('/wpc', wpcRouter);
 
 // Root endpoint to avoid default express 404 "Cannot GET /"
@@ -146,7 +148,7 @@ app.get('/', (req, res) => {
     service: 'EWMRS API',
     base_dir: BASE_DIR,
     gui_dir: GUI_DIR,
-    endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/healthz', '/colormaps']
+    endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
   });
 });
 
