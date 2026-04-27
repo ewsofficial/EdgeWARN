@@ -70,7 +70,7 @@ def _scalar_data_to_rgba(
     else:
         indices = np.digitize(safe_data, thresholds) - 1
         indices = np.clip(indices, 0, len(colors_uint8) - 1)
-        rgba_flat[:, :3] = colors_uint8[indices]
+        rgba_flat[:, :4] = colors_uint8[indices]
 
     rgba_flat[valid_mask & (flat_data >= thresholds[0]), 3] = 255
     return rgba_flat.reshape((data.shape[0], data.shape[1], 4))

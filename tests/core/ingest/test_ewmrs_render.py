@@ -49,18 +49,18 @@ class TestGetCmap:
                         "name": "TestCmap",
                         "interpolate": True,
                         "thresholds": [
-                            {"value": 0, "rgb": [0, 0, 0]},
-                            {"value": 50, "rgb": [128, 128, 128]},
-                            {"value": 100, "rgb": [255, 255, 255]},
+                            {"value": 0, "rgb": [0, 0, 0, 255]},
+                            {"value": 50, "rgb": [128, 128, 128, 255]},
+                            {"value": 100, "rgb": [255, 255, 255, 255]},
                         ],
                     },
                     {
                         "name": "DiscreteCmap",
                         "interpolate": False,
                         "thresholds": [
-                            {"value": 0, "rgb": [0, 0, 0]},
-                            {"value": 10, "rgb": [255, 0, 0]},
-                            {"value": 20, "rgb": [0, 255, 0]},
+                            {"value": 0, "rgb": [0, 0, 0, 255]},
+                            {"value": 10, "rgb": [255, 0, 0, 255]},
+                            {"value": 20, "rgb": [0, 255, 0, 255]},
                         ],
                     },
                 ]
@@ -116,18 +116,18 @@ class TestColormapInterpolation:
                         "name": "InterpCmap",
                         "interpolate": True,
                         "thresholds": [
-                            {"value": 0, "rgb": [0, 0, 0]},
-                            {"value": 50, "rgb": [128, 128, 128]},
-                            {"value": 100, "rgb": [255, 255, 255]},
+                            {"value": 0, "rgb": [0, 0, 0, 255]},
+                            {"value": 50, "rgb": [128, 128, 128, 255]},
+                            {"value": 100, "rgb": [255, 255, 255, 255]},
                         ],
                     },
                     {
                         "name": "DiscreteCmap",
                         "interpolate": False,
                         "thresholds": [
-                            {"value": 0, "rgb": [0, 0, 0]},
-                            {"value": 10, "rgb": [255, 0, 0]},
-                            {"value": 20, "rgb": [0, 255, 0]},
+                            {"value": 0, "rgb": [0, 0, 0, 255]},
+                            {"value": 10, "rgb": [255, 0, 0, 255]},
+                            {"value": 20, "rgb": [0, 255, 0, 255]},
                         ],
                     },
                 ]
@@ -206,7 +206,7 @@ class TestUpdateIndex:
         self.outdir = tmp_path / "gui" / "layer"
         self.outdir.mkdir(parents=True)
         self._orig = fs.GUI_COLORMAP_JSON
-        cmap_data = [{"colormaps": [{"name": "T", "interpolate": True, "thresholds": [{"value": 0, "rgb": [0,0,0]}]}]}]
+        cmap_data = [{"colormaps": [{"name": "T", "interpolate": True, "thresholds": [{"value": 0, "rgb": [0,0,0,255]}]}]}]
         fs.GUI_COLORMAP_JSON = tmp_path / "cmap.json"
         fs.GUI_COLORMAP_JSON.write_text(json.dumps(cmap_data))
         render_module._COLORMAP_CACHE.clear()
@@ -271,7 +271,7 @@ class TestConvertToPng:
                     {
                         "name": "TestCmap",
                         "interpolate": True,
-                        "thresholds": [{"value": 0, "rgb": [0, 0, 0]}, {"value": 100, "rgb": [255, 255, 255]}],
+                        "thresholds": [{"value": 0, "rgb": [0, 0, 0, 255]}, {"value": 100, "rgb": [255, 255, 255, 255]}],
                     }
                 ]
             }
