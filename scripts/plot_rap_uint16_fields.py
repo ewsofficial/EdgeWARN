@@ -11,9 +11,11 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import LinearSegmentedColormap
 
 
 UINT16_VALID_MAX = 65534.0
+COLORMAPS_PATH = Path(__file__).resolve().parents[1] / "src" / "EWMRS" / "colormaps.json"
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,56 @@ def wind_speed_name(type_of_level: str, level: int | None) -> str:
     return f"RAP_WindSpeed_{type_of_level}"
 
 
+def load_project_colormap(colormap_name: str) -> LinearSegmentedColormap:
+    """Build a Matplotlib colormap from src/EWMRS/colormaps.json."""
+    raw = json.loads(COLORMAPS_PATH.read_text(encoding="utf-8"))
+    if isinstance(raw, dict):
+        raw = [raw]
+
+    for source in raw:
+        for colormap_def in source.get("colormaps", []):
+            if str(colormap_def.get("name")) != colormap_name:
+                continue
+
+            value_range = colormap_def.get("range")
+            if not isinstance(value_range, list) or len(value_range) != 2:
+                raise ValueError(f"Colormap {colormap_name} is missing a valid range")
+
+            vmin = float(value_range[0])
+            vmax = float(value_range[1])
+            color_key = "rgba" if colormap_name.startswith("RAP_") else "rgb"
+            thresholds = sorted(colormap_def.get("thresholds", []), key=lambda t: float(t["value"]))
+            if len(thresholds) < 2:
+                raise ValueError(f"Colormap {colormap_name} must define at least two thresholds")
+
+            stops: list[tuple[float, tuple[float, float, float, float]]] = []
+            for threshold in thresholds:
+                color = threshold[color_key]
+                pos = (float(threshold["value"]) - vmin) / (vmax - vmin)
+                pos = min(1.0, max(0.0, pos))
+                alpha = float(color[3]) / 255.0 if len(color) >= 4 else 1.0
+                stops.append(
+                    (
+                        pos,
+                        (
+                            float(color[0]) / 255.0,
+                            float(color[1]) / 255.0,
+                            float(color[2]) / 255.0,
+                            alpha,
+                        ),
+                    )
+                )
+
+            if stops[0][0] > 0.0:
+                stops.insert(0, (0.0, stops[0][1]))
+            if stops[-1][0] < 1.0:
+                stops.append((1.0, stops[-1][1]))
+
+            return LinearSegmentedColormap.from_list(colormap_name, stops)
+
+    raise ValueError(f"Colormap {colormap_name} not found in {COLORMAPS_PATH}")
+
+
 def plot_field(data: np.ndarray, title: str, units: str, output_path: Path, *, cmap: str = "viridis") -> None:
     """Plot one 2D field to PNG."""
     finite = np.isfinite(data)
@@ -128,10 +180,58 @@ def plot_field(data: np.ndarray, title: str, units: str, output_path: Path, *, c
     plt.close(fig)
 
 
+def plot_wind_vector_field(
+    u_data: np.ndarray,
+    v_data: np.ndarray,
+    title: str,
+    units: str,
+    output_path: Path,
+    *,
+    cmap: str | LinearSegmentedColormap,
+) -> None:
+    """Plot wind speed with a downsampled quiver overlay."""
+    speed = np.hypot(u_data, v_data)
+    finite = np.isfinite(speed)
+    if not np.any(finite):
+        raise ValueError(f"Cannot plot {title}: wind field has no finite values")
+
+    fig, ax = plt.subplots(figsize=(11, 8), constrained_layout=True)
+    image = ax.imshow(speed, origin="lower", cmap=cmap, aspect="auto")
+
+    step = max(1, min(speed.shape) // 40)
+    y_coords, x_coords = np.mgrid[0 : speed.shape[0] : step, 0 : speed.shape[1] : step]
+    u_sample = u_data[::step, ::step]
+    v_sample = v_data[::step, ::step]
+    valid = np.isfinite(u_sample) & np.isfinite(v_sample)
+
+    ax.quiver(
+        x_coords[valid],
+        y_coords[valid],
+        u_sample[valid],
+        v_sample[valid],
+        color="black",
+        alpha=0.65,
+        pivot="mid",
+        scale=900,
+        width=0.002,
+    )
+
+    ax.set_title(title)
+    ax.set_xlabel("RAP grid x")
+    ax.set_ylabel("RAP grid y")
+    colorbar = fig.colorbar(image, ax=ax, shrink=0.85)
+    colorbar.set_label(units)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
 def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
     """Plot scalar fields and derived wind-speed products."""
     written: list[Path] = []
     decoded: dict[tuple[str, str], np.ndarray] = {}
+    rap_wind_cmap = load_project_colormap("RAP_Wind")
 
     for field in fields:
         data = decode_uint16_field(field.data_path, field.metadata)
@@ -160,10 +260,16 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
         if u_data.shape != v_data.shape:
             raise ValueError(f"Wind component shape mismatch: {u_field.layer} {u_data.shape} vs {v_field.layer} {v_data.shape}")
 
-        speed = np.hypot(u_data, v_data)
         name = wind_speed_name(type_of_level, level)
         output_path = output_dir / timestamp / f"{name}.png"
-        plot_field(speed, f"{name} {timestamp}", "m s-1", output_path, cmap="magma")
+        plot_wind_vector_field(
+            u_data,
+            v_data,
+            f"{name} {timestamp}",
+            "m s-1",
+            output_path,
+            cmap=rap_wind_cmap,
+        )
         written.append(output_path)
 
     return written
