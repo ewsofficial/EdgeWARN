@@ -689,66 +689,6 @@
         ]
       },
       {
-        "name": "RAP_CategoricalSnow_Surface",
-        "description": "RAP categorical precipitation class colors from GEMPAK coltbl.ptype using discrete non-interpolated mapping",
-        "type": "RAP_GEMPAK_PTYPE",
-        "units": "category",
-        "interpolate": false,
-        "range": [
-          0.0,
-          1.0
-        ],
-        "thresholds": [
-          {"value": 0.0, "rgb": [40, 40, 40]},
-          {"value": 1.0, "rgb": [120, 170, 255]}
-        ]
-      },
-      {
-        "name": "RAP_CategoricalIcePellets_Surface",
-        "description": "RAP categorical precipitation class colors from GEMPAK coltbl.ptype using discrete non-interpolated mapping",
-        "type": "RAP_GEMPAK_PTYPE",
-        "units": "category",
-        "interpolate": false,
-        "range": [
-          0.0,
-          1.0
-        ],
-        "thresholds": [
-          {"value": 0.0, "rgb": [40, 40, 40]},
-          {"value": 1.0, "rgb": [224, 140, 255]}
-        ]
-      },
-      {
-        "name": "RAP_CategoricalFreezingRain_Surface",
-        "description": "RAP categorical precipitation class colors from GEMPAK coltbl.ptype using discrete non-interpolated mapping",
-        "type": "RAP_GEMPAK_PTYPE",
-        "units": "category",
-        "interpolate": false,
-        "range": [
-          0.0,
-          1.0
-        ],
-        "thresholds": [
-          {"value": 0.0, "rgb": [40, 40, 40]},
-          {"value": 1.0, "rgb": [255, 110, 110]}
-        ]
-      },
-      {
-        "name": "RAP_CategoricalRain_Surface",
-        "description": "RAP categorical precipitation class colors from GEMPAK coltbl.ptype using discrete non-interpolated mapping",
-        "type": "RAP_GEMPAK_PTYPE",
-        "units": "category",
-        "interpolate": false,
-        "range": [
-          0.0,
-          1.0
-        ],
-        "thresholds": [
-          {"value": 0.0, "rgb": [40, 40, 40]},
-          {"value": 1.0, "rgb": [110, 210, 120]}
-        ]
-      },
-      {
         "name": "RAP_WetBulbZeroHeight",
         "description": "RAP height colormap derived from GEMPAK upc_z.tbl with evenly spaced thresholds over the configured RAP scale range",
         "type": "RAP_GEMPAK_UPC_Z",
@@ -795,30 +735,6 @@
         ]
       },
       {
-        "name": "RAP_CAPE_Surface",
-        "description": "RAP CAPE colormap derived from GEMPAK cape_upc.tbl with evenly spaced thresholds over the configured RAP scale range",
-        "type": "RAP_GEMPAK_CAPE_UPC",
-        "units": "J kg-1",
-        "interpolate": true,
-        "range": [
-          0.0,
-          6000.0
-        ],
-        "thresholds": [
-          {"value": 0.0, "rgb": [20, 40, 120]},
-          {"value": 600.0, "rgb": [30, 90, 180]},
-          {"value": 1200.0, "rgb": [40, 140, 235]},
-          {"value": 1800.0, "rgb": [40, 185, 210]},
-          {"value": 2400.0, "rgb": [50, 210, 145]},
-          {"value": 3000.0, "rgb": [120, 220, 70]},
-          {"value": 3600.0, "rgb": [205, 225, 40]},
-          {"value": 4200.0, "rgb": [245, 200, 35]},
-          {"value": 4800.0, "rgb": [250, 150, 35]},
-          {"value": 5400.0, "rgb": [235, 75, 45]},
-          {"value": 6000.0, "rgb": [205, 25, 65]}
-        ]
-      },
-      {
         "name": "RAP_CIN_Surface",
         "description": "RAP CIN colormap derived from GEMPAK gdpicinh.tbl with evenly spaced thresholds over the configured RAP scale range",
         "type": "RAP_GEMPAK_GDPICINH",
@@ -838,30 +754,6 @@
           {"value": -250.0, "rgb": [165, 220, 250]},
           {"value": -125.0, "rgb": [210, 238, 252]},
           {"value": 0.0, "rgb": [248, 248, 248]}
-        ]
-      },
-      {
-        "name": "RAP_MLCAPE",
-        "description": "RAP CAPE colormap derived from GEMPAK cape_upc.tbl with evenly spaced thresholds over the configured RAP scale range",
-        "type": "RAP_GEMPAK_CAPE_UPC",
-        "units": "J kg-1",
-        "interpolate": true,
-        "range": [
-          0.0,
-          6000.0
-        ],
-        "thresholds": [
-          {"value": 0.0, "rgb": [20, 40, 120]},
-          {"value": 600.0, "rgb": [30, 90, 180]},
-          {"value": 1200.0, "rgb": [40, 140, 235]},
-          {"value": 1800.0, "rgb": [40, 185, 210]},
-          {"value": 2400.0, "rgb": [50, 210, 145]},
-          {"value": 3000.0, "rgb": [120, 220, 70]},
-          {"value": 3600.0, "rgb": [205, 225, 40]},
-          {"value": 4200.0, "rgb": [245, 200, 35]},
-          {"value": 4800.0, "rgb": [250, 150, 35]},
-          {"value": 5400.0, "rgb": [235, 75, 45]},
-          {"value": 6000.0, "rgb": [205, 25, 65]}
         ]
       },
       {
@@ -887,30 +779,6 @@
         ]
       },
       {
-        "name": "RAP_MUCAPE",
-        "description": "RAP CAPE colormap derived from GEMPAK cape_upc.tbl with evenly spaced thresholds over the configured RAP scale range",
-        "type": "RAP_GEMPAK_CAPE_UPC",
-        "units": "J kg-1",
-        "interpolate": true,
-        "range": [
-          0.0,
-          6000.0
-        ],
-        "thresholds": [
-          {"value": 0.0, "rgb": [20, 40, 120]},
-          {"value": 600.0, "rgb": [30, 90, 180]},
-          {"value": 1200.0, "rgb": [40, 140, 235]},
-          {"value": 1800.0, "rgb": [40, 185, 210]},
-          {"value": 2400.0, "rgb": [50, 210, 145]},
-          {"value": 3000.0, "rgb": [120, 220, 70]},
-          {"value": 3600.0, "rgb": [205, 225, 40]},
-          {"value": 4200.0, "rgb": [245, 200, 35]},
-          {"value": 4800.0, "rgb": [250, 150, 35]},
-          {"value": 5400.0, "rgb": [235, 75, 45]},
-          {"value": 6000.0, "rgb": [205, 25, 65]}
-        ]
-      },
-      {
         "name": "RAP_MUCIN",
         "description": "RAP CIN colormap derived from GEMPAK gdpicinh.tbl with evenly spaced thresholds over the configured RAP scale range",
         "type": "RAP_GEMPAK_GDPICINH",
@@ -933,7 +801,7 @@
         ]
       },
       {
-        "name": "RAP_CAPE_0_3km",
+        "name": "RAP_CAPE",
         "description": "RAP CAPE colormap derived from GEMPAK cape_upc.tbl with evenly spaced thresholds over the configured RAP scale range",
         "type": "RAP_GEMPAK_CAPE_UPC",
         "units": "J kg-1",

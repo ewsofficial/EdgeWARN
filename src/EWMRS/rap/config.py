@@ -15,7 +15,19 @@ def _outdir(layer_name: str):
 
 
 def _with_colormap_key(layer: dict) -> dict:
-    return {**layer, "colormap_key": layer["name"]}
+    # Map layers to their appropriate colormaps
+    name = layer["name"]
+    if name in ("RAP_CAPE_Surface", "RAP_MLCAPE", "RAP_MUCAPE", "RAP_CAPE_0_3km"):
+        colormap_key = "RAP_CAPE"
+    elif name.startswith("RAP_Temperature_"):
+        colormap_key = "RAP_Temperature"
+    elif name.startswith("RAP_RelativeHumidity_"):
+        colormap_key = "RAP_RelativeHumidity"
+    elif name.startswith("RAP_UWind_") or name.startswith("RAP_VWind_"):
+        colormap_key = "RAP_Wind"
+    else:
+        colormap_key = name
+    return {**layer, "colormap_key": colormap_key}
 
 
 def _pressure_thermo_layers() -> list[dict]:
@@ -112,42 +124,10 @@ def _surface_and_precip_layers() -> list[dict]:
             "outdir": _outdir("RAP_FreezingRain_Surface"),
             "description": "RAP freezing rain accumulation",
         },
-        {
-            "name": "RAP_CategoricalSnow_Surface",
-            "short_names": ["csnow"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "category",
-            "scale": {"min": 0.0, "max": 1.0},
-            "outdir": _outdir("RAP_CategoricalSnow_Surface"),
-            "description": "RAP categorical snow flag",
-        },
-        {
-            "name": "RAP_CategoricalIcePellets_Surface",
-            "short_names": ["cicep"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "category",
-            "scale": {"min": 0.0, "max": 1.0},
-            "outdir": _outdir("RAP_CategoricalIcePellets_Surface"),
-            "description": "RAP categorical ice pellets flag",
-        },
-        {
-            "name": "RAP_CategoricalFreezingRain_Surface",
-            "short_names": ["cfrzr"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "category",
-            "scale": {"min": 0.0, "max": 1.0},
-            "outdir": _outdir("RAP_CategoricalFreezingRain_Surface"),
-            "description": "RAP categorical freezing rain flag",
-        },
-        {
-            "name": "RAP_CategoricalRain_Surface",
-            "short_names": ["crain"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "category",
-            "scale": {"min": 0.0, "max": 1.0},
-            "outdir": _outdir("RAP_CategoricalRain_Surface"),
-            "description": "RAP categorical rain flag",
-        },
+
+
+
+
         {
             "name": "RAP_WetBulbZeroHeight",
             "short_names": ["gh"],
