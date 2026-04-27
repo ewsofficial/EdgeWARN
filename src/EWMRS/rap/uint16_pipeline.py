@@ -292,11 +292,11 @@ def _record_timing(
 
 
 def _timestamp_label(dt, rap_path: Path) -> str:
-    if dt is None:
-        parsed = _parse_rap_filename_timestamp(rap_path.name)
-        if parsed is None:
-            parsed = datetime.fromtimestamp(rap_path.stat().st_mtime, tz=timezone.utc)
+    parsed = _parse_rap_filename_timestamp(rap_path.name)
+    if parsed is not None:
         dt = parsed
+    elif dt is None:
+        dt = datetime.fromtimestamp(rap_path.stat().st_mtime, tz=timezone.utc)
     elif isinstance(dt, str):
         dt = datetime.fromisoformat(dt)
     elif not isinstance(dt, datetime):
