@@ -81,7 +81,9 @@ RAP Uint16Array conversion is configured in `src/EWMRS/rap/config.py` and writes
 <BASE_DIR>/gui/RAP/<LayerName>/<YYYYMMDD-HHMM00>/metadata.json
 ```
 
-Each `data.u16` contains the full `Ni * Nj` grid from one matched RAP GRIB message. Each `metadata.json` records the array shape, grid point count, scale, missing-value sentinel, byte order, units, and source GRIB keys needed to reconstruct values from a browser `Uint16Array`.
+Each `data.u16` contains the full `Ni * Nj` grid from one matched RAP GRIB message. Each `metadata.json` records the array shape, grid point count, scale, missing-value sentinel, byte order, units, source GRIB keys, and `colormap_key` needed to reconstruct and render values from a browser `Uint16Array`.
+
+RAP `colormap_key` values are stable and discoverable through `GET /colormaps`, where RAP entries are keyed by the RAP layer name. Colormap definitions follow NOAA/SPC/GEMPAK lineage where practical machine-readable standards are available and use documented project fallbacks for remaining variables.
 
 ## METAR
 

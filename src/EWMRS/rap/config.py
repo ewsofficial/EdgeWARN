@@ -14,6 +14,10 @@ def _outdir(layer_name: str):
     return fs.GUI_RAP_DIR / layer_name.removeprefix("RAP_")
 
 
+def _with_colormap_key(layer: dict) -> dict:
+    return {**layer, "colormap_key": layer["name"]}
+
+
 def _pressure_thermo_layers() -> list[dict]:
     layers = []
     for level in RAP_THERMO_PRESSURE_LEVELS_MB:
@@ -22,7 +26,7 @@ def _pressure_thermo_layers() -> list[dict]:
             ("RelativeHumidity", "r", "%", {"min": 0.0, "max": 100.0}, "relative humidity"),
         ):
             name = f"RAP_{name_part}_{level}mb"
-            layers.append({
+            layers.append(_with_colormap_key({
                 "name": name,
                 "short_names": [short_name],
                 "filter": {"typeOfLevel": "isobaricInhPa", "level": level},
@@ -30,12 +34,12 @@ def _pressure_thermo_layers() -> list[dict]:
                 "scale": scale,
                 "outdir": _outdir(name),
                 "description": f"RAP {level} mb {description}",
-            })
+            }))
     return layers
 
 
 def _surface_and_precip_layers() -> list[dict]:
-    return [
+    return [_with_colormap_key(layer) for layer in [
         {
             "name": "RAP_Temperature_Surface",
             "short_names": ["t"],
@@ -162,11 +166,11 @@ def _surface_and_precip_layers() -> list[dict]:
             "outdir": _outdir("RAP_FreezingLevelHeight"),
             "description": "RAP 0C isotherm height",
         },
-    ]
+    ]]
 
 
 def _instability_and_shear_layers() -> list[dict]:
-    return [
+    return [_with_colormap_key(layer) for layer in [
         {
             "name": "RAP_CAPE_Surface",
             "short_names": ["cape"],
@@ -231,7 +235,7 @@ def _instability_and_shear_layers() -> list[dict]:
             "description": "RAP 0-3 km CAPE",
         },
         {
-            "name": "RAP_SRH_0_3km",
+            "name": "RAP_SRH_0-3km",
             "short_names": ["hlcy"],
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 3000},
             "units": "m2 s-2",
@@ -240,12 +244,12 @@ def _instability_and_shear_layers() -> list[dict]:
             "description": "RAP 0-3 km storm-relative helicity",
         },
         {
-            "name": "RAP_SRH_0_1km",
+            "name": "RAP_SRH_0-1km",
             "short_names": ["hlcy"],
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 1000},
             "units": "m2 s-2",
             "scale": {"min": -500.0, "max": 1000.0},
-            "outdir": fs.GUI_RAP_DIR / "SRH-0_1km",
+            "outdir": fs.GUI_RAP_DIR / "SRH-0-1km",
             "description": "RAP 0-1 km storm-relative helicity",
         },
         {
@@ -275,7 +279,7 @@ def _instability_and_shear_layers() -> list[dict]:
             "outdir": fs.GUI_RAP_DIR / "AbsoluteVorticity_500mb",
             "description": "RAP 500 mb absolute vorticity",
         },
-    ]
+    ]]
 
 
 def _pressure_wind_layers() -> list[dict]:
@@ -283,7 +287,7 @@ def _pressure_wind_layers() -> list[dict]:
     for level in RAP_WIND_PRESSURE_LEVELS_MB:
         for component, label in (("U", "u"), ("V", "v")):
             name = f"RAP_{component}Wind_{level}mb"
-            layers.append({
+            layers.append(_with_colormap_key({
                 "name": name,
                 "short_names": [label],
                 "filter": {"typeOfLevel": "isobaricInhPa", "level": level},
@@ -291,13 +295,13 @@ def _pressure_wind_layers() -> list[dict]:
                 "scale": {"min": -80.0, "max": 80.0},
                 "outdir": _outdir(name),
                 "description": f"RAP {level} mb {label}-component wind",
-            })
+            }))
     return layers
 
 
 def get_rap_uint16_layers() -> list[dict]:
     """Return RAP layers converted to one Uint16Array-compatible file each."""
-    return [
+    return [_with_colormap_key(layer) for layer in [
         {
             "name": "RAP_Temperature_2m",
             "short_names": ["2t", "t", "t2m"],
@@ -338,4 +342,4 @@ def get_rap_uint16_layers() -> list[dict]:
         *_instability_and_shear_layers(),
         *_pressure_thermo_layers(),
         *_pressure_wind_layers(),
-    ]
+    ]]

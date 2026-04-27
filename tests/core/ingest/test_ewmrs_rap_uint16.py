@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -15,6 +16,8 @@ def test_default_config_defines_rap_uint16_layers():
     assert "RAP_Temperature_2m" in layer_by_name
     assert all("outdir" in layer for layer in layers)
     assert all("scale" in layer for layer in layers)
+    assert all("colormap_key" in layer for layer in layers)
+    assert all(layer["colormap_key"] == layer["name"] for layer in layers)
     assert all(not layer["outdir"].name.startswith("RAP_") for layer in layers)
     assert layer_by_name["RAP_Temperature_2m"]["outdir"].name == "Temperature_2m"
 
@@ -29,12 +32,12 @@ def test_default_config_defines_rap_uint16_layers():
             "filter": {"typeOfLevel": "surface", "level": 0},
             "scale": {"min": -1000.0, "max": 0.0},
         },
-        "RAP_SRH_0_3km": {
+        "RAP_SRH_0-3km": {
             "short_names": ["hlcy"],
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 3000},
             "scale": {"min": -500.0, "max": 1000.0},
         },
-        "RAP_SRH_0_1km": {
+        "RAP_SRH_0-1km": {
             "short_names": ["hlcy"],
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 1000},
             "scale": {"min": -500.0, "max": 1000.0},
@@ -119,6 +122,31 @@ def test_default_config_defines_rap_uint16_layers():
             assert layer["outdir"].name == name.removeprefix("RAP_")
 
 
+def test_rap_colormap_keys_exist_in_colormaps_catalog():
+    layers = get_rap_uint16_layers()
+    colormaps_path = Path(__file__).resolve().parents[3] / "src" / "EWMRS" / "colormaps.json"
+    colormaps = json.loads(colormaps_path.read_text(encoding="utf-8"))[0]["colormaps"]
+    colormap_names = {entry["name"] for entry in colormaps}
+
+    for layer in layers:
+        assert layer["colormap_key"] in colormap_names
+
+
+def test_rap_categorical_colormaps_are_discrete():
+    categorical_layers = {
+        "RAP_CategoricalSnow_Surface",
+        "RAP_CategoricalIcePellets_Surface",
+        "RAP_CategoricalFreezingRain_Surface",
+        "RAP_CategoricalRain_Surface",
+    }
+    colormaps_path = Path(__file__).resolve().parents[3] / "src" / "EWMRS" / "colormaps.json"
+    colormaps = json.loads(colormaps_path.read_text(encoding="utf-8"))[0]["colormaps"]
+    by_name = {entry["name"]: entry for entry in colormaps}
+
+    for layer_name in categorical_layers:
+        assert by_name[layer_name]["interpolate"] is False
+
+
 def test_scale_to_uint16_clips_and_reserves_nodata():
     values = np.array([[-10.0, 0.0, 50.0, 100.0, 150.0, np.nan]])
 
@@ -133,6 +161,7 @@ def test_rap_uint16_pipeline_writes_entire_grid_array_and_metadata(tmp_path):
     rap_file.write_bytes(b"grib")
     layer = {
         "name": "RAP_TestLayer",
+        "colormap_key": "RAP_TestLayer",
         "short_names": ["2t"],
         "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
         "units": "K",
@@ -189,6 +218,7 @@ def test_rap_uint16_pipeline_writes_entire_grid_array_and_metadata(tmp_path):
     assert metadata["dtype"] == "uint16"
     assert metadata["byte_order"] == "little_endian"
     assert metadata["grib"] == {"shortName": "2t", "typeOfLevel": "heightAboveGround", "level": 2}
+    assert metadata["colormap_key"] == "RAP_TestLayer"
     assert metadata["timestamp"] == "20260427-130000"
     assert metadata["source_file"] == rap_file.name
 
