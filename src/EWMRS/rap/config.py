@@ -29,6 +29,23 @@ def _wind_colormap_key(name: str) -> str:
     return "RAP_Wind_HL"
 
 
+def _temperature_colormap_key(name: str) -> str:
+    # Low-level temperatures: surface, 2m, 925mb, 850mb, 700mb
+    if name in ("RAP_Temperature_Surface", "RAP_Temperature_2m"):
+        return "RAP_Temperature_LL"
+
+    for level in (925, 850, 700):
+        if name.endswith(f"_{level}mb"):
+            return "RAP_Temperature_LL"
+
+    # High-level temperatures: 500mb, 250mb
+    for level in (500, 250):
+        if name.endswith(f"_{level}mb"):
+            return "RAP_Temperature_HL"
+
+    return "RAP_Temperature_LL"
+
+
 def _with_colormap_key(layer: dict) -> dict:
     # Map layers to their appropriate colormaps
     name = layer["name"]
@@ -37,7 +54,7 @@ def _with_colormap_key(layer: dict) -> dict:
     elif name in ("RAP_SRH_0-3km", "RAP_SRH_0-1km"):
         colormap_key = "RAP_SRH"
     elif name.startswith("RAP_Temperature_"):
-        colormap_key = "RAP_Temperature"
+        colormap_key = _temperature_colormap_key(name)
     elif name.startswith("RAP_RelativeHumidity_"):
         colormap_key = "RAP_RelativeHumidity"
     elif name.startswith("RAP_UWind_") or name.startswith("RAP_VWind_"):

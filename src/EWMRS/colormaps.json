@@ -445,6 +445,54 @@
         ]
       },
       {
+        "name": "RAP_Temperature_LL",
+        "description": "RAP low-level temperature colormap for surface to 700mb levels (-30°C to 45°C)",
+        "type": "RAP_FALLBACK_THERMAL",
+        "units": "K",
+        "interpolate": true,
+        "range": [243.15, 318.15],
+        "thresholds": [
+          {"value": 243.15, "rgba": [34, 58, 140, 255]},
+          {"value": 250.0, "rgba": [48, 90, 182, 255]},
+          {"value": 255.0, "rgba": [66, 126, 214, 255]},
+          {"value": 260.0, "rgba": [86, 166, 226, 255]},
+          {"value": 265.0, "rgba": [118, 200, 214, 255]},
+          {"value": 270.0, "rgba": [176, 224, 170, 255]},
+          {"value": 275.0, "rgba": [232, 232, 128, 255]},
+          {"value": 280.0, "rgba": [248, 200, 100, 255]},
+          {"value": 285.0, "rgba": [242, 150, 88, 255]},
+          {"value": 290.0, "rgba": [224, 98, 80, 255]},
+          {"value": 295.0, "rgba": [200, 60, 60, 255]},
+          {"value": 300.0, "rgba": [180, 40, 40, 255]},
+          {"value": 305.0, "rgba": [160, 20, 20, 255]},
+          {"value": 310.0, "rgba": [140, 10, 10, 255]},
+          {"value": 315.0, "rgba": [120, 5, 5, 255]},
+          {"value": 318.15, "rgba": [100, 0, 0, 255]}
+        ]
+      },
+      {
+        "name": "RAP_Temperature_HL",
+        "description": "RAP high-level temperature colormap for 500mb and 250mb levels (-50°C to 0°C)",
+        "type": "RAP_FALLBACK_THERMAL",
+        "units": "K",
+        "interpolate": true,
+        "range": [223.15, 273.15],
+        "thresholds": [
+          {"value": 223.15, "rgba": [0, 0, 50, 255]},
+          {"value": 230.0, "rgba": [10, 10, 80, 255]},
+          {"value": 235.0, "rgba": [20, 20, 110, 255]},
+          {"value": 240.0, "rgba": [30, 30, 140, 255]},
+          {"value": 245.0, "rgba": [40, 40, 170, 255]},
+          {"value": 250.0, "rgba": [50, 50, 200, 255]},
+          {"value": 255.0, "rgba": [60, 60, 230, 255]},
+          {"value": 260.0, "rgba": [70, 70, 255, 255]},
+          {"value": 265.0, "rgba": [80, 100, 255, 255]},
+          {"value": 268.0, "rgba": [90, 120, 255, 255]},
+          {"value": 270.0, "rgba": [100, 140, 255, 255]},
+          {"value": 273.15, "rgba": [110, 160, 255, 255]}
+        ]
+      },
+      {
         "name": "RAP_Dewpoint_2m",
         "description": "RAP thermal colormap using a project fallback palette aligned to meteorological thermal conventions",
         "type": "RAP_FALLBACK_THERMAL",
