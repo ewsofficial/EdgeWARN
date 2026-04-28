@@ -167,6 +167,25 @@ def load_project_colormap(colormap_name: str) -> LinearSegmentedColormap:
     raise ValueError(f"Colormap {colormap_name} not found in {COLORMAPS_PATH}")
 
 
+def load_project_colormap_range(colormap_name: str) -> tuple[float, float]:
+    """Return the configured min/max range for one project colormap."""
+    raw = json.loads(COLORMAPS_PATH.read_text(encoding="utf-8"))
+    if isinstance(raw, dict):
+        raw = [raw]
+
+    for source in raw:
+        for colormap_def in source.get("colormaps", []):
+            if str(colormap_def.get("name")) != colormap_name:
+                continue
+
+            value_range = colormap_def.get("range")
+            if not isinstance(value_range, list) or len(value_range) != 2:
+                raise ValueError(f"Colormap {colormap_name} is missing a valid range")
+            return float(value_range[0]), float(value_range[1])
+
+    raise ValueError(f"Colormap {colormap_name} not found in {COLORMAPS_PATH}")
+
+
 def draw_transparency_background(ax, width: int, height: int) -> None:
     pattern = np.array(
         [
@@ -178,7 +197,16 @@ def draw_transparency_background(ax, width: int, height: int) -> None:
     ax.imshow(pattern, origin="lower", aspect="auto", extent=[0, width, 0, height], interpolation="nearest", zorder=0)
 
 
-def plot_field(data: np.ndarray, title: str, units: str, output_path: Path, *, cmap: str = "viridis") -> None:
+def plot_field(
+    data: np.ndarray,
+    title: str,
+    units: str,
+    output_path: Path,
+    *,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+) -> None:
     """Plot one 2D field to PNG."""
     finite = np.isfinite(data)
     if not np.any(finite):
@@ -186,7 +214,7 @@ def plot_field(data: np.ndarray, title: str, units: str, output_path: Path, *, c
 
     fig, ax = plt.subplots(figsize=(11, 8), constrained_layout=True)
     draw_transparency_background(ax, data.shape[1], data.shape[0])
-    image = ax.imshow(data, origin="lower", cmap=cmap, aspect="auto", zorder=1)
+    image = ax.imshow(data, origin="lower", cmap=cmap, aspect="auto", zorder=1, vmin=vmin, vmax=vmax)
     ax.set_title(title)
     ax.set_xlabel("RAP grid x")
     ax.set_ylabel("RAP grid y")
@@ -243,6 +271,8 @@ def plot_wind_vector_field(
     output_path: Path,
     *,
     cmap: str | LinearSegmentedColormap,
+    vmin: float | None = None,
+    vmax: float | None = None,
 ) -> None:
     """Plot wind speed with a downsampled quiver overlay."""
     speed = np.hypot(u_data, v_data)
@@ -252,7 +282,7 @@ def plot_wind_vector_field(
 
     fig, ax = plt.subplots(figsize=(11, 8), constrained_layout=True)
     draw_transparency_background(ax, speed.shape[1], speed.shape[0])
-    image = ax.imshow(speed, origin="lower", cmap=cmap, aspect="auto", zorder=1)
+    image = ax.imshow(speed, origin="lower", cmap=cmap, aspect="auto", zorder=1, vmin=vmin, vmax=vmax)
 
     step = max(1, min(speed.shape) // 40)
     y_coords, x_coords = np.mgrid[0 : speed.shape[0] : step, 0 : speed.shape[1] : step]
@@ -288,9 +318,14 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
     written: list[Path] = []
     decoded: dict[tuple[str, str], np.ndarray] = {}
     project_colormaps: dict[str, LinearSegmentedColormap] = {}
+    project_ranges: dict[str, tuple[float, float]] = {}
     wind_colormaps = {
         "RAP_Wind_LL": load_project_colormap("RAP_Wind_LL"),
         "RAP_Wind_HL": load_project_colormap("RAP_Wind_HL"),
+    }
+    wind_ranges = {
+        "RAP_Wind_LL": load_project_colormap_range("RAP_Wind_LL"),
+        "RAP_Wind_HL": load_project_colormap_range("RAP_Wind_HL"),
     }
 
     for field in fields:
@@ -306,9 +341,11 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
         colormap_name = field_colormap_name(field)
         if colormap_name not in project_colormaps:
             project_colormaps[colormap_name] = load_project_colormap(colormap_name)
+            project_ranges[colormap_name] = load_project_colormap_range(colormap_name)
         cmap: str | LinearSegmentedColormap = project_colormaps[colormap_name]
+        vmin, vmax = project_ranges[colormap_name]
 
-        plot_field(data, f"{field.layer} {field.timestamp}", units, output_path, cmap=cmap)
+        plot_field(data, f"{field.layer} {field.timestamp}", units, output_path, cmap=cmap, vmin=vmin, vmax=vmax)
         written.append(output_path)
 
     wind_groups: dict[tuple[str, str, int | None], dict[str, RapField]] = {}
@@ -340,6 +377,8 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
             "m s-1",
             output_path,
             cmap=wind_colormaps[colormap_name],
+            vmin=wind_ranges[colormap_name][0],
+            vmax=wind_ranges[colormap_name][1],
         )
         written.append(output_path)
 

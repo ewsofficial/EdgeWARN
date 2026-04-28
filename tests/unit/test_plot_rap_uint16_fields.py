@@ -98,6 +98,12 @@ def test_should_plot_field_only_when_colormap_is_supported():
     assert module.should_plot_field(unsupported) is False
 
 
+def test_load_project_colormap_range_reads_fixed_bounds():
+    module = _load_plot_script()
+
+    assert module.load_project_colormap_range("RAP_Temperature") == (180.0, 330.0)
+
+
 def test_plot_all_fields_skips_scalar_layers_without_colormaps(tmp_path, monkeypatch):
     module = _load_plot_script()
     plotted = []
@@ -134,9 +140,10 @@ def test_plot_all_fields_skips_scalar_layers_without_colormaps(tmp_path, monkeyp
     )
 
     monkeypatch.setattr(module, "load_project_colormap", lambda name: SimpleNamespace(name=name))
+    monkeypatch.setattr(module, "load_project_colormap_range", lambda name: (180.0, 330.0))
 
-    def fake_plot_field(data, title, units, output_path, *, cmap):
-        plotted.append((title, units, output_path.name, getattr(cmap, "name", cmap)))
+    def fake_plot_field(data, title, units, output_path, *, cmap, vmin, vmax):
+        plotted.append((title, units, output_path.name, getattr(cmap, "name", cmap), vmin, vmax))
 
     monkeypatch.setattr(module, "plot_field", fake_plot_field)
 
@@ -144,5 +151,5 @@ def test_plot_all_fields_skips_scalar_layers_without_colormaps(tmp_path, monkeyp
 
     assert len(written) == 1
     assert plotted == [
-        ("RAP_Temperature_2m 20260427-152800", "K", "RAP_Temperature_2m.png", "RAP_Temperature")
+        ("RAP_Temperature_2m 20260427-152800", "K", "RAP_Temperature_2m.png", "RAP_Temperature", 180.0, 330.0)
     ]
