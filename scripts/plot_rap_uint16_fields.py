@@ -205,6 +205,10 @@ def field_colormap_name(field: RapField) -> str | None:
     return configured_colormap_name(field.layer)
 
 
+def should_plot_field(field: RapField) -> bool:
+    return field_colormap_name(field) is not None
+
+
 def configured_colormap_name(layer_name: str) -> str | None:
     global _CONFIGURED_LAYER_COLORMAPS
     if _CONFIGURED_LAYER_COLORMAPS is None:
@@ -280,7 +284,7 @@ def plot_wind_vector_field(
 
 
 def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
-    """Plot scalar fields and derived wind-speed products."""
+    """Plot scalar fields and derived wind-vector products with configured colormaps."""
     written: list[Path] = []
     decoded: dict[tuple[str, str], np.ndarray] = {}
     project_colormaps: dict[str, LinearSegmentedColormap] = {}
@@ -294,16 +298,15 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
         decoded[(field.layer, field.timestamp)] = data
         if wind_component(field) is not None:
             continue
+        if not should_plot_field(field):
+            continue
 
         units = str(field.metadata.get("units") or "")
         output_path = output_dir / field.timestamp / f"{field.layer}.png"
         colormap_name = field_colormap_name(field)
-        if colormap_name:
-            if colormap_name not in project_colormaps:
-                project_colormaps[colormap_name] = load_project_colormap(colormap_name)
-            cmap: str | LinearSegmentedColormap = project_colormaps[colormap_name]
-        else:
-            cmap = "viridis"
+        if colormap_name not in project_colormaps:
+            project_colormaps[colormap_name] = load_project_colormap(colormap_name)
+        cmap: str | LinearSegmentedColormap = project_colormaps[colormap_name]
 
         plot_field(data, f"{field.layer} {field.timestamp}", units, output_path, cmap=cmap)
         written.append(output_path)

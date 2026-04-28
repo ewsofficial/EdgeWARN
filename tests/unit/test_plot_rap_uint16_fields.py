@@ -1,6 +1,7 @@
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -74,3 +75,74 @@ def test_wind_vector_colormap_name_uses_component_metadata():
     )
 
     assert module.wind_vector_colormap_name(u_field, v_field) == "RAP_Wind_HL"
+
+
+def test_should_plot_field_only_when_colormap_is_supported():
+    module = _load_plot_script()
+    supported = module.RapField(
+        layer="RAP_Temperature_2m",
+        timestamp="20260427-152800",
+        data_path=Path("supported.u16"),
+        metadata_path=Path("supported.json"),
+        metadata={"grib": {"shortName": "2t", "typeOfLevel": "heightAboveGround", "level": 2}},
+    )
+    unsupported = module.RapField(
+        layer="RAP_CategoricalRain_Surface",
+        timestamp="20260427-152800",
+        data_path=Path("unsupported.u16"),
+        metadata_path=Path("unsupported.json"),
+        metadata={"grib": {"shortName": "crain", "typeOfLevel": "surface", "level": 0}},
+    )
+
+    assert module.should_plot_field(supported) is True
+    assert module.should_plot_field(unsupported) is False
+
+
+def test_plot_all_fields_skips_scalar_layers_without_colormaps(tmp_path, monkeypatch):
+    module = _load_plot_script()
+    plotted = []
+
+    supported_data = tmp_path / "supported.u16"
+    unsupported_data = tmp_path / "unsupported.u16"
+    np.array([0, 65534, 32767, 1000], dtype="<u2").tofile(supported_data)
+    np.array([0, 1, 1, 0], dtype="<u2").tofile(unsupported_data)
+
+    metadata = {
+        "shape": [2, 2],
+        "scale": {"min": 0.0, "max": 100.0},
+        "missing_value": 65535,
+        "units": "K",
+        "grib": {"typeOfLevel": "heightAboveGround", "level": 2},
+    }
+    supported = module.RapField(
+        layer="RAP_Temperature_2m",
+        timestamp="20260427-152800",
+        data_path=supported_data,
+        metadata_path=tmp_path / "supported.json",
+        metadata={**metadata, "grib": {**metadata["grib"], "shortName": "2t"}},
+    )
+    unsupported = module.RapField(
+        layer="RAP_CategoricalRain_Surface",
+        timestamp="20260427-152800",
+        data_path=unsupported_data,
+        metadata_path=tmp_path / "unsupported.json",
+        metadata={
+            **metadata,
+            "units": "1",
+            "grib": {"shortName": "crain", "typeOfLevel": "surface", "level": 0},
+        },
+    )
+
+    monkeypatch.setattr(module, "load_project_colormap", lambda name: SimpleNamespace(name=name))
+
+    def fake_plot_field(data, title, units, output_path, *, cmap):
+        plotted.append((title, units, output_path.name, getattr(cmap, "name", cmap)))
+
+    monkeypatch.setattr(module, "plot_field", fake_plot_field)
+
+    written = module.plot_all_fields([supported, unsupported], tmp_path / "plots")
+
+    assert len(written) == 1
+    assert plotted == [
+        ("RAP_Temperature_2m 20260427-152800", "K", "RAP_Temperature_2m.png", "RAP_Temperature")
+    ]

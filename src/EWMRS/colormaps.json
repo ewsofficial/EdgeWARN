@@ -508,48 +508,6 @@
         ]
       },
       {
-        "name": "RAP_PrecipitationRate_Surface",
-        "description": "RAP precipitation-family colormap derived from MetPy precipitation.tbl with evenly spaced thresholds over the configured RAP scale range",
-        "type": "RAP_METPY_PRECIPITATION",
-        "units": "kg m-2 s-1",
-        "interpolate": true,
-        "range": [0.0, 0.05],
-        "thresholds": [
-          {"value": 0.0, "rgba": [56, 56, 56, 255]},
-          {"value": 0.005, "rgba": [0, 122, 255, 255]},
-          {"value": 0.01, "rgba": [0, 168, 255, 255]},
-          {"value": 0.015, "rgba": [0, 196, 168, 255]},
-          {"value": 0.02, "rgba": [0, 176, 84, 255]},
-          {"value": 0.025, "rgba": [112, 196, 56, 255]},
-          {"value": 0.03, "rgba": [236, 220, 0, 255]},
-          {"value": 0.035, "rgba": [252, 172, 0, 255]},
-          {"value": 0.04, "rgba": [242, 118, 0, 255]},
-          {"value": 0.045, "rgba": [220, 52, 0, 255]},
-          {"value": 0.05, "rgba": [176, 0, 72, 255]}
-        ]
-      },
-      {
-        "name": "RAP_TotalPrecipitation_Surface",
-        "description": "RAP precipitation-family colormap derived from MetPy precipitation.tbl with evenly spaced thresholds over the configured RAP scale range",
-        "type": "RAP_METPY_PRECIPITATION",
-        "units": "kg m-2",
-        "interpolate": true,
-        "range": [0.0, 100.0],
-        "thresholds": [
-          {"value": 0.0, "rgba": [56, 56, 56, 255]},
-          {"value": 10.0, "rgba": [0, 122, 255, 255]},
-          {"value": 20.0, "rgba": [0, 168, 255, 255]},
-          {"value": 30.0, "rgba": [0, 196, 168, 255]},
-          {"value": 40.0, "rgba": [0, 176, 84, 255]},
-          {"value": 50.0, "rgba": [112, 196, 56, 255]},
-          {"value": 60.0, "rgba": [236, 220, 0, 255]},
-          {"value": 70.0, "rgba": [252, 172, 0, 255]},
-          {"value": 80.0, "rgba": [242, 118, 0, 255]},
-          {"value": 90.0, "rgba": [220, 52, 0, 255]},
-          {"value": 100.0, "rgba": [176, 0, 72, 255]}
-        ]
-      },
-      {
         "name": "RAP_SnowWaterEquivalent_Surface",
         "description": "RAP precipitation-family colormap derived from MetPy precipitation.tbl with evenly spaced thresholds over the configured RAP scale range",
         "type": "RAP_METPY_PRECIPITATION",
@@ -587,27 +545,6 @@
           {"value": 3.75, "rgba": [74, 142, 210, 255]},
           {"value": 4.375, "rgba": [52, 116, 192, 255]},
           {"value": 5.0, "rgba": [32, 88, 166, 255]}
-        ]
-      },
-      {
-        "name": "RAP_FreezingRain_Surface",
-        "description": "RAP precipitation-family colormap derived from MetPy precipitation.tbl with evenly spaced thresholds over the configured RAP scale range",
-        "type": "RAP_METPY_PRECIPITATION",
-        "units": "kg m-2",
-        "interpolate": true,
-        "range": [0.0, 50.0],
-        "thresholds": [
-          {"value": 0.0, "rgba": [56, 56, 56, 255]},
-          {"value": 5.0, "rgba": [0, 122, 255, 255]},
-          {"value": 10.0, "rgba": [0, 168, 255, 255]},
-          {"value": 15.0, "rgba": [0, 196, 168, 255]},
-          {"value": 20.0, "rgba": [0, 176, 84, 255]},
-          {"value": 25.0, "rgba": [112, 196, 56, 255]},
-          {"value": 30.0, "rgba": [236, 220, 0, 255]},
-          {"value": 35.0, "rgba": [252, 172, 0, 255]},
-          {"value": 40.0, "rgba": [242, 118, 0, 255]},
-          {"value": 45.0, "rgba": [220, 52, 0, 255]},
-          {"value": 50.0, "rgba": [176, 0, 72, 255]}
         ]
       },
       {

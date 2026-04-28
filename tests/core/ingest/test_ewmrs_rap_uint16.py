@@ -115,13 +115,19 @@ def test_default_config_defines_rap_uint16_layers():
     expected_surface_layers = {
         "RAP_ThetaE_Surface": {"short_names": ["papt"], "filter": {"typeOfLevel": "surface", "level": 0}},
         "RAP_SnowDepth_Surface": {"short_names": ["sde"], "filter": {"typeOfLevel": "surface", "level": 0}},
-        "RAP_FreezingRain_Surface": {"short_names": ["frzr"], "filter": {"typeOfLevel": "surface", "level": 0}},
         "RAP_WetBulbZeroHeight": {"short_names": ["gh"], "filter": {"typeOfLevel": "lowestLevelWetBulb0", "level": 0}},
     }
     for name, expected in expected_surface_layers.items():
         layer = layer_by_name[name]
         assert layer["short_names"] == expected["short_names"]
         assert layer["filter"] == expected["filter"]
+
+    for removed_name in (
+        "RAP_PrecipitationRate_Surface",
+        "RAP_TotalPrecipitation_Surface",
+        "RAP_FreezingRain_Surface",
+    ):
+        assert removed_name not in layer_by_name
 
     pressure_levels = (925, 850, 700, 500, 250)
     for level in pressure_levels:
