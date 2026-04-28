@@ -22,6 +22,8 @@ def test_default_config_defines_rap_uint16_layers():
         name = layer["name"]
         if name in ("RAP_CAPE_Surface", "RAP_MLCAPE", "RAP_MUCAPE", "RAP_CAPE_0_3km"):
             assert layer["colormap_key"] == "RAP_CAPE"
+        elif name in ("RAP_SRH_0-3km", "RAP_SRH_0-1km"):
+            assert layer["colormap_key"] == "RAP_SRH"
         elif name.startswith("RAP_Temperature_"):
             assert layer["colormap_key"] == "RAP_Temperature"
         elif name.startswith("RAP_RelativeHumidity_"):
@@ -55,13 +57,13 @@ def test_default_config_defines_rap_uint16_layers():
             "short_names": ["hlcy"],
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 3000},
             "scale": {"min": -500.0, "max": 1000.0},
-            "colormap_key": "RAP_SRH_0-3km",
+            "colormap_key": "RAP_SRH",
         },
         "RAP_SRH_0-1km": {
             "short_names": ["hlcy"],
             "filter": {"typeOfLevel": "heightAboveGroundLayer", "level": 1000},
             "scale": {"min": -500.0, "max": 1000.0},
-            "colormap_key": "RAP_SRH_0-1km",
+            "colormap_key": "RAP_SRH",
         },
         "RAP_MLCAPE": {
             "short_names": ["cape"],
