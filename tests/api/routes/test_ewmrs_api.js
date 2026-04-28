@@ -735,57 +735,25 @@ describe('EWMRS RAP Uint16 routes', () => {
 
 describe('GET /colormaps/', () => {
     let app;
-    const RAP_LAYER_NAMES = [
-        'RAP_Temperature_2m',
+    const RAP_COLORMAP_NAMES = [
+        'RAP_Temperature',
         'RAP_Dewpoint_2m',
-        'RAP_UWind_10m',
-        'RAP_VWind_10m',
-        'RAP_Temperature_Surface',
-        'RAP_RelativeHumidity_2m',
+        'RAP_RelativeHumidity',
         'RAP_ThetaE_Surface',
-        'RAP_PrecipitationRate_Surface',
-        'RAP_TotalPrecipitation_Surface',
-        'RAP_SnowWaterEquivalent_Surface',
+        'RAP_Wind_LL',
+        'RAP_Wind_HL',
+        'RAP_CAPE',
+        'RAP_SRH',
+        'RAP_CIN_Surface',
+        'RAP_MLCIN',
+        'RAP_MUCIN',
         'RAP_SnowDepth_Surface',
-        'RAP_FreezingRain_Surface',
-        'RAP_CategoricalSnow_Surface',
-        'RAP_CategoricalIcePellets_Surface',
-        'RAP_CategoricalFreezingRain_Surface',
-        'RAP_CategoricalRain_Surface',
+        'RAP_SnowWaterEquivalent_Surface',
         'RAP_WetBulbZeroHeight',
         'RAP_FreezingLevelHeight',
-        'RAP_CAPE_Surface',
-        'RAP_CIN_Surface',
-        'RAP_MLCAPE',
-        'RAP_MLCIN',
-        'RAP_MUCAPE',
-        'RAP_MUCIN',
-        'RAP_CAPE_0_3km',
-        'RAP_SRH_0-3km',
-        'RAP_SRH_0-1km',
         'RAP_LiftedIndex_Surface_500_1000mb',
         'RAP_BestLiftedIndex_180_0mbAGL',
-        'RAP_AbsoluteVorticity_500mb',
-        'RAP_Temperature_925mb',
-        'RAP_RelativeHumidity_925mb',
-        'RAP_Temperature_850mb',
-        'RAP_RelativeHumidity_850mb',
-        'RAP_Temperature_700mb',
-        'RAP_RelativeHumidity_700mb',
-        'RAP_Temperature_500mb',
-        'RAP_RelativeHumidity_500mb',
-        'RAP_Temperature_250mb',
-        'RAP_RelativeHumidity_250mb',
-        'RAP_UWind_925mb',
-        'RAP_VWind_925mb',
-        'RAP_UWind_850mb',
-        'RAP_VWind_850mb',
-        'RAP_UWind_700mb',
-        'RAP_VWind_700mb',
-        'RAP_UWind_500mb',
-        'RAP_VWind_500mb',
-        'RAP_UWind_250mb',
-        'RAP_VWind_250mb'
+        'RAP_AbsoluteVorticity_500mb'
     ];
 
     beforeEach(() => {
@@ -832,12 +800,12 @@ describe('GET /colormaps/', () => {
         expect(cmap.units).toBe('K');
     });
 
-    it('includes RAP colormaps for all RAP layer names with valid schema', async () => {
+    it('includes RAP colormaps for all exported RAP colormap names with valid schema', async () => {
         const res = await request(app).get('/colormaps/').expect(200);
         const byName = new Map(res.body[0].colormaps.map(c => [c.name, c]));
 
-        for (const layerName of RAP_LAYER_NAMES) {
-            const cmap = byName.get(layerName);
+        for (const colormapName of RAP_COLORMAP_NAMES) {
+            const cmap = byName.get(colormapName);
             expect(cmap).toBeDefined();
             expect(typeof cmap.units).toBe('string');
             expect(Array.isArray(cmap.range)).toBe(true);
@@ -847,30 +815,13 @@ describe('GET /colormaps/', () => {
         }
     });
 
-    it('marks RAP categorical precipitation colormaps as discrete', async () => {
-        const res = await request(app).get('/colormaps/').expect(200);
-        const byName = new Map(res.body[0].colormaps.map(c => [c.name, c]));
-
-        for (const name of [
-            'RAP_CategoricalSnow_Surface',
-            'RAP_CategoricalIcePellets_Surface',
-            'RAP_CategoricalFreezingRain_Surface',
-            'RAP_CategoricalRain_Surface'
-        ]) {
-            const cmap = byName.get(name);
-            expect(cmap).toBeDefined();
-            expect(cmap.interpolate).toBe(false);
-            expect(cmap.thresholds.length).toBe(2);
-        }
-    });
-
     it('uses expected RAP source-family tags for representative layers', async () => {
         const res = await request(app).get('/colormaps/').expect(200);
         const byName = new Map(res.body[0].colormaps.map(c => [c.name, c]));
 
-        expect(byName.get('RAP_CAPE_Surface').type).toBe('RAP_GEMPAK_CAPE_UPC');
+        expect(byName.get('RAP_CAPE').type).toBe('RAP_GEMPAK_CAPE_UPC');
         expect(byName.get('RAP_CIN_Surface').type).toBe('RAP_GEMPAK_GDPICINH');
         expect(byName.get('RAP_LiftedIndex_Surface_500_1000mb').type).toBe('RAP_GEMPAK_LI_UPC');
-        expect(byName.get('RAP_CategoricalRain_Surface').type).toBe('RAP_GEMPAK_PTYPE');
+        expect(byName.get('RAP_SnowWaterEquivalent_Surface').type).toBe('RAP_METPY_PRECIPITATION');
     });
 });

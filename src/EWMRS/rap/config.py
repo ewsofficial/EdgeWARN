@@ -93,24 +93,6 @@ def _surface_and_precip_layers() -> list[dict]:
             "description": "RAP surface pseudo-adiabatic potential temperature",
         },
         {
-            "name": "RAP_PrecipitationRate_Surface",
-            "short_names": ["prate"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "kg m-2 s-1",
-            "scale": {"min": 0.0, "max": 0.05},
-            "outdir": _outdir("RAP_PrecipitationRate_Surface"),
-            "description": "RAP surface precipitation rate",
-        },
-        {
-            "name": "RAP_TotalPrecipitation_Surface",
-            "short_names": ["tp"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "kg m-2",
-            "scale": {"min": 0.0, "max": 100.0},
-            "outdir": _outdir("RAP_TotalPrecipitation_Surface"),
-            "description": "RAP total precipitation",
-        },
-        {
             "name": "RAP_SnowWaterEquivalent_Surface",
             "short_names": ["sdwe"],
             "filter": {"typeOfLevel": "surface", "level": 0},
@@ -128,19 +110,6 @@ def _surface_and_precip_layers() -> list[dict]:
             "outdir": _outdir("RAP_SnowDepth_Surface"),
             "description": "RAP snow depth",
         },
-        {
-            "name": "RAP_FreezingRain_Surface",
-            "short_names": ["frzr"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "kg m-2",
-            "scale": {"min": 0.0, "max": 50.0},
-            "outdir": _outdir("RAP_FreezingRain_Surface"),
-            "description": "RAP freezing rain accumulation",
-        },
-
-
-
-
         {
             "name": "RAP_WetBulbZeroHeight",
             "short_names": ["gh"],
