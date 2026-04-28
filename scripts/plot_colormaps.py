@@ -53,7 +53,7 @@ def _build_mpl_colormap(colormap_def: dict) -> tuple[LinearSegmentedColormap, fl
     if len(thresholds) < 2:
         raise ValueError(f"Colormap {colormap_def.get('name')} needs at least two thresholds")
 
-    stops: list[tuple[float, tuple[float, float, float]]] = []
+    stops: list[tuple[float, tuple[float, float, float, float]]] = []
     for threshold in thresholds:
         value = float(threshold["value"])
         # Use "rgba" for RAP colormaps, "rgb" for others
@@ -64,8 +64,8 @@ def _build_mpl_colormap(colormap_def: dict) -> tuple[LinearSegmentedColormap, fl
 
         pos = (value - vmin) / (vmax - vmin)
         pos = min(1.0, max(0.0, pos))
-        # Use first 3 values (RGB), ignore alpha if present
-        stops.append((pos, (float(rgba[0]) / 255.0, float(rgba[1]) / 255.0, float(rgba[2]) / 255.0)))
+        alpha = float(rgba[3]) / 255.0 if len(rgba) == 4 else 1.0
+        stops.append((pos, (float(rgba[0]) / 255.0, float(rgba[1]) / 255.0, float(rgba[2]) / 255.0, alpha)))
 
     if stops[0][0] > 0.0:
         stops.insert(0, (0.0, stops[0][1]))
@@ -76,12 +76,21 @@ def _build_mpl_colormap(colormap_def: dict) -> tuple[LinearSegmentedColormap, fl
     return cmap, vmin, vmax
 
 
+def _draw_transparency_background(ax, vmin: float, vmax: float) -> None:
+    pattern = np.array([
+        [[0.92, 0.92, 0.92, 1.0], [0.78, 0.78, 0.78, 1.0]] * 40,
+        [[0.78, 0.78, 0.78, 1.0], [0.92, 0.92, 0.92, 1.0]] * 40,
+    ], dtype=np.float32)
+    ax.imshow(pattern, aspect="auto", extent=[vmin, vmax, 0, 1], interpolation="nearest", zorder=0)
+
+
 def _plot_single(colormap_def: dict, output_path: Path) -> None:
     cmap, vmin, vmax = _build_mpl_colormap(colormap_def)
     gradient = np.linspace(vmin, vmax, 1400, dtype=np.float32).reshape(1, -1)
 
     fig, ax = plt.subplots(figsize=(12, 1.7), constrained_layout=True)
-    ax.imshow(gradient, aspect="auto", cmap=cmap, extent=[vmin, vmax, 0, 1])
+    _draw_transparency_background(ax, vmin, vmax)
+    ax.imshow(gradient, aspect="auto", cmap=cmap, extent=[vmin, vmax, 0, 1], zorder=1)
     ax.set_yticks([])
     ax.set_ylabel("")
     ax.set_xlabel(colormap_def.get("units", ""))
@@ -101,7 +110,8 @@ def _plot_gallery(colormaps: list[dict], output_path: Path) -> None:
     for axis, colormap_def in zip(axes, colormaps):
         cmap, vmin, vmax = _build_mpl_colormap(colormap_def)
         gradient = np.linspace(vmin, vmax, 1400, dtype=np.float32).reshape(1, -1)
-        axis.imshow(gradient, aspect="auto", cmap=cmap, extent=[vmin, vmax, 0, 1])
+        _draw_transparency_background(axis, vmin, vmax)
+        axis.imshow(gradient, aspect="auto", cmap=cmap, extent=[vmin, vmax, 0, 1], zorder=1)
         axis.set_yticks([])
         axis.set_ylabel("")
         axis.set_title(str(colormap_def.get("name")), fontsize=9, loc="left")

@@ -56,11 +56,21 @@ def test_wind_pairing_groups_u_and_v_components():
     assert module.wind_speed_name("isobaricInhPa", 925) == "RAP_WindSpeed_925mb"
 
 
-def test_wind_colormap_name_distinguishes_low_and_high_levels():
+def test_wind_vector_colormap_name_uses_component_metadata():
     module = _load_plot_script()
+    u_field = module.RapField(
+        layer="RAP_UWind_700mb",
+        timestamp="20260427-152800",
+        data_path=Path("u.u16"),
+        metadata_path=Path("u.json"),
+        metadata={"colormap_key": "RAP_Wind_HL", "grib": {"shortName": "u", "typeOfLevel": "isobaricInhPa", "level": 700}},
+    )
+    v_field = module.RapField(
+        layer="RAP_VWind_700mb",
+        timestamp="20260427-152800",
+        data_path=Path("v.u16"),
+        metadata_path=Path("v.json"),
+        metadata={"colormap_key": "RAP_Wind_HL", "grib": {"shortName": "v", "typeOfLevel": "isobaricInhPa", "level": 700}},
+    )
 
-    assert module.wind_colormap_name("heightAboveGround", 10) == "RAP_Wind_LL"
-    assert module.wind_colormap_name("isobaricInhPa", 925) == "RAP_Wind_LL"
-    assert module.wind_colormap_name("isobaricInhPa", 850) == "RAP_Wind_LL"
-    assert module.wind_colormap_name("isobaricInhPa", 700) == "RAP_Wind_HL"
-    assert module.wind_colormap_name("isobaricInhPa", 250) == "RAP_Wind_HL"
+    assert module.wind_vector_colormap_name(u_field, v_field) == "RAP_Wind_HL"

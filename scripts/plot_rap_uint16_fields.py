@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,9 +14,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from EWMRS.rap.config import get_rap_uint16_layers
+
 
 UINT16_VALID_MAX = 65534.0
 COLORMAPS_PATH = Path(__file__).resolve().parents[1] / "src" / "EWMRS" / "colormaps.json"
+_CONFIGURED_LAYER_COLORMAPS: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -111,14 +117,6 @@ def wind_speed_name(type_of_level: str, level: int | None) -> str:
     return f"RAP_WindSpeed_{type_of_level}"
 
 
-def wind_colormap_name(type_of_level: str, level: int | None) -> str:
-    if type_of_level == "heightAboveGround":
-        return "RAP_Wind_LL"
-    if type_of_level == "isobaricInhPa" and level in {925, 850}:
-        return "RAP_Wind_LL"
-    return "RAP_Wind_HL"
-
-
 def load_project_colormap(colormap_name: str) -> LinearSegmentedColormap:
     """Build a Matplotlib colormap from src/EWMRS/colormaps.json."""
     raw = json.loads(COLORMAPS_PATH.read_text(encoding="utf-8"))
@@ -169,6 +167,17 @@ def load_project_colormap(colormap_name: str) -> LinearSegmentedColormap:
     raise ValueError(f"Colormap {colormap_name} not found in {COLORMAPS_PATH}")
 
 
+def draw_transparency_background(ax, width: int, height: int) -> None:
+    pattern = np.array(
+        [
+            [[0.92, 0.92, 0.92, 1.0], [0.78, 0.78, 0.78, 1.0]] * 40,
+            [[0.78, 0.78, 0.78, 1.0], [0.92, 0.92, 0.92, 1.0]] * 40,
+        ],
+        dtype=np.float32,
+    )
+    ax.imshow(pattern, origin="lower", aspect="auto", extent=[0, width, 0, height], interpolation="nearest", zorder=0)
+
+
 def plot_field(data: np.ndarray, title: str, units: str, output_path: Path, *, cmap: str = "viridis") -> None:
     """Plot one 2D field to PNG."""
     finite = np.isfinite(data)
@@ -176,7 +185,8 @@ def plot_field(data: np.ndarray, title: str, units: str, output_path: Path, *, c
         raise ValueError(f"Cannot plot {title}: field has no finite values")
 
     fig, ax = plt.subplots(figsize=(11, 8), constrained_layout=True)
-    image = ax.imshow(data, origin="lower", cmap=cmap, aspect="auto")
+    draw_transparency_background(ax, data.shape[1], data.shape[0])
+    image = ax.imshow(data, origin="lower", cmap=cmap, aspect="auto", zorder=1)
     ax.set_title(title)
     ax.set_xlabel("RAP grid x")
     ax.set_ylabel("RAP grid y")
@@ -186,6 +196,39 @@ def plot_field(data: np.ndarray, title: str, units: str, output_path: Path, *, c
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+
+
+def field_colormap_name(field: RapField) -> str | None:
+    colormap_key = field.metadata.get("colormap_key")
+    if isinstance(colormap_key, str) and colormap_key.strip():
+        return colormap_key.strip()
+    return configured_colormap_name(field.layer)
+
+
+def configured_colormap_name(layer_name: str) -> str | None:
+    global _CONFIGURED_LAYER_COLORMAPS
+    if _CONFIGURED_LAYER_COLORMAPS is None:
+        _CONFIGURED_LAYER_COLORMAPS = {
+            str(layer["name"]): str(layer.get("colormap_key"))
+            for layer in get_rap_uint16_layers()
+            if layer.get("colormap_key")
+        }
+    return _CONFIGURED_LAYER_COLORMAPS.get(layer_name)
+
+
+def wind_vector_colormap_name(u_field: RapField, v_field: RapField) -> str:
+    u_colormap = field_colormap_name(u_field)
+    v_colormap = field_colormap_name(v_field)
+    if u_colormap and v_colormap and u_colormap != v_colormap:
+        raise ValueError(
+            f"Wind component colormap mismatch: {u_field.layer} -> {u_colormap}, "
+            f"{v_field.layer} -> {v_colormap}"
+        )
+    if u_colormap:
+        return u_colormap
+    if v_colormap:
+        return v_colormap
+    raise ValueError(f"Wind fields {u_field.layer} and {v_field.layer} are missing colormap_key metadata")
 
 
 def plot_wind_vector_field(
@@ -204,7 +247,8 @@ def plot_wind_vector_field(
         raise ValueError(f"Cannot plot {title}: wind field has no finite values")
 
     fig, ax = plt.subplots(figsize=(11, 8), constrained_layout=True)
-    image = ax.imshow(speed, origin="lower", cmap=cmap, aspect="auto")
+    draw_transparency_background(ax, speed.shape[1], speed.shape[0])
+    image = ax.imshow(speed, origin="lower", cmap=cmap, aspect="auto", zorder=1)
 
     step = max(1, min(speed.shape) // 40)
     y_coords, x_coords = np.mgrid[0 : speed.shape[0] : step, 0 : speed.shape[1] : step]
@@ -239,6 +283,7 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
     """Plot scalar fields and derived wind-speed products."""
     written: list[Path] = []
     decoded: dict[tuple[str, str], np.ndarray] = {}
+    project_colormaps: dict[str, LinearSegmentedColormap] = {}
     wind_colormaps = {
         "RAP_Wind_LL": load_project_colormap("RAP_Wind_LL"),
         "RAP_Wind_HL": load_project_colormap("RAP_Wind_HL"),
@@ -247,9 +292,20 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
     for field in fields:
         data = decode_uint16_field(field.data_path, field.metadata)
         decoded[(field.layer, field.timestamp)] = data
+        if wind_component(field) is not None:
+            continue
+
         units = str(field.metadata.get("units") or "")
         output_path = output_dir / field.timestamp / f"{field.layer}.png"
-        plot_field(data, f"{field.layer} {field.timestamp}", units, output_path)
+        colormap_name = field_colormap_name(field)
+        if colormap_name:
+            if colormap_name not in project_colormaps:
+                project_colormaps[colormap_name] = load_project_colormap(colormap_name)
+            cmap: str | LinearSegmentedColormap = project_colormaps[colormap_name]
+        else:
+            cmap = "viridis"
+
+        plot_field(data, f"{field.layer} {field.timestamp}", units, output_path, cmap=cmap)
         written.append(output_path)
 
     wind_groups: dict[tuple[str, str, int | None], dict[str, RapField]] = {}
@@ -272,7 +328,7 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
             raise ValueError(f"Wind component shape mismatch: {u_field.layer} {u_data.shape} vs {v_field.layer} {v_data.shape}")
 
         name = wind_speed_name(type_of_level, level)
-        colormap_name = wind_colormap_name(type_of_level, level)
+        colormap_name = wind_vector_colormap_name(u_field, v_field)
         output_path = output_dir / timestamp / f"{name}.png"
         plot_wind_vector_field(
             u_data,
