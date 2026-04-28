@@ -800,16 +800,34 @@
         ]
       },
       {
-        "name": "RAP_Wind_HL",
-        "description": "RAP high-level wind magnitude colormap for 0-150 kts (0-77.17 m/s), transparent through 30 kt and condensed from U/V wind components",
+        "name": "RAP_Wind_ML",
+        "description": "RAP mid-level wind magnitude colormap for 0-150 kts (0-77.17 m/s), transparent through 25 kt and condensed from U/V wind components",
         "type": "RAP_WIND_MAGNITUDE",
         "units": "m s-1",
         "interpolate": true,
         "range": [0, 77.17],
         "thresholds": [
           {"value": 0, "rgba": [245, 245, 245, 0]},
-          {"value": 15.43333, "rgba": [245, 245, 245, 0]},
-          {"value": 15.43334, "rgba": [245, 204, 174, 255]},
+          {"value": 12.861, "rgba": [245, 245, 245, 0]},
+          {"value": 12.86101, "rgba": [245, 245, 245, 255]},
+          {"value": 19.291, "rgba": [245, 204, 174, 255]},
+          {"value": 30.868, "rgba": [238, 160, 120, 255]},
+          {"value": 46.302, "rgba": [224, 112, 82, 255]},
+          {"value": 61.736, "rgba": [196, 72, 58, 255]},
+          {"value": 77.17, "rgba": [156, 36, 46, 255]}
+        ]
+      },
+      {
+        "name": "RAP_Wind_HL",
+        "description": "RAP high-level wind magnitude colormap for 0-150 kts (0-77.17 m/s), transparent through 45 kt and condensed from U/V wind components",
+        "type": "RAP_WIND_MAGNITUDE",
+        "units": "m s-1",
+        "interpolate": true,
+        "range": [0, 77.17],
+        "thresholds": [
+          {"value": 0, "rgba": [245, 245, 245, 0]},
+          {"value": 23.149, "rgba": [245, 245, 245, 0]},
+          {"value": 23.14901, "rgba": [245, 204, 174, 255]},
           {"value": 30.868, "rgba": [238, 160, 120, 255]},
           {"value": 46.302, "rgba": [224, 112, 82, 255]},
           {"value": 61.736, "rgba": [196, 72, 58, 255]},
