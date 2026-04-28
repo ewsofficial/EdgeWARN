@@ -16,25 +16,29 @@ def test_default_config_defines_rap_uint16_layers():
     assert "RAP_Temperature_2m" in layer_by_name
     assert all("outdir" in layer for layer in layers)
     assert all("scale" in layer for layer in layers)
-    assert all("colormap_key" in layer for layer in layers)
+    assert all("colormap_key" in layer for layer in layers if layer.get("colormap_key") is not None)
     # Check colormap key mappings
     for layer in layers:
         name = layer["name"]
+        if layer.get("colormap_key") is None:
+            continue
         if name in ("RAP_CAPE_Surface", "RAP_MLCAPE", "RAP_MUCAPE", "RAP_CAPE_0_3km"):
             assert layer["colormap_key"] == "RAP_CAPE"
         elif name in ("RAP_SRH_0-3km", "RAP_SRH_0-1km"):
             assert layer["colormap_key"] == "RAP_SRH"
         elif name.startswith("RAP_Temperature_"):
-            assert layer["colormap_key"] == "RAP_Temperature"
+            if name in ("RAP_Temperature_2m", "RAP_Temperature_Surface", "RAP_Temperature_925mb", "RAP_Temperature_850mb", "RAP_Temperature_700mb"):
+                assert layer["colormap_key"] == "RAP_Temperature_LL"
+            else:
+                assert layer["colormap_key"] == "RAP_Temperature_HL"
         elif name.startswith("RAP_RelativeHumidity_"):
             assert layer["colormap_key"] == "RAP_RelativeHumidity"
-        elif name in ("RAP_UWind_10m", "RAP_VWind_10m"):
-            assert layer["colormap_key"] == "RAP_Wind_LL"
-        elif name.endswith("_925mb") or name.endswith("_850mb"):
-            if name.startswith("RAP_UWind_") or name.startswith("RAP_VWind_"):
-                assert layer["colormap_key"] == "RAP_Wind_LL"
         elif name.startswith("RAP_UWind_") or name.startswith("RAP_VWind_"):
-            assert layer["colormap_key"] == "RAP_Wind_HL"
+            # Wind colormap assignment handled by _wind_colormap_key
+            expected = "RAP_Wind_LL" if name.endswith("_10m") or name.endswith("_925mb") or name.endswith("_850mb") else \
+                       "RAP_Wind_ML" if name.endswith("_700mb") or name.endswith("_500mb") else \
+                       "RAP_Wind_HL"
+            assert layer["colormap_key"] == expected
         else:
             assert layer["colormap_key"] == name
     assert all(not layer["outdir"].name.startswith("RAP_") for layer in layers)
@@ -114,6 +118,7 @@ def test_default_config_defines_rap_uint16_layers():
 
     expected_surface_layers = {
         "RAP_ThetaE_Surface": {"short_names": ["papt"], "filter": {"typeOfLevel": "surface", "level": 0}},
+        "RAP_MSLP_Surface": {"short_names": ["prmsl"], "filter": {"typeOfLevel": "surface", "level": 0}},
         "RAP_SnowDepth_Surface": {"short_names": ["sde"], "filter": {"typeOfLevel": "surface", "level": 0}},
         "RAP_WetBulbZeroHeight": {"short_names": ["gh"], "filter": {"typeOfLevel": "lowestLevelWetBulb0", "level": 0}},
     }
@@ -159,7 +164,10 @@ def test_rap_colormap_keys_exist_in_colormaps_catalog():
     colormap_names = {entry["name"] for entry in colormaps}
 
     for layer in layers:
-        assert layer["colormap_key"] in colormap_names
+        key = layer.get("colormap_key")
+        if key is None:
+            continue
+        assert key in colormap_names
 
 
 

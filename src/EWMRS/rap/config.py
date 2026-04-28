@@ -59,9 +59,11 @@ def _with_colormap_key(layer: dict) -> dict:
         colormap_key = "RAP_RelativeHumidity"
     elif name.startswith("RAP_UWind_") or name.startswith("RAP_VWind_"):
         colormap_key = _wind_colormap_key(name)
+    elif name == "RAP_MSLP_Surface":
+        colormap_key = None
     else:
         colormap_key = name
-    return {**layer, "colormap_key": colormap_key}
+    return {**layer, "colormap_key": colormap_key} if colormap_key is not None else layer
 
 
 def _pressure_thermo_layers() -> list[dict]:
@@ -85,43 +87,52 @@ def _pressure_thermo_layers() -> list[dict]:
 
 
 def _surface_and_precip_layers() -> list[dict]:
-    return [_with_colormap_key(layer) for layer in [
-        {
-            "name": "RAP_Temperature_Surface",
-            "short_names": ["t"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "K",
-            "scale": {"min": 180.0, "max": 330.0},
-            "outdir": _outdir("RAP_Temperature_Surface"),
-            "description": "RAP surface temperature",
-        },
-        {
-            "name": "RAP_RelativeHumidity_2m",
-            "short_names": ["2r", "r"],
-            "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
-            "units": "%",
-            "scale": {"min": 0.0, "max": 100.0},
-            "outdir": _outdir("RAP_RelativeHumidity_2m"),
-            "description": "RAP 2 meter relative humidity",
-        },
-        {
-            "name": "RAP_ThetaE_Surface",
-            "short_names": ["papt"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "K",
-            "scale": {"min": 250.0, "max": 390.0},
-            "outdir": _outdir("RAP_ThetaE_Surface"),
-            "description": "RAP surface pseudo-adiabatic potential temperature",
-        },
-        {
-            "name": "RAP_SnowWaterEquivalent_Surface",
-            "short_names": ["sdwe"],
-            "filter": {"typeOfLevel": "surface", "level": 0},
-            "units": "kg m-2",
-            "scale": {"min": 0.0, "max": 200.0},
-            "outdir": _outdir("RAP_SnowWaterEquivalent_Surface"),
-            "description": "RAP snow water equivalent",
-        },
+     return [_with_colormap_key(layer) for layer in [
+         {
+             "name": "RAP_Temperature_Surface",
+             "short_names": ["t"],
+             "filter": {"typeOfLevel": "surface", "level": 0},
+             "units": "K",
+             "scale": {"min": 180.0, "max": 330.0},
+             "outdir": _outdir("RAP_Temperature_Surface"),
+             "description": "RAP surface temperature",
+         },
+         {
+             "name": "RAP_RelativeHumidity_2m",
+             "short_names": ["2r", "r"],
+             "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
+             "units": "%",
+             "scale": {"min": 0.0, "max": 100.0},
+             "outdir": _outdir("RAP_RelativeHumidity_2m"),
+             "description": "RAP 2 meter relative humidity",
+         },
+         {
+             "name": "RAP_ThetaE_Surface",
+             "short_names": ["papt"],
+             "filter": {"typeOfLevel": "surface", "level": 0},
+             "units": "K",
+             "scale": {"min": 250.0, "max": 390.0},
+             "outdir": _outdir("RAP_ThetaE_Surface"),
+             "description": "RAP surface pseudo-adiabatic potential temperature",
+         },
+         {
+             "name": "RAP_MSLP_Surface",
+             "short_names": ["prmsl"],
+             "filter": {"typeOfLevel": "surface", "level": 0},
+             "units": "Pa",
+             "scale": {"min": 95000.0, "max": 105000.0},
+             "outdir": _outdir("RAP_MSLP_Surface"),
+             "description": "RAP surface mean sea level pressure",
+         },
+         {
+             "name": "RAP_SnowWaterEquivalent_Surface",
+             "short_names": ["sdwe"],
+             "filter": {"typeOfLevel": "surface", "level": 0},
+             "units": "kg m-2",
+             "scale": {"min": 0.0, "max": 200.0},
+             "outdir": _outdir("RAP_SnowWaterEquivalent_Surface"),
+             "description": "RAP snow water equivalent",
+         },
         {
             "name": "RAP_SnowDepth_Surface",
             "short_names": ["sde"],
