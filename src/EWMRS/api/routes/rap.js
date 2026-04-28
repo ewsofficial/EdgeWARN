@@ -180,7 +180,7 @@ router.get('/layers', async (req, res) => {
 });
 
 router.get('/mappings', async (req, res) => {
-  const mappingsPath = path.join(__dirname, '..', 'mappings.json');
+  const mappingsPath = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'mappings.json');
 
   try {
     const data = await fs.readFile(mappingsPath, 'utf-8');
