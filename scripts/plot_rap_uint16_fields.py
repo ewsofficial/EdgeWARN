@@ -21,6 +21,7 @@ from EWMRS.rap.config import get_rap_uint16_layers
 
 UINT16_VALID_MAX = 65534.0
 COLORMAPS_PATH = Path(__file__).resolve().parents[1] / "src" / "EWMRS" / "colormaps.json"
+MAPPINGS_PATH = Path(__file__).resolve().parents[1] / "src" / "EWMRS" / "mappings.json"
 _CONFIGURED_LAYER_COLORMAPS: dict[str, str] | None = None
 
 
@@ -240,11 +241,23 @@ def should_plot_field(field: RapField) -> bool:
 def configured_colormap_name(layer_name: str) -> str | None:
     global _CONFIGURED_LAYER_COLORMAPS
     if _CONFIGURED_LAYER_COLORMAPS is None:
-        _CONFIGURED_LAYER_COLORMAPS = {
-            str(layer["name"]): str(layer.get("colormap_key"))
-            for layer in get_rap_uint16_layers()
-            if layer.get("colormap_key")
-        }
+        # Try to load from mappings.json first
+        try:
+            if MAPPINGS_PATH.exists():
+                mappings = json.loads(MAPPINGS_PATH.read_text(encoding="utf-8"))
+                _CONFIGURED_LAYER_COLORMAPS = {
+                    k: v for k, v in mappings.items() if v is not None
+                }
+            else:
+                # Fallback: compute from config
+                _CONFIGURED_LAYER_COLORMAPS = {
+                    str(layer["name"]): str(layer.get("colormap_key"))
+                    for layer in get_rap_uint16_layers()
+                    if layer.get("colormap_key")
+                }
+        except Exception as e:
+            print(f"Warning: Could not load colormap mappings: {e}", file=sys.stderr)
+            _CONFIGURED_LAYER_COLORMAPS = {}
     return _CONFIGURED_LAYER_COLORMAPS.get(layer_name)
 
 
