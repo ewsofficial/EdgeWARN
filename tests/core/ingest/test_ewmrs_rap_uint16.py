@@ -26,8 +26,13 @@ def test_default_config_defines_rap_uint16_layers():
             assert layer["colormap_key"] == "RAP_Temperature"
         elif name.startswith("RAP_RelativeHumidity_"):
             assert layer["colormap_key"] == "RAP_RelativeHumidity"
+        elif name in ("RAP_UWind_10m", "RAP_VWind_10m"):
+            assert layer["colormap_key"] == "RAP_Wind_LL"
+        elif name.endswith("_925mb") or name.endswith("_850mb"):
+            if name.startswith("RAP_UWind_") or name.startswith("RAP_VWind_"):
+                assert layer["colormap_key"] == "RAP_Wind_LL"
         elif name.startswith("RAP_UWind_") or name.startswith("RAP_VWind_"):
-            assert layer["colormap_key"] == "RAP_Wind"
+            assert layer["colormap_key"] == "RAP_Wind_HL"
         else:
             assert layer["colormap_key"] == name
     assert all(not layer["outdir"].name.startswith("RAP_") for layer in layers)

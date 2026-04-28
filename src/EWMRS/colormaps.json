@@ -10,10 +10,7 @@
         "type": "reflectivity",
         "units": "dBZ",
         "interpolate": true,
-        "range": [
-          0,
-          85
-        ],
+        "range": [0, 85],
         "thresholds": [
           {"value": 0, "rgb": [35, 150, 190]},
           {"value": 5, "rgb": [26, 26, 117]},
@@ -41,10 +38,7 @@
         "type": "EchoTops",
         "units": "km",
         "interpolate": false,
-        "range": [
-          0,
-          19
-        ],
+        "range": [0, 19],
         "thresholds": [
           {"value": 0, "rgb": [0, 236, 236]},
           {"value": 1, "rgb": [0, 200, 240]},
@@ -74,10 +68,7 @@
         "type": "PrecipitationRate",
         "units": "mm",
         "interpolate": true,
-        "range": [
-          0,
-          177.8
-        ],
+        "range": [0, 177.8],
         "thresholds": [
           {"value": 0.25, "rgb": [0, 236, 236]},
           {"value": 1.27, "rgb": [0, 200, 240]},
@@ -110,10 +101,7 @@
         "type": "QPE",
         "units": "mm",
         "interpolate": true,
-        "range": [
-          0,
-          177.8
-        ],
+        "range": [0, 177.8],
         "thresholds": [
           {"value": 0.25, "rgb": [0, 236, 236]},
           {"value": 1.27, "rgb": [0, 200, 240]},
@@ -146,10 +134,7 @@
         "type": "VILDensity",
         "units": "g/m^3",
         "interpolate": true,
-        "range": [
-          0,
-          70
-        ],
+        "range": [0, 70],
         "thresholds": [
           {"value": 0, "rgb": [0, 236, 236]},
           {"value": 1, "rgb": [0, 160, 246]},
@@ -178,10 +163,7 @@
         "type": "AzShear",
         "units": "0.001/s",
         "interpolate": false,
-        "range": [
-          0,
-          20
-        ],
+        "range": [0, 20],
         "thresholds": [
           {"value": 1, "rgb": [160, 160, 160]},
           {"value": 3, "rgb": [120, 120, 120]},
@@ -206,10 +188,7 @@
         "type": "VIL/VII",
         "units": "kg/m^2",
         "interpolate": true,
-        "range": [
-          0,
-          70
-        ],
+        "range": [0, 70],
         "thresholds": [
           {"value": 0, "rgb": [91, 236, 237]},
           {"value": 1, "rgb": [70, 160, 248]},
@@ -238,10 +217,7 @@
         "type": "MESH",
         "units": "mm",
         "interpolate": true,
-        "range": [
-          0,
-          100
-        ],
+        "range": [0, 100],
         "thresholds": [
           {"value": 0, "rgb": [0, 236, 236]},
           {"value": 1, "rgb": [1, 160, 246]},
@@ -265,10 +241,7 @@
         "type": "GOES_RGB_Raw",
         "units": "1",
         "interpolate": true,
-        "range": [
-          0.0,
-          1.2
-        ],
+        "range": [0.0, 1.2],
         "thresholds": [
           {"value": 0.0, "rgb": [34, 34, 34]},
           {"value": 0.05, "rgb": [46, 46, 46]},
@@ -288,10 +261,7 @@
         "type": "GOES_ABI_C07",
         "units": "K",
         "interpolate": true,
-        "range": [
-          180.0,
-          330.0
-        ],
+        "range": [180.0, 330.0],
         "thresholds": [
           {"value": 180.0, "rgb": [255, 255, 255]},
           {"value": 200.0, "rgb": [230, 230, 230]},
@@ -311,10 +281,7 @@
         "type": "GOES_ABI_C08",
         "units": "K",
         "interpolate": true,
-        "range": [
-          180.0,
-          300.0
-        ],
+        "range": [180.0, 300.0],
         "thresholds": [
           {"value": 180.0, "rgb": [255, 255, 255]},
           {"value": 195.0, "rgb": [168, 234, 255]},
@@ -335,10 +302,7 @@
         "type": "GOES_ABI_C09",
         "units": "K",
         "interpolate": true,
-        "range": [
-          180.0,
-          310.0
-        ],
+        "range": [180.0, 310.0],
         "thresholds": [
           {"value": 180.0, "rgb": [255, 255, 255]},
           {"value": 198.0, "rgb": [176, 238, 255]},
@@ -359,10 +323,7 @@
         "type": "GOES_ABI_C10",
         "units": "K",
         "interpolate": true,
-        "range": [
-          185.0,
-          320.0
-        ],
+        "range": [185.0, 320.0],
         "thresholds": [
           {"value": 185.0, "rgb": [255, 255, 255]},
           {"value": 202.0, "rgb": [182, 240, 255]},
@@ -383,10 +344,7 @@
         "type": "GOES_ABI_C11",
         "units": "K",
         "interpolate": true,
-        "range": [
-          180.0,
-          330.0
-        ],
+        "range": [180.0, 330.0],
         "thresholds": [
           {"value": 180.0, "rgb": [255, 255, 255]},
           {"value": 195.0, "rgb": [234, 234, 234]},
@@ -407,10 +365,7 @@
         "type": "GOES_IR",
         "units": "K",
         "interpolate": true,
-        "range": [
-          180.0,
-          330.0
-        ],
+        "range": [180.0, 330.0],
         "thresholds": [
           {"value": 180.0, "rgb": [100, 0, 100]},
           {"value": 183.15, "rgb": [128, 0, 128]},
@@ -432,10 +387,7 @@
         "type": "GOES_ABI_C12",
         "units": "K",
         "interpolate": true,
-        "range": [
-          180.0,
-          330.0
-        ],
+        "range": [180.0, 330.0],
         "thresholds": [
           {"value": 180.0, "rgb": [255, 255, 255]},
           {"value": 195.0, "rgb": [234, 234, 234]},
@@ -456,10 +408,7 @@
         "type": "GOES_ABI_C16",
         "units": "K",
         "interpolate": true,
-        "range": [
-          180.0,
-          330.0
-        ],
+        "range": [180.0, 330.0],
         "thresholds": [
           {"value": 180.0, "rgb": [255, 255, 255]},
           {"value": 195.0, "rgb": [234, 234, 234]},
@@ -480,10 +429,7 @@
         "type": "RAP_FALLBACK_THERMAL",
         "units": "K",
         "interpolate": true,
-        "range": [
-          180.0,
-          330.0
-        ],
+        "range": [180.0, 330.0],
         "thresholds": [
           {"value": 180.0, "rgba": [34, 58, 140, 255]},
           {"value": 195.0, "rgba": [48, 90, 182, 255]},
@@ -504,10 +450,7 @@
         "type": "RAP_FALLBACK_THERMAL",
         "units": "K",
         "interpolate": true,
-        "range": [
-          180.0,
-          330.0
-        ],
+        "range": [180.0, 330.0],
         "thresholds": [
           {"value": 180.0, "rgba": [34, 58, 140, 255]},
           {"value": 195.0, "rgba": [48, 90, 182, 255]},
@@ -528,10 +471,7 @@
         "type": "RAP_FALLBACK_MOISTURE",
         "units": "%",
         "interpolate": true,
-        "range": [
-          0.0,
-          100.0
-        ],
+        "range": [0.0, 100.0],
         "thresholds": [
           {"value": 0.0, "rgba": [82, 54, 24, 255]},
           {"value": 10.0, "rgba": [110, 74, 30, 255]},
@@ -552,10 +492,7 @@
         "type": "RAP_FALLBACK_THERMAL",
         "units": "K",
         "interpolate": true,
-        "range": [
-          250.0,
-          400.0
-        ],
+        "range": [250.0, 400.0],
         "thresholds": [
           {"value": 250.0, "rgba": [34, 58, 140, 255]},
           {"value": 265.0, "rgba": [48, 90, 182, 255]},
@@ -576,10 +513,7 @@
         "type": "RAP_METPY_PRECIPITATION",
         "units": "kg m-2 s-1",
         "interpolate": true,
-        "range": [
-          0.0,
-          0.05
-        ],
+        "range": [0.0, 0.05],
         "thresholds": [
           {"value": 0.0, "rgba": [56, 56, 56, 255]},
           {"value": 0.005, "rgba": [0, 122, 255, 255]},
@@ -600,10 +534,7 @@
         "type": "RAP_METPY_PRECIPITATION",
         "units": "kg m-2",
         "interpolate": true,
-        "range": [
-          0.0,
-          100.0
-        ],
+        "range": [0.0, 100.0],
         "thresholds": [
           {"value": 0.0, "rgba": [56, 56, 56, 255]},
           {"value": 10.0, "rgba": [0, 122, 255, 255]},
@@ -624,10 +555,7 @@
         "type": "RAP_METPY_PRECIPITATION",
         "units": "kg m-2",
         "interpolate": true,
-        "range": [
-          0.0,
-          200.0
-        ],
+        "range": [0.0, 200.0],
         "thresholds": [
           {"value": 0.0, "rgba": [56, 56, 56, 255]},
           {"value": 20.0, "rgba": [0, 122, 255, 255]},
@@ -648,10 +576,7 @@
         "type": "RAP_FALLBACK_SNOW_DEPTH",
         "units": "m",
         "interpolate": true,
-        "range": [
-          0.0,
-          5.0
-        ],
+        "range": [0.0, 5.0],
         "thresholds": [
           {"value": 0.0, "rgba": [238, 242, 246, 255]},
           {"value": 0.625, "rgba": [220, 232, 244, 255]},
@@ -670,10 +595,7 @@
         "type": "RAP_METPY_PRECIPITATION",
         "units": "kg m-2",
         "interpolate": true,
-        "range": [
-          0.0,
-          50.0
-        ],
+        "range": [0.0, 50.0],
         "thresholds": [
           {"value": 0.0, "rgba": [56, 56, 56, 255]},
           {"value": 5.0, "rgba": [0, 122, 255, 255]},
@@ -694,10 +616,7 @@
         "type": "RAP_GEMPAK_UPC_Z",
         "units": "gpm",
         "interpolate": true,
-        "range": [
-          0.0,
-          6000.0
-        ],
+        "range": [0.0, 6000.0],
         "thresholds": [
           {"value": 0.0, "rgba": [24, 46, 132, 255]},
           {"value": 666.666667, "rgba": [38, 78, 170, 255]},
@@ -717,10 +636,7 @@
         "type": "RAP_GEMPAK_UPC_Z",
         "units": "gpm",
         "interpolate": true,
-        "range": [
-          0.0,
-          6000.0
-        ],
+        "range": [0.0, 6000.0],
         "thresholds": [
           {"value": 0.0, "rgba": [24, 46, 132, 255]},
           {"value": 666.666667, "rgba": [38, 78, 170, 255]},
@@ -740,10 +656,7 @@
         "type": "RAP_GEMPAK_GDPICINH",
         "units": "J kg-1",
         "interpolate": true,
-        "range": [
-          -1000.0,
-          0.0
-        ],
+        "range": [-1000.0, 0.0],
         "thresholds": [
           {"value": -1000.0, "rgba": [72, 0, 110, 255]},
           {"value": -875.0, "rgba": [95, 20, 145, 255]},
@@ -762,10 +675,7 @@
         "type": "RAP_GEMPAK_GDPICINH",
         "units": "J kg-1",
         "interpolate": true,
-        "range": [
-          -1000.0,
-          0.0
-        ],
+        "range": [-1000.0, 0.0],
         "thresholds": [
           {"value": -1000.0, "rgba": [72, 0, 110, 255]},
           {"value": -875.0, "rgba": [95, 20, 145, 255]},
@@ -784,10 +694,7 @@
         "type": "RAP_GEMPAK_GDPICINH",
         "units": "J kg-1",
         "interpolate": true,
-        "range": [
-          -1000.0,
-          0.0
-        ],
+        "range": [-1000.0, 0.0],
         "thresholds": [
           {"value": -1000.0, "rgba": [72, 0, 110, 255]},
           {"value": -875.0, "rgba": [95, 20, 145, 255]},
@@ -806,10 +713,7 @@
         "type": "RAP_GEMPAK_CAPE_UPC",
         "units": "J kg-1",
         "interpolate": true,
-        "range": [
-          0.0,
-          6000.0
-        ],
+        "range": [0.0, 6000.0],
         "thresholds": [
           {"value": 0.0, "rgba": [20, 40, 120, 255]},
           {"value": 600.0, "rgba": [30, 90, 180, 255]},
@@ -830,10 +734,7 @@
         "type": "RAP_FALLBACK_DIVERGING_SIGNED",
         "units": "m2 s-2",
         "interpolate": true,
-        "range": [
-          -500.0,
-          1000.0
-        ],
+        "range": [-500.0, 1000.0],
         "thresholds": [
           {"value": -500.0, "rgba": [28, 64, 148, 255]},
           {"value": -350.0, "rgba": [44, 96, 190, 255]},
@@ -854,10 +755,7 @@
         "type": "RAP_FALLBACK_DIVERGING_SIGNED",
         "units": "m2 s-2",
         "interpolate": true,
-        "range": [
-          -500.0,
-          1000.0
-        ],
+        "range": [-500.0, 1000.0],
         "thresholds": [
           {"value": -500.0, "rgba": [28, 64, 148, 255]},
           {"value": -350.0, "rgba": [44, 96, 190, 255]},
@@ -878,10 +776,7 @@
         "type": "RAP_GEMPAK_LI_UPC",
         "units": "K",
         "interpolate": true,
-        "range": [
-          -15.0,
-          15.0
-        ],
+        "range": [-15.0, 15.0],
         "thresholds": [
           {"value": -15.0, "rgba": [130, 0, 38, 255]},
           {"value": -12.0, "rgba": [180, 20, 45, 255]},
@@ -902,10 +797,7 @@
         "type": "RAP_GEMPAK_LI_UPC",
         "units": "K",
         "interpolate": true,
-        "range": [
-          -15.0,
-          15.0
-        ],
+        "range": [-15.0, 15.0],
         "thresholds": [
           {"value": -15.0, "rgba": [130, 0, 38, 255]},
           {"value": -12.0, "rgba": [180, 20, 45, 255]},
@@ -926,10 +818,7 @@
         "type": "RAP_FALLBACK_DIVERGING_SIGNED",
         "units": "s-1",
         "interpolate": true,
-        "range": [
-          -0.0002,
-          0.0002
-        ],
+        "range": [-0.0002, 0.0002],
         "thresholds": [
           {"value": -0.0002, "rgba": [28, 64, 148, 255]},
           {"value": -0.00016, "rgba": [44, 96, 190, 255]},
@@ -945,18 +834,34 @@
         ]
       },
       {
-        "name": "RAP_Wind",
-        "description": "RAP wind magnitude colormap for 0-150 kts (0-77.17 m/s), condensed from U/V wind components",
+        "name": "RAP_Wind_LL",
+        "description": "RAP low-level wind magnitude colormap for 0-150 kts (0-77.17 m/s), transparent through 10 kt and condensed from U/V wind components",
         "type": "RAP_WIND_MAGNITUDE",
         "units": "m s-1",
         "interpolate": true,
-        "range": [
-          0,
-          77.17
-        ],
+        "range": [0, 77.17],
         "thresholds": [
-          {"value": 0, "rgba": [245, 245, 245, 255]},
+          {"value": 0, "rgba": [245, 245, 245, 0]},
+          {"value": 5.14444, "rgba": [245, 245, 245, 0]},
+          {"value": 5.14445, "rgba": [245, 245, 245, 255]},
           {"value": 15.434, "rgba": [245, 204, 174, 255]},
+          {"value": 30.868, "rgba": [238, 160, 120, 255]},
+          {"value": 46.302, "rgba": [224, 112, 82, 255]},
+          {"value": 61.736, "rgba": [196, 72, 58, 255]},
+          {"value": 77.17, "rgba": [156, 36, 46, 255]}
+        ]
+      },
+      {
+        "name": "RAP_Wind_HL",
+        "description": "RAP high-level wind magnitude colormap for 0-150 kts (0-77.17 m/s), transparent through 30 kt and condensed from U/V wind components",
+        "type": "RAP_WIND_MAGNITUDE",
+        "units": "m s-1",
+        "interpolate": true,
+        "range": [0, 77.17],
+        "thresholds": [
+          {"value": 0, "rgba": [245, 245, 245, 0]},
+          {"value": 15.43333, "rgba": [245, 245, 245, 0]},
+          {"value": 15.43334, "rgba": [245, 204, 174, 255]},
           {"value": 30.868, "rgba": [238, 160, 120, 255]},
           {"value": 46.302, "rgba": [224, 112, 82, 255]},
           {"value": 61.736, "rgba": [196, 72, 58, 255]},

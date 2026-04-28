@@ -14,6 +14,17 @@ def _outdir(layer_name: str):
     return fs.GUI_RAP_DIR / layer_name.removeprefix("RAP_")
 
 
+def _wind_colormap_key(name: str) -> str:
+    if name in ("RAP_UWind_10m", "RAP_VWind_10m"):
+        return "RAP_Wind_LL"
+
+    for level in (925, 850):
+        if name.endswith(f"_{level}mb"):
+            return "RAP_Wind_LL"
+
+    return "RAP_Wind_HL"
+
+
 def _with_colormap_key(layer: dict) -> dict:
     # Map layers to their appropriate colormaps
     name = layer["name"]
@@ -24,7 +35,7 @@ def _with_colormap_key(layer: dict) -> dict:
     elif name.startswith("RAP_RelativeHumidity_"):
         colormap_key = "RAP_RelativeHumidity"
     elif name.startswith("RAP_UWind_") or name.startswith("RAP_VWind_"):
-        colormap_key = "RAP_Wind"
+        colormap_key = _wind_colormap_key(name)
     else:
         colormap_key = name
     return {**layer, "colormap_key": colormap_key}

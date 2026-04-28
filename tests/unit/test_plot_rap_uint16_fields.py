@@ -54,3 +54,13 @@ def test_wind_pairing_groups_u_and_v_components():
     assert module.wind_component(v_field) == "v"
     assert module.wind_pair_key(u_field) == module.wind_pair_key(v_field)
     assert module.wind_speed_name("isobaricInhPa", 925) == "RAP_WindSpeed_925mb"
+
+
+def test_wind_colormap_name_distinguishes_low_and_high_levels():
+    module = _load_plot_script()
+
+    assert module.wind_colormap_name("heightAboveGround", 10) == "RAP_Wind_LL"
+    assert module.wind_colormap_name("isobaricInhPa", 925) == "RAP_Wind_LL"
+    assert module.wind_colormap_name("isobaricInhPa", 850) == "RAP_Wind_LL"
+    assert module.wind_colormap_name("isobaricInhPa", 700) == "RAP_Wind_HL"
+    assert module.wind_colormap_name("isobaricInhPa", 250) == "RAP_Wind_HL"
