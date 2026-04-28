@@ -321,10 +321,12 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
     project_ranges: dict[str, tuple[float, float]] = {}
     wind_colormaps = {
         "RAP_Wind_LL": load_project_colormap("RAP_Wind_LL"),
+        "RAP_Wind_ML": load_project_colormap("RAP_Wind_ML"),
         "RAP_Wind_HL": load_project_colormap("RAP_Wind_HL"),
     }
     wind_ranges = {
         "RAP_Wind_LL": load_project_colormap_range("RAP_Wind_LL"),
+        "RAP_Wind_ML": load_project_colormap_range("RAP_Wind_ML"),
         "RAP_Wind_HL": load_project_colormap_range("RAP_Wind_HL"),
     }
 

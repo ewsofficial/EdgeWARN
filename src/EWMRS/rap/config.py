@@ -22,6 +22,10 @@ def _wind_colormap_key(name: str) -> str:
         if name.endswith(f"_{level}mb"):
             return "RAP_Wind_LL"
 
+    for level in (700, 500):
+        if name.endswith(f"_{level}mb"):
+            return "RAP_Wind_ML"
+
     return "RAP_Wind_HL"
 
 
