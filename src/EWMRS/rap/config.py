@@ -92,7 +92,7 @@ def _surface_and_precip_layers() -> list[dict]:
             "short_names": ["papt"],
             "filter": {"typeOfLevel": "surface", "level": 0},
             "units": "K",
-            "scale": {"min": 250.0, "max": 400.0},
+            "scale": {"min": 250.0, "max": 390.0},
             "outdir": _outdir("RAP_ThetaE_Surface"),
             "description": "RAP surface pseudo-adiabatic potential temperature",
         },
