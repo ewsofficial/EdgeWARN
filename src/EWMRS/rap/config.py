@@ -30,6 +30,8 @@ def _with_colormap_key(layer: dict) -> dict:
     name = layer["name"]
     if name in ("RAP_CAPE_Surface", "RAP_MLCAPE", "RAP_MUCAPE", "RAP_CAPE_0_3km"):
         colormap_key = "RAP_CAPE"
+    elif name in ("RAP_SRH_0-3km", "RAP_SRH_0-1km"):
+        colormap_key = "RAP_SRH"
     elif name.startswith("RAP_Temperature_"):
         colormap_key = "RAP_Temperature"
     elif name.startswith("RAP_RelativeHumidity_"):
