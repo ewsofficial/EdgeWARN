@@ -179,6 +179,21 @@ router.get('/layers', async (req, res) => {
   }
 });
 
+router.get('/mappings', async (req, res) => {
+  const mappingsPath = path.join(__dirname, '..', 'mappings.json');
+
+  try {
+    const data = await fs.readFile(mappingsPath, 'utf-8');
+    res.json(JSON.parse(data));
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return res.status(404).json({ error: 'mappings.json not found' });
+    }
+    console.error('Error reading mappings.json:', err);
+    res.status(500).json({ error: 'Failed to read colormap mappings' });
+  }
+});
+
 router.get('/fetch', async (req, res) => {
   const layer = validateLayerParam(req, res);
   if (!layer) {
