@@ -111,6 +111,14 @@ def wind_speed_name(type_of_level: str, level: int | None) -> str:
     return f"RAP_WindSpeed_{type_of_level}"
 
 
+def wind_colormap_name(type_of_level: str, level: int | None) -> str:
+    if type_of_level == "heightAboveGround":
+        return "RAP_Wind_LL"
+    if type_of_level == "isobaricInhPa" and level in {925, 850}:
+        return "RAP_Wind_LL"
+    return "RAP_Wind_HL"
+
+
 def load_project_colormap(colormap_name: str) -> LinearSegmentedColormap:
     """Build a Matplotlib colormap from src/EWMRS/colormaps.json."""
     raw = json.loads(COLORMAPS_PATH.read_text(encoding="utf-8"))
@@ -231,7 +239,10 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
     """Plot scalar fields and derived wind-speed products."""
     written: list[Path] = []
     decoded: dict[tuple[str, str], np.ndarray] = {}
-    rap_wind_cmap = load_project_colormap("RAP_Wind")
+    wind_colormaps = {
+        "RAP_Wind_LL": load_project_colormap("RAP_Wind_LL"),
+        "RAP_Wind_HL": load_project_colormap("RAP_Wind_HL"),
+    }
 
     for field in fields:
         data = decode_uint16_field(field.data_path, field.metadata)
@@ -261,6 +272,7 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
             raise ValueError(f"Wind component shape mismatch: {u_field.layer} {u_data.shape} vs {v_field.layer} {v_data.shape}")
 
         name = wind_speed_name(type_of_level, level)
+        colormap_name = wind_colormap_name(type_of_level, level)
         output_path = output_dir / timestamp / f"{name}.png"
         plot_wind_vector_field(
             u_data,
@@ -268,7 +280,7 @@ def plot_all_fields(fields: list[RapField], output_dir: Path) -> list[Path]:
             f"{name} {timestamp}",
             "m s-1",
             output_path,
-            cmap=rap_wind_cmap,
+            cmap=wind_colormaps[colormap_name],
         )
         written.append(output_path)
 
