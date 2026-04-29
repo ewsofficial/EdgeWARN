@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,7 @@ import numpy as np
 
 from EWMRS.rap.config import UINT16_NODATA, UINT16_VALID_MAX, get_rap_uint16_layers
 from util.io import IOManager
+import util.file as fs
 
 io_manager = IOManager("[RAPUint16]")
 
@@ -88,7 +90,7 @@ def run_rap_uint16_pipeline(
                 elapsed_seconds = time.perf_counter() - layer_start
                 metadata["conversion_time_seconds"] = elapsed_seconds
                 metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-                _update_product_index(Path(layer["outdir"]), timestamp)
+                _update_product_index(Path(layer["outdir"]), timestamp, max_timestamps=3)
 
                 io_manager.write_info(
                     f"Converted RAP layer {layer['name']} in {elapsed_seconds:.3f}s "
@@ -112,6 +114,7 @@ def run_rap_uint16_pipeline(
         io_manager.write_warning(f"Configured RAP layer not found in {rap_path.name}: {missing_name}")
         _record_timing(timings, missing_name, status="missing", seconds=None, output_path=None)
 
+    cleanup_old_rap_uint16_layers(max_timestamps=3)
     return results
 
 
@@ -244,7 +247,7 @@ def _build_metadata(
     return metadata
 
 
-def _update_product_index(out_dir: Path, timestamp: str) -> None:
+def _update_product_index(out_dir: Path, timestamp: str, max_timestamps: int = 3) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     index_path = out_dir / "index.json"
     timestamps: list[str] = []
@@ -260,12 +263,30 @@ def _update_product_index(out_dir: Path, timestamp: str) -> None:
 
     timestamps = sorted({timestamp, *timestamps}, reverse=True)
     index_data = {
-        "timestamps": timestamps,
+        "timestamps": timestamps[:max_timestamps],
         "format": "uint16",
         "byte_order": "little_endian",
         "missing_value": UINT16_NODATA,
     }
     index_path.write_text(json.dumps(index_data, indent=2), encoding="utf-8")
+
+def cleanup_old_rap_uint16_layers(max_timestamps: int = 3) -> None:
+    """Remove old timestamp directories for RAP uint16 layers, keeping only max_timestamps per layer."""
+    if not fs.GUI_RAP_DIR.exists():
+        return
+    for layer_dir in fs.GUI_RAP_DIR.iterdir():
+        if not layer_dir.is_dir():
+            continue
+        timestamp_dirs = [d for d in layer_dir.iterdir() if d.is_dir()]
+        if len(timestamp_dirs) <= max_timestamps:
+            continue
+        timestamp_dirs.sort(key=lambda d: d.name, reverse=True)
+        for old_dir in timestamp_dirs[max_timestamps:]:
+            try:
+                shutil.rmtree(old_dir)
+                io_manager.write_debug(f"Removed old RAP uint16 layer directory: {old_dir}")
+            except Exception as exc:
+                io_manager.write_warning(f"Failed to remove old RAP uint16 directory {old_dir}: {exc}")
 
 
 def _record_timing(
