@@ -256,15 +256,6 @@ def _instability_and_shear_layers() -> list[dict]:
             "description": "RAP surface lifted index over the 500-1000 mb layer",
         },
         {
-            "name": "RAP_BestLiftedIndex_180_0mbAGL",
-            "short_names": ["4lftx"],
-            "filter": {"typeOfLevel": "pressureFromGroundLayer", "level": 18000},
-            "units": "K",
-            "scale": {"min": -15.0, "max": 15.0},
-            "outdir": fs.GUI_RAP_DIR / "BestLiftedIndex_180-0mbAGL",
-            "description": "RAP best four-layer lifted index from the 180-0 mb above ground layer",
-        },
-        {
             "name": "RAP_AbsoluteVorticity_500mb",
             "short_names": ["absv"],
             "filter": {"typeOfLevel": "isobaricInhPa", "level": 500},
