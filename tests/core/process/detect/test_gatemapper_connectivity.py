@@ -197,3 +197,47 @@ def test_dynamic_thresholding():
     assert final_grid[15, 15] == 2, "Core should be included"
     assert final_grid[13, 13] == 2, "Area >= 37.5 should be included"
     assert final_grid[15, 18] == 0, "Area < 37.5 should NOT be included for weak cell"
+
+
+def test_sparse_label_ids_and_nan_reflectivity_preserve_expansion_logic():
+    """
+    Ensure compact label reductions handle sparse IDs and NaN values correctly.
+    """
+    lats = np.arange(20)
+    lons = np.arange(20)
+    refl_data = np.zeros((20, 20), dtype=float)
+
+    # Label 1 has enough finite support to expand.
+    refl_data[2:6, 2:6] = 45.0
+    refl_data[2, 3] = np.nan
+
+    # Sparse label 100 has one finite seed pixel and surrounding qualifying values.
+    refl_data[12:16, 12:16] = 42.0
+    refl_data[13, 13] = 44.0
+    refl_data[14, 14] = np.nan
+
+    radar_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), refl_data),
+         'latitude': lats,
+         'longitude': lons}
+    )
+
+    polygon_grid = np.zeros((20, 20), dtype=np.int32)
+    polygon_grid[3, 3] = 1
+    polygon_grid[13, 13] = 100
+
+    mapped_ds = xr.Dataset(
+        {'PolygonID': (('latitude', 'longitude'), polygon_grid),
+         'latitude': lats,
+         'longitude': lons}
+    )
+
+    mapper = GateMapper(radar_ds, ps_ds=None, io_manager=MockIOManager(), refl_threshold=37.5, drop_offset=10.0)
+    expanded_ds = mapper.expand_gates(mapped_ds)
+    final_grid = expanded_ds['PolygonID'].values
+
+    assert final_grid[2, 2] == 1
+    assert final_grid[2, 3] == 0  # NaN pixel is excluded by post-filtering.
+    assert final_grid[3, 3] == 1
+    assert final_grid[12, 12] == 100
+    assert final_grid[14, 14] == 0
