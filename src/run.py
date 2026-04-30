@@ -52,6 +52,10 @@ GOES_PAUSE_INGEST_DURING_RENDER = os.environ.get("EDGEWARN_PAUSE_GOES_INGEST_DUR
     "yes",
     "on",
 }
+EWMRS_ENABLED = not args.disable_ewmrs
+NWS_ENABLED = not args.disable_nws
+METAR_ENABLED = not args.disable_metar
+GOES_ENABLED = not args.disable_goes
 
 
 def _get_ewmrs_goes_render_specs():
@@ -278,6 +282,7 @@ def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue):
                 dt,
                 lambda msg: _queue_log(log_queue, msg),
                 include_goes=False,
+                include_ewmrs=EWMRS_ENABLED,
             )
         )
     except Exception as exc:
@@ -286,22 +291,29 @@ def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue):
         print(f"[Scheduler] Tandem ingest cycle failed for {dt}: {exc}")
         return False
 
-    try:
-        glm_results = _download_glm_for_scan(dt)
-        if glm_results:
-            _queue_log(log_queue, f"INFO: Scan-time GLM ingest satisfied by {len(glm_results)} file(s)")
-        else:
-            _queue_log(log_queue, f"INFO: Scan-time GLM ingest found no files for {dt.isoformat()}")
-    except Exception as exc:
-        _queue_log(log_queue, f"WARN: Scan-time GLM ingest failed for {dt.isoformat()}: {exc}")
+    glm_ready = False
+    glm_path = None
+    if GOES_ENABLED:
+        try:
+            glm_results = _download_glm_for_scan(dt)
+            if glm_results:
+                _queue_log(log_queue, f"INFO: Scan-time GLM ingest satisfied by {len(glm_results)} file(s)")
+            else:
+                _queue_log(log_queue, f"INFO: Scan-time GLM ingest found no files for {dt.isoformat()}")
+        except Exception as exc:
+            _queue_log(log_queue, f"WARN: Scan-time GLM ingest failed for {dt.isoformat()}: {exc}")
 
-    goes_specs = _get_ewmrs_goes_render_specs()
-    glm_ready, glm_path = _check_local_glm_ready(dt)
-    rap_ready = "rap_ingest" not in cycle_state.errors
-    edgewarn_integration_ready = cycle_state.ewmrs_mrms_inputs_ready and glm_ready and rap_ready
-    if not glm_ready:
-        _queue_log(log_queue, f"INFO: No local GLM files staged at or after {dt.isoformat()}; EdgeWARN integration will wait for GOES")
+        glm_ready, glm_path = _check_local_glm_ready(dt)
     else:
+        _queue_log(log_queue, "INFO: GOES/GLM components disabled; EdgeWARN integration will not wait for GLM inputs")
+
+    goes_specs = _get_ewmrs_goes_render_specs() if EWMRS_ENABLED and GOES_ENABLED else []
+    rap_ready = "rap_ingest" not in cycle_state.errors
+    mrms_integration_ready = cycle_state.detection_inputs_ready and "mrms_integration_ingest" not in cycle_state.errors
+    edgewarn_integration_ready = mrms_integration_ready and rap_ready and (glm_ready or not GOES_ENABLED)
+    if GOES_ENABLED and not glm_ready:
+        _queue_log(log_queue, f"INFO: No local GLM files staged at or after {dt.isoformat()}; EdgeWARN integration will wait for GOES")
+    elif GOES_ENABLED:
         _queue_log(log_queue, f"INFO: Local GLM readiness satisfied by {glm_path}")
 
     shared_state["detection_inputs_ready"] = cycle_state.detection_inputs_ready
@@ -314,7 +326,7 @@ def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue):
         for key, value in dict(cycle_state.errors).items()
         if key not in {"goes_ingest", "ewmrs_goes_ingest", "edgewarn_integration_ingest"}
     }
-    if not glm_ready:
+    if GOES_ENABLED and not glm_ready:
         errors.setdefault("goes_ingest", "GOES inputs unavailable")
     if not edgewarn_integration_ready:
         errors.setdefault("edgewarn_integration_ingest", "EdgeWARN integration inputs unavailable")
@@ -338,90 +350,106 @@ def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue):
             args.drop_offset,
         ),
     )
-    ewmrs_proc = multiprocessing.Process(
-        target=ewmrs_tandem_worker,
-        args=(log_queue, shared_state, ewmrs_mrms_ready_event, ewmrs_goes_ready_event, dt),
-    )
+    ewmrs_proc = None
+    if EWMRS_ENABLED:
+        ewmrs_proc = multiprocessing.Process(
+            target=ewmrs_tandem_worker,
+            args=(log_queue, shared_state, ewmrs_mrms_ready_event, ewmrs_goes_ready_event, dt),
+        )
 
     edgewarn_proc.start()
-    ewmrs_proc.start()
+    if ewmrs_proc is not None:
+        ewmrs_proc.start()
 
     detection_ready_event.set()
-    ewmrs_mrms_ready_event.set()
+    if EWMRS_ENABLED:
+        ewmrs_mrms_ready_event.set()
     integration_ready_event.set()
 
     goes_ready = False
     goes_path = None
     try:
-        goes_ready, goes_path = _check_local_goes_ready(dt, specs=goes_specs)
-        if goes_ready and GOES_CYCLE_ACTIVE.is_set():
-            goes_ready = False
-            goes_path = None
+        if EWMRS_ENABLED and GOES_ENABLED:
+            goes_ready, goes_path = _check_local_goes_ready(dt, specs=goes_specs)
+            if goes_ready and GOES_CYCLE_ACTIVE.is_set():
+                goes_ready = False
+                goes_path = None
 
-        if not goes_ready:
-            _queue_log(
-                log_queue,
-                f"INFO: Waiting for background GOES ABI ingest cycle to fully stage render inputs for {dt.isoformat()}",
-            )
-            goes_ready, goes_path = _wait_for_local_goes_ready(
-                dt,
-                specs=goes_specs,
-                timeout_seconds=GOES_RENDER_WAIT_SECONDS,
-                interval_seconds=GOES_RENDER_WAIT_INTERVAL_SECONDS,
-            )
-
-        if not goes_ready:
-            _queue_log(
-                log_queue,
-                f"INFO: Background GOES ABI ingest did not finish staging the full render input set for {dt.isoformat()}; GOES render phase will be skipped",
-            )
-        else:
-            _queue_log(log_queue, f"INFO: Full GOES ABI render input set is staged; representative file {goes_path}")
-            dropped_render_tasks = 0
-            saw_shutdown = False
-            while True:
-                try:
-                    queued_task = goes_render_task_queue.get_nowait()
-                except queue.Empty:
-                    break
-
-                if queued_task is None:
-                    saw_shutdown = True
-                    continue
-                dropped_render_tasks += 1
-
-            goes_render_task_queue.put((dt, 10, datetime.now(timezone.utc).isoformat()))
-            if saw_shutdown:
-                goes_render_task_queue.put(None)
-            if dropped_render_tasks > 0:
+            if not goes_ready:
                 _queue_log(
                     log_queue,
-                    f"INFO: Replaced {dropped_render_tasks} stale queued GOES render task(s) with latest ready cycle {dt.isoformat()}",
+                    f"INFO: Waiting for background GOES ABI ingest cycle to fully stage render inputs for {dt.isoformat()}",
                 )
-            _queue_log(log_queue, f"INFO: Queued decoupled EWMRS GOES render for {dt.isoformat()}")
-    except Exception as exc:
-        _queue_log(log_queue, f"WARN: Local GOES readiness check failed for {dt.isoformat()}: {exc}")
-    finally:
-        shared_state["ewmrs_goes_inputs_ready"] = goes_ready
-        errors = dict(shared_state.get("errors", {}))
-        if goes_ready:
-            errors.pop("ewmrs_goes_ingest", None)
+                goes_ready, goes_path = _wait_for_local_goes_ready(
+                    dt,
+                    specs=goes_specs,
+                    timeout_seconds=GOES_RENDER_WAIT_SECONDS,
+                    interval_seconds=GOES_RENDER_WAIT_INTERVAL_SECONDS,
+                )
+
+            if not goes_ready:
+                _queue_log(
+                    log_queue,
+                    f"INFO: Background GOES ABI ingest did not finish staging the full render input set for {dt.isoformat()}; GOES render phase will be skipped",
+                )
+            else:
+                _queue_log(log_queue, f"INFO: Full GOES ABI render input set is staged; representative file {goes_path}")
+                dropped_render_tasks = 0
+                saw_shutdown = False
+                while True:
+                    try:
+                        queued_task = goes_render_task_queue.get_nowait()
+                    except queue.Empty:
+                        break
+
+                    if queued_task is None:
+                        saw_shutdown = True
+                        continue
+                    dropped_render_tasks += 1
+
+                goes_render_task_queue.put((dt, 10, datetime.now(timezone.utc).isoformat()))
+                if saw_shutdown:
+                    goes_render_task_queue.put(None)
+                if dropped_render_tasks > 0:
+                    _queue_log(
+                        log_queue,
+                        f"INFO: Replaced {dropped_render_tasks} stale queued GOES render task(s) with latest ready cycle {dt.isoformat()}",
+                    )
+                _queue_log(log_queue, f"INFO: Queued decoupled EWMRS GOES render for {dt.isoformat()}")
         else:
+            goes_ready = False
+    except Exception as exc:
+        if EWMRS_ENABLED and GOES_ENABLED:
+            _queue_log(log_queue, f"WARN: Local GOES readiness check failed for {dt.isoformat()}: {exc}")
+    finally:
+        shared_state["ewmrs_goes_inputs_ready"] = EWMRS_ENABLED and goes_ready
+        errors = dict(shared_state.get("errors", {}))
+        if not EWMRS_ENABLED:
+            errors.pop("ewmrs_ingest", None)
+            errors.pop("ewmrs_goes_ingest", None)
+            errors.pop("ewmrs_rap_uint16", None)
+        elif goes_ready:
+            errors.pop("ewmrs_goes_ingest", None)
+        elif GOES_ENABLED:
             errors.setdefault("ewmrs_goes_ingest", "EWMRS GOES inputs unavailable")
         shared_state["errors"] = errors
-        ewmrs_goes_ready_event.set()
+        if EWMRS_ENABLED:
+            ewmrs_goes_ready_event.set()
 
-    while edgewarn_proc.is_alive() or ewmrs_proc.is_alive() or not log_queue.empty():
+    while edgewarn_proc.is_alive() or (ewmrs_proc is not None and ewmrs_proc.is_alive()) or not log_queue.empty():
         _drain_log_queue(log_queue)
         _drain_log_queue(goes_render_log_queue)
         time.sleep(1)
 
     edgewarn_proc.join()
-    ewmrs_proc.join()
+    ewmrs_proc_exitcode = 0
+    if ewmrs_proc is not None:
+        ewmrs_proc.join()
+        ewmrs_proc_exitcode = ewmrs_proc.exitcode
     _drain_log_queue(log_queue)
     _drain_log_queue(goes_render_log_queue)
     manager.shutdown()
-    return edgewarn_proc.exitcode == 0 and ewmrs_proc.exitcode == 0
+    return edgewarn_proc.exitcode == 0 and ewmrs_proc_exitcode == 0
 
 
 
@@ -432,13 +460,22 @@ def main():
         print("[Scheduler] CTAM execution disabled via --disable-ctam")
     if args.disable_tracking:
         print("[Scheduler] Tracking disabled via --disable-tracking")
+    if args.disable_ewmrs:
+        print("[Scheduler] EWMRS pipeline disabled via --disable-ewmrs")
+    if args.disable_nws:
+        print("[Scheduler] NWS background ingest disabled via --disable-nws")
+    if args.disable_metar:
+        print("[Scheduler] METAR background ingest disabled via --disable-metar")
+    if args.disable_goes:
+        print("[Scheduler] GOES/GLM ingest and GOES rendering disabled via --disable-goes")
     print(
         "[Scheduler] Detection thresholds: "
         f"refl_threshold={args.refl_threshold}, "
         f"min_seed_percentage={args.min_seed_percentage}, "
         f"drop_offset={args.drop_offset}"
     )
-    print("[Scheduler] GOES ingest decoupled: running as independent background process")
+    if GOES_ENABLED:
+        print("[Scheduler] GOES ingest decoupled: running as independent background process")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed = None  # Track last processed timestamp
 
@@ -464,9 +501,9 @@ def main():
     except Exception as e:
         print(f"[Scheduler] Failed to initialize last_processed: {e}")
 
-    print("[Scheduler] Starting background accessory ingests (METAR, NWS, WPC)...")
-    metar_proc = multiprocessing.Process(target=metar_loop, daemon=True)
-    nws_proc = multiprocessing.Process(target=nws_loop, daemon=True)
+    print("[Scheduler] Starting background accessory ingests...")
+    metar_proc = multiprocessing.Process(target=metar_loop, daemon=True) if METAR_ENABLED else None
+    nws_proc = multiprocessing.Process(target=nws_loop, daemon=True) if NWS_ENABLED else None
     wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True)
     goes_render_task_queue = multiprocessing.Queue()
     goes_render_log_queue = multiprocessing.Queue()
@@ -474,13 +511,17 @@ def main():
         target=goes_render_loop,
         args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
         daemon=True,
-    )
-    metar_proc.start()
-    nws_proc.start()
+    ) if EWMRS_ENABLED and GOES_ENABLED else None
+    if metar_proc is not None:
+        metar_proc.start()
+    if nws_proc is not None:
+        nws_proc.start()
     wpc_proc.start()
-    goes_proc = multiprocessing.Process(target=goes_loop, args=(GOES_CYCLE_ACTIVE, GOES_RENDER_ACTIVE), daemon=True)
-    goes_proc.start()
-    goes_render_proc.start()
+    goes_proc = multiprocessing.Process(target=goes_loop, args=(GOES_CYCLE_ACTIVE, GOES_RENDER_ACTIVE), daemon=True) if GOES_ENABLED else None
+    if goes_proc is not None:
+        goes_proc.start()
+    if goes_render_proc is not None:
+        goes_render_proc.start()
 
     background_processes = [
         (metar_proc, "METAR"),
