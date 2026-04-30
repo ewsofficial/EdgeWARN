@@ -60,3 +60,21 @@ def test_tandem_cycle_keeps_rap_ready_when_rap_uint16_conversion_fails(tmp_path)
 
     assert "rap_ingest" not in state.errors
     assert state.errors["ewmrs_rap_uint16"] == "EWMRS RAP Uint16Array conversion failed"
+
+
+def test_tandem_cycle_skips_rap_uint16_conversion_when_ewmrs_disabled(tmp_path):
+    logs = []
+    rap_file = tmp_path / "RAP.20260427-13z.awp130pgrbf00.grib2"
+    rap_file.write_bytes(b"grib")
+
+    with patch.object(coordinator.mrms_ingest, "download_detection_files_async", new=AsyncMock(return_value=None)), \
+         patch.object(coordinator.mrms_ingest, "download_integration_files_async", new=AsyncMock(return_value=None)), \
+         patch.object(coordinator, "download_rap_async", new=AsyncMock(return_value=rap_file)), \
+         patch("EWMRS.pipeline.run_rap_uint16_pipeline") as mock_convert:
+        state = _run_cycle(logs, include_ewmrs=False)
+
+    mock_convert.assert_not_called()
+    assert "rap_ingest" not in state.errors
+    assert "ewmrs_rap_uint16" not in state.errors
+    assert state.ewmrs_mrms_inputs_ready is False
+    assert state.ewmrs_goes_inputs_ready is False

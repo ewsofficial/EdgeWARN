@@ -78,6 +78,7 @@ async def run_tandem_ingest_cycle(
     *,
     max_entries: int = 10,
     include_goes: bool = True,
+    include_ewmrs: bool = True,
     on_detection_ready: Optional[StateCallback] = None,
     on_ewmrs_mrms_ready: Optional[StateCallback] = None,
     on_ewmrs_goes_ready: Optional[StateCallback] = None,
@@ -148,8 +149,8 @@ async def run_tandem_ingest_cycle(
     if not mrms_integration_ok:
         state.errors["mrms_integration_ingest"] = "MRMS integration inputs unavailable"
 
-    state.ewmrs_mrms_inputs_ready = detection_ok and mrms_integration_ok
-    if not state.ewmrs_mrms_inputs_ready:
+    state.ewmrs_mrms_inputs_ready = include_ewmrs and detection_ok and mrms_integration_ok
+    if include_ewmrs and not state.ewmrs_mrms_inputs_ready:
         state.errors.setdefault(
             "ewmrs_ingest",
             "EWMRS render inputs unavailable from staged MRMS ingest",
@@ -170,13 +171,13 @@ async def run_tandem_ingest_cycle(
         state.errors["goes_ingest"] = "GOES inputs unavailable"
     if not rap_ok:
         state.errors["rap_ingest"] = "RAP inputs unavailable"
-    else:
+    elif include_ewmrs:
         rap_array_ok = await _run_rap_uint16_conversion(rap_path, dt, log)
         if not rap_array_ok:
             state.errors["ewmrs_rap_uint16"] = "EWMRS RAP Uint16Array conversion failed"
 
-    state.ewmrs_goes_inputs_ready = state.ewmrs_mrms_inputs_ready and goes_ok
-    if not state.ewmrs_goes_inputs_ready:
+    state.ewmrs_goes_inputs_ready = include_ewmrs and state.ewmrs_mrms_inputs_ready and goes_ok
+    if include_ewmrs and not state.ewmrs_goes_inputs_ready:
         state.errors.setdefault(
             "ewmrs_goes_ingest",
             "EWMRS GOES inputs unavailable",
