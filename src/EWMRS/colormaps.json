@@ -504,7 +504,7 @@
       },
       {
         "name": "RAP_Dewpoint_2m",
-        "description": "RAP 2 m dewpoint colormap loosely adapted from the provided Fahrenheit dewpoint reference scale, expanded to -30 C through 35 C with sharp transitions at 60 F, 70 F, and 80 F",
+        "description": "RAP 2 m dewpoint colormap loosely adapted from the provided Fahrenheit dewpoint reference scale, expanded to -30 C through 35 C as a smooth gradient",
         "type": "RAP_FALLBACK_THERMAL",
         "units": "K",
         "interpolate": true,
@@ -518,11 +518,8 @@
           {"value": 272.04, "rgba": [206, 206, 192, 255]},
           {"value": 277.59, "rgba": [156, 204, 138, 255]},
           {"value": 283.15, "rgba": [92, 184, 86, 255]},
-          {"value": 288.70, "rgba": [92, 184, 86, 255]},
           {"value": 288.71, "rgba": [168, 182, 188, 255]},
-          {"value": 294.25, "rgba": [168, 182, 188, 255]},
           {"value": 294.26, "rgba": [96, 110, 126, 255]},
-          {"value": 299.81, "rgba": [96, 110, 126, 255]},
           {"value": 299.82, "rgba": [116, 94, 150, 255]},
           {"value": 302.59, "rgba": [176, 128, 156, 255]},
           {"value": 308.15, "rgba": [196, 138, 164, 255]}
