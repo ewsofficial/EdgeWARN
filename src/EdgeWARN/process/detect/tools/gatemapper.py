@@ -125,27 +125,27 @@ class GateMapper:
         sub_mask = baseline_mask[rmin:rmax, cmin:cmax]
         sub_refl = refl_grid[rmin:rmax, cmin:cmax]
         sub_polygon = polygon_grid[rmin:rmax, cmin:cmax]
+        labeled_mask = sub_polygon > 0
         
         # 2. Filter IDs based on Percentage Coverage (Vectorized)
         coverage_start = time.perf_counter()
-        unique_ids = np.unique(sub_polygon)
-        unique_ids = unique_ids[unique_ids > 0]
-        
-        if len(unique_ids) == 0:
-             return xr.Dataset(
+        if not np.any(labeled_mask):
+              return xr.Dataset(
                 {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
                 coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
             )
-            
-        max_id = int(unique_ids.max())
-        pixel_counts = scipy.ndimage.sum_labels(np.ones_like(sub_polygon, dtype=np.int32), sub_polygon, index=unique_ids)
-        refl_counts = scipy.ndimage.sum_labels(sub_mask.astype(np.int32), sub_polygon, index=unique_ids)
-        coverage_ratios = refl_counts / pixel_counts
+
+        labels = sub_polygon[labeled_mask].astype(np.int32, copy=False)
+        max_id = int(labels.max())
+        pixel_counts = np.bincount(labels, minlength=max_id + 1)
+        refl_counts = np.bincount(labels, weights=sub_mask[labeled_mask].astype(np.float32, copy=False), minlength=max_id + 1)
+        unique_ids = np.flatnonzero(pixel_counts)
+        unique_ids = unique_ids[unique_ids > 0]
         
         # Initial Filtering: Trigger expansion for ANY polygon with >= min_seed_percentage coverage
         # With min_seed_percentage=0.001, this effectively triggers for "any pixel".
-        valid_indices = coverage_ratios >= self.min_seed_percentage
-        valid_ids = unique_ids[valid_indices]
+        valid_ids = np.flatnonzero((pixel_counts > 0) & (refl_counts >= (pixel_counts * self.min_seed_percentage)))
+        valid_ids = valid_ids[valid_ids > 0]
         
         if len(valid_ids) == 0:
             return xr.Dataset(
@@ -161,9 +161,14 @@ class GateMapper:
 
         dyn_thresh = np.full(max_id + 1, np.inf, dtype=np.float32)
         max_refl_by_id = np.full(max_id + 1, -np.inf, dtype=np.float32)
-        finite_label_mask = (sub_polygon > 0) & np.isfinite(sub_refl)
+        refl_values = sub_refl[labeled_mask]
+        finite_label_mask = np.isfinite(refl_values)
         if np.any(finite_label_mask):
-            np.maximum.at(max_refl_by_id, sub_polygon[finite_label_mask], sub_refl[finite_label_mask].astype(np.float32, copy=False))
+            np.maximum.at(
+                max_refl_by_id,
+                labels[finite_label_mask],
+                refl_values[finite_label_mask].astype(np.float32, copy=False),
+            )
 
         valid_max_refl = max_refl_by_id[valid_ids]
         min_thresh = np.where(valid_max_refl < 45.0, 37.5, 40.0).astype(np.float32, copy=False)
