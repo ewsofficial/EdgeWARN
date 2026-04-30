@@ -65,8 +65,7 @@ def _scalar_data_to_rgba(
 ) -> np.ndarray:
     flat_data = np.asarray(data, dtype=np.float32).ravel()
 
-    rgba_flat = np.empty((flat_data.shape[0], 4), dtype=np.uint8)
-    rgba_flat[:, 3] = 0
+    rgba_flat = np.zeros((flat_data.shape[0], 4), dtype=np.uint8)
     valid_mask = np.isfinite(flat_data)
     safe_data = np.where(valid_mask, flat_data, thresholds[0])
 
@@ -76,12 +75,14 @@ def _scalar_data_to_rgba(
         rgba_flat[:, 1] = np.interp(safe_data, thresholds, colors[:, 1]).astype(np.uint8)
         rgba_flat[:, 2] = np.interp(safe_data, thresholds, colors[:, 2]).astype(np.uint8)
         rgba_flat[:, 3] = np.interp(safe_data, thresholds, colors[:, 3]).astype(np.uint8)
+        below_min_mask = valid_mask & (flat_data < thresholds[0])
+        rgba_flat[below_min_mask] = 0
     else:
         indices = np.digitize(safe_data, thresholds) - 1
         indices = np.clip(indices, 0, len(colors_uint8) - 1)
         rgba_flat[:, :4] = colors_uint8[indices]
 
-    rgba_flat[~valid_mask, 3] = 0
+    rgba_flat[~valid_mask] = 0
     return rgba_flat.reshape((data.shape[0], data.shape[1], 4))
 
 
