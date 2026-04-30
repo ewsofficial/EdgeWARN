@@ -1,6 +1,7 @@
 from EdgeWARN.process.detect.tools.utils import DetectionDataHandler
 from EdgeWARN.process.detect.tools.gatemapper import GateMapper
 from EdgeWARN.process.detect.tools.save import CellDataSaver
+from concurrent.futures import ThreadPoolExecutor
 from util.io import IOManager
 import util.file as fs
 import gc
@@ -40,11 +41,22 @@ def detect_cells(
         preciptype_obj=preciptype_obj,
     )
 
-    # Use load_subset directly to avoid loading full metadata if possible/cleaner
-    perf_tracker.start("Detection - Load Radar")
-    radar_ds = handler.load_subset()
-    perf_tracker.stop("Detection - Load Radar")
-    
+    def _load_with_timing(timer_name, loader):
+        perf_tracker.start(timer_name)
+        try:
+            return loader()
+        finally:
+            perf_tracker.stop(timer_name)
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        radar_future = executor.submit(_load_with_timing, "Detection - Load Radar", handler.load_subset)
+        ps_future = executor.submit(_load_with_timing, "Detection - Load ProbSevere", handler.load_probsevere)
+        preciptype_future = executor.submit(_load_with_timing, "Detection - Load PrecipType", handler.load_preciptype)
+
+        radar_ds = radar_future.result()
+        ps_ds = ps_future.result()
+        preciptype_ds = preciptype_future.result()
+
     if radar_ds is None:
         io_manager.write_error(f"Failed to load/subset radar data from {radar_path}")
         if return_datasets:
@@ -55,15 +67,6 @@ def detect_cells(
         if return_probsevere:
             return [], None
         return []
-
-    perf_tracker.start("Detection - Load ProbSevere")
-    ps_ds = handler.load_probsevere()
-    perf_tracker.stop("Detection - Load ProbSevere")
-
-    # Load PrecipType early for discrimination logic
-    perf_tracker.start("Detection - Load PrecipType")
-    preciptype_ds = handler.load_preciptype()
-    perf_tracker.stop("Detection - Load PrecipType")
 
     if preciptype_ds is None:
          io_manager.write_warning("Failed to load precipitation type data, stratiform discrimination will be limited")
