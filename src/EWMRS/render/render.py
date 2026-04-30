@@ -75,12 +75,13 @@ def _scalar_data_to_rgba(
         rgba_flat[:, 0] = np.interp(safe_data, thresholds, colors[:, 0]).astype(np.uint8)
         rgba_flat[:, 1] = np.interp(safe_data, thresholds, colors[:, 1]).astype(np.uint8)
         rgba_flat[:, 2] = np.interp(safe_data, thresholds, colors[:, 2]).astype(np.uint8)
+        rgba_flat[:, 3] = np.interp(safe_data, thresholds, colors[:, 3]).astype(np.uint8)
     else:
         indices = np.digitize(safe_data, thresholds) - 1
         indices = np.clip(indices, 0, len(colors_uint8) - 1)
         rgba_flat[:, :4] = colors_uint8[indices]
 
-    rgba_flat[valid_mask & (flat_data >= thresholds[0]), 3] = 255
+    rgba_flat[~valid_mask, 3] = 0
     return rgba_flat.reshape((data.shape[0], data.shape[1], 4))
 
 
