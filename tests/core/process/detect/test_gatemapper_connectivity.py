@@ -108,6 +108,44 @@ def test_merger_split():
     # Check that they cover the block
     assert np.all(final_grid[5:15, 5:15] > 0)
 
+
+def test_disconnected_seeded_components_expand_independently():
+    """
+    Test that multiple disconnected marker-bearing islands are each processed.
+    This specifically covers the component-partitioned watershed fast path.
+    """
+    lats = np.arange(30)
+    lons = np.arange(30)
+    refl_data = np.zeros((30, 30))
+
+    # Two disconnected high-reflectivity islands.
+    refl_data[3:10, 3:10] = 50
+    refl_data[18:26, 18:27] = 50
+
+    radar_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), refl_data),
+         'latitude': lats,
+         'longitude': lons}
+    )
+
+    polygon_grid = np.zeros((30, 30), dtype=np.int32)
+    polygon_grid[5, 5] = 1
+    polygon_grid[21, 22] = 2
+
+    mapped_ds = xr.Dataset(
+        {'PolygonID': (('latitude', 'longitude'), polygon_grid),
+         'latitude': lats,
+         'longitude': lons}
+    )
+
+    mapper = GateMapper(radar_ds, ps_ds=None, io_manager=MockIOManager(), refl_threshold=40.0)
+    expanded_ds = mapper.expand_gates(mapped_ds)
+    final_grid = expanded_ds['PolygonID'].values
+
+    assert np.all(final_grid[3:10, 3:10] == 1)
+    assert np.all(final_grid[18:26, 18:27] == 2)
+    assert np.all(final_grid[11:17, 11:17] == 0)
+
 def test_dynamic_thresholding():
     """
     Test that dynamic thresholding applies correctly to strong vs weak cells.

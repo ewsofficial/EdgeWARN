@@ -6,6 +6,7 @@ from skimage import measure
 import rasterio.features
 from affine import Affine
 import scipy.ndimage
+import time
 
 class GateMapper:
     def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=37.5, min_seed_percentage=0.001, drop_offset=10.0):
@@ -89,6 +90,10 @@ class GateMapper:
         - Discrimination Logic: Stratiform vs Convective
         """
         from skimage.segmentation import watershed
+        step_timings = {}
+
+        def _mark(step_name, start_time):
+            step_timings[step_name] = time.perf_counter() - start_time
         
         # 1. Create Baseline High Reflectivity Mask
         polygon_grid = mapped_ds['PolygonID'].values
@@ -122,6 +127,7 @@ class GateMapper:
         sub_polygon = polygon_grid[rmin:rmax, cmin:cmax]
         
         # 2. Filter IDs based on Percentage Coverage (Vectorized)
+        coverage_start = time.perf_counter()
         unique_ids = np.unique(sub_polygon)
         unique_ids = unique_ids[unique_ids > 0]
         
@@ -146,8 +152,10 @@ class GateMapper:
                 {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
                 coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
             )
+        _mark("coverage_filter", coverage_start)
 
         # 4. Perform Watershed Expansion
+        threshold_start = time.perf_counter()
         valid_id_mask = np.zeros(max_id + 1, dtype=bool)
         valid_id_mask[valid_ids] = True
 
@@ -169,18 +177,55 @@ class GateMapper:
         # Markers are valid polygons intersecting their own logical threshold mask
         pixel_thresholds = dyn_thresh[np.clip(sub_polygon, 0, max_id)]
         markers = np.where(valid_id_mask[sub_polygon] & np.isfinite(sub_refl) & (sub_refl >= pixel_thresholds), sub_polygon, 0)
-        
+        _mark("threshold_prep", threshold_start)
+
         if not np.any(markers > 0):
              return xr.Dataset(
                 {'PolygonID': (('latitude', 'longitude'), np.zeros_like(polygon_grid))},
                 coords={'latitude': mapped_ds['latitude'].values, 'longitude': mapped_ds['longitude'].values}
             )
 
-        dist = distance_transform_edt(composite_mask)
-        elevation = -dist.astype(np.float16)
-        sub_final = watershed(elevation, markers, mask=composite_mask)
+        watershed_start = time.perf_counter()
+        component_labels, component_count = scipy.ndimage.label(composite_mask)
+        component_slices = scipy.ndimage.find_objects(component_labels, max_label=component_count)
+        sub_final = np.zeros_like(sub_polygon, dtype=np.int32)
+        edt_total = 0.0
+        watershed_total = 0.0
+
+        for component_idx, component_slice in enumerate(component_slices, start=1):
+            if component_slice is None:
+                continue
+
+            r0 = max(0, component_slice[0].start - 1)
+            r1 = min(component_labels.shape[0], component_slice[0].stop + 1)
+            c0 = max(0, component_slice[1].start - 1)
+            c1 = min(component_labels.shape[1], component_slice[1].stop + 1)
+            local_slice = (slice(r0, r1), slice(c0, c1))
+
+            component_region = component_labels[local_slice] == component_idx
+            local_markers = markers[local_slice]
+
+            if not np.any(local_markers[component_region] > 0):
+                continue
+
+            edt_start = time.perf_counter()
+            dist = distance_transform_edt(component_region)
+            edt_total += time.perf_counter() - edt_start
+
+            local_elevation = -dist.astype(np.float16)
+            watershed_run_start = time.perf_counter()
+            local_result = watershed(local_elevation, local_markers, mask=component_region)
+            watershed_total += time.perf_counter() - watershed_run_start
+
+            local_final = sub_final[local_slice]
+            local_final[component_region] = local_result[component_region]
+
+        _mark("watershed_total", watershed_start)
+        step_timings["edt_total"] = edt_total
+        step_timings["watershed_only"] = watershed_total
         
         # Post-filtering to enforce strict per-cell thresholds against watershed competition leaks.
+        post_filter_start = time.perf_counter()
         final_thresholds = dyn_thresh[np.clip(sub_final, 0, max_id)]
         invalid_mask = (sub_final > 0) & (~np.isfinite(sub_refl) | (sub_refl < final_thresholds))
         sub_final[invalid_mask] = 0
@@ -198,6 +243,19 @@ class GateMapper:
                   reject_lookup = np.zeros(final_counts.shape[0], dtype=bool)
                   reject_lookup[rejected_ids] = True
                   sub_final[reject_lookup[sub_final]] = 0
+        _mark("post_filter", post_filter_start)
+
+        self.io_manager.write_debug(
+            "Expand Gates stats: "
+            f"crop_shape={sub_mask.shape}, crop_pixels={sub_mask.size}, "
+            f"valid_ids={len(valid_ids)}, composite_pixels={int(np.count_nonzero(composite_mask))}, "
+            f"components={component_count}, coverage={step_timings.get('coverage_filter', 0.0):.3f}s, "
+            f"thresholds={step_timings.get('threshold_prep', 0.0):.3f}s, "
+            f"edt={step_timings.get('edt_total', 0.0):.3f}s, "
+            f"watershed={step_timings.get('watershed_only', 0.0):.3f}s, "
+            f"expand_total={step_timings.get('watershed_total', 0.0):.3f}s, "
+            f"post_filter={step_timings.get('post_filter', 0.0):.3f}s"
+        )
 
         # Place result back into full grid
         final_grid = np.zeros_like(polygon_grid)
