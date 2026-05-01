@@ -4,7 +4,8 @@ import pytest
 import numpy as np
 import xarray as xr
 import util.file as fs
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+from EdgeWARN.process.integrate.core import integrator as integrator_module
 from EdgeWARN.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.process.integrate.azshear.integration import _build_search_polygons, _open_azshear_dataset
 from EdgeWARN.process.integrate.azshear.metrics import compute_component_metrics
@@ -308,6 +309,39 @@ def test_integrate_multi_stats_with_2d_coords(integrator, synthetic_dataset_2d_c
     )
 
     assert result[0]["properties"]["p100Test"] == 100.0
+
+
+def test_integrate_multi_stats_reuses_spatial_lookup_cache(integrator, synthetic_dataset):
+    cell = {
+        "id": "test_cell_cache",
+        "bbox": [
+            [30.495, -95.505],
+            [30.495, -95.495],
+            [30.505, -95.495],
+            [30.505, -95.505],
+            [30.495, -95.505],
+        ],
+        "centroid": [30.5, -95.5],
+        "properties": {},
+    }
+    cells = [cell]
+    cell_contexts = integrator.build_cell_contexts(cells)
+
+    with patch("EdgeWARN.process.integrate.core.integrator.build_spatial_lookup", wraps=integrator_module.build_spatial_lookup) as mock_build_lookup:
+        integrator.integrate_multi_stats(
+            synthetic_dataset,
+            cells,
+            [{"key": "MaxOne", "method": "max"}],
+            cell_contexts=cell_contexts,
+        )
+        integrator.integrate_multi_stats(
+            synthetic_dataset,
+            cells,
+            [{"key": "MaxTwo", "method": "max"}],
+            cell_contexts=cell_contexts,
+        )
+
+    assert mock_build_lookup.call_count == 1
 
 def test_integrate_error_handling(integrator):
     """Test handling of invalid file path"""
