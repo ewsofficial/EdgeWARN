@@ -107,6 +107,18 @@ def test_parallel_enrichment_ignores_unknown_patch_cell(sample_cells):
     assert "Ref0" not in merged[1]["properties"]
 
 
+def test_merge_property_patch_preserves_nested_existing_values(sample_cells):
+    merged = pipeline._merge_property_patch(
+        copy.deepcopy(sample_cells),
+        {
+            "101": {"wind_field": {"u850": 10.0}},
+        },
+    )
+
+    assert merged[0]["properties"]["wind_field"]["legacy"] == 1
+    assert merged[0]["properties"]["wind_field"]["u850"] == 10.0
+
+
 def test_main_aborts_history_and_index_updates_when_save_fails(sample_cells):
     with patch.object(pipeline, "StatFileHandler") as MockHandler, \
          patch.object(pipeline, "StormCellIntegrator"), \

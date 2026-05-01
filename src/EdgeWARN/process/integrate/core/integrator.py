@@ -1,15 +1,14 @@
 import gc
 
 import numpy as np
-import shapely.vectorized as sv
 import xarray as xr
 
 from util.grib_loader import load_grib_fast
 from ..integrate_azshear import integrate_azshear_features as _integrate_azshear_features
 from ..utils import StormIntegrationUtils
-from .polygon import polygon_for_dataset
+from .polygon import polygon_for_dataset, polygon_for_longitude_mode, uses_360_longitude
 from .stats import OUTPUT_DECIMALS, prepare_stats_specs, reduce_stats, sanitize_masked_values
-from .subset import axis_slice_indices, extract_spatial_subset
+from .subset import axis_slice_indices, build_spatial_lookup, extract_spatial_subset
 
 # Suppress cfgrib/xarray compatibility warnings
 xr.set_options(use_new_combine_kwarg_defaults=True)
@@ -71,13 +70,126 @@ class StormCellIntegrator:
     def _polygon_for_dataset(cls, poly, lon_vals):
         return polygon_for_dataset(poly, lon_vals)
 
+    @staticmethod
+    def _is_axis_aligned_rectangle(cell):
+        bbox = cell.get("bbox")
+        if not bbox or len(bbox) < 4:
+            return False
+
+        lats = {round(float(point[0]), 8) for point in bbox}
+        lons = {round(StormIntegrationUtils.normalize_longitude(point[1]), 8) for point in bbox}
+        return len(lats) == 2 and len(lons) == 2
+
+    @classmethod
+    def build_cell_contexts(cls, storm_cells):
+        contexts = []
+        for cell in storm_cells:
+            polygon = StormIntegrationUtils.create_cell_polygon(cell)
+            contexts.append({
+                "polygon_180": polygon,
+                "polygon_360": None,
+                "axis_aligned_rectangle": cls._is_axis_aligned_rectangle(cell),
+                "spatial_lookup_by_grid": {},
+            })
+        return contexts
+
+    @staticmethod
+    def _grid_signature(lat_vals, lon_vals):
+        lat_arr = np.asarray(lat_vals)
+        lon_arr = np.asarray(lon_vals)
+
+        if lat_arr.ndim == 1 and lon_arr.ndim == 1:
+            return (
+                "1d",
+                lat_arr.shape,
+                lon_arr.shape,
+                float(lat_arr[0]),
+                float(lat_arr[-1]),
+                float(lon_arr[0]),
+                float(lon_arr[-1]),
+            )
+
+        return (
+            "2d",
+            lat_arr.shape,
+            lon_arr.shape,
+            float(np.nanmin(lat_arr)),
+            float(np.nanmax(lat_arr)),
+            float(np.nanmin(lon_arr)),
+            float(np.nanmax(lon_arr)),
+        )
+
+    @staticmethod
+    def _context_polygon_for_longitudes(context, use_360_longitude):
+        polygon = context["polygon_180"]
+        if polygon is None or not use_360_longitude:
+            return polygon
+
+        if context["polygon_360"] is None:
+            context["polygon_360"] = polygon_for_longitude_mode(polygon, True)
+
+        return context["polygon_360"]
+
+    def _spatial_lookup_for_cell(self, context, ds, lat_name, lon_name, lat_vals, lon_vals, grid_signature, use_360_longitude):
+        cache_key = (grid_signature, use_360_longitude)
+        spatial_lookup = context["spatial_lookup_by_grid"].get(cache_key)
+        if spatial_lookup is not None:
+            return spatial_lookup
+
+        polygon = self._context_polygon_for_longitudes(context, use_360_longitude)
+        if polygon is None:
+            spatial_lookup = {"empty": True}
+        else:
+            spatial_lookup = build_spatial_lookup(
+                ds,
+                lat_name,
+                lon_name,
+                lat_vals,
+                lon_vals,
+                polygon,
+                axis_aligned_rectangle=context["axis_aligned_rectangle"],
+            )
+
+        context["spatial_lookup_by_grid"][cache_key] = spatial_lookup
+        return spatial_lookup
+
     def integrate_azshear_features(self, low_dataset_path, mid_dataset_path, storm_cells):
         return _integrate_azshear_features(self, low_dataset_path, mid_dataset_path, storm_cells)
 
-    def _extract_spatial_subset(self, ds, var, is_grib, var_values, lat_name, lon_name, lat_vals, lon_vals, poly):
-        return extract_spatial_subset(ds, var, is_grib, var_values, lat_name, lon_name, lat_vals, lon_vals, poly)
+    def _extract_spatial_subset(self, ds, var, is_grib, var_values, *args):
+        if len(args) == 1 and isinstance(args[0], dict):
+            return extract_spatial_subset(ds, var, is_grib, var_values, args[0])
 
-    def integrate_ds_via_max(self, dataset_path, storm_cells, output_key):
+        if len(args) != 5:
+            raise TypeError("_extract_spatial_subset expected a spatial lookup or lat/lon metadata")
+
+        lat_name, lon_name, lat_vals, lon_vals, poly = args
+        spatial_lookup = build_spatial_lookup(
+            ds,
+            lat_name,
+            lon_name,
+            lat_vals,
+            lon_vals,
+            poly,
+            axis_aligned_rectangle=False,
+        )
+        sub_var, _inside = extract_spatial_subset(ds, var, is_grib, var_values, spatial_lookup)
+        if sub_var is None:
+            return None, None, None
+
+        if spatial_lookup["layout"] == "1d":
+            lat_subset = lat_vals[spatial_lookup["lat_slice"]]
+            lon_subset = lon_vals[spatial_lookup["lon_slice"]]
+            sub_lon, sub_lat = np.meshgrid(lon_subset, lat_subset)
+        else:
+            row_slice = spatial_lookup["row_slice"]
+            col_slice = spatial_lookup["col_slice"]
+            sub_lat = lat_vals[row_slice, col_slice]
+            sub_lon = lon_vals[row_slice, col_slice]
+
+        return sub_var, sub_lat, sub_lon
+
+    def integrate_ds_via_max(self, dataset_path, storm_cells, output_key, cell_contexts=None):
         if not storm_cells:
             return storm_cells
 
@@ -99,6 +211,8 @@ class StormCellIntegrator:
         lon_name = "longitude" if "longitude" in ds.coords else "lon"
         lat_vals = ds[lat_name].values
         lon_vals = ds[lon_name].values
+        grid_signature = self._grid_signature(lat_vals, lon_vals)
+        use_360_longitude = uses_360_longitude(lon_vals)
 
         var = ds.get("unknown")
         if var is None:
@@ -112,30 +226,37 @@ class StormCellIntegrator:
         if is_grib:
             var_values = var.values
 
-        for cell in active_cells:
+        if cell_contexts is None:
+            cell_contexts = self.build_cell_contexts(storm_cells)
+
+        for cell, context in zip(active_cells, cell_contexts):
             if "properties" not in cell:
                 cell["properties"] = {}
 
             target = cell["properties"]
 
-            poly = StormIntegrationUtils.create_cell_polygon(cell)
-            if poly is None:
+            if context["polygon_180"] is None:
                 target[output_key] = 0
                 continue
 
             try:
-                poly = self._polygon_for_dataset(poly, lon_vals)
-                sub_var, sub_lat, sub_lon = self._extract_spatial_subset(
-                    ds, var, is_grib, var_values, lat_name, lon_name, lat_vals, lon_vals, poly
+                spatial_lookup = self._spatial_lookup_for_cell(
+                    context,
+                    ds,
+                    lat_name,
+                    lon_name,
+                    lat_vals,
+                    lon_vals,
+                    grid_signature,
+                    use_360_longitude,
                 )
+                sub_var, inside = self._extract_spatial_subset(ds, var, is_grib, var_values, spatial_lookup)
 
                 if sub_var is None or sub_var.size == 0:
                     target[output_key] = 0
                     continue
 
-                inside = sv.contains(poly, sub_lon, sub_lat)
-
-                masked_vals = sub_var[inside]
+                masked_vals = sub_var if inside is None else sub_var[inside]
                 masked_vals = masked_vals[masked_vals >= 0]
 
                 if masked_vals.size == 0:
@@ -152,7 +273,7 @@ class StormCellIntegrator:
         gc.collect()
         return storm_cells
 
-    def integrate_multi_stats(self, dataset_path, storm_cells, stats_config_list):
+    def integrate_multi_stats(self, dataset_path, storm_cells, stats_config_list, cell_contexts=None):
         if not storm_cells:
             return storm_cells
 
@@ -178,6 +299,8 @@ class StormCellIntegrator:
         lon_name = "longitude" if "longitude" in ds.coords else "lon"
         lat_vals = ds[lat_name].values
         lon_vals = ds[lon_name].values
+        grid_signature = self._grid_signature(lat_vals, lon_vals)
+        use_360_longitude = uses_360_longitude(lon_vals)
 
         var_name = list(ds.data_vars)[0]
         if "unknown" in ds.data_vars:
@@ -192,32 +315,40 @@ class StormCellIntegrator:
         if is_grib:
             var_values = var.values
 
+        if cell_contexts is None:
+            cell_contexts = self.build_cell_contexts(storm_cells)
+
         keys_str = ", ".join([key for key, _, _ in stats_specs])
         self.io_manager.write_info(f"Integrating [{keys_str}] for {len(storm_cells)} cells")
 
-        for cell in storm_cells:
+        for cell, context in zip(storm_cells, cell_contexts):
             if "properties" not in cell:
                 cell["properties"] = {}
 
             target = cell["properties"]
 
-            poly = StormIntegrationUtils.create_cell_polygon(cell)
-            if poly is None:
+            if context["polygon_180"] is None:
                 target.update(zero_results)
                 continue
 
             try:
-                poly = self._polygon_for_dataset(poly, lon_vals)
-                sub_var, sub_lat, sub_lon = self._extract_spatial_subset(
-                    ds, var, is_grib, var_values, lat_name, lon_name, lat_vals, lon_vals, poly
+                spatial_lookup = self._spatial_lookup_for_cell(
+                    context,
+                    ds,
+                    lat_name,
+                    lon_name,
+                    lat_vals,
+                    lon_vals,
+                    grid_signature,
+                    use_360_longitude,
                 )
+                sub_var, inside = self._extract_spatial_subset(ds, var, is_grib, var_values, spatial_lookup)
 
                 if sub_var is None or sub_var.size == 0:
                     target.update(zero_results)
                     continue
 
-                inside = sv.contains(poly, sub_lon, sub_lat)
-                masked_vals = sub_var[inside]
+                masked_vals = sub_var if inside is None else sub_var[inside]
                 masked_vals = sanitize_masked_values(masked_vals)
 
                 if masked_vals.size == 0:

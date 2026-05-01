@@ -38,6 +38,7 @@ def _integrate_dataset_groups(integrator, cells):
         grouped_configs[config["filepath"]].append(config)
 
     result_cells = cells
+    cell_contexts = integrator.build_cell_contexts(result_cells)
     for filepath, group_list in grouped_configs.items():
         name_list = [c["name"] for c in group_list]
         name_str = ", ".join(name_list)
@@ -53,7 +54,12 @@ def _integrate_dataset_groups(integrator, cells):
 
             result_cells = _run_step(
                 f"Integration - {name_str}",
-                lambda: integrator.integrate_multi_stats(latest_file, result_cells, group_list),
+                lambda: integrator.integrate_multi_stats(
+                    latest_file,
+                    result_cells,
+                    group_list,
+                    cell_contexts=cell_contexts,
+                ),
             )
             io_manager.write_debug(f"Integration completed for {name_str}")
 
@@ -147,8 +153,20 @@ def _integrate_rap(cells):
     return cells
 
 
-def _clone_cells_for_worker(cells):
-    return copy.deepcopy(cells)
+def _clone_cells_for_worker(cells, preserve_properties=False):
+    worker_cells = []
+    for cell in cells:
+        worker_cell = {"id": cell.get("id"), "properties": {}}
+        for key in ("bbox", "centroid", "timestamp"):
+            if key in cell:
+                worker_cell[key] = copy.deepcopy(cell[key])
+
+        if preserve_properties:
+            worker_cell["properties"] = copy.deepcopy(cell.get("properties", {}))
+
+        worker_cells.append(worker_cell)
+
+    return worker_cells
 
 
 def _stringify_cell_id(cell):
@@ -166,11 +184,23 @@ def _extract_patch_for_keys(worker_cells, owned_keys):
             continue
 
         props = cell.get("properties", {})
-        delta = {key: copy.deepcopy(props[key]) for key in owned_keys if key in props}
+        delta = {key: props[key] for key in owned_keys if key in props}
         if delta:
             patch[cell_id] = delta
 
     return patch
+
+
+def _merge_property_value(existing_value, incoming_value):
+    if isinstance(existing_value, dict) and isinstance(incoming_value, dict):
+        for key, value in incoming_value.items():
+            if key in existing_value:
+                existing_value[key] = _merge_property_value(existing_value[key], value)
+            else:
+                existing_value[key] = copy.deepcopy(value)
+        return existing_value
+
+    return copy.deepcopy(incoming_value)
 
 
 def _merge_property_patch(result_cells, patch):
@@ -191,7 +221,10 @@ def _merge_property_patch(result_cells, patch):
 
         target_props = target_cell.setdefault("properties", {})
         for key, value in delta.items():
-            target_props[key] = copy.deepcopy(value)
+            if key in target_props:
+                target_props[key] = _merge_property_value(target_props[key], value)
+            else:
+                target_props[key] = copy.deepcopy(value)
 
     return result_cells
 
@@ -231,7 +264,7 @@ def _run_parallel_enrichment(integrator, cells):
         return _extract_patch_for_keys(worker_result, stats_keys)
 
     def run_azshear_worker():
-        worker_cells = _clone_cells_for_worker(cells)
+        worker_cells = _clone_cells_for_worker(cells, preserve_properties=True)
         worker_result = _run_step(
             "Integration - Worker AzShear",
             lambda: _integrate_azshear(integrator, worker_cells),
