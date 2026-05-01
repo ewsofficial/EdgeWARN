@@ -418,12 +418,6 @@ class StormCastModule(AnalysisModule):
             if result.forecast_polygon_reason:
                 alert_blockers.append(result.forecast_polygon_reason)
 
-            io_manager.write_info(
-                f"Cell {storm_entry.get('id', 'unknown')}: history_points={len(historical_points)} unique_points={len(unique_points)} "
-                f"duration_min={duration_min:.2f} polygon_ready={bool(result.polygon_0_30m)} "
-                f"alert_eligible={can_generate_alerts} timestamp={current_ts_str}"
-            )
-
             if not can_generate_alerts:
                 io_manager.write_info(
                     f"Cell {storm_entry.get('id', 'unknown')}: suppressing StormCast alert because forecast polygon_0_30m is unavailable"
