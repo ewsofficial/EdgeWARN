@@ -54,6 +54,12 @@ src/EdgeWARN/api/
 2. `EDGEWARN_BASE_DIR`
 3. Platform fallback defaults
 
+EdgeWARN rate-limit CLI overrides:
+
+- `--edgewarn-rate-limit-1s`
+- `--edgewarn-rate-limit-1m`
+- `0` disables the respective limiter window
+
 Data directories are derived from `BASE_DIR/data/...`, including `cells`, `stormcells`, `Mesocyclones`, `METAR`, and alert directories.
 
 At startup, required directories are created if missing.
@@ -190,6 +196,8 @@ Special behavior:
 - `TRUST_PROXY`
 - `TRUST_PROXY_IPS`
 - `EDGEWARN_BASE_DIR`
+- `EWMRS_RATE_LIMIT_MAX_SEC`
+- `EWMRS_RATE_LIMIT_MAX_MIN`
 
 ## Runtime Modes
 
@@ -197,6 +205,7 @@ Special behavior:
 - Debug API server: `npm run debug:edgewarn`
 - EWMRS API server: `npm run api:ewmrs` on port `3003` by default
 - EWMRS debug API server: `npm run debug:ewmrs` passes `--debug-server` and uses port `3004` unless `PORT` is set
+- EWMRS rate-limit CLI overrides: `--ewmrs-rate-limit-1s`, `--ewmrs-rate-limit-1m`; `0` disables the respective limiter window
 
 See also:
 

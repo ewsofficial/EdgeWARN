@@ -281,3 +281,7 @@ Both return `410 Gone` with migration guidance to `/api/v2`.
 - Global rate limiting uses two windows by default:
   - `40` requests per second
   - `2000` requests per minute
+- EdgeWARN CLI overrides:
+  - `--edgewarn-rate-limit-1s <count>`
+  - `--edgewarn-rate-limit-1m <count>`
+  - A value of `0` disables that rate-limit window

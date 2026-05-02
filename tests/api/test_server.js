@@ -97,6 +97,19 @@ describe('API server', () => {
       .expect(200);
   });
 
+  it('uses EdgeWARN CLI rate limit flags and disables a zero-valued bin', async () => {
+    const app = createApp(
+      { NODE_ENV: 'test' },
+      {
+        argv: ['--edgewarn-rate-limit-1s=0', '--edgewarn-rate-limit-1m=2']
+      }
+    );
+
+    await request(app).get('/').expect(200);
+    await request(app).get('/').expect(200);
+    await request(app).get('/').expect(429);
+  });
+
   it('returns development error details from error middleware', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     const app = createApp(

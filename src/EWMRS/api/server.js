@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import os from 'os';
+import { pathToFileURL } from 'url';
 import rendersRouter from './routes/renders.js';
 import wpcRouter from './routes/wpc.js';
 import colormapsRouter from './routes/colormaps.js';
@@ -15,25 +16,41 @@ import rapRouter from './routes/rap.js';
 const DEFAULT_PORT = 3003;
 const DEBUG_PORT = 3004;
 
-const app = express();
-app.use(cors());
-app.use(morgan('tiny'));
-app.use(helmet());
-app.use(compression());
+function parseNonNegativeInteger(value, label) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    console.warn(`[RateLimit] Ignoring invalid ${label} value: ${value}`);
+    return undefined;
+  }
 
-// Rate Limiting
-const limiter = rateLimit({
-  // windowMs is in milliseconds. Use 1000 ms for a 1-second window.
-  windowMs: 1000, // 1 sec
-  max: 30, // Limit each IP to 30 requests per `window` (here, per 1 sec)
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-});
-app.use(limiter);
+  return parsed;
+}
+
+function readConfiguredInteger(value, fallback, label) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const parsed = parseNonNegativeInteger(value, label);
+  return parsed ?? fallback;
+}
+
+function parseCliIntegerFlag(args, flagName) {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === flagName && args[i + 1] !== undefined) {
+      return parseNonNegativeInteger(args[i + 1], flagName);
+    }
+
+    if (args[i].startsWith(`${flagName}=`)) {
+      return parseNonNegativeInteger(args[i].slice(flagName.length + 1), flagName);
+    }
+  }
+
+  return undefined;
+}
 
 // Parse --base_dir from command line arguments
-function getBaseDirFromArgs() {
-  const args = process.argv.slice(2);
+function getBaseDirFromArgs(args = process.argv.slice(2)) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--base_dir' && args[i + 1]) {
       return args[i + 1];
@@ -50,26 +67,41 @@ function hasDebugServerFlag() {
   return args.includes('--debug-server') || args.includes('--debug_server');
 }
 
+function getEwmrsRateLimitConfig(env, args = process.argv.slice(2)) {
+  const cliRateLimitMaxSec = parseCliIntegerFlag(args, '--ewmrs-rate-limit-1s');
+  const cliRateLimitMaxMin = parseCliIntegerFlag(args, '--ewmrs-rate-limit-1m');
+
+  return {
+    rateLimitWindowMsSec: 1000,
+    rateLimitMaxSec: cliRateLimitMaxSec ?? readConfiguredInteger(env.EWMRS_RATE_LIMIT_MAX_SEC, 30, 'EWMRS_RATE_LIMIT_MAX_SEC'),
+    rateLimitWindowMsMin: 60 * 1000,
+    rateLimitMaxMin: cliRateLimitMaxMin ?? readConfiguredInteger(env.EWMRS_RATE_LIMIT_MAX_MIN, 1800, 'EWMRS_RATE_LIMIT_MAX_MIN')
+  };
+}
+
 // Determine BASE_DIR with parity to Python `util/file.py` behaviour:
 // Priority order:
 // 1. --base_dir command-line argument
 // 2. BASE_DIR environment variable
 // 3. Platform-specific defaults
-const argBase = getBaseDirFromArgs();
-const envBase = process.env.BASE_DIR;
-let BASE_DIR;
+function resolveBaseDir(env = process.env, args = process.argv.slice(2)) {
+  const argBase = getBaseDirFromArgs(args);
+  const envBase = env.BASE_DIR;
 
-if (argBase) {
-  BASE_DIR = argBase;
-} else if (envBase) {
-  BASE_DIR = envBase;
-} else if (process.platform === 'win32') {
-  BASE_DIR = 'C:\\EdgeWARN_input';
-} else {
-  BASE_DIR = path.join(os.homedir(), 'EdgeWARN_input');
+  if (argBase) {
+    return argBase;
+  }
+
+  if (envBase) {
+    return envBase;
+  }
+
+  if (process.platform === 'win32') {
+    return 'C:\\EdgeWARN_input';
+  }
+
+  return path.join(os.homedir(), 'EdgeWARN_input');
 }
-
-const GUI_DIR = path.join(BASE_DIR, 'gui');
 
 // Known GUI subdirectories (keeps parity with util/file.py)
 const GUI_SUBDIRS = [
@@ -134,32 +166,80 @@ async function listFilesInDir(dirPath, limit = 50) {
   }
 }
 
-// Use new RESTful routes - pass BASE_DIR via app.locals
-app.locals.BASE_DIR = BASE_DIR;
-app.locals.GUI_DIR = GUI_DIR;
+export function createApp(options = {}) {
+  const env = options.env || process.env;
+  const args = options.argv || process.argv.slice(2);
+  const baseDir = options.baseDir || resolveBaseDir(env, args);
+  const guiDir = path.join(baseDir, 'gui');
+  const {
+    rateLimitWindowMsSec,
+    rateLimitMaxSec,
+    rateLimitWindowMsMin,
+    rateLimitMaxMin
+  } = getEwmrsRateLimitConfig(env, args);
 
-app.use('/renders', rendersRouter);
-app.use('/rap', rapRouter);
-app.use('/wpc', wpcRouter);
+  const app = express();
+  app.use(cors());
+  app.use(morgan('tiny'));
+  app.use(helmet());
+  app.use(compression());
 
-// Root endpoint to avoid default express 404 "Cannot GET /"
-app.get('/', (req, res) => {
-  res.json({
-    service: 'EWMRS API',
-    base_dir: BASE_DIR,
-    gui_dir: GUI_DIR,
-    endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
+  const buildLimiter = (windowMs, max) => rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
   });
-});
 
-// Simple healthcheck
-app.get('/healthz', (req, res) => res.json({ ok: true }));
+  if (rateLimitMaxSec > 0) {
+    app.use(buildLimiter(rateLimitWindowMsSec, rateLimitMaxSec));
+  }
 
-// Return colormaps.json
-app.use('/colormaps', colormapsRouter);
+  if (rateLimitMaxMin > 0) {
+    app.use(buildLimiter(rateLimitWindowMsMin, rateLimitMaxMin));
+  }
 
-const PORT = process.env.PORT || (hasDebugServerFlag() ? DEBUG_PORT : DEFAULT_PORT);
-app.listen(PORT, () => {
-  console.log(`EWMRS API server listening on port ${PORT}`);
-  console.log(`Using BASE_DIR=${BASE_DIR}`);
-});
+  // Use new RESTful routes - pass BASE_DIR via app.locals
+  app.locals.BASE_DIR = baseDir;
+  app.locals.GUI_DIR = guiDir;
+
+  app.use('/renders', rendersRouter);
+  app.use('/rap', rapRouter);
+  app.use('/wpc', wpcRouter);
+
+  // Root endpoint to avoid default express 404 "Cannot GET /"
+  app.get('/', (req, res) => {
+    res.json({
+      service: 'EWMRS API',
+      base_dir: baseDir,
+      gui_dir: guiDir,
+      endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
+    });
+  });
+
+  // Simple healthcheck
+  app.get('/healthz', (req, res) => res.json({ ok: true }));
+
+  // Return colormaps.json
+  app.use('/colormaps', colormapsRouter);
+
+  return { app, baseDir, guiDir };
+}
+
+export function startServer(options = {}) {
+  const env = options.env || process.env;
+  const port = options.port || env.PORT || (hasDebugServerFlag() ? DEBUG_PORT : DEFAULT_PORT);
+  const { app, baseDir } = options.app ? { app: options.app, baseDir: options.baseDir || resolveBaseDir(env) } : createApp(options);
+  const server = app.listen(port, () => {
+    console.log(`EWMRS API server listening on port ${port}`);
+    console.log(`Using BASE_DIR=${baseDir}`);
+  });
+
+  return { app, server, port, baseDir };
+}
+
+const entryFileUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
+
+if (entryFileUrl === import.meta.url) {
+  startServer();
+}
