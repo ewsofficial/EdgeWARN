@@ -14,12 +14,57 @@ import config from './config.js';
 
 dotenv.config();
 
+function parseCliIntegerFlag(args, flagName) {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === flagName && args[i + 1] !== undefined) {
+      return parseNonNegativeInteger(args[i + 1], flagName);
+    }
+
+    if (args[i].startsWith(`${flagName}=`)) {
+      return parseNonNegativeInteger(args[i].slice(flagName.length + 1), flagName);
+    }
+  }
+
+  return undefined;
+}
+
+function parseNonNegativeInteger(value, label) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    console.warn(`[RateLimit] Ignoring invalid ${label} value: ${value}`);
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function readConfiguredInteger(value, fallback, label) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const parsed = parseNonNegativeInteger(value, label);
+  return parsed ?? fallback;
+}
+
+function getEdgewarnRateLimitConfig(env, args = process.argv.slice(2)) {
+  const cliRateLimitMaxSec = parseCliIntegerFlag(args, '--edgewarn-rate-limit-1s');
+  const cliRateLimitMaxMin = parseCliIntegerFlag(args, '--edgewarn-rate-limit-1m');
+
+  return {
+    rateLimitWindowMsSec: readConfiguredInteger(env.RATE_LIMIT_WINDOW_MS_SEC, 1000, 'RATE_LIMIT_WINDOW_MS_SEC'),
+    rateLimitMaxSec: cliRateLimitMaxSec ?? readConfiguredInteger(env.RATE_LIMIT_MAX_SEC, 40, 'RATE_LIMIT_MAX_SEC'),
+    rateLimitWindowMsMin: readConfiguredInteger(env.RATE_LIMIT_WINDOW_MS_MIN, 60 * 1000, 'RATE_LIMIT_WINDOW_MS_MIN'),
+    rateLimitMaxMin: cliRateLimitMaxMin ?? readConfiguredInteger(env.RATE_LIMIT_MAX_MIN, 2000, 'RATE_LIMIT_MAX_MIN')
+  };
+}
+
 function getPort(env) {
   return env.PORT || (config.DEBUG_SERVER ? config.DEBUG_PORT : config.DEFAULT_PORT);
 }
 
 export function createApp(env = process.env, options = {}) {
-  const { beforeErrorHandler } = options;
+  const { beforeErrorHandler, argv = process.argv.slice(2) } = options;
   const app = express();
 
   // Middleware
@@ -76,15 +121,16 @@ export function createApp(env = process.env, options = {}) {
   }
 
   // Rate Limiting - configurable via environment variables
-  const rateLimitWindowMsSec = parseInt(env.RATE_LIMIT_WINDOW_MS_SEC, 10) || 1000; // 1 second default
-  const rateLimitMaxSec = parseInt(env.RATE_LIMIT_MAX_SEC, 10) || 40; // 40 requests per second default
+  const {
+    rateLimitWindowMsSec,
+    rateLimitMaxSec,
+    rateLimitWindowMsMin,
+    rateLimitMaxMin
+  } = getEdgewarnRateLimitConfig(env, argv);
 
-  const rateLimitWindowMsMin = parseInt(env.RATE_LIMIT_WINDOW_MS_MIN, 10) || 60 * 1000; // 1 minute default
-  const rateLimitMaxMin = parseInt(env.RATE_LIMIT_MAX_MIN, 10) || 2000; // 2000 requests per minute default
-
-  const limiterSec = rateLimit({
-    windowMs: rateLimitWindowMsSec,
-    max: rateLimitMaxSec,
+  const buildLimiter = (windowMs, max) => rateLimit({
+    windowMs,
+    max,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later' },
@@ -104,30 +150,14 @@ export function createApp(env = process.env, options = {}) {
     }
   });
 
-  const limiterMin = rateLimit({
-    windowMs: rateLimitWindowMsMin,
-    max: rateLimitMaxMin,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many requests, please try again later' },
-    skip: (req) => {
-      return req.path === '/health' && req.headers['x-internal-check'] === 'true';
-    },
-    keyGenerator: (req) => {
-      let clientIp;
-      if (trustProxy) {
-        clientIp = req.ip;
-      } else {
-        clientIp = req.connection.remoteAddress || req.socket.remoteAddress ||
-          (req.connection.socket ? req.connection.socket.remoteAddress : null);
-      }
-      return ipKeyGenerator(clientIp);
-    }
-  });
+  // Apply enabled rate limiting middleware to all requests.
+  if (rateLimitMaxSec > 0) {
+    app.use(buildLimiter(rateLimitWindowMsSec, rateLimitMaxSec));
+  }
 
-  // Apply the rate limiting middleware to all requests (both per-second and per-minute)
-  app.use(limiterSec);
-  app.use(limiterMin);
+  if (rateLimitMaxMin > 0) {
+    app.use(buildLimiter(rateLimitWindowMsMin, rateLimitMaxMin));
+  }
 
   // Routes
   app.get('/', (req, res) => {

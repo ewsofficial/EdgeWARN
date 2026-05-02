@@ -44,6 +44,12 @@ Response:
 }
 ```
 
+Rate limiting:
+
+- Default global limits are `30` requests per second and `1800` requests per minute
+- CLI overrides: `--ewmrs-rate-limit-1s <count>` and `--ewmrs-rate-limit-1m <count>`
+- A value of `0` disables that rate-limit window
+
 ## Render Endpoints
 
 ### GET /renders/get-items
