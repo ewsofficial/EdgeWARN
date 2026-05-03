@@ -52,6 +52,18 @@ See `docs/core/goes_pipeline.md` for the end-to-end GOES readiness and render fl
 
 `src/common/ingest/nws/main.py` downloads active alerts from `https://api.weather.gov/alerts/active`, applies GeoMapper processing, and updates the alert registry.
 
+The NWS asset maintenance utility `src/common/ingest/nws/zone_sync.py` can also refresh `assets/nws_zones` directly. Its CLI supports:
+
+- `--assets-dir`
+- `--zone-types`
+- `--timeout-seconds`
+- `--max-retries`
+- `--max-workers`
+- `--pause-seconds`
+- `--no-progress`
+- `--apply`
+- `--report-path`
+
 Key behavior:
 
 - Blocklist filtering for non-target event types

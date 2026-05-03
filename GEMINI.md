@@ -48,12 +48,34 @@ python src/run.py [options]
 *   `--lat_limits <min> <max>`: Latitude limits
 *   `--lon_limits <min> <max>`: Longitude limits
 *   `--base_dir <path>` or `--base-dir <path>`: Output directory (Default: `~/EdgeWARN_input`)
+*   `--profile`: Enable performance profiling
+*   `--disable-ctam`: Skip CTAM execution during integration
+*   `--disable-tracking`: Skip lineage detection and Kalman tracking
+*   `--disable-ewmrs`: Disable EWMRS workers and rendering
+*   `--disable-nws`: Disable background NWS alert ingestion
+*   `--disable-metar`: Disable background METAR ingestion
+*   `--disable-goes`: Disable GOES ingest, GLM ingest, and GOES rendering
+*   `--refl-threshold <value>`: Override the baseline reflectivity threshold
+*   `--min-seed-percentage <value>`: Override polygon seed coverage ratio
+*   `--drop-offset <value>`: Override dynamic reflectivity drop offset
 
 #### 2. Historical Analysis
 Process historical data (available back to Jan 1, 2021):
 ```bash
 python src/process_historical.py --start <ISO8601> --end <ISO8601> [options]
 ```
+
+**Options:**
+*   `--lat <min> <max>`: Latitude limits
+*   `--lon <min> <max>`: Longitude limits
+*   `--output <path>`: Output JSON path
+*   `--base_dir <path>` or `--base-dir <path>`: Runtime base directory override
+*   `--profile`: Enable performance profiling
+*   `--disable-ctam`: Skip CTAM execution during integration
+*   `--disable-tracking`: Skip lineage detection and Kalman tracking
+*   `--refl-threshold <value>`: Override the baseline reflectivity threshold
+*   `--min-seed-percentage <value>`: Override polygon seed coverage ratio
+*   `--drop-offset <value>`: Override dynamic reflectivity drop offset
 
 #### 3. API Server (v2)
 Start the Node.js backend server:
@@ -64,6 +86,7 @@ npm run api:edgewarn
 *   **Debug Port:** 3001 (via `npm run debug:edgewarn`)
 *   **Health Check:** `http://localhost:5000/health`
 *   **EWMRS API:** `npm run api:ewmrs`
+*   **EWMRS Debug API:** `npm run debug:ewmrs`
 
 ## Development Conventions
 

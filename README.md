@@ -50,6 +50,7 @@ From repository root:
 npm run api:edgewarn
 npm run debug:edgewarn
 npm run api:ewmrs
+npm run debug:ewmrs
 ```
 
 ## Running Python Pipelines
@@ -60,6 +61,10 @@ From `src/`:
 python run.py --lat_limits 20 55 --lon_limits 230 300
 python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:00 --lat 20 55 --lon -130 -60
 ```
+
+Key realtime flags include `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-ctam`, `--disable-tracking`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
+
+Historical processing supports `--output`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
 ## Runtime Base Directory
 
@@ -73,6 +78,8 @@ Supported overrides:
 - Python CLI: `--base_dir` / `--base-dir`
 - EdgeWARN API: `--base-dir` or `EDGEWARN_BASE_DIR`
 - EWMRS API: `--base_dir` or `BASE_DIR`
+
+See `INSTALLATION.md` for the full CLI reference, including API debug and rate-limit flags plus the `zone_sync.py` maintenance utility.
 
 ## Testing
 

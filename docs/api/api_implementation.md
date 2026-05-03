@@ -69,6 +69,7 @@ Debug mode:
 - Enabled with `--debug_server`
 - Default port `5000`
 - Debug port `3001`
+- The packaged debug command is `npm run debug:edgewarn`
 
 ## Routing
 
@@ -196,8 +197,8 @@ Special behavior:
 - `TRUST_PROXY`
 - `TRUST_PROXY_IPS`
 - `EDGEWARN_BASE_DIR`
-- `EWMRS_RATE_LIMIT_MAX_SEC`
-- `EWMRS_RATE_LIMIT_MAX_MIN`
+
+EWMRS-specific environment variables are documented in `docs/api/ewmrs_api_endpoints.md`.
 
 ## Runtime Modes
 
