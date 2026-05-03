@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.5.1] 2026-05-02
+## [2.5.2] 2026-05-02
 
 ### Added
 - CLI flags and environment-variable overrides for configuring EdgeWARN and EWMRS API rate limits

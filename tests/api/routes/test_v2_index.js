@@ -19,7 +19,7 @@ describe('API v2 index route', () => {
       .expect(200);
 
     expect(response.body.message).toBe('EdgeWARN API v2');
-    expect(response.body.version).toBe('2.5.1');
+    expect(response.body.version).toBe('2.5.2');
     expect(response.body.endpoints.features.cells).toBe('/api/v2/features/cells[?id={int}]');
     expect(response.body.endpoints.features.mesocyclones).toBe('/api/v2/features/mesocyclones[?timestamp={YYYYMMDD-HHMMSS}]');
 
