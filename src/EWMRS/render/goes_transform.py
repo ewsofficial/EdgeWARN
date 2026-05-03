@@ -168,7 +168,7 @@ def _apply_layer_transform(
         kappa0 = _get_scalar_or_array_parameter(ds, data, "kappa0", channel_id)
         if kappa0 is not None:
             data = data * np.float32(kappa0)
-            data = data.where(~np.isfinite(data) | (data >= 0), 0)
+            data = data.where(~np.isfinite(data) | (data >= 0))
 
     if transform_name == "brightness_temp_from_rad" and source_variable_name == "Rad":
         fk1 = _get_scalar_or_array_parameter(ds, data, "planck_fk1", channel_id)
