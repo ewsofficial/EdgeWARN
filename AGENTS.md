@@ -66,6 +66,7 @@ Run these commands from the repository root:
 npm run api:edgewarn   # Start the EdgeWARN API (default port 5000)
 npm run debug:edgewarn # Start the EdgeWARN API in debug mode (port 3001)
 npm run api:ewmrs      # Start the EWMRS API (default port 3003)
+npm run debug:ewmrs    # Start the EWMRS API in debug mode (port 3004)
 ```
 
 ### Real-Time Tandem Processing (Python)
@@ -79,10 +80,16 @@ python run.py --lat_limits 20 55 --lon_limits 230 300
 `run.py` currently performs a shared staged-ingest cycle and then launches EdgeWARN and EWMRS worker processes in tandem. It also starts background loops for METAR, NWS, and WPC ingestion.
 
 Common optional flags:
+- `--lat_limits`
+- `--lon_limits`
 - `--base_dir` / `--base-dir`
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
+- `--disable-ewmrs`
+- `--disable-nws`
+- `--disable-metar`
+- `--disable-goes`
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
@@ -98,6 +105,10 @@ python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:
 `process_historical.py` iterates minute-by-minute through a requested time range, finds the best available MRMS timestamp near each step, and runs the historical EdgeWARN pipeline with optional CTAM/tracking controls.
 
 Supported historical flags include:
+- `--start`
+- `--end`
+- `--lat`
+- `--lon`
 - `--output`
 - `--base_dir` / `--base-dir`
 - `--profile`

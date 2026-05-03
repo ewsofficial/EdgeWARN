@@ -51,11 +51,23 @@ Run from repository root:
 npm run api:edgewarn
 npm run debug:edgewarn
 npm run api:ewmrs
+npm run debug:ewmrs
 ```
 
 - EdgeWARN API default port: `5000`
 - EdgeWARN debug mode port: `3001`
 - EWMRS API default port: `3003`
+- EWMRS debug mode port: `3004`
+
+CLI and environment overrides:
+
+- EdgeWARN API base directory: `--base-dir <path>` or `EDGEWARN_BASE_DIR`
+- EdgeWARN API debug mode: `--debug_server`
+- EdgeWARN API rate limits: `--edgewarn-rate-limit-1s <count>`, `--edgewarn-rate-limit-1m <count>`
+- EWMRS API base directory: `--base_dir <path>` or `BASE_DIR`
+- EWMRS API debug mode: `--debug-server` or `--debug_server`
+- EWMRS API rate limits: `--ewmrs-rate-limit-1s <count>`, `--ewmrs-rate-limit-1m <count>`
+- For both APIs, a rate-limit value of `0` disables that limiter window
 
 ## Running Real-Time Tandem Processing
 
@@ -67,13 +79,25 @@ python run.py --lat_limits 20 55 --lon_limits 230 300
 
 Common optional flags:
 
+- `--lat_limits <LAT_MIN> <LAT_MAX>` default `20 55`
+- `--lon_limits <LON_MIN> <LON_MAX>` default `230 300`
 - `--base_dir` / `--base-dir`
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
+- `--disable-ewmrs`
+- `--disable-nws`
+- `--disable-metar`
+- `--disable-goes`
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
+
+Notes:
+
+- `run.py` normalizes `--lon_limits` into the `0-360` domain internally
+- `--disable-goes` disables GOES ingest, GLM ingest, and GOES rendering
+- `--disable-ewmrs` skips EWMRS workers and rendering while leaving EdgeWARN realtime processing enabled
 
 ## Running Historical Reprocessing
 
@@ -85,7 +109,11 @@ python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:
 
 Common optional flags:
 
-- `--output`
+- `--start <ISO8601>` required
+- `--end <ISO8601>` required
+- `--lat <LAT_MIN> <LAT_MAX>` default `20 55`
+- `--lon <LON_MIN> <LON_MAX>` default `-130 -60`
+- `--output <path>` default `stormcell_test.json`
 - `--base_dir` / `--base-dir`
 - `--profile`
 - `--disable-ctam`
@@ -93,6 +121,28 @@ Common optional flags:
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
+
+## Maintaining NWS Zone Assets
+
+`src/common/ingest/nws/zone_sync.py` refreshes `assets/nws_zones` from the NWS zone and UGC APIs.
+
+Run from repository root:
+
+```bash
+python src/common/ingest/nws/zone_sync.py --apply
+```
+
+Flags:
+
+- `--assets-dir <path>` custom `assets/nws_zones` location
+- `--zone-types <types...>` defaults to `forecast fire public county marine`
+- `--timeout-seconds <int>` default `30`
+- `--max-retries <int>` default `3`
+- `--max-workers <int>` default `16`
+- `--pause-seconds <float>` default `0.0`
+- `--no-progress` disable progress output
+- `--apply` write updates; without it the command is a dry run
+- `--report-path <path>` write the sync report JSON to a file
 
 ## Tests
 

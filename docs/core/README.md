@@ -61,6 +61,12 @@ The GOES render path uses a unified cycle that reuses shared channel reprojectio
 - `run.py` performs a staged shared ingest cycle, then runs EdgeWARN and EWMRS workers in tandem
 - `process_historical.py` iterates through a requested UTC time range and runs the historical EdgeWARN flow
 
+Current CLI coverage:
+
+- `run.py`: `--lat_limits`, `--lon_limits`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--output`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `common/ingest/nws/zone_sync.py`: `--assets-dir`, `--zone-types`, `--timeout-seconds`, `--max-retries`, `--max-workers`, `--pause-seconds`, `--no-progress`, `--apply`, `--report-path`
+
 ## Additional References
 
 - `docs/core/ingestion.md`

@@ -7,6 +7,13 @@ This document describes the current HTTP routes implemented in `src/EWMRS/api`.
 - Base URL: `/`
 - Response format: JSON for metadata/list routes, PNG for render downloads/tiles, raw binary for RAP Uint16 arrays
 
+Runtime configuration:
+
+- Base directory resolution order: `--base_dir`, then `BASE_DIR`, then platform default
+- Debug mode flags: `--debug-server` and `--debug_server`
+- Default port: `3003`
+- Debug port: `3004` unless `PORT` is set
+
 ## Root Endpoints
 
 ### GET /
@@ -49,6 +56,7 @@ Rate limiting:
 - Default global limits are `30` requests per second and `1800` requests per minute
 - CLI overrides: `--ewmrs-rate-limit-1s <count>` and `--ewmrs-rate-limit-1m <count>`
 - A value of `0` disables that rate-limit window
+- Environment overrides: `EWMRS_RATE_LIMIT_MAX_SEC` and `EWMRS_RATE_LIMIT_MAX_MIN`
 
 ## Render Endpoints
 
