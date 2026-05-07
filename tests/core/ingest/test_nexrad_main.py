@@ -54,9 +54,33 @@ def test_list_allowed_vcp_sites_filters_and_sorts():
         "KCCC": station(212),
         "KAAA": station(12),
         "KDDD": station(None),
+        "WXYZ": station(212),
     }
 
     with patch("common.ingest.nexrad.main.fetch_radar_station_vcps", return_value=stations):
         sites = list_allowed_vcp_sites()
 
+    # WXYZ should be excluded because it does not start with 'K'
     assert sites == ["KAAA", "KCCC"]
+
+
+def test_ingest_allowed_vcp_volume_uses_provided_station_vcp(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    chunks = [
+        ChunkKey("KTLH", "999", number, "I", f"KTLH/999/20260507-150000-{number:03d}-I")
+        for number in range(1, 26)
+    ]
+    station = type("Station", (), {"vcp": 212})()
+
+    def _chunk_bytes(chunk, **_kwargs):
+        return f"chunk{chunk.chunk_number}".encode("utf-8")
+
+    with patch("common.ingest.nexrad.main.probe_volume_vcp") as probe_mock, \
+         patch("common.ingest.nexrad.main.list_volume_chunks", return_value=chunks), \
+         patch("common.ingest.nexrad.main.get_chunk_bytes", side_effect=_chunk_bytes):
+        result = ingest_allowed_vcp_volume("KTLH", "999", base_dir=tmp_path, s3_client=object(), station_vcp=station)
+
+    probe_mock.assert_not_called()
+    assert result.site == "KTLH"
+    assert result.volume_id == "999"
+    assert result.vcp == 212
