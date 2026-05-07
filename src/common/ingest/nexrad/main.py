@@ -3,10 +3,11 @@ import re
 from pathlib import Path
 
 import util.file as fs
-from common.ingest.nexrad.config import LOW_CHECKPOINT_HINT
+from common.ingest.nexrad.config import ALLOWED_VCPS, LOW_CHECKPOINT_HINT
 from common.ingest.nexrad.models import NexradIngestResult
 from common.ingest.nexrad.s3_chunks import get_chunk_bytes, get_unsigned_s3_client, list_recent_volume_ids, list_volume_chunks
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
+from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]")
@@ -112,9 +113,14 @@ def ingest_latest_allowed_vcp_scans(sites, *, max_volumes_per_site=1, base_dir=N
     return results
 
 
+def list_allowed_vcp_sites(*, weather_session=None):
+    stations = fetch_radar_station_vcps(session=weather_session)
+    return sorted(site for site, station in stations.items() if station.vcp in ALLOWED_VCPS)
+
+
 def _build_parser():
     parser = argparse.ArgumentParser(description="Ingest VCP-gated NEXRAD Level-II chunks")
-    parser.add_argument("--site", required=True)
+    parser.add_argument("--site")
     parser.add_argument("--volume-id")
     parser.add_argument("--base-dir")
     parser.add_argument("--max-volumes-per-site", type=int, default=1)
@@ -123,6 +129,9 @@ def _build_parser():
 
 def main():
     args = _build_parser().parse_args()
+    if args.volume_id and not args.site:
+        raise SystemExit("--site is required when --volume-id is provided")
+
     if args.volume_id:
         result = ingest_allowed_vcp_volume(args.site, args.volume_id, base_dir=args.base_dir)
         if result is None:
@@ -142,15 +151,23 @@ def main():
             )
         return
 
+    sites = [args.site] if args.site else list_allowed_vcp_sites()
+    if not sites:
+        io_manager.write_info("No radar sites with allowed VCPs were available from weather.gov in this pass.")
+        return
+
     results = ingest_latest_allowed_vcp_scans(
-        [args.site],
+        sites,
         max_volumes_per_site=args.max_volumes_per_site,
         base_dir=args.base_dir,
     )
     if not results:
-        io_manager.write_info(
-            f"No accepted VCP volumes were ingested for {args.site.upper()} in this pass."
-        )
+        if args.site:
+            io_manager.write_info(
+                f"No accepted VCP volumes were ingested for {args.site.upper()} in this pass."
+            )
+        else:
+            io_manager.write_info("No accepted VCP volumes were ingested for any allowed-VCP radar site in this pass.")
         return
 
     for result in results:

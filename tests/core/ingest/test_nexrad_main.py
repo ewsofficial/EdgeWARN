@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import util.file as fs
 from common.ingest.nexrad.models import ChunkKey
-from common.ingest.nexrad.main import ingest_allowed_vcp_volume
+from common.ingest.nexrad.main import ingest_allowed_vcp_volume, list_allowed_vcp_sites
 
 
 def test_ingest_downloads_chunks_to_timestamped_site_chunks_dir(tmp_path):
@@ -45,3 +45,18 @@ def test_ingest_downloads_chunks_to_timestamped_site_chunks_dir(tmp_path):
     assert (outdir / "20260507-150000-001-S").read_bytes() == b"chunk1"
     assert (outdir / "20260507-150000-025-I").read_bytes() == b"chunk25"
     assert not (outdir / "20260507-150000-026-I").exists()
+
+
+def test_list_allowed_vcp_sites_filters_and_sorts():
+    station = lambda vcp: type("Station", (), {"vcp": vcp})()
+    stations = {
+        "KBBB": station(99),
+        "KCCC": station(212),
+        "KAAA": station(12),
+        "KDDD": station(None),
+    }
+
+    with patch("common.ingest.nexrad.main.fetch_radar_station_vcps", return_value=stations):
+        sites = list_allowed_vcp_sites()
+
+    assert sites == ["KAAA", "KCCC"]
