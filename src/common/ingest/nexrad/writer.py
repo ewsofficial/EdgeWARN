@@ -7,16 +7,7 @@ import xarray as xr
 
 import util.file as fs
 
-IMPORTANT_DATA_VARS = {
-    "DBZH",
-    "VRADH",
-    "WRADH",
-    "ZDR",
-    "PHIDP",
-    "RHOHV",
-    "sweep_fixed_angle",
-    "sweep_number",
-}
+IMPORTANT_DATA_VARS = None
 
 
 def _sanitize_attr_value(value):
@@ -63,6 +54,20 @@ def _slim_dataset(dataset: xr.Dataset):
     return slim
 
 
+def _slim_dataset_from_node(node):
+    dataset_view = node.ds if hasattr(node, "ds") else node.to_dataset()
+    if IMPORTANT_DATA_VARS is None:
+        slim = dataset_view
+    else:
+        keep_vars = [name for name in dataset_view.variables if name in IMPORTANT_DATA_VARS]
+        slim = dataset_view[keep_vars] if keep_vars else dataset_view.drop_vars(list(dataset_view.data_vars))
+    slim = slim.copy(deep=False)
+    slim.attrs = {}
+    for variable_name in slim.variables:
+        slim[variable_name].attrs = {}
+    return slim
+
+
 def _default_fill_value(dtype):
     dtype = np.dtype(dtype)
     if dtype.kind == "u":
@@ -88,11 +93,6 @@ def _build_variable_encoding(data_array):
         if default_fill is not None:
             encoding["_FillValue"] = default_fill
 
-    if data_array.ndim > 0 and data_array.dtype.kind in {"f", "i", "u"}:
-        encoding["zlib"] = True
-        encoding["complevel"] = 4
-        encoding["shuffle"] = True
-
     return encoding
 
 
@@ -111,7 +111,7 @@ def _write_grouped_netcdf(path: Path, root_attrs: dict, datatree, group_names: l
     path.parent.mkdir(parents=True, exist_ok=True)
     _empty_root_dataset(root_attrs).to_netcdf(path)
     for group_name in group_names:
-        dataset = _sanitize_dataset(_slim_dataset(datatree[group_name].to_dataset()))
+        dataset = _sanitize_dataset(_slim_dataset_from_node(datatree[group_name]))
         dataset.to_netcdf(
             path,
             mode="a",

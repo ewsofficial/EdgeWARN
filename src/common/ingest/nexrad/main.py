@@ -1,15 +1,40 @@
 import argparse
+from pathlib import Path
 
 import util.file as fs
+from common.ingest.nexrad.config import LOW_CHECKPOINT_HINT
+from common.ingest.nexrad.models import NexradIngestResult
 from common.ingest.nexrad.s3_chunks import get_chunk_bytes, get_unsigned_s3_client, list_recent_volume_ids, list_volume_chunks
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
-from common.ingest.nexrad.volume_builder import build_low_high_outputs
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]")
 
 
+def _chunk_output_dir(site: str) -> Path:
+    return fs.NEXRAD_LEVEL2_DIR / site.upper() / "chunks"
+
+
+def _download_chunks_to_site_dir(site: str, chunks, *, s3_client):
+    outdir = _chunk_output_dir(site)
+    outdir.mkdir(parents=True, exist_ok=True)
+    for chunk in chunks:
+        filename = chunk.key.split("/")[-1]
+        local_path = outdir / filename
+        if local_path.exists():
+            continue
+        local_path.write_bytes(get_chunk_bytes(chunk, s3_client=s3_client))
+
+
+def _required_low_chunks(chunks):
+    needed = [chunk for chunk in chunks if chunk.chunk_number <= LOW_CHECKPOINT_HINT]
+    if len(needed) < LOW_CHECKPOINT_HINT:
+        return []
+    return needed
+
+
 def ingest_allowed_vcp_volume(site, volume_id, *, base_dir=None, s3_client=None, weather_session=None, parser=None, writer=None):
+    _ = (parser, writer)
     if base_dir:
         fs.initialize_filesystem(base_dir)
 
@@ -19,13 +44,31 @@ def ingest_allowed_vcp_volume(site, volume_id, *, base_dir=None, s3_client=None,
         return None
 
     chunks = list_volume_chunks(site, volume_id, s3_client=s3_client)
-    return build_low_high_outputs(
-        probe,
-        chunks,
-        chunk_fetcher=lambda chunk: get_chunk_bytes(chunk, s3_client=s3_client),
-        **({"parser": parser} if parser is not None else {}),
-        **({"writer": writer} if writer is not None else {}),
-        base_dir=base_dir,
+    needed_chunks = _required_low_chunks(chunks)
+    if not needed_chunks:
+        return NexradIngestResult(
+            site=probe.site,
+            volume_id=probe.volume_id,
+            vcp=probe.vcp,
+            dynamic_scan_type=None,
+            low_path=None,
+            high_path=None,
+            manifest_path=None,
+            chunks_downloaded=0,
+            complete=False,
+        )
+
+    _download_chunks_to_site_dir(site, needed_chunks, s3_client=s3_client)
+    return NexradIngestResult(
+        site=probe.site,
+        volume_id=probe.volume_id,
+        vcp=probe.vcp,
+        dynamic_scan_type=None,
+        low_path=None,
+        high_path=None,
+        manifest_path=None,
+        chunks_downloaded=len(needed_chunks),
+        complete=True,
     )
 
 

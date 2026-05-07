@@ -26,14 +26,16 @@ def _extract_parsed_volume(datatree) -> ParsedVolume:
     sweeps = []
 
     for index, group_name in enumerate(sorted(group for group in datatree.groups if group.startswith("/sweep_"))):
-        dataset = datatree[group_name].to_dataset()
+        node = datatree[group_name]
+        dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
         angle_var = dataset.get("sweep_fixed_angle")
         if angle_var is None:
             continue
         fixed_angle = float(angle_var.values.item())
         azimuth_count = int(dataset.sizes.get("azimuth", dataset.sizes.get("time", 0)))
         waveform = (
-            dataset.attrs.get("waveform_type")
+            getattr(node, "attrs", {}).get("waveform_type")
+            or dataset.attrs.get("waveform_type")
             or dataset.attrs.get("prt_mode")
             or dataset.attrs.get("sweep_mode")
         )
@@ -112,6 +114,11 @@ def _checkpoint_numbers(vcp: int, max_chunk_number: int):
     }
 
 
+def _required_low_chunks_available(chunks, low_checkpoint: int) -> bool:
+    available = {chunk.chunk_number for chunk in chunks}
+    return all(number in available for number in range(1, low_checkpoint + 1))
+
+
 def build_low_high_outputs(
     probe,
     chunks,
@@ -136,26 +143,33 @@ def build_low_high_outputs(
         )
 
     max_chunk_number = chunks[-1].chunk_number
+    low_checkpoint = min(LOW_CHECKPOINT_HINT, max_chunk_number)
+    if not _required_low_chunks_available(chunks, low_checkpoint):
+        io_manager.write_info(
+            f"Volume {probe.site}/{probe.volume_id} is missing required low chunks through {low_checkpoint}; waiting before download"
+        )
+        return NexradIngestResult(
+            site=probe.site,
+            volume_id=probe.volume_id,
+            vcp=probe.vcp,
+            dynamic_scan_type=None,
+            low_path=None,
+            high_path=None,
+            manifest_path=None,
+            chunks_downloaded=0,
+            complete=False,
+        )
+
     checkpoint_numbers = _checkpoint_numbers(probe.vcp, max_chunk_number)
     last_parsed = None
     classified = []
     chunks_downloaded = 0
 
     if parser is not None:
-        payload_parts = []
-        for chunk in chunks:
-            payload_parts.append(chunk_fetcher(chunk))
-            chunks_downloaded = chunk.chunk_number
-            if chunk.chunk_number not in checkpoint_numbers:
-                continue
-
-            try:
-                last_parsed = parser(b"".join(payload_parts))
-            except Exception as exc:
-                io_manager.write_debug(
-                    f"Partial parse not ready at chunk {chunk.chunk_number} for {probe.site}/{probe.volume_id}: {exc}"
-                )
-                continue
+        low_bytes = b"".join(chunk_fetcher(chunk) for chunk in chunks if chunk.chunk_number <= low_checkpoint)
+        chunks_downloaded = low_checkpoint
+        try:
+            last_parsed = parser(low_bytes)
             classified = classify_sweeps(last_parsed.sweeps, dynamic_scan_type=last_parsed.dynamic_scan_type)
             if _has_required_low_bins(classified):
                 low_path, high_path, manifest_path = writer(
@@ -176,45 +190,38 @@ def build_low_high_outputs(
                     chunks_downloaded=chunks_downloaded,
                     complete=True,
                 )
-        if last_parsed is None:
-            try:
-                last_parsed = parser(b"".join(payload_parts))
-            except Exception as exc:
-                io_manager.write_warning(
-                    f"Unable to parse volume {probe.site}/{probe.volume_id} after {chunks_downloaded} chunks: {exc}"
-                )
-                return NexradIngestResult(
-                    site=probe.site,
-                    volume_id=probe.volume_id,
-                    vcp=probe.vcp,
-                    dynamic_scan_type=None,
-                    low_path=None,
-                    high_path=None,
-                    manifest_path=None,
-                    chunks_downloaded=chunks_downloaded,
-                    complete=False,
-                )
-            classified = classify_sweeps(last_parsed.sweeps, dynamic_scan_type=last_parsed.dynamic_scan_type)
+        except Exception as exc:
+            io_manager.write_debug(
+                f"Low-checkpoint parse failed at chunk {low_checkpoint} for {probe.site}/{probe.volume_id}: {exc}"
+            )
+
+        io_manager.write_warning(
+            f"Unable to parse low checkpoint for {probe.site}/{probe.volume_id} after {chunks_downloaded} chunks"
+        )
+        return NexradIngestResult(
+            site=probe.site,
+            volume_id=probe.volume_id,
+            vcp=probe.vcp,
+            dynamic_scan_type=None,
+            low_path=None,
+            high_path=None,
+            manifest_path=None,
+            chunks_downloaded=chunks_downloaded,
+            complete=False,
+        )
     else:
         temp_path = None
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".ar2v") as volume_file:
                 temp_path = volume_file.name
-                for chunk in chunks:
+                low_chunks = [chunk for chunk in chunks if chunk.chunk_number <= low_checkpoint]
+                for chunk in low_chunks:
                     volume_file.write(chunk_fetcher(chunk))
-                    chunks_downloaded = chunk.chunk_number
-                    if chunk.chunk_number not in checkpoint_numbers:
-                        continue
-                    volume_file.flush()
+                volume_file.flush()
+                chunks_downloaded = low_checkpoint
 
-                    try:
-                        last_parsed = parser_file(temp_path)
-                    except Exception as exc:
-                        io_manager.write_debug(
-                            f"Partial parse not ready at chunk {chunk.chunk_number} for {probe.site}/{probe.volume_id}: {exc}"
-                        )
-                        continue
-
+                try:
+                    last_parsed = parser_file(temp_path)
                     classified = classify_sweeps(last_parsed.sweeps, dynamic_scan_type=last_parsed.dynamic_scan_type)
                     if _has_required_low_bins(classified):
                         low_path, high_path, manifest_path = writer(
@@ -235,26 +242,25 @@ def build_low_high_outputs(
                             chunks_downloaded=chunks_downloaded,
                             complete=True,
                         )
-
-            if last_parsed is None:
-                try:
-                    last_parsed = parser_file(temp_path)
                 except Exception as exc:
-                    io_manager.write_warning(
-                        f"Unable to parse volume {probe.site}/{probe.volume_id} after {chunks_downloaded} chunks: {exc}"
+                    io_manager.write_debug(
+                        f"Low-checkpoint parse failed at chunk {low_checkpoint} for {probe.site}/{probe.volume_id}: {exc}"
                     )
-                    return NexradIngestResult(
-                        site=probe.site,
-                        volume_id=probe.volume_id,
-                        vcp=probe.vcp,
-                        dynamic_scan_type=None,
-                        low_path=None,
-                        high_path=None,
-                        manifest_path=None,
-                        chunks_downloaded=chunks_downloaded,
-                        complete=False,
-                    )
-                classified = classify_sweeps(last_parsed.sweeps, dynamic_scan_type=last_parsed.dynamic_scan_type)
+
+            io_manager.write_warning(
+                f"Unable to parse low checkpoint for {probe.site}/{probe.volume_id} after {chunks_downloaded} chunks"
+            )
+            return NexradIngestResult(
+                site=probe.site,
+                volume_id=probe.volume_id,
+                vcp=probe.vcp,
+                dynamic_scan_type=None,
+                low_path=None,
+                high_path=None,
+                manifest_path=None,
+                chunks_downloaded=chunks_downloaded,
+                complete=False,
+            )
         finally:
             if temp_path and os.path.exists(temp_path):
                 os.unlink(temp_path)

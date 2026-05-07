@@ -13,12 +13,18 @@ def _chunk(number):
     return ChunkKey("KDDC", "468", number, "I", f"KDDC/468/{number:03d}")
 
 
+def _chunks_with_terminal(last_number):
+    chunks = [_chunk(number) for number in range(1, last_number)]
+    chunks.append(ChunkKey("KDDC", "468", last_number, "E", f"KDDC/468/{last_number:03d}"))
+    return chunks
+
+
 def _sweep(index, angle, bucket="excluded", complete=True):
     return SweepInfo(index, f"/sweep_{index:02d}", angle, "surveillance", 720, complete, False, bucket)
 
 
 def test_volume_builder_marks_low_ready_at_low_checkpoint():
-    chunks = [_chunk(number) for number in range(1, 26)]
+    chunks = _chunks_with_terminal(25)
     parsed = ParsedVolume(
         scan_name="VCP-215",
         dynamic_scan_type="standard",
@@ -42,7 +48,7 @@ def test_volume_builder_marks_low_ready_at_low_checkpoint():
 
 
 def test_volume_builder_waits_for_high_bins_through_chunk_61():
-    chunks = [_chunk(number) for number in range(1, 62)]
+    chunks = _chunks_with_terminal(61)
 
     def parser(payload):
         marker = int(payload.decode()[-2:]) if len(payload.decode()) >= 2 else int(payload.decode())
@@ -64,6 +70,23 @@ def test_volume_builder_waits_for_high_bins_through_chunk_61():
     assert writes == [25]
     assert result.complete is True
     assert result.chunks_downloaded == 25
+
+
+def test_volume_builder_waits_for_required_low_chunks_before_downloading():
+    chunks = [_chunk(number) for number in range(1, 26) if number != 10]
+    fetched = []
+
+    result = build_low_high_outputs(
+        _probe(),
+        chunks,
+        chunk_fetcher=lambda chunk: fetched.append(chunk.chunk_number) or b"x",
+        parser=lambda payload: ParsedVolume("VCP-215", "standard", [_sweep(0, 0.5), _sweep(1, 0.9)], None, "chunks"),
+        writer=lambda *args, **kwargs: (None, None, None),
+    )
+
+    assert fetched == []
+    assert result.complete is False
+    assert result.chunks_downloaded == 0
 
 
 def test_parse_level2_volume_bytes_uses_temp_file_path(monkeypatch):

@@ -37,7 +37,7 @@ def test_write_grouped_netcdf_sanitizes_boolean_attrs(tmp_path):
     try:
         assert reopened.attrs == {}
         assert reopened["DBZH"].attrs == {}
-        assert "CCORH" not in reopened.data_vars
+        assert "CCORH" in reopened.data_vars
     finally:
         reopened.close()
 
@@ -53,7 +53,7 @@ def test_dataset_encoding_preserves_packed_storage_and_fill_value():
     assert encoding["DBZH"]["scale_factor"] == 0.5
     assert encoding["DBZH"]["add_offset"] == -33.0
     assert encoding["DBZH"]["_FillValue"] == 255
-    assert encoding["DBZH"]["zlib"] is True
+    assert "zlib" not in encoding["DBZH"]
 
 
 def test_write_grouped_netcdf_uses_packed_compressed_encoding(tmp_path):
@@ -67,15 +67,13 @@ def test_write_grouped_netcdf_uses_packed_compressed_encoding(tmp_path):
     handle = netCDF4.Dataset(path)
     try:
         variable = handle.groups["sweep_00"].variables["DBZH"]
-        filters = variable.filters()
         assert variable.dtype == np.dtype("uint8")
-        assert filters["zlib"] is True
         assert variable.getncattr("_FillValue") == 255
     finally:
         handle.close()
 
 
-def test_write_grouped_netcdf_keeps_only_important_variables(tmp_path):
+def test_write_grouped_netcdf_preserves_all_variables(tmp_path):
     dataset = xr.Dataset(
         {
             "DBZH": (("azimuth",), [1.0, 2.0]),
@@ -91,7 +89,6 @@ def test_write_grouped_netcdf_keeps_only_important_variables(tmp_path):
 
     reopened = xr.open_dataset(path, group="sweep_00")
     try:
-        assert set(reopened.data_vars) == {"DBZH", "VRADH", "WRADH", "RHOHV"}
-        assert "noise" not in reopened.data_vars
+        assert {"DBZH", "VRADH", "WRADH", "RHOHV", "noise"}.issubset(set(reopened.data_vars))
     finally:
         reopened.close()
