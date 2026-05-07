@@ -59,6 +59,7 @@ def _define_paths(base_path):
     global GUI_GOES_RGB_DAY_CLOUD_PHASE_DIR, GUI_GOES_RGB_SIMPLE_WATER_VAPOR_DIR, GUI_GOES_RGB_SANDWICH_DIR
     global GUI_RAP_DIR, GUI_MAP_DIR, GUI_MANIFEST_JSON, GUI_COLORMAP_JSON
     global WPC_DIR, WPC_SFC_DIR, STORMCELL_JSON
+    global NEXRAD_LEVEL2_DIR, NEXRAD_LEVEL2_LOW_DIR, NEXRAD_LEVEL2_HIGH_DIR, NEXRAD_LEVEL2_MANIFEST_DIR
 
     base_path = Path(base_path)
     data_dir = base_path / "data"
@@ -181,6 +182,10 @@ def _define_paths(base_path):
     WPC_DIR = base_path / "wpc"
     WPC_SFC_DIR = WPC_DIR / "surface_analysis"
     STORMCELL_JSON = data_dir / "stormcells.json"
+    NEXRAD_LEVEL2_DIR = data_dir / "NEXRAD_Level2"
+    NEXRAD_LEVEL2_LOW_DIR = NEXRAD_LEVEL2_DIR / "Low"
+    NEXRAD_LEVEL2_HIGH_DIR = NEXRAD_LEVEL2_DIR / "High"
+    NEXRAD_LEVEL2_MANIFEST_DIR = NEXRAD_LEVEL2_DIR / "manifests"
     GUI_COLORMAP_JSON = _find_existing_path([
         Path.cwd() / "colormaps.json",
         Path(__file__).resolve().parents[1] / "EWMRS" / "colormaps.json",
