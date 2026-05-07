@@ -1,6 +1,18 @@
 """Shared NEXRAD Level-II ingest helpers."""
 
-__all__ = ["ingest_allowed_vcp_volume", "ingest_latest_allowed_vcp_scans"]
+from .main import NexradIngestService
+from .s3_chunks import NexradChunkStore
+from .vcp_probe import VolumeVcpProber
+from .weather_api import RadarStationCatalog
+
+__all__ = [
+    "NexradIngestService",
+    "NexradChunkStore",
+    "RadarStationCatalog",
+    "VolumeVcpProber",
+    "ingest_allowed_vcp_volume",
+    "ingest_latest_allowed_vcp_scans",
+]
 
 
 def ingest_allowed_vcp_volume(*args, **kwargs):
