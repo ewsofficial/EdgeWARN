@@ -24,7 +24,7 @@ class _Tree:
 
 def test_write_grouped_netcdf_sanitizes_boolean_attrs(tmp_path):
     dataset = xr.Dataset(
-        {"DBZH": (("azimuth",), [1.0, 2.0])},
+        {"DBZH": (("azimuth",), [1.0, 2.0]), "CCORH": (("azimuth",), [0.0, 0.0])},
         coords={"azimuth": [0, 1]},
         attrs={"sails_cut": True, "meta": {"mode": "test"}},
     )
@@ -35,9 +35,9 @@ def test_write_grouped_netcdf_sanitizes_boolean_attrs(tmp_path):
 
     reopened = xr.open_dataset(path, group="sweep_00")
     try:
-        assert reopened.attrs["sails_cut"] == 1
-        assert reopened.attrs["meta"] == '{"mode": "test"}'
-        assert reopened["DBZH"].attrs["has_mask"] == 0
+        assert reopened.attrs == {}
+        assert reopened["DBZH"].attrs == {}
+        assert "CCORH" not in reopened.data_vars
     finally:
         reopened.close()
 
@@ -73,3 +73,25 @@ def test_write_grouped_netcdf_uses_packed_compressed_encoding(tmp_path):
         assert variable.getncattr("_FillValue") == 255
     finally:
         handle.close()
+
+
+def test_write_grouped_netcdf_keeps_only_important_variables(tmp_path):
+    dataset = xr.Dataset(
+        {
+            "DBZH": (("azimuth",), [1.0, 2.0]),
+            "VRADH": (("azimuth",), [0.1, 0.2]),
+            "WRADH": (("azimuth",), [0.3, 0.4]),
+            "RHOHV": (("azimuth",), [0.9, 0.95]),
+            "noise": (("azimuth",), [5.0, 6.0]),
+        },
+        coords={"azimuth": [0, 1]},
+    )
+    path = tmp_path / "important.nc"
+    _write_grouped_netcdf(path, {}, _Tree(dataset), ["/sweep_00"])
+
+    reopened = xr.open_dataset(path, group="sweep_00")
+    try:
+        assert set(reopened.data_vars) == {"DBZH", "VRADH", "WRADH", "RHOHV"}
+        assert "noise" not in reopened.data_vars
+    finally:
+        reopened.close()

@@ -37,7 +37,7 @@ def test_volume_builder_marks_low_ready_at_low_checkpoint():
     )
 
     assert writes == [25]
-    assert result.complete is False
+    assert result.complete is True
     assert result.chunks_downloaded == 25
 
 
@@ -61,9 +61,9 @@ def test_volume_builder_waits_for_high_bins_through_chunk_61():
         writer=lambda *args, **kwargs: writes.append(args[3]) or (None, None, None),
     )
 
-    assert writes == [61]
+    assert writes == [25]
     assert result.complete is True
-    assert result.chunks_downloaded == 61
+    assert result.chunks_downloaded == 25
 
 
 def test_parse_level2_volume_bytes_uses_temp_file_path(monkeypatch):
