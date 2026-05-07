@@ -7,15 +7,49 @@ import xarray as xr
 import util.file as fs
 
 
+def _sanitize_attr_value(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (str, bytes, int, float)):
+        return value
+    if hasattr(value, "item"):
+        try:
+            return _sanitize_attr_value(value.item())
+        except Exception:
+            pass
+    if isinstance(value, (list, tuple, dict)):
+        return json.dumps(value)
+    return str(value)
+
+
+def _sanitize_attrs(attrs: dict):
+    sanitized = {}
+    for key, value in (attrs or {}).items():
+        sanitized_value = _sanitize_attr_value(value)
+        if sanitized_value is not None:
+            sanitized[key] = sanitized_value
+    return sanitized
+
+
+def _sanitize_dataset(dataset: xr.Dataset):
+    sanitized = dataset.copy(deep=False)
+    sanitized.attrs = _sanitize_attrs(dataset.attrs)
+    for variable_name in sanitized.variables:
+        sanitized[variable_name].attrs = _sanitize_attrs(sanitized[variable_name].attrs)
+    return sanitized
+
+
 def _empty_root_dataset(attrs: dict):
-    return xr.Dataset(attrs=attrs)
+    return xr.Dataset(attrs=_sanitize_attrs(attrs))
 
 
 def _write_grouped_netcdf(path: Path, root_attrs: dict, datatree, group_names: list[str]):
     path.parent.mkdir(parents=True, exist_ok=True)
     _empty_root_dataset(root_attrs).to_netcdf(path)
     for group_name in group_names:
-        dataset = datatree[group_name].to_dataset()
+        dataset = _sanitize_dataset(datatree[group_name].to_dataset())
         dataset.to_netcdf(path, mode="a", group=group_name.lstrip("/"))
 
 
