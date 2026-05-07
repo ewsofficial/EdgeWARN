@@ -11,10 +11,6 @@ from common.ingest.nexrad.config import (
 )
 from common.ingest.nexrad.models import RadarStationVcp
 
-_cache_lock = threading.Lock()
-_station_cache: dict[str, RadarStationVcp] = {}
-_station_cache_expires_at = 0.0
-
 
 def normalize_weather_vcp(value) -> int | None:
     if value is None:
@@ -50,57 +46,80 @@ def _build_station_record(feature: dict) -> RadarStationVcp | None:
     )
 
 
+class RadarStationCatalog:
+    def __init__(
+        self,
+        *,
+        url=WEATHER_RADAR_STATIONS_URL,
+        user_agent=WEATHER_API_USER_AGENT,
+        timeout_seconds=WEATHER_API_TIMEOUT_SECONDS,
+        cache_ttl_seconds=WEATHER_API_CACHE_TTL_SECONDS,
+    ):
+        self.url = url
+        self.user_agent = user_agent
+        self.timeout_seconds = timeout_seconds
+        self.cache_ttl_seconds = cache_ttl_seconds
+        self._cache_lock = threading.Lock()
+        self._station_cache: dict[str, RadarStationVcp] = {}
+        self._station_cache_expires_at = 0.0
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "User-Agent": self.user_agent,
+            "Accept": "application/geo+json",
+        }
+
+    def fetch_radar_station_vcps(self, *, session=None) -> dict[str, RadarStationVcp]:
+        headers = self._headers()
+        timeout = self.timeout_seconds
+        if session is None:
+            response = requests.get(self.url, headers=headers, timeout=timeout)
+        else:
+            response = session.get(self.url, headers=headers, timeout=timeout)
+
+        response.raise_for_status()
+        payload = response.json()
+        features = payload.get("features") or []
+        stations = {}
+        for feature in features:
+            station = _build_station_record(feature)
+            if station is not None:
+                stations[station.site] = station
+        return stations
+
+    def get_station_vcp(self, site, *, session=None, cache_ttl_seconds=None) -> RadarStationVcp | None:
+        site = str(site).upper()
+        now = time.time()
+        ttl = self.cache_ttl_seconds if cache_ttl_seconds is None else cache_ttl_seconds
+
+        with self._cache_lock:
+            if self._station_cache and now < self._station_cache_expires_at:
+                return self._station_cache.get(site)
+
+        stations = self.fetch_radar_station_vcps(session=session)
+        expires_at = now + max(ttl, 0)
+        with self._cache_lock:
+            self._station_cache.clear()
+            self._station_cache.update(stations)
+            self._station_cache_expires_at = expires_at
+            return self._station_cache.get(site)
+
+    def reset_station_vcp_cache(self):
+        with self._cache_lock:
+            self._station_cache.clear()
+            self._station_cache_expires_at = 0.0
+
+
+_DEFAULT_CATALOG = RadarStationCatalog()
+
+
 def fetch_radar_station_vcps(session=None) -> dict[str, RadarStationVcp]:
-    headers = {
-        "User-Agent": WEATHER_API_USER_AGENT,
-        "Accept": "application/geo+json",
-    }
-
-    if session is None:
-        response = requests.get(
-            WEATHER_RADAR_STATIONS_URL,
-            headers=headers,
-            timeout=WEATHER_API_TIMEOUT_SECONDS,
-        )
-    else:
-        response = session.get(
-            WEATHER_RADAR_STATIONS_URL,
-            headers=headers,
-            timeout=WEATHER_API_TIMEOUT_SECONDS,
-        )
-
-    response.raise_for_status()
-    payload = response.json()
-    features = payload.get("features") or []
-    stations = {}
-    for feature in features:
-        station = _build_station_record(feature)
-        if station is not None:
-            stations[station.site] = station
-    return stations
+    return _DEFAULT_CATALOG.fetch_radar_station_vcps(session=session)
 
 
 def get_station_vcp(site, *, cache_ttl_seconds=WEATHER_API_CACHE_TTL_SECONDS, session=None) -> RadarStationVcp | None:
-    global _station_cache_expires_at
-
-    site = str(site).upper()
-    now = time.time()
-
-    with _cache_lock:
-        if _station_cache and now < _station_cache_expires_at:
-            return _station_cache.get(site)
-
-    stations = fetch_radar_station_vcps(session=session)
-    expires_at = now + max(cache_ttl_seconds, 0)
-    with _cache_lock:
-        _station_cache.clear()
-        _station_cache.update(stations)
-        _station_cache_expires_at = expires_at
-        return _station_cache.get(site)
+    return _DEFAULT_CATALOG.get_station_vcp(site, session=session, cache_ttl_seconds=cache_ttl_seconds)
 
 
 def reset_station_vcp_cache():
-    global _station_cache_expires_at
-    with _cache_lock:
-        _station_cache.clear()
-        _station_cache_expires_at = 0.0
+    _DEFAULT_CATALOG.reset_station_vcp_cache()
