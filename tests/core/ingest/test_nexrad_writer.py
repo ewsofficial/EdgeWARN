@@ -1,6 +1,8 @@
+import netCDF4
+import numpy as np
 import xarray as xr
 
-from common.ingest.nexrad.writer import _write_grouped_netcdf
+from common.ingest.nexrad.writer import _dataset_encoding, _write_grouped_netcdf
 
 
 class _Group:
@@ -38,3 +40,36 @@ def test_write_grouped_netcdf_sanitizes_boolean_attrs(tmp_path):
         assert reopened["DBZH"].attrs["has_mask"] == 0
     finally:
         reopened.close()
+
+
+def test_dataset_encoding_preserves_packed_storage_and_fill_value():
+    data = xr.DataArray(np.array([[1.0, np.nan]], dtype=np.float64), dims=("azimuth", "range"))
+    data.encoding = {"dtype": np.dtype("uint8"), "scale_factor": 0.5, "add_offset": -33.0, "_FillValue": None}
+    dataset = xr.Dataset({"DBZH": data})
+
+    encoding = _dataset_encoding(dataset)
+
+    assert encoding["DBZH"]["dtype"] == np.dtype("uint8")
+    assert encoding["DBZH"]["scale_factor"] == 0.5
+    assert encoding["DBZH"]["add_offset"] == -33.0
+    assert encoding["DBZH"]["_FillValue"] == 255
+    assert encoding["DBZH"]["zlib"] is True
+
+
+def test_write_grouped_netcdf_uses_packed_compressed_encoding(tmp_path):
+    data = xr.DataArray(np.array([[1.0, np.nan]], dtype=np.float64), dims=("azimuth", "range"))
+    data.encoding = {"dtype": np.dtype("uint8"), "scale_factor": 0.5, "add_offset": -33.0, "_FillValue": None}
+    dataset = xr.Dataset({"DBZH": data}, attrs={"sails_cut": False})
+
+    path = tmp_path / "packed.nc"
+    _write_grouped_netcdf(path, {}, _Tree(dataset), ["/sweep_00"])
+
+    handle = netCDF4.Dataset(path)
+    try:
+        variable = handle.groups["sweep_00"].variables["DBZH"]
+        filters = variable.filters()
+        assert variable.dtype == np.dtype("uint8")
+        assert filters["zlib"] is True
+        assert variable.getncattr("_FillValue") == 255
+    finally:
+        handle.close()

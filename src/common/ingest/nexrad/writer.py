@@ -2,6 +2,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+import numpy as np
 import xarray as xr
 
 import util.file as fs
@@ -41,6 +42,52 @@ def _sanitize_dataset(dataset: xr.Dataset):
     return sanitized
 
 
+def _default_fill_value(dtype):
+    dtype = np.dtype(dtype)
+    if dtype.kind == "u":
+        return np.iinfo(dtype).max
+    if dtype.kind == "i":
+        return np.iinfo(dtype).min
+    if dtype.kind == "f":
+        return np.nan
+    return None
+
+
+def _has_missing_values(data_array):
+    if not np.issubdtype(data_array.dtype, np.floating):
+        return False
+    return bool(np.isnan(data_array.values).any())
+
+
+def _build_variable_encoding(data_array):
+    encoding = {}
+    source_encoding = data_array.encoding or {}
+
+    for key in ("dtype", "scale_factor", "add_offset", "_FillValue"):
+        if key in source_encoding:
+            encoding[key] = source_encoding[key]
+
+    target_dtype = encoding.get("dtype")
+    if target_dtype is not None and encoding.get("_FillValue") is None:
+        default_fill = _default_fill_value(target_dtype)
+        if default_fill is not None:
+            encoding["_FillValue"] = default_fill
+
+    if data_array.ndim > 0 and data_array.dtype.kind in {"f", "i", "u"}:
+        encoding["zlib"] = True
+        encoding["complevel"] = 4
+        encoding["shuffle"] = True
+
+    return encoding
+
+
+def _dataset_encoding(dataset: xr.Dataset):
+    return {
+        variable_name: _build_variable_encoding(dataset[variable_name])
+        for variable_name in dataset.data_vars
+    }
+
+
 def _empty_root_dataset(attrs: dict):
     return xr.Dataset(attrs=_sanitize_attrs(attrs))
 
@@ -50,7 +97,12 @@ def _write_grouped_netcdf(path: Path, root_attrs: dict, datatree, group_names: l
     _empty_root_dataset(root_attrs).to_netcdf(path)
     for group_name in group_names:
         dataset = _sanitize_dataset(datatree[group_name].to_dataset())
-        dataset.to_netcdf(path, mode="a", group=group_name.lstrip("/"))
+        dataset.to_netcdf(
+            path,
+            mode="a",
+            group=group_name.lstrip("/"),
+            encoding=_dataset_encoding(dataset),
+        )
 
 
 def write_outputs(probe, parsed_volume, classified_sweeps, chunks_downloaded, *, base_dir=None):
