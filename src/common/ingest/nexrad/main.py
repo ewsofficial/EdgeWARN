@@ -1,10 +1,18 @@
 import argparse
+import asyncio
+from contextlib import asynccontextmanager
 import re
 from pathlib import Path
 
 import util.file as fs
-from common.ingest.nexrad.config import ALLOWED_VCPS, LOW_CHECKPOINT_HINT
+from common.ingest.nexrad.config import ALLOWED_VCPS, CHUNKS_BUCKET, LOW_CHECKPOINT_HINT
 from common.ingest.nexrad.models import NexradIngestResult
+from common.ingest.nexrad.s3_async import (
+    async_get_chunk_bytes,
+    async_list_recent_volume_ids,
+    async_list_volume_chunks,
+    get_unsigned_s3_client_async,
+)
 from common.ingest.nexrad.s3_chunks import get_chunk_bytes, get_unsigned_s3_client, list_recent_volume_ids, list_volume_chunks
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
@@ -26,12 +34,23 @@ class NexradIngestService:
         volume_lister=None,
         station_fetcher=None,
         volume_prober=None,
+        async_chunk_lister=None,
+        async_chunk_fetcher=None,
+        async_volume_lister=None,
+        max_site_tasks=16,
+        max_chunk_downloads=32,
     ):
         self.chunk_lister = chunk_lister or list_volume_chunks
         self.chunk_fetcher = chunk_fetcher or get_chunk_bytes
         self.volume_lister = volume_lister or list_recent_volume_ids
         self.station_fetcher = station_fetcher or fetch_radar_station_vcps
         self.volume_prober = volume_prober or probe_volume_vcp
+        self.async_chunk_lister = async_chunk_lister or async_list_volume_chunks
+        self.async_chunk_fetcher = async_chunk_fetcher or async_get_chunk_bytes
+        self.async_volume_lister = async_volume_lister or async_list_recent_volume_ids
+        self.max_site_tasks = max_site_tasks
+        self.max_chunk_downloads = max_chunk_downloads
+        self._stream_chunk_downloads = async_chunk_fetcher is None
 
     @staticmethod
     def _volume_timestamp(volume_id: str, chunks) -> str:
@@ -62,6 +81,43 @@ class NexradIngestService:
             if local_path.exists():
                 continue
             local_path.write_bytes(self.chunk_fetcher(chunk, s3_client=s3_client))
+
+    async def _download_chunks_to_site_dir_async(self, site: str, volume_id: str, chunks, *, s3_client):
+        import aiofiles
+
+        outdir = self._chunk_output_dir(site, volume_id, chunks)
+        outdir.mkdir(parents=True, exist_ok=True)
+        semaphore = asyncio.Semaphore(self.max_chunk_downloads)
+
+        async def _download_one(chunk):
+            filename = chunk.key.split("/")[-1]
+            local_path = outdir / filename
+            if local_path.exists():
+                return
+
+            async with semaphore:
+                async with aiofiles.open(local_path, "wb") as file_obj:
+                    if self._stream_chunk_downloads:
+                        response = await s3_client.get_object(Bucket=CHUNKS_BUCKET, Key=chunk.key)
+                        body = response["Body"]
+                        async for data in body.iter_chunks():
+                            await file_obj.write(data)
+                        return
+
+                    payload = await self.async_chunk_fetcher(chunk, s3_client=s3_client)
+                    if isinstance(payload, (bytes, bytearray)):
+                        await file_obj.write(payload)
+                        return
+
+                    body = payload["Body"] if isinstance(payload, dict) else payload
+                    if hasattr(body, "iter_chunks"):
+                        async for data in body.iter_chunks():
+                            await file_obj.write(data)
+                        return
+
+                    await file_obj.write(await body.read())
+
+        await asyncio.gather(*(_download_one(chunk) for chunk in chunks))
 
     @staticmethod
     def _required_low_chunks(chunks):
@@ -129,6 +185,70 @@ class NexradIngestService:
             complete=True,
         )
 
+    async def ingest_allowed_vcp_volume_async(
+        self,
+        site,
+        volume_id,
+        *,
+        base_dir=None,
+        s3_client=None,
+        weather_session=None,
+        parser=None,
+        writer=None,
+        station_vcp=None,
+    ):
+        _ = (parser, writer)
+        if base_dir:
+            fs.initialize_filesystem(base_dir)
+
+        async with self._async_s3_client(s3_client) as active_s3_client:
+            if station_vcp is None:
+                probe = await asyncio.to_thread(
+                    self.volume_prober,
+                    site,
+                    volume_id,
+                    weather_session=weather_session,
+                )
+                if not probe.accepted:
+                    return None
+                probe_vcp = probe.vcp
+                probe_site = probe.site
+                probe_volume_id = probe.volume_id
+            else:
+                if station_vcp.vcp not in ALLOWED_VCPS:
+                    return None
+                probe_vcp = station_vcp.vcp
+                probe_site = str(site).upper()
+                probe_volume_id = str(volume_id)
+
+            chunks = await self.async_chunk_lister(site, volume_id, s3_client=active_s3_client)
+            needed_chunks = self._required_low_chunks(chunks)
+            if not needed_chunks:
+                return NexradIngestResult(
+                    site=probe_site,
+                    volume_id=probe_volume_id,
+                    vcp=probe_vcp,
+                    dynamic_scan_type=None,
+                    low_path=None,
+                    high_path=None,
+                    manifest_path=None,
+                    chunks_downloaded=0,
+                    complete=False,
+                )
+
+            await self._download_chunks_to_site_dir_async(site, volume_id, needed_chunks, s3_client=active_s3_client)
+            return NexradIngestResult(
+                site=probe_site,
+                volume_id=probe_volume_id,
+                vcp=probe_vcp,
+                dynamic_scan_type=None,
+                low_path=None,
+                high_path=None,
+                manifest_path=None,
+                chunks_downloaded=len(needed_chunks),
+                complete=True,
+            )
+
     def ingest_latest_allowed_vcp_scans(
         self,
         sites,
@@ -156,6 +276,92 @@ class NexradIngestService:
                 if result is not None:
                     results.append(result)
         return results
+
+    async def ingest_latest_allowed_vcp_scans_async(
+        self,
+        sites,
+        *,
+        max_volumes_per_site=1,
+        base_dir=None,
+        s3_client=None,
+        weather_session=None,
+        station_vcps=None,
+    ):
+        if base_dir:
+            fs.initialize_filesystem(base_dir)
+
+        if station_vcps is None:
+            station_vcps = await asyncio.to_thread(self.station_fetcher, session=weather_session)
+
+        filtered_sites = [
+            str(site).upper()
+            for site in sites
+            if str(site).upper().startswith("K")
+            and station_vcps.get(str(site).upper()) is not None
+            and station_vcps[str(site).upper()].vcp in ALLOWED_VCPS
+        ]
+        if not filtered_sites:
+            return []
+
+        results = []
+        site_semaphore = asyncio.Semaphore(self.max_site_tasks)
+
+        async with self._async_s3_client(s3_client) as active_s3_client:
+            async def _list_site_volumes(site):
+                async with site_semaphore:
+                    volume_ids = await self.async_volume_lister(
+                        site,
+                        limit=max_volumes_per_site,
+                        s3_client=active_s3_client,
+                    )
+                    return site, volume_ids
+
+            listed_sites = await asyncio.gather(*(_list_site_volumes(site) for site in filtered_sites), return_exceptions=True)
+
+            volume_work = []
+            for listed_site in listed_sites:
+                if isinstance(listed_site, Exception):
+                    io_manager.write_warning(f"Skipping site after async volume-list failure: {listed_site}")
+                    continue
+
+                site, volume_ids = listed_site
+                station_vcp = station_vcps.get(site)
+                for volume_id in volume_ids:
+                    volume_work.append((site, volume_id, station_vcp))
+
+            gathered = await asyncio.gather(
+                *(
+                    self.ingest_allowed_vcp_volume_async(
+                        site,
+                        volume_id,
+                        base_dir=base_dir,
+                        s3_client=active_s3_client,
+                        weather_session=weather_session,
+                        station_vcp=station_vcp,
+                    )
+                    for site, volume_id, station_vcp in volume_work
+                ),
+                return_exceptions=True,
+            )
+
+        for (site, volume_id, _station_vcp), result in zip(volume_work, gathered):
+            if isinstance(result, Exception):
+                io_manager.write_warning(f"Skipping {site}/{volume_id} after async ingest failure: {result}")
+                continue
+            if result is not None:
+                results.append(result)
+
+        return results
+
+    @staticmethod
+    @asynccontextmanager
+    async def _async_s3_client(s3_client=None):
+        if s3_client is not None:
+            yield s3_client
+            return
+
+        async with get_unsigned_s3_client_async() as client:
+            yield client
 
     def list_allowed_vcp_sites(self, *, weather_session=None, stations=None):
         if stations is None:
@@ -211,6 +417,50 @@ def ingest_latest_allowed_vcp_scans(
     )
 
 
+async def ingest_allowed_vcp_volume_async(
+    site,
+    volume_id,
+    *,
+    base_dir=None,
+    s3_client=None,
+    weather_session=None,
+    parser=None,
+    writer=None,
+    station_vcp=None,
+):
+    service = NexradIngestService()
+    return await service.ingest_allowed_vcp_volume_async(
+        site,
+        volume_id,
+        base_dir=base_dir,
+        s3_client=s3_client,
+        weather_session=weather_session,
+        parser=parser,
+        writer=writer,
+        station_vcp=station_vcp,
+    )
+
+
+async def ingest_latest_allowed_vcp_scans_async(
+    sites,
+    *,
+    max_volumes_per_site=1,
+    base_dir=None,
+    s3_client=None,
+    weather_session=None,
+    station_vcps=None,
+):
+    service = NexradIngestService()
+    return await service.ingest_latest_allowed_vcp_scans_async(
+        sites,
+        max_volumes_per_site=max_volumes_per_site,
+        base_dir=base_dir,
+        s3_client=s3_client,
+        weather_session=weather_session,
+        station_vcps=station_vcps,
+    )
+
+
 def list_allowed_vcp_sites(*, weather_session=None, stations=None):
     service = NexradIngestService()
     return service.list_allowed_vcp_sites(weather_session=weather_session, stations=stations)
@@ -236,16 +486,28 @@ def main():
         io_manager.write_info(f"Skipping {args.site}: only radar stations starting with 'K' are processed")
         return
 
-    stations = None if args.volume_id else fetch_radar_station_vcps()
+    stations = fetch_radar_station_vcps()
 
     if args.volume_id:
         station_vcp = stations.get(str(args.site).upper()) if stations is not None else None
-        result = service.ingest_allowed_vcp_volume(
-            args.site,
-            args.volume_id,
-            base_dir=args.base_dir,
-            station_vcp=station_vcp,
-        )
+        try:
+            result = asyncio.run(
+                service.ingest_allowed_vcp_volume_async(
+                    args.site,
+                    args.volume_id,
+                    base_dir=args.base_dir,
+                    station_vcp=station_vcp,
+                )
+            )
+        except Exception as exc:
+            io_manager.write_error(f"Async NEXRAD ingest failed for {args.site.upper()}/{args.volume_id}: {exc}")
+            io_manager.write_info("Falling back to synchronous NEXRAD ingest...")
+            result = service.ingest_allowed_vcp_volume(
+                args.site,
+                args.volume_id,
+                base_dir=args.base_dir,
+                station_vcp=station_vcp,
+            )
         if result is None:
             io_manager.write_info(
                 f"Skipped {args.site.upper()}/{args.volume_id}: station VCP is not allowed or unavailable from weather.gov"
@@ -268,12 +530,24 @@ def main():
         io_manager.write_info("No radar sites with allowed VCPs were available from weather.gov in this pass.")
         return
 
-    results = service.ingest_latest_allowed_vcp_scans(
-        sites,
-        max_volumes_per_site=args.max_volumes_per_site,
-        base_dir=args.base_dir,
-        station_vcps=stations,
-    )
+    try:
+        results = asyncio.run(
+            service.ingest_latest_allowed_vcp_scans_async(
+                sites,
+                max_volumes_per_site=args.max_volumes_per_site,
+                base_dir=args.base_dir,
+                station_vcps=stations,
+            )
+        )
+    except Exception as exc:
+        io_manager.write_error(f"Async latest-scan NEXRAD ingest failed: {exc}")
+        io_manager.write_info("Falling back to synchronous NEXRAD ingest...")
+        results = service.ingest_latest_allowed_vcp_scans(
+            sites,
+            max_volumes_per_site=args.max_volumes_per_site,
+            base_dir=args.base_dir,
+            station_vcps=stations,
+        )
     if not results:
         if args.site:
             io_manager.write_info(
