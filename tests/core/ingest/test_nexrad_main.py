@@ -6,7 +6,7 @@ from common.ingest.nexrad.models import ChunkKey
 from common.ingest.nexrad.main import ingest_allowed_vcp_volume
 
 
-def test_ingest_downloads_chunks_to_site_chunks_dir(tmp_path):
+def test_ingest_downloads_chunks_to_timestamped_site_chunks_dir(tmp_path):
     fs.initialize_filesystem(tmp_path)
 
     chunks = [
@@ -41,7 +41,7 @@ def test_ingest_downloads_chunks_to_site_chunks_dir(tmp_path):
     assert result.low_path is None
     assert result.high_path is None
     assert result.manifest_path is None
-    outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "chunks"
+    outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks"
     assert (outdir / "20260507-150000-001-S").read_bytes() == b"chunk1"
     assert (outdir / "20260507-150000-025-I").read_bytes() == b"chunk25"
     assert not (outdir / "20260507-150000-026-I").exists()

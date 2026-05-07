@@ -1,4 +1,5 @@
 import argparse
+import re
 from pathlib import Path
 
 import util.file as fs
@@ -11,12 +12,33 @@ from util.io import IOManager
 io_manager = IOManager("[NEXRAD]")
 
 
-def _chunk_output_dir(site: str) -> Path:
-    return fs.NEXRAD_LEVEL2_DIR / site.upper() / "chunks"
+_TIMESTAMP_RE = re.compile(r"(?P<stamp>[0-9]{8}-[0-9]{6})")
+_VOLUME_ID_TS_RE = re.compile(r"(?P<date>[0-9]{8})[_-](?P<time>[0-9]{6})")
 
 
-def _download_chunks_to_site_dir(site: str, chunks, *, s3_client):
-    outdir = _chunk_output_dir(site)
+def _volume_timestamp(volume_id: str, chunks) -> str:
+    # Only inspect the first chunk's filename for a timestamp
+    if chunks:
+        first = chunks[0]
+        filename = first.key.rsplit("/", 1)[-1]
+        match = _TIMESTAMP_RE.search(filename)
+        if match:
+            return match.group("stamp")
+
+    # Fall back to parsing the volume_id for a timestamp
+    match = _VOLUME_ID_TS_RE.search(volume_id)
+    if match:
+        return f"{match.group('date')}-{match.group('time')}"
+    return volume_id
+
+
+def _chunk_output_dir(site: str, volume_id: str, chunks) -> Path:
+    timestamp = _volume_timestamp(volume_id, chunks)
+    return fs.NEXRAD_LEVEL2_DIR / site.upper() / timestamp / "chunks"
+
+
+def _download_chunks_to_site_dir(site: str, volume_id: str, chunks, *, s3_client):
+    outdir = _chunk_output_dir(site, volume_id, chunks)
     outdir.mkdir(parents=True, exist_ok=True)
     for chunk in chunks:
         filename = chunk.key.split("/")[-1]
@@ -58,7 +80,7 @@ def ingest_allowed_vcp_volume(site, volume_id, *, base_dir=None, s3_client=None,
             complete=False,
         )
 
-    _download_chunks_to_site_dir(site, needed_chunks, s3_client=s3_client)
+    _download_chunks_to_site_dir(site, volume_id, needed_chunks, s3_client=s3_client)
     return NexradIngestResult(
         site=probe.site,
         volume_id=probe.volume_id,
