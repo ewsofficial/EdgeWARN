@@ -5,6 +5,7 @@ from botocore import UNSIGNED
 from botocore.client import Config
 from util.io import IOManager
 import util.file as fs
+from common.ingest.aws_async_compat import ensure_aiobotocore_endpoint_compat
 from common.ingest.synoptic.config import RAP_BUCKET, RAP_FILE_PATTERN, RAP_DIR_PATTERN
 from common.ingest.synoptic.s3_sync import SynopticFileDownloader
 from common.ingest.synoptic.s3_async import AsyncSynopticFileDownloader
@@ -46,6 +47,7 @@ async def download_synoptic_async(dt, bucket, file_pattern, dir_pattern, out_dir
     """
     s3_key, local_path = _build_synoptic_s3_params(dt, file_pattern, dir_pattern, out_dir)
 
+    ensure_aiobotocore_endpoint_compat()
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         downloader = AsyncSynopticFileDownloader(bucket, io_manager, s3_client=s3)
         return await downloader.async_download_file(s3_key, local_path)

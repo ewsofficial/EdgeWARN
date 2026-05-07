@@ -19,6 +19,7 @@ import asyncio
 import aioboto3
 from botocore import UNSIGNED
 from botocore.client import Config
+from common.ingest.aws_async_compat import ensure_aiobotocore_endpoint_compat
 
 from util.io import IOManager, PerformanceTimer
 from util.performance import tracker as perf_tracker
@@ -103,6 +104,7 @@ async def download_all_files_async_internal(dt, max_entries, target_modifiers=No
     trace_id = f"INGEST-{uuid.uuid4().hex[:8]}"
     
     # Create shared async S3 client for all operations
+    ensure_aiobotocore_endpoint_compat()
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         with PerformanceTimer(io_manager, "MRMS_Ingest_Total", trace_id):
             io_manager.write_debug(f"[{trace_id}] Starting async downloads...")
@@ -618,6 +620,7 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
     if not goes_modifiers_list:
         return
 
+    ensure_aiobotocore_endpoint_compat()
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         io_manager.write_info(f"[{trace_id}] Starting async GOES-19 downloads...")
         shared_channel_files_by_product = {}

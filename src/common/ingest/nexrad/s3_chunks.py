@@ -46,11 +46,11 @@ class NexradChunkStore:
         prefix = f"{site.upper()}/"
         paginator = client.get_paginator("list_objects_v2")
         volume_ids = set()
-        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                parts = key.split("/", 2)
-                if len(parts) >= 2 and parts[1]:
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter="/"):
+            for common_prefix in page.get("CommonPrefixes", []):
+                child_prefix = common_prefix.get("Prefix", "")
+                parts = child_prefix.rstrip("/").split("/", 1)
+                if len(parts) == 2 and parts[1]:
                     volume_ids.add(parts[1])
         return sorted(volume_ids, reverse=True)[:limit]
 
