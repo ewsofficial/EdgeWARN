@@ -1,5 +1,8 @@
+import sys
+import types
+
 from common.ingest.nexrad.models import ChunkKey, ParsedVolume, SweepInfo, VolumeProbe
-from common.ingest.nexrad.volume_builder import build_low_high_outputs
+from common.ingest.nexrad.volume_builder import build_low_high_outputs, parse_level2_volume_bytes
 
 
 def _probe():
@@ -61,3 +64,65 @@ def test_volume_builder_waits_for_high_bins_through_chunk_61():
     assert writes == [61]
     assert result.complete is True
     assert result.chunks_downloaded == 61
+
+
+def test_parse_level2_volume_bytes_uses_temp_file_path(monkeypatch):
+    captured = {}
+
+    class _Angle:
+        def __init__(self, value):
+            self.values = self
+            self._value = value
+
+        def item(self):
+            return self._value
+
+    class _Dataset:
+        def __init__(self):
+            self.sizes = {"azimuth": 720}
+            self.attrs = {"prt_mode": "contiguous_surveillance"}
+
+        def get(self, key):
+            if key == "sweep_fixed_angle":
+                return _Angle(0.5)
+            return None
+
+    class _Group:
+        def to_dataset(self):
+            return _Dataset()
+
+    class _Tree:
+        attrs = {"scan_name": "VCP-215", "scan_strategy": "SAILS x 1"}
+        groups = ["/sweep_00"]
+
+        def __getitem__(self, key):
+            assert key == "/sweep_00"
+            return _Group()
+
+    def fake_opener(path):
+        captured["arg_type"] = type(path)
+        captured["path"] = path
+        with open(path, "rb") as handle:
+            captured["payload"] = handle.read()
+        return _Tree()
+
+    fake_xradar = types.SimpleNamespace(
+        io=types.SimpleNamespace(
+            backends=types.SimpleNamespace(
+                nexrad_level2=types.SimpleNamespace(
+                    open_nexradlevel2_datatree=fake_opener,
+                )
+            )
+        )
+    )
+    monkeypatch.setitem(sys.modules, "xradar", fake_xradar)
+
+    parsed = parse_level2_volume_bytes(b"example-level2-bytes")
+
+    assert captured["arg_type"] is str
+    assert captured["path"].endswith(".ar2v")
+    assert captured["payload"] == b"example-level2-bytes"
+    assert parsed.scan_name == "VCP-215"
+    assert parsed.dynamic_scan_type == "SAILS x 1"
+    assert len(parsed.sweeps) == 1
+    assert parsed.sweeps[0].azimuth_count == 720

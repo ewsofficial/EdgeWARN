@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import io
+import os
+import tempfile
 import warnings
 
 from common.ingest.nexrad.config import (
@@ -28,9 +29,18 @@ def parse_level2_volume_bytes(volume_bytes: bytes) -> ParsedVolume:
     if opener is None:
         raise RuntimeError("xradar nexrad Level-II DataTree opener is unavailable")
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        datatree = opener(io.BytesIO(volume_bytes))
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".ar2v") as temp_file:
+            temp_file.write(volume_bytes)
+            temp_path = temp_file.name
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            datatree = opener(temp_path)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
 
     root_attrs = getattr(datatree, "attrs", {}) or {}
     scan_name = root_attrs.get("scan_name") or root_attrs.get("volume_scan_pattern")
