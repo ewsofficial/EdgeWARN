@@ -80,7 +80,7 @@ def test_parse_level2_volume_bytes_uses_temp_file_path(monkeypatch):
     class _Dataset:
         def __init__(self):
             self.sizes = {"azimuth": 720}
-            self.attrs = {"prt_mode": "contiguous_surveillance"}
+            self.attrs = {"waveform_type": "contiguous_surveillance"}
 
         def get(self, key):
             if key == "sweep_fixed_angle":
@@ -126,3 +126,4 @@ def test_parse_level2_volume_bytes_uses_temp_file_path(monkeypatch):
     assert parsed.dynamic_scan_type == "SAILS x 1"
     assert len(parsed.sweeps) == 1
     assert parsed.sweeps[0].azimuth_count == 720
+    assert parsed.sweeps[0].waveform == "contiguous_surveillance"

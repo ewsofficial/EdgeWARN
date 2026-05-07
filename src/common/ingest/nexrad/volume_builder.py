@@ -54,7 +54,11 @@ def parse_level2_volume_bytes(volume_bytes: bytes) -> ParsedVolume:
             continue
         fixed_angle = float(angle_var.values.item())
         azimuth_count = int(dataset.sizes.get("azimuth", dataset.sizes.get("time", 0)))
-        waveform = dataset.attrs.get("prt_mode") or dataset.attrs.get("sweep_mode")
+        waveform = (
+            dataset.attrs.get("waveform_type")
+            or dataset.attrs.get("prt_mode")
+            or dataset.attrs.get("sweep_mode")
+        )
         sweeps.append(
             SweepInfo(
                 index=index,

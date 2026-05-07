@@ -9,8 +9,12 @@ def _closest_bin(angle: float, bins, tolerance=ANGLE_DEDUP_TOLERANCE_DEG):
     return min(candidates, key=lambda target: abs(angle - target))
 
 
+def _waveform_key(waveform):
+    return str(waveform or "").strip().lower()
+
+
 def classify_sweeps(sweeps: list[SweepInfo], *, dynamic_scan_type=None):
-    seen_low_bins = set()
+    seen_low_bin_waveforms = set()
     seen_high_tilt = False
     dynamic_scan_type = (dynamic_scan_type or "").upper()
     repeated_low_is_supplemental = any(token in dynamic_scan_type for token in ("SAILS", "MRLE", "MESO"))
@@ -22,9 +26,10 @@ def classify_sweeps(sweeps: list[SweepInfo], *, dynamic_scan_type=None):
         supplemental = False
 
         if low_bin is not None:
-            if low_bin not in seen_low_bins:
+            low_signature = (low_bin, _waveform_key(sweep.waveform))
+            if low_signature not in seen_low_bin_waveforms:
                 bucket = "low"
-                seen_low_bins.add(low_bin)
+                seen_low_bin_waveforms.add(low_signature)
             elif seen_high_tilt or repeated_low_is_supplemental or sweep.fixed_angle <= LOW_MAX_ANGLE_DEG:
                 bucket = "excluded"
                 supplemental = True
