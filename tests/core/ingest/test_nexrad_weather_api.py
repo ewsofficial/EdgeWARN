@@ -1,0 +1,75 @@
+from common.ingest.nexrad import weather_api
+
+
+class _Response:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _Session:
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = 0
+
+    def get(self, url, headers=None, timeout=None):
+        self.calls += 1
+        return _Response(self.payload)
+
+
+def test_normalize_weather_vcp_accepts_r_prefixed_values():
+    assert weather_api.normalize_weather_vcp("R215") == 215
+    assert weather_api.normalize_weather_vcp("R212") == 212
+    assert weather_api.normalize_weather_vcp("R12") == 12
+    assert weather_api.normalize_weather_vcp("215") == 215
+    assert weather_api.normalize_weather_vcp("VCP-215") == 215
+    assert weather_api.normalize_weather_vcp(12) == 12
+
+
+def test_normalize_weather_vcp_rejects_malformed_values():
+    assert weather_api.normalize_weather_vcp(None) is None
+    assert weather_api.normalize_weather_vcp("") is None
+    assert weather_api.normalize_weather_vcp("R35X") is None
+    assert weather_api.normalize_weather_vcp("ABC") is None
+
+
+def test_fetch_radar_station_vcps_indexes_by_station_id():
+    payload = {
+        "features": [
+            {
+                "properties": {
+                    "id": "KDDC",
+                    "timeOfLastLevelTwoVolumeScan": "2026-05-06T21:00:00Z",
+                    "rda": {"properties": {"volumeCoveragePattern": "R215", "timestamp": "2026-05-06T20:59:00Z"}},
+                }
+            },
+            {"properties": {"id": "TXYZ", "rda": {"properties": {}}}},
+        ]
+    }
+
+    stations = weather_api.fetch_radar_station_vcps(session=_Session(payload))
+    assert stations["KDDC"].vcp == 215
+    assert stations["KDDC"].raw_vcp == "R215"
+    assert stations["TXYZ"].vcp is None
+
+
+def test_get_station_vcp_uses_short_ttl_cache():
+    payload = {
+        "features": [
+            {"properties": {"id": "KDDC", "rda": {"properties": {"volumeCoveragePattern": "R215"}}}},
+        ]
+    }
+    session = _Session(payload)
+    weather_api.reset_station_vcp_cache()
+
+    first = weather_api.get_station_vcp("kddc", cache_ttl_seconds=30, session=session)
+    second = weather_api.get_station_vcp("KDDC", cache_ttl_seconds=30, session=session)
+
+    assert first.vcp == 215
+    assert second.vcp == 215
+    assert session.calls == 1
