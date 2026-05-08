@@ -72,3 +72,13 @@ class NexradIngestResult:
     manifest_path: Path | None
     chunks_downloaded: int
     complete: bool
+
+
+@dataclass(frozen=True)
+class NexradCoordinatorResult:
+    site: str
+    latest_scan_time: str | None
+    vcp: int | None
+    volume_id: str | None
+    action: str
+    chunks_downloaded: int = 0
