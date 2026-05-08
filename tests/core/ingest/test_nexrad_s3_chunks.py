@@ -1,7 +1,7 @@
 import pytest
 
 from common.ingest.nexrad.s3_async import AsyncNexradChunkStore, async_get_chunk_bytes
-from common.ingest.nexrad.s3_chunks import parse_chunk_key
+from common.ingest.nexrad.s3_chunks import order_recent_volume_ids, parse_chunk_key
 
 
 def test_parse_chunk_key_supports_timestamped_chunk_format():
@@ -62,6 +62,10 @@ async def test_async_list_recent_volume_ids_collects_unique_sorted_volume_ids():
 
     assert await store.async_list_recent_volume_ids("ktlh", limit=2) == ["003", "002"]
     assert client.paginator.calls == [{"Bucket": "bucket", "Prefix": "KTLH/", "Delimiter": "/"}]
+
+
+def test_order_recent_volume_ids_prefers_wrapped_ids_before_limiting():
+    assert order_recent_volume_ids(["999", "998", "2", "1"])[:3] == ["2", "1", "999"]
 
 
 @pytest.mark.asyncio

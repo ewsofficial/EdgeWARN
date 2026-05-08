@@ -58,6 +58,29 @@ def test_fetch_radar_station_vcps_indexes_by_station_id():
     assert stations["TXYZ"].vcp is None
 
 
+def test_fetch_radar_station_vcps_reads_live_latency_timestamp_shape():
+    payload = {
+        "features": [
+            {
+                "properties": {
+                    "id": "KEPZ",
+                    "latency": {"levelTwoLastReceivedTime": "2026-05-08T17:24:58+00:00"},
+                    "rda": {
+                        "timestamp": "2026-05-08T17:22:56+00:00",
+                        "properties": {"volumeCoveragePattern": "R215"},
+                    },
+                }
+            }
+        ]
+    }
+
+    stations = weather_api.fetch_radar_station_vcps(session=_Session(payload))
+
+    assert stations["KEPZ"].vcp == 215
+    assert stations["KEPZ"].rda_timestamp == "2026-05-08T17:22:56+00:00"
+    assert stations["KEPZ"].level_two_last_received_time == "2026-05-08T17:24:58+00:00"
+
+
 def test_get_station_vcp_uses_short_ttl_cache():
     payload = {
         "features": [

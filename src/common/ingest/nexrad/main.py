@@ -603,17 +603,58 @@ async def ingest_latest_allowed_vcp_scans_async(
     )
 
 
+async def ingest_latest_station_scans_async(
+    sites=None,
+    *,
+    base_dir=None,
+    s3_client=None,
+    weather_session=None,
+    max_candidate_volumes_per_site=3,
+):
+    from common.ingest.nexrad.coordinator import ingest_latest_station_scans_async as _impl
+
+    return await _impl(
+        sites,
+        base_dir=base_dir,
+        s3_client=s3_client,
+        weather_session=weather_session,
+        max_candidate_volumes_per_site=max_candidate_volumes_per_site,
+    )
+
+
+async def poll_latest_station_scans_forever_async(
+    sites=None,
+    *,
+    base_dir=None,
+    s3_client=None,
+    weather_session=None,
+    max_candidate_volumes_per_site=3,
+    poll_interval_seconds=60,
+):
+    from common.ingest.nexrad.coordinator import poll_latest_station_scans_forever_async as _impl
+
+    await _impl(
+        sites,
+        base_dir=base_dir,
+        s3_client=s3_client,
+        weather_session=weather_session,
+        max_candidate_volumes_per_site=max_candidate_volumes_per_site,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+
+
 def list_allowed_vcp_sites(*, weather_session=None, stations=None):
     service = NexradIngestService()
     return service.list_allowed_vcp_sites(weather_session=weather_session, stations=stations)
 
 
 def _build_parser():
-    parser = argparse.ArgumentParser(description="Ingest VCP-gated NEXRAD Level-II chunks")
+    parser = argparse.ArgumentParser(description="Coordinate latest-scan NEXRAD Level-II chunk ingest")
     parser.add_argument("--site")
     parser.add_argument("--volume-id")
     parser.add_argument("--base-dir")
     parser.add_argument("--max-volumes-per-site", type=int, default=1)
+    parser.add_argument("--max-candidate-volumes-per-site", type=int, default=3)
     return parser
 
 
@@ -628,14 +669,13 @@ def main():
         io_manager.write_info(f"Skipping {args.site}: only radar stations starting with 'K' are processed")
         return
 
-    station_fetch_started_at = time.perf_counter()
-    stations = fetch_radar_station_vcps()
-    io_manager.write_perf(
-        f"[CLI] station_catalog_fetch: {service._format_perf_ms(station_fetch_started_at):.2f}ms "
-        f"(stations={len(stations)})"
-    )
-
     if args.volume_id:
+        station_fetch_started_at = time.perf_counter()
+        stations = fetch_radar_station_vcps()
+        io_manager.write_perf(
+            f"[CLI] station_catalog_fetch: {service._format_perf_ms(station_fetch_started_at):.2f}ms "
+            f"(stations={len(stations)})"
+        )
         station_vcp = stations.get(str(args.site).upper()) if stations is not None else None
         try:
             result = asyncio.run(
@@ -672,43 +712,30 @@ def main():
             )
         return
 
-    sites = [args.site] if args.site else service.list_allowed_vcp_sites(stations=stations)
-    if not sites:
-        io_manager.write_info("No radar sites with allowed VCPs were available from weather.gov in this pass.")
-        return
-
     try:
         results = asyncio.run(
-            service.ingest_latest_allowed_vcp_scans_async(
-                sites,
-                max_volumes_per_site=args.max_volumes_per_site,
+            ingest_latest_station_scans_async(
+                [args.site] if args.site else None,
                 base_dir=args.base_dir,
-                station_vcps=stations,
+                max_candidate_volumes_per_site=args.max_candidate_volumes_per_site,
             )
         )
     except Exception as exc:
-        io_manager.write_error(f"Async latest-scan NEXRAD ingest failed: {exc}")
-        io_manager.write_info("Falling back to synchronous NEXRAD ingest...")
-        results = service.ingest_latest_allowed_vcp_scans(
-            sites,
-            max_volumes_per_site=args.max_volumes_per_site,
-            base_dir=args.base_dir,
-            station_vcps=stations,
-        )
+        io_manager.write_error(f"Latest-scan NEXRAD coordinator failed: {exc}")
+        return
     if not results:
         if args.site:
             io_manager.write_info(
-                f"No accepted VCP volumes were ingested for {args.site.upper()} in this pass."
+                f"No latest-scan NEXRAD action was needed for {args.site.upper()} in this pass."
             )
         else:
-            io_manager.write_info("No accepted VCP volumes were ingested for any allowed-VCP radar site in this pass.")
+            io_manager.write_info("No latest-scan NEXRAD action was needed for any allowed-VCP radar site in this pass.")
         return
 
     for result in results:
         io_manager.write_info(
-            f"Processed {result.site}/{result.volume_id} VCP-{result.vcp}: "
-            f"chunks={result.chunks_downloaded}, complete={result.complete}, "
-            f"low={result.low_path}, high={result.high_path}, manifest={result.manifest_path}"
+            f"Site {result.site}: action={result.action}, latest_scan={result.latest_scan_time}, "
+            f"volume_id={result.volume_id}, vcp={result.vcp}, chunks_downloaded={result.chunks_downloaded}"
         )
 
 
