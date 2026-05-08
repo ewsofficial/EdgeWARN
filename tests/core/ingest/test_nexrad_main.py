@@ -1,9 +1,11 @@
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 import util.file as fs
+import common.ingest.nexrad.main as nexrad_main
 from common.ingest.nexrad.models import ChunkKey
 from common.ingest.nexrad.main import NexradIngestService, ingest_allowed_vcp_volume, list_allowed_vcp_sites
 
@@ -368,3 +370,65 @@ async def test_ingest_latest_allowed_vcp_scans_async_skips_per_volume_exceptions
 
 async def _return_chunks(chunks):
     return chunks
+
+
+@pytest.mark.asyncio
+async def test_ingest_latest_station_scans_async_forwards_to_coordinator():
+    captured = {}
+
+    async def _impl(sites=None, **kwargs):
+        captured["sites"] = sites
+        captured.update(kwargs)
+        return ["ok"]
+
+    with patch("common.ingest.nexrad.coordinator.ingest_latest_station_scans_async", side_effect=_impl):
+        result = await nexrad_main.ingest_latest_station_scans_async(
+            ["KTLH"],
+            base_dir="/tmp/base",
+            max_candidate_volumes_per_site=5,
+        )
+
+    assert result == ["ok"]
+    assert captured == {
+        "sites": ["KTLH"],
+        "base_dir": "/tmp/base",
+        "s3_client": None,
+        "weather_session": None,
+        "max_candidate_volumes_per_site": 5,
+    }
+
+
+def test_main_uses_latest_scan_coordinator_for_default_path():
+    args = SimpleNamespace(
+        site=None,
+        volume_id=None,
+        base_dir=None,
+        max_volumes_per_site=1,
+        max_candidate_volumes_per_site=4,
+    )
+    parsed_sites = []
+
+    async def _ingest_latest_station_scans_async(sites=None, **kwargs):
+        parsed_sites.append((sites, kwargs))
+        return [
+            SimpleNamespace(
+                site="KTLH",
+                action="skipped_already_downloaded",
+                latest_scan_time="20260507-150000",
+                volume_id="999",
+                vcp=212,
+                chunks_downloaded=0,
+            )
+        ]
+
+    parser = SimpleNamespace(parse_args=lambda: args)
+
+    with patch.object(nexrad_main, "_build_parser", return_value=parser), \
+         patch.object(nexrad_main, "ingest_latest_station_scans_async", side_effect=_ingest_latest_station_scans_async), \
+         patch.object(nexrad_main.io_manager, "write_info") as write_info, \
+         patch.object(nexrad_main.io_manager, "write_error") as write_error:
+        nexrad_main.main()
+
+    assert parsed_sites == [(None, {"base_dir": None, "max_candidate_volumes_per_site": 4})]
+    write_error.assert_not_called()
+    assert any("action=skipped_already_downloaded" in call.args[0] for call in write_info.call_args_list)

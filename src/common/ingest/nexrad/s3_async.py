@@ -8,7 +8,7 @@ from botocore.client import Config
 
 from common.ingest.aws_async_compat import ensure_aiobotocore_endpoint_compat
 from common.ingest.nexrad.config import CHUNKS_BUCKET
-from common.ingest.nexrad.s3_chunks import parse_chunk_key
+from common.ingest.nexrad.s3_chunks import order_recent_volume_ids, parse_chunk_key
 
 
 @asynccontextmanager
@@ -40,7 +40,7 @@ class AsyncNexradChunkStore:
                 parts = child_prefix.rstrip("/").split("/", 1)
                 if len(parts) == 2 and parts[1]:
                     volume_ids.add(parts[1])
-        return sorted(volume_ids, reverse=True)[:limit]
+        return order_recent_volume_ids(volume_ids)[:limit]
 
     async def async_list_volume_chunks(self, site: str, volume_id: str, *, s3_client=None):
         client = self._client(override=s3_client)

@@ -33,6 +33,40 @@ def parse_chunk_key(key: str) -> ChunkKey | None:
     )
 
 
+def order_recent_volume_ids(volume_ids):
+    ordered = sorted({str(volume_id) for volume_id in volume_ids}, reverse=True)
+    numeric_pairs = []
+    for volume_id in ordered:
+        if not volume_id.isdigit():
+            return ordered
+        numeric_pairs.append((volume_id, int(volume_id)))
+
+    numeric_values = [value for _text, value in numeric_pairs]
+    if 1 not in numeric_values or len(numeric_pairs) < 2:
+        return ordered
+
+    ascending = sorted(numeric_pairs, key=lambda item: item[1])
+    largest_gap = 0
+    gap_index = -1
+    for index in range(len(ascending) - 1):
+        gap = ascending[index + 1][1] - ascending[index][1]
+        if gap > largest_gap:
+            largest_gap = gap
+            gap_index = index
+
+    if largest_gap <= 1 or gap_index < 0:
+        return ordered
+
+    wrapped_segment = ascending[: gap_index + 1]
+    prior_segment = ascending[gap_index + 1 :]
+    if not wrapped_segment or wrapped_segment[0][1] != 1:
+        return ordered
+
+    wrapped_ordered = sorted(wrapped_segment, key=lambda item: item[1], reverse=True)
+    wrapped_ordered.extend(sorted(prior_segment, key=lambda item: item[1], reverse=True))
+    return [text for text, _value in wrapped_ordered]
+
+
 class NexradChunkStore:
     def __init__(self, *, s3_client=None, bucket=CHUNKS_BUCKET):
         self.s3_client = s3_client
@@ -52,7 +86,7 @@ class NexradChunkStore:
                 parts = child_prefix.rstrip("/").split("/", 1)
                 if len(parts) == 2 and parts[1]:
                     volume_ids.add(parts[1])
-        return sorted(volume_ids, reverse=True)[:limit]
+        return order_recent_volume_ids(volume_ids)[:limit]
 
     def list_volume_chunks(self, site: str, volume_id: str, *, s3_client=None):
         client = self._client(override=s3_client)

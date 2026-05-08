@@ -34,14 +34,19 @@ def _build_station_record(feature: dict) -> RadarStationVcp | None:
     if not site:
         return None
 
+    latency_properties = properties.get("latency") or {}
+    rda = properties.get("rda") or {}
     rda_properties = ((properties.get("rda") or {}).get("properties") or {})
     raw_vcp = rda_properties.get("volumeCoveragePattern")
     return RadarStationVcp(
         site=str(site).upper(),
         vcp=normalize_weather_vcp(raw_vcp),
         raw_vcp=raw_vcp,
-        rda_timestamp=rda_properties.get("timestamp"),
-        level_two_last_received_time=properties.get("timeOfLastLevelTwoVolumeScan"),
+        rda_timestamp=rda.get("timestamp") or rda_properties.get("timestamp"),
+        level_two_last_received_time=(
+            latency_properties.get("levelTwoLastReceivedTime")
+            or properties.get("timeOfLastLevelTwoVolumeScan")
+        ),
         properties=properties,
     )
 

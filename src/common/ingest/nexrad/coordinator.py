@@ -6,7 +6,6 @@ from common.ingest.nexrad.config import ALLOWED_VCPS
 from common.ingest.nexrad.main import (
     NexradIngestService,
     extract_volume_timestamp,
-    format_nexrad_timestamp,
     local_low_chunks_complete,
     parse_nexrad_timestamp,
     required_low_chunks,
@@ -42,7 +41,10 @@ class NexradScanCoordinator:
     def _format_perf_ms(started_at: float) -> float:
         return (time.perf_counter() - started_at) * 1000
 
-    async def _find_latest_volume(self, site, latest_scan_stamp, *, s3_client):
+    async def _find_latest_volume(self, site, *, s3_client):
+        latest_volume_id = None
+        latest_chunks = None
+        latest_stamp = None
         volume_ids = await self.async_volume_lister(
             site,
             limit=self.max_candidate_volumes_per_site,
@@ -50,9 +52,31 @@ class NexradScanCoordinator:
         )
         for volume_id in volume_ids:
             chunks = await self.async_chunk_lister(site, volume_id, s3_client=s3_client)
-            if extract_volume_timestamp(volume_id, chunks) == latest_scan_stamp:
-                return volume_id, chunks
-        return None, None
+            if not chunks:
+                continue
+
+            stamp = extract_volume_timestamp(volume_id, chunks)
+            if latest_stamp is None:
+                latest_volume_id = volume_id
+                latest_chunks = chunks
+                latest_stamp = stamp
+                continue
+
+            current_dt = parse_nexrad_timestamp(stamp)
+            latest_dt = parse_nexrad_timestamp(latest_stamp)
+            if current_dt is None or latest_dt is None:
+                if stamp > latest_stamp:
+                    latest_volume_id = volume_id
+                    latest_chunks = chunks
+                    latest_stamp = stamp
+                continue
+
+            if current_dt > latest_dt:
+                latest_volume_id = volume_id
+                latest_chunks = chunks
+                latest_stamp = stamp
+
+        return latest_volume_id, latest_chunks
 
     async def _process_site(self, site, station, *, base_dir=None, s3_client=None, weather_session=None):
         if not str(site).upper().startswith("K"):
@@ -61,14 +85,11 @@ class NexradScanCoordinator:
         if station.vcp not in ALLOWED_VCPS:
             return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=station.level_two_last_received_time, vcp=station.vcp, volume_id=None, action="skipped_invalid_vcp")
 
-        latest_scan_dt = parse_nexrad_timestamp(station.level_two_last_received_time)
-        latest_scan_stamp = format_nexrad_timestamp(latest_scan_dt)
-        if latest_scan_stamp is None:
-            return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=station.level_two_last_received_time, vcp=station.vcp, volume_id=None, action="skipped_missing_timestamp")
-
-        volume_id, chunks = await self._find_latest_volume(site, latest_scan_stamp, s3_client=s3_client)
+        volume_id, chunks = await self._find_latest_volume(site, s3_client=s3_client)
         if volume_id is None:
-            return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=latest_scan_stamp, vcp=station.vcp, volume_id=None, action="skipped_no_matching_volume")
+            return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=station.level_two_last_received_time, vcp=station.vcp, volume_id=None, action="skipped_no_matching_volume")
+
+        latest_scan_stamp = extract_volume_timestamp(volume_id, chunks)
 
         if local_low_chunks_complete(site, volume_id, chunks):
             return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=latest_scan_stamp, vcp=station.vcp, volume_id=volume_id, action="skipped_already_downloaded")
@@ -129,14 +150,14 @@ class NexradScanCoordinator:
 
         site_semaphore = asyncio.Semaphore(self.max_site_tasks)
 
-        async def _run(site, station):
+        async def _run(site, station, *, active_s3_client):
             async with site_semaphore:
                 try:
                     result = await self._process_site(
                         site,
                         station,
                         base_dir=base_dir,
-                        s3_client=s3_client,
+                        s3_client=active_s3_client,
                         weather_session=weather_session,
                     )
                     io_manager.write_info(
@@ -154,7 +175,13 @@ class NexradScanCoordinator:
                         action="site_error",
                     )
 
-        results = await asyncio.gather(*(_run(site, station) for site, station in site_items))
+        async with self._ingest_service._async_s3_client(s3_client) as active_s3_client:
+            results = await asyncio.gather(
+                *(
+                    _run(site, station, active_s3_client=active_s3_client)
+                    for site, station in site_items
+                )
+            )
         downloaded = sum(1 for result in results if result.action == "downloaded")
         io_manager.write_perf(
             f"[RUN] latest_station_scans_async_total: {self._format_perf_ms(started_at):.2f}ms "

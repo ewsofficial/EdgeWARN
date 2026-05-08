@@ -36,7 +36,7 @@ def _chunks(site="KTLH", volume_id="999", stamp="20260507-150000", last_number=2
 
 
 @pytest.mark.asyncio
-async def test_coordinator_downloads_matching_latest_scan_and_fetches_station_catalog_once(tmp_path):
+async def test_coordinator_downloads_latest_volume_and_fetches_station_catalog_once(tmp_path):
     fs.initialize_filesystem(tmp_path)
     station_calls = []
     ingest_calls = []
@@ -76,6 +76,117 @@ async def test_coordinator_downloads_matching_latest_scan_and_fetches_station_ca
 
 
 @pytest.mark.asyncio
+async def test_coordinator_selects_newest_candidate_by_first_chunk_timestamp(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    chosen = []
+
+    async def _volume_lister(site, limit=1, **_kwargs):
+        assert site == "KTLH"
+        return ["999", "524", "99"]
+
+    async def _chunk_lister(_site, volume_id, **_kwargs):
+        if volume_id == "999":
+            return _chunks(volume_id="999", stamp="20260508-120000")
+        if volume_id == "524":
+            return _chunks(volume_id="524", stamp="20260508-172949")
+        return _chunks(volume_id="99", stamp="20260507-050135")
+
+    async def _ingest_trigger(site, volume_id, **_kwargs):
+        chosen.append((site, volume_id))
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+
+    coordinator = NexradScanCoordinator(
+        station_fetcher=lambda **_kwargs: {"KTLH": _station()},
+        async_volume_lister=_volume_lister,
+        async_chunk_lister=_chunk_lister,
+        async_ingest_trigger=_ingest_trigger,
+    )
+
+    results = await coordinator.ingest_latest_station_scans_async(base_dir=tmp_path)
+
+    assert chosen == [("KTLH", "524")]
+    assert results[0].volume_id == "524"
+    assert results[0].latest_scan_time == "20260508-172949"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_prefers_wrapped_volume_ids_after_reset_to_one(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    chosen = []
+
+    async def _volume_lister(site, limit=1, **_kwargs):
+        assert site == "KTLH"
+        return ["999", "2", "1"]
+
+    async def _chunk_lister(_site, volume_id, **_kwargs):
+        if volume_id == "999":
+            return _chunks(volume_id="999", stamp="20260508-172500")
+        if volume_id == "2":
+            return _chunks(volume_id="2", stamp="20260508-173100")
+        return _chunks(volume_id="1", stamp="20260508-173000")
+
+    async def _ingest_trigger(site, volume_id, **_kwargs):
+        chosen.append((site, volume_id))
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+
+    coordinator = NexradScanCoordinator(
+        station_fetcher=lambda **_kwargs: {"KTLH": _station()},
+        async_volume_lister=_volume_lister,
+        async_chunk_lister=_chunk_lister,
+        async_ingest_trigger=_ingest_trigger,
+    )
+
+    results = await coordinator.ingest_latest_station_scans_async(base_dir=tmp_path)
+
+    assert chosen == [("KTLH", "2")]
+    assert results[0].volume_id == "2"
+    assert results[0].latest_scan_time == "20260508-173100"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_creates_default_async_s3_client_when_none_is_provided(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    station = _station()
+    remote_chunks = _chunks()
+    observed = {}
+
+    async def _volume_lister(site, limit=1, **_kwargs):
+        observed["volume_s3_client"] = _kwargs.get("s3_client")
+        return ["999"]
+
+    async def _chunk_lister(_site, _volume_id, **_kwargs):
+        observed["chunk_s3_client"] = _kwargs.get("s3_client")
+        return remote_chunks
+
+    async def _ingest_trigger(site, volume_id, **kwargs):
+        observed["ingest_s3_client"] = kwargs.get("s3_client")
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+
+    coordinator = NexradScanCoordinator(
+        station_fetcher=lambda **_kwargs: {"KTLH": station},
+        async_volume_lister=_volume_lister,
+        async_chunk_lister=_chunk_lister,
+        async_ingest_trigger=_ingest_trigger,
+    )
+
+    class _ClientContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(coordinator._ingest_service, "_async_s3_client", lambda s3_client=None: _ClientContext())
+
+    results = await coordinator.ingest_latest_station_scans_async(base_dir=tmp_path)
+
+    assert len(results) == 1
+    assert results[0].action == "downloaded"
+    assert observed["volume_s3_client"] is observed["chunk_s3_client"]
+    assert observed["chunk_s3_client"] is observed["ingest_s3_client"]
+
+
+@pytest.mark.asyncio
 async def test_coordinator_skips_disallowed_vcp_without_listing_s3(tmp_path):
     fs.initialize_filesystem(tmp_path)
     listed = []
@@ -96,23 +207,31 @@ async def test_coordinator_skips_disallowed_vcp_without_listing_s3(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_coordinator_skips_missing_latest_scan_timestamp(tmp_path):
+async def test_coordinator_ignores_missing_latest_scan_timestamp_when_latest_volume_exists(tmp_path):
     fs.initialize_filesystem(tmp_path)
-    listed = []
+    ingested = []
 
     async def _volume_lister(*_args, **_kwargs):
-        listed.append(True)
-        return []
+        return ["999"]
+
+    async def _chunk_lister(*_args, **_kwargs):
+        return _chunks()
+
+    async def _ingest_trigger(site, volume_id, **_kwargs):
+        ingested.append((site, volume_id))
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     coordinator = NexradScanCoordinator(
         station_fetcher=lambda **_kwargs: {"KTLH": _station(latest_scan_time=None)},
         async_volume_lister=_volume_lister,
+        async_chunk_lister=_chunk_lister,
+        async_ingest_trigger=_ingest_trigger,
     )
 
     results = await coordinator.ingest_latest_station_scans_async(base_dir=tmp_path)
 
-    assert [result.action for result in results] == ["skipped_missing_timestamp"]
-    assert listed == []
+    assert [result.action for result in results] == ["downloaded"]
+    assert ingested == [("KTLH", "999")]
 
 
 @pytest.mark.asyncio
@@ -166,12 +285,11 @@ async def test_coordinator_skips_when_remote_low_chunks_are_incomplete(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_coordinator_skips_when_no_recent_volume_matches_latest_scan(tmp_path):
+async def test_coordinator_skips_when_no_recent_volume_exists(tmp_path):
     fs.initialize_filesystem(tmp_path)
     coordinator = NexradScanCoordinator(
         station_fetcher=lambda **_kwargs: {"KTLH": _station()},
-        async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
-        async_chunk_lister=lambda *_args, **_kwargs: _return(_chunks(stamp="20260507-145500")),
+        async_volume_lister=lambda *_args, **_kwargs: _return([]),
     )
 
     results = await coordinator.ingest_latest_station_scans_async(base_dir=tmp_path)
