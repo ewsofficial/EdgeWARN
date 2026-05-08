@@ -88,6 +88,28 @@ def test_ingest_allowed_vcp_volume_uses_provided_station_vcp(tmp_path):
     assert result.vcp == 212
 
 
+def test_ingest_keeps_only_latest_station_scan_dir(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    old_outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-145500" / "chunks"
+    old_outdir.mkdir(parents=True, exist_ok=True)
+    (old_outdir / "stale").write_bytes(b"old")
+    chunks = [
+        ChunkKey("KTLH", "999", number, "I", f"KTLH/999/20260507-150000-{number:03d}-I")
+        for number in range(1, 26)
+    ]
+    station = type("Station", (), {"vcp": 212})()
+
+    def _chunk_bytes(chunk, **_kwargs):
+        return f"chunk{chunk.chunk_number}".encode("utf-8")
+
+    with patch("common.ingest.nexrad.main.list_volume_chunks", return_value=chunks), \
+         patch("common.ingest.nexrad.main.get_chunk_bytes", side_effect=_chunk_bytes):
+        ingest_allowed_vcp_volume("KTLH", "999", base_dir=tmp_path, s3_client=object(), station_vcp=station)
+
+    assert not old_outdir.parent.exists()
+    assert (Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks").exists()
+
+
 class _AsyncBody:
     def __init__(self, payload):
         self.payload = payload
@@ -172,6 +194,35 @@ async def test_ingest_allowed_vcp_volume_async_skips_existing_files(tmp_path):
     assert 1 not in fetched
     assert len(fetched) == 24
     assert (outdir / "20260507-150000-001-S").read_bytes() == b"existing"
+
+
+@pytest.mark.asyncio
+async def test_ingest_allowed_vcp_volume_async_keeps_only_latest_station_scan_dir(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    old_outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-145500" / "chunks"
+    old_outdir.mkdir(parents=True, exist_ok=True)
+    (old_outdir / "stale").write_bytes(b"old")
+    chunks = _make_low_chunks()
+    station = type("Station", (), {"vcp": 212})()
+
+    async def _chunk_bytes(chunk, **_kwargs):
+        return f"chunk{chunk.chunk_number}".encode("utf-8")
+
+    service = NexradIngestService(async_chunk_lister=lambda *_args, **_kwargs: None)
+    service.async_chunk_lister = lambda *_args, **_kwargs: _return_chunks(chunks)
+    service.async_chunk_fetcher = _chunk_bytes
+    service._stream_chunk_downloads = False
+
+    await service.ingest_allowed_vcp_volume_async(
+        "KTLH",
+        "999",
+        base_dir=tmp_path,
+        s3_client=object(),
+        station_vcp=station,
+    )
+
+    assert not old_outdir.parent.exists()
+    assert (Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks").exists()
 
 
 @pytest.mark.asyncio

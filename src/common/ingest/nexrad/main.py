@@ -1,7 +1,9 @@
 import argparse
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -24,6 +26,84 @@ io_manager = IOManager("[NEXRAD]")
 
 _TIMESTAMP_RE = re.compile(r"(?P<stamp>[0-9]{8}-[0-9]{6})")
 _VOLUME_ID_TS_RE = re.compile(r"(?P<date>[0-9]{8})[_-](?P<time>[0-9]{6})")
+_TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
+
+
+def parse_nexrad_timestamp(value) -> datetime | None:
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = datetime.strptime(text, _TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def format_nexrad_timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).strftime(_TIMESTAMP_FORMAT)
+
+
+def extract_volume_timestamp(volume_id: str, chunks) -> str:
+    # Only inspect the first chunk's filename for a timestamp
+    if chunks:
+        first = chunks[0]
+        filename = first.key.rsplit("/", 1)[-1]
+        match = _TIMESTAMP_RE.search(filename)
+        if match:
+            return match.group("stamp")
+
+    # Fall back to parsing the volume_id for a timestamp
+    match = _VOLUME_ID_TS_RE.search(volume_id)
+    if match:
+        return f"{match.group('date')}-{match.group('time')}"
+    return volume_id
+
+
+def chunk_output_dir(site: str, volume_id: str, chunks) -> Path:
+    timestamp = extract_volume_timestamp(volume_id, chunks)
+    return fs.NEXRAD_LEVEL2_DIR / site.upper() / timestamp / "chunks"
+
+
+def required_low_chunks(chunks):
+    needed = [chunk for chunk in chunks if chunk.chunk_number <= LOW_CHECKPOINT_HINT]
+    if len(needed) < LOW_CHECKPOINT_HINT:
+        return []
+    return needed
+
+
+def local_low_chunks_complete(site: str, volume_id: str, chunks) -> bool:
+    needed_chunks = required_low_chunks(chunks)
+    if not needed_chunks:
+        return False
+
+    outdir = chunk_output_dir(site, volume_id, chunks)
+    return all((outdir / chunk.key.rsplit("/", 1)[-1]).exists() for chunk in needed_chunks)
+
+
+def prune_station_scan_dirs(site: str, keep_timestamp: str):
+    site_dir = fs.NEXRAD_LEVEL2_DIR / str(site).upper()
+    if not site_dir.exists():
+        return
+
+    for child in site_dir.iterdir():
+        if not child.is_dir() or child.name == keep_timestamp:
+            continue
+        shutil.rmtree(child, ignore_errors=True)
 
 
 class NexradIngestService:
@@ -60,23 +140,10 @@ class NexradIngestService:
 
     @staticmethod
     def _volume_timestamp(volume_id: str, chunks) -> str:
-        # Only inspect the first chunk's filename for a timestamp
-        if chunks:
-            first = chunks[0]
-            filename = first.key.rsplit("/", 1)[-1]
-            match = _TIMESTAMP_RE.search(filename)
-            if match:
-                return match.group("stamp")
-
-        # Fall back to parsing the volume_id for a timestamp
-        match = _VOLUME_ID_TS_RE.search(volume_id)
-        if match:
-            return f"{match.group('date')}-{match.group('time')}"
-        return volume_id
+        return extract_volume_timestamp(volume_id, chunks)
 
     def _chunk_output_dir(self, site: str, volume_id: str, chunks) -> Path:
-        timestamp = self._volume_timestamp(volume_id, chunks)
-        return fs.NEXRAD_LEVEL2_DIR / site.upper() / timestamp / "chunks"
+        return chunk_output_dir(site, volume_id, chunks)
 
     def _download_chunks_to_site_dir(self, site: str, volume_id: str, chunks, *, s3_client):
         outdir = self._chunk_output_dir(site, volume_id, chunks)
@@ -87,6 +154,7 @@ class NexradIngestService:
             if local_path.exists():
                 continue
             local_path.write_bytes(self.chunk_fetcher(chunk, s3_client=s3_client))
+        prune_station_scan_dirs(site, outdir.parent.name)
 
     async def _download_chunks_to_site_dir_async(self, site: str, volume_id: str, chunks, *, s3_client, chunk_download_semaphore=None):
         import aiofiles
@@ -125,6 +193,7 @@ class NexradIngestService:
                     await file_obj.write(await body.read())
 
         await asyncio.gather(*(_download_one(chunk) for chunk in chunks))
+        prune_station_scan_dirs(site, outdir.parent.name)
         elapsed_ms = self._format_perf_ms(started_at)
         io_manager.write_perf(
             f"[VOL {str(site).upper()}/{volume_id}] chunk_download_write: {elapsed_ms:.2f}ms "
@@ -133,10 +202,7 @@ class NexradIngestService:
 
     @staticmethod
     def _required_low_chunks(chunks):
-        needed = [chunk for chunk in chunks if chunk.chunk_number <= LOW_CHECKPOINT_HINT]
-        if len(needed) < LOW_CHECKPOINT_HINT:
-            return []
-        return needed
+        return required_low_chunks(chunks)
 
     def ingest_allowed_vcp_volume(
         self,
