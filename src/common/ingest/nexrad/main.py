@@ -2,6 +2,7 @@ import argparse
 import asyncio
 from contextlib import asynccontextmanager
 import re
+import time
 from pathlib import Path
 
 import util.file as fs
@@ -51,6 +52,11 @@ class NexradIngestService:
         self.max_site_tasks = max_site_tasks
         self.max_chunk_downloads = max_chunk_downloads
         self._stream_chunk_downloads = async_chunk_fetcher is None
+        self._shared_chunk_download_semaphore = None
+
+    @staticmethod
+    def _format_perf_ms(started_at: float) -> float:
+        return (time.perf_counter() - started_at) * 1000
 
     @staticmethod
     def _volume_timestamp(volume_id: str, chunks) -> str:
@@ -82,12 +88,13 @@ class NexradIngestService:
                 continue
             local_path.write_bytes(self.chunk_fetcher(chunk, s3_client=s3_client))
 
-    async def _download_chunks_to_site_dir_async(self, site: str, volume_id: str, chunks, *, s3_client):
+    async def _download_chunks_to_site_dir_async(self, site: str, volume_id: str, chunks, *, s3_client, chunk_download_semaphore=None):
         import aiofiles
 
+        started_at = time.perf_counter()
         outdir = self._chunk_output_dir(site, volume_id, chunks)
         outdir.mkdir(parents=True, exist_ok=True)
-        semaphore = asyncio.Semaphore(self.max_chunk_downloads)
+        semaphore = chunk_download_semaphore or asyncio.Semaphore(self.max_chunk_downloads)
 
         async def _download_one(chunk):
             filename = chunk.key.split("/")[-1]
@@ -118,6 +125,11 @@ class NexradIngestService:
                     await file_obj.write(await body.read())
 
         await asyncio.gather(*(_download_one(chunk) for chunk in chunks))
+        elapsed_ms = self._format_perf_ms(started_at)
+        io_manager.write_perf(
+            f"[VOL {str(site).upper()}/{volume_id}] chunk_download_write: {elapsed_ms:.2f}ms "
+            f"(chunks={len(chunks)}, max_chunk_downloads={self.max_chunk_downloads})"
+        )
 
     @staticmethod
     def _required_low_chunks(chunks):
@@ -196,8 +208,10 @@ class NexradIngestService:
         parser=None,
         writer=None,
         station_vcp=None,
+        chunk_download_semaphore=None,
     ):
         _ = (parser, writer)
+        total_started_at = time.perf_counter()
         if base_dir:
             fs.initialize_filesystem(base_dir)
 
@@ -221,9 +235,20 @@ class NexradIngestService:
                 probe_site = str(site).upper()
                 probe_volume_id = str(volume_id)
 
+            list_started_at = time.perf_counter()
             chunks = await self.async_chunk_lister(site, volume_id, s3_client=active_s3_client)
+            list_elapsed_ms = self._format_perf_ms(list_started_at)
             needed_chunks = self._required_low_chunks(chunks)
+            io_manager.write_perf(
+                f"[VOL {probe_site}/{probe_volume_id}] chunk_list: {list_elapsed_ms:.2f}ms "
+                f"(listed={len(chunks)}, needed={len(needed_chunks)})"
+            )
             if not needed_chunks:
+                total_elapsed_ms = self._format_perf_ms(total_started_at)
+                io_manager.write_perf(
+                    f"[VOL {probe_site}/{probe_volume_id}] total_async_ingest: {total_elapsed_ms:.2f}ms "
+                    f"(accepted=True, complete=False, chunks_downloaded=0)"
+                )
                 return NexradIngestResult(
                     site=probe_site,
                     volume_id=probe_volume_id,
@@ -236,7 +261,18 @@ class NexradIngestService:
                     complete=False,
                 )
 
-            await self._download_chunks_to_site_dir_async(site, volume_id, needed_chunks, s3_client=active_s3_client)
+            await self._download_chunks_to_site_dir_async(
+                site,
+                volume_id,
+                needed_chunks,
+                s3_client=active_s3_client,
+                chunk_download_semaphore=chunk_download_semaphore or self._shared_chunk_download_semaphore,
+            )
+            total_elapsed_ms = self._format_perf_ms(total_started_at)
+            io_manager.write_perf(
+                f"[VOL {probe_site}/{probe_volume_id}] total_async_ingest: {total_elapsed_ms:.2f}ms "
+                f"(accepted=True, complete=True, chunks_downloaded={len(needed_chunks)})"
+            )
             return NexradIngestResult(
                 site=probe_site,
                 volume_id=probe_volume_id,
@@ -287,62 +323,93 @@ class NexradIngestService:
         weather_session=None,
         station_vcps=None,
     ):
+        total_started_at = time.perf_counter()
+        sites = [str(site).upper() for site in sites]
         if base_dir:
             fs.initialize_filesystem(base_dir)
 
         if station_vcps is None:
+            station_started_at = time.perf_counter()
             station_vcps = await asyncio.to_thread(self.station_fetcher, session=weather_session)
+            io_manager.write_perf(
+                f"[RUN] station_catalog_fetch: {self._format_perf_ms(station_started_at):.2f}ms "
+                f"(stations={len(station_vcps)})"
+            )
 
+        filter_started_at = time.perf_counter()
         filtered_sites = [
-            str(site).upper()
+            site
             for site in sites
-            if str(site).upper().startswith("K")
-            and station_vcps.get(str(site).upper()) is not None
-            and station_vcps[str(site).upper()].vcp in ALLOWED_VCPS
+            if site.startswith("K") and station_vcps.get(site) is not None and station_vcps[site].vcp in ALLOWED_VCPS
         ]
+        io_manager.write_perf(
+            f"[RUN] site_filter: {self._format_perf_ms(filter_started_at):.2f}ms "
+            f"(input={len(sites)}, allowed={len(filtered_sites)})"
+        )
         if not filtered_sites:
             return []
 
         results = []
         site_semaphore = asyncio.Semaphore(self.max_site_tasks)
+        chunk_download_semaphore = asyncio.Semaphore(self.max_chunk_downloads)
+        self._shared_chunk_download_semaphore = chunk_download_semaphore
 
-        async with self._async_s3_client(s3_client) as active_s3_client:
-            async def _list_site_volumes(site):
-                async with site_semaphore:
-                    volume_ids = await self.async_volume_lister(
-                        site,
-                        limit=max_volumes_per_site,
-                        s3_client=active_s3_client,
-                    )
-                    return site, volume_ids
+        try:
+            async with self._async_s3_client(s3_client) as active_s3_client:
+                async def _list_site_volumes(site):
+                    async with site_semaphore:
+                        started_at = time.perf_counter()
+                        volume_ids = await self.async_volume_lister(
+                            site,
+                            limit=max_volumes_per_site,
+                            s3_client=active_s3_client,
+                        )
+                        io_manager.write_perf(
+                            f"[SITE {site}] recent_volume_list: {self._format_perf_ms(started_at):.2f}ms "
+                            f"(volumes={len(volume_ids)}, limit={max_volumes_per_site})"
+                        )
+                        return site, volume_ids
 
-            listed_sites = await asyncio.gather(*(_list_site_volumes(site) for site in filtered_sites), return_exceptions=True)
+                volume_discovery_started_at = time.perf_counter()
+                listed_sites = await asyncio.gather(*(_list_site_volumes(site) for site in filtered_sites), return_exceptions=True)
+                io_manager.write_perf(
+                    f"[RUN] site_volume_discovery: {self._format_perf_ms(volume_discovery_started_at):.2f}ms "
+                    f"(sites={len(filtered_sites)}, max_site_tasks={self.max_site_tasks})"
+                )
 
-            volume_work = []
-            for listed_site in listed_sites:
-                if isinstance(listed_site, Exception):
-                    io_manager.write_warning(f"Skipping site after async volume-list failure: {listed_site}")
-                    continue
+                volume_work = []
+                for listed_site in listed_sites:
+                    if isinstance(listed_site, Exception):
+                        io_manager.write_warning(f"Skipping site after async volume-list failure: {listed_site}")
+                        continue
 
-                site, volume_ids = listed_site
-                station_vcp = station_vcps.get(site)
-                for volume_id in volume_ids:
-                    volume_work.append((site, volume_id, station_vcp))
+                    site, volume_ids = listed_site
+                    station_vcp = station_vcps.get(site)
+                    for volume_id in volume_ids:
+                        volume_work.append((site, volume_id, station_vcp))
 
-            gathered = await asyncio.gather(
-                *(
-                    self.ingest_allowed_vcp_volume_async(
-                        site,
-                        volume_id,
-                        base_dir=base_dir,
-                        s3_client=active_s3_client,
-                        weather_session=weather_session,
-                        station_vcp=station_vcp,
-                    )
-                    for site, volume_id, station_vcp in volume_work
-                ),
-                return_exceptions=True,
-            )
+                volume_ingest_started_at = time.perf_counter()
+                gathered = await asyncio.gather(
+                    *(
+                        self.ingest_allowed_vcp_volume_async(
+                            site,
+                            volume_id,
+                            base_dir=base_dir,
+                            s3_client=active_s3_client,
+                            weather_session=weather_session,
+                            station_vcp=station_vcp,
+                            chunk_download_semaphore=chunk_download_semaphore,
+                        )
+                        for site, volume_id, station_vcp in volume_work
+                    ),
+                    return_exceptions=True,
+                )
+                io_manager.write_perf(
+                    f"[RUN] volume_ingest_batch: {self._format_perf_ms(volume_ingest_started_at):.2f}ms "
+                    f"(volumes={len(volume_work)}, shared_chunk_limit={self.max_chunk_downloads})"
+                )
+        finally:
+            self._shared_chunk_download_semaphore = None
 
         for (site, volume_id, _station_vcp), result in zip(volume_work, gathered):
             if isinstance(result, Exception):
@@ -350,6 +417,15 @@ class NexradIngestService:
                 continue
             if result is not None:
                 results.append(result)
+
+        complete_count = sum(1 for result in results if result.complete)
+        downloaded_chunks = sum(result.chunks_downloaded for result in results)
+        total_elapsed_ms = self._format_perf_ms(total_started_at)
+        io_manager.write_perf(
+            f"[RUN] latest_allowed_vcp_scans_async_total: {total_elapsed_ms:.2f}ms "
+            f"(sites={len(filtered_sites)}, volumes={len(volume_work)}, results={len(results)}, "
+            f"complete={complete_count}, chunks_downloaded={downloaded_chunks}, max_site_tasks={self.max_site_tasks})"
+        )
 
         return results
 
@@ -486,7 +562,12 @@ def main():
         io_manager.write_info(f"Skipping {args.site}: only radar stations starting with 'K' are processed")
         return
 
+    station_fetch_started_at = time.perf_counter()
     stations = fetch_radar_station_vcps()
+    io_manager.write_perf(
+        f"[CLI] station_catalog_fetch: {service._format_perf_ms(station_fetch_started_at):.2f}ms "
+        f"(stations={len(stations)})"
+    )
 
     if args.volume_id:
         station_vcp = stations.get(str(args.site).upper()) if stations is not None else None
