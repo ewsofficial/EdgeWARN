@@ -39,7 +39,7 @@ async def poll_latest_station_scans_forever_async(*args, **kwargs):
 
 def __getattr__(name):
     if name == "NexradIngestService":
-        from .main import NexradIngestService as _impl
+        from .service import NexradIngestService as _impl
 
         return _impl
     if name == "NexradChunkStore":
