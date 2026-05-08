@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import re
 from functools import lru_cache
 
@@ -5,14 +6,18 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from common.ingest.nexrad.config import CHUNKS_BUCKET
+from common.ingest.nexrad.config import CHUNKS_BUCKET, LOW_CHECKPOINT_HINT
 from common.ingest.nexrad.models import ChunkKey
+from util.handler import extract_timestamp
 
 _CHUNK_KEY_RE = re.compile(
     r"^(?P<site>[A-Z0-9]+)/(?P<volume_id>[^/]+)/"
     r"(?:(?P<stamp>[0-9]{8}-[0-9]{6})-)?"
     r"(?P<chunk>[0-9]{3})-(?P<chunk_type>[A-Z])$"
 )
+_TIMESTAMP_RE = re.compile(r"(?P<stamp>[0-9]{8}-[0-9]{6})")
+_VOLUME_ID_TS_RE = re.compile(r"(?P<date>[0-9]{8})[_-](?P<time>[0-9]{6})")
+_TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
 
 
 @lru_cache(maxsize=1)
@@ -65,6 +70,39 @@ def order_recent_volume_ids(volume_ids):
     wrapped_ordered = sorted(wrapped_segment, key=lambda item: item[1], reverse=True)
     wrapped_ordered.extend(sorted(prior_segment, key=lambda item: item[1], reverse=True))
     return [text for text, _value in wrapped_ordered]
+
+
+def parse_nexrad_timestamp(value) -> datetime | None:
+    return extract_timestamp(value, use_timezone_utc=True)
+
+
+def format_nexrad_timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).strftime(_TIMESTAMP_FORMAT)
+
+
+def extract_volume_timestamp(volume_id: str, chunks) -> str:
+    if chunks:
+        first = chunks[0]
+        filename = first.key.rsplit("/", 1)[-1]
+        match = _TIMESTAMP_RE.search(filename)
+        if match:
+            return match.group("stamp")
+
+    match = _VOLUME_ID_TS_RE.search(volume_id)
+    if match:
+        return f"{match.group('date')}-{match.group('time')}"
+    return volume_id
+
+
+def required_low_chunks(chunks):
+    needed = [chunk for chunk in chunks if chunk.chunk_number <= LOW_CHECKPOINT_HINT]
+    if len(needed) < LOW_CHECKPOINT_HINT:
+        return []
+    return needed
 
 
 class NexradChunkStore:
