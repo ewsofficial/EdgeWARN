@@ -14,6 +14,9 @@ def _load_fast_grib_loader():
     return load_grib_fast
 
 
+_DIRECT_TIMESTAMP_RE = re.compile(r"^(\d{8})[-_](\d{6})$")
+
+
 def extract_timestamp(filepath, use_timezone_utc=False, round_to_minute=False, isoformat=False):
     fname = Path(filepath).name
     dt = None
@@ -23,13 +26,26 @@ def extract_timestamp(filepath, use_timezone_utc=False, round_to_minute=False, i
     elif m := re.search(r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d{1})", fname):
         y, d, h, mn, s, _ = map(int, m.groups())
         dt = datetime(y, 1, 1, h, mn, s) + timedelta(days=d - 1)
+    else:
+        text = str(filepath).strip()
+        if text:
+            if m := _DIRECT_TIMESTAMP_RE.match(text):
+                dt = datetime.strptime(f"{m.group(1)}{m.group(2)}", "%Y%m%d%H%M%S")
+            else:
+                try:
+                    dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                except ValueError:
+                    dt = None
 
     if not dt:
         return None
     if round_to_minute:
         dt = dt.replace(second=0, microsecond=0)
-    if use_timezone_utc and dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+    if use_timezone_utc:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
     return dt.isoformat() if isoformat else dt
 
 

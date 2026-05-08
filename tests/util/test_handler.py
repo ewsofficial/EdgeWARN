@@ -72,6 +72,26 @@ class TestExtractTimestamp:
         
         assert result.tzinfo == timezone.utc
 
+    def test_direct_timestamp_string_with_dash_uses_utc(self):
+        result = extract_timestamp("20260507-150000", use_timezone_utc=True)
+
+        assert result == datetime(2026, 5, 7, 15, 0, 0, tzinfo=timezone.utc)
+
+    def test_direct_timestamp_string_with_underscore_uses_utc(self):
+        result = extract_timestamp("20260507_150000", use_timezone_utc=True)
+
+        assert result == datetime(2026, 5, 7, 15, 0, 0, tzinfo=timezone.utc)
+
+    def test_iso_timestamp_string_z_uses_utc(self):
+        result = extract_timestamp("2026-05-07T15:00:00Z", use_timezone_utc=True)
+
+        assert result == datetime(2026, 5, 7, 15, 0, 0, tzinfo=timezone.utc)
+
+    def test_iso_timestamp_string_with_offset_normalizes_to_utc(self):
+        result = extract_timestamp("2026-05-07T11:00:00-04:00", use_timezone_utc=True)
+
+        assert result == datetime(2026, 5, 7, 15, 0, 0, tzinfo=timezone.utc)
+
     def test_isoformat_output(self):
         """Test isoformat parameter"""
         result = extract_timestamp(

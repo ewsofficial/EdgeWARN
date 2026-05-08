@@ -3,14 +3,10 @@ import time
 
 import util.file as fs
 from common.ingest.nexrad.config import ALLOWED_VCPS
-from common.ingest.nexrad.main import (
-    NexradIngestService,
-    extract_volume_timestamp,
-    local_low_chunks_complete,
-    parse_nexrad_timestamp,
-    required_low_chunks,
-)
+from common.ingest.nexrad.main import NexradIngestService
 from common.ingest.nexrad.models import NexradCoordinatorResult
+from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, parse_nexrad_timestamp, required_low_chunks
+from common.ingest.nexrad.writer import local_low_chunks_complete
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from util.io import IOManager

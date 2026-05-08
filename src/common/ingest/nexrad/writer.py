@@ -1,4 +1,5 @@
 import json
+import shutil
 from dataclasses import asdict
 from pathlib import Path
 
@@ -6,8 +7,45 @@ import numpy as np
 import xarray as xr
 
 import util.file as fs
+from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, required_low_chunks
 
 IMPORTANT_DATA_VARS = None
+
+
+class NexradLocalChunkStore:
+    def chunk_output_dir(self, site: str, volume_id: str, chunks) -> Path:
+        timestamp = extract_volume_timestamp(volume_id, chunks)
+        return fs.NEXRAD_LEVEL2_DIR / site.upper() / timestamp / "chunks"
+
+    def local_low_chunks_complete(self, site: str, volume_id: str, chunks) -> bool:
+        needed_chunks = required_low_chunks(chunks)
+        if not needed_chunks:
+            return False
+
+        outdir = self.chunk_output_dir(site, volume_id, chunks)
+        return all((outdir / chunk.key.rsplit("/", 1)[-1]).exists() for chunk in needed_chunks)
+
+    def prune_station_scan_dirs(self, site: str, keep_timestamp: str):
+        site_dir = fs.NEXRAD_LEVEL2_DIR / str(site).upper()
+        if not site_dir.exists():
+            return
+
+        for child in site_dir.iterdir():
+            if not child.is_dir() or child.name == keep_timestamp:
+                continue
+            shutil.rmtree(child, ignore_errors=True)
+
+
+def chunk_output_dir(site: str, volume_id: str, chunks) -> Path:
+    return NexradLocalChunkStore().chunk_output_dir(site, volume_id, chunks)
+
+
+def local_low_chunks_complete(site: str, volume_id: str, chunks) -> bool:
+    return NexradLocalChunkStore().local_low_chunks_complete(site, volume_id, chunks)
+
+
+def prune_station_scan_dirs(site: str, keep_timestamp: str):
+    NexradLocalChunkStore().prune_station_scan_dirs(site, keep_timestamp)
 
 
 def _sanitize_attr_value(value):
