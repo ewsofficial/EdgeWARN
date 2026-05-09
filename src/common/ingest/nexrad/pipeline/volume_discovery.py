@@ -1,5 +1,5 @@
 from common.ingest.nexrad.models import RadarStationVcp
-from common.ingest.nexrad.pipeline_models import VolumeDiscoveryResult
+from common.ingest.nexrad.pipeline.models import VolumeDiscoveryResult
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, parse_nexrad_timestamp
 from common.ingest.nexrad.writer import local_low_chunks_complete

@@ -3,15 +3,15 @@ import asyncio
 import time
 
 import util.file as fs
-from common.ingest.nexrad.emitter import NexradDownloadEmitter
-from common.ingest.nexrad.pending import NexradPendingVolumeTracker
-from common.ingest.nexrad.pipeline_models import PendingVolume
 from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.s3_chunks import required_low_chunks
-from common.ingest.nexrad.station_filter import NexradStationFilter
-from common.ingest.nexrad.volume_discovery import NexradVolumeDiscovery
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
+from common.ingest.nexrad.pipeline.emitter import NexradDownloadEmitter
+from common.ingest.nexrad.pipeline.models import PendingVolume
+from common.ingest.nexrad.pipeline.pending import NexradPendingVolumeTracker
+from common.ingest.nexrad.pipeline.station_filter import NexradStationFilter
+from common.ingest.nexrad.pipeline.volume_discovery import NexradVolumeDiscovery
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD-PIPE]", include_timestamps=True)
@@ -227,7 +227,3 @@ def main():
         completion_interval_seconds=args.completion_interval_seconds,
         max_candidate_volumes_per_site=args.max_candidate_volumes_per_site,
     )
-
-
-if __name__ == "__main__":
-    main()
