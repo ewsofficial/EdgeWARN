@@ -10,6 +10,7 @@ import util.file as fs
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, required_low_chunks
 
 IMPORTANT_DATA_VARS = None
+NEXRAD_SCAN_DIRS_TO_KEEP = 3
 
 
 class NexradLocalChunkStore:
@@ -30,8 +31,16 @@ class NexradLocalChunkStore:
         if not site_dir.exists():
             return
 
-        for child in site_dir.iterdir():
-            if not child.is_dir() or child.name == keep_timestamp:
+        timestamp_dirs = sorted(
+            (child for child in site_dir.iterdir() if child.is_dir()),
+            key=lambda child: child.name,
+            reverse=True,
+        )
+        keep_dirs = {child.name for child in timestamp_dirs[:NEXRAD_SCAN_DIRS_TO_KEEP]}
+        keep_dirs.add(keep_timestamp)
+
+        for child in timestamp_dirs:
+            if child.name in keep_dirs:
                 continue
             shutil.rmtree(child, ignore_errors=True)
 
