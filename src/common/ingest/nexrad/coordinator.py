@@ -3,7 +3,7 @@ import time
 
 import util.file as fs
 from common.ingest.nexrad.config import ALLOWED_VCPS
-from common.ingest.nexrad.models import NexradCoordinatorResult
+from common.ingest.nexrad.models import NexradCoordinatorResult, NexradCoordinatorRunResults
 from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, parse_nexrad_timestamp, required_low_chunks
 from common.ingest.nexrad.writer import local_low_chunks_complete
@@ -142,7 +142,7 @@ class NexradScanCoordinator:
 
         site_items = [(site, station) for site, station in site_items if station is not None]
         if not site_items:
-            return []
+            return NexradCoordinatorRunResults()
 
         site_semaphore = asyncio.Semaphore(self.max_site_tasks)
 
@@ -179,11 +179,12 @@ class NexradScanCoordinator:
                 )
             )
         downloaded = sum(1 for result in results if result.action == "downloaded")
+        downloaded_sites = [result.site for result in results if result.action == "downloaded"]
         io_manager.write_perf(
             f"[RUN] latest_station_scans_async_total: {self._format_perf_ms(started_at):.2f}ms "
             f"(sites={len(site_items)}, downloaded={downloaded}, skipped={len(results) - downloaded})"
         )
-        return results
+        return NexradCoordinatorRunResults(results, downloaded_sites=downloaded_sites)
 
     async def poll_latest_station_scans_forever_async(
         self,

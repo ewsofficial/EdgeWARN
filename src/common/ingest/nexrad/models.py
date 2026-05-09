@@ -82,3 +82,9 @@ class NexradCoordinatorResult:
     volume_id: str | None
     action: str
     chunks_downloaded: int = 0
+
+
+class NexradCoordinatorRunResults(list[NexradCoordinatorResult]):
+    def __init__(self, results=(), *, downloaded_sites=()):
+        super().__init__(results)
+        self.downloaded_sites = tuple(downloaded_sites)

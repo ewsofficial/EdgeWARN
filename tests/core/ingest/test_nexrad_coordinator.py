@@ -73,6 +73,7 @@ async def test_coordinator_downloads_latest_volume_and_fetches_station_catalog_o
     assert len(results) == 1
     assert results[0].action == "downloaded"
     assert results[0].chunks_downloaded == 25
+    assert results.downloaded_sites == ("KTLH",)
 
 
 @pytest.mark.asyncio
@@ -295,6 +296,7 @@ async def test_coordinator_skips_when_no_recent_volume_exists(tmp_path):
     results = await coordinator.ingest_latest_station_scans_async(base_dir=tmp_path)
 
     assert [result.action for result in results] == ["skipped_no_matching_volume"]
+    assert results.downloaded_sites == ()
 
 
 @pytest.mark.asyncio
