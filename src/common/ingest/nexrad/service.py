@@ -25,7 +25,7 @@ from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from common.ingest.nexrad.writer import NexradLocalChunkStore
 from util.io import IOManager
 
-io_manager = IOManager("[NEXRAD]")
+io_manager = IOManager("[NEXRAD]", include_timestamps=True)
 
 
 class NexradIngestService:

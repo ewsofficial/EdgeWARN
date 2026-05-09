@@ -33,8 +33,17 @@ class QueueWriter:
 
 
 class IOManager:
-    def __init__(self, header):
+    def __init__(self, header, *, include_timestamps=False):
         self.header = header
+        self.include_timestamps = include_timestamps
+
+    def _timestamp_prefix(self):
+        if not self.include_timestamps:
+            return ""
+        return f"[{datetime.now(timezone.utc).isoformat()}] "
+
+    def _write(self, level, msg):
+        print(f"{self._timestamp_prefix()}{self.header} {level} {msg}")
 
     @staticmethod
     def get_base_dir_arg():
@@ -74,19 +83,19 @@ class IOManager:
         return args
 
     def write_info(self, msg):
-        print(f"{self.header} INFO: {msg}")
+        self._write("INFO:", msg)
 
     def write_debug(self, msg):
-        print(f"{self.header} DEBUG: {msg}")
+        self._write("DEBUG:", msg)
 
     def write_warning(self, msg):
-        print(f"{self.header} WARN: {msg}")
+        self._write("WARN:", msg)
 
     def write_error(self, msg):
-        print(f"{self.header} ERROR: {msg}")
+        self._write("ERROR:", msg)
 
     def write_perf(self, msg):
-        print(f"{self.header} [PERF] {msg}")
+        self._write("[PERF]", msg)
 
 
 class PerformanceTimer:

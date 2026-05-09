@@ -16,7 +16,7 @@ from common.ingest.nexrad.sweep_classifier import canonical_angle_matches, class
 from common.ingest.nexrad.writer import write_outputs
 from util.io import IOManager
 
-io_manager = IOManager("[NEXRAD]")
+io_manager = IOManager("[NEXRAD]", include_timestamps=True)
 
 
 def _extract_parsed_volume(datatree) -> ParsedVolume:

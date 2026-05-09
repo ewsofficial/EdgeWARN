@@ -90,11 +90,15 @@ def test_ingest_allowed_vcp_volume_uses_provided_station_vcp(tmp_path):
     assert result.vcp == 212
 
 
-def test_ingest_keeps_only_latest_station_scan_dir(tmp_path):
+def test_ingest_keeps_latest_three_station_scan_dirs(tmp_path):
     fs.initialize_filesystem(tmp_path)
+    oldest_outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-145000" / "chunks"
     old_outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-145500" / "chunks"
+    newer_outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-145900" / "chunks"
+    oldest_outdir.mkdir(parents=True, exist_ok=True)
     old_outdir.mkdir(parents=True, exist_ok=True)
-    (old_outdir / "stale").write_bytes(b"old")
+    newer_outdir.mkdir(parents=True, exist_ok=True)
+    (oldest_outdir / "stale").write_bytes(b"oldest")
     chunks = [
         ChunkKey("KTLH", "999", number, "I", f"KTLH/999/20260507-150000-{number:03d}-I")
         for number in range(1, 26)
@@ -108,7 +112,9 @@ def test_ingest_keeps_only_latest_station_scan_dir(tmp_path):
          patch("common.ingest.nexrad.main.get_chunk_bytes", side_effect=_chunk_bytes):
         ingest_allowed_vcp_volume("KTLH", "999", base_dir=tmp_path, s3_client=object(), station_vcp=station)
 
-    assert not old_outdir.parent.exists()
+    assert not oldest_outdir.parent.exists()
+    assert old_outdir.parent.exists()
+    assert newer_outdir.parent.exists()
     assert (Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks").exists()
 
 
@@ -199,11 +205,15 @@ async def test_ingest_allowed_vcp_volume_async_skips_existing_files(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ingest_allowed_vcp_volume_async_keeps_only_latest_station_scan_dir(tmp_path):
+async def test_ingest_allowed_vcp_volume_async_keeps_latest_three_station_scan_dirs(tmp_path):
     fs.initialize_filesystem(tmp_path)
+    oldest_outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-145000" / "chunks"
     old_outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-145500" / "chunks"
+    newer_outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-145900" / "chunks"
+    oldest_outdir.mkdir(parents=True, exist_ok=True)
     old_outdir.mkdir(parents=True, exist_ok=True)
-    (old_outdir / "stale").write_bytes(b"old")
+    newer_outdir.mkdir(parents=True, exist_ok=True)
+    (oldest_outdir / "stale").write_bytes(b"oldest")
     chunks = _make_low_chunks()
     station = type("Station", (), {"vcp": 212})()
 
@@ -223,7 +233,9 @@ async def test_ingest_allowed_vcp_volume_async_keeps_only_latest_station_scan_di
         station_vcp=station,
     )
 
-    assert not old_outdir.parent.exists()
+    assert not oldest_outdir.parent.exists()
+    assert old_outdir.parent.exists()
+    assert newer_outdir.parent.exists()
     assert (Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks").exists()
 
 

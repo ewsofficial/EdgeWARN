@@ -3,6 +3,7 @@
 __all__ = [
     "NexradIngestService",
     "NexradScanCoordinator",
+    "NexradRealtimeIngestionPipeline",
     "NexradChunkStore",
     "RadarStationCatalog",
     "VolumeVcpProber",
@@ -10,6 +11,8 @@ __all__ = [
     "ingest_latest_allowed_vcp_scans",
     "ingest_latest_station_scans_async",
     "poll_latest_station_scans_forever_async",
+    "run_realtime_ingestion_pipeline",
+    "run_realtime_ingestion_pipeline_async",
 ]
 
 
@@ -37,6 +40,18 @@ async def poll_latest_station_scans_forever_async(*args, **kwargs):
     return await _impl(*args, **kwargs)
 
 
+async def run_realtime_ingestion_pipeline_async(*args, **kwargs):
+    from .pipeline import run_realtime_ingestion_pipeline_async as _impl
+
+    return await _impl(*args, **kwargs)
+
+
+def run_realtime_ingestion_pipeline(*args, **kwargs):
+    from .pipeline import run_realtime_ingestion_pipeline as _impl
+
+    return _impl(*args, **kwargs)
+
+
 def __getattr__(name):
     if name == "NexradIngestService":
         from .service import NexradIngestService as _impl
@@ -48,6 +63,10 @@ def __getattr__(name):
         return _impl
     if name == "NexradScanCoordinator":
         from .coordinator import NexradScanCoordinator as _impl
+
+        return _impl
+    if name == "NexradRealtimeIngestionPipeline":
+        from .pipeline import NexradRealtimeIngestionPipeline as _impl
 
         return _impl
     if name == "VolumeVcpProber":
