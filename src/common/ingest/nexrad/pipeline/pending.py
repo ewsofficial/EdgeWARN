@@ -1,4 +1,4 @@
-from common.ingest.nexrad.pipeline_models import PendingVolume
+from common.ingest.nexrad.pipeline.models import PendingVolume
 
 
 class NexradPendingVolumeTracker:
