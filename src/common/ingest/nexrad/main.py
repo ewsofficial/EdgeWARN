@@ -280,6 +280,9 @@ def main():
             f"volume_id={result.volume_id}, vcp={result.vcp}, chunks_downloaded={result.chunks_downloaded}"
         )
 
+    downloaded_sites = getattr(results, "downloaded_sites", ())
+    io_manager.write_info(f"Downloaded sites: {list(downloaded_sites)}")
+
 
 if __name__ == "__main__":
     main()
