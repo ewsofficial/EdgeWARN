@@ -5,7 +5,7 @@ import pytest
 import util.file as fs
 from common.ingest.nexrad.models import ChunkKey, NexradIngestResult, RadarStationVcp
 from common.ingest.nexrad.pipeline import NexradRealtimeIngestionPipeline
-from common.ingest.nexrad.pipeline_models import PendingVolume
+from common.ingest.nexrad.pipeline.models import PendingVolume
 from common.ingest.nexrad.writer import chunk_output_dir
 
 
