@@ -14,17 +14,24 @@ NEXRAD_SCAN_DIRS_TO_KEEP = 3
 
 
 class NexradLocalChunkStore:
-    def chunk_output_dir(self, site: str, volume_id: str, chunks) -> Path:
+    def scan_output_dir(self, site: str, volume_id: str, chunks) -> Path:
         timestamp = extract_volume_timestamp(volume_id, chunks)
-        return fs.NEXRAD_LEVEL2_DIR / site.upper() / timestamp / "chunks"
+        return fs.NEXRAD_LEVEL2_DIR / site.upper() / timestamp
+
+    def chunk_output_dir(self, site: str, volume_id: str, chunks) -> Path:
+        return self.scan_output_dir(site, volume_id, chunks) / "chunks"
+
+    def volume_output_path(self, site: str, volume_id: str, chunks) -> Path:
+        scan_dir = self.scan_output_dir(site, volume_id, chunks)
+        return scan_dir / f"{str(site).upper()}_{scan_dir.name}_{volume_id}.ar2v"
 
     def local_low_chunks_complete(self, site: str, volume_id: str, chunks) -> bool:
         needed_chunks = required_low_chunks(chunks)
         if not needed_chunks:
             return False
 
-        outdir = self.chunk_output_dir(site, volume_id, chunks)
-        return all((outdir / chunk.key.rsplit("/", 1)[-1]).exists() for chunk in needed_chunks)
+        volume_path = self.volume_output_path(site, volume_id, chunks)
+        return volume_path.exists()
 
     def prune_station_scan_dirs(self, site: str, keep_timestamp: str):
         site_dir = fs.NEXRAD_LEVEL2_DIR / str(site).upper()
@@ -47,6 +54,10 @@ class NexradLocalChunkStore:
 
 def chunk_output_dir(site: str, volume_id: str, chunks) -> Path:
     return NexradLocalChunkStore().chunk_output_dir(site, volume_id, chunks)
+
+
+def volume_output_path(site: str, volume_id: str, chunks) -> Path:
+    return NexradLocalChunkStore().volume_output_path(site, volume_id, chunks)
 
 
 def local_low_chunks_complete(site: str, volume_id: str, chunks) -> bool:

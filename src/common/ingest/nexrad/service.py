@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import time
 from pathlib import Path
+import shutil
 
 import util.file as fs
 from common.ingest.nexrad.config import ALLOWED_VCPS, CHUNKS_BUCKET
@@ -68,15 +69,32 @@ class NexradIngestService:
     def _chunk_output_dir(self, site: str, volume_id: str, chunks) -> Path:
         return self.local_chunk_store.chunk_output_dir(site, volume_id, chunks)
 
+    def _volume_output_path(self, site: str, volume_id: str, chunks) -> Path:
+        return self.local_chunk_store.volume_output_path(site, volume_id, chunks)
+
+    @staticmethod
+    def _remove_chunk_dir(outdir: Path):
+        if outdir.exists():
+            shutil.rmtree(outdir, ignore_errors=True)
+
     def _download_chunks_to_site_dir(self, site: str, volume_id: str, chunks, *, s3_client):
         outdir = self._chunk_output_dir(site, volume_id, chunks)
-        outdir.mkdir(parents=True, exist_ok=True)
-        for chunk in chunks:
-            filename = chunk.key.split("/")[-1]
-            local_path = outdir / filename
-            if local_path.exists():
-                continue
-            local_path.write_bytes(self.chunk_fetcher(chunk, s3_client=s3_client))
+        volume_path = self._volume_output_path(site, volume_id, chunks)
+        if self.local_chunk_store.local_low_chunks_complete(site, volume_id, chunks):
+            self._remove_chunk_dir(outdir)
+            return
+
+        self._remove_chunk_dir(outdir)
+        volume_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = volume_path.with_suffix(f"{volume_path.suffix}.part")
+        if temp_path.exists():
+            temp_path.unlink()
+
+        with temp_path.open("wb") as volume_file:
+            for chunk in chunks:
+                volume_file.write(self.chunk_fetcher(chunk, s3_client=s3_client))
+
+        temp_path.replace(volume_path)
         self.local_chunk_store.prune_station_scan_dirs(site, outdir.parent.name)
 
     async def _download_chunks_to_site_dir_async(self, site: str, volume_id: str, chunks, *, s3_client, chunk_download_semaphore=None):
@@ -84,38 +102,47 @@ class NexradIngestService:
 
         started_at = time.perf_counter()
         outdir = self._chunk_output_dir(site, volume_id, chunks)
-        outdir.mkdir(parents=True, exist_ok=True)
+        volume_path = self._volume_output_path(site, volume_id, chunks)
+        if self.local_chunk_store.local_low_chunks_complete(site, volume_id, chunks):
+            self._remove_chunk_dir(outdir)
+            return
+
+        self._remove_chunk_dir(outdir)
+        volume_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = volume_path.with_suffix(f"{volume_path.suffix}.part")
+        if temp_path.exists():
+            temp_path.unlink()
         semaphore = chunk_download_semaphore or asyncio.Semaphore(self.max_chunk_downloads)
 
-        async def _download_one(chunk):
-            filename = chunk.key.split("/")[-1]
-            local_path = outdir / filename
-            if local_path.exists():
-                return
-
-            async with semaphore:
-                async with aiofiles.open(local_path, "wb") as file_obj:
+        async with aiofiles.open(temp_path, "wb") as file_obj:
+            for chunk in chunks:
+                async with semaphore:
                     if self._stream_chunk_downloads:
                         response = await s3_client.get_object(Bucket=CHUNKS_BUCKET, Key=chunk.key)
                         body = response["Body"]
                         async for data in body.iter_chunks():
                             await file_obj.write(data)
-                        return
+                        if hasattr(body, "close"):
+                            maybe_close = body.close()
+                            if asyncio.iscoroutine(maybe_close):
+                                await maybe_close
+                    else:
+                        payload = await self.async_chunk_fetcher(chunk, s3_client=s3_client)
+                        if isinstance(payload, (bytes, bytearray)):
+                            await file_obj.write(payload)
+                        else:
+                            body = payload["Body"] if isinstance(payload, dict) else payload
+                            if hasattr(body, "iter_chunks"):
+                                async for data in body.iter_chunks():
+                                    await file_obj.write(data)
+                            else:
+                                await file_obj.write(await body.read())
+                            if hasattr(body, "close"):
+                                maybe_close = body.close()
+                                if asyncio.iscoroutine(maybe_close):
+                                    await maybe_close
 
-                    payload = await self.async_chunk_fetcher(chunk, s3_client=s3_client)
-                    if isinstance(payload, (bytes, bytearray)):
-                        await file_obj.write(payload)
-                        return
-
-                    body = payload["Body"] if isinstance(payload, dict) else payload
-                    if hasattr(body, "iter_chunks"):
-                        async for data in body.iter_chunks():
-                            await file_obj.write(data)
-                        return
-
-                    await file_obj.write(await body.read())
-
-        await asyncio.gather(*(_download_one(chunk) for chunk in chunks))
+        temp_path.replace(volume_path)
         self.local_chunk_store.prune_station_scan_dirs(site, outdir.parent.name)
         elapsed_ms = self._format_perf_ms(started_at)
         io_manager.write_perf(
