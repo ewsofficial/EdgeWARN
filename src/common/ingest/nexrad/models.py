@@ -67,11 +67,22 @@ class NexradIngestResult:
     volume_id: str
     vcp: int
     dynamic_scan_type: str | None
+    volume_path: Path | None
+    scan_timestamp: str | None
     low_path: Path | None
     high_path: Path | None
     manifest_path: Path | None
     chunks_downloaded: int
     complete: bool
+
+
+@dataclass(frozen=True)
+class NexradCompletionRecord:
+    site: str
+    volume_id: str
+    scan_timestamp: str | None
+    volume_path: Path | None
+    manifest_path: Path | None
 
 
 @dataclass(frozen=True)

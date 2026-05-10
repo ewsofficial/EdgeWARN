@@ -57,7 +57,7 @@ async def test_coordinator_downloads_latest_volume_and_fetches_station_catalog_o
 
     async def _ingest_trigger(site, volume_id, **kwargs):
         ingest_calls.append((site, volume_id, kwargs.get("station_vcp")))
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     coordinator = NexradScanCoordinator(
         station_fetcher=_station_fetcher,
@@ -94,7 +94,7 @@ async def test_coordinator_selects_newest_candidate_by_first_chunk_timestamp(tmp
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
         chosen.append((site, volume_id))
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     coordinator = NexradScanCoordinator(
         station_fetcher=lambda **_kwargs: {"KTLH": _station()},
@@ -128,7 +128,7 @@ async def test_coordinator_prefers_wrapped_volume_ids_after_reset_to_one(tmp_pat
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
         chosen.append((site, volume_id))
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     coordinator = NexradScanCoordinator(
         station_fetcher=lambda **_kwargs: {"KTLH": _station()},
@@ -161,7 +161,7 @@ async def test_coordinator_creates_default_async_s3_client_when_none_is_provided
 
     async def _ingest_trigger(site, volume_id, **kwargs):
         observed["ingest_s3_client"] = kwargs.get("s3_client")
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     coordinator = NexradScanCoordinator(
         station_fetcher=lambda **_kwargs: {"KTLH": station},
@@ -220,7 +220,7 @@ async def test_coordinator_ignores_missing_latest_scan_timestamp_when_latest_vol
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
         ingested.append((site, volume_id))
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     coordinator = NexradScanCoordinator(
         station_fetcher=lambda **_kwargs: {"KTLH": _station(latest_scan_time=None)},
@@ -309,7 +309,7 @@ async def test_coordinator_retries_partial_local_scan_download(tmp_path):
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
         ingest_calls.append((site, volume_id))
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=1, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=1, complete=True)
 
     coordinator = NexradScanCoordinator(
         station_fetcher=lambda **_kwargs: {"KTLH": _station()},
@@ -334,7 +334,7 @@ async def test_coordinator_keeps_site_isolation_on_listing_error(tmp_path):
         return _chunks(site="KDGX", volume_id="123")
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     coordinator = NexradScanCoordinator(
         station_fetcher=lambda **_kwargs: {"KTLH": _station(site="KTLH"), "KDGX": _station(site="KDGX")},

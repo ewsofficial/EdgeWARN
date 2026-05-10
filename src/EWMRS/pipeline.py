@@ -17,6 +17,7 @@ from EWMRS.render.config import (
     get_file_list,
     get_goes_file_list,
     get_mrms_file_list,
+    get_nexrad_file_list,
 )
 from EWMRS.render.tools import configure_proj_runtime
 import util.file as fs
@@ -320,6 +321,44 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
         return None
 
 
+def _render_nexrad_layer(layer: dict) -> tuple[str, RenderOutput]:
+    from EWMRS.render.render import GUIArrayRenderer
+
+    name = str(layer.get("name"))
+    out_dir = Path(layer["outdir"])
+    timestamp_iso = str(layer["scan_timestamp"])
+    cached_render = _current_render_paths(out_dir, timestamp_iso)
+    if cached_render is not None:
+        io_manager.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
+        return name, cached_render
+
+    triples = np.load(Path(layer["payload_path"])).astype(np.float32, copy=False)
+    if triples.size == 0:
+        return name, None
+
+    azimuth = np.deg2rad(triples[:, 0])
+    distance = triples[:, 1]
+    values = triples[:, 2]
+    max_range = float(np.max(distance)) if distance.size else 0.0
+    if max_range <= 0.0:
+        return name, None
+
+    grid_size = max(350, int(os.environ.get("EWMRS_NEXRAD_RENDER_SIZE", "1400")))
+    center = (grid_size - 1) / 2.0
+    scale = center / max_range
+    x = distance * np.sin(azimuth)
+    y = distance * np.cos(azimuth)
+    px = np.clip(np.rint(center + (x * scale)).astype(np.int32), 0, grid_size - 1)
+    py = np.clip(np.rint(center - (y * scale)).astype(np.int32), 0, grid_size - 1)
+
+    grid = np.full((grid_size, grid_size), np.nan, dtype=np.float32)
+    grid[py, px] = values
+
+    renderer = GUIArrayRenderer(grid, out_dir, layer["colormap_key"], name, timestamp_iso)
+    png_paths, _timestamp = renderer.convert_to_png(tile_output=True)
+    return name, png_paths
+
+
 def _normalize_render_timestamp(timestamp_iso: str) -> str:
     dt = datetime.fromisoformat(timestamp_iso)
     return dt.strftime(r"%Y%m%d-%H%M00")
@@ -334,12 +373,19 @@ def cleanup_old_gui_files(max_age_minutes: int = 120):
     max_age_seconds = max_age_minutes * 60
     total_removed = 0
 
+    candidate_dirs = []
     for layer in get_file_list():
         output_path = layer.get("outdir")
         if output_path is None:
             continue
 
-        out_dir = Path(output_path)
+        candidate_dirs.append(Path(output_path))
+
+    nexrad_root = fs.BASE_DIR / "gui" / "NEXRAD"
+    if nexrad_root.exists():
+        candidate_dirs.extend(path for path in nexrad_root.glob("*/*") if path.is_dir())
+
+    for out_dir in candidate_dirs:
         if not out_dir.exists():
             continue
 
@@ -809,6 +855,23 @@ def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutpu
     return results
 
 
+def run_nexrad_render_pipeline(task) -> Dict[str, RenderOutput]:
+    manifest_path = Path(task.manifest_path if hasattr(task, "manifest_path") else task["manifest_path"])
+    if not manifest_path.exists():
+        io_manager.write_warning(f"NEXRAD render manifest missing: {manifest_path}")
+        return {}
+
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+
+    layers = get_nexrad_file_list(task, manifest)
+    results: Dict[str, RenderOutput] = {}
+    for layer in layers:
+        name, png_path = _render_nexrad_layer(layer)
+        results[name] = png_path
+    return results
+
+
 def run_rap_uint16_pipeline(rap_file, dt=None):
     """Run the EWMRS RAP Uint16Array conversion pipeline for one RAP GRIB2 file."""
     from EWMRS.rap.uint16_pipeline import run_rap_uint16_pipeline as _run_rap_uint16_pipeline
@@ -870,3 +933,19 @@ def ewmrs_goes_worker(log_queue, dt, max_entries: int = 10):
         log(f"INFO: EWMRS GOES render completed: {_summarize_results(results)}")
     except Exception as exc:
         log(f"ERROR: EWMRS GOES worker failed - {exc}")
+
+
+def ewmrs_nexrad_worker(log_queue, task):
+    """Process target for decoupled NEXRAD rendering outside tandem completion."""
+    sys.stdout = QueueWriter(log_queue)
+    sys.stderr = QueueWriter(log_queue)
+
+    def log(msg: str):
+        log_queue.put(str(msg))
+
+    try:
+        log(f"INFO: Starting EWMRS NEXRAD render phase for {task.site}/{task.volume_id}")
+        results = run_nexrad_render_pipeline(task)
+        log(f"INFO: EWMRS NEXRAD render completed: {_summarize_results(results)}")
+    except Exception as exc:
+        log(f"ERROR: EWMRS NEXRAD worker failed - {exc}")

@@ -1,8 +1,10 @@
+import json
+
 import netCDF4
 import numpy as np
 import xarray as xr
 
-from common.ingest.nexrad.writer import _dataset_encoding, _write_grouped_netcdf
+from common.ingest.nexrad.writer import _dataset_encoding, _write_grouped_netcdf, serialize_nexrad_render_intermediate
 
 
 class _Group:
@@ -14,6 +16,15 @@ class _Group:
 
 
 class _Tree:
+    def __init__(self, dataset):
+        self._dataset = dataset
+
+    def __getitem__(self, key):
+        assert key == "/sweep_00"
+        return _Group(self._dataset)
+
+
+class _ParsedTree:
     def __init__(self, dataset):
         self._dataset = dataset
 
@@ -92,3 +103,39 @@ def test_write_grouped_netcdf_preserves_all_variables(tmp_path):
         assert {"DBZH", "VRADH", "WRADH", "RHOHV", "noise"}.issubset(set(reopened.data_vars))
     finally:
         reopened.close()
+
+
+def test_serialize_nexrad_render_intermediate_writes_float16_triples(tmp_path):
+    dataset = xr.Dataset(
+        {
+            "DBZH": (("azimuth", "range"), np.array([[1.5, np.nan], [3.5, 4.5]], dtype=np.float32)),
+            "VRADH": (("azimuth", "range"), np.array([[10.0, 11.0], [12.0, 13.0]], dtype=np.float32)),
+            "noise": (("azimuth", "range"), np.array([[5.0, 6.0], [7.0, 8.0]], dtype=np.float32)),
+        },
+        coords={
+            "azimuth": np.array([0.0, 90.0], dtype=np.float32),
+            "range": np.array([1000.0, 2000.0], dtype=np.float32),
+        },
+    )
+    parsed = type(
+        "ParsedVolumeFixture",
+        (),
+        {
+            "scan_name": "VCP-212",
+            "dynamic_scan_type": "standard",
+            "sweeps": [type("SweepFixture", (), {"group_name": "/sweep_00", "fixed_angle": 0.5})()],
+            "datatree": _ParsedTree(dataset),
+        },
+    )()
+    volume_path = tmp_path / "KTLH_20260507-150000_999.ar2v"
+    volume_path.parent.mkdir(parents=True, exist_ok=True)
+    volume_path.write_bytes(b"volume")
+
+    manifest_path = serialize_nexrad_render_intermediate("KTLH", "999", "20260507-150000", volume_path, parsed)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert [layer["variable_name"] for layer in manifest["layers"]] == ["DBZH", "VRADH"]
+
+    payload = np.load(manifest["layers"][0]["payload_path"])
+    assert payload.dtype == np.float16
+    assert payload.tolist() == [[0.0, 1000.0, 1.5], [90.0, 1000.0, 3.5], [90.0, 2000.0, 4.5]]

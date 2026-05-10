@@ -11,6 +11,12 @@ from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, required_lo
 
 IMPORTANT_DATA_VARS = None
 NEXRAD_SCAN_DIRS_TO_KEEP = 3
+NEXRAD_RENDERABLE_VARS = {
+    "DBZH": "NWS_Reflectivity",
+    "VRADH": "NEXRAD_Velocity",
+    "WRADH": "NEXRAD_SpectrumWidth",
+    "RHOHV": "NEXRAD_CorrelationCoefficient",
+}
 
 
 class NexradLocalChunkStore:
@@ -66,6 +72,96 @@ def local_low_chunks_complete(site: str, volume_id: str, chunks) -> bool:
 
 def prune_station_scan_dirs(site: str, keep_timestamp: str):
     NexradLocalChunkStore().prune_station_scan_dirs(site, keep_timestamp)
+
+
+def nexrad_render_output_dir(layer_name: str, site: str) -> Path:
+    return fs.BASE_DIR / "gui" / "NEXRAD" / layer_name / str(site).upper()
+
+
+def nexrad_render_intermediate_dir(scan_dir: Path) -> Path:
+    return Path(scan_dir) / "render"
+
+
+def serialize_nexrad_render_intermediate(
+    site: str,
+    volume_id: str,
+    scan_timestamp: str,
+    volume_path: Path,
+    parsed_volume,
+) -> Path:
+    scan_dir = Path(volume_path).parent
+    render_dir = nexrad_render_intermediate_dir(scan_dir)
+    payload_dir = render_dir / "payloads"
+    payload_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_layers = []
+    datatree = getattr(parsed_volume, "datatree", None)
+    if datatree is not None:
+        for sweep_index, sweep in enumerate(parsed_volume.sweeps):
+            node = datatree[sweep.group_name]
+            dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
+            if "azimuth" not in dataset.coords or "range" not in dataset.coords:
+                continue
+
+            azimuths = np.asarray(dataset["azimuth"].values, dtype=np.float32)
+            ranges = np.asarray(dataset["range"].values, dtype=np.float32)
+            for variable_name, colormap_key in NEXRAD_RENDERABLE_VARS.items():
+                if variable_name not in dataset.data_vars:
+                    continue
+                data_array = dataset[variable_name]
+                if tuple(data_array.dims)[:2] != ("azimuth", "range"):
+                    continue
+
+                values = np.asarray(data_array.values, dtype=np.float32)
+                valid_mask = np.isfinite(values)
+                if not np.any(valid_mask):
+                    continue
+
+                azimuth_grid = np.broadcast_to(azimuths[:, None], values.shape)
+                range_grid = np.broadcast_to(ranges[None, :], values.shape)
+                triples = np.column_stack(
+                    (
+                        azimuth_grid[valid_mask],
+                        range_grid[valid_mask],
+                        values[valid_mask],
+                    )
+                ).astype(np.float16, copy=False)
+
+                layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
+                payload_path = payload_dir / f"{layer_name}.npy"
+                np.save(payload_path, triples)
+
+                manifest_layers.append(
+                    {
+                        "name": layer_name,
+                        "site": str(site).upper(),
+                        "volume_id": str(volume_id),
+                        "scan_timestamp": scan_timestamp,
+                        "sweep_index": sweep_index,
+                        "sweep_group": sweep.group_name,
+                        "fixed_angle": float(sweep.fixed_angle),
+                        "variable_name": variable_name,
+                        "colormap_key": colormap_key,
+                        "payload_path": str(payload_path),
+                        "outdir": str(nexrad_render_output_dir(layer_name, site)),
+                        "azimuth_values": azimuths.astype(np.float16).tolist(),
+                        "range_values": ranges.astype(np.float16).tolist(),
+                        "triplet_count": int(triples.shape[0]),
+                    }
+                )
+
+    manifest_path = render_dir / "manifest.json"
+    manifest_payload = {
+        "site": str(site).upper(),
+        "volume_id": str(volume_id),
+        "scan_timestamp": scan_timestamp,
+        "volume_path": str(volume_path),
+        "scan_name": parsed_volume.scan_name,
+        "dynamic_scan_type": parsed_volume.dynamic_scan_type,
+        "layers": manifest_layers,
+    }
+    manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
+    return manifest_path
 
 
 def _sanitize_attr_value(value):

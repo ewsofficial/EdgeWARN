@@ -33,6 +33,60 @@
         ]
       },
       {
+        "name": "NEXRAD_Velocity",
+        "description": "NEXRAD radial velocity colormap",
+        "type": "velocity",
+        "units": "m/s",
+        "interpolate": true,
+        "range": [-80, 80],
+        "thresholds": [
+          {"value": -80, "rgb": [64, 0, 128]},
+          {"value": -60, "rgb": [0, 32, 180]},
+          {"value": -40, "rgb": [0, 96, 255]},
+          {"value": -20, "rgb": [64, 176, 255]},
+          {"value": 0, "rgb": [24, 24, 24]},
+          {"value": 20, "rgb": [255, 176, 64]},
+          {"value": 40, "rgb": [255, 96, 0]},
+          {"value": 60, "rgb": [220, 24, 0]},
+          {"value": 80, "rgb": [164, 0, 0]}
+        ]
+      },
+      {
+        "name": "NEXRAD_SpectrumWidth",
+        "description": "NEXRAD spectrum width colormap",
+        "type": "spectrum_width",
+        "units": "m/s",
+        "interpolate": true,
+        "range": [0, 20],
+        "thresholds": [
+          {"value": 0, "rgb": [0, 0, 0, 0]},
+          {"value": 2, "rgb": [32, 96, 255]},
+          {"value": 5, "rgb": [0, 200, 255]},
+          {"value": 8, "rgb": [0, 220, 96]},
+          {"value": 11, "rgb": [255, 255, 0]},
+          {"value": 14, "rgb": [255, 160, 0]},
+          {"value": 17, "rgb": [255, 64, 0]},
+          {"value": 20, "rgb": [180, 0, 0]}
+        ]
+      },
+      {
+        "name": "NEXRAD_CorrelationCoefficient",
+        "description": "NEXRAD correlation coefficient colormap",
+        "type": "correlation_coefficient",
+        "units": "unitless",
+        "interpolate": true,
+        "range": [0.7, 1.0],
+        "thresholds": [
+          {"value": 0.7, "rgb": [80, 0, 80]},
+          {"value": 0.8, "rgb": [180, 0, 180]},
+          {"value": 0.85, "rgb": [255, 64, 64]},
+          {"value": 0.9, "rgb": [255, 160, 0]},
+          {"value": 0.95, "rgb": [255, 255, 0]},
+          {"value": 0.98, "rgb": [120, 255, 120]},
+          {"value": 1.0, "rgb": [255, 255, 255]}
+        ]
+      },
+      {
         "name": "EnhancedEchoTop",
         "description": "Enhanced Echo Top color map",
         "type": "EchoTops",
