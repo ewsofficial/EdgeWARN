@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 import util.file as fs
-from common.ingest.nexrad.models import ChunkKey, NexradIngestResult, RadarStationVcp
+from common.ingest.nexrad.models import ChunkKey, NexradCompletionRecord, NexradIngestResult, RadarStationVcp
 from common.ingest.nexrad.pipeline import NexradRealtimeIngestionPipeline
 from common.ingest.nexrad.pipeline.models import PendingVolume
 from common.ingest.nexrad.writer import volume_output_path
@@ -31,6 +31,16 @@ def _chunks(site="KTLH", volume_id="999", stamp="20260507-150000", last_number=2
         )
         for number in range(1, last_number + 1)
     ]
+
+
+def _record(site, volume_id, scan_timestamp):
+    return NexradCompletionRecord(
+        site=site,
+        volume_id=volume_id,
+        scan_timestamp=scan_timestamp,
+        volume_path=None,
+        manifest_path=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -68,7 +78,7 @@ async def test_pipeline_downloads_complete_volume_and_emits_after_ingest(tmp_pat
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
         events.append(("ingest", site, volume_id))
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     pipeline = NexradRealtimeIngestionPipeline(
         base_dir=tmp_path,
@@ -76,13 +86,16 @@ async def test_pipeline_downloads_complete_volume_and_emits_after_ingest(tmp_pat
         async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
         async_chunk_lister=lambda *_args, **_kwargs: _return(_chunks()),
         async_ingest_trigger=_ingest_trigger,
-        download_emitter=lambda sites: events.append(("emit", tuple(sites))),
+        download_emitter=lambda records: events.append(("emit", tuple(records))),
     )
 
     downloaded = await pipeline.scan_for_new_volumes_once()
 
-    assert downloaded == ["KTLH"]
-    assert events == [("ingest", "KTLH", "999"), ("emit", ("KTLH",))]
+    assert downloaded == [_record("KTLH", "999", "20260507-150000")]
+    assert events == [
+        ("ingest", "KTLH", "999"),
+        ("emit", (_record("KTLH", "999", "20260507-150000"),)),
+    ]
 
 
 @pytest.mark.asyncio
@@ -96,7 +109,7 @@ async def test_pipeline_adds_incomplete_volume_to_pending_without_emitting(tmp_p
         async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
         async_chunk_lister=lambda *_args, **_kwargs: _return(_chunks(last_number=24)),
         async_ingest_trigger=lambda *_args, **_kwargs: _track_call(ingested),
-        download_emitter=lambda sites: emitted.append(tuple(sites)),
+        download_emitter=lambda records: emitted.append(tuple(records)),
     )
 
     downloaded = await pipeline.scan_for_new_volumes_once()
@@ -122,7 +135,7 @@ async def test_pipeline_rechecks_pending_and_downloads_when_chunks_complete(tmp_
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
         ingested.append((site, volume_id))
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     pipeline = NexradRealtimeIngestionPipeline(
         base_dir=tmp_path,
@@ -136,9 +149,9 @@ async def test_pipeline_rechecks_pending_and_downloads_when_chunks_complete(tmp_
     await pipeline.scan_for_new_volumes_once()
     downloaded = await pipeline.check_pending_once()
 
-    assert downloaded == ["KTLH"]
+    assert downloaded == [_record("KTLH", "999", "20260507-150000")]
     assert ingested == [("KTLH", "999")]
-    assert emitted == [("KTLH",)]
+    assert emitted == [(_record("KTLH", "999", "20260507-150000"),)]
     assert pipeline.pending_tracker.pending == {}
 
 
@@ -148,7 +161,7 @@ async def test_pipeline_emits_downloaded_sites_for_multiple_scan_completions(tmp
     emitted = []
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000" if site == "KTLH" else "20260507-150100", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     pipeline = NexradRealtimeIngestionPipeline(
         base_dir=tmp_path,
@@ -156,13 +169,16 @@ async def test_pipeline_emits_downloaded_sites_for_multiple_scan_completions(tmp
         async_volume_lister=lambda site, **_kwargs: _return(["999"] if site == "KTLH" else ["123"]),
         async_chunk_lister=lambda site, volume_id, **_kwargs: _return(_chunks(site=site, volume_id=volume_id)),
         async_ingest_trigger=_ingest_trigger,
-        download_emitter=lambda sites: emitted.append(tuple(sites)),
+        download_emitter=lambda records: emitted.append(tuple(records)),
     )
 
     downloaded = await pipeline.scan_for_new_volumes_once()
 
-    assert sorted(downloaded) == ["KDGX", "KTLH"]
-    assert emitted == [("KDGX", "KTLH")]
+    assert downloaded == [
+        _record("KDGX", "123", "20260507-150100"),
+        _record("KTLH", "999", "20260507-150000"),
+    ]
+    assert emitted == [tuple(downloaded)]
 
 
 @pytest.mark.asyncio
@@ -177,7 +193,7 @@ async def test_pipeline_drops_stale_pending_when_newer_volume_is_seen(tmp_path):
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
         ingested.append((site, volume_id))
-        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
 
     pipeline = NexradRealtimeIngestionPipeline(
         base_dir=tmp_path,

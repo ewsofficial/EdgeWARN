@@ -1,8 +1,10 @@
 import argparse
 import asyncio
 import time
+from pathlib import Path
 
 import util.file as fs
+from common.ingest.nexrad.models import NexradCompletionRecord, NexradIngestResult
 from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.s3_chunks import required_low_chunks
@@ -15,6 +17,16 @@ from common.ingest.nexrad.pipeline.volume_discovery import NexradVolumeDiscovery
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD-PIPE]", include_timestamps=True)
+
+
+def _completion_record_from_result(result: NexradIngestResult) -> NexradCompletionRecord:
+    return NexradCompletionRecord(
+        site=str(result.site).upper(),
+        volume_id=str(result.volume_id),
+        scan_timestamp=result.scan_timestamp,
+        volume_path=None if result.volume_path is None else Path(result.volume_path),
+        manifest_path=None if result.manifest_path is None else Path(result.manifest_path),
+    )
 
 
 class NexradRealtimeIngestionPipeline:
@@ -61,7 +73,7 @@ class NexradRealtimeIngestionPipeline:
     async def scan_for_new_volumes_once(self, *, s3_client=None, weather_session=None):
         if self.base_dir:
             fs.initialize_filesystem(self.base_dir)
-        downloaded_sites = []
+        downloaded_records = []
         site_semaphore = asyncio.Semaphore(self.max_site_tasks)
         allowed_sites = await self.station_filter.fetch_allowed_stations(
             sites=self.sites,
@@ -113,7 +125,7 @@ class NexradRealtimeIngestionPipeline:
                     if result is None or not result.complete:
                         return None
                     self.pending_tracker.remove(site, discovery.volume_id)
-                    return site
+                    return _completion_record_from_result(result)
 
             results = await asyncio.gather(
                 *(_scan_site(site, station) for site, station in allowed_sites),
@@ -125,14 +137,14 @@ class NexradRealtimeIngestionPipeline:
                 io_manager.write_warning(f"[SCAN] site failure: {result}")
                 continue
             if result is not None:
-                downloaded_sites.append(result)
-        self.download_emitter.emit_downloaded_sites(downloaded_sites)
-        return downloaded_sites
+                downloaded_records.append(result)
+        self.download_emitter.emit_downloaded_sites(downloaded_records)
+        return downloaded_records
 
     async def check_pending_once(self, *, s3_client=None, weather_session=None):
         if self.base_dir:
             fs.initialize_filesystem(self.base_dir)
-        downloaded_sites = []
+        downloaded_records = []
         async with self._ingest_service._async_s3_client(s3_client) as active_s3_client:
             for (site, volume_id), pending_volume in self.pending_tracker.items():
                 if self.last_seen_by_site.get(site) not in (None, volume_id):
@@ -163,10 +175,10 @@ class NexradRealtimeIngestionPipeline:
                 if result is None or not result.complete:
                     continue
                 self.pending_tracker.remove(site, volume_id)
-                downloaded_sites.append(site)
+                downloaded_records.append(_completion_record_from_result(result))
 
-        self.download_emitter.emit_downloaded_sites(downloaded_sites)
-        return downloaded_sites
+        self.download_emitter.emit_downloaded_sites(downloaded_records)
+        return downloaded_records
 
     async def run_forever(self, *, s3_client=None, weather_session=None):
         next_scan_at = self.monotonic()

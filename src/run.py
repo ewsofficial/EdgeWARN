@@ -10,6 +10,7 @@ import asyncio
 import util.file as fs
 import common.ingest.nws.main as nws_ingest
 import common.ingest.metar as metar_ingest
+from common.ingest.nexrad.pipeline import run_realtime_ingestion_pipeline
 from common.ingest.mrms.config import get_abi_radc_channel_specs, get_check_modifiers, get_goes_modifiers
 from common.ingest.mrms.downloader import (
     download_goes_product,
@@ -25,7 +26,7 @@ from common.pipeline.goes_readiness import (
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN import initialize_runtime
 from EdgeWARN.pipeline import edgewarn_tandem_worker
-from EWMRS.pipeline import ewmrs_goes_worker, ewmrs_tandem_worker
+from EWMRS.pipeline import ewmrs_goes_worker, ewmrs_nexrad_worker, ewmrs_tandem_worker
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
 from util.release import get_release_version
@@ -146,6 +147,50 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
                 return
     except KeyboardInterrupt:
         render_active_event.clear()
+        return
+
+
+def nexrad_ingest_loop(task_queue):
+    def _emit(records):
+        for record in records:
+            task_queue.put(record)
+
+    try:
+        run_realtime_ingestion_pipeline(base_dir=args.base_dir, download_emitter=_emit)
+    except KeyboardInterrupt:
+        return
+
+
+def _nexrad_task_key(task):
+    return (str(task.site).upper(), str(task.volume_id), str(task.scan_timestamp or ""))
+
+
+def nexrad_render_loop(task_queue, log_queue):
+    try:
+        while True:
+            task = task_queue.get()
+            if task is None:
+                return
+
+            pending = {_nexrad_task_key(task): task}
+            saw_shutdown = False
+            while True:
+                try:
+                    queued_task = task_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+                if queued_task is None:
+                    saw_shutdown = True
+                    continue
+                pending[_nexrad_task_key(queued_task)] = queued_task
+
+            for pending_task in [pending[key] for key in sorted(pending)]:
+                ewmrs_nexrad_worker(log_queue, pending_task)
+
+            if saw_shutdown:
+                return
+    except KeyboardInterrupt:
         return
 
 
@@ -507,11 +552,19 @@ def main():
     wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True)
     goes_render_task_queue = multiprocessing.Queue()
     goes_render_log_queue = multiprocessing.Queue()
+    nexrad_render_task_queue = multiprocessing.Queue()
+    nexrad_render_log_queue = multiprocessing.Queue()
     goes_render_proc = multiprocessing.Process(
         target=goes_render_loop,
         args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
         daemon=True,
     ) if EWMRS_ENABLED and GOES_ENABLED else None
+    nexrad_ingest_proc = multiprocessing.Process(target=nexrad_ingest_loop, args=(nexrad_render_task_queue,), daemon=True) if EWMRS_ENABLED else None
+    nexrad_render_proc = multiprocessing.Process(
+        target=nexrad_render_loop,
+        args=(nexrad_render_task_queue, nexrad_render_log_queue),
+        daemon=True,
+    ) if EWMRS_ENABLED else None
     if metar_proc is not None:
         metar_proc.start()
     if nws_proc is not None:
@@ -522,6 +575,10 @@ def main():
         goes_proc.start()
     if goes_render_proc is not None:
         goes_render_proc.start()
+    if nexrad_ingest_proc is not None:
+        nexrad_ingest_proc.start()
+    if nexrad_render_proc is not None:
+        nexrad_render_proc.start()
 
     background_processes = [
         (metar_proc, "METAR"),
@@ -529,11 +586,14 @@ def main():
         (wpc_proc, "WPC"),
         (goes_proc, "GOES"),
         (goes_render_proc, "GOES Render"),
+        (nexrad_ingest_proc, "NEXRAD Ingest"),
+        (nexrad_render_proc, "NEXRAD Render"),
     ]
 
     try:
         while True:
             _drain_log_queue(goes_render_log_queue)
+            _drain_log_queue(nexrad_render_log_queue)
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
             # Pass last_processed to allow StartAfter optimization
@@ -603,6 +663,10 @@ def main():
     finally:
         try:
             goes_render_task_queue.put(None)
+        except Exception:
+            pass
+        try:
+            nexrad_render_task_queue.put(None)
         except Exception:
             pass
         for process, name in background_processes:

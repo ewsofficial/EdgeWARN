@@ -22,8 +22,9 @@ from common.ingest.nexrad.s3_chunks import (
     required_low_chunks,
 )
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
+from common.ingest.nexrad.volume_builder import parse_level2_volume_file
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
-from common.ingest.nexrad.writer import NexradLocalChunkStore
+from common.ingest.nexrad.writer import NexradLocalChunkStore, serialize_nexrad_render_intermediate
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
@@ -71,6 +72,27 @@ class NexradIngestService:
 
     def _volume_output_path(self, site: str, volume_id: str, chunks) -> Path:
         return self.local_chunk_store.volume_output_path(site, volume_id, chunks)
+
+    def _prepare_render_manifest(self, site: str, volume_id: str, chunks) -> tuple[Path, Path | None, str | None]:
+        volume_path = self._volume_output_path(site, volume_id, chunks)
+        if not volume_path.exists():
+            return volume_path, None, None
+        scan_timestamp = self._volume_timestamp(volume_id, chunks)
+        try:
+            parsed_volume = parse_level2_volume_file(volume_path)
+            manifest_path = serialize_nexrad_render_intermediate(
+                str(site).upper(),
+                volume_id,
+                scan_timestamp,
+                volume_path,
+                parsed_volume,
+            )
+            return volume_path, manifest_path, scan_timestamp
+        except Exception as exc:
+            io_manager.write_warning(
+                f"[VOL {str(site).upper()}/{volume_id}] NEXRAD render intermediate generation skipped: {exc}"
+            )
+            return volume_path, None, scan_timestamp
 
     @staticmethod
     def _remove_chunk_dir(outdir: Path):
@@ -193,6 +215,8 @@ class NexradIngestService:
                 volume_id=probe_volume_id,
                 vcp=probe_vcp,
                 dynamic_scan_type=None,
+                volume_path=None,
+                scan_timestamp=None,
                 low_path=None,
                 high_path=None,
                 manifest_path=None,
@@ -201,14 +225,17 @@ class NexradIngestService:
             )
 
         self._download_chunks_to_site_dir(site, volume_id, needed_chunks, s3_client=s3_client)
+        volume_path, manifest_path, scan_timestamp = self._prepare_render_manifest(site, volume_id, needed_chunks)
         return NexradIngestResult(
             site=probe_site,
             volume_id=probe_volume_id,
             vcp=probe_vcp,
             dynamic_scan_type=None,
+            volume_path=volume_path,
+            scan_timestamp=scan_timestamp,
             low_path=None,
             high_path=None,
-            manifest_path=None,
+            manifest_path=manifest_path,
             chunks_downloaded=len(needed_chunks),
             complete=True,
         )
@@ -270,6 +297,8 @@ class NexradIngestService:
                     volume_id=probe_volume_id,
                     vcp=probe_vcp,
                     dynamic_scan_type=None,
+                    volume_path=None,
+                    scan_timestamp=None,
                     low_path=None,
                     high_path=None,
                     manifest_path=None,
@@ -284,6 +313,12 @@ class NexradIngestService:
                 s3_client=active_s3_client,
                 chunk_download_semaphore=chunk_download_semaphore or self._shared_chunk_download_semaphore,
             )
+            volume_path, manifest_path, scan_timestamp = await asyncio.to_thread(
+                self._prepare_render_manifest,
+                site,
+                volume_id,
+                needed_chunks,
+            )
             total_elapsed_ms = self._format_perf_ms(total_started_at)
             io_manager.write_perf(
                 f"[VOL {probe_site}/{probe_volume_id}] total_async_ingest: {total_elapsed_ms:.2f}ms "
@@ -294,9 +329,11 @@ class NexradIngestService:
                 volume_id=probe_volume_id,
                 vcp=probe_vcp,
                 dynamic_scan_type=None,
+                volume_path=volume_path,
+                scan_timestamp=scan_timestamp,
                 low_path=None,
                 high_path=None,
-                manifest_path=None,
+                manifest_path=manifest_path,
                 chunks_downloaded=len(needed_chunks),
                 complete=True,
             )
