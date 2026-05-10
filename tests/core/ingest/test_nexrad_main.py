@@ -8,9 +8,10 @@ import util.file as fs
 import common.ingest.nexrad.main as nexrad_main
 from common.ingest.nexrad.models import ChunkKey
 from common.ingest.nexrad.main import NexradIngestService, ingest_allowed_vcp_volume, list_allowed_vcp_sites
+from common.ingest.nexrad.writer import chunk_output_dir, volume_output_path
 
 
-def test_ingest_downloads_chunks_to_timestamped_site_chunks_dir(tmp_path):
+def test_ingest_downloads_chunks_to_timestamped_site_volume_file_and_markers(tmp_path):
     fs.initialize_filesystem(tmp_path)
 
     chunks = [
@@ -46,9 +47,9 @@ def test_ingest_downloads_chunks_to_timestamped_site_chunks_dir(tmp_path):
     assert result.high_path is None
     assert result.manifest_path is None
     outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks"
-    assert (outdir / "20260507-150000-001-S").read_bytes() == b"chunk1"
-    assert (outdir / "20260507-150000-025-I").read_bytes() == b"chunk25"
-    assert not (outdir / "20260507-150000-026-I").exists()
+    volume_path = volume_output_path("KTLH", "999", chunks)
+    assert volume_path.read_bytes() == b"".join(f"chunk{number}".encode("utf-8") for number in range(1, 26))
+    assert not outdir.exists()
 
 
 def test_list_allowed_vcp_sites_filters_and_sorts():
@@ -115,7 +116,8 @@ def test_ingest_keeps_latest_three_station_scan_dirs(tmp_path):
     assert not oldest_outdir.parent.exists()
     assert old_outdir.parent.exists()
     assert newer_outdir.parent.exists()
-    assert (Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks").exists()
+    assert volume_output_path("KTLH", "999", chunks).exists()
+    assert not (Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks").exists()
 
 
 class _AsyncBody:
@@ -168,17 +170,21 @@ async def test_ingest_allowed_vcp_volume_async_downloads_chunks_to_timestamped_s
     assert result.vcp == 212
     assert result.chunks_downloaded == 25
     outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks"
-    assert (outdir / "20260507-150000-001-S").read_bytes() == b"chunk1"
-    assert (outdir / "20260507-150000-025-I").read_bytes() == b"chunk25"
+    volume_path = volume_output_path("KTLH", "999", chunks)
+    assert volume_path.read_bytes() == b"".join(f"chunk{number}".encode("utf-8") for number in range(1, 26))
+    assert not outdir.exists()
 
 
 @pytest.mark.asyncio
 async def test_ingest_allowed_vcp_volume_async_skips_existing_files(tmp_path):
     fs.initialize_filesystem(tmp_path)
     chunks = _make_low_chunks()
-    outdir = Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks"
+    outdir = chunk_output_dir("KTLH", "999", chunks)
     outdir.mkdir(parents=True, exist_ok=True)
-    (outdir / "20260507-150000-001-S").write_bytes(b"existing")
+    (outdir / "legacy-marker").touch()
+    volume_path = volume_output_path("KTLH", "999", chunks)
+    volume_path.parent.mkdir(parents=True, exist_ok=True)
+    volume_path.write_bytes(b"existing")
     station = type("Station", (), {"vcp": 212})()
     fetched = []
 
@@ -199,9 +205,9 @@ async def test_ingest_allowed_vcp_volume_async_skips_existing_files(tmp_path):
         station_vcp=station,
     )
 
-    assert 1 not in fetched
-    assert len(fetched) == 24
-    assert (outdir / "20260507-150000-001-S").read_bytes() == b"existing"
+    assert fetched == []
+    assert volume_path.read_bytes() == b"existing"
+    assert not outdir.exists()
 
 
 @pytest.mark.asyncio
@@ -236,7 +242,8 @@ async def test_ingest_allowed_vcp_volume_async_keeps_latest_three_station_scan_d
     assert not oldest_outdir.parent.exists()
     assert old_outdir.parent.exists()
     assert newer_outdir.parent.exists()
-    assert (Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks").exists()
+    assert volume_output_path("KTLH", "999", chunks).exists()
+    assert not (Path(tmp_path) / "data" / "NEXRAD_Level2" / "KTLH" / "20260507-150000" / "chunks").exists()
 
 
 @pytest.mark.asyncio

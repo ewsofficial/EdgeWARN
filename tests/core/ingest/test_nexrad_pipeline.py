@@ -6,7 +6,7 @@ import util.file as fs
 from common.ingest.nexrad.models import ChunkKey, NexradIngestResult, RadarStationVcp
 from common.ingest.nexrad.pipeline import NexradRealtimeIngestionPipeline
 from common.ingest.nexrad.pipeline.models import PendingVolume
-from common.ingest.nexrad.writer import chunk_output_dir
+from common.ingest.nexrad.writer import volume_output_path
 
 
 def _station(site="KTLH", *, vcp=212):
@@ -200,10 +200,9 @@ async def test_pipeline_drops_stale_pending_when_newer_volume_is_seen(tmp_path):
 async def test_pipeline_removes_local_complete_pending_without_duplicate_ingest(tmp_path):
     fs.initialize_filesystem(tmp_path)
     chunks = _chunks()
-    outdir = chunk_output_dir("KTLH", "999", chunks)
-    outdir.mkdir(parents=True, exist_ok=True)
-    for chunk in chunks:
-        (outdir / Path(chunk.key).name).write_bytes(b"x")
+    volume_path = volume_output_path("KTLH", "999", chunks)
+    volume_path.parent.mkdir(parents=True, exist_ok=True)
+    volume_path.write_bytes(b"volume")
     ingested = []
     pipeline = NexradRealtimeIngestionPipeline(
         base_dir=tmp_path,

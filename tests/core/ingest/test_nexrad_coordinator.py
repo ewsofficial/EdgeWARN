@@ -4,7 +4,7 @@ import pytest
 
 import util.file as fs
 from common.ingest.nexrad.coordinator import NexradScanCoordinator
-from common.ingest.nexrad.main import chunk_output_dir
+from common.ingest.nexrad.writer import volume_output_path
 from common.ingest.nexrad.models import ChunkKey, NexradIngestResult, RadarStationVcp
 
 
@@ -239,10 +239,9 @@ async def test_coordinator_ignores_missing_latest_scan_timestamp_when_latest_vol
 async def test_coordinator_skips_when_latest_scan_is_already_downloaded(tmp_path):
     fs.initialize_filesystem(tmp_path)
     remote_chunks = _chunks()
-    outdir = chunk_output_dir("KTLH", "999", remote_chunks)
-    outdir.mkdir(parents=True, exist_ok=True)
-    for chunk in remote_chunks:
-        (outdir / Path(chunk.key).name).write_bytes(b"x")
+    volume_path = volume_output_path("KTLH", "999", remote_chunks)
+    volume_path.parent.mkdir(parents=True, exist_ok=True)
+    volume_path.write_bytes(b"volume")
     ingest_calls = []
 
     async def _ingest_trigger(*_args, **_kwargs):
@@ -303,10 +302,9 @@ async def test_coordinator_skips_when_no_recent_volume_exists(tmp_path):
 async def test_coordinator_retries_partial_local_scan_download(tmp_path):
     fs.initialize_filesystem(tmp_path)
     remote_chunks = _chunks()
-    outdir = chunk_output_dir("KTLH", "999", remote_chunks)
-    outdir.mkdir(parents=True, exist_ok=True)
-    for chunk in remote_chunks[:-1]:
-        (outdir / Path(chunk.key).name).write_bytes(b"x")
+    volume_path = volume_output_path("KTLH", "999", remote_chunks)
+    volume_path.parent.mkdir(parents=True, exist_ok=True)
+    volume_path.with_suffix(f"{volume_path.suffix}.part").write_bytes(b"partial")
     ingest_calls = []
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
