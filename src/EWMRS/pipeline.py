@@ -335,38 +335,34 @@ def _cleanup_old_nexrad_gui_files(max_age_minutes: int = 120) -> int:
     max_age_seconds = max_age_minutes * 60
     total_removed = 0
 
-    for layer_dir in nexrad_root.iterdir():
-        if not layer_dir.is_dir() or layer_dir.name.startswith("."):
+    for site_dir in nexrad_root.iterdir():
+        if not site_dir.is_dir() or site_dir.name.startswith("."):
             continue
 
-        for site_dir in layer_dir.iterdir():
-            if not site_dir.is_dir() or site_dir.name.startswith("."):
+        for timestamp_dir in site_dir.iterdir():
+            if not timestamp_dir.is_dir() or timestamp_dir.name.startswith("."):
                 continue
 
-            for timestamp_dir in site_dir.iterdir():
-                if not timestamp_dir.is_dir() or timestamp_dir.name.startswith("."):
-                    continue
-
-                try:
-                    folder_age = now - timestamp_dir.stat().st_mtime
-                    if folder_age <= max_age_seconds:
-                        continue
-
-                    shutil.rmtree(timestamp_dir)
-                    total_removed += 1
-                    io_manager.write_debug(f"Removed old NEXRAD timestamp folder: {timestamp_dir}")
-                except Exception as exc:
-                    io_manager.write_warning(f"Failed to process NEXRAD folder {timestamp_dir}: {exc}")
-
             try:
-                if any(site_dir.iterdir()):
+                folder_age = now - timestamp_dir.stat().st_mtime
+                if folder_age <= max_age_seconds:
                     continue
 
-                site_dir.rmdir()
+                shutil.rmtree(timestamp_dir)
                 total_removed += 1
-                io_manager.write_debug(f"Removed empty NEXRAD site folder: {site_dir}")
+                io_manager.write_debug(f"Removed old NEXRAD timestamp folder: {timestamp_dir}")
             except Exception as exc:
-                io_manager.write_warning(f"Failed to process NEXRAD site folder {site_dir}: {exc}")
+                io_manager.write_warning(f"Failed to process NEXRAD folder {timestamp_dir}: {exc}")
+
+        try:
+            if any(site_dir.iterdir()):
+                continue
+
+            site_dir.rmdir()
+            total_removed += 1
+            io_manager.write_debug(f"Removed empty NEXRAD site folder: {site_dir}")
+        except Exception as exc:
+            io_manager.write_warning(f"Failed to process NEXRAD site folder {site_dir}: {exc}")
 
     return total_removed
 
