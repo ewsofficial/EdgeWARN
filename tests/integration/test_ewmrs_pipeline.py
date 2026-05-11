@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timezone
 
 import EWMRS.pipeline as ewmrs_pipeline
@@ -270,6 +271,40 @@ def test_cleanup_old_gui_files_uses_dynamic_render_configuration(monkeypatch, tm
 
     assert not active_timestamp_dir.exists()
     assert json.loads((active_dir / "index.json").read_text()) == []
+
+
+def test_cleanup_old_gui_files_prunes_old_nexrad_site_timestamps(monkeypatch, tmp_path):
+    active_dir = tmp_path / "active"
+    nexrad_root = tmp_path / "gui" / "NEXRAD"
+    stale_timestamp_dir = nexrad_root / "NEXRAD_DBZH_SWEEP_00" / "KTLH" / "20260317-170000"
+    fresh_timestamp_dir = nexrad_root / "NEXRAD_DBZH_SWEEP_00" / "KTLH" / "20260317-193000"
+    empty_site_timestamp_dir = nexrad_root / "NEXRAD_DBZH_SWEEP_00" / "KJAX" / "20260317-160000"
+
+    active_dir.mkdir()
+    stale_timestamp_dir.mkdir(parents=True)
+    fresh_timestamp_dir.mkdir(parents=True)
+    empty_site_timestamp_dir.mkdir(parents=True)
+
+    (stale_timestamp_dir / "data.f16").write_bytes(b"stale")
+    (fresh_timestamp_dir / "data.f16").write_bytes(b"fresh")
+    (empty_site_timestamp_dir / "data.f16").write_bytes(b"empty-site")
+
+    now = 1_800_000_000
+    stale_mtime = now - (3 * 60 * 60)
+    fresh_mtime = now - (30 * 60)
+    os.utime(stale_timestamp_dir, (stale_mtime, stale_mtime))
+    os.utime(empty_site_timestamp_dir, (stale_mtime, stale_mtime))
+    os.utime(fresh_timestamp_dir, (fresh_mtime, fresh_mtime))
+
+    monkeypatch.setattr(ewmrs_pipeline, "get_file_list", lambda: [{"outdir": active_dir}])
+    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", nexrad_root)
+    monkeypatch.setattr(ewmrs_pipeline.time, "time", lambda: now)
+
+    ewmrs_pipeline.cleanup_old_gui_files(max_age_minutes=120)
+
+    assert not stale_timestamp_dir.exists()
+    assert fresh_timestamp_dir.exists()
+    assert not (nexrad_root / "NEXRAD_DBZH_SWEEP_00" / "KJAX").exists()
 
 
 def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monkeypatch):
