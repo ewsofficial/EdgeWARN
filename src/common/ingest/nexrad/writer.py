@@ -78,8 +78,16 @@ def nexrad_render_output_dir(layer_name: str, site: str) -> Path:
     return fs.BASE_DIR / "gui" / "NEXRAD" / layer_name / str(site).upper()
 
 
-def nexrad_render_intermediate_dir(scan_dir: Path) -> Path:
-    return Path(scan_dir) / "render"
+def nexrad_render_timestamp_dir(layer_name: str, site: str, scan_timestamp: str) -> Path:
+    return nexrad_render_output_dir(layer_name, site) / str(scan_timestamp)
+
+
+def _write_float16_file(path: Path, values: np.ndarray) -> None:
+    np.asarray(values, dtype=np.float16).tofile(path)
+
+
+def _write_float32_file(path: Path, values: np.ndarray) -> None:
+    np.asarray(values, dtype=np.float32).tofile(path)
 
 
 def serialize_nexrad_render_intermediate(
@@ -90,9 +98,8 @@ def serialize_nexrad_render_intermediate(
     parsed_volume,
 ) -> Path:
     scan_dir = Path(volume_path).parent
-    render_dir = nexrad_render_intermediate_dir(scan_dir)
-    payload_dir = render_dir / "payloads"
-    payload_dir.mkdir(parents=True, exist_ok=True)
+    render_dir = scan_dir / "render"
+    render_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_layers = []
     datatree = getattr(parsed_volume, "datatree", None)
@@ -113,23 +120,17 @@ def serialize_nexrad_render_intermediate(
                     continue
 
                 values = np.asarray(data_array.values, dtype=np.float32)
-                valid_mask = np.isfinite(values)
-                if not np.any(valid_mask):
-                    continue
-
-                azimuth_grid = np.broadcast_to(azimuths[:, None], values.shape)
-                range_grid = np.broadcast_to(ranges[None, :], values.shape)
-                triples = np.column_stack(
-                    (
-                        azimuth_grid[valid_mask],
-                        range_grid[valid_mask],
-                        values[valid_mask],
-                    )
-                ).astype(np.float16, copy=False)
+                dense_data = values.T.astype(np.float16, copy=False)
 
                 layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
-                payload_path = payload_dir / f"{layer_name}.npy"
-                np.save(payload_path, triples)
+                timestamp_dir = nexrad_render_timestamp_dir(layer_name, site, scan_timestamp)
+                timestamp_dir.mkdir(parents=True, exist_ok=True)
+                azimuths_path = timestamp_dir / "azimuths.f32"
+                ranges_path = timestamp_dir / "ranges.f32"
+                data_path = timestamp_dir / "data.f16"
+                _write_float32_file(azimuths_path, azimuths)
+                _write_float32_file(ranges_path, ranges)
+                _write_float16_file(data_path, dense_data)
 
                 manifest_layers.append(
                     {
@@ -142,11 +143,15 @@ def serialize_nexrad_render_intermediate(
                         "fixed_angle": float(sweep.fixed_angle),
                         "variable_name": variable_name,
                         "colormap_key": colormap_key,
-                        "payload_path": str(payload_path),
+                        "azimuths_path": str(azimuths_path),
+                        "ranges_path": str(ranges_path),
+                        "data_path": str(data_path),
+                        "served_dir": str(timestamp_dir),
+                        "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
+                        "data_order": "range_azimuth",
+                        "azimuth_count": int(azimuths.shape[0]),
+                        "range_count": int(ranges.shape[0]),
                         "outdir": str(nexrad_render_output_dir(layer_name, site)),
-                        "azimuth_values": azimuths.astype(np.float16).tolist(),
-                        "range_values": ranges.astype(np.float16).tolist(),
-                        "triplet_count": int(triples.shape[0]),
                     }
                 )
 
