@@ -3,8 +3,9 @@ import json
 import netCDF4
 import numpy as np
 import xarray as xr
+from EWMRS.render.nexrad import serialize_nexrad_render_intermediate
 
-from common.ingest.nexrad.writer import _dataset_encoding, _write_grouped_netcdf, serialize_nexrad_render_intermediate
+from common.ingest.nexrad.writer import _dataset_encoding, _write_grouped_netcdf
 
 
 class _Group:
