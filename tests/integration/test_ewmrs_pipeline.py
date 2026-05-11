@@ -285,9 +285,9 @@ def test_cleanup_old_gui_files_prunes_old_nexrad_site_timestamps(monkeypatch, tm
     fresh_timestamp_dir.mkdir(parents=True)
     empty_site_timestamp_dir.mkdir(parents=True)
 
-    (stale_timestamp_dir / "data.f16").write_bytes(b"stale")
-    (fresh_timestamp_dir / "data.f16").write_bytes(b"fresh")
-    (empty_site_timestamp_dir / "data.f16").write_bytes(b"empty-site")
+    (stale_timestamp_dir / "data.f16.gz").write_bytes(b"stale")
+    (fresh_timestamp_dir / "data.f16.gz").write_bytes(b"fresh")
+    (empty_site_timestamp_dir / "data.f16.gz").write_bytes(b"empty-site")
 
     now = 1_800_000_000
     stale_mtime = now - (3 * 60 * 60)

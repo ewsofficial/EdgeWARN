@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 
@@ -23,8 +24,10 @@ def nexrad_render_timestamp_dir(layer_name: str, site: str, scan_timestamp: str)
     return nexrad_render_output_dir(layer_name, site) / str(scan_timestamp)
 
 
-def _write_float16_file(path: Path, values: np.ndarray) -> None:
-    np.asarray(values, dtype=np.float16).tofile(path)
+def _write_float16_gzip_file(path: Path, values: np.ndarray) -> None:
+    payload = np.asarray(values, dtype=np.float16).tobytes(order="C")
+    with gzip.open(path, "wb") as handle:
+        handle.write(payload)
 
 
 def _write_float32_file(path: Path, values: np.ndarray) -> None:
@@ -68,10 +71,10 @@ def serialize_nexrad_render_intermediate(
                 timestamp_dir.mkdir(parents=True, exist_ok=True)
                 azimuths_path = timestamp_dir / "azimuths.f32"
                 ranges_path = timestamp_dir / "ranges.f32"
-                data_path = timestamp_dir / "data.f16"
+                data_path = timestamp_dir / "data.f16.gz"
                 _write_float32_file(azimuths_path, azimuths)
                 _write_float32_file(ranges_path, ranges)
-                _write_float16_file(data_path, dense_data)
+                _write_float16_gzip_file(data_path, dense_data)
 
                 manifest_layers.append(
                     {

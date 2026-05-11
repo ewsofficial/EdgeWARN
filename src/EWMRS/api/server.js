@@ -12,6 +12,7 @@ import rendersRouter from './routes/renders.js';
 import wpcRouter from './routes/wpc.js';
 import colormapsRouter from './routes/colormaps.js';
 import rapRouter from './routes/rap.js';
+import nexradRouter from './routes/nexrad.js';
 
 const DEFAULT_PORT = 3003;
 const DEBUG_PORT = 3004;
@@ -206,6 +207,7 @@ export function createApp(options = {}) {
   app.use('/renders', rendersRouter);
   app.use('/rap', rapRouter);
   app.use('/wpc', wpcRouter);
+  app.use('/nexrad', nexradRouter);
 
   // Root endpoint to avoid default express 404 "Cannot GET /"
   app.get('/', (req, res) => {
@@ -213,7 +215,7 @@ export function createApp(options = {}) {
       service: 'EWMRS API',
       base_dir: baseDir,
       gui_dir: guiDir,
-      endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
+      endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/nexrad/variables', '/nexrad/sites', '/nexrad/timestamps', '/nexrad/download', '/healthz', '/colormaps']
     });
   });
 
