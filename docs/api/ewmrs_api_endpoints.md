@@ -35,6 +35,9 @@ Response:
     "/rap/fetch",
     "/rap/metadata",
     "/rap/data",
+    "/nexrad/sites",
+    "/nexrad/timestamps",
+    "/nexrad/download",
     "/healthz",
     "/colormaps"
   ]
@@ -314,6 +317,80 @@ if value == 65535:
 else:
   decoded = scale.min + (value / 65534) * (scale.max - scale.min)
 ```
+
+## NEXRAD Polar Intermediate Endpoints
+
+NEXRAD intermediate outputs are served from:
+
+```text
+<BASE_DIR>/gui/NEXRAD/NEXRAD_<VARIABLE>_SWEEP_<NN>/<SITE>/<YYYYMMDD-HHMMSS>/
+  azimuths.f32
+  ranges.f32
+  data.f16.gz
+```
+
+Supported `variable` values:
+
+- `CCORH`
+- `DBZH`
+- `PHIDP`
+- `RHOHV`
+- `VRADH`
+- `WRADH`
+- `ZDR`
+
+### GET /nexrad/variables
+
+Returns the supported NEXRAD variable names in API order.
+
+Responses:
+
+- `200`: `string[]`
+
+### GET /nexrad/sites?variable={variable}[&sweep={NN}]
+
+Returns sorted unique site codes for a variable (and optional sweep).
+
+Responses:
+
+- `200`: `string[]`
+- `400`: invalid `variable` or `sweep`
+- `500`: read/server failure
+
+### GET /nexrad/timestamps?variable={variable}&site={site}[&sweep={NN}]
+
+Returns available timestamps for `site` + `variable`.
+
+- If `sweep` is omitted, timestamps are aggregated across matching sweep folders and de-duplicated.
+- Timestamps are sorted descending.
+
+Responses:
+
+- `200`: `string[]`
+- `400`: invalid params
+- `500`: read/server failure
+
+### GET /nexrad/download?variable={variable}&site={site}&timestamp={YYYYMMDD-HHMMSS}&file={azimuths|ranges|data}[&sweep={NN}]
+
+Returns one raw NEXRAD intermediate file.
+
+`file` mapping:
+
+- `azimuths` -> `azimuths.f32`
+- `ranges` -> `ranges.f32`
+- `data` -> `data.f16.gz`
+
+Behavior:
+
+- If `sweep` is provided, only that sweep directory is searched.
+- If `sweep` is omitted, the API searches matching sweeps from highest sweep number to lowest and serves the first match.
+
+Responses:
+
+- `200`: raw binary (`application/octet-stream`); `file=data` responses are gzip-compressed and sent with `Content-Encoding: gzip`
+- `400`: invalid params
+- `404`: layer/file not found
+- `500`: read/server failure
 
 ## Colormap Endpoint
 

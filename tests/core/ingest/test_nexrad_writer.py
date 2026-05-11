@@ -1,3 +1,4 @@
+import gzip
 import json
 
 import netCDF4
@@ -142,7 +143,7 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
     assert "/gui/NEXRAD/NEXRAD_DBZH_SWEEP_00/KTLH/20260507-150000/" in manifest["layers"][0]["azimuths_path"]
     assert manifest["layers"][0]["azimuths_path"].endswith(".f32")
     assert manifest["layers"][0]["ranges_path"].endswith(".f32")
-    assert manifest["layers"][0]["data_path"].endswith(".f16")
+    assert manifest["layers"][0]["data_path"].endswith(".f16.gz")
     assert "colormap_key" not in manifest["layers"][0]
     assert "data_order" not in manifest["layers"][0]
     assert "served_dir" not in manifest["layers"][0]
@@ -150,7 +151,8 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
 
     azimuths = np.fromfile(manifest["layers"][0]["azimuths_path"], dtype=np.float32)
     ranges = np.fromfile(manifest["layers"][0]["ranges_path"], dtype=np.float32)
-    data = np.fromfile(manifest["layers"][0]["data_path"], dtype=np.float16).reshape((3, 2))
+    with gzip.open(manifest["layers"][0]["data_path"], "rb") as handle:
+        data = np.frombuffer(handle.read(), dtype=np.float16).reshape((3, 2))
 
     assert azimuths.dtype == np.float32
     assert ranges.dtype == np.float32

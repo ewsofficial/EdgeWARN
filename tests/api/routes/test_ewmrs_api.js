@@ -8,16 +8,19 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import zlib from 'zlib';
 
 import rendersRouter from '../../../src/EWMRS/api/routes/renders.js';
 import colormapsRouter from '../../../src/EWMRS/api/routes/colormaps.js';
 import rapRouter from '../../../src/EWMRS/api/routes/rap.js';
+import nexradRouter from '../../../src/EWMRS/api/routes/nexrad.js';
 
 function createApp(tempDir) {
     const app = express();
     app.locals.GUI_DIR = path.join(tempDir, 'gui');
     app.use('/renders', rendersRouter);
     app.use('/rap', rapRouter);
+    app.use('/nexrad', nexradRouter);
     return app;
 }
 
@@ -39,7 +42,7 @@ describe('EWMRS Root Route', () => {
                 service: 'EWMRS API',
                 base_dir: req.app.locals.BASE_DIR,
                 gui_dir: req.app.locals.GUI_DIR,
-                endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
+                endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/nexrad/variables', '/nexrad/sites', '/nexrad/timestamps', '/nexrad/download', '/healthz', '/colormaps']
             });
         });
     });
@@ -49,6 +52,8 @@ describe('EWMRS Root Route', () => {
         expect(res.body.service).toBe('EWMRS API');
         expect(res.body.endpoints).toContain('/renders/get-items');
         expect(res.body.endpoints).toContain('/rap/data');
+        expect(res.body.endpoints).toContain('/nexrad/variables');
+        expect(res.body.endpoints).toContain('/nexrad/download');
     });
 });
 
@@ -730,6 +735,143 @@ describe('EWMRS RAP Uint16 routes', () => {
             .expect(404);
 
         expect(res.body.error).toContain('Data file not found');
+    });
+});
+
+describe('EWMRS NEXRAD routes', () => {
+    let app, tempDir, nexradRoot;
+    const site = 'KAAA';
+    const variable = 'DBZH';
+    const supportedVariables = ['CCORH', 'DBZH', 'PHIDP', 'RHOHV', 'VRADH', 'WRADH', 'ZDR'];
+    const tsA = '20260507-150000';
+    const tsB = '20260507-145500';
+
+    beforeEach(async () => {
+        tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ewmrs-nexrad-'));
+        nexradRoot = path.join(tempDir, 'gui', 'NEXRAD');
+
+        const sweep00TsA = path.join(nexradRoot, 'NEXRAD_DBZH_SWEEP_00', site, tsA);
+        const sweep00TsB = path.join(nexradRoot, 'NEXRAD_DBZH_SWEEP_00', site, tsB);
+        const sweep01TsA = path.join(nexradRoot, 'NEXRAD_DBZH_SWEEP_01', site, tsA);
+        const velocitySite = path.join(nexradRoot, 'NEXRAD_VRADH_SWEEP_00', 'KBBB', tsA);
+
+        await fs.promises.mkdir(sweep00TsA, { recursive: true });
+        await fs.promises.mkdir(sweep00TsB, { recursive: true });
+        await fs.promises.mkdir(sweep01TsA, { recursive: true });
+        await fs.promises.mkdir(velocitySite, { recursive: true });
+
+        await fs.promises.writeFile(path.join(sweep00TsA, 'azimuths.f32'), Buffer.from([1, 2, 3, 4]));
+        await fs.promises.writeFile(path.join(sweep00TsA, 'ranges.f32'), Buffer.from([5, 6, 7, 8]));
+        await fs.promises.writeFile(path.join(sweep00TsA, 'data.f16.gz'), zlib.gzipSync(Buffer.from([9, 10, 11, 12])));
+        await fs.promises.writeFile(path.join(sweep01TsA, 'data.f16.gz'), zlib.gzipSync(Buffer.from([99])));
+        await fs.promises.writeFile(path.join(sweep00TsB, 'data.f16.gz'), zlib.gzipSync(Buffer.from([77])));
+
+        app = createApp(tempDir);
+    });
+
+    afterEach(async () => {
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+    });
+
+    it('lists unique sites for a variable', async () => {
+        const res = await request(app).get('/nexrad/sites?variable=DBZH').expect(200);
+        expect(res.body).toEqual(['KAAA']);
+    });
+
+    it('lists all supported NEXRAD variables', async () => {
+        const res = await request(app).get('/nexrad/variables').expect(200);
+        expect(res.body).toEqual(supportedVariables);
+    });
+
+    it('accepts the full supported NEXRAD variable set', async () => {
+        for (const supportedVariable of supportedVariables) {
+            const res = await request(app).get(`/nexrad/sites?variable=${supportedVariable}`).expect(200);
+            expect(Array.isArray(res.body)).toBe(true);
+        }
+    });
+
+    it('lists timestamps for a site and variable in descending order', async () => {
+        const res = await request(app)
+            .get('/nexrad/timestamps?variable=DBZH&site=KAAA')
+            .expect(200);
+        expect(res.body).toEqual([tsA, tsB]);
+    });
+
+    it('filters timestamps by sweep when provided', async () => {
+        const res = await request(app)
+            .get('/nexrad/timestamps?variable=DBZH&site=KAAA&sweep=01')
+            .expect(200);
+        expect(res.body).toEqual([tsA]);
+    });
+
+    it('downloads azimuths file bytes', async () => {
+        const res = await request(app)
+            .get(`/nexrad/download?variable=${variable}&site=${site}&timestamp=${tsA}&file=azimuths&sweep=00`)
+            .buffer(true)
+            .parse(parseBinary)
+            .expect(200);
+
+        expect(Array.from(res.body)).toEqual([1, 2, 3, 4]);
+        expect(res.headers['content-type']).toContain('application/octet-stream');
+    });
+
+    it('downloads ranges file bytes', async () => {
+        const res = await request(app)
+            .get(`/nexrad/download?variable=${variable}&site=${site}&timestamp=${tsA}&file=ranges&sweep=00`)
+            .buffer(true)
+            .parse(parseBinary)
+            .expect(200);
+
+        expect(Array.from(res.body)).toEqual([5, 6, 7, 8]);
+    });
+
+    it('downloads data file bytes and auto-selects newest sweep when omitted', async () => {
+        const res = await request(app)
+            .get(`/nexrad/download?variable=${variable}&site=${site}&timestamp=${tsA}&file=data`)
+            .buffer(true)
+            .parse(parseBinary)
+            .expect(200);
+
+        expect(Array.from(res.body)).toEqual([99]);
+        expect(res.headers['content-encoding']).toBe('gzip');
+        expect(res.headers['content-disposition']).toContain('SWEEP_01');
+        expect(res.headers['content-disposition']).toContain('data.f16.gz');
+    });
+
+    it('returns 400 for invalid variable parameter', async () => {
+        const res = await request(app).get('/nexrad/sites?variable=BAD').expect(400);
+        expect(res.body.error).toContain('Invalid variable');
+    });
+
+    it('returns 400 for invalid site parameter', async () => {
+        const res = await request(app).get('/nexrad/timestamps?variable=DBZH&site=../KAAA').expect(400);
+        expect(res.body.error).toContain('Invalid site');
+    });
+
+    it('returns 400 for invalid sweep parameter', async () => {
+        const res = await request(app).get('/nexrad/timestamps?variable=DBZH&site=KAAA&sweep=1').expect(400);
+        expect(res.body.error).toContain('Invalid sweep');
+    });
+
+    it('returns 400 for invalid timestamp parameter', async () => {
+        const res = await request(app)
+            .get('/nexrad/download?variable=DBZH&site=KAAA&timestamp=20260507&file=data')
+            .expect(400);
+        expect(res.body.error).toContain('Invalid timestamp');
+    });
+
+    it('returns 400 for invalid file selector', async () => {
+        const res = await request(app)
+            .get(`/nexrad/download?variable=${variable}&site=${site}&timestamp=${tsA}&file=unknown`)
+            .expect(400);
+        expect(res.body.error).toContain('Invalid file');
+    });
+
+    it('returns 404 when requested file is missing', async () => {
+        const res = await request(app)
+            .get('/nexrad/download?variable=DBZH&site=KAAA&timestamp=20260507-140000&file=data&sweep=00')
+            .expect(404);
+        expect(res.body.error).toContain('not found');
     });
 });
 
