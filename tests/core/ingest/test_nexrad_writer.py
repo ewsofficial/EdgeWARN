@@ -124,7 +124,7 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
         {
             "scan_name": "VCP-212",
             "dynamic_scan_type": "standard",
-            "sweeps": [type("SweepFixture", (), {"group_name": "/sweep_00", "fixed_angle": 0.5})()],
+            "sweeps": [type("SweepFixture", (), {"group_name": "/sweep_00", "fixed_angle": 0.5, "waveform": "contiguous_surveillance"})()],
             "datatree": _ParsedTree(dataset),
         },
     )()
@@ -135,15 +135,18 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
     manifest_path = serialize_nexrad_render_intermediate("KTLH", "999", "20260507-150000", volume_path, parsed)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    assert [layer["variable_name"] for layer in manifest["layers"]] == ["DBZH", "VRADH"]
-    assert manifest["layers"][0]["data_order"] == "range_azimuth"
+    assert [layer["variable_name"] for layer in manifest["layers"]] == ["DBZH", "VRADH", "noise"]
     assert manifest["layers"][0]["data_shape"] == [3, 2]
+    assert manifest["layers"][0]["name"] == "NEXRAD_DBZH_SWEEP_00"
 
-    assert "/gui/NEXRAD/NEXRAD_DBZH_SWEEP_00/KTLH/20260507-150000/" in manifest["layers"][0]["azimuths_path"]
+    assert "/render/NEXRAD_DBZH_SWEEP_00/20260507-150000/" in manifest["layers"][0]["azimuths_path"]
     assert manifest["layers"][0]["azimuths_path"].endswith(".f32")
     assert manifest["layers"][0]["ranges_path"].endswith(".f32")
     assert manifest["layers"][0]["data_path"].endswith(".f16")
-    assert manifest["layers"][0]["served_dir"].endswith("/gui/NEXRAD/NEXRAD_DBZH_SWEEP_00/KTLH/20260507-150000")
+    assert "colormap_key" not in manifest["layers"][0]
+    assert "data_order" not in manifest["layers"][0]
+    assert "served_dir" not in manifest["layers"][0]
+    assert "outdir" not in manifest["layers"][0]
 
     azimuths = np.fromfile(manifest["layers"][0]["azimuths_path"], dtype=np.float32)
     ranges = np.fromfile(manifest["layers"][0]["ranges_path"], dtype=np.float32)
@@ -157,3 +160,35 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
     assert data.shape == (3, 2)
     expected = np.array([[1.5, 3.5], [np.nan, 4.5], [2.5, 5.5]], dtype=np.float16)
     np.testing.assert_allclose(data, expected, equal_nan=True)
+
+
+def test_serialize_nexrad_render_intermediate_skips_dbzh_for_contiguous_doppler_sweeps(tmp_path):
+    dataset = xr.Dataset(
+        {
+            "DBZH": (("azimuth", "range"), np.array([[1.0, 2.0]], dtype=np.float32)),
+            "VRADH": (("azimuth", "range"), np.array([[3.0, 4.0]], dtype=np.float32)),
+            "WRADH": (("azimuth", "range"), np.array([[5.0, 6.0]], dtype=np.float32)),
+        },
+        coords={
+            "azimuth": np.array([0.0], dtype=np.float32),
+            "range": np.array([1000.0, 2000.0], dtype=np.float32),
+        },
+    )
+    parsed = type(
+        "ParsedVolumeFixture",
+        (),
+        {
+            "scan_name": "VCP-212",
+            "dynamic_scan_type": "standard",
+            "sweeps": [type("SweepFixture", (), {"group_name": "/sweep_00", "fixed_angle": 0.5, "waveform": "contiguous_doppler"})()],
+            "datatree": _ParsedTree(dataset),
+        },
+    )()
+    volume_path = tmp_path / "KTLH_20260507-150000_999.ar2v"
+    volume_path.parent.mkdir(parents=True, exist_ok=True)
+    volume_path.write_bytes(b"volume")
+
+    manifest_path = serialize_nexrad_render_intermediate("KTLH", "999", "20260507-150000", volume_path, parsed)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert [layer["variable_name"] for layer in manifest["layers"]] == ["VRADH", "WRADH"]

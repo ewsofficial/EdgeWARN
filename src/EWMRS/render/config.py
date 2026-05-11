@@ -229,20 +229,5 @@ def get_file_list():
     """Return the combined render configuration list."""
     return get_mrms_file_list() + get_goes_file_list()
 
-
-def get_nexrad_file_list(task, manifest):
-    site = str(manifest.get("site") or getattr(task, "site", "")).upper()
-    scan_timestamp = manifest.get("scan_timestamp") or getattr(task, "scan_timestamp", None)
-    volume_id = manifest.get("volume_id") or getattr(task, "volume_id", None)
-    layers = []
-    for entry in manifest.get("layers", []):
-        layer = dict(entry)
-        layer["site"] = site
-        layer["scan_timestamp"] = scan_timestamp
-        layer["volume_id"] = volume_id
-        layer["source_type"] = "nexrad_polar"
-        layers.append(layer)
-    return layers
-
 # For backward compatibility - returns list at import time (use get_file_list() for dynamic paths)
 file_list = get_file_list()
