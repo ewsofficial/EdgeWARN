@@ -17,7 +17,6 @@ from EWMRS.render.config import (
     get_file_list,
     get_goes_file_list,
     get_mrms_file_list,
-    get_nexrad_file_list,
 )
 from EWMRS.render.tools import configure_proj_runtime
 import util.file as fs
@@ -319,36 +318,6 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
         return [path for _, _, path in tile_paths]
     except Exception:
         return None
-
-
-def _render_nexrad_layer(layer: dict) -> tuple[str, RenderOutput]:
-    name = str(layer.get("name"))
-    data_order = str(layer.get("data_order", ""))
-    if data_order != "range_azimuth":
-        io_manager.write_warning(f"Unsupported NEXRAD data order for {name}: {data_order}")
-        return name, None
-
-    azimuths_path = Path(layer["azimuths_path"])
-    ranges_path = Path(layer["ranges_path"])
-    data_path = Path(layer["data_path"])
-    for path in (azimuths_path, ranges_path, data_path):
-        if not path.exists():
-            io_manager.write_warning(f"Missing NEXRAD served artifact for {name}: {path}")
-            return name, None
-
-    azimuths = np.fromfile(azimuths_path, dtype=np.float32)
-    ranges = np.fromfile(ranges_path, dtype=np.float32)
-    data = np.fromfile(data_path, dtype=np.float16)
-
-    expected_shape = (int(ranges.shape[0]), int(azimuths.shape[0]))
-    if data.size != expected_shape[0] * expected_shape[1]:
-        io_manager.write_warning(
-            f"Invalid NEXRAD data size for {name}: got {data.size}, expected {expected_shape[0] * expected_shape[1]}"
-        )
-        return name, None
-    return name, [azimuths_path, ranges_path, data_path]
-
-
 def _normalize_render_timestamp(timestamp_iso: str) -> str:
     dt = datetime.fromisoformat(timestamp_iso)
     return dt.strftime(r"%Y%m%d-%H%M00")
@@ -370,10 +339,6 @@ def cleanup_old_gui_files(max_age_minutes: int = 120):
             continue
 
         candidate_dirs.append(Path(output_path))
-
-    nexrad_root = fs.BASE_DIR / "gui" / "NEXRAD"
-    if nexrad_root.exists():
-        candidate_dirs.extend(path for path in nexrad_root.glob("*/*") if path.is_dir())
 
     for out_dir in candidate_dirs:
         if not out_dir.exists():
@@ -843,25 +808,6 @@ def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutpu
     io_manager.write_info(f"GOES render pipeline completed in {time.perf_counter() - pipeline_start_s:.3f}s")
 
     return results
-
-
-def run_nexrad_render_pipeline(task) -> Dict[str, RenderOutput]:
-    manifest_path = Path(task.manifest_path if hasattr(task, "manifest_path") else task["manifest_path"])
-    if not manifest_path.exists():
-        io_manager.write_warning(f"NEXRAD render manifest missing: {manifest_path}")
-        return {}
-
-    with open(manifest_path, "r", encoding="utf-8") as handle:
-        manifest = json.load(handle)
-
-    layers = get_nexrad_file_list(task, manifest)
-    results: Dict[str, RenderOutput] = {}
-    for layer in layers:
-        name, png_path = _render_nexrad_layer(layer)
-        results[name] = png_path
-    return results
-
-
 def run_rap_uint16_pipeline(rap_file, dt=None):
     """Run the EWMRS RAP Uint16Array conversion pipeline for one RAP GRIB2 file."""
     from EWMRS.rap.uint16_pipeline import run_rap_uint16_pipeline as _run_rap_uint16_pipeline
@@ -923,19 +869,3 @@ def ewmrs_goes_worker(log_queue, dt, max_entries: int = 10):
         log(f"INFO: EWMRS GOES render completed: {_summarize_results(results)}")
     except Exception as exc:
         log(f"ERROR: EWMRS GOES worker failed - {exc}")
-
-
-def ewmrs_nexrad_worker(log_queue, task):
-    """Process target for decoupled NEXRAD rendering outside tandem completion."""
-    sys.stdout = QueueWriter(log_queue)
-    sys.stderr = QueueWriter(log_queue)
-
-    def log(msg: str):
-        log_queue.put(str(msg))
-
-    try:
-        log(f"INFO: Starting EWMRS NEXRAD render phase for {task.site}/{task.volume_id}")
-        results = run_nexrad_render_pipeline(task)
-        log(f"INFO: EWMRS NEXRAD render completed: {_summarize_results(results)}")
-    except Exception as exc:
-        log(f"ERROR: EWMRS NEXRAD worker failed - {exc}")

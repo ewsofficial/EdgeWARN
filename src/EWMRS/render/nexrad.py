@@ -5,22 +5,16 @@ from pathlib import Path
 
 import numpy as np
 
-import util.file as fs
 
-NEXRAD_RENDERABLE_VARS = {
-    "DBZH": "NWS_Reflectivity",
-    "VRADH": "NEXRAD_Velocity",
-    "WRADH": "NEXRAD_SpectrumWidth",
-    "RHOHV": "NEXRAD_CorrelationCoefficient",
-}
+def _should_serialize_variable(sweep, variable_name: str) -> bool:
+    waveform = str(getattr(sweep, "waveform", "") or "").lower()
+    if waveform == "contiguous_doppler" and variable_name == "DBZH":
+        return False
+    return True
 
 
-def nexrad_render_output_dir(layer_name: str, site: str) -> Path:
-    return fs.GUI_NEXRAD_DIR / layer_name / str(site).upper()
-
-
-def nexrad_render_timestamp_dir(layer_name: str, site: str, scan_timestamp: str) -> Path:
-    return nexrad_render_output_dir(layer_name, site) / str(scan_timestamp)
+def nexrad_render_timestamp_dir(render_dir: Path, layer_name: str, scan_timestamp: str) -> Path:
+    return render_dir / layer_name / str(scan_timestamp)
 
 
 def _write_float16_file(path: Path, values: np.ndarray) -> None:
@@ -53,8 +47,8 @@ def serialize_nexrad_render_intermediate(
 
             azimuths = np.asarray(dataset["azimuth"].values, dtype=np.float32)
             ranges = np.asarray(dataset["range"].values, dtype=np.float32)
-            for variable_name, colormap_key in NEXRAD_RENDERABLE_VARS.items():
-                if variable_name not in dataset.data_vars:
+            for variable_name in dataset.data_vars:
+                if not _should_serialize_variable(sweep, variable_name):
                     continue
                 data_array = dataset[variable_name]
                 if tuple(data_array.dims)[:2] != ("azimuth", "range"):
@@ -64,7 +58,7 @@ def serialize_nexrad_render_intermediate(
                 dense_data = values.T.astype(np.float16, copy=False)
 
                 layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
-                timestamp_dir = nexrad_render_timestamp_dir(layer_name, site, scan_timestamp)
+                timestamp_dir = nexrad_render_timestamp_dir(render_dir, layer_name, scan_timestamp)
                 timestamp_dir.mkdir(parents=True, exist_ok=True)
                 azimuths_path = timestamp_dir / "azimuths.f32"
                 ranges_path = timestamp_dir / "ranges.f32"
@@ -83,16 +77,12 @@ def serialize_nexrad_render_intermediate(
                         "sweep_group": sweep.group_name,
                         "fixed_angle": float(sweep.fixed_angle),
                         "variable_name": variable_name,
-                        "colormap_key": colormap_key,
                         "azimuths_path": str(azimuths_path),
                         "ranges_path": str(ranges_path),
                         "data_path": str(data_path),
-                        "served_dir": str(timestamp_dir),
                         "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
-                        "data_order": "range_azimuth",
                         "azimuth_count": int(azimuths.shape[0]),
                         "range_count": int(ranges.shape[0]),
-                        "outdir": str(nexrad_render_output_dir(layer_name, site)),
                     }
                 )
 
