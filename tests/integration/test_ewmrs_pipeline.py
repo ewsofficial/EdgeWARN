@@ -276,18 +276,18 @@ def test_cleanup_old_gui_files_uses_dynamic_render_configuration(monkeypatch, tm
 def test_cleanup_old_gui_files_prunes_old_nexrad_site_timestamps(monkeypatch, tmp_path):
     active_dir = tmp_path / "active"
     nexrad_root = tmp_path / "gui" / "NEXRAD"
-    stale_timestamp_dir = nexrad_root / "NEXRAD_DBZH_SWEEP_00" / "KTLH" / "20260317-170000"
-    fresh_timestamp_dir = nexrad_root / "NEXRAD_DBZH_SWEEP_00" / "KTLH" / "20260317-193000"
-    empty_site_timestamp_dir = nexrad_root / "NEXRAD_DBZH_SWEEP_00" / "KJAX" / "20260317-160000"
+    stale_timestamp_dir = nexrad_root / "KTLH" / "20260317-170000"
+    fresh_timestamp_dir = nexrad_root / "KTLH" / "20260317-193000"
+    empty_site_timestamp_dir = nexrad_root / "KJAX" / "20260317-160000"
 
     active_dir.mkdir()
-    stale_timestamp_dir.mkdir(parents=True)
-    fresh_timestamp_dir.mkdir(parents=True)
-    empty_site_timestamp_dir.mkdir(parents=True)
+    (stale_timestamp_dir / "0.5" / "DBZH").mkdir(parents=True)
+    (fresh_timestamp_dir / "0.5" / "DBZH").mkdir(parents=True)
+    (empty_site_timestamp_dir / "0.5" / "DBZH").mkdir(parents=True)
 
-    (stale_timestamp_dir / "data.f16.gz").write_bytes(b"stale")
-    (fresh_timestamp_dir / "data.f16.gz").write_bytes(b"fresh")
-    (empty_site_timestamp_dir / "data.f16.gz").write_bytes(b"empty-site")
+    (stale_timestamp_dir / "0.5" / "DBZH" / "data.f16.gz").write_bytes(b"stale")
+    (fresh_timestamp_dir / "0.5" / "DBZH" / "data.f16.gz").write_bytes(b"fresh")
+    (empty_site_timestamp_dir / "0.5" / "DBZH" / "data.f16.gz").write_bytes(b"empty-site")
 
     now = 1_800_000_000
     stale_mtime = now - (3 * 60 * 60)
@@ -304,7 +304,7 @@ def test_cleanup_old_gui_files_prunes_old_nexrad_site_timestamps(monkeypatch, tm
 
     assert not stale_timestamp_dir.exists()
     assert fresh_timestamp_dir.exists()
-    assert not (nexrad_root / "NEXRAD_DBZH_SWEEP_00" / "KJAX").exists()
+    assert not (nexrad_root / "KJAX").exists()
 
 
 def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monkeypatch):

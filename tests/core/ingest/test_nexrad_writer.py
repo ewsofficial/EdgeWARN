@@ -139,8 +139,10 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
     assert [layer["variable_name"] for layer in manifest["layers"]] == ["DBZH", "VRADH", "noise"]
     assert manifest["layers"][0]["data_shape"] == [3, 2]
     assert manifest["layers"][0]["name"] == "NEXRAD_DBZH_SWEEP_00"
+    assert manifest["layers"][0]["canonical_elevation"] == "0.5"
 
-    assert "/gui/NEXRAD/NEXRAD_DBZH_SWEEP_00/KTLH/20260507-150000/" in manifest["layers"][0]["azimuths_path"]
+    assert "/gui/NEXRAD/KTLH/20260507-150000/0.5/DBZH/" in manifest["layers"][0]["azimuths_path"]
+    assert manifest["layers"][0]["variable_dir"].endswith("/gui/NEXRAD/KTLH/20260507-150000/0.5/DBZH")
     assert manifest["layers"][0]["azimuths_path"].endswith(".f32")
     assert manifest["layers"][0]["ranges_path"].endswith(".f32")
     assert manifest["layers"][0]["data_path"].endswith(".f16.gz")
@@ -194,3 +196,4 @@ def test_serialize_nexrad_render_intermediate_skips_dbzh_for_contiguous_doppler_
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert [layer["variable_name"] for layer in manifest["layers"]] == ["VRADH", "WRADH"]
+    assert all(layer["canonical_elevation"] == "0.5" for layer in manifest["layers"])
