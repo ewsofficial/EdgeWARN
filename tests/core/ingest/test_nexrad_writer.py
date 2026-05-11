@@ -139,7 +139,7 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
     assert manifest["layers"][0]["data_shape"] == [3, 2]
     assert manifest["layers"][0]["name"] == "NEXRAD_DBZH_SWEEP_00"
 
-    assert "/render/NEXRAD_DBZH_SWEEP_00/20260507-150000/" in manifest["layers"][0]["azimuths_path"]
+    assert "/gui/NEXRAD/NEXRAD_DBZH_SWEEP_00/KTLH/20260507-150000/" in manifest["layers"][0]["azimuths_path"]
     assert manifest["layers"][0]["azimuths_path"].endswith(".f32")
     assert manifest["layers"][0]["ranges_path"].endswith(".f32")
     assert manifest["layers"][0]["data_path"].endswith(".f16")

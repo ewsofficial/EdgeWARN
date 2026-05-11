@@ -5,6 +5,12 @@ from pathlib import Path
 
 import numpy as np
 
+import util.file as fs
+
+
+def nexrad_render_output_dir(layer_name: str, site: str) -> Path:
+    return fs.GUI_NEXRAD_DIR / layer_name / str(site).upper()
+
 
 def _should_serialize_variable(sweep, variable_name: str) -> bool:
     waveform = str(getattr(sweep, "waveform", "") or "").lower()
@@ -13,8 +19,8 @@ def _should_serialize_variable(sweep, variable_name: str) -> bool:
     return True
 
 
-def nexrad_render_timestamp_dir(render_dir: Path, layer_name: str, scan_timestamp: str) -> Path:
-    return render_dir / layer_name / str(scan_timestamp)
+def nexrad_render_timestamp_dir(layer_name: str, site: str, scan_timestamp: str) -> Path:
+    return nexrad_render_output_dir(layer_name, site) / str(scan_timestamp)
 
 
 def _write_float16_file(path: Path, values: np.ndarray) -> None:
@@ -58,7 +64,7 @@ def serialize_nexrad_render_intermediate(
                 dense_data = values.T.astype(np.float16, copy=False)
 
                 layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
-                timestamp_dir = nexrad_render_timestamp_dir(render_dir, layer_name, scan_timestamp)
+                timestamp_dir = nexrad_render_timestamp_dir(layer_name, site, scan_timestamp)
                 timestamp_dir.mkdir(parents=True, exist_ok=True)
                 azimuths_path = timestamp_dir / "azimuths.f32"
                 ranges_path = timestamp_dir / "ranges.f32"
