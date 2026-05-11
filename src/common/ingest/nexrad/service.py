@@ -24,7 +24,8 @@ from common.ingest.nexrad.s3_chunks import (
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.volume_builder import parse_level2_volume_file
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
-from common.ingest.nexrad.writer import NexradLocalChunkStore, serialize_nexrad_render_intermediate
+from common.ingest.nexrad.writer import NexradLocalChunkStore
+from EWMRS.render.nexrad import serialize_nexrad_render_intermediate
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
