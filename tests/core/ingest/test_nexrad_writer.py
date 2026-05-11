@@ -105,16 +105,16 @@ def test_write_grouped_netcdf_preserves_all_variables(tmp_path):
         reopened.close()
 
 
-def test_serialize_nexrad_render_intermediate_writes_float16_triples(tmp_path):
+def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(tmp_path):
     dataset = xr.Dataset(
         {
-            "DBZH": (("azimuth", "range"), np.array([[1.5, np.nan], [3.5, 4.5]], dtype=np.float32)),
-            "VRADH": (("azimuth", "range"), np.array([[10.0, 11.0], [12.0, 13.0]], dtype=np.float32)),
-            "noise": (("azimuth", "range"), np.array([[5.0, 6.0], [7.0, 8.0]], dtype=np.float32)),
+            "DBZH": (("azimuth", "range"), np.array([[1.5, np.nan, 2.5], [3.5, 4.5, 5.5]], dtype=np.float32)),
+            "VRADH": (("azimuth", "range"), np.array([[10.0, 11.0, 12.0], [13.0, 14.0, 15.0]], dtype=np.float32)),
+            "noise": (("azimuth", "range"), np.array([[5.0, 6.0, 7.0], [8.0, 9.0, 10.0]], dtype=np.float32)),
         },
         coords={
             "azimuth": np.array([0.0, 90.0], dtype=np.float32),
-            "range": np.array([1000.0, 2000.0], dtype=np.float32),
+            "range": np.array([1000.0, 2000.0, 3000.0], dtype=np.float32),
         },
     )
     parsed = type(
@@ -135,7 +135,24 @@ def test_serialize_nexrad_render_intermediate_writes_float16_triples(tmp_path):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert [layer["variable_name"] for layer in manifest["layers"]] == ["DBZH", "VRADH"]
+    assert manifest["layers"][0]["data_order"] == "range_azimuth"
+    assert manifest["layers"][0]["data_shape"] == [3, 2]
 
-    payload = np.load(manifest["layers"][0]["payload_path"])
-    assert payload.dtype == np.float16
-    assert payload.tolist() == [[0.0, 1000.0, 1.5], [90.0, 1000.0, 3.5], [90.0, 2000.0, 4.5]]
+    assert "/gui/NEXRAD/NEXRAD_DBZH_SWEEP_00/KTLH/20260507-150000/" in manifest["layers"][0]["azimuths_path"]
+    assert manifest["layers"][0]["azimuths_path"].endswith(".f32")
+    assert manifest["layers"][0]["ranges_path"].endswith(".f32")
+    assert manifest["layers"][0]["data_path"].endswith(".f16")
+    assert manifest["layers"][0]["served_dir"].endswith("/gui/NEXRAD/NEXRAD_DBZH_SWEEP_00/KTLH/20260507-150000")
+
+    azimuths = np.fromfile(manifest["layers"][0]["azimuths_path"], dtype=np.float32)
+    ranges = np.fromfile(manifest["layers"][0]["ranges_path"], dtype=np.float32)
+    data = np.fromfile(manifest["layers"][0]["data_path"], dtype=np.float16).reshape((3, 2))
+
+    assert azimuths.dtype == np.float32
+    assert ranges.dtype == np.float32
+    assert data.dtype == np.float16
+    assert azimuths.tolist() == [0.0, 90.0]
+    assert ranges.tolist() == [1000.0, 2000.0, 3000.0]
+    assert data.shape == (3, 2)
+    expected = np.array([[1.5, 3.5], [np.nan, 4.5], [2.5, 5.5]], dtype=np.float16)
+    np.testing.assert_allclose(data, expected, equal_nan=True)

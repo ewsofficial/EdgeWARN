@@ -322,41 +322,31 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
 
 
 def _render_nexrad_layer(layer: dict) -> tuple[str, RenderOutput]:
-    from EWMRS.render.render import GUIArrayRenderer
-
     name = str(layer.get("name"))
-    out_dir = Path(layer["outdir"])
-    timestamp_iso = str(layer["scan_timestamp"])
-    cached_render = _current_render_paths(out_dir, timestamp_iso)
-    if cached_render is not None:
-        io_manager.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
-        return name, cached_render
-
-    triples = np.load(Path(layer["payload_path"])).astype(np.float32, copy=False)
-    if triples.size == 0:
+    data_order = str(layer.get("data_order", ""))
+    if data_order != "range_azimuth":
+        io_manager.write_warning(f"Unsupported NEXRAD data order for {name}: {data_order}")
         return name, None
 
-    azimuth = np.deg2rad(triples[:, 0])
-    distance = triples[:, 1]
-    values = triples[:, 2]
-    max_range = float(np.max(distance)) if distance.size else 0.0
-    if max_range <= 0.0:
+    azimuths_path = Path(layer["azimuths_path"])
+    ranges_path = Path(layer["ranges_path"])
+    data_path = Path(layer["data_path"])
+    for path in (azimuths_path, ranges_path, data_path):
+        if not path.exists():
+            io_manager.write_warning(f"Missing NEXRAD served artifact for {name}: {path}")
+            return name, None
+
+    azimuths = np.fromfile(azimuths_path, dtype=np.float32)
+    ranges = np.fromfile(ranges_path, dtype=np.float32)
+    data = np.fromfile(data_path, dtype=np.float16)
+
+    expected_shape = (int(ranges.shape[0]), int(azimuths.shape[0]))
+    if data.size != expected_shape[0] * expected_shape[1]:
+        io_manager.write_warning(
+            f"Invalid NEXRAD data size for {name}: got {data.size}, expected {expected_shape[0] * expected_shape[1]}"
+        )
         return name, None
-
-    grid_size = max(350, int(os.environ.get("EWMRS_NEXRAD_RENDER_SIZE", "1400")))
-    center = (grid_size - 1) / 2.0
-    scale = center / max_range
-    x = distance * np.sin(azimuth)
-    y = distance * np.cos(azimuth)
-    px = np.clip(np.rint(center + (x * scale)).astype(np.int32), 0, grid_size - 1)
-    py = np.clip(np.rint(center - (y * scale)).astype(np.int32), 0, grid_size - 1)
-
-    grid = np.full((grid_size, grid_size), np.nan, dtype=np.float32)
-    grid[py, px] = values
-
-    renderer = GUIArrayRenderer(grid, out_dir, layer["colormap_key"], name, timestamp_iso)
-    png_paths, _timestamp = renderer.convert_to_png(tile_output=True)
-    return name, png_paths
+    return name, [azimuths_path, ranges_path, data_path]
 
 
 def _normalize_render_timestamp(timestamp_iso: str) -> str:
