@@ -320,11 +320,16 @@ else:
 NEXRAD intermediate outputs are served from:
 
 ```text
-<BASE_DIR>/gui/NEXRAD/<SITE>/<YYYYMMDD-HHMMSS>/<ELEVATION>/<VARIABLE>/
-  azimuths.f32
-  ranges.f32
-  data.f16.gz
+<BASE_DIR>/gui/NEXRAD/<SITE>/<YYYYMMDD-HHMMSS>/<ELEVATION>/<VARIABLE>.bin.gz
 ```
+
+Each `.bin.gz` payload decompresses to:
+
+```text
+[magic bytes EWFFv1S0][azimuth_count uint32 LE][range_count uint32 LE][data float16 LE][azimuths float32 LE][ranges float32 LE]
+```
+
+Stored `data` values remain range-major with shape `[range_count, azimuth_count]`.
 
 Operational mapping currently writes low paired sweeps into canonical elevation folders:
 
