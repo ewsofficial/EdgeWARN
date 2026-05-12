@@ -2,7 +2,7 @@
   {
     "source": "Edgemont Weather Service",
     "product": "EdgeWARN GUI Colormaps",
-    "version": "2025.11.9",
+    "version": "2026.5.12",
     "colormaps": [
       {
         "name": "NWS_Reflectivity",
@@ -33,57 +33,105 @@
         ]
       },
       {
-        "name": "NEXRAD_Velocity",
-        "description": "NEXRAD radial velocity colormap",
-        "type": "velocity",
+        "name": "VRADH",
+        "description": "Official NWS base-velocity legend rescaled from the public RIDGE II knot display to Level II meters per second",
+        "type": "Velocity",
         "units": "m/s",
-        "interpolate": true,
-        "range": [-80, 80],
+        "interpolate": false,
+        "range": [-51.44, 51.44],
         "thresholds": [
-          {"value": -80, "rgb": [64, 0, 128]},
-          {"value": -60, "rgb": [0, 32, 180]},
-          {"value": -40, "rgb": [0, 96, 255]},
-          {"value": -20, "rgb": [64, 176, 255]},
-          {"value": 0, "rgb": [24, 24, 24]},
-          {"value": 20, "rgb": [255, 176, 64]},
-          {"value": 40, "rgb": [255, 96, 0]},
-          {"value": 60, "rgb": [220, 24, 0]},
-          {"value": 80, "rgb": [164, 0, 0]}
+          {"value": -51.44, "rgb": [42, 3, 153]},
+          {"value": -41.15, "rgb": [41, 176, 211]},
+          {"value": -30.87, "rgb": [147, 234, 237]},
+          {"value": -23.15, "rgb": [33, 237, 37]},
+          {"value": -10.29, "rgb": [2, 143, 2]},
+          {"value": -2.0, "rgb": [67, 105, 67]},
+          {"value": 0.0, "rgb": [136, 118, 116]},
+          {"value": 2.0, "rgb": [136, 118, 116]},
+          {"value": 10.29, "rgb": [115, 20, 23]},
+          {"value": 23.15, "rgb": [206, 0, 0]},
+          {"value": 30.87, "rgb": [253, 123, 167]},
+          {"value": 41.15, "rgb": [255, 213, 145]},
+          {"value": 51.44, "rgb": [245, 129, 75]}
         ]
       },
       {
-        "name": "NEXRAD_SpectrumWidth",
-        "description": "NEXRAD spectrum width colormap",
-        "type": "spectrum_width",
+        "name": "WRADH",
+        "description": "Official NWS spectrum-width palette adapted to Level II meters per second",
+        "type": "SpectrumWidth",
         "units": "m/s",
-        "interpolate": true,
-        "range": [0, 20],
+        "interpolate": false,
+        "range": [0.0, 15.43],
         "thresholds": [
-          {"value": 0, "rgb": [0, 0, 0, 0]},
-          {"value": 2, "rgb": [32, 96, 255]},
-          {"value": 5, "rgb": [0, 200, 255]},
-          {"value": 8, "rgb": [0, 220, 96]},
-          {"value": 11, "rgb": [255, 255, 0]},
-          {"value": 14, "rgb": [255, 160, 0]},
-          {"value": 17, "rgb": [255, 64, 0]},
-          {"value": 20, "rgb": [180, 0, 0]}
+          {"value": 0.0, "rgb": [144, 0, 159]},
+          {"value": 2.57, "rgb": [123, 123, 123]},
+          {"value": 5.14, "rgb": [152, 152, 152]},
+          {"value": 7.72, "rgb": [3, 185, 0]},
+          {"value": 10.29, "rgb": [195, 44, 0]},
+          {"value": 12.86, "rgb": [221, 151, 0]},
+          {"value": 15.43, "rgb": [255, 255, 0]}
         ]
       },
       {
-        "name": "NEXRAD_CorrelationCoefficient",
-        "description": "NEXRAD correlation coefficient colormap",
-        "type": "correlation_coefficient",
-        "units": "unitless",
+        "name": "ZDR",
+        "description": "NWS dual-pol differential-reflectivity display ramp covering the full operational ZDR range",
+        "type": "DifferentialReflectivity",
+        "units": "dB",
         "interpolate": true,
-        "range": [0.7, 1.0],
+        "range": [-7.9, 7.9],
         "thresholds": [
-          {"value": 0.7, "rgb": [80, 0, 80]},
-          {"value": 0.8, "rgb": [180, 0, 180]},
-          {"value": 0.85, "rgb": [255, 64, 64]},
-          {"value": 0.9, "rgb": [255, 160, 0]},
-          {"value": 0.95, "rgb": [255, 255, 0]},
-          {"value": 0.98, "rgb": [120, 255, 120]},
-          {"value": 1.0, "rgb": [255, 255, 255]}
+          {"value": -7.9, "rgb": [0, 0, 255]},
+          {"value": -6.0, "rgb": [0, 96, 255]},
+          {"value": -4.0, "rgb": [0, 181, 255]},
+          {"value": -2.0, "rgb": [0, 229, 255]},
+          {"value": -1.0, "rgb": [0, 233, 189]},
+          {"value": 0.0, "rgb": [0, 251, 0]},
+          {"value": 1.0, "rgb": [132, 255, 0]},
+          {"value": 2.0, "rgb": [255, 248, 0]},
+          {"value": 4.0, "rgb": [255, 152, 0]},
+          {"value": 6.0, "rgb": [255, 56, 0]},
+          {"value": 7.0, "rgb": [255, 8, 0]},
+          {"value": 7.9, "rgb": [255, 0, 255]}
+        ]
+      },
+      {
+        "name": "PHIDP",
+        "description": "NWS dual-pol differential-phase style ramp spanning the operational 0 to 360 degree PHIDP range",
+        "type": "DifferentialPhase",
+        "units": "degrees",
+        "interpolate": true,
+        "range": [0.0, 360.0],
+        "thresholds": [
+          {"value": 0.0, "rgb": [0, 96, 32]},
+          {"value": 45.0, "rgb": [0, 180, 64]},
+          {"value": 90.0, "rgb": [64, 220, 64]},
+          {"value": 135.0, "rgb": [220, 220, 32]},
+          {"value": 180.0, "rgb": [255, 176, 0]},
+          {"value": 225.0, "rgb": [255, 112, 0]},
+          {"value": 270.0, "rgb": [220, 48, 0]},
+          {"value": 315.0, "rgb": [160, 32, 96]},
+          {"value": 360.0, "rgb": [96, 32, 160]}
+        ]
+      },
+      {
+        "name": "RHOHV",
+        "description": "Official NWS dual-pol correlation-coefficient legend over the published rhohv operating range",
+        "type": "CorrelationCoefficient",
+        "units": "1",
+        "interpolate": true,
+        "range": [0.2, 1.05],
+        "thresholds": [
+          {"value": 0.2, "rgb": [15, 15, 140]},
+          {"value": 0.55, "rgb": [15, 15, 144]},
+          {"value": 0.6, "rgb": [12, 12, 166]},
+          {"value": 0.65, "rgb": [10, 10, 188]},
+          {"value": 0.7, "rgb": [53, 53, 215]},
+          {"value": 0.75, "rgb": [101, 101, 244]},
+          {"value": 0.8, "rgb": [100, 221, 129]},
+          {"value": 0.85, "rgb": [151, 220, 9]},
+          {"value": 0.9, "rgb": [255, 204, 0]},
+          {"value": 0.975, "rgb": [147, 27, 73]},
+          {"value": 1.05, "rgb": [165, 55, 150]}
         ]
       },
       {
