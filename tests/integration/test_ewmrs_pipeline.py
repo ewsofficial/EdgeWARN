@@ -281,13 +281,13 @@ def test_cleanup_old_gui_files_prunes_old_nexrad_site_timestamps(monkeypatch, tm
     empty_site_timestamp_dir = nexrad_root / "KJAX" / "20260317-160000"
 
     active_dir.mkdir()
-    (stale_timestamp_dir / "0.5" / "DBZH").mkdir(parents=True)
-    (fresh_timestamp_dir / "0.5" / "DBZH").mkdir(parents=True)
-    (empty_site_timestamp_dir / "0.5" / "DBZH").mkdir(parents=True)
+    (stale_timestamp_dir / "0.5").mkdir(parents=True)
+    (fresh_timestamp_dir / "0.5").mkdir(parents=True)
+    (empty_site_timestamp_dir / "0.5").mkdir(parents=True)
 
-    (stale_timestamp_dir / "0.5" / "DBZH" / "data.f16.gz").write_bytes(b"stale")
-    (fresh_timestamp_dir / "0.5" / "DBZH" / "data.f16.gz").write_bytes(b"fresh")
-    (empty_site_timestamp_dir / "0.5" / "DBZH" / "data.f16.gz").write_bytes(b"empty-site")
+    (stale_timestamp_dir / "0.5" / "DBZH.bin.gz").write_bytes(b"stale")
+    (fresh_timestamp_dir / "0.5" / "DBZH.bin.gz").write_bytes(b"fresh")
+    (empty_site_timestamp_dir / "0.5" / "DBZH.bin.gz").write_bytes(b"empty-site")
 
     now = 1_800_000_000
     stale_mtime = now - (3 * 60 * 60)

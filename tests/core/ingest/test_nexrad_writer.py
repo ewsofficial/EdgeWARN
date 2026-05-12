@@ -1,10 +1,11 @@
 import gzip
 import json
+from pathlib import Path
 
 import netCDF4
 import numpy as np
 import xarray as xr
-from EWMRS.render.nexrad import serialize_nexrad_render_intermediate
+from EWMRS.render.nexrad import NEXRAD_FIELD_MAGIC, serialize_nexrad_render_intermediate
 
 from common.ingest.nexrad.writer import _dataset_encoding, _write_grouped_netcdf
 
@@ -141,24 +142,57 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
     assert manifest["layers"][0]["name"] == "NEXRAD_DBZH_SWEEP_00"
     assert manifest["layers"][0]["canonical_elevation"] == "0.5"
 
-    assert "/gui/NEXRAD/KTLH/20260507-150000/0.5/DBZH/" in manifest["layers"][0]["azimuths_path"]
-    assert manifest["layers"][0]["variable_dir"].endswith("/gui/NEXRAD/KTLH/20260507-150000/0.5/DBZH")
-    assert manifest["layers"][0]["azimuths_path"].endswith(".f32")
-    assert manifest["layers"][0]["ranges_path"].endswith(".f32")
-    assert manifest["layers"][0]["data_path"].endswith(".f16.gz")
+    layer = manifest["layers"][0]
+    assert layer["bin_path"].endswith("/gui/NEXRAD/KTLH/20260507-150000/0.5/DBZH.bin.gz")
+    assert "variable_dir" not in layer
+    assert "azimuths_path" not in layer
+    assert "ranges_path" not in layer
+    assert "data_path" not in layer
+    assert "binary_layout" not in layer
     assert "colormap_key" not in manifest["layers"][0]
     assert "data_order" not in manifest["layers"][0]
     assert "served_dir" not in manifest["layers"][0]
     assert "outdir" not in manifest["layers"][0]
+    assert not (Path(layer["bin_path"]).parent / "DBZH").exists()
 
-    azimuths = np.fromfile(manifest["layers"][0]["azimuths_path"], dtype=np.float32)
-    ranges = np.fromfile(manifest["layers"][0]["ranges_path"], dtype=np.float32)
-    with gzip.open(manifest["layers"][0]["data_path"], "rb") as handle:
-        data = np.frombuffer(handle.read(), dtype=np.float16).reshape((3, 2))
+    raw_file = Path(layer["bin_path"]).read_bytes()
+    assert raw_file[:2] == b"\x1f\x8b"
 
-    assert azimuths.dtype == np.float32
-    assert ranges.dtype == np.float32
-    assert data.dtype == np.float16
+    with gzip.open(layer["bin_path"], "rb") as handle:
+        raw = handle.read()
+
+    assert raw.startswith(NEXRAD_FIELD_MAGIC)
+
+    count_start = len(NEXRAD_FIELD_MAGIC)
+    count_end = count_start + 2 * np.dtype("<u4").itemsize
+    azimuth_count, range_count = np.frombuffer(raw[count_start:count_end], dtype="<u4")
+
+    assert int(azimuth_count) == layer["azimuth_count"]
+    assert int(range_count) == layer["range_count"]
+
+    data_shape = (int(range_count), int(azimuth_count))
+    assert data_shape == tuple(layer["data_shape"])
+    data_count = data_shape[0] * data_shape[1]
+
+    data_byte_length = data_count * np.dtype("<f2").itemsize
+    azimuth_byte_length = int(azimuth_count) * np.dtype("<f4").itemsize
+    range_byte_length = int(range_count) * np.dtype("<f4").itemsize
+
+    data_start = count_end
+    data_end = data_start + data_byte_length
+    data = np.frombuffer(raw[data_start:data_end], dtype="<f2").reshape(data_shape)
+    azimuth_start = data_end
+    azimuth_end = azimuth_start + azimuth_byte_length
+    azimuths = np.frombuffer(raw[azimuth_start:azimuth_end], dtype="<f4")
+    range_start = azimuth_end
+    range_end = range_start + range_byte_length
+    ranges = np.frombuffer(raw[range_start:range_end], dtype="<f4")
+
+    assert len(raw) == range_end
+
+    assert azimuths.dtype == np.dtype("<f4")
+    assert ranges.dtype == np.dtype("<f4")
+    assert data.dtype == np.dtype("<f2")
     assert azimuths.tolist() == [0.0, 90.0]
     assert ranges.tolist() == [1000.0, 2000.0, 3000.0]
     assert data.shape == (3, 2)
