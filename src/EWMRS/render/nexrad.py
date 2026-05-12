@@ -47,6 +47,7 @@ VCP_SWEEP_ELEVATION_LABELS = {
 }
 
 OPERATIONAL_ELEVATION_LABELS = frozenset({"0.5", "0.9"})
+NEXRAD_FIELD_MAGIC = b"EWFFv1S0"
 
 
 def _normalize_scan_name(scan_name: str | None) -> str | None:
@@ -80,8 +81,12 @@ def _resolve_operational_elevation_label(scan_name: str | None, sweep_index: int
     return None
 
 
-def nexrad_render_variable_dir(site: str, scan_timestamp: str, elevation_label: str, variable_name: str) -> Path:
-    return fs.GUI_NEXRAD_DIR / str(site).upper() / str(scan_timestamp) / str(elevation_label) / str(variable_name)
+def nexrad_render_elevation_dir(site: str, scan_timestamp: str, elevation_label: str) -> Path:
+    return fs.GUI_NEXRAD_DIR / str(site).upper() / str(scan_timestamp) / str(elevation_label)
+
+
+def nexrad_render_variable_bin_path(site: str, scan_timestamp: str, elevation_label: str, variable_name: str) -> Path:
+    return nexrad_render_elevation_dir(site, scan_timestamp, elevation_label) / f"{variable_name}.bin.gz"
 
 
 def _should_serialize_variable(sweep, variable_name: str) -> bool:
@@ -91,14 +96,18 @@ def _should_serialize_variable(sweep, variable_name: str) -> bool:
     return True
 
 
-def _write_float16_gzip_file(path: Path, values: np.ndarray) -> None:
-    payload = np.asarray(values, dtype=np.float16).tobytes(order="C")
+def _write_nexrad_variable_bin(path: Path, dense_data: np.ndarray, azimuths: np.ndarray, ranges: np.ndarray) -> None:
+    data = np.asarray(dense_data, dtype="<f2")
+    azimuth_values = np.asarray(azimuths, dtype="<f4")
+    range_values = np.asarray(ranges, dtype="<f4")
+    counts = np.asarray([azimuth_values.shape[0], range_values.shape[0]], dtype="<u4")
+
     with gzip.open(path, "wb") as handle:
-        handle.write(payload)
-
-
-def _write_float32_file(path: Path, values: np.ndarray) -> None:
-    np.asarray(values, dtype=np.float32).tofile(path)
+        handle.write(NEXRAD_FIELD_MAGIC)
+        handle.write(counts.tobytes(order="C"))
+        handle.write(data.tobytes(order="C"))
+        handle.write(azimuth_values.tobytes(order="C"))
+        handle.write(range_values.tobytes(order="C"))
 
 
 def serialize_nexrad_render_intermediate(
@@ -138,14 +147,10 @@ def serialize_nexrad_render_intermediate(
                 dense_data = values.T.astype(np.float16, copy=False)
 
                 layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
-                variable_dir = nexrad_render_variable_dir(site, scan_timestamp, canonical_elevation, variable_name)
-                variable_dir.mkdir(parents=True, exist_ok=True)
-                azimuths_path = variable_dir / "azimuths.f32"
-                ranges_path = variable_dir / "ranges.f32"
-                data_path = variable_dir / "data.f16.gz"
-                _write_float32_file(azimuths_path, azimuths)
-                _write_float32_file(ranges_path, ranges)
-                _write_float16_gzip_file(data_path, dense_data)
+                elevation_dir = nexrad_render_elevation_dir(site, scan_timestamp, canonical_elevation)
+                elevation_dir.mkdir(parents=True, exist_ok=True)
+                bin_path = nexrad_render_variable_bin_path(site, scan_timestamp, canonical_elevation, variable_name)
+                _write_nexrad_variable_bin(bin_path, dense_data, azimuths, ranges)
 
                 manifest_layers.append(
                     {
@@ -157,11 +162,8 @@ def serialize_nexrad_render_intermediate(
                         "sweep_group": sweep.group_name,
                         "fixed_angle": float(sweep.fixed_angle),
                         "canonical_elevation": canonical_elevation,
-                        "variable_dir": str(variable_dir),
+                        "bin_path": str(bin_path),
                         "variable_name": variable_name,
-                        "azimuths_path": str(azimuths_path),
-                        "ranges_path": str(ranges_path),
-                        "data_path": str(data_path),
                         "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
                         "azimuth_count": int(azimuths.shape[0]),
                         "range_count": int(ranges.shape[0]),
