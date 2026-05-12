@@ -48,6 +48,14 @@ VCP_SWEEP_ELEVATION_LABELS = {
 
 OPERATIONAL_ELEVATION_LABELS = frozenset({"0.5", "0.9"})
 NEXRAD_FIELD_MAGIC = b"EWFFv1S0"
+NEXRAD_VARIABLE_COLORMAP_KEYS = {
+    "DBZH": "NWS_Reflectivity",
+    "VRADH": "VRADH",
+    "WRADH": "WRADH",
+    "PHIDP": "PHIDP",
+    "RHOHV": "RHOHV",
+    "ZDR": "ZDR",
+}
 
 
 def _normalize_scan_name(scan_name: str | None) -> str | None:
@@ -164,6 +172,7 @@ def serialize_nexrad_render_intermediate(
                         "canonical_elevation": canonical_elevation,
                         "bin_path": str(bin_path),
                         "variable_name": variable_name,
+                        "colormap_key": NEXRAD_VARIABLE_COLORMAP_KEYS.get(variable_name),
                         "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
                         "azimuth_count": int(azimuths.shape[0]),
                         "range_count": int(ranges.shape[0]),

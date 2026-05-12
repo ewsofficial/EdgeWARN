@@ -144,12 +144,14 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
 
     layer = manifest["layers"][0]
     assert layer["bin_path"].endswith("/gui/NEXRAD/KTLH/20260507-150000/0.5/DBZH.bin.gz")
+    assert layer["colormap_key"] == "NWS_Reflectivity"
+    assert manifest["layers"][1]["colormap_key"] == "VRADH"
+    assert manifest["layers"][2]["colormap_key"] is None
     assert "variable_dir" not in layer
     assert "azimuths_path" not in layer
     assert "ranges_path" not in layer
     assert "data_path" not in layer
     assert "binary_layout" not in layer
-    assert "colormap_key" not in manifest["layers"][0]
     assert "data_order" not in manifest["layers"][0]
     assert "served_dir" not in manifest["layers"][0]
     assert "outdir" not in manifest["layers"][0]
@@ -231,3 +233,4 @@ def test_serialize_nexrad_render_intermediate_skips_dbzh_for_contiguous_doppler_
 
     assert [layer["variable_name"] for layer in manifest["layers"]] == ["VRADH", "WRADH"]
     assert all(layer["canonical_elevation"] == "0.5" for layer in manifest["layers"])
+    assert [layer["colormap_key"] for layer in manifest["layers"]] == ["VRADH", "WRADH"]
