@@ -31,6 +31,7 @@ Response:
       "/renders/get-items",
       "/renders/fetch",
       "/renders/download",
+      "/nexrad",
       "/rap/layers",
       "/rap/fetch",
       "/rap/metadata",
@@ -189,6 +190,84 @@ Responses:
 - `400`: invalid product parameter
 - `404`: unknown product
 - `500`: read/server failure
+
+## NEXRAD Endpoints
+
+NEXRAD render intermediates are served from `<BASE_DIR>/gui/NEXRAD`.
+
+Runtime layout:
+
+```text
+<BASE_DIR>/gui/NEXRAD/<SITE>/<YYYYMMDD-HHMMSS>/<ELEVATION>/<PRODUCT>.bin.gz
+```
+
+Allowed products:
+
+- `DBZH`
+- `VRADH`
+- `WRADH`
+- `PHIDP`
+- `CCORH`
+- `RHOHV`
+- `ZDR`
+
+Security and validation rules:
+
+- Site identifiers are normalized to uppercase and must be exactly 4 alphanumeric characters.
+- Timestamps must use `YYYYMMDD-HHMMSS` and pass calendar/time validation.
+- Elevations must be simple numeric directory labels such as `0.5`, `0.9`, or `1.3`.
+- Product names must match the exact allowlist above.
+- Path traversal attempts and malformed parameters are rejected.
+- Unsafe on-disk directory names are ignored during listing.
+
+### GET /nexrad
+
+Returns active radar site folders that contain at least one valid timestamp/elevation/product path.
+
+Responses:
+
+- `200`: `string[]`
+
+Example:
+
+```json
+["KTLH", "KTLX"]
+```
+
+### GET /nexrad/{site}
+
+Returns valid timestamps for one radar site mapped to their available elevations.
+
+Responses:
+
+- `200`: object mapping timestamps to numeric elevation arrays
+- `400`: invalid site parameter
+- `404`: site not found
+
+Example:
+
+```json
+{
+  "20260512-004753": [1.3],
+  "20260512-004336": [0.5, 0.9]
+}
+```
+
+### GET /nexrad/{site}/{timestamp}/{elevation}?product={PRODUCT}
+
+Downloads the requested gzip-compressed NEXRAD binary field file.
+
+Responses:
+
+- `200`: gzip binary payload
+- `400`: invalid site, timestamp, elevation, or product parameter
+- `404`: site/timestamp/elevation/product file not found
+
+Response headers include:
+
+- `Content-Type: application/gzip`
+- `Content-Disposition: attachment; filename="<SITE>_<TIMESTAMP>_<ELEVATION>_<PRODUCT>.bin.gz"`
+- `Cache-Control: public, max-age=60`
 
 ## RAP Uint16 Endpoints
 
