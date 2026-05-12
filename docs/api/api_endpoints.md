@@ -221,10 +221,6 @@ The EWMRS service under `src/EWMRS/api` exposes tiled GUI products through:
 - `GET /renders/download?product={product}&timestamp={YYYYMMDD-HHMMSS}`
 - `GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}[&x={int}&y={int}]`
 - `GET /renders/tile-info?product={product}`
-- `GET /nexrad/variables`
-- `GET /nexrad/sites?variable={CCORH|DBZH|PHIDP|RHOHV|VRADH|WRADH|ZDR}[&sweep={NN}]`
-- `GET /nexrad/timestamps?variable={CCORH|DBZH|PHIDP|RHOHV|VRADH|WRADH|ZDR}&site={site}[&sweep={NN}]`
-- `GET /nexrad/download?variable={CCORH|DBZH|PHIDP|RHOHV|VRADH|WRADH|ZDR}&site={site}&timestamp={YYYYMMDD-HHMMSS}&file={azimuths|ranges|data}[&sweep={NN}]`
 
 For `/renders/tile`, supplying both `x` and `y` returns a PNG tile; omitting both returns the valid tile coordinates listed in the timestamp folder's `index.json`.
 
