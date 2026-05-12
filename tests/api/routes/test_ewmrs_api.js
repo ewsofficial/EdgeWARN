@@ -12,11 +12,13 @@ import os from 'os';
 import rendersRouter from '../../../src/EWMRS/api/routes/renders.js';
 import colormapsRouter from '../../../src/EWMRS/api/routes/colormaps.js';
 import rapRouter from '../../../src/EWMRS/api/routes/rap.js';
+import nexradRouter from '../../../src/EWMRS/api/routes/nexrad/index.js';
 
 function createApp(tempDir) {
     const app = express();
     app.locals.GUI_DIR = path.join(tempDir, 'gui');
     app.use('/renders', rendersRouter);
+    app.use('/nexrad', nexradRouter);
     app.use('/rap', rapRouter);
     return app;
 }
@@ -39,7 +41,7 @@ describe('EWMRS Root Route', () => {
                 service: 'EWMRS API',
                 base_dir: req.app.locals.BASE_DIR,
                 gui_dir: req.app.locals.GUI_DIR,
-                endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
+                endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/nexrad', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
             });
         });
     });
@@ -48,6 +50,7 @@ describe('EWMRS Root Route', () => {
         const res = await request(app).get('/').expect(200);
         expect(res.body.service).toBe('EWMRS API');
         expect(res.body.endpoints).toContain('/renders/get-items');
+        expect(res.body.endpoints).toContain('/nexrad');
         expect(res.body.endpoints).toContain('/rap/data');
         expect(res.body.endpoints).not.toContain('/nexrad/variables');
         expect(res.body.endpoints).not.toContain('/nexrad/download');

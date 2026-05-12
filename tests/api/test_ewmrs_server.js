@@ -32,4 +32,13 @@ describe('EWMRS API server', () => {
     expect(result.port).toBe(3010);
     expect(result.app).toBe(app);
   });
+
+  it('exposes /nexrad in root metadata and mounts the route', async () => {
+    const { app } = createApp({ baseDir: '/tmp/ewmrs-test' });
+
+    const rootResponse = await request(app).get('/').expect(200);
+    expect(rootResponse.body.endpoints).toContain('/nexrad');
+
+    await request(app).get('/nexrad').expect(200);
+  });
 });
