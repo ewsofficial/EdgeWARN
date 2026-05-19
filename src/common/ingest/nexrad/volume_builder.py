@@ -14,7 +14,6 @@ from common.ingest.nexrad.parser import (
     extract_sweep_angle,
     extract_sweep_timestamp,
     extract_waveform,
-    open_partial_volume,
     parse_raw_volume_file,
 )
 from common.ingest.nexrad.sweep_classifier import canonical_angle_matches, classify_sweeps
@@ -22,6 +21,29 @@ from common.ingest.nexrad.writer import write_outputs
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
+
+
+def _raw_sweeps_to_sweep_info(raw_sweeps: list) -> list[SweepInfo]:
+    """Convert raw sweep list to SweepInfo list without xradar."""
+    sweeps = []
+    for raw_sweep in raw_sweeps:
+        if raw_sweep.fixed_angle is None:
+            continue
+        azimuth_count = raw_sweep.radial_count
+        waveform = raw_sweep.waveform
+        sweeps.append(
+            SweepInfo(
+                index=raw_sweep.index,
+                group_name=raw_sweep.group_name,
+                fixed_angle=raw_sweep.fixed_angle,
+                waveform=waveform,
+                azimuth_count=azimuth_count,
+                complete=raw_sweep.complete and azimuth_count > 0,
+                supplemental=False,
+                bucket="excluded",
+            )
+        )
+    return sweeps
 
 
 def extract_sweep_records(datatree, raw_sweeps_by_index: dict[int, object] | None = None) -> list[SweepRecord]:
@@ -97,19 +119,21 @@ def _extract_parsed_volume(datatree, raw_sweeps_by_index: dict[int, object] | No
     )
 
 
-def _parse_level2_datatree(path: str | Path):
-    return open_partial_volume(path)
+def _extract_parsed_volume_from_raw(raw_volume) -> ParsedVolume:
+    """Build ParsedVolume from raw byte parsing only, no xradar."""
+    sweeps = _raw_sweeps_to_sweep_info(raw_volume.sweeps)
+    return ParsedVolume(
+        scan_name=None,
+        dynamic_scan_type=None,
+        sweeps=sweeps,
+        datatree=None,
+        source_bucket="unidata-nexrad-level2-chunks",
+    )
 
 
 def parse_level2_volume_file(path: str | Path) -> ParsedVolume:
-    datatree = _parse_level2_datatree(path)
-    raw_sweeps_by_index = None
-    try:
-        raw_volume = parse_raw_volume_file(path)
-        raw_sweeps_by_index = {sweep.index: sweep for sweep in raw_volume.sweeps}
-    except Exception:
-        raw_sweeps_by_index = None
-    return _extract_parsed_volume(datatree, raw_sweeps_by_index)
+    raw_volume = parse_raw_volume_file(path)
+    return _extract_parsed_volume_from_raw(raw_volume)
 
 
 def parse_level2_volume_bytes(volume_bytes: bytes) -> ParsedVolume:

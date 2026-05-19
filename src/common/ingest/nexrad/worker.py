@@ -134,6 +134,9 @@ def parse_and_export(
                     retained.extend(record)
             retained.extend(raw_volume.trailing_bytes)
             Path(volume_path).write_bytes(bytes(retained))
+            del retained
+
+        del raw_volume
 
     except Exception as exc:
         parse_error = str(exc)

@@ -92,61 +92,41 @@ def test_volume_builder_waits_for_required_low_chunks_before_downloading():
 def test_parse_level2_volume_bytes_uses_temp_file_path(monkeypatch):
     captured = {}
 
-    class _Angle:
-        def __init__(self, value):
-            self.values = self
-            self._value = value
-
-        def item(self):
-            return self._value
-
-    class _Dataset:
+    class _RawSweep:
         def __init__(self):
-            self.sizes = {"azimuth": 720}
-            self.attrs = {"waveform_type": "contiguous_surveillance"}
+            self.index = 0
+            self.group_name = "/sweep_00"
+            self.fixed_angle = 0.5
+            self.waveform = "contiguous_surveillance"
+            self.radial_count = 720
+            self.complete = True
 
-        def get(self, key):
-            if key == "sweep_fixed_angle":
-                return _Angle(0.5)
-            return None
+    class _RawVolume:
+        def __init__(self, path):
+            self.site = "KTLX"
+            self.volume_header = b"AR2V\x00\x00\x00\x00" + b"\x00" * 16
+            self.metadata_records = []
+            self.sweeps = [_RawSweep()]
+            self.trailing_bytes = b""
+            self.compression_record_count = 0
 
-    class _Group:
-        def to_dataset(self):
-            return _Dataset()
-
-    class _Tree:
-        attrs = {"scan_name": "VCP-215", "scan_strategy": "SAILS x 1"}
-        groups = ["/sweep_00"]
-
-        def __getitem__(self, key):
-            assert key == "/sweep_00"
-            return _Group()
-
-    def fake_opener(path):
+    def fake_parse(path):
         captured["arg_type"] = type(path)
-        captured["path"] = path
+        captured["path"] = str(path)
         with open(path, "rb") as handle:
             captured["payload"] = handle.read()
-        return _Tree()
+        return _RawVolume(path)
 
-    fake_xradar = types.SimpleNamespace(
-        io=types.SimpleNamespace(
-            backends=types.SimpleNamespace(
-                nexrad_level2=types.SimpleNamespace(
-                    open_nexradlevel2_datatree=fake_opener,
-                )
-            )
-        )
+    monkeypatch.setattr(
+        "common.ingest.nexrad.volume_builder.parse_raw_volume_file",
+        fake_parse,
     )
-    monkeypatch.setitem(sys.modules, "xradar", fake_xradar)
 
     parsed = parse_level2_volume_bytes(b"example-level2-bytes")
 
     assert captured["arg_type"] is str
     assert captured["path"].endswith(".ar2v")
     assert captured["payload"] == b"example-level2-bytes"
-    assert parsed.scan_name == "VCP-215"
-    assert parsed.dynamic_scan_type == "SAILS x 1"
     assert len(parsed.sweeps) == 1
     assert parsed.sweeps[0].azimuth_count == 720
     assert parsed.sweeps[0].waveform == "contiguous_surveillance"
