@@ -18,8 +18,6 @@ import bz2
 import struct
 import warnings
 
-import numpy as np
-
 
 RECORD_BYTES = 2432
 VOLUME_HEADER_BYTES = 24
@@ -306,6 +304,8 @@ def open_partial_volume(path: str | Path):
 
 def extract_sweep_timestamp(ds) -> str | None:
     """Extract sweep timestamp from xarray time coordinate."""
+    import numpy as np
+
     try:
         values = np.asarray(ds["time"].values).reshape(-1)
         values = values[~np.isnat(values)]
