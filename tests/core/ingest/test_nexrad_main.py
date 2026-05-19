@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-import subprocess
 from types import SimpleNamespace
 from unittest.mock import patch, AsyncMock
 
@@ -8,7 +7,7 @@ import pytest
 
 import util.file as fs
 import common.ingest.nexrad.main as nexrad_main
-from common.ingest.nexrad.models import ChunkKey, NexradIngestResult, ScanStreamState
+from common.ingest.nexrad.models import ChunkKey, NexradIngestResult, ScanStreamState, WorkerParseResult, ElevationArtifact
 from common.ingest.nexrad.main import NexradIngestService, ingest_allowed_vcp_volume, list_allowed_vcp_sites
 from common.ingest.nexrad.writer import chunk_output_dir, volume_output_path, elevation_netcdf_path
 
@@ -122,7 +121,7 @@ def test_ingest_keeps_latest_three_station_scan_dirs(tmp_path):
     assert len(remaining) <= 4
 
 
-def test_run_worker_parse_uses_subprocess_and_updates_seen_keys(tmp_path):
+def test_run_worker_parse_uses_pool_and_updates_seen_keys(tmp_path):
     fs.initialize_filesystem(tmp_path)
     service = NexradIngestService()
     state = ScanStreamState(
@@ -135,35 +134,32 @@ def test_run_worker_parse_uses_subprocess_and_updates_seen_keys(tmp_path):
     seen_keys = set()
     saved_artifacts = []
 
-    payload = {
-        "visible_sweeps": 2,
-        "saved_sweeps": ["/sweep_0", "/sweep_1"],
-        "saved_elevations": [
-            {
-                "site": "KTLX",
-                "volume_id": "999",
-                "scan_timestamp": "2026-05-19T13:21:57Z",
-                "elevation": "0.5",
-                "elevation_timestamp": "2026-05-19T13:21:57Z",
-                "first_sweep_index": 0,
-                "last_sweep_index": 1,
-                "member_group_names": ["/sweep_0", "/sweep_1"],
-                "waveforms_present": ["surveillance"],
-                "supplemental": False,
-                "netcdf_path": str(tmp_path / "out.nc"),
-            }
-        ],
-        "parse_error": None,
-        "child_rss_kb": 1234.0,
-    }
+    artifact = ElevationArtifact(
+        site="KTLX",
+        volume_id="999",
+        scan_timestamp="2026-05-19T13:21:57Z",
+        elevation="0.5",
+        elevation_timestamp="2026-05-19T13:21:57Z",
+        first_sweep_index=0,
+        last_sweep_index=1,
+        member_group_names=["/sweep_0", "/sweep_1"],
+        waveforms_present={"surveillance"},
+        supplemental=False,
+        netcdf_path=str(tmp_path / "out.nc"),
+        ar2v_path=str(tmp_path / "out.ar2v"),
+    )
+    payload = WorkerParseResult(
+        visible_sweeps=2,
+        saved_sweeps=["/sweep_0", "/sweep_1"],
+        saved_elevations=[artifact],
+        parse_error=None,
+        child_rss_kb=1234.0,
+    )
 
-    with patch("common.ingest.nexrad.service.subprocess.run") as run_mock:
-        run_mock.return_value = subprocess.CompletedProcess(
-            args=["python"],
-            returncode=0,
-            stdout=json.dumps(payload),
-            stderr="",
-        )
+    mock_future = type("Future", (), {"result": lambda self: payload})()
+
+    with patch("common.ingest.nexrad.service.get_nexrad_pool") as pool_mock:
+        pool_mock.return_value.submit.return_value = mock_future
         service._run_worker_parse(
             state,
             "KTLX",
@@ -177,8 +173,9 @@ def test_run_worker_parse_uses_subprocess_and_updates_seen_keys(tmp_path):
     assert len(saved_artifacts) == 1
     assert saved_artifacts[0].member_group_names == ["/sweep_0", "/sweep_1"]
     assert saved_artifacts[0].waveforms_present == {"surveillance"}
+    assert saved_artifacts[0].ar2v_path == str(tmp_path / "out.ar2v")
     assert seen_keys == {"0.5:/sweep_0,/sweep_1"}
-    run_mock.assert_called_once()
+    pool_mock.return_value.submit.assert_called_once()
 
 
 class _AsyncBody:

@@ -6,6 +6,7 @@ import pytest
 import util.file as fs
 from common.ingest.nexrad.writer import (
     NexradElevationStore,
+    elevation_ar2v_path,
     elevation_dir,
     elevation_netcdf_path,
     elevation_manifest_path,
@@ -26,6 +27,9 @@ def test_elevation_store_paths(tmp_path):
 
     nc_path = store.elevation_netcdf_path("KTLH", "0.5", "20260507-150000")
     assert "KTLH_0.5_20260507-150000.nc" in str(nc_path)
+
+    ar2v_path = store.elevation_ar2v_path("KTLH", "0.5", "20260507-150000")
+    assert "KTLH_0.5_20260507-150000.ar2v" in str(ar2v_path)
 
     manifest_path = store.elevation_manifest_path("KTLH", "0.5", "20260507-150000")
     assert "KTLH_0.5_20260507-150000.json" in str(manifest_path)
@@ -83,6 +87,14 @@ def test_local_elevation_complete_true_when_exists(tmp_path):
     nc_path = elevation_netcdf_path("KTLH", "0.5", "20260507-150000")
     nc_path.parent.mkdir(parents=True, exist_ok=True)
     nc_path.write_bytes(b"data")
+    assert local_elevation_complete("KTLH", "0.5", "20260507-150000") is True
+
+
+def test_local_elevation_complete_true_when_ar2v_exists(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    ar2v_path = elevation_ar2v_path("KTLH", "0.5", "20260507-150000")
+    ar2v_path.parent.mkdir(parents=True, exist_ok=True)
+    ar2v_path.write_bytes(b"data")
     assert local_elevation_complete("KTLH", "0.5", "20260507-150000") is True
 
 
