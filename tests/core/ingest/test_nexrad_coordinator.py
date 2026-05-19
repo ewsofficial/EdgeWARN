@@ -4,7 +4,7 @@ import pytest
 
 import util.file as fs
 from common.ingest.nexrad.coordinator import NexradScanCoordinator
-from common.ingest.nexrad.writer import volume_output_path
+from common.ingest.nexrad.writer import volume_output_path, elevation_netcdf_path
 from common.ingest.nexrad.models import ChunkKey, NexradIngestResult, RadarStationVcp
 
 
@@ -242,6 +242,33 @@ async def test_coordinator_skips_when_latest_scan_is_already_downloaded(tmp_path
     volume_path = volume_output_path("KTLH", "999", remote_chunks)
     volume_path.parent.mkdir(parents=True, exist_ok=True)
     volume_path.write_bytes(b"volume")
+    ingest_calls = []
+
+    async def _ingest_trigger(*_args, **_kwargs):
+        ingest_calls.append(True)
+        return None
+
+    coordinator = NexradScanCoordinator(
+        station_fetcher=lambda **_kwargs: {"KTLH": _station()},
+        async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
+        async_chunk_lister=lambda *_args, **_kwargs: _return(remote_chunks),
+        async_ingest_trigger=_ingest_trigger,
+    )
+
+    results = await coordinator.ingest_latest_station_scans_async(base_dir=tmp_path)
+
+    assert [result.action for result in results] == ["skipped_already_downloaded"]
+    assert ingest_calls == []
+
+
+@pytest.mark.asyncio
+async def test_coordinator_skips_when_elevation_artifacts_exist(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    remote_chunks = _chunks()
+    for elev in ("0.5", "0.9"):
+        nc_path = elevation_netcdf_path("KTLH", elev, "20260507-150000")
+        nc_path.parent.mkdir(parents=True, exist_ok=True)
+        nc_path.write_bytes(b"elevation_data")
     ingest_calls = []
 
     async def _ingest_trigger(*_args, **_kwargs):

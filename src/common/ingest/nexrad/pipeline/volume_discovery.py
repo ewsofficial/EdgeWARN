@@ -2,7 +2,9 @@ from common.ingest.nexrad.models import RadarStationVcp
 from common.ingest.nexrad.pipeline.models import VolumeDiscoveryResult
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, parse_nexrad_timestamp
-from common.ingest.nexrad.writer import local_low_chunks_complete
+from common.ingest.nexrad.writer import local_low_chunks_complete, local_scan_elevations_complete
+
+OPERATIONAL_ELEVATIONS = frozenset({"0.5", "0.9"})
 
 
 class NexradVolumeDiscovery:
@@ -58,4 +60,8 @@ class NexradVolumeDiscovery:
 
     @staticmethod
     def local_complete(site: str, volume_id: str, chunks) -> bool:
-        return local_low_chunks_complete(site, volume_id, chunks)
+        if local_low_chunks_complete(site, volume_id, chunks):
+            return True
+        scan_timestamp = extract_volume_timestamp(volume_id, chunks)
+        required_elevations = [(elev, scan_timestamp) for elev in OPERATIONAL_ELEVATIONS]
+        return local_scan_elevations_complete(site, required_elevations)

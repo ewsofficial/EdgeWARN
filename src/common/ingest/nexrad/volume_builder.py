@@ -5,18 +5,112 @@ import tempfile
 import warnings
 from pathlib import Path
 
+import numpy as np
+
 from common.ingest.nexrad.config import (
     EXPECTED_HIGH_BINS,
     HIGH_CHECKPOINT_HINTS,
     LOW_BINS,
     LOW_CHECKPOINT_HINT,
 )
-from common.ingest.nexrad.models import NexradIngestResult, ParsedVolume, SweepInfo
+from common.ingest.nexrad.models import NexradIngestResult, ParsedVolume, SweepInfo, SweepRecord
 from common.ingest.nexrad.sweep_classifier import canonical_angle_matches, classify_sweeps
 from common.ingest.nexrad.writer import write_outputs
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
+
+
+def open_partial_volume(path: str | Path):
+    """Open a partial NEXRAD Level-II file with xradar, dropping incomplete sweeps."""
+    try:
+        import xradar as xd
+    except ImportError as exc:
+        raise RuntimeError("xradar is required for live NEXRAD volume parsing") from exc
+
+    opener = getattr(xd.io.backends.nexrad_level2, "open_nexradlevel2_datatree", None)
+    if opener is None:
+        raise RuntimeError("xradar nexrad Level-II DataTree opener is unavailable")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            return opener(str(path), loaddata=False, incomplete_sweep="drop")
+        except TypeError:
+            return opener(str(path))
+
+
+def extract_sweep_timestamp(ds) -> str | None:
+    """Extract sweep timestamp from xarray time coordinate."""
+    try:
+        values = np.asarray(ds["time"].values).reshape(-1)
+        values = values[~np.isnat(values)]
+        if len(values) == 0:
+            return None
+        return np.datetime_as_string(values.max(), unit="s", timezone="UTC")
+    except Exception:
+        return None
+
+
+def extract_sweep_angle(ds) -> float | None:
+    """Extract fixed angle from sweep dataset."""
+    try:
+        angle_var = ds.get("sweep_fixed_angle")
+        if angle_var is None:
+            return None
+        return float(angle_var.values.item())
+    except Exception:
+        return None
+
+
+def extract_waveform(node) -> str | None:
+    """Extract waveform type from sweep node."""
+    try:
+        attrs = getattr(node, "attrs", {}) or {}
+        dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
+        return (
+            attrs.get("waveform_type")
+            or dataset.attrs.get("waveform_type")
+            or dataset.attrs.get("prt_mode")
+            or dataset.attrs.get("sweep_mode")
+        )
+    except Exception:
+        return None
+
+
+def extract_azimuth_count(ds) -> int:
+    """Extract azimuth count from sweep dataset."""
+    try:
+        return int(ds.sizes.get("azimuth", ds.sizes.get("time", 0)))
+    except Exception:
+        return 0
+
+
+def extract_sweep_records(datatree) -> list[SweepRecord]:
+    """Extract SweepRecord list from a parsed datatree."""
+    records = []
+    for group_name in sorted(g for g in datatree.groups if g.startswith("/sweep_")):
+        node = datatree[group_name]
+        dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
+
+        angle = extract_sweep_angle(dataset)
+        if angle is None:
+            continue
+
+        azimuth_count = extract_azimuth_count(dataset)
+        waveform = extract_waveform(node)
+        timestamp = extract_sweep_timestamp(dataset)
+        sweep_index = len(records)
+
+        records.append(SweepRecord(
+            index=sweep_index,
+            group_name=group_name,
+            fixed_angle=angle,
+            waveform=waveform,
+            timestamp=timestamp,
+            azimuth_count=azimuth_count,
+        ))
+    return records
 
 
 def _extract_parsed_volume(datatree) -> ParsedVolume:
@@ -32,13 +126,8 @@ def _extract_parsed_volume(datatree) -> ParsedVolume:
         if angle_var is None:
             continue
         fixed_angle = float(angle_var.values.item())
-        azimuth_count = int(dataset.sizes.get("azimuth", dataset.sizes.get("time", 0)))
-        waveform = (
-            getattr(node, "attrs", {}).get("waveform_type")
-            or dataset.attrs.get("waveform_type")
-            or dataset.attrs.get("prt_mode")
-            or dataset.attrs.get("sweep_mode")
-        )
+        azimuth_count = extract_azimuth_count(dataset)
+        waveform = extract_waveform(node)
         sweeps.append(
             SweepInfo(
                 index=index,
@@ -62,21 +151,7 @@ def _extract_parsed_volume(datatree) -> ParsedVolume:
 
 
 def _parse_level2_datatree(path: str | Path):
-    try:
-        import xradar as xd
-    except ImportError as exc:
-        raise RuntimeError("xradar is required for live NEXRAD volume parsing") from exc
-
-    opener = getattr(xd.io.backends.nexrad_level2, "open_nexradlevel2_datatree", None)
-    if opener is None:
-        raise RuntimeError("xradar nexrad Level-II DataTree opener is unavailable")
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            return opener(str(path), loaddata=False)
-        except TypeError:
-            return opener(str(path))
+    return open_partial_volume(path)
 
 
 def parse_level2_volume_file(path: str | Path) -> ParsedVolume:

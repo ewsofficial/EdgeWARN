@@ -6,7 +6,7 @@ import util.file as fs
 from common.ingest.nexrad.models import ChunkKey, NexradCompletionRecord, NexradIngestResult, RadarStationVcp
 from common.ingest.nexrad.pipeline import NexradRealtimeIngestionPipeline
 from common.ingest.nexrad.pipeline.models import PendingVolume
-from common.ingest.nexrad.writer import volume_output_path
+from common.ingest.nexrad.writer import volume_output_path, elevation_netcdf_path
 
 
 def _station(site="KTLH", *, vcp=212):
@@ -307,3 +307,36 @@ async def _return(value):
 async def _track_call(calls):
     calls.append(True)
     return None
+
+
+@pytest.mark.asyncio
+async def test_pipeline_removes_local_complete_pending_via_elevation_artifacts(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    chunks = _chunks()
+    for elev in ("0.5", "0.9"):
+        nc_path = elevation_netcdf_path("KTLH", elev, "20260507-150000")
+        nc_path.parent.mkdir(parents=True, exist_ok=True)
+        nc_path.write_bytes(b"elevation_data")
+    ingested = []
+    pipeline = NexradRealtimeIngestionPipeline(
+        base_dir=tmp_path,
+        station_fetcher=lambda **_kwargs: {"KTLH": _station()},
+        async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
+        async_chunk_lister=lambda *_args, **_kwargs: _return(chunks),
+        async_ingest_trigger=lambda *_args, **_kwargs: _track_call(ingested),
+    )
+    pipeline.pending_tracker.upsert(
+        PendingVolume(
+            site="KTLH",
+            volume_id="999",
+            station=_station(),
+            latest_scan_time="20260507-150000",
+        )
+    )
+    pipeline.last_seen_by_site["KTLH"] = "999"
+
+    downloaded = await pipeline.check_pending_once()
+
+    assert downloaded == []
+    assert ingested == []
+    assert pipeline.pending_tracker.pending == {}

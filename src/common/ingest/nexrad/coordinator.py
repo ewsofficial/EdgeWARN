@@ -6,12 +6,14 @@ from common.ingest.nexrad.config import ALLOWED_VCPS
 from common.ingest.nexrad.models import NexradCoordinatorResult, NexradCoordinatorRunResults
 from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, parse_nexrad_timestamp, required_low_chunks
-from common.ingest.nexrad.writer import local_low_chunks_complete
+from common.ingest.nexrad.writer import local_low_chunks_complete, local_scan_elevations_complete
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD-COORD]", include_timestamps=True)
+
+OPERATIONAL_ELEVATIONS = frozenset({"0.5", "0.9"})
 
 
 class NexradScanCoordinator:
@@ -87,7 +89,7 @@ class NexradScanCoordinator:
 
         latest_scan_stamp = extract_volume_timestamp(volume_id, chunks)
 
-        if local_low_chunks_complete(site, volume_id, chunks):
+        if self._local_complete(site, volume_id, chunks):
             return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=latest_scan_stamp, vcp=station.vcp, volume_id=volume_id, action="skipped_already_downloaded")
 
         if not required_low_chunks(chunks):
@@ -111,6 +113,14 @@ class NexradScanCoordinator:
             action=action,
             chunks_downloaded=chunks_downloaded,
         )
+
+    @staticmethod
+    def _local_complete(site, volume_id, chunks) -> bool:
+        if local_low_chunks_complete(site, volume_id, chunks):
+            return True
+        scan_timestamp = extract_volume_timestamp(volume_id, chunks)
+        required_elevations = [(elev, scan_timestamp) for elev in OPERATIONAL_ELEVATIONS]
+        return local_scan_elevations_complete(site, required_elevations)
 
     async def ingest_latest_station_scans_async(
         self,

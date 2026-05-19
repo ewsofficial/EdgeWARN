@@ -52,6 +52,67 @@ class SweepInfo:
     bucket: str
 
 
+@dataclass
+class SweepRecord:
+    index: int
+    group_name: str
+    fixed_angle: float
+    waveform: str | None
+    timestamp: str | None
+    azimuth_count: int
+
+
+@dataclass
+class ElevationGroup:
+    elevation_id: str
+    canonical_angle_deg: float
+    members: list[SweepRecord] = field(default_factory=list)
+    waveforms_present: set[str] = field(default_factory=set)
+    first_sweep_index: int = 0
+    last_sweep_index: int = 0
+    first_timestamp: str | None = None
+    last_timestamp: str | None = None
+    supplemental: bool = False
+    complete: bool = False
+
+
+@dataclass
+class ElevationArtifact:
+    site: str
+    volume_id: str
+    scan_timestamp: str | None
+    elevation: str
+    elevation_timestamp: str | None
+    first_sweep_index: int
+    last_sweep_index: int
+    member_group_names: list[str]
+    waveforms_present: set[str]
+    supplemental: bool
+    netcdf_path: str | None = None
+
+
+@dataclass
+class ScanStreamState:
+    index: int
+    volume_id: str
+    scan_timestamp: str | None
+    file_path: str
+    bytes_written: int = 0
+    seen_elevation_keys: set[str] = field(default_factory=set)
+    saved_artifacts: list[ElevationArtifact] = field(default_factory=list)
+    parse_errors: list[str] = field(default_factory=list)
+    finalized: bool = False
+
+
+@dataclass
+class WorkerParseResult:
+    visible_sweeps: int
+    saved_sweeps: list[str]
+    saved_elevations: list[ElevationArtifact]
+    parse_error: str | None
+    child_rss_kb: float | None = None
+
+
 @dataclass(frozen=True)
 class ParsedVolume:
     scan_name: str | None
