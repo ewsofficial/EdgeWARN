@@ -191,3 +191,124 @@ def serialize_nexrad_render_intermediate(
     }
     manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
     return manifest_path
+
+
+def serialize_nexrad_elevation_artifacts(
+    site: str,
+    volume_id: str,
+    scan_timestamp: str,
+    elevation_artifacts: list,
+) -> Path:
+    """Serialize render intermediates from grouped elevation artifacts.
+
+    Reads pre-written elevation NetCDF files and produces GUI bin.gz outputs,
+    keeping the GUI output contract unchanged:
+        gui/NEXRAD/<SITE>/<SCAN_TIMESTAMP>/<ELEVATION>/<VARIABLE>.bin.gz
+    """
+    render_dir = fs.GUI_NEXRAD_DIR / str(site).upper() / str(scan_timestamp) / "render"
+    render_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_layers = []
+    for artifact in elevation_artifacts:
+        elevation_label = artifact.elevation
+        if elevation_label not in OPERATIONAL_ELEVATION_LABELS:
+            continue
+
+        nc_path = Path(artifact.netcdf_path) if artifact.netcdf_path else None
+        if nc_path is None or not nc_path.exists():
+            continue
+
+        try:
+            import xarray as xr
+        except ImportError:
+            continue
+
+        try:
+            datatree = _open_elevation_datatree(nc_path)
+        except Exception:
+            continue
+
+        elevation_dir = nexrad_render_elevation_dir(site, scan_timestamp, elevation_label)
+        elevation_dir.mkdir(parents=True, exist_ok=True)
+
+        for group_name in sorted(g for g in datatree.groups if g.startswith("/sweep_")):
+            node = datatree[group_name]
+            dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
+            if "azimuth" not in dataset.coords or "range" not in dataset.coords:
+                continue
+
+            azimuths = np.asarray(dataset["azimuth"].values, dtype=np.float32)
+            ranges = np.asarray(dataset["range"].values, dtype=np.float32)
+
+            sweep_index = int(group_name.split("_")[-1]) if "_" in group_name else 0
+            for variable_name in dataset.data_vars:
+                data_array = dataset[variable_name]
+                if tuple(data_array.dims)[:2] != ("azimuth", "range"):
+                    continue
+
+                values = np.asarray(data_array.values, dtype=np.float32)
+                dense_data = values.T.astype(np.float16, copy=False)
+
+                layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
+                bin_path = nexrad_render_variable_bin_path(site, scan_timestamp, elevation_label, variable_name)
+                _write_nexrad_variable_bin(bin_path, dense_data, azimuths, ranges)
+
+                manifest_layers.append(
+                    {
+                        "name": layer_name,
+                        "site": str(site).upper(),
+                        "volume_id": str(volume_id),
+                        "scan_timestamp": scan_timestamp,
+                        "sweep_index": sweep_index,
+                        "sweep_group": group_name,
+                        "canonical_elevation": elevation_label,
+                        "bin_path": str(bin_path),
+                        "variable_name": variable_name,
+                        "colormap_key": NEXRAD_VARIABLE_COLORMAP_KEYS.get(variable_name),
+                        "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
+                        "azimuth_count": int(azimuths.shape[0]),
+                        "range_count": int(ranges.shape[0]),
+                    }
+                )
+
+    manifest_path = render_dir / "manifest.json"
+    manifest_payload = {
+        "site": str(site).upper(),
+        "volume_id": str(volume_id),
+        "scan_timestamp": scan_timestamp,
+        "source": "elevation_artifacts",
+        "layers": manifest_layers,
+    }
+    manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
+    return manifest_path
+
+
+def _open_elevation_datatree(path: Path):
+    """Open an elevation NetCDF as a datatree-like structure."""
+    import xarray as xr
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ds = xr.open_dataset(path)
+
+    class _Node:
+        def __init__(self, dataset):
+            self._ds = dataset
+
+        @property
+        def ds(self):
+            return self._ds
+
+        def to_dataset(self):
+            return self._ds
+
+    class _DataTree:
+        def __init__(self, root_ds):
+            self._root = root_ds
+            self.groups = []
+
+        def __getitem__(self, key):
+            return _Node(self._root)
+
+    return _DataTree(ds)

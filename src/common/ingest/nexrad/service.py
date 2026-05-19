@@ -1,12 +1,18 @@
 import asyncio
 from contextlib import asynccontextmanager
+import json
+import subprocess
 import time
 from pathlib import Path
 import shutil
 
 import util.file as fs
 from common.ingest.nexrad.config import ALLOWED_VCPS, CHUNKS_BUCKET
-from common.ingest.nexrad.models import NexradIngestResult
+from common.ingest.nexrad.models import (
+    NexradIngestResult,
+    ScanStreamState,
+    WorkerParseResult,
+)
 from common.ingest.nexrad.s3_async import (
     async_get_chunk_bytes,
     async_list_recent_volume_ids,
@@ -21,14 +27,28 @@ from common.ingest.nexrad.s3_chunks import (
     list_volume_chunks,
     required_low_chunks,
 )
+from common.ingest.nexrad.stream import (
+    MAX_MAGIC_OVERLAP,
+    VolumeState,
+    detect_next_volume_offset,
+    split_at_boundary,
+)
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.volume_builder import parse_level2_volume_file
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
-from common.ingest.nexrad.writer import NexradLocalChunkStore
+from common.ingest.nexrad.worker import parse_and_export
+from common.ingest.nexrad.writer import (
+    NexradLocalChunkStore,
+    NexradElevationStore,
+    runtime_scan_path,
+    local_scan_elevations_complete,
+)
 from EWMRS.render.nexrad import serialize_nexrad_render_intermediate
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
+
+OPERATIONAL_ELEVATIONS = frozenset({"0.5", "0.9"})
 
 
 class NexradIngestService:
@@ -59,6 +79,7 @@ class NexradIngestService:
         self._stream_chunk_downloads = async_chunk_fetcher is None
         self._shared_chunk_download_semaphore = None
         self.local_chunk_store = NexradLocalChunkStore()
+        self.elevation_store = NexradElevationStore()
 
     @staticmethod
     def _format_perf_ms(started_at: float) -> float:
@@ -99,6 +120,9 @@ class NexradIngestService:
     def _remove_chunk_dir(outdir: Path):
         if outdir.exists():
             shutil.rmtree(outdir, ignore_errors=True)
+
+    def _required_low_chunks(self, chunks):
+        return required_low_chunks(chunks)
 
     def _download_chunks_to_site_dir(self, site: str, volume_id: str, chunks, *, s3_client):
         outdir = self._chunk_output_dir(site, volume_id, chunks)
@@ -158,24 +182,354 @@ class NexradIngestService:
                             if hasattr(body, "iter_chunks"):
                                 async for data in body.iter_chunks():
                                     await file_obj.write(data)
+                                if hasattr(body, "close"):
+                                    maybe_close = body.close()
+                                    if asyncio.iscoroutine(maybe_close):
+                                        await maybe_close
                             else:
-                                await file_obj.write(await body.read())
+                                data = await body.read()
+                                await file_obj.write(data)
+
+        temp_path.replace(volume_path)
+        elapsed_ms = self._format_perf_ms(started_at)
+        io_manager.write_perf(
+            f"[VOL {str(site).upper()}/{volume_id}] async_chunk_download: {elapsed_ms:.2f}ms "
+            f"(chunks={len(chunks)})"
+        )
+
+    def _stream_ingest_volume(
+        self,
+        site: str,
+        volume_id: str,
+        chunks,
+        *,
+        s3_client,
+        base_dir=None,
+    ):
+        """Overlap-safe stream ingest: fetches chunks, detects boundaries, runs worker parse."""
+        if base_dir:
+            fs.initialize_filesystem(base_dir)
+
+        scan_timestamp = self._volume_timestamp(volume_id, chunks)
+        site_upper = str(site).upper()
+        sorted_chunks = sorted(chunks, key=lambda c: (c.chunk_number, c.chunk_type))
+
+        runtime_path = runtime_scan_path(site_upper, volume_id)
+        current_state = ScanStreamState(
+            index=0,
+            volume_id=volume_id,
+            scan_timestamp=scan_timestamp,
+            file_path=str(runtime_path),
+        )
+
+        previous_tail = b""
+        stream_has_started = False
+        parse_iteration = 0
+        bytes_received_total = 0
+        bytes_dropped_total = 0
+        seen_elevation_keys: set[str] = set()
+        saved_artifacts = []
+
+        with open(runtime_path, "wb") as scan_file:
+            for chunk in sorted_chunks:
+                payload = self.chunk_fetcher(chunk, s3_client=s3_client)
+                if not payload:
+                    continue
+
+                bytes_received_total += len(payload)
+                found_boundary, boundary_offset = detect_next_volume_offset(
+                    previous_tail, payload, stream_has_started,
+                )
+
+                if found_boundary and boundary_offset > 0:
+                    before, after = split_at_boundary(payload, boundary_offset)
+                    if before:
+                        scan_file.write(before)
+                        current_state.bytes_written += len(before)
+
+                    current_state.finalized = True
+                    self._run_worker_parse(
+                        current_state,
+                        site_upper,
+                        volume_id,
+                        scan_timestamp,
+                        seen_elevation_keys,
+                        saved_artifacts,
+                        base_dir=base_dir,
+                    )
+
+                    bytes_dropped_total += current_state.bytes_written
+                    current_state = ScanStreamState(
+                        index=current_state.index + 1,
+                        volume_id=volume_id,
+                        scan_timestamp=scan_timestamp,
+                        file_path=str(runtime_path),
+                    )
+                    scan_file.seek(0)
+                    scan_file.truncate()
+
+                    if after:
+                        scan_file.write(after)
+                        current_state.bytes_written = len(after)
+
+                    stream_has_started = True
+                    previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
+                    continue
+
+                scan_file.write(payload)
+                current_state.bytes_written += len(payload)
+                stream_has_started = True
+
+                tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
+                previous_tail = tail_candidate
+
+                parse_iteration += 1
+
+            if current_state.bytes_written > 0:
+                self._run_worker_parse(
+                    current_state,
+                    site_upper,
+                    volume_id,
+                    scan_timestamp,
+                    seen_elevation_keys,
+                    saved_artifacts,
+                    base_dir=base_dir,
+                )
+
+        if runtime_path.exists():
+            runtime_path.unlink(missing_ok=True)
+
+        self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
+
+        required_elevations = [
+            (elev, saved_artifacts[0].elevation_timestamp if saved_artifacts else scan_timestamp)
+            for elev in OPERATIONAL_ELEVATIONS
+        ]
+        complete = local_scan_elevations_complete(site_upper, required_elevations)
+
+        return NexradIngestResult(
+            site=site_upper,
+            volume_id=volume_id,
+            vcp=0,
+            dynamic_scan_type=None,
+            volume_path=None,
+            scan_timestamp=scan_timestamp,
+            low_path=None,
+            high_path=None,
+            manifest_path=None,
+            chunks_downloaded=len(sorted_chunks),
+            complete=complete,
+        )
+
+    def _run_worker_parse(
+        self,
+        state: ScanStreamState,
+        site: str,
+        volume_id: str,
+        scan_timestamp: str | None,
+        seen_elevation_keys: set[str],
+        saved_artifacts: list,
+        *,
+        base_dir=None,
+    ):
+        """Run the worker parse/export subprocess on the current scan file."""
+        if not state.file_path or not Path(state.file_path).exists():
+            return
+
+        output_root = fs.NEXRAD_LEVEL2_DIR if base_dir is None else Path(base_dir) / "data" / "NEXRAD_Level2"
+
+        try:
+            result = parse_and_export(
+                volume_path=state.file_path,
+                output_root=output_root,
+                site=site,
+                volume_id=volume_id,
+                scan_timestamp=scan_timestamp,
+                seen_elevation_keys=seen_elevation_keys,
+            )
+
+            if result.parse_error:
+                state.parse_errors.append(result.parse_error)
+                io_manager.write_warning(
+                    f"[VOL {site}/{volume_id}] worker parse error: {result.parse_error}"
+                )
+
+            for artifact in result.saved_elevations:
+                saved_artifacts.append(artifact)
+
+            if result.saved_sweeps:
+                io_manager.write_info(
+                    f"[VOL {site}/{volume_id}] worker exported {len(result.saved_sweeps)} sweeps, "
+                    f"{len(result.saved_elevations)} elevations "
+                    f"(visible={result.visible_sweeps}, rss_kb={result.child_rss_kb})"
+                )
+        except Exception as exc:
+            state.parse_errors.append(str(exc))
+            io_manager.write_warning(
+                f"[VOL {site}/{volume_id}] worker parse failed: {exc}"
+            )
+
+    async def _stream_ingest_volume_async(
+        self,
+        site: str,
+        volume_id: str,
+        chunks,
+        *,
+        s3_client,
+        base_dir=None,
+        chunk_download_semaphore=None,
+    ):
+        """Async variant: downloads chunks first, then runs stream ingest."""
+        if base_dir:
+            fs.initialize_filesystem(base_dir)
+
+        scan_timestamp = self._volume_timestamp(volume_id, chunks)
+        site_upper = str(site).upper()
+        sorted_chunks = sorted(chunks, key=lambda c: (c.chunk_number, c.chunk_type))
+
+        runtime_path = runtime_scan_path(site_upper, volume_id)
+        runtime_path.parent.mkdir(parents=True, exist_ok=True)
+
+        current_state = ScanStreamState(
+            index=0,
+            volume_id=volume_id,
+            scan_timestamp=scan_timestamp,
+            file_path=str(runtime_path),
+        )
+
+        previous_tail = b""
+        stream_has_started = False
+        parse_iteration = 0
+        bytes_received_total = 0
+        bytes_dropped_total = 0
+        seen_elevation_keys: set[str] = set()
+        saved_artifacts = []
+
+        import aiofiles
+
+        async with aiofiles.open(runtime_path, "wb") as scan_file:
+            for chunk in sorted_chunks:
+                if self._stream_chunk_downloads:
+                    response = await s3_client.get_object(Bucket=CHUNKS_BUCKET, Key=chunk.key)
+                    body = response["Body"]
+                    payload_chunks = []
+                    async for data in body.iter_chunks():
+                        payload_chunks.append(data)
+                        bytes_received_total += len(data)
+                    payload = b"".join(payload_chunks)
+                    if hasattr(body, "close"):
+                        maybe_close = body.close()
+                        if asyncio.iscoroutine(maybe_close):
+                            await maybe_close
+                else:
+                    payload = await self.async_chunk_fetcher(chunk, s3_client=s3_client)
+                    if isinstance(payload, (bytes, bytearray)):
+                        bytes_received_total += len(payload)
+                    else:
+                        body = payload["Body"] if isinstance(payload, dict) else payload
+                        if hasattr(body, "iter_chunks"):
+                            payload_chunks = []
+                            async for data in body.iter_chunks():
+                                payload_chunks.append(data)
+                                bytes_received_total += len(data)
+                            payload = b"".join(payload_chunks)
                             if hasattr(body, "close"):
                                 maybe_close = body.close()
                                 if asyncio.iscoroutine(maybe_close):
                                     await maybe_close
+                        else:
+                            data = await body.read()
+                            payload = data
+                            bytes_received_total += len(data)
 
-        temp_path.replace(volume_path)
-        self.local_chunk_store.prune_station_scan_dirs(site, outdir.parent.name)
-        elapsed_ms = self._format_perf_ms(started_at)
-        io_manager.write_perf(
-            f"[VOL {str(site).upper()}/{volume_id}] chunk_download_write: {elapsed_ms:.2f}ms "
-            f"(chunks={len(chunks)}, max_chunk_downloads={self.max_chunk_downloads})"
+                if not payload:
+                    continue
+
+                found_boundary, boundary_offset = detect_next_volume_offset(
+                    previous_tail, payload, stream_has_started,
+                )
+
+                if found_boundary and boundary_offset > 0:
+                    before, after = split_at_boundary(payload, boundary_offset)
+                    if before:
+                        await scan_file.write(before)
+                        current_state.bytes_written += len(before)
+
+                    current_state.finalized = True
+                    await asyncio.to_thread(
+                        self._run_worker_parse,
+                        current_state,
+                        site_upper,
+                        volume_id,
+                        scan_timestamp,
+                        seen_elevation_keys,
+                        saved_artifacts,
+                        base_dir=base_dir,
+                    )
+
+                    bytes_dropped_total += current_state.bytes_written
+                    current_state = ScanStreamState(
+                        index=current_state.index + 1,
+                        volume_id=volume_id,
+                        scan_timestamp=scan_timestamp,
+                        file_path=str(runtime_path),
+                    )
+                    await scan_file.seek(0)
+                    await scan_file.truncate()
+
+                    if after:
+                        await scan_file.write(after)
+                        current_state.bytes_written = len(after)
+
+                    stream_has_started = True
+                    previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
+                    continue
+
+                await scan_file.write(payload)
+                current_state.bytes_written += len(payload)
+                stream_has_started = True
+
+                tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
+                previous_tail = tail_candidate
+
+                parse_iteration += 1
+
+            if current_state.bytes_written > 0:
+                await asyncio.to_thread(
+                    self._run_worker_parse,
+                    current_state,
+                    site_upper,
+                    volume_id,
+                    scan_timestamp,
+                    seen_elevation_keys,
+                    saved_artifacts,
+                    base_dir=base_dir,
+                )
+
+        if runtime_path.exists():
+            runtime_path.unlink(missing_ok=True)
+
+        self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
+
+        required_elevations = [
+            (elev, saved_artifacts[0].elevation_timestamp if saved_artifacts else scan_timestamp)
+            for elev in OPERATIONAL_ELEVATIONS
+        ]
+        complete = local_scan_elevations_complete(site_upper, required_elevations)
+
+        return NexradIngestResult(
+            site=site_upper,
+            volume_id=volume_id,
+            vcp=0,
+            dynamic_scan_type=None,
+            volume_path=None,
+            scan_timestamp=scan_timestamp,
+            low_path=None,
+            high_path=None,
+            manifest_path=None,
+            chunks_downloaded=len(sorted_chunks),
+            complete=complete,
         )
-
-    @staticmethod
-    def _required_low_chunks(chunks):
-        return required_low_chunks(chunks)
 
     def ingest_allowed_vcp_volume(
         self,
@@ -193,9 +547,12 @@ class NexradIngestService:
         if base_dir:
             fs.initialize_filesystem(base_dir)
 
-        s3_client = s3_client or get_unsigned_s3_client()
         if station_vcp is None:
-            probe = self.volume_prober(site, volume_id, s3_client=s3_client, weather_session=weather_session)
+            probe = self.volume_prober(
+                site,
+                volume_id,
+                weather_session=weather_session,
+            )
             if not probe.accepted:
                 return None
             probe_vcp = probe.vcp
@@ -225,20 +582,25 @@ class NexradIngestService:
                 complete=False,
             )
 
-        self._download_chunks_to_site_dir(site, volume_id, needed_chunks, s3_client=s3_client)
-        volume_path, manifest_path, scan_timestamp = self._prepare_render_manifest(site, volume_id, needed_chunks)
+        result = self._stream_ingest_volume(
+            probe_site,
+            probe_volume_id,
+            needed_chunks,
+            s3_client=s3_client,
+            base_dir=base_dir,
+        )
         return NexradIngestResult(
-            site=probe_site,
-            volume_id=probe_volume_id,
+            site=result.site,
+            volume_id=result.volume_id,
             vcp=probe_vcp,
             dynamic_scan_type=None,
-            volume_path=volume_path,
-            scan_timestamp=scan_timestamp,
+            volume_path=None,
+            scan_timestamp=result.scan_timestamp,
             low_path=None,
             high_path=None,
-            manifest_path=manifest_path,
-            chunks_downloaded=len(needed_chunks),
-            complete=True,
+            manifest_path=None,
+            chunks_downloaded=result.chunks_downloaded,
+            complete=result.complete,
         )
 
     async def ingest_allowed_vcp_volume_async(
@@ -307,36 +669,31 @@ class NexradIngestService:
                     complete=False,
                 )
 
-            await self._download_chunks_to_site_dir_async(
-                site,
-                volume_id,
+            result = await self._stream_ingest_volume_async(
+                probe_site,
+                probe_volume_id,
                 needed_chunks,
                 s3_client=active_s3_client,
+                base_dir=base_dir,
                 chunk_download_semaphore=chunk_download_semaphore or self._shared_chunk_download_semaphore,
-            )
-            volume_path, manifest_path, scan_timestamp = await asyncio.to_thread(
-                self._prepare_render_manifest,
-                site,
-                volume_id,
-                needed_chunks,
             )
             total_elapsed_ms = self._format_perf_ms(total_started_at)
             io_manager.write_perf(
                 f"[VOL {probe_site}/{probe_volume_id}] total_async_ingest: {total_elapsed_ms:.2f}ms "
-                f"(accepted=True, complete=True, chunks_downloaded={len(needed_chunks)})"
+                f"(accepted=True, complete={result.complete}, chunks_downloaded={result.chunks_downloaded})"
             )
             return NexradIngestResult(
-                site=probe_site,
-                volume_id=probe_volume_id,
+                site=result.site,
+                volume_id=result.volume_id,
                 vcp=probe_vcp,
                 dynamic_scan_type=None,
-                volume_path=volume_path,
-                scan_timestamp=scan_timestamp,
+                volume_path=None,
+                scan_timestamp=result.scan_timestamp,
                 low_path=None,
                 high_path=None,
-                manifest_path=manifest_path,
-                chunks_downloaded=len(needed_chunks),
-                complete=True,
+                manifest_path=None,
+                chunks_downloaded=result.chunks_downloaded,
+                complete=result.complete,
             )
 
     def ingest_latest_allowed_vcp_scans(

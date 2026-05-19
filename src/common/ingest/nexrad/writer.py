@@ -8,9 +8,11 @@ import xarray as xr
 
 import util.file as fs
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, required_low_chunks
+from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
 
 IMPORTANT_DATA_VARS = None
 NEXRAD_SCAN_DIRS_TO_KEEP = 3
+NEXRAD_ELEVATION_DIRS_TO_KEEP = 5
 
 
 class NexradLocalChunkStore:
@@ -50,6 +52,97 @@ class NexradLocalChunkStore:
             if child.name in keep_dirs:
                 continue
             shutil.rmtree(child, ignore_errors=True)
+
+
+class NexradElevationStore:
+    """Manages per-elevation public outputs and internal scratch paths."""
+
+    def elevation_dir(self, site: str, elevation: str) -> Path:
+        return fs.NEXRAD_LEVEL2_DIR / str(site).upper() / str(elevation)
+
+    def elevation_netcdf_path(
+        self, site: str, elevation: str, elevation_timestamp: str
+    ) -> Path:
+        ts = elevation_timestamp.replace(":", "-") if elevation_timestamp else "unknown"
+        stem = f"{str(site).upper()}_{elevation}_{ts}"
+        return self.elevation_dir(site, elevation) / f"{stem}.nc"
+
+    def elevation_manifest_path(
+        self, site: str, elevation: str, elevation_timestamp: str
+    ) -> Path:
+        ts = elevation_timestamp.replace(":", "-") if elevation_timestamp else "unknown"
+        stem = f"{str(site).upper()}_{elevation}_{ts}"
+        return self.elevation_dir(site, elevation) / f"{stem}.json"
+
+    def runtime_dir(self, site: str) -> Path:
+        return fs.NEXRAD_LEVEL2_DIR / ".runtime" / str(site).upper()
+
+    def runtime_scan_path(self, site: str, volume_id: str) -> Path:
+        runtime = self.runtime_dir(site)
+        runtime.mkdir(parents=True, exist_ok=True)
+        return runtime / f"{str(site).upper()}_{volume_id}.ar2v"
+
+    def prune_elevation_artifacts(self, site: str, elevation: str):
+        elev_dir = self.elevation_dir(site, elevation)
+        if not elev_dir.exists():
+            return
+
+        nc_files = sorted(
+            (f for f in elev_dir.iterdir() if f.suffix == ".nc"),
+            key=lambda f: f.name,
+            reverse=True,
+        )
+        keep = {f.name for f in nc_files[:NEXRAD_ELEVATION_DIRS_TO_KEEP]}
+
+        for f in nc_files:
+            if f.name in keep:
+                continue
+            f.unlink(missing_ok=True)
+            json_path = f.with_suffix(".json")
+            json_path.unlink(missing_ok=True)
+
+
+def _elevation_store() -> NexradElevationStore:
+    return NexradElevationStore()
+
+
+def elevation_dir(site: str, elevation: str) -> Path:
+    return _elevation_store().elevation_dir(site, elevation)
+
+
+def elevation_netcdf_path(site: str, elevation: str, elevation_timestamp: str) -> Path:
+    return _elevation_store().elevation_netcdf_path(site, elevation, elevation_timestamp)
+
+
+def elevation_manifest_path(site: str, elevation: str, elevation_timestamp: str) -> Path:
+    return _elevation_store().elevation_manifest_path(site, elevation, elevation_timestamp)
+
+
+def runtime_dir(site: str) -> Path:
+    return _elevation_store().runtime_dir(site)
+
+
+def runtime_scan_path(site: str, volume_id: str) -> Path:
+    return _elevation_store().runtime_scan_path(site, volume_id)
+
+
+def local_elevation_complete(site: str, elevation: str, elevation_timestamp: str) -> bool:
+    nc_path = elevation_netcdf_path(site, elevation, elevation_timestamp)
+    return nc_path.exists()
+
+
+def local_scan_elevations_complete(
+    site: str,
+    required_elevations: list[tuple[str, str]],
+) -> bool:
+    for elevation, elevation_timestamp in required_elevations:
+        if not local_elevation_complete(site, elevation, elevation_timestamp):
+            return False
+    return True
+
+
+def prune_elevation_artifacts(site: str, elevation: str):
+    _elevation_store().prune_elevation_artifacts(site, elevation)
 
 
 def chunk_output_dir(site: str, volume_id: str, chunks) -> Path:
@@ -220,3 +313,101 @@ def write_outputs(probe, parsed_volume, classified_sweeps, chunks_downloaded, *,
     }
     manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
     return low_path if low_groups else None, high_path if high_groups else None, manifest_path
+
+
+def _write_elevation_netcdf(
+    path: Path,
+    root_attrs: dict,
+    datatree,
+    group_names: list[str],
+) -> Path:
+    """Write a single elevation NetCDF with all member sweep groups."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _empty_root_dataset(root_attrs).to_netcdf(path)
+    for group_name in group_names:
+        dataset = _sanitize_dataset(_slim_dataset_from_node(datatree[group_name]))
+        dataset.to_netcdf(
+            path,
+            mode="a",
+            group=group_name.lstrip("/"),
+            encoding=_dataset_encoding(dataset),
+        )
+    return path
+
+
+def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
+    """Write a per-elevation JSON manifest."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "site": artifact.site,
+        "volume_id": artifact.volume_id,
+        "scan_timestamp": artifact.scan_timestamp,
+        "elevation": artifact.elevation,
+        "elevation_timestamp": artifact.elevation_timestamp,
+        "first_sweep_index": artifact.first_sweep_index,
+        "last_sweep_index": artifact.last_sweep_index,
+        "member_group_names": artifact.member_group_names,
+        "waveforms_present": list(artifact.waveforms_present),
+        "supplemental": artifact.supplemental,
+        "netcdf_path": artifact.netcdf_path,
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def write_elevation_artifacts(
+    group: ElevationGroup,
+    datatree,
+    *,
+    site: str,
+    volume_id: str,
+    scan_timestamp: str | None,
+    elevation_label: str,
+    elevation_timestamp: str | None,
+    output_root: str | Path | None = None,
+) -> list[ElevationArtifact]:
+    """Write grouped elevation NetCDF and manifest to the public output tree.
+
+    Returns a list of ElevationArtifact records for the emitted files.
+    """
+    if output_root:
+        fs.initialize_filesystem(output_root)
+
+    ts_for_filename = elevation_timestamp or scan_timestamp or "unknown"
+    store = _elevation_store()
+
+    nc_path = store.elevation_netcdf_path(site, elevation_label, ts_for_filename)
+    manifest_path = store.elevation_manifest_path(site, elevation_label, ts_for_filename)
+
+    root_attrs = {
+        "site": site,
+        "volume_id": volume_id,
+        "scan_timestamp": scan_timestamp,
+        "elevation": elevation_label,
+        "elevation_timestamp": elevation_timestamp,
+        "first_sweep_index": group.first_sweep_index,
+        "last_sweep_index": group.last_sweep_index,
+        "supplemental": group.supplemental,
+    }
+
+    group_names = [m.group_name for m in group.members]
+    _write_elevation_netcdf(nc_path, root_attrs, datatree, group_names)
+
+    artifact = ElevationArtifact(
+        site=site,
+        volume_id=volume_id,
+        scan_timestamp=scan_timestamp,
+        elevation=elevation_label,
+        elevation_timestamp=elevation_timestamp,
+        first_sweep_index=group.first_sweep_index,
+        last_sweep_index=group.last_sweep_index,
+        member_group_names=group_names,
+        waveforms_present=group.waveforms_present,
+        supplemental=group.supplemental,
+        netcdf_path=str(nc_path),
+    )
+    _write_elevation_manifest(manifest_path, artifact)
+
+    store.prune_elevation_artifacts(site, elevation_label)
+
+    return [artifact]
