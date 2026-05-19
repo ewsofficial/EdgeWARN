@@ -132,7 +132,7 @@ def test_run_worker_parse_uses_pool_and_updates_seen_keys(tmp_path):
     )
     Path(state.file_path).write_bytes(b"data")
     seen_keys = set()
-    saved_artifacts = []
+    first_ts = None
 
     artifact = ElevationArtifact(
         site="KTLX",
@@ -160,20 +160,17 @@ def test_run_worker_parse_uses_pool_and_updates_seen_keys(tmp_path):
 
     with patch("common.ingest.nexrad.service.get_nexrad_pool") as pool_mock:
         pool_mock.return_value.submit.return_value = mock_future
-        service._run_worker_parse(
+        result_ts = service._run_worker_parse(
             state,
             "KTLX",
             "999",
             "2026-05-19T13:21:57Z",
             seen_keys,
-            saved_artifacts,
+            first_ts,
             base_dir=tmp_path,
         )
 
-    assert len(saved_artifacts) == 1
-    assert saved_artifacts[0].member_group_names == ["/sweep_0", "/sweep_1"]
-    assert saved_artifacts[0].waveforms_present == {"surveillance"}
-    assert saved_artifacts[0].ar2v_path == str(tmp_path / "out.ar2v")
+    assert result_ts == "2026-05-19T13:21:57Z"
     assert seen_keys == {"0.5:/sweep_0,/sweep_1"}
     pool_mock.return_value.submit.assert_called_once()
 

@@ -6,6 +6,7 @@ and stream-oriented, while the worker handles parse and export work.
 
 from __future__ import annotations
 
+import gc
 import resource
 from pathlib import Path
 
@@ -21,6 +22,21 @@ def _get_child_rss_kb() -> float:
     """Return peak RSS of the current process in KB."""
     ru = resource.getrusage(resource.RUSAGE_SELF)
     return ru.ru_maxrss
+
+
+def _clear_worker_caches() -> None:
+    """Clear internal caches held by heavy libraries to bound worker RSS."""
+    try:
+        import dask.base
+        dask.base._seen.clear()
+    except Exception:
+        pass
+    try:
+        import netCDF4
+        netCDF4.Dataset._cls_dict.clear()
+    except Exception:
+        pass
+    gc.collect()
 
 
 def parse_and_export(
@@ -121,6 +137,8 @@ def parse_and_export(
 
     except Exception as exc:
         parse_error = str(exc)
+
+    _clear_worker_caches()
 
     return WorkerParseResult(
         visible_sweeps=visible_sweeps,
