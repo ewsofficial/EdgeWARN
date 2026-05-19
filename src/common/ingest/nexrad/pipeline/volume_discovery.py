@@ -7,6 +7,26 @@ from common.ingest.nexrad.writer import local_low_chunks_complete, local_scan_el
 OPERATIONAL_ELEVATIONS = frozenset({"0.5", "0.9"})
 
 
+def is_newer_volume_stamp(stamp: str | None, latest_stamp: str | None) -> bool:
+    if latest_stamp is None:
+        return stamp is not None
+    if stamp is None:
+        return False
+    current_dt = parse_nexrad_timestamp(stamp)
+    latest_dt = parse_nexrad_timestamp(latest_stamp)
+    if current_dt is None or latest_dt is None:
+        return stamp > latest_stamp
+    return current_dt > latest_dt
+
+
+def local_volume_complete(site: str, volume_id: str, chunks) -> bool:
+    if local_low_chunks_complete(site, volume_id, chunks):
+        return True
+    scan_timestamp = extract_volume_timestamp(volume_id, chunks)
+    required_elevations = [(elev, scan_timestamp) for elev in OPERATIONAL_ELEVATIONS]
+    return local_scan_elevations_complete(site, required_elevations)
+
+
 class NexradVolumeDiscovery:
     def __init__(
         self,
@@ -33,7 +53,7 @@ class NexradVolumeDiscovery:
             if not chunks:
                 continue
             stamp = extract_volume_timestamp(volume_id, chunks)
-            if self._is_newer(stamp, latest_stamp):
+            if is_newer_volume_stamp(stamp, latest_stamp):
                 latest_volume_id = volume_id
                 latest_chunks = chunks
                 latest_stamp = stamp
@@ -47,21 +67,5 @@ class NexradVolumeDiscovery:
         )
 
     @staticmethod
-    def _is_newer(stamp: str | None, latest_stamp: str | None) -> bool:
-        if latest_stamp is None:
-            return stamp is not None
-        if stamp is None:
-            return False
-        current_dt = parse_nexrad_timestamp(stamp)
-        latest_dt = parse_nexrad_timestamp(latest_stamp)
-        if current_dt is None or latest_dt is None:
-            return stamp > latest_stamp
-        return current_dt > latest_dt
-
-    @staticmethod
     def local_complete(site: str, volume_id: str, chunks) -> bool:
-        if local_low_chunks_complete(site, volume_id, chunks):
-            return True
-        scan_timestamp = extract_volume_timestamp(volume_id, chunks)
-        required_elevations = [(elev, scan_timestamp) for elev in OPERATIONAL_ELEVATIONS]
-        return local_scan_elevations_complete(site, required_elevations)
+        return local_volume_complete(site, volume_id, chunks)

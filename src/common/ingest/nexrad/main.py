@@ -28,6 +28,19 @@ from util.io import IOManager
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
 
 
+def _service_defaults():
+    return {
+        "chunk_lister": list_volume_chunks,
+        "chunk_fetcher": get_chunk_bytes,
+        "volume_lister": list_recent_volume_ids,
+        "station_fetcher": fetch_radar_station_vcps,
+        "volume_prober": probe_volume_vcp,
+        "async_chunk_lister": async_list_volume_chunks,
+        "async_chunk_fetcher": async_get_chunk_bytes,
+        "async_volume_lister": async_list_recent_volume_ids,
+    }
+
+
 class NexradIngestService(_BaseNexradIngestService):
     def __init__(
         self,
@@ -43,18 +56,23 @@ class NexradIngestService(_BaseNexradIngestService):
         max_site_tasks=16,
         max_chunk_downloads=32,
     ):
+        defaults = _service_defaults()
         super().__init__(
-            chunk_lister=chunk_lister or list_volume_chunks,
-            chunk_fetcher=chunk_fetcher or get_chunk_bytes,
-            volume_lister=volume_lister or list_recent_volume_ids,
-            station_fetcher=station_fetcher or fetch_radar_station_vcps,
-            volume_prober=volume_prober or probe_volume_vcp,
-            async_chunk_lister=async_chunk_lister or async_list_volume_chunks,
-            async_chunk_fetcher=async_chunk_fetcher or async_get_chunk_bytes,
-            async_volume_lister=async_volume_lister or async_list_recent_volume_ids,
+            chunk_lister=chunk_lister or defaults["chunk_lister"],
+            chunk_fetcher=chunk_fetcher or defaults["chunk_fetcher"],
+            volume_lister=volume_lister or defaults["volume_lister"],
+            station_fetcher=station_fetcher or defaults["station_fetcher"],
+            volume_prober=volume_prober or defaults["volume_prober"],
+            async_chunk_lister=async_chunk_lister or defaults["async_chunk_lister"],
+            async_chunk_fetcher=async_chunk_fetcher or defaults["async_chunk_fetcher"],
+            async_volume_lister=async_volume_lister or defaults["async_volume_lister"],
             max_site_tasks=max_site_tasks,
             max_chunk_downloads=max_chunk_downloads,
         )
+
+
+def _new_service() -> NexradIngestService:
+    return NexradIngestService()
 
 
 def ingest_allowed_vcp_volume(
@@ -68,7 +86,7 @@ def ingest_allowed_vcp_volume(
     writer=None,
     station_vcp=None,
 ):
-    service = NexradIngestService()
+    service = _new_service()
     return service.ingest_allowed_vcp_volume(
         site,
         volume_id,
@@ -90,7 +108,7 @@ def ingest_latest_allowed_vcp_scans(
     weather_session=None,
     station_vcps=None,
 ):
-    service = NexradIngestService()
+    service = _new_service()
     return service.ingest_latest_allowed_vcp_scans(
         sites,
         max_volumes_per_site=max_volumes_per_site,
@@ -112,7 +130,7 @@ async def ingest_allowed_vcp_volume_async(
     writer=None,
     station_vcp=None,
 ):
-    service = NexradIngestService()
+    service = _new_service()
     return await service.ingest_allowed_vcp_volume_async(
         site,
         volume_id,
@@ -134,7 +152,7 @@ async def ingest_latest_allowed_vcp_scans_async(
     weather_session=None,
     station_vcps=None,
 ):
-    service = NexradIngestService()
+    service = _new_service()
     return await service.ingest_latest_allowed_vcp_scans_async(
         sites,
         max_volumes_per_site=max_volumes_per_site,
@@ -186,7 +204,7 @@ async def poll_latest_station_scans_forever_async(
 
 
 def list_allowed_vcp_sites(*, weather_session=None, stations=None):
-    service = NexradIngestService()
+    service = _new_service()
     return service.list_allowed_vcp_sites(weather_session=weather_session, stations=stations)
 
 
@@ -201,7 +219,7 @@ def _build_parser():
 
 
 def main():
-    service = NexradIngestService()
+    service = _new_service()
     args = _build_parser().parse_args()
     if args.volume_id and not args.site:
         raise SystemExit("--site is required when --volume-id is provided")
