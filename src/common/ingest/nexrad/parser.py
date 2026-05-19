@@ -54,7 +54,9 @@ def _decompress_chunked_record_stream(volume_bytes: bytes) -> bytes:
         cursor += block_size
         record_parts.append(bz2.decompress(compressed_block))
 
-    return b"".join(record_parts)
+    result = b"".join(record_parts)
+    del record_parts
+    return result
 
 
 @dataclass
@@ -205,6 +207,8 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
         record_stream = volume_bytes
         offset = VOLUME_HEADER_BYTES
 
+    del volume_bytes
+
     metadata_records: list[bytes] = []
     sweeps: list[RawSweep] = []
     current: RawSweep | None = None
@@ -264,12 +268,15 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
     if current is not None and current.records:
         sweeps.append(current)
 
+    trailing = record_stream[offset:]
+    del record_stream
+
     return RawVolume(
         volume_header=volume_header,
         site=site.upper(),
         metadata_records=metadata_records,
         sweeps=sweeps,
-        trailing_bytes=record_stream[offset:],
+        trailing_bytes=trailing,
         compression_record_count=compression_record_count,
     )
 

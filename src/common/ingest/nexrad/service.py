@@ -224,9 +224,6 @@ class NexradIngestService:
 
         previous_tail = b""
         stream_has_started = False
-        parse_iteration = 0
-        bytes_received_total = 0
-        bytes_dropped_total = 0
         seen_elevation_keys: set[str] = set()
         first_elevation_timestamp: str | None = None
 
@@ -299,23 +296,13 @@ class NexradIngestService:
                 )
                 scan_file.write(normalized_payload)
                 current_state.bytes_written += len(normalized_payload)
-                scan_file.flush()
-                first_elevation_timestamp = self._run_worker_parse(
-                    current_state,
-                    site_upper,
-                    volume_id,
-                    scan_timestamp,
-                    seen_elevation_keys,
-                    first_elevation_timestamp,
-                    base_dir=base_dir,
-                )
-                current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
                 stream_has_started = True
 
                 tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
                 previous_tail = tail_candidate
 
             if current_state.bytes_written > 0:
+                scan_file.flush()
                 first_elevation_timestamp = self._run_worker_parse(
                     current_state,
                     site_upper,
@@ -468,6 +455,7 @@ class NexradIngestService:
                     async for data in body.iter_chunks():
                         payload_chunks.append(data)
                     payload = b"".join(payload_chunks)
+                    del payload_chunks
                     if hasattr(body, "close"):
                         maybe_close = body.close()
                         if asyncio.iscoroutine(maybe_close):
@@ -481,6 +469,7 @@ class NexradIngestService:
                             async for data in body.iter_chunks():
                                 payload_chunks.append(data)
                             payload = b"".join(payload_chunks)
+                            del payload_chunks
                             if hasattr(body, "close"):
                                 maybe_close = body.close()
                                 if asyncio.iscoroutine(maybe_close):
@@ -549,6 +538,7 @@ class NexradIngestService:
 
                     stream_has_started = True
                     previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
+                    del payload
                     continue
 
                 normalized_payload = normalize_chunk_payload(
@@ -557,24 +547,14 @@ class NexradIngestService:
                 )
                 await scan_file.write(normalized_payload)
                 current_state.bytes_written += len(normalized_payload)
-                await scan_file.flush()
-                first_elevation_timestamp = await asyncio.to_thread(
-                    self._run_worker_parse,
-                    current_state,
-                    site_upper,
-                    volume_id,
-                    scan_timestamp,
-                    seen_elevation_keys,
-                    first_elevation_timestamp,
-                    base_dir=base_dir,
-                )
-                current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
                 stream_has_started = True
 
                 tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
                 previous_tail = tail_candidate
+                del payload
 
             if current_state.bytes_written > 0:
+                await scan_file.flush()
                 first_elevation_timestamp = await asyncio.to_thread(
                     self._run_worker_parse,
                     current_state,
