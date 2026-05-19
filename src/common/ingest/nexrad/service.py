@@ -296,6 +296,17 @@ class NexradIngestService:
                 )
                 scan_file.write(normalized_payload)
                 current_state.bytes_written += len(normalized_payload)
+                scan_file.flush()
+                first_elevation_timestamp = self._run_worker_parse(
+                    current_state,
+                    site_upper,
+                    volume_id,
+                    scan_timestamp,
+                    seen_elevation_keys,
+                    first_elevation_timestamp,
+                    base_dir=base_dir,
+                )
+                current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
                 stream_has_started = True
 
                 tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
@@ -547,6 +558,18 @@ class NexradIngestService:
                 )
                 await scan_file.write(normalized_payload)
                 current_state.bytes_written += len(normalized_payload)
+                await scan_file.flush()
+                first_elevation_timestamp = await asyncio.to_thread(
+                    self._run_worker_parse,
+                    current_state,
+                    site_upper,
+                    volume_id,
+                    scan_timestamp,
+                    seen_elevation_keys,
+                    first_elevation_timestamp,
+                    base_dir=base_dir,
+                )
+                current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
                 stream_has_started = True
 
                 tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
