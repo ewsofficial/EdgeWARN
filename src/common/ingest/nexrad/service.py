@@ -228,7 +228,7 @@ class NexradIngestService:
         bytes_received_total = 0
         bytes_dropped_total = 0
         seen_elevation_keys: set[str] = set()
-        saved_artifacts = []
+        first_elevation_timestamp: str | None = None
 
         with open(runtime_path, "wb") as scan_file:
             for chunk in sorted_chunks:
@@ -253,13 +253,13 @@ class NexradIngestService:
                     scan_file.flush()
 
                     current_state.finalized = True
-                    self._run_worker_parse(
+                    first_elevation_timestamp = self._run_worker_parse(
                         current_state,
                         site_upper,
                         volume_id,
                         scan_timestamp,
                         seen_elevation_keys,
-                        saved_artifacts,
+                        first_elevation_timestamp,
                         base_dir=base_dir,
                     )
                     current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
@@ -278,13 +278,13 @@ class NexradIngestService:
                         scan_file.write(normalized_after)
                         current_state.bytes_written = len(normalized_after)
                         scan_file.flush()
-                        self._run_worker_parse(
+                        first_elevation_timestamp = self._run_worker_parse(
                             current_state,
                             site_upper,
                             volume_id,
                             scan_timestamp,
                             seen_elevation_keys,
-                            saved_artifacts,
+                            first_elevation_timestamp,
                             base_dir=base_dir,
                         )
                         current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
@@ -300,13 +300,13 @@ class NexradIngestService:
                 scan_file.write(normalized_payload)
                 current_state.bytes_written += len(normalized_payload)
                 scan_file.flush()
-                self._run_worker_parse(
+                first_elevation_timestamp = self._run_worker_parse(
                     current_state,
                     site_upper,
                     volume_id,
                     scan_timestamp,
                     seen_elevation_keys,
-                    saved_artifacts,
+                    first_elevation_timestamp,
                     base_dir=base_dir,
                 )
                 current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
@@ -316,13 +316,13 @@ class NexradIngestService:
                 previous_tail = tail_candidate
 
             if current_state.bytes_written > 0:
-                self._run_worker_parse(
+                first_elevation_timestamp = self._run_worker_parse(
                     current_state,
                     site_upper,
                     volume_id,
                     scan_timestamp,
                     seen_elevation_keys,
-                    saved_artifacts,
+                    first_elevation_timestamp,
                     base_dir=base_dir,
                 )
 
@@ -332,7 +332,7 @@ class NexradIngestService:
         self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
 
         required_elevations = [
-            (elev, saved_artifacts[0].elevation_timestamp if saved_artifacts else scan_timestamp)
+            (elev, first_elevation_timestamp or scan_timestamp)
             for elev in OPERATIONAL_ELEVATIONS
         ]
         complete = local_scan_elevations_complete(site_upper, required_elevations)
@@ -358,13 +358,16 @@ class NexradIngestService:
         volume_id: str,
         scan_timestamp: str | None,
         seen_elevation_keys: set[str],
-        saved_artifacts: list,
+        first_elevation_timestamp: str | None,
         *,
         base_dir=None,
-    ):
-        """Run the worker parse/export via the shared process pool."""
+    ) -> str | None:
+        """Run the worker parse/export via the shared process pool.
+
+        Returns the first elevation timestamp seen, or the existing value.
+        """
         if not state.file_path or not Path(state.file_path).exists():
-            return
+            return first_elevation_timestamp
 
         output_root = fs.NEXRAD_LEVEL2_DIR if base_dir is None else Path(base_dir) / "data" / "NEXRAD_Level2"
         pool = get_nexrad_pool()
@@ -395,8 +398,9 @@ class NexradIngestService:
                 )
 
             for artifact in result.saved_elevations:
-                saved_artifacts.append(artifact)
                 seen_elevation_keys.add(_artifact_group_key(artifact))
+                if first_elevation_timestamp is None and artifact.elevation_timestamp:
+                    first_elevation_timestamp = artifact.elevation_timestamp
 
             if result.saved_sweeps:
                 io_manager.write_info(
@@ -417,6 +421,8 @@ class NexradIngestService:
             io_manager.write_warning(
                 f"[VOL {site}/{volume_id}] worker parse failed: {exc}"
             )
+
+        return first_elevation_timestamp
 
     async def _stream_ingest_volume_async(
         self,
@@ -449,7 +455,7 @@ class NexradIngestService:
         previous_tail = b""
         stream_has_started = False
         seen_elevation_keys: set[str] = set()
-        saved_artifacts = []
+        first_elevation_timestamp: str | None = None
 
         import aiofiles
 
@@ -503,14 +509,14 @@ class NexradIngestService:
                     await scan_file.flush()
 
                     current_state.finalized = True
-                    await asyncio.to_thread(
+                    first_elevation_timestamp = await asyncio.to_thread(
                         self._run_worker_parse,
                         current_state,
                         site_upper,
                         volume_id,
                         scan_timestamp,
                         seen_elevation_keys,
-                        saved_artifacts,
+                        first_elevation_timestamp,
                         base_dir=base_dir,
                     )
                     current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
@@ -529,14 +535,14 @@ class NexradIngestService:
                         await scan_file.write(normalized_after)
                         current_state.bytes_written = len(normalized_after)
                         await scan_file.flush()
-                        await asyncio.to_thread(
+                        first_elevation_timestamp = await asyncio.to_thread(
                             self._run_worker_parse,
                             current_state,
                             site_upper,
                             volume_id,
                             scan_timestamp,
                             seen_elevation_keys,
-                            saved_artifacts,
+                            first_elevation_timestamp,
                             base_dir=base_dir,
                         )
                         current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
@@ -552,14 +558,14 @@ class NexradIngestService:
                 await scan_file.write(normalized_payload)
                 current_state.bytes_written += len(normalized_payload)
                 await scan_file.flush()
-                await asyncio.to_thread(
+                first_elevation_timestamp = await asyncio.to_thread(
                     self._run_worker_parse,
                     current_state,
                     site_upper,
                     volume_id,
                     scan_timestamp,
                     seen_elevation_keys,
-                    saved_artifacts,
+                    first_elevation_timestamp,
                     base_dir=base_dir,
                 )
                 current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
@@ -569,14 +575,14 @@ class NexradIngestService:
                 previous_tail = tail_candidate
 
             if current_state.bytes_written > 0:
-                await asyncio.to_thread(
+                first_elevation_timestamp = await asyncio.to_thread(
                     self._run_worker_parse,
                     current_state,
                     site_upper,
                     volume_id,
                     scan_timestamp,
                     seen_elevation_keys,
-                    saved_artifacts,
+                    first_elevation_timestamp,
                     base_dir=base_dir,
                 )
 
@@ -586,7 +592,7 @@ class NexradIngestService:
         self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
 
         required_elevations = [
-            (elev, saved_artifacts[0].elevation_timestamp if saved_artifacts else scan_timestamp)
+            (elev, first_elevation_timestamp or scan_timestamp)
             for elev in OPERATIONAL_ELEVATIONS
         ]
         complete = local_scan_elevations_complete(site_upper, required_elevations)
