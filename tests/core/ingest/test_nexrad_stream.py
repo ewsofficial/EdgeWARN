@@ -4,10 +4,7 @@ from common.ingest.nexrad.stream import (
     MAX_MAGIC_OVERLAP,
     VOLUME_MAGICS,
     VolumeState,
-    create_scan_state,
     detect_next_volume_offset,
-    finalize_scan_state,
-    iter_transport_chunks,
     split_at_boundary,
 )
 
@@ -91,8 +88,8 @@ def test_split_at_boundary_end_offset():
     assert after == b""
 
 
-def test_create_scan_state():
-    state = create_scan_state(0, "VOL123", "/path/to/file.ar2v")
+def test_volume_state_defaults():
+    state = VolumeState(index=0, volume_id="VOL123", file_path="/path/to/file.ar2v")
     assert state.index == 0
     assert state.volume_id == "VOL123"
     assert state.file_path == "/path/to/file.ar2v"
@@ -100,25 +97,13 @@ def test_create_scan_state():
     assert state.finalized is False
 
 
-def test_finalize_scan_state():
-    state = create_scan_state(0, "VOL123", "/path/to/file.ar2v")
-    state.bytes_written = 1000
-    finalized = finalize_scan_state(state)
-    assert finalized.finalized is True
-    assert finalized.bytes_written == 1000
-
-
-def test_iter_transport_chunks_splits_large_payload():
-    payloads = [b"a" * 600, b"b" * 600]
-    chunks = iter_transport_chunks(payloads, transport_size=500)
-    assert len(chunks) == 3
-    assert len(chunks[0]) == 500
-    assert len(chunks[1]) == 500
-    assert len(chunks[2]) == 200
-
-
-def test_iter_transport_chunks_single_small_payload():
-    payloads = [b"small"]
-    chunks = iter_transport_chunks(payloads, transport_size=1000)
-    assert len(chunks) == 1
-    assert chunks[0] == b"small"
+def test_volume_state_finalized():
+    state = VolumeState(
+        index=0,
+        volume_id="VOL123",
+        file_path="/path/to/file.ar2v",
+        bytes_written=1000,
+        finalized=True,
+    )
+    assert state.finalized is True
+    assert state.bytes_written == 1000

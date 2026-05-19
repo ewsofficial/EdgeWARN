@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import time
 
-from common.ingest.nexrad.config import ALLOWED_VCPS
+from common.ingest.nexrad.config import ALLOWED_VCPS, format_perf_ms
 from common.ingest.nexrad.service import NexradIngestService as _BaseNexradIngestService
 from common.ingest.nexrad.s3_async import (
     async_get_chunk_bytes,
@@ -215,7 +215,7 @@ def main():
         station_fetch_started_at = time.perf_counter()
         stations = fetch_radar_station_vcps()
         io_manager.write_perf(
-            f"[CLI] station_catalog_fetch: {service._format_perf_ms(station_fetch_started_at):.2f}ms "
+            f"[CLI] station_catalog_fetch: {format_perf_ms(station_fetch_started_at):.2f}ms "
             f"(stations={len(stations)})"
         )
         station_vcp = stations.get(str(args.site).upper()) if stations is not None else None

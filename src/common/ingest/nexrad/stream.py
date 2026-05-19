@@ -3,8 +3,7 @@
 Modeled after nexrad_overlap_scan_poc.py boundary semantics.
 """
 
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 
 
 VOLUME_MAGICS = (b"AR2V", b"ARCHIVE2")
@@ -18,14 +17,6 @@ class VolumeState:
     file_path: str
     bytes_written: int = 0
     finalized: bool = False
-
-
-@dataclass
-class BoundaryResult:
-    found: bool
-    boundary_offset: int = -1
-    before: bytes = b""
-    after: bytes = b""
 
 
 def detect_next_volume_offset(
@@ -71,66 +62,3 @@ def split_at_boundary(
     before = payload[:boundary_offset]
     after = payload[boundary_offset:]
     return before, after
-
-
-def create_scan_state(
-    index: int,
-    volume_id: str,
-    file_path: str | Path,
-) -> VolumeState:
-    """Create a new scan state for a fresh volume."""
-    return VolumeState(
-        index=index,
-        volume_id=str(volume_id),
-        file_path=str(file_path),
-    )
-
-
-def finalize_scan_state(state: VolumeState) -> VolumeState:
-    """Mark a scan state as finalized."""
-    return VolumeState(
-        index=state.index,
-        volume_id=state.volume_id,
-        file_path=state.file_path,
-        bytes_written=state.bytes_written,
-        finalized=True,
-    )
-
-
-def iter_transport_chunks(
-    payloads: list[bytes],
-    transport_size: int = 1024 * 1024,
-) -> list[bytes]:
-    """Repack raw payloads into transport-sized chunks.
-
-    This flattens all payloads into a continuous byte stream and
-    yields chunks of at most *transport_size* bytes each.
-    """
-    combined = b"".join(payloads)
-    result = []
-    offset = 0
-    while offset < len(combined):
-        chunk = combined[offset:offset + transport_size]
-        result.append(chunk)
-        offset += transport_size
-    return result
-
-
-def iter_volume_payloads(
-    site: str,
-    volume_id: str,
-    *,
-    chunk_fetcher,
-    chunks,
-) -> list[bytes]:
-    """Fetch and return ordered chunk payloads for a volume.
-
-    Returns a list of raw byte payloads in chunk-number order.
-    """
-    sorted_chunks = sorted(chunks, key=lambda c: (c.chunk_number, c.chunk_type))
-    payloads = []
-    for chunk in sorted_chunks:
-        payload = chunk_fetcher(chunk)
-        if payload:
-            payloads.append(payload)
-    return payloads

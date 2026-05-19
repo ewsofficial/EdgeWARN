@@ -144,13 +144,6 @@ class NexradChunkStore:
         response = client.get_object(Bucket=self.bucket, Key=chunk_key.key)
         return response["Body"].read()
 
-    def iter_chunks_until(self, site: str, volume_id: str, stop_condition, *, s3_client=None):
-        chunks = self.list_volume_chunks(site, volume_id, s3_client=s3_client)
-        for chunk in chunks:
-            yield chunk
-            if stop_condition(chunk):
-                break
-
 
 def list_recent_volume_ids(site: str, limit=1, *, s3_client=None, bucket=CHUNKS_BUCKET):
     store = NexradChunkStore(s3_client=s3_client, bucket=bucket)
@@ -165,8 +158,3 @@ def list_volume_chunks(site: str, volume_id: str, *, s3_client=None, bucket=CHUN
 def get_chunk_bytes(chunk_key: ChunkKey, *, s3_client=None, bucket=CHUNKS_BUCKET):
     store = NexradChunkStore(s3_client=s3_client, bucket=bucket)
     return store.get_chunk_bytes(chunk_key)
-
-
-def iter_chunks_until(site: str, volume_id: str, stop_condition, *, s3_client=None, bucket=CHUNKS_BUCKET):
-    store = NexradChunkStore(s3_client=s3_client, bucket=bucket)
-    yield from store.iter_chunks_until(site, volume_id, stop_condition)
