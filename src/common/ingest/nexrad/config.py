@@ -1,5 +1,3 @@
-from pathlib import Path
-
 CHUNKS_BUCKET = "unidata-nexrad-level2-chunks"
 ARCHIVE_BUCKET = "unidata-nexrad-level2"
 WEATHER_RADAR_STATIONS_URL = "https://api.weather.gov/radar/stations"
@@ -29,11 +27,7 @@ EXPECTED_HIGH_BINS = {
 }
 
 
-def default_runtime_dirs(base_dir: Path):
-    data_dir = Path(base_dir) / "data" / "NEXRAD_Level2"
-    return {
-        "root": data_dir,
-        "low": data_dir / "Low",
-        "high": data_dir / "High",
-        "manifests": data_dir / "manifests",
-    }
+def format_perf_ms(started_at: float) -> float:
+    """Return elapsed wall-clock time in milliseconds."""
+    import time
+    return (time.perf_counter() - started_at) * 1000

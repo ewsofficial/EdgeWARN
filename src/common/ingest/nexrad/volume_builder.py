@@ -2,88 +2,25 @@ from __future__ import annotations
 
 import os
 import tempfile
-import warnings
 from pathlib import Path
 
-import numpy as np
-
 from common.ingest.nexrad.config import (
-    EXPECTED_HIGH_BINS,
-    HIGH_CHECKPOINT_HINTS,
     LOW_BINS,
     LOW_CHECKPOINT_HINT,
 )
 from common.ingest.nexrad.models import NexradIngestResult, ParsedVolume, SweepInfo, SweepRecord
 from common.ingest.nexrad.sweep_classifier import canonical_angle_matches, classify_sweeps
 from common.ingest.nexrad.writer import write_outputs
+from common.ingest.nexrad.xradar_helpers import (
+    extract_azimuth_count,
+    extract_sweep_angle,
+    extract_sweep_timestamp,
+    extract_waveform,
+    open_partial_volume,
+)
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
-
-
-def open_partial_volume(path: str | Path):
-    """Open a partial NEXRAD Level-II file with xradar, dropping incomplete sweeps."""
-    try:
-        import xradar as xd
-    except ImportError as exc:
-        raise RuntimeError("xradar is required for live NEXRAD volume parsing") from exc
-
-    opener = getattr(xd.io.backends.nexrad_level2, "open_nexradlevel2_datatree", None)
-    if opener is None:
-        raise RuntimeError("xradar nexrad Level-II DataTree opener is unavailable")
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            return opener(str(path), loaddata=False, incomplete_sweep="drop")
-        except TypeError:
-            return opener(str(path))
-
-
-def extract_sweep_timestamp(ds) -> str | None:
-    """Extract sweep timestamp from xarray time coordinate."""
-    try:
-        values = np.asarray(ds["time"].values).reshape(-1)
-        values = values[~np.isnat(values)]
-        if len(values) == 0:
-            return None
-        return np.datetime_as_string(values.max(), unit="s", timezone="UTC")
-    except Exception:
-        return None
-
-
-def extract_sweep_angle(ds) -> float | None:
-    """Extract fixed angle from sweep dataset."""
-    try:
-        angle_var = ds.get("sweep_fixed_angle")
-        if angle_var is None:
-            return None
-        return float(angle_var.values.item())
-    except Exception:
-        return None
-
-
-def extract_waveform(node) -> str | None:
-    """Extract waveform type from sweep node."""
-    try:
-        attrs = getattr(node, "attrs", {}) or {}
-        dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
-        return (
-            attrs.get("waveform_type")
-            or dataset.attrs.get("waveform_type")
-            or dataset.attrs.get("prt_mode")
-            or dataset.attrs.get("sweep_mode")
-        )
-    except Exception:
-        return None
-
-
-def extract_azimuth_count(ds) -> int:
-    """Extract azimuth count from sweep dataset."""
-    try:
-        return int(ds.sizes.get("azimuth", ds.sizes.get("time", 0)))
-    except Exception:
-        return 0
 
 
 def extract_sweep_records(datatree) -> list[SweepRecord]:
@@ -176,17 +113,7 @@ def _has_required_low_bins(classified_sweeps: list[SweepInfo]):
     return all(any(canonical_angle_matches(sweep.fixed_angle, target) for sweep in low_sweeps) for target in LOW_BINS)
 
 
-def _has_required_high_bins(classified_sweeps: list[SweepInfo], vcp: int):
-    high_sweeps = [sweep for sweep in classified_sweeps if sweep.bucket == "high" and sweep.complete]
-    expected_bins = EXPECTED_HIGH_BINS.get(vcp, ())
-    return all(any(canonical_angle_matches(sweep.fixed_angle, target) for sweep in high_sweeps) for target in expected_bins)
 
-
-def _checkpoint_numbers(vcp: int, max_chunk_number: int):
-    return {
-        min(LOW_CHECKPOINT_HINT, max_chunk_number),
-        max_chunk_number,
-    }
 
 
 def _required_low_chunks_available(chunks, low_checkpoint: int) -> bool:
@@ -239,7 +166,6 @@ def build_low_high_outputs(
             complete=False,
         )
 
-    checkpoint_numbers = _checkpoint_numbers(probe.vcp, max_chunk_number)
     last_parsed = None
     classified = []
     chunks_downloaded = 0

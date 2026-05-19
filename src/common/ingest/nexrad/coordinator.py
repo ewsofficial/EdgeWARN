@@ -2,7 +2,7 @@ import asyncio
 import time
 
 import util.file as fs
-from common.ingest.nexrad.config import ALLOWED_VCPS
+from common.ingest.nexrad.config import ALLOWED_VCPS, format_perf_ms
 from common.ingest.nexrad.models import NexradCoordinatorResult, NexradCoordinatorRunResults
 from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, parse_nexrad_timestamp, required_low_chunks
@@ -34,10 +34,6 @@ class NexradScanCoordinator:
         self.max_candidate_volumes_per_site = max_candidate_volumes_per_site
         self._ingest_service = NexradIngestService()
         self.async_ingest_trigger = async_ingest_trigger or self._ingest_service.ingest_allowed_vcp_volume_async
-
-    @staticmethod
-    def _format_perf_ms(started_at: float) -> float:
-        return (time.perf_counter() - started_at) * 1000
 
     async def _find_latest_volume(self, site, *, s3_client):
         latest_volume_id = None
@@ -141,7 +137,7 @@ class NexradScanCoordinator:
         station_started_at = time.perf_counter()
         station_vcps = await asyncio.to_thread(self.station_fetcher, session=weather_session)
         io_manager.write_perf(
-            f"[RUN] station_catalog_fetch: {self._format_perf_ms(station_started_at):.2f}ms "
+            f"[RUN] station_catalog_fetch: {format_perf_ms(station_started_at):.2f}ms "
             f"(stations={len(station_vcps)})"
         )
 
@@ -191,7 +187,7 @@ class NexradScanCoordinator:
         downloaded = sum(1 for result in results if result.action == "downloaded")
         downloaded_sites = [result.site for result in results if result.action == "downloaded"]
         io_manager.write_perf(
-            f"[RUN] latest_station_scans_async_total: {self._format_perf_ms(started_at):.2f}ms "
+            f"[RUN] latest_station_scans_async_total: {format_perf_ms(started_at):.2f}ms "
             f"(sites={len(site_items)}, downloaded={downloaded}, skipped={len(results) - downloaded})"
         )
         return NexradCoordinatorRunResults(results, downloaded_sites=downloaded_sites)
