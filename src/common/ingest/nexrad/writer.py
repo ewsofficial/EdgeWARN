@@ -3,9 +3,6 @@ import shutil
 from dataclasses import asdict
 from pathlib import Path
 
-import numpy as np
-import xarray as xr
-
 import util.file as fs
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, required_low_chunks
 from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
@@ -205,7 +202,7 @@ def _sanitize_attrs(attrs: dict):
     return sanitized
 
 
-def _sanitize_dataset(dataset: xr.Dataset):
+def _sanitize_dataset(dataset):
     sanitized = dataset.copy(deep=False)
     sanitized.attrs = _sanitize_attrs(dataset.attrs)
     for variable_name in sanitized.variables:
@@ -213,7 +210,7 @@ def _sanitize_dataset(dataset: xr.Dataset):
     return sanitized
 
 
-def _slim_dataset(dataset: xr.Dataset):
+def _slim_dataset(dataset):
     keep_vars = [name for name in dataset.data_vars if name in IMPORTANT_DATA_VARS]
     slim = dataset[keep_vars] if keep_vars else dataset.drop_vars(list(dataset.data_vars))
     slim = slim.copy(deep=False)
@@ -238,6 +235,8 @@ def _slim_dataset_from_node(node):
 
 
 def _default_fill_value(dtype):
+    import numpy as np
+
     dtype = np.dtype(dtype)
     if dtype.kind == "u":
         return np.iinfo(dtype).max
@@ -265,7 +264,7 @@ def _build_variable_encoding(data_array):
     return encoding
 
 
-def _dataset_encoding(dataset: xr.Dataset):
+def _dataset_encoding(dataset):
     return {
         variable_name: _build_variable_encoding(dataset[variable_name])
         for variable_name in dataset.data_vars
@@ -273,6 +272,8 @@ def _dataset_encoding(dataset: xr.Dataset):
 
 
 def _empty_root_dataset(attrs: dict):
+    import xarray as xr
+
     return xr.Dataset(attrs=_sanitize_attrs(attrs))
 
 
