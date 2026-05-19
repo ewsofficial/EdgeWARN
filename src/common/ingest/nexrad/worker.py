@@ -1,26 +1,20 @@
 """Worker parse/export entrypoint for NEXRAD Level-II elevation artifacts.
 
 Modeled after nexrad_overlap_scan_poc_low_rss.py: parent stays disk-backed
-and stream-oriented, while the worker handles heavy xradar parse and export.
+and stream-oriented, while the worker handles parse and export work.
 """
 
 from __future__ import annotations
 
-import json
 import resource
 from pathlib import Path
 
-from common.ingest.nexrad.config import ANGLE_DEDUP_TOLERANCE_DEG
 from common.ingest.nexrad.grouping import elevation_group_key, group_sweeps_by_elevation
 from common.ingest.nexrad.models import ElevationArtifact, SweepRecord, WorkerParseResult
-from common.ingest.nexrad.writer import write_elevation_artifacts
-from common.ingest.nexrad.xradar_helpers import (
-    extract_azimuth_count,
-    extract_sweep_angle,
-    extract_sweep_timestamp,
-    extract_waveform,
-    open_partial_volume,
+from common.ingest.nexrad.parser import (
+    parse_raw_volume_file,
 )
+from common.ingest.nexrad.writer import write_elevation_artifacts
 
 
 def _get_child_rss_kb() -> float:
@@ -36,6 +30,7 @@ def parse_and_export(
     volume_id: str,
     scan_timestamp: str | None,
     seen_elevation_keys: set[str] | None = None,
+    trim_buffer: bool = False,
 ) -> WorkerParseResult:
     """Parse a partial .ar2v and emit newly-complete elevation artifacts.
 
@@ -59,41 +54,36 @@ def parse_and_export(
     visible_sweeps = 0
 
     try:
-        datatree = open_partial_volume(volume_path)
+        raw_volume = parse_raw_volume_file(volume_path)
 
+        visible_sweeps = len(raw_volume.sweeps)
         sweep_records: list[SweepRecord] = []
-        for group_name in sorted(g for g in datatree.groups if g.startswith("/sweep_")):
-            node = datatree[group_name]
-            dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
-
-            angle = extract_sweep_angle(dataset)
-            if angle is None:
+        for raw_sweep in raw_volume.sweeps:
+            if raw_sweep.fixed_angle is None:
                 continue
 
-            azimuth_count = extract_azimuth_count(dataset)
-            if azimuth_count <= 0:
+            azimuth_count = raw_sweep.radial_count
+            if azimuth_count <= 0 or not raw_sweep.complete:
                 continue
 
-            waveform = extract_waveform(node)
-            timestamp = extract_sweep_timestamp(dataset)
             sweep_index = len(sweep_records)
 
             sweep_records.append(SweepRecord(
                 index=sweep_index,
-                group_name=group_name,
-                fixed_angle=angle,
-                waveform=waveform,
-                timestamp=timestamp,
+                group_name=raw_sweep.group_name,
+                fixed_angle=raw_sweep.fixed_angle,
+                waveform=raw_sweep.waveform,
+                timestamp=raw_sweep.last_timestamp,
                 azimuth_count=azimuth_count,
             ))
 
-        visible_sweeps = len(sweep_records)
-
         elevation_groups = group_sweeps_by_elevation(sweep_records)
+        dropped_group_names: set[str] = set()
 
         for group in elevation_groups:
             key = elevation_group_key(group)
             if key in seen_elevation_keys:
+                dropped_group_names.update(member.group_name for member in group.members)
                 continue
 
             elevation_label = str(group.canonical_angle_deg)
@@ -101,7 +91,7 @@ def parse_and_export(
 
             artifacts = write_elevation_artifacts(
                 group,
-                datatree,
+                raw_volume,
                 site=str(site).upper(),
                 volume_id=str(volume_id),
                 scan_timestamp=scan_timestamp,
@@ -115,6 +105,19 @@ def parse_and_export(
                 seen_elevation_keys.add(key)
 
             saved_sweeps.extend(m.group_name for m in group.members)
+            dropped_group_names.update(member.group_name for member in group.members)
+
+        if trim_buffer and raw_volume.compression_record_count == 0:
+            retained = bytearray(raw_volume.volume_header)
+            for record in raw_volume.metadata_records:
+                retained.extend(record)
+            for raw_sweep in raw_volume.sweeps:
+                if raw_sweep.group_name in dropped_group_names:
+                    continue
+                for record in raw_sweep.records:
+                    retained.extend(record)
+            retained.extend(raw_volume.trailing_bytes)
+            Path(volume_path).write_bytes(bytes(retained))
 
     except Exception as exc:
         parse_error = str(exc)
@@ -126,57 +129,3 @@ def parse_and_export(
         parse_error=parse_error,
         child_rss_kb=_get_child_rss_kb(),
     )
-
-
-def worker_main():
-    """CLI entrypoint for subprocess worker invocation."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="NEXRAD elevation export worker")
-    parser.add_argument("--volume-path", required=True)
-    parser.add_argument("--output-root", required=True)
-    parser.add_argument("--site", required=True)
-    parser.add_argument("--volume-id", required=True)
-    parser.add_argument("--scan-timestamp", default=None)
-    parser.add_argument("--seen-keys", default="")
-    args = parser.parse_args()
-
-    seen = set(args.seen_keys.split(",")) if args.seen_keys else set()
-    seen.discard("")
-
-    result = parse_and_export(
-        volume_path=args.volume_path,
-        output_root=args.output_root,
-        site=args.site,
-        volume_id=args.volume_id,
-        scan_timestamp=args.scan_timestamp,
-        seen_elevation_keys=seen,
-    )
-
-    payload = {
-        "visible_sweeps": result.visible_sweeps,
-        "saved_sweeps": result.saved_sweeps,
-        "saved_elevations": [
-            {
-                "site": a.site,
-                "volume_id": a.volume_id,
-                "scan_timestamp": a.scan_timestamp,
-                "elevation": a.elevation,
-                "elevation_timestamp": a.elevation_timestamp,
-                "first_sweep_index": a.first_sweep_index,
-                "last_sweep_index": a.last_sweep_index,
-                "member_group_names": a.member_group_names,
-                "waveforms_present": list(a.waveforms_present),
-                "supplemental": a.supplemental,
-                "netcdf_path": a.netcdf_path,
-            }
-            for a in result.saved_elevations
-        ],
-        "parse_error": result.parse_error,
-        "child_rss_kb": result.child_rss_kb,
-    }
-    print(json.dumps(payload))
-
-
-if __name__ == "__main__":
-    worker_main()

@@ -89,6 +89,7 @@ class ElevationArtifact:
     waveforms_present: set[str]
     supplemental: bool
     netcdf_path: str | None = None
+    ar2v_path: str | None = None
 
 
 @dataclass

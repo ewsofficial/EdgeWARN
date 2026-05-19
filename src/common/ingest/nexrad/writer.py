@@ -67,6 +67,13 @@ class NexradElevationStore:
         stem = f"{str(site).upper()}_{elevation}_{ts}"
         return self.elevation_dir(site, elevation) / f"{stem}.nc"
 
+    def elevation_ar2v_path(
+        self, site: str, elevation: str, elevation_timestamp: str
+    ) -> Path:
+        ts = elevation_timestamp.replace(":", "-") if elevation_timestamp else "unknown"
+        stem = f"{str(site).upper()}_{elevation}_{ts}"
+        return self.elevation_dir(site, elevation) / f"{stem}.ar2v"
+
     def elevation_manifest_path(
         self, site: str, elevation: str, elevation_timestamp: str
     ) -> Path:
@@ -92,9 +99,15 @@ class NexradElevationStore:
             key=lambda f: f.name,
             reverse=True,
         )
+        ar2v_files = sorted(
+            (f for f in elev_dir.iterdir() if f.suffix == ".ar2v"),
+            key=lambda f: f.name,
+            reverse=True,
+        )
         keep = {f.name for f in nc_files[:NEXRAD_ELEVATION_DIRS_TO_KEEP]}
+        keep.update(f.name for f in ar2v_files[:NEXRAD_ELEVATION_DIRS_TO_KEEP])
 
-        for f in nc_files:
+        for f in [*nc_files, *ar2v_files]:
             if f.name in keep:
                 continue
             f.unlink(missing_ok=True)
@@ -114,6 +127,10 @@ def elevation_netcdf_path(site: str, elevation: str, elevation_timestamp: str) -
     return _elevation_store().elevation_netcdf_path(site, elevation, elevation_timestamp)
 
 
+def elevation_ar2v_path(site: str, elevation: str, elevation_timestamp: str) -> Path:
+    return _elevation_store().elevation_ar2v_path(site, elevation, elevation_timestamp)
+
+
 def elevation_manifest_path(site: str, elevation: str, elevation_timestamp: str) -> Path:
     return _elevation_store().elevation_manifest_path(site, elevation, elevation_timestamp)
 
@@ -128,7 +145,8 @@ def runtime_scan_path(site: str, volume_id: str) -> Path:
 
 def local_elevation_complete(site: str, elevation: str, elevation_timestamp: str) -> bool:
     nc_path = elevation_netcdf_path(site, elevation, elevation_timestamp)
-    return nc_path.exists()
+    ar2v_path = elevation_ar2v_path(site, elevation, elevation_timestamp)
+    return nc_path.exists() or ar2v_path.exists()
 
 
 def local_scan_elevations_complete(
@@ -350,14 +368,32 @@ def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
         "waveforms_present": list(artifact.waveforms_present),
         "supplemental": artifact.supplemental,
         "netcdf_path": artifact.netcdf_path,
+        "ar2v_path": artifact.ar2v_path,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
 
 
+def _write_elevation_ar2v(path: Path, raw_volume, group_names: list[str]) -> Path:
+    """Write a grouped elevation as a raw AR2V payload."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sweeps_by_group = {sweep.group_name: sweep for sweep in getattr(raw_volume, "sweeps", [])}
+    payload = bytearray(raw_volume.volume_header)
+    for record in getattr(raw_volume, "metadata_records", []):
+        payload.extend(record)
+    for group_name in group_names:
+        sweep = sweeps_by_group.get(group_name)
+        if sweep is None:
+            continue
+        for record in sweep.records:
+            payload.extend(record)
+    path.write_bytes(bytes(payload))
+    return path
+
+
 def write_elevation_artifacts(
     group: ElevationGroup,
-    datatree,
+    source,
     *,
     site: str,
     volume_id: str,
@@ -376,7 +412,8 @@ def write_elevation_artifacts(
     ts_for_filename = elevation_timestamp or scan_timestamp or "unknown"
     store = _elevation_store()
 
-    nc_path = store.elevation_netcdf_path(site, elevation_label, ts_for_filename)
+    nc_path = None
+    ar2v_path = None
     manifest_path = store.elevation_manifest_path(site, elevation_label, ts_for_filename)
 
     root_attrs = {
@@ -391,7 +428,12 @@ def write_elevation_artifacts(
     }
 
     group_names = [m.group_name for m in group.members]
-    _write_elevation_netcdf(nc_path, root_attrs, datatree, group_names)
+    if hasattr(source, "volume_header") and hasattr(source, "metadata_records"):
+        ar2v_path = store.elevation_ar2v_path(site, elevation_label, ts_for_filename)
+        _write_elevation_ar2v(ar2v_path, source, group_names)
+    else:
+        nc_path = store.elevation_netcdf_path(site, elevation_label, ts_for_filename)
+        _write_elevation_netcdf(nc_path, root_attrs, source, group_names)
 
     artifact = ElevationArtifact(
         site=site,
@@ -404,7 +446,8 @@ def write_elevation_artifacts(
         member_group_names=group_names,
         waveforms_present=group.waveforms_present,
         supplemental=group.supplemental,
-        netcdf_path=str(nc_path),
+        netcdf_path=str(nc_path) if nc_path is not None else None,
+        ar2v_path=str(ar2v_path) if ar2v_path is not None else None,
     )
     _write_elevation_manifest(manifest_path, artifact)
 

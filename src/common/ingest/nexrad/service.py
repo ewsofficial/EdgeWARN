@@ -1,8 +1,5 @@
 import asyncio
 from contextlib import asynccontextmanager
-import json
-import subprocess
-import sys
 import time
 from pathlib import Path
 import shutil
@@ -15,6 +12,7 @@ from common.ingest.nexrad.models import (
     ScanStreamState,
     WorkerParseResult,
 )
+from common.ingest.nexrad.parser import normalize_chunk_payload
 from common.ingest.nexrad.s3_async import (
     async_get_chunk_bytes,
     async_list_recent_volume_ids,
@@ -38,6 +36,7 @@ from common.ingest.nexrad.stream import (
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.volume_builder import parse_level2_volume_file
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
+from common.ingest.nexrad.worker_pool import get_nexrad_pool
 from common.ingest.nexrad.writer import (
     NexradLocalChunkStore,
     NexradElevationStore,
@@ -244,8 +243,14 @@ class NexradIngestService:
                 if found_boundary and boundary_offset > 0:
                     before, after = split_at_boundary(payload, boundary_offset)
                     if before:
-                        scan_file.write(before)
-                        current_state.bytes_written += len(before)
+                        normalized_before = normalize_chunk_payload(
+                            before,
+                            first_chunk_of_volume=current_state.bytes_written == 0,
+                        )
+                        scan_file.write(normalized_before)
+                        current_state.bytes_written += len(normalized_before)
+
+                    scan_file.flush()
 
                     current_state.finalized = True
                     self._run_worker_parse(
@@ -257,6 +262,7 @@ class NexradIngestService:
                         saved_artifacts,
                         base_dir=base_dir,
                     )
+                    current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
 
                     current_state = ScanStreamState(
                         index=current_state.index + 1,
@@ -268,15 +274,42 @@ class NexradIngestService:
                     scan_file.truncate()
 
                     if after:
-                        scan_file.write(after)
-                        current_state.bytes_written = len(after)
+                        normalized_after = normalize_chunk_payload(after, first_chunk_of_volume=True)
+                        scan_file.write(normalized_after)
+                        current_state.bytes_written = len(normalized_after)
+                        scan_file.flush()
+                        self._run_worker_parse(
+                            current_state,
+                            site_upper,
+                            volume_id,
+                            scan_timestamp,
+                            seen_elevation_keys,
+                            saved_artifacts,
+                            base_dir=base_dir,
+                        )
+                        current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
 
                     stream_has_started = True
                     previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
                     continue
 
-                scan_file.write(payload)
-                current_state.bytes_written += len(payload)
+                normalized_payload = normalize_chunk_payload(
+                    payload,
+                    first_chunk_of_volume=current_state.bytes_written == 0,
+                )
+                scan_file.write(normalized_payload)
+                current_state.bytes_written += len(normalized_payload)
+                scan_file.flush()
+                self._run_worker_parse(
+                    current_state,
+                    site_upper,
+                    volume_id,
+                    scan_timestamp,
+                    seen_elevation_keys,
+                    saved_artifacts,
+                    base_dir=base_dir,
+                )
+                current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
                 stream_has_started = True
 
                 tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
@@ -329,60 +362,30 @@ class NexradIngestService:
         *,
         base_dir=None,
     ):
-        """Run the worker parse/export subprocess on the current scan file."""
+        """Run the worker parse/export via the shared process pool."""
         if not state.file_path or not Path(state.file_path).exists():
             return
 
         output_root = fs.NEXRAD_LEVEL2_DIR if base_dir is None else Path(base_dir) / "data" / "NEXRAD_Level2"
-
-        command = [
-            sys.executable,
-            "-m",
-            "common.ingest.nexrad.worker",
-            "--volume-path",
-            state.file_path,
-            "--output-root",
-            str(output_root),
-            "--site",
-            site,
-            "--volume-id",
-            volume_id,
-        ]
-        if scan_timestamp is not None:
-            command.extend(["--scan-timestamp", scan_timestamp])
-        if seen_elevation_keys:
-            command.extend(["--seen-keys", ",".join(sorted(seen_elevation_keys))])
+        pool = get_nexrad_pool()
 
         try:
-            completed = subprocess.run(
-                command,
-                check=True,
-                capture_output=True,
-                text=True,
+            future = pool.submit(
+                volume_path=state.file_path,
+                output_root=str(output_root),
+                site=site,
+                volume_id=volume_id,
+                scan_timestamp=scan_timestamp,
+                seen_keys=seen_elevation_keys,
+                trim_buffer=True,
             )
-
-            payload = json.loads(completed.stdout)
+            payload = future.result()
             result = WorkerParseResult(
-                visible_sweeps=payload.get("visible_sweeps", 0),
-                saved_sweeps=list(payload.get("saved_sweeps") or []),
-                saved_elevations=[
-                    ElevationArtifact(
-                        site=artifact["site"],
-                        volume_id=artifact["volume_id"],
-                        scan_timestamp=artifact.get("scan_timestamp"),
-                        elevation=artifact["elevation"],
-                        elevation_timestamp=artifact.get("elevation_timestamp"),
-                        first_sweep_index=artifact["first_sweep_index"],
-                        last_sweep_index=artifact["last_sweep_index"],
-                        member_group_names=list(artifact.get("member_group_names") or []),
-                        waveforms_present=set(artifact.get("waveforms_present") or []),
-                        supplemental=bool(artifact.get("supplemental", False)),
-                        netcdf_path=artifact.get("netcdf_path"),
-                    )
-                    for artifact in payload.get("saved_elevations") or []
-                ],
-                parse_error=payload.get("parse_error"),
-                child_rss_kb=payload.get("child_rss_kb"),
+                visible_sweeps=payload.visible_sweeps,
+                saved_sweeps=payload.saved_sweeps,
+                saved_elevations=payload.saved_elevations,
+                parse_error=payload.parse_error,
+                child_rss_kb=payload.child_rss_kb,
             )
 
             if result.parse_error:
@@ -490,8 +493,14 @@ class NexradIngestService:
                 if found_boundary and boundary_offset > 0:
                     before, after = split_at_boundary(payload, boundary_offset)
                     if before:
-                        await scan_file.write(before)
-                        current_state.bytes_written += len(before)
+                        normalized_before = normalize_chunk_payload(
+                            before,
+                            first_chunk_of_volume=current_state.bytes_written == 0,
+                        )
+                        await scan_file.write(normalized_before)
+                        current_state.bytes_written += len(normalized_before)
+
+                    await scan_file.flush()
 
                     current_state.finalized = True
                     await asyncio.to_thread(
@@ -504,6 +513,7 @@ class NexradIngestService:
                         saved_artifacts,
                         base_dir=base_dir,
                     )
+                    current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
 
                     current_state = ScanStreamState(
                         index=current_state.index + 1,
@@ -515,15 +525,44 @@ class NexradIngestService:
                     await scan_file.truncate()
 
                     if after:
-                        await scan_file.write(after)
-                        current_state.bytes_written = len(after)
+                        normalized_after = normalize_chunk_payload(after, first_chunk_of_volume=True)
+                        await scan_file.write(normalized_after)
+                        current_state.bytes_written = len(normalized_after)
+                        await scan_file.flush()
+                        await asyncio.to_thread(
+                            self._run_worker_parse,
+                            current_state,
+                            site_upper,
+                            volume_id,
+                            scan_timestamp,
+                            seen_elevation_keys,
+                            saved_artifacts,
+                            base_dir=base_dir,
+                        )
+                        current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
 
                     stream_has_started = True
                     previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
                     continue
 
-                await scan_file.write(payload)
-                current_state.bytes_written += len(payload)
+                normalized_payload = normalize_chunk_payload(
+                    payload,
+                    first_chunk_of_volume=current_state.bytes_written == 0,
+                )
+                await scan_file.write(normalized_payload)
+                current_state.bytes_written += len(normalized_payload)
+                await scan_file.flush()
+                await asyncio.to_thread(
+                    self._run_worker_parse,
+                    current_state,
+                    site_upper,
+                    volume_id,
+                    scan_timestamp,
+                    seen_elevation_keys,
+                    saved_artifacts,
+                    base_dir=base_dir,
+                )
+                current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
                 stream_has_started = True
 
                 tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload

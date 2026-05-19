@@ -201,7 +201,7 @@ def serialize_nexrad_elevation_artifacts(
 ) -> Path:
     """Serialize render intermediates from grouped elevation artifacts.
 
-    Reads pre-written elevation NetCDF files and produces GUI bin.gz outputs,
+    Reads pre-written elevation NetCDF or AR2V files and produces GUI bin.gz outputs,
     keeping the GUI output contract unchanged:
         gui/NEXRAD/<SITE>/<SCAN_TIMESTAMP>/<ELEVATION>/<VARIABLE>.bin.gz
     """
@@ -214,17 +214,16 @@ def serialize_nexrad_elevation_artifacts(
         if elevation_label not in OPERATIONAL_ELEVATION_LABELS:
             continue
 
-        nc_path = Path(artifact.netcdf_path) if artifact.netcdf_path else None
-        if nc_path is None or not nc_path.exists():
+        artifact_path = None
+        if artifact.netcdf_path:
+            artifact_path = Path(artifact.netcdf_path)
+        elif getattr(artifact, "ar2v_path", None):
+            artifact_path = Path(artifact.ar2v_path)
+        if artifact_path is None or not artifact_path.exists():
             continue
 
         try:
-            import xarray as xr
-        except ImportError:
-            continue
-
-        try:
-            datatree = _open_elevation_datatree(nc_path)
+            datatree = _open_elevation_datatree(artifact_path)
         except Exception:
             continue
 
@@ -284,7 +283,12 @@ def serialize_nexrad_elevation_artifacts(
 
 
 def _open_elevation_datatree(path: Path):
-    """Open an elevation NetCDF as a datatree-like structure."""
+    """Open an elevation NetCDF or AR2V as a datatree-like structure."""
+    if path.suffix == ".ar2v":
+        from common.ingest.nexrad.parser import open_partial_volume
+
+        return open_partial_volume(path)
+
     import xarray as xr
     import warnings
 

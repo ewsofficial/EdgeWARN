@@ -9,34 +9,42 @@ from common.ingest.nexrad.config import (
     LOW_CHECKPOINT_HINT,
 )
 from common.ingest.nexrad.models import NexradIngestResult, ParsedVolume, SweepInfo, SweepRecord
-from common.ingest.nexrad.sweep_classifier import canonical_angle_matches, classify_sweeps
-from common.ingest.nexrad.writer import write_outputs
-from common.ingest.nexrad.xradar_helpers import (
+from common.ingest.nexrad.parser import (
     extract_azimuth_count,
     extract_sweep_angle,
     extract_sweep_timestamp,
     extract_waveform,
     open_partial_volume,
+    parse_raw_volume_file,
 )
+from common.ingest.nexrad.sweep_classifier import canonical_angle_matches, classify_sweeps
+from common.ingest.nexrad.writer import write_outputs
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
 
 
-def extract_sweep_records(datatree) -> list[SweepRecord]:
+def extract_sweep_records(datatree, raw_sweeps_by_index: dict[int, object] | None = None) -> list[SweepRecord]:
     """Extract SweepRecord list from a parsed datatree."""
     records = []
     for group_name in sorted(g for g in datatree.groups if g.startswith("/sweep_")):
         node = datatree[group_name]
         dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
+        raw_sweep = None if raw_sweeps_by_index is None else raw_sweeps_by_index.get(len(records))
 
-        angle = extract_sweep_angle(dataset)
+        angle = raw_sweep.fixed_angle if raw_sweep is not None else extract_sweep_angle(dataset)
         if angle is None:
             continue
 
         azimuth_count = extract_azimuth_count(dataset)
+        if azimuth_count <= 0 and raw_sweep is not None:
+            azimuth_count = raw_sweep.radial_count
         waveform = extract_waveform(node)
-        timestamp = extract_sweep_timestamp(dataset)
+        timestamp = (
+            raw_sweep.last_timestamp
+            if raw_sweep is not None and raw_sweep.last_timestamp is not None
+            else extract_sweep_timestamp(dataset)
+        )
         sweep_index = len(records)
 
         records.append(SweepRecord(
@@ -50,7 +58,7 @@ def extract_sweep_records(datatree) -> list[SweepRecord]:
     return records
 
 
-def _extract_parsed_volume(datatree) -> ParsedVolume:
+def _extract_parsed_volume(datatree, raw_sweeps_by_index: dict[int, object] | None = None) -> ParsedVolume:
     root_attrs = getattr(datatree, "attrs", {}) or {}
     scan_name = root_attrs.get("scan_name") or root_attrs.get("volume_scan_pattern")
     dynamic_scan_type = root_attrs.get("scan_strategy") or root_attrs.get("scan_name")
@@ -59,11 +67,13 @@ def _extract_parsed_volume(datatree) -> ParsedVolume:
     for index, group_name in enumerate(sorted(group for group in datatree.groups if group.startswith("/sweep_"))):
         node = datatree[group_name]
         dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
-        angle_var = dataset.get("sweep_fixed_angle")
-        if angle_var is None:
+        raw_sweep = None if raw_sweeps_by_index is None else raw_sweeps_by_index.get(index)
+        fixed_angle = raw_sweep.fixed_angle if raw_sweep is not None else extract_sweep_angle(dataset)
+        if fixed_angle is None:
             continue
-        fixed_angle = float(angle_var.values.item())
         azimuth_count = extract_azimuth_count(dataset)
+        if azimuth_count <= 0 and raw_sweep is not None:
+            azimuth_count = raw_sweep.radial_count
         waveform = extract_waveform(node)
         sweeps.append(
             SweepInfo(
@@ -93,7 +103,13 @@ def _parse_level2_datatree(path: str | Path):
 
 def parse_level2_volume_file(path: str | Path) -> ParsedVolume:
     datatree = _parse_level2_datatree(path)
-    return _extract_parsed_volume(datatree)
+    raw_sweeps_by_index = None
+    try:
+        raw_volume = parse_raw_volume_file(path)
+        raw_sweeps_by_index = {sweep.index: sweep for sweep in raw_volume.sweeps}
+    except Exception:
+        raw_sweeps_by_index = None
+    return _extract_parsed_volume(datatree, raw_sweeps_by_index)
 
 
 def parse_level2_volume_bytes(volume_bytes: bytes) -> ParsedVolume:
