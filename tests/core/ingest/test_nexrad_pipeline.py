@@ -121,6 +121,39 @@ async def test_pipeline_adds_incomplete_volume_to_pending_without_emitting(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_pipeline_tracks_incomplete_ingest_for_followup_completion(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    emitted = []
+    ingest_calls = []
+
+    async def _ingest_trigger(site, volume_id, **_kwargs):
+        ingest_calls.append((site, volume_id, len(ingest_calls)))
+        if len(ingest_calls) == 1:
+            return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=False)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=5, complete=True)
+
+    pipeline = NexradRealtimeIngestionPipeline(
+        base_dir=tmp_path,
+        station_fetcher=lambda **_kwargs: {"KTLH": _station()},
+        async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
+        async_chunk_lister=lambda *_args, **_kwargs: _return(_chunks()),
+        async_ingest_trigger=_ingest_trigger,
+        download_emitter=lambda records: emitted.append(tuple(records)),
+    )
+
+    first_downloaded = await pipeline.scan_for_new_volumes_once()
+    assert list(pipeline.pending_tracker.pending) == [("KTLH", "999")]
+
+    second_downloaded = await pipeline.check_pending_once()
+
+    assert first_downloaded == []
+    assert second_downloaded == [_record("KTLH", "999", "20260507-150000")]
+    assert pipeline.pending_tracker.pending == {}
+    assert ingest_calls == [("KTLH", "999", 0), ("KTLH", "999", 1)]
+    assert emitted == [(_record("KTLH", "999", "20260507-150000"),)]
+
+
+@pytest.mark.asyncio
 async def test_pipeline_rechecks_pending_and_downloads_when_chunks_complete(tmp_path):
     fs.initialize_filesystem(tmp_path)
     emitted = []
@@ -210,6 +243,48 @@ async def test_pipeline_drops_stale_pending_when_newer_volume_is_seen(tmp_path):
 
     assert ("KTLH", "999") not in pipeline.pending_tracker.pending
     assert ingested == [("KTLH", "1000")]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_keeps_stale_started_pending_when_newer_volume_is_seen(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    chunk_map = {
+        "999": _chunks(volume_id="999"),
+        "1000": _chunks(volume_id="1000", stamp="20260507-150100", last_number=25),
+    }
+    ingested = []
+
+    async def _ingest_trigger(site, volume_id, **_kwargs):
+        ingested.append((site, volume_id))
+        if volume_id == "999":
+            return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150100", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=24, complete=False)
+
+    pipeline = NexradRealtimeIngestionPipeline(
+        base_dir=tmp_path,
+        station_fetcher=lambda **_kwargs: {"KTLH": _station()},
+        async_volume_lister=lambda *_args, **_kwargs: _return(["1000"]),
+        async_chunk_lister=lambda _site, volume_id, **_kwargs: _return(chunk_map[volume_id]),
+        async_ingest_trigger=_ingest_trigger,
+    )
+    pipeline.pending_tracker.upsert(
+        PendingVolume(
+            site="KTLH",
+            volume_id="999",
+            station=_station(),
+            latest_scan_time="20260507-150000",
+            ingest_started=True,
+        )
+    )
+    pipeline.last_seen_by_site["KTLH"] = "999"
+
+    first_downloaded = await pipeline.scan_for_new_volumes_once()
+    downloaded = await pipeline.check_pending_once()
+
+    assert first_downloaded == []
+    assert downloaded == [_record("KTLH", "999", "20260507-150000")]
+    assert ("KTLH", "999") not in pipeline.pending_tracker.pending
+    assert ingested == [("KTLH", "1000"), ("KTLH", "999"), ("KTLH", "1000")]
 
 
 @pytest.mark.asyncio

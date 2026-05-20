@@ -9,6 +9,7 @@ class PendingVolume:
     volume_id: str
     station: RadarStationVcp
     latest_scan_time: str | None
+    ingest_started: bool = False
 
 
 @dataclass(frozen=True)
