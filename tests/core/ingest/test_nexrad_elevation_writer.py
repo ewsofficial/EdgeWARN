@@ -6,6 +6,7 @@ import pytest
 import util.file as fs
 from common.ingest.nexrad.writer import (
     NexradElevationStore,
+    NexradLocalChunkStore,
     elevation_ar2v_path,
     elevation_dir,
     elevation_netcdf_path,
@@ -53,6 +54,19 @@ def test_elevation_netcdf_path_helper(tmp_path):
     p = elevation_netcdf_path("KDDC", "1.3", "20260101-120000")
     assert p.suffix == ".nc"
     assert "KDDC" in str(p)
+
+
+def test_elevation_paths_normalize_iso_timestamps(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    store = NexradElevationStore()
+
+    nc_path = store.elevation_netcdf_path("KTLH", "0.5", "2026-05-20T17:45:24Z")
+    ar2v_path = store.elevation_ar2v_path("KTLH", "0.5", "2026-05-20T17:45:24Z")
+    manifest_path = store.elevation_manifest_path("KTLH", "0.5", "2026-05-20T17:45:24Z")
+
+    assert nc_path.name == "KTLH_0.5_20260520-174524.nc"
+    assert ar2v_path.name == "KTLH_0.5_20260520-174524.ar2v"
+    assert manifest_path.name == "KTLH_0.5_20260520-174524.json"
 
 
 def test_elevation_manifest_path_helper(tmp_path):
@@ -134,3 +148,24 @@ def test_prune_elevation_artifacts_keeps_recent(tmp_path):
 
     remaining_nc = list(elev_dir.glob("*.nc"))
     assert len(remaining_nc) <= 5
+
+
+def test_prune_station_scan_dirs_ignores_elevation_directories(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    site_dir = Path(fs.NEXRAD_LEVEL2_DIR) / "KTLH"
+    site_dir.mkdir(parents=True, exist_ok=True)
+
+    for scan_dir_name in ("20260507-150000", "20260507-151000", "20260507-152000", "20260507-153000"):
+        (site_dir / scan_dir_name).mkdir()
+    for elevation_name in ("0.5", "0.9", "1.3"):
+        (site_dir / elevation_name).mkdir()
+
+    NexradLocalChunkStore().prune_station_scan_dirs("KTLH", "20260507-153000")
+
+    assert not (site_dir / "20260507-150000").exists()
+    assert (site_dir / "20260507-151000").exists()
+    assert (site_dir / "20260507-152000").exists()
+    assert (site_dir / "20260507-153000").exists()
+    assert (site_dir / "0.5").exists()
+    assert (site_dir / "0.9").exists()
+    assert (site_dir / "1.3").exists()

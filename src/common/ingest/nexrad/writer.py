@@ -1,15 +1,28 @@
 import json
+import re
 import shutil
 from dataclasses import asdict
 from pathlib import Path
 
 import util.file as fs
-from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, required_low_chunks
+from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, format_nexrad_timestamp, parse_nexrad_timestamp, required_low_chunks
 from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
 
 IMPORTANT_DATA_VARS = None
 NEXRAD_SCAN_DIRS_TO_KEEP = 3
 NEXRAD_ELEVATION_DIRS_TO_KEEP = 5
+SCAN_TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
+
+
+def _filename_timestamp(timestamp: str | None) -> str:
+    if not timestamp:
+        return "unknown"
+    parsed = parse_nexrad_timestamp(timestamp)
+    if parsed is not None:
+        formatted = format_nexrad_timestamp(parsed)
+        if formatted is not None:
+            return formatted
+    return str(timestamp).replace(":", "-")
 
 
 class NexradLocalChunkStore:
@@ -38,7 +51,10 @@ class NexradLocalChunkStore:
             return
 
         timestamp_dirs = sorted(
-            (child for child in site_dir.iterdir() if child.is_dir()),
+            (
+                child for child in site_dir.iterdir()
+                if child.is_dir() and SCAN_TIMESTAMP_RE.fullmatch(child.name)
+            ),
             key=lambda child: child.name,
             reverse=True,
         )
@@ -60,21 +76,21 @@ class NexradElevationStore:
     def elevation_netcdf_path(
         self, site: str, elevation: str, elevation_timestamp: str
     ) -> Path:
-        ts = elevation_timestamp.replace(":", "-") if elevation_timestamp else "unknown"
+        ts = _filename_timestamp(elevation_timestamp)
         stem = f"{str(site).upper()}_{elevation}_{ts}"
         return self.elevation_dir(site, elevation) / f"{stem}.nc"
 
     def elevation_ar2v_path(
         self, site: str, elevation: str, elevation_timestamp: str
     ) -> Path:
-        ts = elevation_timestamp.replace(":", "-") if elevation_timestamp else "unknown"
+        ts = _filename_timestamp(elevation_timestamp)
         stem = f"{str(site).upper()}_{elevation}_{ts}"
         return self.elevation_dir(site, elevation) / f"{stem}.ar2v"
 
     def elevation_manifest_path(
         self, site: str, elevation: str, elevation_timestamp: str
     ) -> Path:
-        ts = elevation_timestamp.replace(":", "-") if elevation_timestamp else "unknown"
+        ts = _filename_timestamp(elevation_timestamp)
         stem = f"{str(site).upper()}_{elevation}_{ts}"
         return self.elevation_dir(site, elevation) / f"{stem}.json"
 
