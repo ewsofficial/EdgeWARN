@@ -106,7 +106,10 @@ def _walk_records(
     """
     if sweep_index is None:
         sweep_index = len(sweeps)
-    current: RawSweep | None = sweeps[-1] if sweeps and not sweeps[-1].complete else None
+
+    current: RawSweep | None = None
+    if sweeps and not sweeps[-1].complete:
+        current = sweeps.pop()
 
     stream_len = len(record_stream)
     while offset + 12 + MSG_HEADER_LEN <= stream_len:
@@ -423,34 +426,45 @@ def parse_raw_volume_file_mmap(
             final_offset: int = 0
 
             if compression_record_count > 0:
-                # Streaming decompression limits memory overhead
                 metadata_records = []
                 sweeps = []
                 sweep_index = 0
                 cursor = 28
-                decompressor = bz2.BZ2Decompressor()
-                
-                # Keep a running buffer that we trim as we read complete records
                 current_uncompressed = bytearray()
-                
+
+                if mm[cursor:cursor+4] == b"BZh9":
+                    decompressor = bz2.BZ2Decompressor()
+                    decompressed = decompressor.decompress(bytes(mm[cursor:]))
+                    current_uncompressed.extend(decompressed)
+                    if decompressor.unused_data:
+                        cursor = file_size - len(decompressor.unused_data)
+                    else:
+                        cursor = file_size
+
+                    final_offset, sweep_index = _walk_records(
+                        current_uncompressed, 0, metadata_records, sweeps, sweep_index=sweep_index,
+                    )
+                    if final_offset > 0:
+                        current_uncompressed = current_uncompressed[final_offset:]
+
                 while cursor + 4 <= file_size:
                     block_size = struct.unpack(">I", mm[cursor : cursor + 4])[0]
                     cursor += 4
                     if block_size <= 0 or cursor + block_size > file_size:
                         break
-                    
+
                     compressed_block = mm[cursor : cursor + block_size]
                     cursor += block_size
-                    
-                    current_uncompressed.extend(decompressor.decompress(compressed_block))
-                    
-                    if len(current_uncompressed) > 0:
-                        view = memoryview(current_uncompressed)
-                        final_offset, sweep_index = _walk_records(view, 0, metadata_records, sweeps, sweep_index=sweep_index)
-                        
-                        if final_offset > 0:
-                            del current_uncompressed[:final_offset]
-                
+
+                    current_uncompressed.extend(bz2.decompress(compressed_block))
+
+                    final_offset, sweep_index = _walk_records(
+                        current_uncompressed, 0, metadata_records, sweeps, sweep_index=sweep_index,
+                    )
+
+                    if final_offset > 0:
+                        current_uncompressed = current_uncompressed[final_offset:]
+
                 trailing = bytes(current_uncompressed)
                 del current_uncompressed
             else:

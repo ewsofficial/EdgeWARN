@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import time
 from pathlib import Path
 import shutil
@@ -79,6 +80,66 @@ class NexradIngestService:
         self._shared_chunk_download_semaphore = None
         self.local_chunk_store = NexradLocalChunkStore()
         self.elevation_store = NexradElevationStore()
+
+    def _runtime_state_path(self, site: str, volume_id: str) -> Path:
+        runtime_dir = self.elevation_store.runtime_dir(site)
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        return runtime_dir / f"{str(site).upper()}_{volume_id}.json"
+
+    @staticmethod
+    def _chunk_identity(chunk) -> str:
+        return f"{chunk.chunk_number:03d}-{chunk.chunk_type}:{chunk.key}"
+
+    def _load_runtime_state(self, site: str, volume_id: str, runtime_path: Path) -> dict:
+        if not runtime_path.exists():
+            return {}
+
+        state_path = self._runtime_state_path(site, volume_id)
+        if not state_path.exists():
+            return {}
+
+        try:
+            data = json.loads(state_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+        if not isinstance(data, dict):
+            return {}
+        return data
+
+    def _save_runtime_state(
+        self,
+        site: str,
+        volume_id: str,
+        *,
+        downloaded_chunk_keys: set[str],
+        seen_elevation_keys: set[str],
+        first_elevation_timestamp: str | None,
+        parse_offset: int,
+        scan_timestamp: str | None,
+    ) -> None:
+        state_path = self._runtime_state_path(site, volume_id)
+        payload = {
+            "site": str(site).upper(),
+            "volume_id": str(volume_id),
+            "scan_timestamp": scan_timestamp,
+            "downloaded_chunk_keys": sorted(downloaded_chunk_keys),
+            "seen_elevation_keys": sorted(seen_elevation_keys),
+            "first_elevation_timestamp": first_elevation_timestamp,
+            "parse_offset": max(0, int(parse_offset)),
+        }
+        state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def _clear_runtime_state(self, site: str, volume_id: str) -> None:
+        self._runtime_state_path(site, volume_id).unlink(missing_ok=True)
+
+    @staticmethod
+    def _read_runtime_tail(runtime_path: Path) -> bytes:
+        if not runtime_path.exists():
+            return b""
+        with runtime_path.open("rb") as handle:
+            handle.seek(max(0, runtime_path.stat().st_size - MAX_MAGIC_OVERLAP))
+            return handle.read()
 
     @staticmethod
     def _volume_timestamp(volume_id: str, chunks) -> str:
@@ -186,23 +247,35 @@ class NexradIngestService:
         sorted_chunks = sorted(chunks, key=lambda c: (c.chunk_number, c.chunk_type))
 
         runtime_path = runtime_scan_path(site_upper, volume_id)
+        persisted_state = self._load_runtime_state(site_upper, volume_id, runtime_path)
+        downloaded_chunk_keys = set(persisted_state.get("downloaded_chunk_keys", []))
+        pending_chunks = [
+            chunk for chunk in sorted_chunks
+            if self._chunk_identity(chunk) not in downloaded_chunk_keys
+        ]
+        existing_size = runtime_path.stat().st_size if runtime_path.exists() else 0
         current_state = ScanStreamState(
             index=0,
             volume_id=volume_id,
             scan_timestamp=scan_timestamp,
             file_path=str(runtime_path),
+            bytes_written=existing_size,
+            parse_offset=min(int(persisted_state.get("parse_offset", 0) or 0), existing_size),
         )
 
-        previous_tail = b""
-        stream_has_started = False
-        seen_elevation_keys: set[str] = set()
-        first_elevation_timestamp: str | None = None
+        previous_tail = self._read_runtime_tail(runtime_path)
+        stream_has_started = existing_size > 0
+        seen_elevation_keys: set[str] = set(persisted_state.get("seen_elevation_keys", []))
+        first_elevation_timestamp: str | None = persisted_state.get("first_elevation_timestamp")
 
-        with open(runtime_path, "wb") as scan_file:
-            for chunk in sorted_chunks:
+        runtime_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(runtime_path, "ab" if existing_size > 0 else "wb") as scan_file:
+            for chunk in pending_chunks:
                 payload = self.chunk_fetcher(chunk, s3_client=s3_client)
                 if not payload:
                     continue
+
+                downloaded_chunk_keys.add(self._chunk_identity(chunk))
 
                 found_boundary, boundary_offset = detect_next_volume_offset(
                     previous_tail, payload, stream_has_started,
@@ -281,9 +354,6 @@ class NexradIngestService:
                     base_dir=base_dir,
                 )
 
-        if runtime_path.exists():
-            runtime_path.unlink(missing_ok=True)
-
         self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
 
         required_elevations = [
@@ -291,6 +361,21 @@ class NexradIngestService:
             for elev in OPERATIONAL_ELEVATIONS
         ]
         complete = local_scan_elevations_complete(site_upper, required_elevations)
+
+        if complete:
+            if runtime_path.exists():
+                runtime_path.unlink(missing_ok=True)
+            self._clear_runtime_state(site_upper, volume_id)
+        else:
+            self._save_runtime_state(
+                site_upper,
+                volume_id,
+                downloaded_chunk_keys=downloaded_chunk_keys,
+                seen_elevation_keys=seen_elevation_keys,
+                first_elevation_timestamp=first_elevation_timestamp,
+                parse_offset=current_state.parse_offset,
+                scan_timestamp=scan_timestamp,
+            )
 
         return NexradIngestResult(
             site=site_upper,
@@ -302,7 +387,7 @@ class NexradIngestService:
             low_path=None,
             high_path=None,
             manifest_path=None,
-            chunks_downloaded=len(sorted_chunks),
+            chunks_downloaded=len(pending_chunks),
             complete=complete,
         )
 
@@ -324,7 +409,7 @@ class NexradIngestService:
         if not state.file_path or not Path(state.file_path).exists():
             return first_elevation_timestamp
 
-        output_root = fs.NEXRAD_LEVEL2_DIR if base_dir is None else Path(base_dir) / "data" / "NEXRAD_Level2"
+        output_root = fs.NEXRAD_LEVEL2_DIR
         pool = get_nexrad_pool()
 
         try:
@@ -400,26 +485,37 @@ class NexradIngestService:
 
         runtime_path = runtime_scan_path(site_upper, volume_id)
         runtime_path.parent.mkdir(parents=True, exist_ok=True)
+        persisted_state = self._load_runtime_state(site_upper, volume_id, runtime_path)
+        downloaded_chunk_keys = set(persisted_state.get("downloaded_chunk_keys", []))
+        pending_chunks = [
+            chunk for chunk in sorted_chunks
+            if self._chunk_identity(chunk) not in downloaded_chunk_keys
+        ]
+        existing_size = runtime_path.stat().st_size if runtime_path.exists() else 0
 
         current_state = ScanStreamState(
             index=0,
             volume_id=volume_id,
             scan_timestamp=scan_timestamp,
             file_path=str(runtime_path),
+            bytes_written=existing_size,
+            parse_offset=min(int(persisted_state.get("parse_offset", 0) or 0), existing_size),
         )
 
-        previous_tail = b""
-        stream_has_started = False
-        seen_elevation_keys: set[str] = set()
-        first_elevation_timestamp: str | None = None
+        previous_tail = self._read_runtime_tail(runtime_path)
+        stream_has_started = existing_size > 0
+        seen_elevation_keys: set[str] = set(persisted_state.get("seen_elevation_keys", []))
+        first_elevation_timestamp: str | None = persisted_state.get("first_elevation_timestamp")
 
         import aiofiles
 
-        async with aiofiles.open(runtime_path, "wb") as scan_file:
-            for chunk in sorted_chunks:
+        async with aiofiles.open(runtime_path, "ab" if existing_size > 0 else "wb") as scan_file:
+            for chunk in pending_chunks:
                 async for payload in self._fetch_chunk_stream(chunk, s3_client):
                     if not payload:
                         continue
+
+                    downloaded_chunk_keys.add(self._chunk_identity(chunk))
 
                     await scan_file.write(payload)
                     current_state.bytes_written += len(payload)
@@ -491,9 +587,6 @@ class NexradIngestService:
                     base_dir=base_dir,
                 )
 
-        if runtime_path.exists():
-            runtime_path.unlink(missing_ok=True)
-
         self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
 
         required_elevations = [
@@ -501,6 +594,21 @@ class NexradIngestService:
             for elev in OPERATIONAL_ELEVATIONS
         ]
         complete = local_scan_elevations_complete(site_upper, required_elevations)
+
+        if complete:
+            if runtime_path.exists():
+                runtime_path.unlink(missing_ok=True)
+            self._clear_runtime_state(site_upper, volume_id)
+        else:
+            self._save_runtime_state(
+                site_upper,
+                volume_id,
+                downloaded_chunk_keys=downloaded_chunk_keys,
+                seen_elevation_keys=seen_elevation_keys,
+                first_elevation_timestamp=first_elevation_timestamp,
+                parse_offset=current_state.parse_offset,
+                scan_timestamp=scan_timestamp,
+            )
 
         return NexradIngestResult(
             site=site_upper,
@@ -512,7 +620,7 @@ class NexradIngestService:
             low_path=None,
             high_path=None,
             manifest_path=None,
-            chunks_downloaded=len(sorted_chunks),
+            chunks_downloaded=len(pending_chunks),
             complete=complete,
         )
 

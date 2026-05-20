@@ -407,8 +407,7 @@ def write_elevation_artifacts(
 
     Returns a list of ElevationArtifact records for the emitted files.
     """
-    if output_root:
-        fs.initialize_filesystem(output_root)
+    _ = output_root
 
     ts_for_filename = elevation_timestamp or scan_timestamp or "unknown"
     store = _elevation_store()

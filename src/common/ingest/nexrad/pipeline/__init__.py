@@ -94,7 +94,13 @@ class NexradRealtimeIngestionPipeline:
                         return None
 
                     self.last_seen_by_site[site] = discovery.volume_id
-                    self.pending_tracker.drop_stale_for_site(site, discovery.volume_id)
+                    stale_pending = [
+                        pending
+                        for (pending_site, _pending_volume_id), pending in self.pending_tracker.items()
+                        if pending_site == site and pending.volume_id != discovery.volume_id and not pending.ingest_started
+                    ]
+                    for pending in stale_pending:
+                        self.pending_tracker.remove(pending.site, pending.volume_id)
                     if self.volume_discovery.local_complete(
                         site,
                         discovery.volume_id,
@@ -110,6 +116,7 @@ class NexradRealtimeIngestionPipeline:
                                 volume_id=discovery.volume_id,
                                 station=station,
                                 latest_scan_time=discovery.latest_scan_time,
+                                ingest_started=False,
                             )
                         )
                         return None
@@ -122,7 +129,18 @@ class NexradRealtimeIngestionPipeline:
                         weather_session=weather_session,
                         station_vcp=station,
                     )
-                    if result is None or not result.complete:
+                    if result is None:
+                        return None
+                    if not result.complete:
+                        self.pending_tracker.upsert(
+                            PendingVolume(
+                                site=site,
+                                volume_id=discovery.volume_id,
+                                station=station,
+                                latest_scan_time=discovery.latest_scan_time,
+                                ingest_started=True,
+                            )
+                        )
                         return None
                     self.pending_tracker.remove(site, discovery.volume_id)
                     return _completion_record_from_result(result)
@@ -148,8 +166,9 @@ class NexradRealtimeIngestionPipeline:
         async with self._ingest_service._async_s3_client(s3_client) as active_s3_client:
             for (site, volume_id), pending_volume in self.pending_tracker.items():
                 if self.last_seen_by_site.get(site) not in (None, volume_id):
-                    self.pending_tracker.remove(site, volume_id)
-                    continue
+                    if not pending_volume.ingest_started:
+                        self.pending_tracker.remove(site, volume_id)
+                        continue
                 chunks = tuple(
                     await self.volume_discovery.async_chunk_lister(
                         site,
