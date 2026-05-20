@@ -29,21 +29,18 @@ from common.ingest.nexrad.s3_chunks import (
 )
 from common.ingest.nexrad.stream import (
     MAX_MAGIC_OVERLAP,
-    VolumeState,
     detect_next_volume_offset,
     split_at_boundary,
 )
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
-from common.ingest.nexrad.volume_builder import parse_level2_volume_file
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
-from common.ingest.nexrad.worker_pool import get_nexrad_pool
+from common.ingest.nexrad.worker_pool import get_nexrad_pool, record_volume_and_maybe_recycle
 from common.ingest.nexrad.writer import (
     NexradLocalChunkStore,
     NexradElevationStore,
     runtime_scan_path,
     local_scan_elevations_complete,
 )
-from EWMRS.render.nexrad import serialize_nexrad_render_intermediate
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
@@ -94,27 +91,6 @@ class NexradIngestService:
 
     def _volume_output_path(self, site: str, volume_id: str, chunks) -> Path:
         return self.local_chunk_store.volume_output_path(site, volume_id, chunks)
-
-    def _prepare_render_manifest(self, site: str, volume_id: str, chunks) -> tuple[Path, Path | None, str | None]:
-        volume_path = self._volume_output_path(site, volume_id, chunks)
-        if not volume_path.exists():
-            return volume_path, None, None
-        scan_timestamp = self._volume_timestamp(volume_id, chunks)
-        try:
-            parsed_volume = parse_level2_volume_file(volume_path)
-            manifest_path = serialize_nexrad_render_intermediate(
-                str(site).upper(),
-                volume_id,
-                scan_timestamp,
-                volume_path,
-                parsed_volume,
-            )
-            return volume_path, manifest_path, scan_timestamp
-        except Exception as exc:
-            io_manager.write_warning(
-                f"[VOL {str(site).upper()}/{volume_id}] NEXRAD render intermediate generation skipped: {exc}"
-            )
-            return volume_path, None, scan_timestamp
 
     @staticmethod
     def _remove_chunk_dir(outdir: Path):
@@ -239,6 +215,7 @@ class NexradIngestService:
 
                 if found_boundary and boundary_offset > 0:
                     before, after = split_at_boundary(payload, boundary_offset)
+                    del payload
                     if before:
                         normalized_before = normalize_chunk_payload(
                             before,
@@ -246,6 +223,8 @@ class NexradIngestService:
                         )
                         scan_file.write(normalized_before)
                         current_state.bytes_written += len(normalized_before)
+                        del normalized_before
+                    del before
 
                     scan_file.flush()
 
@@ -285,15 +264,19 @@ class NexradIngestService:
                             base_dir=base_dir,
                         )
                         current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
+                        del normalized_after
 
                     stream_has_started = True
                     previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
+                    del after
                     continue
 
                 normalized_payload = normalize_chunk_payload(
                     payload,
                     first_chunk_of_volume=current_state.bytes_written == 0,
                 )
+                tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
+                del payload
                 scan_file.write(normalized_payload)
                 current_state.bytes_written += len(normalized_payload)
                 scan_file.flush()
@@ -309,8 +292,8 @@ class NexradIngestService:
                 current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
                 stream_has_started = True
 
-                tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
                 previous_tail = tail_candidate
+                del tail_candidate, normalized_payload
 
             if current_state.bytes_written > 0:
                 scan_file.flush()
@@ -498,6 +481,7 @@ class NexradIngestService:
 
                 if found_boundary and boundary_offset > 0:
                     before, after = split_at_boundary(payload, boundary_offset)
+                    del payload
                     if before:
                         normalized_before = normalize_chunk_payload(
                             before,
@@ -505,6 +489,8 @@ class NexradIngestService:
                         )
                         await scan_file.write(normalized_before)
                         current_state.bytes_written += len(normalized_before)
+                        del normalized_before
+                    del before
 
                     await scan_file.flush()
 
@@ -546,16 +532,19 @@ class NexradIngestService:
                             base_dir=base_dir,
                         )
                         current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
+                        del normalized_after
 
                     stream_has_started = True
                     previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
-                    del payload
+                    del after
                     continue
 
                 normalized_payload = normalize_chunk_payload(
                     payload,
                     first_chunk_of_volume=current_state.bytes_written == 0,
                 )
+                tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
+                del payload
                 await scan_file.write(normalized_payload)
                 current_state.bytes_written += len(normalized_payload)
                 await scan_file.flush()
@@ -572,9 +561,8 @@ class NexradIngestService:
                 current_state.bytes_written = Path(current_state.file_path).stat().st_size if Path(current_state.file_path).exists() else 0
                 stream_has_started = True
 
-                tail_candidate = payload[-MAX_MAGIC_OVERLAP:] if len(payload) >= MAX_MAGIC_OVERLAP else payload
                 previous_tail = tail_candidate
-                del payload
+                del tail_candidate, normalized_payload
 
             if current_state.bytes_written > 0:
                 await scan_file.flush()
@@ -672,6 +660,7 @@ class NexradIngestService:
             s3_client=s3_client,
             base_dir=base_dir,
         )
+        record_volume_and_maybe_recycle()
         return NexradIngestResult(
             site=result.site,
             volume_id=result.volume_id,
@@ -760,6 +749,7 @@ class NexradIngestService:
                 base_dir=base_dir,
                 chunk_download_semaphore=chunk_download_semaphore or self._shared_chunk_download_semaphore,
             )
+            record_volume_and_maybe_recycle()
             total_elapsed_ms = format_perf_ms(total_started_at)
             io_manager.write_perf(
                 f"[VOL {probe_site}/{probe_volume_id}] total_async_ingest: {total_elapsed_ms:.2f}ms "

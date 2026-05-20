@@ -6,6 +6,7 @@ and stream-oriented, while the worker handles parse and export work.
 
 from __future__ import annotations
 
+import ctypes
 import gc
 import resource
 from pathlib import Path
@@ -25,7 +26,7 @@ def _get_child_rss_kb() -> float:
 
 
 def _clear_worker_caches() -> None:
-    """Clear internal caches held by heavy libraries to bound worker RSS."""
+    """Clear internal caches held by heavy libraries and return freed heap to OS."""
     try:
         import dask.base
         dask.base._seen.clear()
@@ -37,6 +38,10 @@ def _clear_worker_caches() -> None:
     except Exception:
         pass
     gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
 
 
 def parse_and_export(
@@ -95,6 +100,7 @@ def parse_and_export(
 
         elevation_groups = group_sweeps_by_elevation(sweep_records)
         dropped_group_names: set[str] = set()
+        sweeps_by_group = {s.group_name: s for s in raw_volume.sweeps}
 
         for group in elevation_groups:
             key = elevation_group_key(group)
@@ -123,18 +129,22 @@ def parse_and_export(
             saved_sweeps.extend(m.group_name for m in group.members)
             dropped_group_names.update(member.group_name for member in group.members)
 
+            for member in group.members:
+                sweep = sweeps_by_group.get(member.group_name)
+                if sweep is not None:
+                    sweep.records.clear()
+
         if trim_buffer and raw_volume.compression_record_count == 0:
-            retained = bytearray(raw_volume.volume_header)
-            for record in raw_volume.metadata_records:
-                retained.extend(record)
-            for raw_sweep in raw_volume.sweeps:
-                if raw_sweep.group_name in dropped_group_names:
-                    continue
-                for record in raw_sweep.records:
-                    retained.extend(record)
-            retained.extend(raw_volume.trailing_bytes)
-            Path(volume_path).write_bytes(bytes(retained))
-            del retained
+            with open(volume_path, "wb") as f:
+                f.write(raw_volume.volume_header)
+                for record in raw_volume.metadata_records:
+                    f.write(record)
+                for raw_sweep in raw_volume.sweeps:
+                    if raw_sweep.group_name in dropped_group_names:
+                        continue
+                    for record in raw_sweep.records:
+                        f.write(record)
+                f.write(raw_volume.trailing_bytes)
 
         del raw_volume
 
