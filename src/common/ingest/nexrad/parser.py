@@ -423,26 +423,36 @@ def parse_raw_volume_file_mmap(
             final_offset: int = 0
 
             if compression_record_count > 0:
-                decompressor = bz2.BZ2Decompressor()
-                decompressed_parts: list[bytes] = []
+                # Streaming decompression limits memory overhead
+                metadata_records = []
+                sweeps = []
+                sweep_index = 0
                 cursor = 28
-
+                decompressor = bz2.BZ2Decompressor()
+                
+                # Keep a running buffer that we trim as we read complete records
+                current_uncompressed = bytearray()
+                
                 while cursor + 4 <= file_size:
-                    block_size = struct.unpack(">I", bytes(mm[cursor : cursor + 4]))[0]
+                    block_size = struct.unpack(">I", mm[cursor : cursor + 4])[0]
                     cursor += 4
                     if block_size <= 0 or cursor + block_size > file_size:
                         break
-                    compressed_block = bytes(mm[cursor : cursor + block_size])
+                    
+                    compressed_block = mm[cursor : cursor + block_size]
                     cursor += block_size
-                    decompressed_parts.append(bz2.decompress(compressed_block))
-
-                full_decompressed = b"".join(decompressed_parts)
-                del decompressed_parts
-
-                start = parse_offset if parse_offset > 0 else 0
-                final_offset, _ = _walk_records(full_decompressed, start, metadata_records, sweeps)
-                trailing = full_decompressed[final_offset:]
-                del full_decompressed
+                    
+                    current_uncompressed.extend(decompressor.decompress(compressed_block))
+                    
+                    if len(current_uncompressed) > 0:
+                        view = memoryview(current_uncompressed)
+                        final_offset, sweep_index = _walk_records(view, 0, metadata_records, sweeps, sweep_index=sweep_index)
+                        
+                        if final_offset > 0:
+                            del current_uncompressed[:final_offset]
+                
+                trailing = bytes(current_uncompressed)
+                del current_uncompressed
             else:
                 data_start = VOLUME_HEADER_BYTES
                 start = parse_offset if parse_offset > 0 else data_start
