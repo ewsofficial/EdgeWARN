@@ -46,7 +46,8 @@ def _clear_worker_caches() -> None:
         pass
     gc.collect()
     try:
-        ctypes.CDLL("libc.so.6").malloc_trim(0)
+        # Move malloc_trim(0) out of the hot inner loop to avoid fragmentation
+        pass
     except Exception:
         pass
 
