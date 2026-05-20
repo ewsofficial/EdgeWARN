@@ -99,6 +99,8 @@ class ScanStreamState:
     scan_timestamp: str | None
     file_path: str
     bytes_written: int = 0
+    parse_offset: int = 0
+    chunks_since_parse: int = 0
     seen_elevation_keys: set[str] = field(default_factory=set)
     saved_artifacts: list[ElevationArtifact] = field(default_factory=list)
     parse_errors: list[str] = field(default_factory=list)

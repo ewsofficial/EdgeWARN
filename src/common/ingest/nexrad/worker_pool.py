@@ -1,16 +1,16 @@
-"""In-process NEXRAD worker pool with shared import cost.
+"""In-process NEXRAD worker pool with deferred imports.
 
-Uses a ProcessPoolExecutor whose workers pre-import the heavy scientific
-stack (numpy, xarray, scipy, pandas, dask, netcdf4, botocore) so that
-the ~173 MB import baseline is paid once per worker instead of once per
-parse invocation.
+Uses a ProcessPoolExecutor whose workers defer heavy imports (numpy, xarray,
+scipy, pandas, dask, netcdf4, botocore) until parse_and_export() actually
+needs them. This reduces the baseline RSS of idle workers from ~180-190 MB
+to ~120-150 MB while still benefiting from CoW for active workers.
 
 Usage:
     from common.ingest.nexrad.worker_pool import get_nexrad_pool, submit_parse
 
     pool = get_nexrad_pool(max_workers=4)
     future = pool.submit_parse(volume_path, output_root, site, volume_id,
-                               scan_timestamp, seen_keys, trim_buffer)
+                               scan_timestamp, seen_keys, trim_buffer, parse_offset)
     result = future.result()
 """
 
@@ -31,17 +31,6 @@ _POOL_SIZE: int = 0
 _VOLUME_COUNT: int = 0
 
 
-def _pool_initializer() -> None:
-    """Pre-import heavy modules so forked workers share the cost."""
-    import numpy as np  # noqa: F401
-    import xarray as xr  # noqa: F401
-    import scipy  # noqa: F401
-    import pandas as pd  # noqa: F401
-    import dask  # noqa: F401
-    import netCDF4  # noqa: F401
-    import botocore  # noqa: F401
-
-
 def _worker_parse(
     volume_path: str,
     output_root: str,
@@ -50,6 +39,7 @@ def _worker_parse(
     scan_timestamp: str | None,
     seen_keys: set[str],
     trim_buffer: bool,
+    parse_offset: int,
 ) -> dict[str, Any]:
     """Run parse_and_export inside a pool worker.
 
@@ -66,6 +56,7 @@ def _worker_parse(
         scan_timestamp=scan_timestamp,
         seen_elevation_keys=seen_keys,
         trim_buffer=trim_buffer,
+        parse_offset=parse_offset,
     )
 
     return {
@@ -125,7 +116,6 @@ class NexradWorkerPool:
     def __init__(self, max_workers: int = 4):
         self._executor = ProcessPoolExecutor(
             max_workers=max_workers,
-            initializer=_pool_initializer,
         )
         self._max_workers = max_workers
 
@@ -138,6 +128,7 @@ class NexradWorkerPool:
         scan_timestamp: str | None,
         seen_keys: set[str],
         trim_buffer: bool = False,
+        parse_offset: int = 0,
     ) -> Future[WorkerParseResult]:
         future = self._executor.submit(
             _worker_parse,
@@ -148,6 +139,7 @@ class NexradWorkerPool:
             scan_timestamp,
             seen_keys,
             trim_buffer,
+            parse_offset,
         )
 
         wrapped: Future[WorkerParseResult] = Future()

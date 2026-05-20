@@ -2,6 +2,13 @@
 
 Modeled after nexrad_overlap_scan_poc_low_rss.py: parent stays disk-backed
 and stream-oriented, while the worker handles parse and export work.
+
+Memory optimizations:
+- mmap-based file reading (zero-copy, OS-paged on demand)
+- Incremental parsing by offset (resume from last parsed position)
+- Streaming BZ2 decompression (one block at a time)
+- Deferred heavy imports (only when needed)
+- Early cleanup of metadata_records + trailing_bytes after first elevation write
 """
 
 from __future__ import annotations
@@ -14,7 +21,7 @@ from pathlib import Path
 from common.ingest.nexrad.grouping import elevation_group_key, group_sweeps_by_elevation
 from common.ingest.nexrad.models import ElevationArtifact, SweepRecord, WorkerParseResult
 from common.ingest.nexrad.parser import (
-    parse_raw_volume_file,
+    parse_raw_volume_file_mmap,
 )
 from common.ingest.nexrad.writer import write_elevation_artifacts
 
@@ -52,6 +59,7 @@ def parse_and_export(
     scan_timestamp: str | None,
     seen_elevation_keys: set[str] | None = None,
     trim_buffer: bool = False,
+    parse_offset: int = 0,
 ) -> WorkerParseResult:
     """Parse a partial .ar2v and emit newly-complete elevation artifacts.
 
@@ -62,6 +70,7 @@ def parse_and_export(
         volume_id: Volume identifier.
         scan_timestamp: Scan-level timestamp for manifest tracking.
         seen_elevation_keys: Set of already-exported elevation group keys.
+        parse_offset: Byte offset to resume parsing from (0 = full parse).
 
     Returns:
         WorkerParseResult with metadata about newly exported artifacts.
@@ -75,7 +84,7 @@ def parse_and_export(
     visible_sweeps = 0
 
     try:
-        raw_volume = parse_raw_volume_file(volume_path)
+        raw_volume = parse_raw_volume_file_mmap(volume_path, parse_offset=parse_offset)
 
         visible_sweeps = len(raw_volume.sweeps)
         sweep_records: list[SweepRecord] = []
@@ -102,6 +111,7 @@ def parse_and_export(
         dropped_group_names: set[str] = set()
         sweeps_by_group = {s.group_name: s for s in raw_volume.sweeps}
 
+        first_elevation_written = False
         for group in elevation_groups:
             key = elevation_group_key(group)
             if key in seen_elevation_keys:
@@ -133,6 +143,13 @@ def parse_and_export(
                 sweep = sweeps_by_group.get(member.group_name)
                 if sweep is not None:
                     sweep.records.clear()
+
+            if not first_elevation_written:
+                first_elevation_written = True
+                del raw_volume.metadata_records
+                raw_volume.metadata_records = []
+                del raw_volume.trailing_bytes
+                raw_volume.trailing_bytes = b""
 
         if trim_buffer and raw_volume.compression_record_count == 0:
             with open(volume_path, "wb") as f:
