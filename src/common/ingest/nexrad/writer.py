@@ -376,19 +376,19 @@ def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
 
 
 def _write_elevation_ar2v(path: Path, raw_volume, group_names: list[str]) -> Path:
-    """Write a grouped elevation as a raw AR2V payload."""
+    """Write a grouped elevation as a raw AR2V payload via streaming writes."""
     path.parent.mkdir(parents=True, exist_ok=True)
     sweeps_by_group = {sweep.group_name: sweep for sweep in getattr(raw_volume, "sweeps", [])}
-    payload = bytearray(raw_volume.volume_header)
-    for record in getattr(raw_volume, "metadata_records", []):
-        payload.extend(record)
-    for group_name in group_names:
-        sweep = sweeps_by_group.get(group_name)
-        if sweep is None:
-            continue
-        for record in sweep.records:
-            payload.extend(record)
-    path.write_bytes(bytes(payload))
+    with open(path, "wb") as f:
+        f.write(raw_volume.volume_header)
+        for record in getattr(raw_volume, "metadata_records", []):
+            f.write(record)
+        for group_name in group_names:
+            sweep = sweeps_by_group.get(group_name)
+            if sweep is None:
+                continue
+            for record in sweep.records:
+                f.write(record)
     return path
 
 

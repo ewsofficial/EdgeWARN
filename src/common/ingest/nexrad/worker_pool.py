@@ -28,6 +28,7 @@ from common.ingest.nexrad.models import ElevationArtifact, WorkerParseResult
 
 _POOL: ProcessPoolExecutor | None = None
 _POOL_SIZE: int = 0
+_VOLUME_COUNT: int = 0
 
 
 def _pool_initializer() -> None:
@@ -181,6 +182,14 @@ def get_nexrad_pool(max_workers: int | None = None) -> NexradWorkerPool:
         _POOL_SIZE = target
 
     return _POOL
+
+
+def record_volume_and_maybe_recycle(max_workers: int | None = None) -> None:
+    """No-op placeholder. Worker recycling was removed because forking new
+    workers from a grown parent process produces children with higher RSS
+    baselines than keeping the existing workers and relying on malloc_trim.
+    """
+    pass
 
 
 def shutdown_nexrad_pool(wait: bool = True) -> None:
