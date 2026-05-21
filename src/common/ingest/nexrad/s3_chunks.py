@@ -6,7 +6,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from common.ingest.nexrad.config import CHUNKS_BUCKET, LOW_CHECKPOINT_HINT
+from common.ingest.nexrad.config import CHUNKS_BUCKET, MIN_VOLUME_FILE_CHUNKS
 from common.ingest.nexrad.models import ChunkKey
 from util.handler import extract_timestamp
 
@@ -98,9 +98,9 @@ def extract_volume_timestamp(volume_id: str, chunks) -> str:
     return volume_id
 
 
-def required_low_chunks(chunks):
-    needed = [chunk for chunk in chunks if chunk.chunk_number <= LOW_CHECKPOINT_HINT]
-    if len(needed) < LOW_CHECKPOINT_HINT:
+def required_volume_chunks(chunks):
+    needed = [chunk for chunk in chunks if chunk.chunk_number <= MIN_VOLUME_FILE_CHUNKS]
+    if len(needed) < MIN_VOLUME_FILE_CHUNKS:
         return []
     return needed
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import util.file as fs
 from common.ingest.nexrad.grouping import DOPPLER_WAVEFORM
 from common.ingest.nexrad.parser import filter_msg31_blocks
-from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, format_nexrad_timestamp, parse_nexrad_timestamp, required_low_chunks
+from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, format_nexrad_timestamp, parse_nexrad_timestamp, required_volume_chunks
 from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
 
 IMPORTANT_DATA_VARS = None
@@ -39,8 +39,8 @@ class NexradLocalChunkStore:
         scan_dir = self.scan_output_dir(site, volume_id, chunks)
         return scan_dir / f"{str(site).upper()}_{scan_dir.name}_{volume_id}.ar2v"
 
-    def local_low_chunks_complete(self, site: str, volume_id: str, chunks) -> bool:
-        needed_chunks = required_low_chunks(chunks)
+    def local_volume_file_complete(self, site: str, volume_id: str, chunks) -> bool:
+        needed_chunks = required_volume_chunks(chunks)
         if not needed_chunks:
             return False
 
@@ -186,8 +186,8 @@ def volume_output_path(site: str, volume_id: str, chunks) -> Path:
     return NexradLocalChunkStore().volume_output_path(site, volume_id, chunks)
 
 
-def local_low_chunks_complete(site: str, volume_id: str, chunks) -> bool:
-    return NexradLocalChunkStore().local_low_chunks_complete(site, volume_id, chunks)
+def local_volume_file_complete(site: str, volume_id: str, chunks) -> bool:
+    return NexradLocalChunkStore().local_volume_file_complete(site, volume_id, chunks)
 
 
 def prune_station_scan_dirs(site: str, keep_timestamp: str):

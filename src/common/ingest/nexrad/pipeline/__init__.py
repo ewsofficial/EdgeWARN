@@ -7,7 +7,7 @@ import util.file as fs
 from common.ingest.nexrad.models import NexradCompletionRecord, NexradIngestResult
 from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
-from common.ingest.nexrad.s3_chunks import required_low_chunks
+from common.ingest.nexrad.s3_chunks import required_volume_chunks
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from common.ingest.nexrad.pipeline.emitter import NexradDownloadEmitter
 from common.ingest.nexrad.pipeline.models import PendingVolume
@@ -109,7 +109,7 @@ class NexradRealtimeIngestionPipeline:
                         self.pending_tracker.remove(site, discovery.volume_id)
                         return None
 
-                    if not required_low_chunks(discovery.chunks):
+                    if not required_volume_chunks(discovery.chunks):
                         self.pending_tracker.upsert(
                             PendingVolume(
                                 site=site,
@@ -181,7 +181,7 @@ class NexradRealtimeIngestionPipeline:
                 if self.volume_discovery.local_complete(site, volume_id, chunks):
                     self.pending_tracker.remove(site, volume_id)
                     continue
-                if not required_low_chunks(chunks):
+                if not required_volume_chunks(chunks):
                     continue
                 result = await self.async_ingest_trigger(
                     site,

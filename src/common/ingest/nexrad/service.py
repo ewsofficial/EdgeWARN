@@ -31,6 +31,7 @@ from common.ingest.nexrad.stream import (
     detect_next_volume_offset,
     split_at_boundary,
 )
+from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from common.ingest.nexrad.worker_pool import get_nexrad_pool, record_volume_and_maybe_recycle
@@ -44,11 +45,28 @@ from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
 
-OPERATIONAL_ELEVATIONS = frozenset({"0.5", "0.9"})
-
-
 def _artifact_group_key(artifact: ElevationArtifact) -> str:
     return f"{artifact.elevation}:{','.join(artifact.member_group_names)}"
+
+
+def _normalize_elevation_timestamps(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, str] = {}
+    for elevation, timestamp in value.items():
+        if timestamp:
+            normalized[str(elevation)] = str(timestamp)
+    return normalized
+
+
+def _required_elevation_paths_complete(site: str, elevation_timestamps: dict[str, str]) -> bool:
+    required_elevations: list[tuple[str, str]] = []
+    for elevation in INGEST_READINESS_ELEVATION_IDS:
+        timestamp = elevation_timestamps.get(elevation)
+        if not timestamp:
+            return False
+        required_elevations.append((elevation, timestamp))
+    return local_scan_elevations_complete(site, required_elevations)
 
 
 class NexradIngestService:
@@ -114,6 +132,7 @@ class NexradIngestService:
         *,
         downloaded_chunk_keys: set[str],
         seen_elevation_keys: set[str],
+        elevation_timestamps_by_id: dict[str, str],
         first_elevation_timestamp: str | None,
         parse_offset: int,
         scan_timestamp: str | None,
@@ -125,6 +144,7 @@ class NexradIngestService:
             "scan_timestamp": scan_timestamp,
             "downloaded_chunk_keys": sorted(downloaded_chunk_keys),
             "seen_elevation_keys": sorted(seen_elevation_keys),
+            "elevation_timestamps_by_id": elevation_timestamps_by_id,
             "first_elevation_timestamp": first_elevation_timestamp,
             "parse_offset": max(0, int(parse_offset)),
         }
@@ -159,7 +179,7 @@ class NexradIngestService:
     def _download_chunks_to_site_dir(self, site: str, volume_id: str, chunks, *, s3_client):
         outdir = self._chunk_output_dir(site, volume_id, chunks)
         volume_path = self._volume_output_path(site, volume_id, chunks)
-        if self.local_chunk_store.local_low_chunks_complete(site, volume_id, chunks):
+        if self.local_chunk_store.local_volume_file_complete(site, volume_id, chunks):
             self._remove_chunk_dir(outdir)
             return
 
@@ -182,7 +202,7 @@ class NexradIngestService:
         started_at = time.perf_counter()
         outdir = self._chunk_output_dir(site, volume_id, chunks)
         volume_path = self._volume_output_path(site, volume_id, chunks)
-        if self.local_chunk_store.local_low_chunks_complete(site, volume_id, chunks):
+        if self.local_chunk_store.local_volume_file_complete(site, volume_id, chunks):
             self._remove_chunk_dir(outdir)
             return
 
@@ -266,6 +286,7 @@ class NexradIngestService:
         previous_tail = self._read_runtime_tail(runtime_path)
         stream_has_started = existing_size > 0
         seen_elevation_keys: set[str] = set(persisted_state.get("seen_elevation_keys", []))
+        elevation_timestamps_by_id = _normalize_elevation_timestamps(persisted_state.get("elevation_timestamps_by_id"))
         first_elevation_timestamp: str | None = persisted_state.get("first_elevation_timestamp")
 
         runtime_path.parent.mkdir(parents=True, exist_ok=True)
@@ -299,6 +320,7 @@ class NexradIngestService:
                         scan_timestamp,
                         seen_elevation_keys,
                         first_elevation_timestamp,
+                        elevation_timestamps_by_id=elevation_timestamps_by_id,
                         base_dir=base_dir,
                     )
                     current_state.parse_offset = current_state.bytes_written
@@ -323,6 +345,7 @@ class NexradIngestService:
                             scan_timestamp,
                             seen_elevation_keys,
                             first_elevation_timestamp,
+                            elevation_timestamps_by_id=elevation_timestamps_by_id,
                             base_dir=base_dir,
                         )
                         current_state.parse_offset = current_state.bytes_written
@@ -351,16 +374,13 @@ class NexradIngestService:
                     scan_timestamp,
                     seen_elevation_keys,
                     first_elevation_timestamp,
+                    elevation_timestamps_by_id=elevation_timestamps_by_id,
                     base_dir=base_dir,
                 )
 
         self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
 
-        required_elevations = [
-            (elev, first_elevation_timestamp or scan_timestamp)
-            for elev in OPERATIONAL_ELEVATIONS
-        ]
-        complete = local_scan_elevations_complete(site_upper, required_elevations)
+        complete = _required_elevation_paths_complete(site_upper, elevation_timestamps_by_id)
 
         if complete:
             if runtime_path.exists():
@@ -372,6 +392,7 @@ class NexradIngestService:
                 volume_id,
                 downloaded_chunk_keys=downloaded_chunk_keys,
                 seen_elevation_keys=seen_elevation_keys,
+                elevation_timestamps_by_id=elevation_timestamps_by_id,
                 first_elevation_timestamp=first_elevation_timestamp,
                 parse_offset=current_state.parse_offset,
                 scan_timestamp=scan_timestamp,
@@ -400,6 +421,7 @@ class NexradIngestService:
         seen_elevation_keys: set[str],
         first_elevation_timestamp: str | None,
         *,
+        elevation_timestamps_by_id: dict[str, str] | None = None,
         base_dir=None,
     ) -> str | None:
         """Run the worker parse/export via the shared process pool.
@@ -408,6 +430,11 @@ class NexradIngestService:
         """
         if not state.file_path or not Path(state.file_path).exists():
             return first_elevation_timestamp
+
+        if not isinstance(elevation_timestamps_by_id, dict):
+            if first_elevation_timestamp is None:
+                first_elevation_timestamp = elevation_timestamps_by_id
+            elevation_timestamps_by_id = {}
 
         output_root = fs.NEXRAD_LEVEL2_DIR
         pool = get_nexrad_pool()
@@ -440,8 +467,11 @@ class NexradIngestService:
 
             for artifact in result.saved_elevations:
                 seen_elevation_keys.add(_artifact_group_key(artifact))
-                if first_elevation_timestamp is None and artifact.elevation_timestamp:
-                    first_elevation_timestamp = artifact.elevation_timestamp
+                artifact_timestamp = artifact.elevation_timestamp or artifact.scan_timestamp
+                if artifact_timestamp:
+                    elevation_timestamps_by_id.setdefault(artifact.elevation, artifact_timestamp)
+                    if first_elevation_timestamp is None:
+                        first_elevation_timestamp = artifact_timestamp
 
             if result.saved_sweeps:
                 io_manager.write_info(
@@ -505,6 +535,7 @@ class NexradIngestService:
         previous_tail = self._read_runtime_tail(runtime_path)
         stream_has_started = existing_size > 0
         seen_elevation_keys: set[str] = set(persisted_state.get("seen_elevation_keys", []))
+        elevation_timestamps_by_id = _normalize_elevation_timestamps(persisted_state.get("elevation_timestamps_by_id"))
         first_elevation_timestamp: str | None = persisted_state.get("first_elevation_timestamp")
 
         import aiofiles
@@ -538,6 +569,7 @@ class NexradIngestService:
                             scan_timestamp,
                             seen_elevation_keys,
                             first_elevation_timestamp,
+                            elevation_timestamps_by_id=elevation_timestamps_by_id,
                             base_dir=base_dir,
                         )
                         current_state.parse_offset = current_state.bytes_written
@@ -563,6 +595,7 @@ class NexradIngestService:
                                 scan_timestamp,
                                 seen_elevation_keys,
                                 first_elevation_timestamp,
+                                elevation_timestamps_by_id=elevation_timestamps_by_id,
                                 base_dir=base_dir,
                             )
                             current_state.parse_offset = current_state.bytes_written
@@ -584,16 +617,13 @@ class NexradIngestService:
                     scan_timestamp,
                     seen_elevation_keys,
                     first_elevation_timestamp,
+                    elevation_timestamps_by_id=elevation_timestamps_by_id,
                     base_dir=base_dir,
                 )
 
         self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
 
-        required_elevations = [
-            (elev, first_elevation_timestamp or scan_timestamp)
-            for elev in OPERATIONAL_ELEVATIONS
-        ]
-        complete = local_scan_elevations_complete(site_upper, required_elevations)
+        complete = _required_elevation_paths_complete(site_upper, elevation_timestamps_by_id)
 
         if complete:
             if runtime_path.exists():
@@ -605,6 +635,7 @@ class NexradIngestService:
                 volume_id,
                 downloaded_chunk_keys=downloaded_chunk_keys,
                 seen_elevation_keys=seen_elevation_keys,
+                elevation_timestamps_by_id=elevation_timestamps_by_id,
                 first_elevation_timestamp=first_elevation_timestamp,
                 parse_offset=current_state.parse_offset,
                 scan_timestamp=scan_timestamp,

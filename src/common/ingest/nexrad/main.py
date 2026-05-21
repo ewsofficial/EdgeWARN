@@ -18,11 +18,11 @@ from common.ingest.nexrad.s3_chunks import (
     list_recent_volume_ids,
     list_volume_chunks,
     parse_nexrad_timestamp,
-    required_low_chunks,
+    required_volume_chunks,
 )
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
-from common.ingest.nexrad.writer import chunk_output_dir, local_low_chunks_complete, prune_station_scan_dirs
+from common.ingest.nexrad.writer import chunk_output_dir, local_volume_file_complete, prune_station_scan_dirs
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)

@@ -3,7 +3,9 @@
 from common.ingest.nexrad.models import ElevationGroup, SweepRecord
 
 MAX_ELEVATION_DEG = 4.0
-FIXED_ELEVATION_BINS = (0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0)
+CANONICAL_ELEVATION_BINS = (0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0)
+CANONICAL_ELEVATION_IDS = tuple(str(angle) for angle in CANONICAL_ELEVATION_BINS)
+INGEST_READINESS_ELEVATION_IDS = CANONICAL_ELEVATION_IDS
 SURVEILLANCE_WAVEFORM = "contiguous_surveillance"
 DOPPLER_WAVEFORM = "contiguous_doppler"
 SINGLE_ELEVATION_WAVEFORMS = {"staggered_pulse_pair", "batch"}
@@ -13,7 +15,7 @@ RECOGNIZED_WAVEFORMS = SINGLE_ELEVATION_WAVEFORMS | {SURVEILLANCE_WAVEFORM, DOPP
 def _canonical_angle(fixed_angle: float) -> float:
     """Return the elevation angle used for the grouped output label."""
     angle = float(fixed_angle)
-    return min(FIXED_ELEVATION_BINS, key=lambda candidate: (abs(candidate - angle), candidate))
+    return min(CANONICAL_ELEVATION_BINS, key=lambda candidate: (abs(candidate - angle), candidate))
 
 
 def _waveform_key(waveform: str | None) -> str:
@@ -28,9 +30,21 @@ def _first_non_null_timestamp(members: list[SweepRecord]) -> str | None:
     return None
 
 
+def _group_representative_angle(group: ElevationGroup) -> float:
+    """Prefer the surveillance anchor angle, otherwise the first member angle."""
+    for member in group.members:
+        if _waveform_key(member.waveform) == SURVEILLANCE_WAVEFORM:
+            return float(member.fixed_angle)
+    return float(group.members[0].fixed_angle)
+
+
 def _finalize_group(group: ElevationGroup | None, result: list[ElevationGroup]) -> None:
     if group is None:
         return
+    representative_angle = _group_representative_angle(group)
+    canonical_angle = _canonical_angle(representative_angle)
+    group.elevation_id = str(canonical_angle)
+    group.canonical_angle_deg = canonical_angle
     group.first_timestamp = _first_non_null_timestamp(group.members)
     group.last_timestamp = group.members[-1].timestamp if group.members else None
     group.complete = len(group.members) > 0
@@ -38,10 +52,9 @@ def _finalize_group(group: ElevationGroup | None, result: list[ElevationGroup]) 
 
 
 def _start_group(sweep: SweepRecord, waveform: str) -> ElevationGroup:
-    canon = _canonical_angle(sweep.fixed_angle)
     return ElevationGroup(
-        elevation_id=str(canon),
-        canonical_angle_deg=canon,
+        elevation_id="",
+        canonical_angle_deg=0.0,
         members=[sweep],
         waveforms_present={waveform},
         first_sweep_index=sweep.index,

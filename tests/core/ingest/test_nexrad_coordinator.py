@@ -4,7 +4,8 @@ import pytest
 
 import util.file as fs
 from common.ingest.nexrad.coordinator import NexradScanCoordinator
-from common.ingest.nexrad.writer import volume_output_path, elevation_netcdf_path
+from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
+from common.ingest.nexrad.writer import elevation_manifest_path, volume_output_path, elevation_netcdf_path
 from common.ingest.nexrad.models import ChunkKey, NexradIngestResult, RadarStationVcp
 
 
@@ -265,10 +266,22 @@ async def test_coordinator_skips_when_latest_scan_is_already_downloaded(tmp_path
 async def test_coordinator_skips_when_elevation_artifacts_exist(tmp_path):
     fs.initialize_filesystem(tmp_path)
     remote_chunks = _chunks()
-    for elev in ("0.5", "0.9"):
-        nc_path = elevation_netcdf_path("KTLH", elev, "20260507-150000")
+    for index, elev in enumerate(INGEST_READINESS_ELEVATION_IDS):
+        timestamp = f"20260507-1500{index:02d}"
+        nc_path = elevation_netcdf_path("KTLH", elev, timestamp)
         nc_path.parent.mkdir(parents=True, exist_ok=True)
         nc_path.write_bytes(b"elevation_data")
+        manifest_path = elevation_manifest_path("KTLH", elev, timestamp)
+        manifest_path.write_text(
+            '{\n'
+            '  "site": "KTLH",\n'
+            '  "volume_id": "999",\n'
+            f'  "elevation": "{elev}",\n'
+            f'  "elevation_timestamp": "{timestamp}",\n'
+            f'  "netcdf_path": "{nc_path}"\n'
+            '}',
+            encoding="utf-8",
+        )
     ingest_calls = []
 
     async def _ingest_trigger(*_args, **_kwargs):
