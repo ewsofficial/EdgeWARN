@@ -76,6 +76,7 @@ def extract_sweep_records(datatree, raw_sweeps_by_index: dict[int, object] | Non
             waveform=waveform,
             timestamp=timestamp,
             azimuth_count=azimuth_count,
+            elevation_number=None,
         ))
     return records
 

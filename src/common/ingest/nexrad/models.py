@@ -60,6 +60,7 @@ class SweepRecord:
     waveform: str | None
     timestamp: str | None
     azimuth_count: int
+    elevation_number: int | None = None
 
 
 @dataclass

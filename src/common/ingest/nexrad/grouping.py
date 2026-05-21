@@ -1,15 +1,17 @@
-"""Elevation grouping for NEXRAD sweeps.
+"""Elevation grouping for NEXRAD sweeps."""
 
-Modeled after nexrad_elevation_grouping_poc.py structural grouping algorithm.
-"""
-
-from common.ingest.nexrad.config import ANGLE_DEDUP_TOLERANCE_DEG
 from common.ingest.nexrad.models import ElevationGroup, SweepRecord
 
+MAX_ELEVATION_DEG = 4.0
+SURVEILLANCE_WAVEFORM = "contiguous_surveillance"
+DOPPLER_WAVEFORM = "contiguous_doppler"
+SINGLE_ELEVATION_WAVEFORMS = {"staggered_pulse_pair", "batch"}
+RECOGNIZED_WAVEFORMS = SINGLE_ELEVATION_WAVEFORMS | {SURVEILLANCE_WAVEFORM, DOPPLER_WAVEFORM}
 
-def _canonical_angle(fixed_angle: float, tolerance: float = ANGLE_DEDUP_TOLERANCE_DEG) -> float:
-    """Canonicalize a fixed angle by rounding to the nearest tolerance bucket."""
-    return round(fixed_angle / tolerance) * tolerance
+
+def _canonical_angle(fixed_angle: float) -> float:
+    """Return the elevation angle used for the grouped output label."""
+    return float(fixed_angle)
 
 
 def _waveform_key(waveform: str | None) -> str:
@@ -24,62 +26,117 @@ def _first_non_null_timestamp(members: list[SweepRecord]) -> str | None:
     return None
 
 
+def _finalize_group(group: ElevationGroup | None, result: list[ElevationGroup]) -> None:
+    if group is None:
+        return
+    group.first_timestamp = _first_non_null_timestamp(group.members)
+    group.last_timestamp = group.members[-1].timestamp if group.members else None
+    group.complete = len(group.members) > 0
+    result.append(group)
+
+
+def _start_group(sweep: SweepRecord, waveform: str) -> ElevationGroup:
+    canon = _canonical_angle(sweep.fixed_angle)
+    return ElevationGroup(
+        elevation_id=str(canon),
+        canonical_angle_deg=canon,
+        members=[sweep],
+        waveforms_present={waveform},
+        first_sweep_index=sweep.index,
+        last_sweep_index=sweep.index,
+    )
+
+
+def _group_by_waveform(valid: list[SweepRecord]) -> list[ElevationGroup]:
+    result: list[ElevationGroup] = []
+    current_group: ElevationGroup | None = None
+
+    for sweep in valid:
+        if sweep.fixed_angle >= MAX_ELEVATION_DEG:
+            break
+
+        waveform = _waveform_key(sweep.waveform)
+
+        if waveform == SURVEILLANCE_WAVEFORM:
+            _finalize_group(current_group, result)
+            current_group = _start_group(sweep, waveform)
+            continue
+
+        if waveform == DOPPLER_WAVEFORM:
+            if current_group is None:
+                continue
+            current_group.members.append(sweep)
+            current_group.waveforms_present.add(waveform)
+            current_group.last_sweep_index = sweep.index
+            continue
+
+        if waveform in SINGLE_ELEVATION_WAVEFORMS:
+            _finalize_group(current_group, result)
+            current_group = None
+            single_group = _start_group(sweep, waveform)
+            _finalize_group(single_group, result)
+            continue
+
+    _finalize_group(current_group, result)
+    return result
+
+
+def _same_raw_elevation(left: SweepRecord, right: SweepRecord) -> bool:
+    if left.elevation_number is not None and right.elevation_number is not None:
+        return left.elevation_number == right.elevation_number
+    return left.fixed_angle == right.fixed_angle
+
+
+def _group_without_waveforms(valid: list[SweepRecord]) -> list[ElevationGroup]:
+    result: list[ElevationGroup] = []
+    current_group: ElevationGroup | None = None
+    current_sweep: SweepRecord | None = None
+
+    for sweep in valid:
+        if sweep.fixed_angle >= MAX_ELEVATION_DEG:
+            break
+
+        waveform = _waveform_key(sweep.waveform)
+        if current_group is None:
+            current_group = _start_group(sweep, waveform)
+            current_sweep = sweep
+            continue
+
+        if current_sweep is not None and _same_raw_elevation(current_sweep, sweep):
+            current_group.members.append(sweep)
+            current_group.waveforms_present.add(waveform)
+            current_group.last_sweep_index = sweep.index
+            current_sweep = sweep
+            continue
+
+        _finalize_group(current_group, result)
+        current_group = _start_group(sweep, waveform)
+        current_sweep = sweep
+
+    _finalize_group(current_group, result)
+    return result
+
+
 def group_sweeps_by_elevation(
     sweeps: list[SweepRecord],
-    *,
-    tolerance: float = ANGLE_DEDUP_TOLERANCE_DEG,
 ) -> list[ElevationGroup]:
-    """Group complete sweeps into elevation groups.
+    """Group complete sweeps into elevation groups using waveform sequencing.
 
     Rules:
     - Sort sweeps by sweep index
     - Ignore incomplete sweeps (azimuth_count <= 0)
-    - Canonicalize angle by tolerance
-    - Merge same-angle sweeps into one elevation
-    - Preserve waveform membership
-    - Mark repeated low tilts after higher tilts as supplemental
-
-    The emitted filename timestamp uses the first sweep timestamp in the group.
+    - Stop processing the volume once the sweep angle reaches 4.0 degrees or higher
+    - A grouped elevation starts with `contiguous_surveillance`
+    - Following contiguous `contiguous_doppler` sweeps join that elevation
+    - `staggered_pulse_pair` and `batch` each become single-sweep elevations
+    - `contiguous_doppler` sweeps without a leading surveillance sweep are ignored
     """
     valid = [s for s in sweeps if s.azimuth_count > 0]
     valid.sort(key=lambda s: s.index)
-
-    groups: dict[float, ElevationGroup] = {}
-    max_angle_seen = 0.0
-
-    for sweep in valid:
-        canon = _canonical_angle(sweep.fixed_angle, tolerance)
-        waveform = _waveform_key(sweep.waveform)
-
-        if canon not in groups:
-            groups[canon] = ElevationGroup(
-                elevation_id=str(canon),
-                canonical_angle_deg=canon,
-            )
-
-        group = groups[canon]
-        group.members.append(sweep)
-        group.waveforms_present.add(waveform)
-
-        if len(group.members) == 1:
-            group.first_sweep_index = sweep.index
-        group.last_sweep_index = sweep.index
-
-        if canon > max_angle_seen:
-            max_angle_seen = canon
-
-    for group in groups.values():
-        group.first_timestamp = _first_non_null_timestamp(group.members)
-        group.last_timestamp = group.members[-1].timestamp if group.members else None
-        group.complete = len(group.members) > 0
-
-        is_low_tilt = group.canonical_angle_deg <= 1.0
-        is_repeated_after_high = group.last_sweep_index > 0 and group.canonical_angle_deg < max_angle_seen
-        if is_low_tilt and is_repeated_after_high:
-            group.supplemental = True
-
-    result = sorted(groups.values(), key=lambda g: g.first_sweep_index)
-    return result
+    has_recognized_waveforms = any(_waveform_key(sweep.waveform) in RECOGNIZED_WAVEFORMS for sweep in valid)
+    if has_recognized_waveforms:
+        return _group_by_waveform(valid)
+    return _group_without_waveforms(valid)
 
 
 def elevation_group_key(group: ElevationGroup) -> str:
