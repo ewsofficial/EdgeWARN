@@ -106,6 +106,7 @@ def parse_and_export(
                 waveform=raw_sweep.waveform,
                 timestamp=raw_sweep.last_timestamp,
                 azimuth_count=azimuth_count,
+                elevation_number=raw_sweep.elevation_number,
             ))
 
         elevation_groups = group_sweeps_by_elevation(sweep_records)
