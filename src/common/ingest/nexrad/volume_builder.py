@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -21,6 +22,11 @@ from common.ingest.nexrad.writer import write_outputs
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
+
+
+def _sweep_group_sort_key(group_name: str):
+    match = re.search(r"/sweep_(\d+)$", str(group_name))
+    return int(match.group(1)) if match else 10**9
 
 
 def _raw_sweeps_to_sweep_info(raw_sweeps: list) -> list[SweepInfo]:
@@ -49,7 +55,7 @@ def _raw_sweeps_to_sweep_info(raw_sweeps: list) -> list[SweepInfo]:
 def extract_sweep_records(datatree, raw_sweeps_by_index: dict[int, object] | None = None) -> list[SweepRecord]:
     """Extract SweepRecord list from a parsed datatree."""
     records = []
-    for group_name in sorted(g for g in datatree.groups if g.startswith("/sweep_")):
+    for group_name in sorted((g for g in datatree.groups if g.startswith("/sweep_")), key=_sweep_group_sort_key):
         node = datatree[group_name]
         dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
         raw_sweep = None if raw_sweeps_by_index is None else raw_sweeps_by_index.get(len(records))
@@ -87,7 +93,7 @@ def _extract_parsed_volume(datatree, raw_sweeps_by_index: dict[int, object] | No
     dynamic_scan_type = root_attrs.get("scan_strategy") or root_attrs.get("scan_name")
     sweeps = []
 
-    for index, group_name in enumerate(sorted(group for group in datatree.groups if group.startswith("/sweep_"))):
+    for index, group_name in enumerate(sorted((group for group in datatree.groups if group.startswith("/sweep_")), key=_sweep_group_sort_key)):
         node = datatree[group_name]
         dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
         raw_sweep = None if raw_sweeps_by_index is None else raw_sweeps_by_index.get(index)

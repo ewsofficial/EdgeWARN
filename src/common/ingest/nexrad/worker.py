@@ -20,9 +20,7 @@ from pathlib import Path
 
 from common.ingest.nexrad.grouping import elevation_group_key, group_sweeps_by_elevation
 from common.ingest.nexrad.models import ElevationArtifact, SweepRecord, WorkerParseResult
-from common.ingest.nexrad.parser import (
-    parse_raw_volume_file_mmap,
-)
+from common.ingest.nexrad.parser import parse_raw_volume_file_mmap
 from common.ingest.nexrad.writer import write_elevation_artifacts
 
 
@@ -88,26 +86,7 @@ def parse_and_export(
         raw_volume = parse_raw_volume_file_mmap(volume_path, parse_offset=parse_offset)
 
         visible_sweeps = len(raw_volume.sweeps)
-        sweep_records: list[SweepRecord] = []
-        for raw_sweep in raw_volume.sweeps:
-            if raw_sweep.fixed_angle is None:
-                continue
-
-            azimuth_count = raw_sweep.radial_count
-            if azimuth_count <= 0 or not raw_sweep.complete:
-                continue
-
-            sweep_index = len(sweep_records)
-
-            sweep_records.append(SweepRecord(
-                index=sweep_index,
-                group_name=raw_sweep.group_name,
-                fixed_angle=raw_sweep.fixed_angle,
-                waveform=raw_sweep.waveform,
-                timestamp=raw_sweep.last_timestamp,
-                azimuth_count=azimuth_count,
-                elevation_number=raw_sweep.elevation_number,
-            ))
+        sweep_records = _extract_worker_sweep_records(raw_volume)
 
         elevation_groups = group_sweeps_by_elevation(sweep_records)
         dropped_group_names: set[str] = set()
@@ -179,3 +158,28 @@ def parse_and_export(
         parse_error=parse_error,
         child_rss_kb=_get_child_rss_kb(),
     )
+
+
+def _extract_worker_sweep_records(raw_volume) -> list[SweepRecord]:
+    sweep_records: list[SweepRecord] = []
+    for raw_sweep in raw_volume.sweeps:
+        if raw_sweep.fixed_angle is None:
+            continue
+
+        azimuth_count = raw_sweep.radial_count
+        if azimuth_count <= 0 or not raw_sweep.complete:
+            continue
+
+        sweep_index = len(sweep_records)
+
+        sweep_records.append(SweepRecord(
+            index=sweep_index,
+            group_name=raw_sweep.group_name,
+            fixed_angle=raw_sweep.fixed_angle,
+            waveform=raw_sweep.waveform,
+            timestamp=raw_sweep.last_timestamp,
+            azimuth_count=azimuth_count,
+            elevation_number=raw_sweep.elevation_number,
+        ))
+
+    return sweep_records

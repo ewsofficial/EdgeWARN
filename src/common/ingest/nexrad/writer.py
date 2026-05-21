@@ -5,6 +5,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 import util.file as fs
+from common.ingest.nexrad.grouping import DOPPLER_WAVEFORM
+from common.ingest.nexrad.parser import filter_msg31_blocks
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, format_nexrad_timestamp, parse_nexrad_timestamp, required_low_chunks
 from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
 
@@ -404,7 +406,10 @@ def _write_elevation_ar2v(path: Path, raw_volume, group_names: list[str]) -> Pat
             if sweep is None:
                 continue
             for record in sweep.records:
-                f.write(record)
+                output_record = record
+                if str(getattr(sweep, "waveform", "") or "").strip().lower() == DOPPLER_WAVEFORM:
+                    output_record = filter_msg31_blocks(record, {"DREF"})
+                f.write(output_record)
     return path
 
 
