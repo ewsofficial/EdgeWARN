@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from common.ingest.nexrad.grouping import group_sweeps_by_elevation
 import common.ingest.nexrad.worker as worker_module
 
 
@@ -49,3 +50,23 @@ def test_extract_worker_sweep_records_filters_incomplete_raw_records():
     assert [record.fixed_angle for record in records] == [0.632, 0.483]
     assert [record.elevation_number for record in records] == [1, 2]
     assert all(record.waveform is None for record in records)
+
+
+def test_extract_worker_sweep_records_reindex_for_grouping_contract():
+    raw_volume = SimpleNamespace(
+        sweeps=[
+            _raw_sweep(10, angle=0.84, elevation_number=1),
+            _raw_sweep(11, angle=0.47, elevation_number=1),
+            _raw_sweep(12, angle=1.19, elevation_number=2),
+        ]
+    )
+
+    raw_volume.sweeps[0].waveform = "contiguous_surveillance"
+    raw_volume.sweeps[1].waveform = "contiguous_doppler"
+    raw_volume.sweeps[2].waveform = "batch"
+
+    records = worker_module._extract_worker_sweep_records(raw_volume)
+    groups = group_sweeps_by_elevation(records)
+
+    assert [record.index for record in records] == [0, 1, 2]
+    assert [group.canonical_angle_deg for group in groups] == [0.9, 1.3]

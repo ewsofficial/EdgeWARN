@@ -1,10 +1,38 @@
+import json
+from pathlib import Path
+
+from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
 from common.ingest.nexrad.models import RadarStationVcp
 from common.ingest.nexrad.pipeline.models import VolumeDiscoveryResult
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, parse_nexrad_timestamp
-from common.ingest.nexrad.writer import local_low_chunks_complete, local_scan_elevations_complete
+from common.ingest.nexrad.writer import elevation_dir, local_volume_file_complete
 
-OPERATIONAL_ELEVATIONS = frozenset({"0.5", "0.9"})
+
+def _manifest_artifact_exists(payload: dict) -> bool:
+    for key in ("netcdf_path", "ar2v_path"):
+        value = payload.get(key)
+        if value and Path(value).exists():
+            return True
+    return False
+
+
+def _local_elevation_complete_for_volume(site: str, volume_id: str, elevation: str) -> bool:
+    elev_dir = elevation_dir(site, elevation)
+    if not elev_dir.exists():
+        return False
+    for manifest_path in sorted(elev_dir.glob("*.json"), reverse=True):
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("volume_id")) != str(volume_id):
+            continue
+        if _manifest_artifact_exists(payload):
+            return True
+    return False
 
 
 def is_newer_volume_stamp(stamp: str | None, latest_stamp: str | None) -> bool:
@@ -20,11 +48,13 @@ def is_newer_volume_stamp(stamp: str | None, latest_stamp: str | None) -> bool:
 
 
 def local_volume_complete(site: str, volume_id: str, chunks) -> bool:
-    if local_low_chunks_complete(site, volume_id, chunks):
+    if local_volume_file_complete(site, volume_id, chunks):
         return True
-    scan_timestamp = extract_volume_timestamp(volume_id, chunks)
-    required_elevations = [(elev, scan_timestamp) for elev in OPERATIONAL_ELEVATIONS]
-    return local_scan_elevations_complete(site, required_elevations)
+    _ = extract_volume_timestamp(volume_id, chunks)
+    return all(
+        _local_elevation_complete_for_volume(site, volume_id, elevation)
+        for elevation in INGEST_READINESS_ELEVATION_IDS
+    )
 
 
 class NexradVolumeDiscovery:

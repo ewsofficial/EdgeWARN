@@ -3,10 +3,11 @@ from pathlib import Path
 import pytest
 
 import util.file as fs
+from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
 from common.ingest.nexrad.models import ChunkKey, NexradCompletionRecord, NexradIngestResult, RadarStationVcp
 from common.ingest.nexrad.pipeline import NexradRealtimeIngestionPipeline
 from common.ingest.nexrad.pipeline.models import PendingVolume
-from common.ingest.nexrad.writer import volume_output_path, elevation_netcdf_path
+from common.ingest.nexrad.writer import elevation_manifest_path, volume_output_path, elevation_netcdf_path
 
 
 def _station(site="KTLH", *, vcp=212):
@@ -388,10 +389,22 @@ async def _track_call(calls):
 async def test_pipeline_removes_local_complete_pending_via_elevation_artifacts(tmp_path):
     fs.initialize_filesystem(tmp_path)
     chunks = _chunks()
-    for elev in ("0.5", "0.9"):
-        nc_path = elevation_netcdf_path("KTLH", elev, "20260507-150000")
+    for index, elev in enumerate(INGEST_READINESS_ELEVATION_IDS):
+        timestamp = f"20260507-1500{index:02d}"
+        nc_path = elevation_netcdf_path("KTLH", elev, timestamp)
         nc_path.parent.mkdir(parents=True, exist_ok=True)
         nc_path.write_bytes(b"elevation_data")
+        manifest_path = elevation_manifest_path("KTLH", elev, timestamp)
+        manifest_path.write_text(
+            '{\n'
+            '  "site": "KTLH",\n'
+            '  "volume_id": "999",\n'
+            f'  "elevation": "{elev}",\n'
+            f'  "elevation_timestamp": "{timestamp}",\n'
+            f'  "netcdf_path": "{nc_path}"\n'
+            '}',
+            encoding="utf-8",
+        )
     ingested = []
     pipeline = NexradRealtimeIngestionPipeline(
         base_dir=tmp_path,

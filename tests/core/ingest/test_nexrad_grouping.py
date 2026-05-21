@@ -59,6 +59,16 @@ def test_group_sweeps_groups_surveillance_then_doppler_into_one_elevation():
     assert len(groups[1].members) == 1
 
 
+def test_group_sweeps_assigns_pair_using_surveillance_anchor_angle():
+    sweeps = [
+        _sweep(0, 0.84, waveform="contiguous_surveillance", timestamp="2026-01-01T00:00:00Z"),
+        _sweep(1, 0.47, waveform="contiguous_doppler", timestamp="2026-01-01T00:01:00Z"),
+    ]
+    groups = group_sweeps_by_elevation(sweeps)
+    assert len(groups) == 1
+    assert groups[0].canonical_angle_deg == 0.9
+
+
 def test_group_sweeps_ignores_incomplete():
     sweeps = [
         _sweep(0, 0.5, waveform="contiguous_surveillance", azimuth_count=720),
@@ -109,6 +119,15 @@ def test_group_sweeps_treats_batch_and_staggered_pulse_pair_as_single_elevations
     assert len(groups) == 2
     assert len(groups[0].members) == 1
     assert len(groups[1].members) == 1
+
+
+def test_group_sweeps_assigns_single_sweep_waveforms_to_nearest_target_bin():
+    sweeps = [
+        _sweep(0, 1.19, waveform="batch"),
+        _sweep(1, 3.08, waveform="staggered_pulse_pair"),
+    ]
+    groups = group_sweeps_by_elevation(sweeps)
+    assert [group.canonical_angle_deg for group in groups] == [1.3, 3.1]
 
 
 def test_elevation_group_key_is_deterministic():

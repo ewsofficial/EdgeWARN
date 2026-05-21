@@ -6,7 +6,7 @@ from common.ingest.nexrad.config import ALLOWED_VCPS, format_perf_ms
 from common.ingest.nexrad.models import NexradCoordinatorResult, NexradCoordinatorRunResults
 from common.ingest.nexrad.pipeline.volume_discovery import NexradVolumeDiscovery
 from common.ingest.nexrad.service import NexradIngestService
-from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, required_low_chunks
+from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, required_volume_chunks
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from util.io import IOManager
@@ -56,7 +56,7 @@ class NexradScanCoordinator:
         if self.volume_discovery.local_complete(site, volume_id, chunks):
             return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=latest_scan_stamp, vcp=station.vcp, volume_id=volume_id, action="skipped_already_downloaded")
 
-        if not required_low_chunks(chunks):
+        if not required_volume_chunks(chunks):
             return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=latest_scan_stamp, vcp=station.vcp, volume_id=volume_id, action="skipped_incomplete_remote")
 
         result = await self.async_ingest_trigger(

@@ -34,7 +34,7 @@ async def test_stream_ingest_async_only_downloads_new_chunks_for_partial_volume(
     service = NexradIngestService(async_chunk_fetcher=_async_chunk_fetcher)
     monkeypatch.setattr(
         nexrad_service_module,
-        "local_scan_elevations_complete",
+        "_required_elevation_paths_complete",
         lambda *_args, **_kwargs: False,
     )
     monkeypatch.setattr(
@@ -80,7 +80,7 @@ async def test_stream_ingest_async_clears_runtime_state_after_completion(tmp_pat
     service = NexradIngestService(async_chunk_fetcher=_async_chunk_fetcher)
     monkeypatch.setattr(
         nexrad_service_module,
-        "local_scan_elevations_complete",
+        "_required_elevation_paths_complete",
         lambda *_args, **_kwargs: next(completion_states),
     )
     monkeypatch.setattr(
