@@ -24,10 +24,14 @@ RECORD_BYTES = 2432
 VOLUME_HEADER_BYTES = 24
 MSG_HEADER_LEN = 16
 MSG_31_PREFIX_LEN = 28
+MSG_31_BLOCK_POINTERS = 10
 VOLUME_MAGICS = (b"AR2V", b"ARCHIVE2")
 SUPPORTED_METADATA_TYPES = {2, 3, 5, 13, 15, 18}
 START_STATUSES = {0, 3, 5}
 END_STATUSES = {2, 4}
+DUALPOL_BLOCKS = {"DZDR", "DPHI", "DRHO", "DCFP"}
+DOPPLER_BLOCKS = {"DVEL", "DSW "}
+MIN_SWEEP_ANGLE_DEG = 0.4
 
 
 def _decompress_chunked_record_stream(volume_bytes: bytes) -> bytes:
@@ -130,6 +134,14 @@ def _walk_records(
             continue
 
         radial_status, elevation_number, _collect_ms, elevation_angle, timestamp = _read_msg31_metadata(record)
+        sweep_angle = float(elevation_angle)
+        if sweep_angle < MIN_SWEEP_ANGLE_DEG:
+            if radial_status in START_STATUSES and current is not None and current.records:
+                sweeps.append(current)
+                sweep_index = current.index + 1
+                current = None
+            continue
+        waveform = _classify_msg31_waveform(record, sweep_angle)
 
         if radial_status in START_STATUSES:
             if current is not None and current.records:
@@ -139,7 +151,8 @@ def _walk_records(
                 index=sweep_index,
                 group_name=f"/sweep_{sweep_index}",
                 elevation_number=elevation_number,
-                fixed_angle=float(elevation_angle),
+                fixed_angle=sweep_angle,
+                waveform=waveform,
                 first_timestamp=timestamp,
                 last_timestamp=timestamp,
             )
@@ -149,11 +162,15 @@ def _walk_records(
                 index=sweep_index,
                 group_name=f"/sweep_{sweep_index}",
                 elevation_number=elevation_number,
-                fixed_angle=float(elevation_angle),
+                fixed_angle=sweep_angle,
+                waveform=waveform,
                 first_timestamp=timestamp,
                 last_timestamp=timestamp,
             )
             sweep_index += 1
+
+        if current.waveform is None and waveform is not None:
+            current.waveform = waveform
 
         current.records.append(bytes(record) if not isinstance(record, bytes) else record)
         current.radial_count += 1
@@ -268,6 +285,117 @@ def _read_msg31_metadata(record: bytes) -> tuple[int, int, int, float, str | Non
     return radial_status, elevation_number, collect_ms, elevation_angle, timestamp
 
 
+def _message31_block_names(record: bytes) -> list[str]:
+    msg31_start = 12 + MSG_HEADER_LEN
+    pointer_start = msg31_start + MSG_31_PREFIX_LEN
+    pointer_end = pointer_start + 4 + MSG_31_BLOCK_POINTERS * 4
+    if len(record) < pointer_end:
+        return []
+
+    offsets = struct.unpack(
+        ">" + "I" * MSG_31_BLOCK_POINTERS,
+        record[pointer_start + 4 : pointer_end],
+    )
+
+    names: list[str] = []
+    for offset in offsets:
+        if offset <= 0:
+            continue
+        block_start = msg31_start + offset
+        block_end = block_start + 4
+        if block_end > len(record):
+            continue
+        name = record[block_start:block_end].decode("ascii", errors="ignore")
+        if name:
+            names.append(name)
+    return names
+
+
+def filter_msg31_blocks(record: bytes, drop_block_names: set[str] | frozenset[str]) -> bytes:
+    """Return a message-31 record with selected data blocks removed.
+
+    Non-message-31 records are returned unchanged.
+    """
+    size_words, msg_type = _read_msg_header(record)
+    if msg_type != 31 or not drop_block_names:
+        return record
+
+    msg31_start = 12 + MSG_HEADER_LEN
+    pointer_start = msg31_start + MSG_31_PREFIX_LEN
+    pointer_end = pointer_start + 4 + MSG_31_BLOCK_POINTERS * 4
+    if len(record) < pointer_end:
+        return record
+
+    prefix = record[msg31_start : msg31_start + MSG_31_PREFIX_LEN]
+    word1, _block_count = struct.unpack(">HH", record[pointer_start : pointer_start + 4])
+    offsets = list(struct.unpack(">" + "I" * MSG_31_BLOCK_POINTERS, record[pointer_start + 4 : pointer_end]))
+
+    positive_offsets = [offset for offset in offsets if offset > 0]
+    if not positive_offsets:
+        return record
+
+    record_end = min(_record_size(record, msg_type, size_words), len(record))
+    body_end = record_end - msg31_start
+    selected_blocks: list[bytes] = []
+
+    for index, offset in enumerate(offsets):
+        if offset <= 0:
+            continue
+        next_offsets = [candidate for candidate in offsets[index + 1 :] if candidate > offset]
+        next_offset = min(next_offsets) if next_offsets else body_end
+        block_start = msg31_start + offset
+        block_end = msg31_start + next_offset
+        if block_end > record_end or block_start + 4 > block_end:
+            continue
+        name = record[block_start : block_start + 4].decode("ascii", errors="ignore")
+        if name in drop_block_names:
+            continue
+        selected_blocks.append(record[block_start:block_end])
+
+    if len(selected_blocks) == len(positive_offsets):
+        return record
+
+    next_offset = MSG_31_PREFIX_LEN + 4 + MSG_31_BLOCK_POINTERS * 4
+    new_offsets: list[int] = []
+    payload = bytearray()
+    for block in selected_blocks:
+        new_offsets.append(next_offset)
+        payload.extend(block)
+        next_offset += len(block)
+    new_offsets.extend([0] * (MSG_31_BLOCK_POINTERS - len(new_offsets)))
+
+    body = bytearray(prefix)
+    body.extend(struct.pack(">HH", word1, len(selected_blocks)))
+    body.extend(struct.pack(">" + "I" * MSG_31_BLOCK_POINTERS, *new_offsets))
+    body.extend(payload)
+
+    new_record = bytearray(record[:12])
+    msg_header = list(struct.unpack(">HBBHHIHH", record[12 : 12 + MSG_HEADER_LEN]))
+    total_after_prefix = MSG_HEADER_LEN + len(body)
+    if total_after_prefix % 2 != 0:
+        body.append(0)
+        total_after_prefix += 1
+    msg_header[0] = total_after_prefix // 2
+    new_record.extend(struct.pack(">HBBHHIHH", *msg_header))
+    new_record.extend(body)
+    return bytes(new_record)
+
+
+def _classify_msg31_waveform(record: bytes, elevation_angle: float) -> str | None:
+    block_names = set(_message31_block_names(record))
+    has_doppler = any(name in block_names for name in DOPPLER_BLOCKS)
+    has_dualpol = any(name in block_names for name in DUALPOL_BLOCKS)
+    has_reflectivity = "DREF" in block_names
+
+    if has_doppler and has_dualpol:
+        return "batch" if elevation_angle >= 4.0 else "staggered_pulse_pair"
+    if has_doppler:
+        return "contiguous_doppler"
+    if has_dualpol or has_reflectivity:
+        return "contiguous_surveillance"
+    return None
+
+
 def split_stream_into_volumes(stream_bytes: bytes) -> list[bytes]:
     """Split an ordered chunk stream into inline AR2V/ARCHIVE2 volumes."""
     if not stream_bytes:
@@ -343,6 +471,14 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
             continue
 
         radial_status, elevation_number, _collect_ms, elevation_angle, timestamp = _read_msg31_metadata(record)
+        sweep_angle = float(elevation_angle)
+        if sweep_angle < MIN_SWEEP_ANGLE_DEG:
+            if radial_status in START_STATUSES:
+                if current is not None and current.records:
+                    sweeps.append(current)
+                current = None
+            continue
+        waveform = _classify_msg31_waveform(record, sweep_angle)
 
         if radial_status in START_STATUSES:
             if current is not None and current.records:
@@ -351,7 +487,8 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
                 index=sweep_index,
                 group_name=f"/sweep_{sweep_index}",
                 elevation_number=elevation_number,
-                fixed_angle=float(elevation_angle),
+                fixed_angle=sweep_angle,
+                waveform=waveform,
                 first_timestamp=timestamp,
                 last_timestamp=timestamp,
             )
@@ -361,11 +498,15 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
                 index=sweep_index,
                 group_name=f"/sweep_{sweep_index}",
                 elevation_number=elevation_number,
-                fixed_angle=float(elevation_angle),
+                fixed_angle=sweep_angle,
+                waveform=waveform,
                 first_timestamp=timestamp,
                 last_timestamp=timestamp,
             )
             sweep_index += 1
+
+        if current.waveform is None and waveform is not None:
+            current.waveform = waveform
 
         current.records.append(record)
         current.radial_count += 1

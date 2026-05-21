@@ -3,6 +3,7 @@
 from common.ingest.nexrad.models import ElevationGroup, SweepRecord
 
 MAX_ELEVATION_DEG = 4.0
+FIXED_ELEVATION_BINS = (0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0)
 SURVEILLANCE_WAVEFORM = "contiguous_surveillance"
 DOPPLER_WAVEFORM = "contiguous_doppler"
 SINGLE_ELEVATION_WAVEFORMS = {"staggered_pulse_pair", "batch"}
@@ -11,7 +12,8 @@ RECOGNIZED_WAVEFORMS = SINGLE_ELEVATION_WAVEFORMS | {SURVEILLANCE_WAVEFORM, DOPP
 
 def _canonical_angle(fixed_angle: float) -> float:
     """Return the elevation angle used for the grouped output label."""
-    return float(fixed_angle)
+    angle = float(fixed_angle)
+    return min(FIXED_ELEVATION_BINS, key=lambda candidate: (abs(candidate - angle), candidate))
 
 
 def _waveform_key(waveform: str | None) -> str:
@@ -52,7 +54,7 @@ def _group_by_waveform(valid: list[SweepRecord]) -> list[ElevationGroup]:
     current_group: ElevationGroup | None = None
 
     for sweep in valid:
-        if sweep.fixed_angle >= MAX_ELEVATION_DEG:
+        if sweep.fixed_angle > MAX_ELEVATION_DEG:
             break
 
         waveform = _waveform_key(sweep.waveform)
@@ -93,7 +95,7 @@ def _group_without_waveforms(valid: list[SweepRecord]) -> list[ElevationGroup]:
     current_sweep: SweepRecord | None = None
 
     for sweep in valid:
-        if sweep.fixed_angle >= MAX_ELEVATION_DEG:
+        if sweep.fixed_angle > MAX_ELEVATION_DEG:
             break
 
         waveform = _waveform_key(sweep.waveform)
@@ -125,7 +127,8 @@ def group_sweeps_by_elevation(
     Rules:
     - Sort sweeps by sweep index
     - Ignore incomplete sweeps (azimuth_count <= 0)
-    - Stop processing the volume once the sweep angle reaches 4.0 degrees or higher
+    - Force grouped elevations into the fixed levels 0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0
+    - Stop processing the volume once the sweep angle exceeds 4.0 degrees
     - A grouped elevation starts with `contiguous_surveillance`
     - Following contiguous `contiguous_doppler` sweeps join that elevation
     - `staggered_pulse_pair` and `batch` each become single-sweep elevations

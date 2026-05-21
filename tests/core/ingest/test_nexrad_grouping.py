@@ -20,10 +20,12 @@ def _sweep(index, angle, waveform="surveillance", timestamp=None, azimuth_count=
 
 def test_canonical_angle_preserves_angle():
     assert _canonical_angle(0.5) == 0.5
-    assert _canonical_angle(0.51) == 0.51
-    assert _canonical_angle(0.49) == 0.49
+    assert _canonical_angle(0.51) == 0.5
+    assert _canonical_angle(0.49) == 0.5
     assert _canonical_angle(0.9) == 0.9
     assert _canonical_angle(1.3) == 1.3
+    assert _canonical_angle(1.23) == 1.3
+    assert _canonical_angle(3.78) == 4.0
 
 
 def test_first_non_null_timestamp_returns_first_valid():
@@ -45,9 +47,9 @@ def test_first_non_null_timestamp_all_none():
 
 def test_group_sweeps_groups_surveillance_then_doppler_into_one_elevation():
     sweeps = [
-        _sweep(0, 0.5, waveform="contiguous_surveillance", timestamp="2026-01-01T00:00:00Z"),
-        _sweep(1, 0.5, waveform="contiguous_doppler", timestamp="2026-01-01T00:01:00Z"),
-        _sweep(2, 0.9, waveform="staggered_pulse_pair", timestamp="2026-01-01T00:02:00Z"),
+        _sweep(0, 0.68, waveform="contiguous_surveillance", timestamp="2026-01-01T00:00:00Z"),
+        _sweep(1, 0.47, waveform="contiguous_doppler", timestamp="2026-01-01T00:01:00Z"),
+        _sweep(2, 0.84, waveform="staggered_pulse_pair", timestamp="2026-01-01T00:02:00Z"),
     ]
     groups = group_sweeps_by_elevation(sweeps)
     assert len(groups) == 2
@@ -122,10 +124,10 @@ def test_elevation_group_key_is_deterministic():
 
 def test_group_sweeps_ordered_by_first_sweep_index():
     sweeps = [
-        _sweep(2, 0.9, waveform="batch"),
-        _sweep(0, 0.5, waveform="contiguous_surveillance"),
-        _sweep(1, 0.5, waveform="contiguous_doppler"),
-        _sweep(4, 1.3, waveform="staggered_pulse_pair"),
+        _sweep(2, 0.84, waveform="batch"),
+        _sweep(0, 0.68, waveform="contiguous_surveillance"),
+        _sweep(1, 0.47, waveform="contiguous_doppler"),
+        _sweep(4, 1.19, waveform="staggered_pulse_pair"),
     ]
     groups = group_sweeps_by_elevation(sweeps)
     assert groups[0].canonical_angle_deg == 0.5
@@ -135,22 +137,39 @@ def test_group_sweeps_ordered_by_first_sweep_index():
 
 def test_group_sweeps_stops_once_angle_reaches_four_degrees():
     sweeps = [
-        _sweep(0, 0.5, waveform="contiguous_surveillance"),
-        _sweep(1, 0.5, waveform="contiguous_doppler"),
-        _sweep(2, 3.5, waveform="batch"),
-        _sweep(3, 4.0, waveform="staggered_pulse_pair"),
+        _sweep(0, 0.68, waveform="contiguous_surveillance"),
+        _sweep(1, 0.47, waveform="contiguous_doppler"),
+        _sweep(2, 3.78, waveform="batch"),
+        _sweep(3, 4.94, waveform="staggered_pulse_pair"),
         _sweep(4, 1.3, waveform="staggered_pulse_pair"),
     ]
     groups = group_sweeps_by_elevation(sweeps)
-    assert [group.canonical_angle_deg for group in groups] == [0.5, 3.5]
+    assert [group.canonical_angle_deg for group in groups] == [0.5, 4.0]
+
+
+def test_group_sweeps_keeps_revisit_groups_separate_but_in_same_canonical_folder():
+    sweeps = [
+        _sweep(0, 0.68, waveform="contiguous_surveillance", timestamp="2026-01-01T00:00:00Z"),
+        _sweep(1, 0.47, waveform="contiguous_doppler", timestamp="2026-01-01T00:00:10Z"),
+        _sweep(2, 3.08, waveform="staggered_pulse_pair", timestamp="2026-01-01T00:01:00Z"),
+        _sweep(3, 0.70, waveform="contiguous_surveillance", timestamp="2026-01-01T00:02:00Z"),
+        _sweep(4, 0.45, waveform="contiguous_doppler", timestamp="2026-01-01T00:02:10Z"),
+    ]
+    groups = group_sweeps_by_elevation(sweeps)
+    low_groups = [group for group in groups if group.canonical_angle_deg == 0.5]
+    assert len(low_groups) == 2
+    assert low_groups[0].first_timestamp == "2026-01-01T00:00:00Z"
+    assert low_groups[1].first_timestamp == "2026-01-01T00:02:00Z"
+    assert [member.group_name for member in low_groups[0].members] == ["/sweep_00", "/sweep_01"]
+    assert [member.group_name for member in low_groups[1].members] == ["/sweep_03", "/sweep_04"]
 
 
 def test_group_sweeps_falls_back_to_raw_elevation_number_when_waveform_missing():
     sweeps = [
-        SweepRecord(index=0, group_name="/sweep_00", fixed_angle=0.5, waveform=None, timestamp="2026-01-01T00:00:00Z", azimuth_count=720, elevation_number=1),
-        SweepRecord(index=1, group_name="/sweep_01", fixed_angle=0.5, waveform=None, timestamp="2026-01-01T00:00:10Z", azimuth_count=720, elevation_number=1),
-        SweepRecord(index=2, group_name="/sweep_02", fixed_angle=0.9, waveform=None, timestamp="2026-01-01T00:01:00Z", azimuth_count=720, elevation_number=2),
-        SweepRecord(index=3, group_name="/sweep_03", fixed_angle=4.0, waveform=None, timestamp="2026-01-01T00:02:00Z", azimuth_count=720, elevation_number=3),
+        SweepRecord(index=0, group_name="/sweep_00", fixed_angle=0.68, waveform=None, timestamp="2026-01-01T00:00:00Z", azimuth_count=720, elevation_number=1),
+        SweepRecord(index=1, group_name="/sweep_01", fixed_angle=0.47, waveform=None, timestamp="2026-01-01T00:00:10Z", azimuth_count=720, elevation_number=1),
+        SweepRecord(index=2, group_name="/sweep_02", fixed_angle=0.84, waveform=None, timestamp="2026-01-01T00:01:00Z", azimuth_count=720, elevation_number=2),
+        SweepRecord(index=3, group_name="/sweep_03", fixed_angle=4.94, waveform=None, timestamp="2026-01-01T00:02:00Z", azimuth_count=720, elevation_number=3),
     ]
     groups = group_sweeps_by_elevation(sweeps)
     assert len(groups) == 2
