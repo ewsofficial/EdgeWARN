@@ -1,12 +1,12 @@
 import json
 from pathlib import Path
 
-import pytest
-
 import util.file as fs
+from common.ingest.nexrad.models import ElevationGroup, SweepRecord
 from common.ingest.nexrad.writer import (
     NexradElevationStore,
     NexradLocalChunkStore,
+    build_site_manifest,
     elevation_ar2v_path,
     elevation_dir,
     elevation_netcdf_path,
@@ -16,6 +16,9 @@ from common.ingest.nexrad.writer import (
     local_elevation_complete,
     local_scan_elevations_complete,
     prune_elevation_artifacts,
+    site_manifest_path,
+    write_elevation_artifacts,
+    write_site_manifest,
 )
 
 
@@ -147,7 +150,256 @@ def test_prune_elevation_artifacts_keeps_recent(tmp_path):
     prune_elevation_artifacts("KTLH", "0.5")
 
     remaining_nc = list(elev_dir.glob("*.nc"))
-    assert len(remaining_nc) <= 5
+    assert len(remaining_nc) <= 3
+
+
+class _FakeRawSweep:
+    def __init__(self, group_name, waveform):
+        self.group_name = group_name
+        self.waveform = waveform
+        self.records = [b"record"]
+
+
+class _FakeRawVolume:
+    volume_header = b"header"
+    metadata_records = []
+
+    def __init__(self, sweeps):
+        self.sweeps = sweeps
+
+
+def _write_test_artifact(site, volume_id, scan_timestamp, elevation, member_specs):
+    group = ElevationGroup(
+        elevation_id=elevation,
+        canonical_angle_deg=float(elevation),
+        members=[
+            SweepRecord(
+                index=index,
+                group_name=group_name,
+                fixed_angle=float(elevation),
+                waveform=waveform,
+                timestamp=timestamp,
+                azimuth_count=360,
+            )
+            for index, (group_name, waveform, timestamp) in enumerate(member_specs)
+        ],
+        waveforms_present={waveform for _group_name, waveform, _timestamp in member_specs},
+        first_sweep_index=0,
+        last_sweep_index=len(member_specs) - 1,
+        first_timestamp=member_specs[0][2],
+        last_timestamp=member_specs[-1][2],
+        complete=True,
+    )
+    source = _FakeRawVolume([_FakeRawSweep(group_name, waveform) for group_name, waveform, _timestamp in member_specs])
+    write_elevation_artifacts(
+        group,
+        source,
+        site=site,
+        volume_id=volume_id,
+        scan_timestamp=scan_timestamp,
+        elevation_label=elevation,
+        elevation_timestamp=member_specs[0][2],
+    )
+
+
+def test_write_elevation_manifest_includes_member_sweep_timestamps(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+
+    _write_test_artifact(
+        "KTLH",
+        "VOL-001",
+        "20260507-150000",
+        "0.5",
+        [
+            ("sweep_0", "contiguous_surveillance", "20260507-150001"),
+            ("sweep_1", "batch", "20260507-150004"),
+        ],
+    )
+
+    manifest = json.loads(
+        elevation_manifest_path("KTLH", "0.5", "20260507-150001").read_text(encoding="utf-8")
+    )
+
+    assert manifest["volume_timestamp"] == "20260507-150000"
+    assert manifest["first_sweep_timestamp"] == "20260507-150001"
+    assert manifest["last_sweep_timestamp"] == "20260507-150004"
+    assert manifest["member_sweeps"] == [
+        {
+            "group_name": "sweep_0",
+            "sweep_index": 0,
+            "fixed_angle": 0.5,
+            "elevation_number": None,
+            "waveform": "contiguous_surveillance",
+            "timestamp": "20260507-150001",
+        },
+        {
+            "group_name": "sweep_1",
+            "sweep_index": 1,
+            "fixed_angle": 0.5,
+            "elevation_number": None,
+            "waveform": "batch",
+            "timestamp": "20260507-150004",
+        },
+    ]
+
+
+def test_site_manifest_keeps_latest_three_volumes_by_volume_timestamp(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+
+    volume_specs = [
+        ("VOL-C", "20260507-152000"),
+        ("VOL-A", "20260507-150000"),
+        ("VOL-D", "20260507-153000"),
+        ("VOL-B", "20260507-151000"),
+    ]
+    for volume_id, volume_timestamp in volume_specs:
+        _write_test_artifact(
+            "KTLH",
+            volume_id,
+            volume_timestamp,
+            "0.5",
+            [
+                (f"{volume_id}_0", "contiguous_surveillance", f"{volume_timestamp[:-2]}01"),
+                (f"{volume_id}_1", "batch", f"{volume_timestamp[:-2]}04"),
+            ],
+        )
+        _write_test_artifact(
+            "KTLH",
+            volume_id,
+            volume_timestamp,
+            "0.9",
+            [
+                (f"{volume_id}_2", "batch", f"{volume_timestamp[:-2]}06"),
+            ],
+        )
+
+    manifest_path = write_site_manifest("KTLH")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest_path == site_manifest_path("KTLH")
+    assert [volume["volume_id"] for volume in manifest["volumes"]] == ["VOL-D", "VOL-C", "VOL-B"]
+    assert [volume["volume_timestamp"] for volume in manifest["volumes"]] == [
+        "20260507-153000",
+        "20260507-152000",
+        "20260507-151000",
+    ]
+    assert manifest["volumes"][0]["sweeps"] == [
+        {
+            "sweep_index": 0,
+            "group_name": "VOL-D_0",
+            "elevation": 0.5,
+            "timestamp": "20260507-153001",
+            "waveform": "contiguous_surveillance",
+        },
+        {
+            "sweep_index": 0,
+            "group_name": "VOL-D_2",
+            "elevation": 0.9,
+            "timestamp": "20260507-153006",
+            "waveform": "batch",
+        },
+        {
+            "sweep_index": 1,
+            "group_name": "VOL-D_1",
+            "elevation": 0.5,
+            "timestamp": "20260507-153004",
+            "waveform": "batch",
+        },
+    ]
+
+    pruned_sidecars = sorted(path.name for path in elevation_dir("KTLH", "0.5").glob("*.json"))
+    assert pruned_sidecars == [
+        "KTLH_0.5_20260507-151001.json",
+        "KTLH_0.5_20260507-152001.json",
+        "KTLH_0.5_20260507-153001.json",
+    ]
+
+
+def test_build_site_manifest_ignores_runtime_and_scan_dirs(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    site_dir = Path(fs.NEXRAD_LEVEL2_DIR) / "KTLH"
+    site_dir.mkdir(parents=True, exist_ok=True)
+    (site_dir / "20260507-150000").mkdir()
+    (site_dir / "misc").mkdir()
+    (Path(fs.NEXRAD_LEVEL2_DIR) / ".runtime" / "KTLH").mkdir(parents=True, exist_ok=True)
+    (site_dir / "manifest.json").write_text("{}", encoding="utf-8")
+
+    _write_test_artifact(
+        "KTLH",
+        "VOL-001",
+        "20260507-150000",
+        "0.5",
+        [("sweep_0", "batch", "20260507-150001")],
+    )
+
+    manifest = build_site_manifest("KTLH")
+    assert [volume["volume_id"] for volume in manifest["volumes"]] == ["VOL-001"]
+    assert manifest["volumes"][0]["sweeps"] == [
+        {
+            "sweep_index": 0,
+            "group_name": "sweep_0",
+            "elevation": 0.5,
+            "timestamp": "20260507-150001",
+            "waveform": "batch",
+        }
+    ]
+
+
+def test_site_manifest_keeps_duplicate_same_bin_sweeps_as_raw_entries(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+
+    _write_test_artifact(
+        "KTLH",
+        "VOL-001",
+        "20260507-150000",
+        "0.5",
+        [
+            ("sweep_0", "contiguous_surveillance", "20260507-150001"),
+            ("sweep_1", "batch", "20260507-150004"),
+        ],
+    )
+    _write_test_artifact(
+        "KTLH",
+        "VOL-001",
+        "20260507-150000",
+        "0.5",
+        [
+            ("sweep_8", "contiguous_surveillance", "20260507-150031"),
+            ("sweep_9", "batch", "20260507-150034"),
+        ],
+    )
+
+    manifest = build_site_manifest("KTLH")
+    assert manifest["volumes"][0]["sweeps"] == [
+        {
+            "sweep_index": 0,
+            "group_name": "sweep_0",
+            "elevation": 0.5,
+            "timestamp": "20260507-150001",
+            "waveform": "contiguous_surveillance",
+        },
+        {
+            "sweep_index": 0,
+            "group_name": "sweep_8",
+            "elevation": 0.5,
+            "timestamp": "20260507-150031",
+            "waveform": "contiguous_surveillance",
+        },
+        {
+            "sweep_index": 1,
+            "group_name": "sweep_1",
+            "elevation": 0.5,
+            "timestamp": "20260507-150004",
+            "waveform": "batch",
+        },
+        {
+            "sweep_index": 1,
+            "group_name": "sweep_9",
+            "elevation": 0.5,
+            "timestamp": "20260507-150034",
+            "waveform": "batch",
+        },
+    ]
 
 
 def test_prune_station_scan_dirs_ignores_elevation_directories(tmp_path):

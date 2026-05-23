@@ -76,3 +76,39 @@ def test_local_volume_complete_requires_all_grouped_elevation_outputs(tmp_path):
         )
 
     assert local_volume_complete("KTLH", "999", chunks) is False
+
+
+def test_local_volume_complete_accepts_expanded_elevation_sidecar_payload(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    chunks = _chunks()
+
+    for index, elev in enumerate(INGEST_READINESS_ELEVATION_IDS):
+        timestamp = f"20260507-1500{index:02d}"
+        nc_path = elevation_netcdf_path("KTLH", elev, timestamp)
+        nc_path.parent.mkdir(parents=True, exist_ok=True)
+        nc_path.write_bytes(b"elevation")
+        manifest_path = elevation_manifest_path("KTLH", elev, timestamp)
+        manifest_path.write_text(
+            '{\n'
+            '  "site": "KTLH",\n'
+            '  "volume_id": "999",\n'
+            '  "volume_timestamp": "20260507-150000",\n'
+            '  "scan_timestamp": "20260507-150000",\n'
+            f'  "elevation": "{elev}",\n'
+            f'  "elevation_timestamp": "{timestamp}",\n'
+            f'  "first_sweep_timestamp": "{timestamp}",\n'
+            f'  "last_sweep_timestamp": "{timestamp}",\n'
+            '  "member_sweeps": [\n'
+            '    {\n'
+            f'      "group_name": "{elev}-0",\n'
+            '      "sweep_index": 0,\n'
+            '      "waveform": "batch",\n'
+            f'      "timestamp": "{timestamp}"\n'
+            '    }\n'
+            '  ],\n'
+            f'  "netcdf_path": "{nc_path}"\n'
+            '}',
+            encoding="utf-8",
+        )
+
+    assert local_volume_complete("KTLH", "999", chunks) is True

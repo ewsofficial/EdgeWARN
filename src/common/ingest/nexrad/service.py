@@ -40,6 +40,7 @@ from common.ingest.nexrad.writer import (
     NexradElevationStore,
     runtime_scan_path,
     local_scan_elevations_complete,
+    write_site_manifest,
 )
 from util.io import IOManager
 
@@ -383,6 +384,11 @@ class NexradIngestService:
         complete = _required_elevation_paths_complete(site_upper, elevation_timestamps_by_id)
 
         if complete:
+            write_site_manifest(
+                site_upper,
+                current_volume_id=volume_id,
+                current_volume_timestamp=scan_timestamp,
+            )
             if runtime_path.exists():
                 runtime_path.unlink(missing_ok=True)
             self._clear_runtime_state(site_upper, volume_id)
@@ -626,6 +632,11 @@ class NexradIngestService:
         complete = _required_elevation_paths_complete(site_upper, elevation_timestamps_by_id)
 
         if complete:
+            write_site_manifest(
+                site_upper,
+                current_volume_id=volume_id,
+                current_volume_timestamp=scan_timestamp,
+            )
             if runtime_path.exists():
                 runtime_path.unlink(missing_ok=True)
             self._clear_runtime_state(site_upper, volume_id)

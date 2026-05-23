@@ -12,7 +12,7 @@ from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
 
 IMPORTANT_DATA_VARS = None
 NEXRAD_SCAN_DIRS_TO_KEEP = 3
-NEXRAD_ELEVATION_DIRS_TO_KEEP = 5
+NEXRAD_ELEVATION_DIRS_TO_KEEP = 3
 SCAN_TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
 
 
@@ -104,6 +104,9 @@ class NexradElevationStore:
         runtime.mkdir(parents=True, exist_ok=True)
         return runtime / f"{str(site).upper()}_{volume_id}.ar2v"
 
+    def site_manifest_path(self, site: str) -> Path:
+        return fs.NEXRAD_LEVEL2_DIR / str(site).upper() / "manifest.json"
+
     def prune_elevation_artifacts(self, site: str, elevation: str):
         elev_dir = self.elevation_dir(site, elevation)
         if not elev_dir.exists():
@@ -158,6 +161,10 @@ def runtime_scan_path(site: str, volume_id: str) -> Path:
     return _elevation_store().runtime_scan_path(site, volume_id)
 
 
+def site_manifest_path(site: str) -> Path:
+    return _elevation_store().site_manifest_path(site)
+
+
 def local_elevation_complete(site: str, elevation: str, elevation_timestamp: str) -> bool:
     nc_path = elevation_netcdf_path(site, elevation, elevation_timestamp)
     ar2v_path = elevation_ar2v_path(site, elevation, elevation_timestamp)
@@ -176,6 +183,206 @@ def local_scan_elevations_complete(
 
 def prune_elevation_artifacts(site: str, elevation: str):
     _elevation_store().prune_elevation_artifacts(site, elevation)
+
+
+def _parse_manifest_timestamp(timestamp: str | None):
+    if not timestamp:
+        return None
+    return parse_nexrad_timestamp(timestamp)
+
+
+def _volume_sort_key(volume_timestamp: str | None, volume_id: str):
+    parsed = _parse_manifest_timestamp(volume_timestamp)
+    return (parsed is not None, parsed or volume_timestamp or "", str(volume_id))
+
+
+def _elevation_sort_key(elevation: str):
+    try:
+        return (0, float(elevation))
+    except (TypeError, ValueError):
+        return (1, str(elevation))
+
+
+def _site_manifest_candidate_dirs(site_dir: Path):
+    for child in site_dir.iterdir():
+        if not child.is_dir():
+            continue
+        if child.name == ".runtime":
+            continue
+        if SCAN_TIMESTAMP_RE.fullmatch(child.name):
+            continue
+        try:
+            float(child.name)
+        except (TypeError, ValueError):
+            continue
+        yield child
+
+
+def _load_elevation_manifest_payload(manifest_path: Path) -> dict | None:
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _normalize_sidecar_payload(
+    payload: dict,
+    *,
+    fallback_volume_id: str | None = None,
+    fallback_volume_timestamp: str | None = None,
+) -> dict | None:
+    volume_id = payload.get("volume_id") or fallback_volume_id
+    if not volume_id:
+        return None
+
+    volume_timestamp = payload.get("volume_timestamp") or payload.get("scan_timestamp")
+    if fallback_volume_id is not None and str(volume_id) == str(fallback_volume_id) and fallback_volume_timestamp:
+        volume_timestamp = volume_timestamp or fallback_volume_timestamp
+
+    elevation = payload.get("elevation")
+    return {
+        "site": str(payload.get("site") or "").upper(),
+        "volume_id": str(volume_id),
+        "volume_timestamp": volume_timestamp,
+        "scan_timestamp": payload.get("scan_timestamp") or volume_timestamp,
+        "elevation": str(elevation) if elevation is not None else None,
+        "elevation_timestamp": payload.get("elevation_timestamp"),
+        "first_sweep_index": payload.get("first_sweep_index"),
+        "last_sweep_index": payload.get("last_sweep_index"),
+        "first_sweep_timestamp": payload.get("first_sweep_timestamp"),
+        "last_sweep_timestamp": payload.get("last_sweep_timestamp"),
+        "member_group_names": list(payload.get("member_group_names") or []),
+        "member_sweeps": list(payload.get("member_sweeps") or []),
+        "waveforms_present": list(payload.get("waveforms_present") or []),
+        "supplemental": bool(payload.get("supplemental", False)),
+        "netcdf_path": payload.get("netcdf_path"),
+        "ar2v_path": payload.get("ar2v_path"),
+    }
+
+
+def _raw_sweep_sort_key(sweep: dict):
+    sweep_index = sweep.get("sweep_index")
+    try:
+        normalized_index = int(sweep_index)
+    except (TypeError, ValueError):
+        normalized_index = float("inf")
+    return (
+        normalized_index,
+        sweep.get("timestamp") or "",
+        sweep.get("group_name") or "",
+    )
+
+
+def _raw_sweep_identity(sweep: dict):
+    return (
+        sweep.get("group_name"),
+        sweep.get("sweep_index"),
+        sweep.get("timestamp"),
+    )
+
+
+def _raw_sweep_elevation(member_sweep: dict, grouped_elevation: str | None):
+    if member_sweep.get("fixed_angle") is not None:
+        return member_sweep.get("fixed_angle")
+    return grouped_elevation
+
+
+def build_site_manifest(
+    site: str,
+    *,
+    current_volume_id: str | None = None,
+    current_volume_timestamp: str | None = None,
+) -> dict:
+    site_upper = str(site).upper()
+    site_dir = fs.NEXRAD_LEVEL2_DIR / site_upper
+    volumes: dict[str, dict] = {}
+
+    if site_dir.exists():
+        for elev_dir in _site_manifest_candidate_dirs(site_dir):
+            for manifest_file in sorted(elev_dir.glob("*.json"), reverse=True):
+                payload = _load_elevation_manifest_payload(manifest_file)
+                if payload is None:
+                    continue
+                normalized = _normalize_sidecar_payload(
+                    payload,
+                    fallback_volume_id=current_volume_id,
+                    fallback_volume_timestamp=current_volume_timestamp,
+                )
+                if normalized is None:
+                    continue
+
+                volume_id = normalized["volume_id"]
+                volume = volumes.setdefault(
+                    volume_id,
+                    {
+                        "site": site_upper,
+                        "volume_id": volume_id,
+                        "volume_timestamp": normalized["volume_timestamp"],
+                        "scan_timestamp": normalized["scan_timestamp"],
+                        "sweeps": [],
+                        "_seen_sweeps": set(),
+                    },
+                )
+
+                volume_timestamp = normalized["volume_timestamp"]
+                if _volume_sort_key(volume_timestamp, volume_id) > _volume_sort_key(volume.get("volume_timestamp"), volume_id):
+                    volume["volume_timestamp"] = volume_timestamp
+                if volume.get("scan_timestamp") is None and normalized["scan_timestamp"] is not None:
+                    volume["scan_timestamp"] = normalized["scan_timestamp"]
+
+                if normalized["elevation"] is None:
+                    continue
+
+                for member_sweep in normalized.get("member_sweeps") or []:
+                    if not isinstance(member_sweep, dict):
+                        continue
+                    raw_sweep = {
+                        "sweep_index": member_sweep.get("sweep_index"),
+                        "group_name": member_sweep.get("group_name"),
+                        "elevation": _raw_sweep_elevation(member_sweep, normalized["elevation"]),
+                        "timestamp": member_sweep.get("timestamp"),
+                        "waveform": member_sweep.get("waveform"),
+                    }
+                    identity = _raw_sweep_identity(raw_sweep)
+                    if identity in volume["_seen_sweeps"]:
+                        continue
+                    volume["_seen_sweeps"].add(identity)
+                    volume["sweeps"].append(raw_sweep)
+
+    ordered_volumes = sorted(
+        volumes.values(),
+        key=lambda volume: _volume_sort_key(volume.get("volume_timestamp"), volume.get("volume_id", "")),
+        reverse=True,
+    )[:NEXRAD_ELEVATION_DIRS_TO_KEEP]
+
+    for volume in ordered_volumes:
+        volume["sweeps"].sort(key=_raw_sweep_sort_key)
+        volume.pop("_seen_sweeps", None)
+
+    return {
+        "site": site_upper,
+        "volumes": ordered_volumes,
+    }
+
+
+def write_site_manifest(
+    site: str,
+    *,
+    current_volume_id: str | None = None,
+    current_volume_timestamp: str | None = None,
+) -> Path:
+    path = site_manifest_path(site)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = build_site_manifest(
+        site,
+        current_volume_id=current_volume_id,
+        current_volume_timestamp=current_volume_timestamp,
+    )
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
 
 
 def chunk_output_dir(site: str, volume_id: str, chunks) -> Path:
@@ -378,12 +585,16 @@ def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
     payload = {
         "site": artifact.site,
         "volume_id": artifact.volume_id,
+        "volume_timestamp": artifact.volume_timestamp,
         "scan_timestamp": artifact.scan_timestamp,
         "elevation": artifact.elevation,
         "elevation_timestamp": artifact.elevation_timestamp,
         "first_sweep_index": artifact.first_sweep_index,
         "last_sweep_index": artifact.last_sweep_index,
+        "first_sweep_timestamp": artifact.first_sweep_timestamp,
+        "last_sweep_timestamp": artifact.last_sweep_timestamp,
         "member_group_names": artifact.member_group_names,
+        "member_sweeps": artifact.member_sweeps,
         "waveforms_present": list(artifact.waveforms_present),
         "supplemental": artifact.supplemental,
         "netcdf_path": artifact.netcdf_path,
@@ -449,6 +660,17 @@ def write_elevation_artifacts(
     }
 
     group_names = [m.group_name for m in group.members]
+    member_sweeps = [
+        {
+            "group_name": member.group_name,
+            "sweep_index": member.index,
+            "fixed_angle": member.fixed_angle,
+            "elevation_number": member.elevation_number,
+            "waveform": member.waveform,
+            "timestamp": member.timestamp,
+        }
+        for member in group.members
+    ]
     if hasattr(source, "volume_header") and hasattr(source, "metadata_records"):
         ar2v_path = store.elevation_ar2v_path(site, elevation_label, ts_for_filename)
         _write_elevation_ar2v(ar2v_path, source, group_names)
@@ -459,12 +681,16 @@ def write_elevation_artifacts(
     artifact = ElevationArtifact(
         site=site,
         volume_id=volume_id,
+        volume_timestamp=scan_timestamp,
         scan_timestamp=scan_timestamp,
         elevation=elevation_label,
         elevation_timestamp=elevation_timestamp,
         first_sweep_index=group.first_sweep_index,
         last_sweep_index=group.last_sweep_index,
+        first_sweep_timestamp=group.first_timestamp,
+        last_sweep_timestamp=group.last_timestamp,
         member_group_names=group_names,
+        member_sweeps=member_sweeps,
         waveforms_present=group.waveforms_present,
         supplemental=group.supplemental,
         netcdf_path=str(nc_path) if nc_path is not None else None,
