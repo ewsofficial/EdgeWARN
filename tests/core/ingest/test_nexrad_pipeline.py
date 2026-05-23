@@ -73,7 +73,7 @@ async def test_pipeline_filters_stations_before_any_s3_listing(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_downloads_complete_volume_and_emits_after_ingest(tmp_path):
+async def test_pipeline_downloads_complete_volume_after_ingest(tmp_path):
     fs.initialize_filesystem(tmp_path)
     events = []
 
@@ -87,22 +87,17 @@ async def test_pipeline_downloads_complete_volume_and_emits_after_ingest(tmp_pat
         async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
         async_chunk_lister=lambda *_args, **_kwargs: _return(_chunks()),
         async_ingest_trigger=_ingest_trigger,
-        download_emitter=lambda records: events.append(("emit", tuple(records))),
     )
 
     downloaded = await pipeline.scan_for_new_volumes_once()
 
     assert downloaded == [_record("KTLH", "999", "20260507-150000")]
-    assert events == [
-        ("ingest", "KTLH", "999"),
-        ("emit", (_record("KTLH", "999", "20260507-150000"),)),
-    ]
+    assert events == [("ingest", "KTLH", "999")]
 
 
 @pytest.mark.asyncio
 async def test_pipeline_adds_incomplete_volume_to_pending_without_emitting(tmp_path):
     fs.initialize_filesystem(tmp_path)
-    emitted = []
     ingested = []
     pipeline = NexradRealtimeIngestionPipeline(
         base_dir=tmp_path,
@@ -110,7 +105,6 @@ async def test_pipeline_adds_incomplete_volume_to_pending_without_emitting(tmp_p
         async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
         async_chunk_lister=lambda *_args, **_kwargs: _return(_chunks(last_number=24)),
         async_ingest_trigger=lambda *_args, **_kwargs: _track_call(ingested),
-        download_emitter=lambda records: emitted.append(tuple(records)),
     )
 
     downloaded = await pipeline.scan_for_new_volumes_once()
@@ -118,13 +112,11 @@ async def test_pipeline_adds_incomplete_volume_to_pending_without_emitting(tmp_p
     assert downloaded == []
     assert list(pipeline.pending_tracker.pending) == [("KTLH", "999")]
     assert ingested == []
-    assert emitted == []
 
 
 @pytest.mark.asyncio
 async def test_pipeline_tracks_incomplete_ingest_for_followup_completion(tmp_path):
     fs.initialize_filesystem(tmp_path)
-    emitted = []
     ingest_calls = []
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
@@ -139,7 +131,6 @@ async def test_pipeline_tracks_incomplete_ingest_for_followup_completion(tmp_pat
         async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
         async_chunk_lister=lambda *_args, **_kwargs: _return(_chunks()),
         async_ingest_trigger=_ingest_trigger,
-        download_emitter=lambda records: emitted.append(tuple(records)),
     )
 
     first_downloaded = await pipeline.scan_for_new_volumes_once()
@@ -151,13 +142,11 @@ async def test_pipeline_tracks_incomplete_ingest_for_followup_completion(tmp_pat
     assert second_downloaded == [_record("KTLH", "999", "20260507-150000")]
     assert pipeline.pending_tracker.pending == {}
     assert ingest_calls == [("KTLH", "999", 0), ("KTLH", "999", 1)]
-    assert emitted == [(_record("KTLH", "999", "20260507-150000"),)]
 
 
 @pytest.mark.asyncio
 async def test_pipeline_rechecks_pending_and_downloads_when_chunks_complete(tmp_path):
     fs.initialize_filesystem(tmp_path)
-    emitted = []
     ingested = []
     chunk_calls = []
 
@@ -177,7 +166,6 @@ async def test_pipeline_rechecks_pending_and_downloads_when_chunks_complete(tmp_
         async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
         async_chunk_lister=_chunk_lister,
         async_ingest_trigger=_ingest_trigger,
-        download_emitter=lambda sites: emitted.append(tuple(sites)),
     )
 
     await pipeline.scan_for_new_volumes_once()
@@ -185,14 +173,12 @@ async def test_pipeline_rechecks_pending_and_downloads_when_chunks_complete(tmp_
 
     assert downloaded == [_record("KTLH", "999", "20260507-150000")]
     assert ingested == [("KTLH", "999")]
-    assert emitted == [(_record("KTLH", "999", "20260507-150000"),)]
     assert pipeline.pending_tracker.pending == {}
 
 
 @pytest.mark.asyncio
-async def test_pipeline_emits_downloaded_sites_for_multiple_scan_completions(tmp_path):
+async def test_pipeline_returns_multiple_scan_completions(tmp_path):
     fs.initialize_filesystem(tmp_path)
-    emitted = []
 
     async def _ingest_trigger(site, volume_id, **_kwargs):
         return NexradIngestResult(site=site, volume_id=volume_id, vcp=212, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000" if site == "KTLH" else "20260507-150100", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
@@ -203,7 +189,6 @@ async def test_pipeline_emits_downloaded_sites_for_multiple_scan_completions(tmp
         async_volume_lister=lambda site, **_kwargs: _return(["999"] if site == "KTLH" else ["123"]),
         async_chunk_lister=lambda site, volume_id, **_kwargs: _return(_chunks(site=site, volume_id=volume_id)),
         async_ingest_trigger=_ingest_trigger,
-        download_emitter=lambda records: emitted.append(tuple(records)),
     )
 
     downloaded = await pipeline.scan_for_new_volumes_once()
@@ -212,7 +197,6 @@ async def test_pipeline_emits_downloaded_sites_for_multiple_scan_completions(tmp
         _record("KDGX", "123", "20260507-150100"),
         _record("KTLH", "999", "20260507-150000"),
     ]
-    assert emitted == [tuple(downloaded)]
 
 
 @pytest.mark.asyncio
@@ -321,22 +305,19 @@ async def test_pipeline_removes_local_complete_pending_without_duplicate_ingest(
 
 
 @pytest.mark.asyncio
-async def test_pipeline_does_not_emit_for_failed_ingest(tmp_path):
+async def test_pipeline_returns_no_records_for_failed_ingest(tmp_path):
     fs.initialize_filesystem(tmp_path)
-    emitted = []
     pipeline = NexradRealtimeIngestionPipeline(
         base_dir=tmp_path,
         station_fetcher=lambda **_kwargs: {"KTLH": _station()},
         async_volume_lister=lambda *_args, **_kwargs: _return(["999"]),
         async_chunk_lister=lambda *_args, **_kwargs: _return(_chunks()),
         async_ingest_trigger=lambda *_args, **_kwargs: _return(None),
-        download_emitter=lambda sites: emitted.append(tuple(sites)),
     )
 
     downloaded = await pipeline.scan_for_new_volumes_once()
 
     assert downloaded == []
-    assert emitted == []
 
 
 @pytest.mark.asyncio

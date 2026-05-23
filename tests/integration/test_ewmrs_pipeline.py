@@ -276,25 +276,28 @@ def test_cleanup_old_gui_files_uses_dynamic_render_configuration(monkeypatch, tm
 def test_cleanup_old_gui_files_prunes_old_nexrad_site_timestamps(monkeypatch, tmp_path):
     active_dir = tmp_path / "active"
     nexrad_root = tmp_path / "gui" / "NEXRAD"
-    stale_timestamp_dir = nexrad_root / "KTLH" / "20260317-170000"
-    fresh_timestamp_dir = nexrad_root / "KTLH" / "20260317-193000"
-    empty_site_timestamp_dir = nexrad_root / "KJAX" / "20260317-160000"
+    stale_elevation_dir = nexrad_root / "KTLH" / "0.5"
+    fresh_elevation_dir = nexrad_root / "KTLH" / "0.9"
+    empty_site_elevation_dir = nexrad_root / "KJAX" / "0.5"
 
     active_dir.mkdir()
-    (stale_timestamp_dir / "0.5").mkdir(parents=True)
-    (fresh_timestamp_dir / "0.5").mkdir(parents=True)
-    (empty_site_timestamp_dir / "0.5").mkdir(parents=True)
+    stale_elevation_dir.mkdir(parents=True)
+    fresh_elevation_dir.mkdir(parents=True)
+    empty_site_elevation_dir.mkdir(parents=True)
 
-    (stale_timestamp_dir / "0.5" / "DBZH.bin.gz").write_bytes(b"stale")
-    (fresh_timestamp_dir / "0.5" / "DBZH.bin.gz").write_bytes(b"fresh")
-    (empty_site_timestamp_dir / "0.5" / "DBZH.bin.gz").write_bytes(b"empty-site")
+    stale_file = stale_elevation_dir / "KTLH_DBZH_0.5_20260317-170000.bin.gz"
+    fresh_file = fresh_elevation_dir / "KTLH_DBZH_0.9_20260317-193000.bin.gz"
+    empty_site_file = empty_site_elevation_dir / "KJAX_DBZH_0.5_20260317-160000.bin.gz"
+    stale_file.write_bytes(b"stale")
+    fresh_file.write_bytes(b"fresh")
+    empty_site_file.write_bytes(b"empty-site")
 
     now = 1_800_000_000
     stale_mtime = now - (3 * 60 * 60)
     fresh_mtime = now - (30 * 60)
-    os.utime(stale_timestamp_dir, (stale_mtime, stale_mtime))
-    os.utime(empty_site_timestamp_dir, (stale_mtime, stale_mtime))
-    os.utime(fresh_timestamp_dir, (fresh_mtime, fresh_mtime))
+    os.utime(stale_file, (stale_mtime, stale_mtime))
+    os.utime(empty_site_file, (stale_mtime, stale_mtime))
+    os.utime(fresh_file, (fresh_mtime, fresh_mtime))
 
     monkeypatch.setattr(ewmrs_pipeline, "get_file_list", lambda: [{"outdir": active_dir}])
     monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", nexrad_root)
@@ -302,9 +305,66 @@ def test_cleanup_old_gui_files_prunes_old_nexrad_site_timestamps(monkeypatch, tm
 
     ewmrs_pipeline.cleanup_old_gui_files(max_age_minutes=120)
 
-    assert not stale_timestamp_dir.exists()
-    assert fresh_timestamp_dir.exists()
+    assert not stale_elevation_dir.exists()
+    assert fresh_elevation_dir.exists()
     assert not (nexrad_root / "KJAX").exists()
+
+
+def test_render_pending_nexrad_gui_files_skips_existing_same_timestamp(monkeypatch, tmp_path):
+    nexrad_root = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5"
+    gui_root = tmp_path / "gui" / "NEXRAD"
+    artifact_path = nexrad_root / "KTLH_0.5_20260507-150001.nc"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_bytes(b"artifact")
+    artifact_path.with_suffix(".json").write_text(json.dumps({
+        "site": "KTLH",
+        "volume_id": "999",
+        "scan_timestamp": "20260507-150000",
+        "elevation": "0.5",
+        "elevation_timestamp": "20260507-150001",
+    }))
+    existing_output = gui_root / "KTLH" / "0.5" / "KTLH_DBZH_0.5_20260507-150001.bin.gz"
+    existing_output.parent.mkdir(parents=True, exist_ok=True)
+    existing_output.write_bytes(b"existing")
+
+    calls = []
+    monkeypatch.setattr(ewmrs_pipeline.fs, "NEXRAD_LEVEL2_DIR", tmp_path / "data" / "NEXRAD_Level2")
+    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", gui_root)
+    monkeypatch.setattr("EWMRS.render.nexrad.serialize_nexrad_elevation_artifacts", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    rendered = ewmrs_pipeline.render_pending_nexrad_gui_files()
+
+    assert rendered == 0
+    assert calls == []
+
+
+def test_render_pending_nexrad_gui_files_skips_stale_source_artifacts(monkeypatch, tmp_path):
+    nexrad_root = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5"
+    gui_root = tmp_path / "gui" / "NEXRAD"
+    artifact_path = nexrad_root / "KTLH_0.5_20260507-150001.nc"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_bytes(b"artifact")
+    artifact_path.with_suffix(".json").write_text(json.dumps({
+        "site": "KTLH",
+        "volume_id": "999",
+        "scan_timestamp": "20260507-150000",
+        "elevation": "0.5",
+        "elevation_timestamp": "20260507-150001",
+    }))
+
+    calls = []
+    now = 1_800_000_000
+    stale_mtime = now - (3 * 60 * 60)
+    os.utime(artifact_path, (stale_mtime, stale_mtime))
+    monkeypatch.setattr(ewmrs_pipeline.fs, "NEXRAD_LEVEL2_DIR", tmp_path / "data" / "NEXRAD_Level2")
+    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", gui_root)
+    monkeypatch.setattr(ewmrs_pipeline.time, "time", lambda: now)
+    monkeypatch.setattr("EWMRS.render.nexrad.serialize_nexrad_elevation_artifacts", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    rendered = ewmrs_pipeline.render_pending_nexrad_gui_files()
+
+    assert rendered == 0
+    assert calls == []
 
 
 def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monkeypatch):

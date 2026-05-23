@@ -58,6 +58,14 @@ NEXRAD_VARIABLE_COLORMAP_KEYS = {
 }
 
 
+def nexrad_render_site_dir(site: str) -> Path:
+    return fs.GUI_NEXRAD_DIR / str(site).upper()
+
+
+def nexrad_render_manifest_dir(site: str) -> Path:
+    return nexrad_render_site_dir(site) / "render"
+
+
 def _normalize_scan_name(scan_name: str | None) -> str | None:
     if scan_name is None:
         return None
@@ -89,12 +97,21 @@ def _resolve_operational_elevation_label(scan_name: str | None, sweep_index: int
     return None
 
 
-def nexrad_render_elevation_dir(site: str, scan_timestamp: str, elevation_label: str) -> Path:
-    return fs.GUI_NEXRAD_DIR / str(site).upper() / str(scan_timestamp) / str(elevation_label)
+def nexrad_render_elevation_dir(site: str, elevation_label: str) -> Path:
+    return nexrad_render_site_dir(site) / str(elevation_label)
+
+
+def nexrad_render_variable_bin_name(site: str, scan_timestamp: str, elevation_label: str, variable_name: str) -> str:
+    return f"{str(site).upper()}_{variable_name}_{elevation_label}_{scan_timestamp}.bin.gz"
 
 
 def nexrad_render_variable_bin_path(site: str, scan_timestamp: str, elevation_label: str, variable_name: str) -> Path:
-    return nexrad_render_elevation_dir(site, scan_timestamp, elevation_label) / f"{variable_name}.bin.gz"
+    return nexrad_render_elevation_dir(site, elevation_label) / nexrad_render_variable_bin_name(
+        site,
+        scan_timestamp,
+        elevation_label,
+        variable_name,
+    )
 
 
 def _should_serialize_variable(sweep, variable_name: str) -> bool:
@@ -125,8 +142,7 @@ def serialize_nexrad_render_intermediate(
     volume_path: Path,
     parsed_volume,
 ) -> Path:
-    scan_dir = Path(volume_path).parent
-    render_dir = scan_dir / "render"
+    render_dir = nexrad_render_manifest_dir(site)
     render_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_layers = []
@@ -155,7 +171,7 @@ def serialize_nexrad_render_intermediate(
                 dense_data = values.T.astype(np.float16, copy=False)
 
                 layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
-                elevation_dir = nexrad_render_elevation_dir(site, scan_timestamp, canonical_elevation)
+                elevation_dir = nexrad_render_elevation_dir(site, canonical_elevation)
                 elevation_dir.mkdir(parents=True, exist_ok=True)
                 bin_path = nexrad_render_variable_bin_path(site, scan_timestamp, canonical_elevation, variable_name)
                 _write_nexrad_variable_bin(bin_path, dense_data, azimuths, ranges)
@@ -179,7 +195,7 @@ def serialize_nexrad_render_intermediate(
                     }
                 )
 
-    manifest_path = render_dir / "manifest.json"
+    manifest_path = render_dir / f"{str(site).upper()}_{scan_timestamp}_{volume_id}.json"
     manifest_payload = {
         "site": str(site).upper(),
         "volume_id": str(volume_id),
@@ -201,18 +217,23 @@ def serialize_nexrad_elevation_artifacts(
 ) -> Path:
     """Serialize render intermediates from grouped elevation artifacts.
 
-    Reads pre-written elevation NetCDF or AR2V files and produces GUI bin.gz outputs,
-    keeping the GUI output contract unchanged:
-        gui/NEXRAD/<SITE>/<SCAN_TIMESTAMP>/<ELEVATION>/<VARIABLE>.bin.gz
+    Reads pre-written elevation NetCDF or AR2V files and produces GUI bin.gz outputs:
+        gui/NEXRAD/<SITE>/<ELEVATION>/<SITE>_<VARIABLE>_<ELEVATION>_<TIMESTAMP>.bin.gz
     """
-    render_dir = fs.GUI_NEXRAD_DIR / str(site).upper() / str(scan_timestamp) / "render"
+    render_dir = nexrad_render_manifest_dir(site)
     render_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_layers = []
+    manifest_timestamp = scan_timestamp
     for artifact in elevation_artifacts:
         elevation_label = artifact.elevation
         if elevation_label not in OPERATIONAL_ELEVATION_LABELS:
             continue
+
+        artifact_timestamp = artifact.elevation_timestamp or artifact.scan_timestamp or scan_timestamp
+        if artifact_timestamp is None:
+            continue
+        manifest_timestamp = manifest_timestamp or artifact_timestamp
 
         artifact_path = None
         if artifact.netcdf_path:
@@ -227,7 +248,7 @@ def serialize_nexrad_elevation_artifacts(
         except Exception:
             continue
 
-        elevation_dir = nexrad_render_elevation_dir(site, scan_timestamp, elevation_label)
+        elevation_dir = nexrad_render_elevation_dir(site, elevation_label)
         elevation_dir.mkdir(parents=True, exist_ok=True)
 
         for group_name in sorted(g for g in datatree.groups if g.startswith("/sweep_")):
@@ -249,15 +270,16 @@ def serialize_nexrad_elevation_artifacts(
                 dense_data = values.T.astype(np.float16, copy=False)
 
                 layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
-                bin_path = nexrad_render_variable_bin_path(site, scan_timestamp, elevation_label, variable_name)
-                _write_nexrad_variable_bin(bin_path, dense_data, azimuths, ranges)
+                bin_path = nexrad_render_variable_bin_path(site, artifact_timestamp, elevation_label, variable_name)
+                if not bin_path.exists():
+                    _write_nexrad_variable_bin(bin_path, dense_data, azimuths, ranges)
 
                 manifest_layers.append(
                     {
                         "name": layer_name,
                         "site": str(site).upper(),
                         "volume_id": str(volume_id),
-                        "scan_timestamp": scan_timestamp,
+                        "scan_timestamp": artifact_timestamp,
                         "sweep_index": sweep_index,
                         "sweep_group": group_name,
                         "canonical_elevation": elevation_label,
@@ -270,11 +292,11 @@ def serialize_nexrad_elevation_artifacts(
                     }
                 )
 
-    manifest_path = render_dir / "manifest.json"
+    manifest_path = render_dir / f"{str(site).upper()}_{manifest_timestamp or 'unknown'}_{volume_id}.json"
     manifest_payload = {
         "site": str(site).upper(),
         "volume_id": str(volume_id),
-        "scan_timestamp": scan_timestamp,
+        "scan_timestamp": manifest_timestamp,
         "source": "elevation_artifacts",
         "layers": manifest_layers,
     }
@@ -289,12 +311,14 @@ def _open_elevation_datatree(path: Path):
 
         return open_partial_volume(path)
 
+    import netCDF4
     import xarray as xr
     import warnings
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        ds = xr.open_dataset(path)
+    with netCDF4.Dataset(path) as handle:
+        group_names = [f"/{name}" for name in handle.groups.keys()]
+    if not group_names:
+        group_names = ["/sweep_00"]
 
     class _Node:
         def __init__(self, dataset):
@@ -308,11 +332,26 @@ def _open_elevation_datatree(path: Path):
             return self._ds
 
     class _DataTree:
-        def __init__(self, root_ds):
-            self._root = root_ds
-            self.groups = []
+        def __init__(self, dataset_path: Path, groups: list[str]):
+            self._dataset_path = dataset_path
+            self.groups = groups
+            self._cache: dict[str, _Node] = {}
 
         def __getitem__(self, key):
-            return _Node(self._root)
+            normalized = str(key).lstrip("/")
+            cache_key = normalized or "/"
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
 
-    return _DataTree(ds)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                if normalized:
+                    dataset = xr.open_dataset(self._dataset_path, group=normalized)
+                else:
+                    dataset = xr.open_dataset(self._dataset_path)
+            node = _Node(dataset)
+            self._cache[cache_key] = node
+            return node
+
+    return _DataTree(path, group_names)

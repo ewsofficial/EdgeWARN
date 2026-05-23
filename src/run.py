@@ -26,7 +26,7 @@ from common.pipeline.goes_readiness import (
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN import initialize_runtime
 from EdgeWARN.pipeline import edgewarn_tandem_worker
-from EWMRS.pipeline import ewmrs_goes_worker, ewmrs_tandem_worker
+from EWMRS.pipeline import ewmrs_goes_worker, ewmrs_tandem_worker, run_nexrad_render_loop
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
 from util.release import get_release_version
@@ -153,6 +153,13 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
 def nexrad_ingest_loop():
     try:
         run_realtime_ingestion_pipeline(base_dir=args.base_dir)
+    except KeyboardInterrupt:
+        return
+
+
+def nexrad_render_loop():
+    try:
+        run_nexrad_render_loop(base_dir=args.base_dir)
     except KeyboardInterrupt:
         return
 
@@ -520,6 +527,7 @@ def main():
         args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
         daemon=True,
     ) if EWMRS_ENABLED and GOES_ENABLED else None
+    nexrad_render_proc = multiprocessing.Process(target=nexrad_render_loop, daemon=True) if EWMRS_ENABLED else None
     # NEXRAD ingest uses a ProcessPoolExecutor for parser workers, so this
     # process must not be daemonic or child worker creation will fail.
     nexrad_ingest_proc = multiprocessing.Process(target=nexrad_ingest_loop, daemon=False) if EWMRS_ENABLED else None
@@ -533,6 +541,8 @@ def main():
         goes_proc.start()
     if goes_render_proc is not None:
         goes_render_proc.start()
+    if nexrad_render_proc is not None:
+        nexrad_render_proc.start()
     if nexrad_ingest_proc is not None:
         nexrad_ingest_proc.start()
 
@@ -542,6 +552,7 @@ def main():
         (wpc_proc, "WPC"),
         (goes_proc, "GOES"),
         (goes_render_proc, "GOES Render"),
+        (nexrad_render_proc, "NEXRAD Render"),
         (nexrad_ingest_proc, "NEXRAD Ingest"),
     ]
 

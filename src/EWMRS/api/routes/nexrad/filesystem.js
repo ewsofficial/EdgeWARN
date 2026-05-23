@@ -56,42 +56,83 @@ export async function listSafeDirectories(root, predicate) {
     .sort();
 }
 
-export async function listTimestampDirectories(siteDir) {
-  const timestamps = await listSafeDirectories(siteDir, isSafeNexradTimestamp);
-  return timestamps.sort().reverse();
+function buildNexradProductFilename(site, product, elevation, timestamp) {
+  return `${site}_${product}_${elevation}_${timestamp}.bin.gz`;
 }
 
-async function hasAllowedProductFiles(elevationDir) {
+function parseNexradProductFilename(site, elevation, fileName) {
+  if (!fileName.endsWith('.bin.gz')) {
+    return null;
+  }
+
+  const prefix = `${site}_`;
+  const infix = `_${elevation}_`;
+  if (!fileName.startsWith(prefix) || !fileName.endsWith('.bin.gz')) {
+    return null;
+  }
+
+  const stem = fileName.slice(0, -'.bin.gz'.length);
+  const infixIndex = stem.lastIndexOf(infix);
+  if (infixIndex <= prefix.length) {
+    return null;
+  }
+
+  const product = stem.slice(prefix.length, infixIndex);
+  const timestamp = stem.slice(infixIndex + infix.length);
+  if (!ALLOWED_NEXRAD_PRODUCTS.has(product) || !isSafeNexradTimestamp(timestamp)) {
+    return null;
+  }
+
+  return { product, timestamp };
+}
+
+async function listTimestampEntriesForElevation(site, elevation, elevationDir) {
   const entries = await fs.readdir(elevationDir, { withFileTypes: true });
-  return entries.some((entry) => entry.isFile() && ALLOWED_NEXRAD_PRODUCTS.has(path.basename(entry.name, '.bin.gz')) && entry.name.endsWith('.bin.gz'));
+  const timestamps = new Set();
+
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const parsed = parseNexradProductFilename(site, elevation, entry.name);
+    if (parsed !== null) {
+      timestamps.add(parsed.timestamp);
+    }
+  }
+
+  return [...timestamps].sort().reverse();
 }
 
-export async function listElevationsWithAllowedProducts(timestampDir) {
-  const entries = await fs.readdir(timestampDir, { withFileTypes: true });
-  const elevations = [];
+export async function listSiteTimestampElevations(siteDir, site) {
+  const entries = await fs.readdir(siteDir, { withFileTypes: true });
+  const timestamps = new Map();
 
   for (const entry of entries) {
     if (!entry.isDirectory() || !isSafeNexradElevation(entry.name)) {
       continue;
     }
 
-    const elevationDir = resolveUnder(timestampDir, entry.name);
-    if (await hasAllowedProductFiles(elevationDir)) {
-      elevations.push(parseNexradElevationNumber(entry.name));
+    const elevationDir = resolveUnder(siteDir, entry.name);
+    for (const timestamp of await listTimestampEntriesForElevation(site, entry.name, elevationDir)) {
+      const elevations = timestamps.get(timestamp) || new Set();
+      elevations.add(parseNexradElevationNumber(entry.name));
+      timestamps.set(timestamp, elevations);
     }
   }
 
-  return elevations.sort((left, right) => left - right);
+  return Object.fromEntries(
+    [...timestamps.entries()]
+      .sort(([left], [right]) => right.localeCompare(left))
+      .map(([timestamp, elevations]) => [timestamp, [...elevations].sort((left, right) => left - right)])
+  );
 }
 
-export async function siteHasAnyData(siteDir) {
-  const timestamps = await listTimestampDirectories(siteDir);
-  for (const timestamp of timestamps) {
-    const timestampDir = resolveUnder(siteDir, timestamp);
-    const elevations = await listElevationsWithAllowedProducts(timestampDir);
-    if (elevations.length > 0) {
-      return true;
-    }
-  }
-  return false;
+export async function siteHasAnyData(siteDir, site) {
+  const timestampMap = await listSiteTimestampElevations(siteDir, site);
+  return Object.keys(timestampMap).length > 0;
+}
+
+export function resolveNexradProductFile(nexradRoot, site, timestamp, elevation, product) {
+  return resolveUnder(nexradRoot, site, elevation, buildNexradProductFilename(site, product, elevation, timestamp));
 }

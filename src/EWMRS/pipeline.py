@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -51,6 +52,11 @@ _RUNTIME_CONFIGURED = False
 _GOES_CLEANUP_MIN_INTERVAL_SECONDS = max(0.0, float(os.environ.get("EWMRS_GOES_CLEANUP_MIN_INTERVAL_SECONDS", "300")))
 _LAST_GOES_GUI_CLEANUP_S = 0.0
 _LAST_GOES_GUI_CLEANUP_FUNC_ID: int | None = None
+_NEXRAD_GUI_RETENTION_MINUTES = 120
+_NEXRAD_SITE_DIR_PATTERN = re.compile(r"^[A-Z0-9]{4}$")
+_NEXRAD_ELEVATION_DIR_PATTERN = re.compile(r"^\d{1,3}(?:\.\d{1,2})?$")
+_NEXRAD_TIMESTAMP_PATTERN = re.compile(r"^\d{8}-\d{6}$")
+_NEXRAD_POLL_INTERVAL_SECONDS = 30.0
 
 
 def _load_timestamp_tile_index(tile_dir: Path) -> tuple[list[list[int]], dict | None] | None:
@@ -324,8 +330,7 @@ def _normalize_render_timestamp(timestamp_iso: str) -> str:
 
 
 def _cleanup_old_nexrad_gui_files(max_age_minutes: int = 120) -> int:
-    """Remove stale NEXRAD site timestamp folders and empty site directories."""
-    import shutil
+    """Remove stale NEXRAD GUI files and empty site/elevation directories."""
 
     nexrad_root = Path(fs.GUI_NEXRAD_DIR)
     if not nexrad_root.exists():
@@ -336,23 +341,32 @@ def _cleanup_old_nexrad_gui_files(max_age_minutes: int = 120) -> int:
     total_removed = 0
 
     for site_dir in nexrad_root.iterdir():
-        if not site_dir.is_dir() or site_dir.name.startswith("."):
+        if not site_dir.is_dir() or site_dir.name.startswith(".") or not _NEXRAD_SITE_DIR_PATTERN.fullmatch(site_dir.name):
             continue
 
-        for timestamp_dir in site_dir.iterdir():
-            if not timestamp_dir.is_dir() or timestamp_dir.name.startswith("."):
+        for child_dir in site_dir.iterdir():
+            if not child_dir.is_dir() or child_dir.name.startswith("."):
+                continue
+            if child_dir.name != "render" and not _NEXRAD_ELEVATION_DIR_PATTERN.fullmatch(child_dir.name):
                 continue
 
             try:
-                folder_age = now - timestamp_dir.stat().st_mtime
-                if folder_age <= max_age_seconds:
-                    continue
+                for child_file in child_dir.iterdir():
+                    if not child_file.is_file() or child_file.name.startswith("."):
+                        continue
+                    file_age = now - child_file.stat().st_mtime
+                    if file_age <= max_age_seconds:
+                        continue
+                    child_file.unlink(missing_ok=True)
+                    total_removed += 1
+                    io_manager.write_debug(f"Removed old NEXRAD GUI file: {child_file}")
 
-                shutil.rmtree(timestamp_dir)
-                total_removed += 1
-                io_manager.write_debug(f"Removed old NEXRAD timestamp folder: {timestamp_dir}")
+                if not any(child_dir.iterdir()):
+                    child_dir.rmdir()
+                    total_removed += 1
+                    io_manager.write_debug(f"Removed empty NEXRAD directory: {child_dir}")
             except Exception as exc:
-                io_manager.write_warning(f"Failed to process NEXRAD folder {timestamp_dir}: {exc}")
+                io_manager.write_warning(f"Failed to process NEXRAD directory {child_dir}: {exc}")
 
         try:
             if any(site_dir.iterdir()):
@@ -365,6 +379,143 @@ def _cleanup_old_nexrad_gui_files(max_age_minutes: int = 120) -> int:
             io_manager.write_warning(f"Failed to process NEXRAD site folder {site_dir}: {exc}")
 
     return total_removed
+
+
+def _load_nexrad_artifact_metadata(artifact_path: Path) -> dict | None:
+    sidecar_payload = {}
+    sidecar_path = artifact_path.with_suffix(".json")
+    if sidecar_path.exists():
+        try:
+            loaded = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                sidecar_payload = loaded
+        except Exception:
+            sidecar_payload = {}
+
+    stem_prefix = f"{artifact_path.parent.parent.name}_{artifact_path.parent.name}_"
+    filename_timestamp = artifact_path.stem[len(stem_prefix):] if artifact_path.stem.startswith(stem_prefix) else None
+    timestamp = sidecar_payload.get("elevation_timestamp") or sidecar_payload.get("scan_timestamp") or filename_timestamp
+    if timestamp is None or not _NEXRAD_TIMESTAMP_PATTERN.fullmatch(str(timestamp)):
+        return None
+
+    return {
+        "site": artifact_path.parent.parent.name,
+        "elevation": artifact_path.parent.name,
+        "scan_timestamp": sidecar_payload.get("scan_timestamp") or str(timestamp),
+        "elevation_timestamp": str(timestamp),
+        "volume_id": str(sidecar_payload.get("volume_id") or artifact_path.stem),
+        "artifact_path": artifact_path,
+    }
+
+
+def _nexrad_source_artifact_is_fresh(artifact_path: Path, *, now: float, max_age_minutes: int) -> bool:
+    try:
+        return (now - artifact_path.stat().st_mtime) <= max_age_minutes * 60
+    except OSError:
+        return False
+
+
+def _iter_latest_nexrad_artifacts():
+    nexrad_root = Path(fs.NEXRAD_LEVEL2_DIR)
+    if not nexrad_root.exists():
+        return
+
+    for site_dir in sorted(nexrad_root.iterdir(), key=lambda path: path.name):
+        if (
+            not site_dir.is_dir()
+            or site_dir.name.startswith(".")
+            or not _NEXRAD_SITE_DIR_PATTERN.fullmatch(site_dir.name)
+        ):
+            continue
+
+        for elevation_dir in sorted(site_dir.iterdir(), key=lambda path: path.name):
+            if (
+                not elevation_dir.is_dir()
+                or elevation_dir.name.startswith(".")
+                or not _NEXRAD_ELEVATION_DIR_PATTERN.fullmatch(elevation_dir.name)
+            ):
+                continue
+
+            preferred_by_stem: dict[str, Path] = {}
+            for artifact_path in sorted(elevation_dir.iterdir(), key=lambda path: path.name):
+                if not artifact_path.is_file() or artifact_path.suffix not in {".nc", ".ar2v"}:
+                    continue
+                existing = preferred_by_stem.get(artifact_path.stem)
+                if existing is None or (existing.suffix != ".nc" and artifact_path.suffix == ".nc"):
+                    preferred_by_stem[artifact_path.stem] = artifact_path
+
+            for artifact_path in sorted(preferred_by_stem.values(), key=lambda path: path.name):
+                metadata = _load_nexrad_artifact_metadata(artifact_path)
+                if metadata is not None:
+                    yield metadata
+
+
+def _nexrad_gui_timestamp_exists(site: str, elevation: str, timestamp: str) -> bool:
+    from EWMRS.render.nexrad import nexrad_render_elevation_dir
+
+    elevation_dir = nexrad_render_elevation_dir(site, elevation)
+    if not elevation_dir.exists():
+        return False
+    pattern = f"{str(site).upper()}_*_{elevation}_{timestamp}.bin.gz"
+    return any(elevation_dir.glob(pattern))
+
+
+def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: int = _NEXRAD_GUI_RETENTION_MINUTES) -> int:
+    from EWMRS.render.nexrad import serialize_nexrad_elevation_artifacts
+    from common.ingest.nexrad.models import ElevationArtifact
+
+    if base_dir:
+        fs.initialize_filesystem(base_dir)
+
+    rendered_count = 0
+    now = time.time()
+    for metadata in _iter_latest_nexrad_artifacts() or ():
+        site = str(metadata["site"]).upper()
+        elevation = str(metadata["elevation"])
+        timestamp = str(metadata["elevation_timestamp"])
+        artifact_path = Path(metadata["artifact_path"])
+        if not _nexrad_source_artifact_is_fresh(artifact_path, now=now, max_age_minutes=max_source_age_minutes):
+            continue
+        if _nexrad_gui_timestamp_exists(site, elevation, timestamp):
+            continue
+
+        artifact = ElevationArtifact(
+            site=site,
+            volume_id=str(metadata["volume_id"]),
+            volume_timestamp=str(metadata["scan_timestamp"]),
+            scan_timestamp=str(metadata["scan_timestamp"]),
+            elevation=elevation,
+            elevation_timestamp=timestamp,
+            first_sweep_index=0,
+            last_sweep_index=0,
+            first_sweep_timestamp=None,
+            last_sweep_timestamp=None,
+            member_group_names=[],
+            member_sweeps=[],
+            waveforms_present=set(),
+            supplemental=False,
+            netcdf_path=str(artifact_path) if artifact_path.suffix == ".nc" else None,
+            ar2v_path=str(artifact_path) if artifact_path.suffix == ".ar2v" else None,
+        )
+        serialize_nexrad_elevation_artifacts(site, str(metadata["volume_id"]), str(metadata["scan_timestamp"]), [artifact])
+        if _nexrad_gui_timestamp_exists(site, elevation, timestamp):
+            rendered_count += 1
+
+    return rendered_count
+
+
+def run_nexrad_render_loop(*, base_dir=None, poll_interval_seconds: float = _NEXRAD_POLL_INTERVAL_SECONDS) -> None:
+    poll_interval_seconds = max(1.0, float(poll_interval_seconds))
+    while True:
+        try:
+            rendered = render_pending_nexrad_gui_files(base_dir=base_dir)
+            if rendered > 0:
+                io_manager.write_info(f"NEXRAD render poll cycle wrote {rendered} artifact(s)")
+        except KeyboardInterrupt:
+            return
+        except Exception as exc:
+            io_manager.write_warning(f"NEXRAD render poll cycle failed: {exc}")
+        time.sleep(poll_interval_seconds)
 
 
 def cleanup_old_gui_files(max_age_minutes: int = 120):
