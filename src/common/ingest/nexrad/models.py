@@ -81,12 +81,16 @@ class ElevationGroup:
 class ElevationArtifact:
     site: str
     volume_id: str
+    volume_timestamp: str | None
     scan_timestamp: str | None
     elevation: str
     elevation_timestamp: str | None
     first_sweep_index: int
     last_sweep_index: int
+    first_sweep_timestamp: str | None
+    last_sweep_timestamp: str | None
     member_group_names: list[str]
+    member_sweeps: list[dict[str, Any]]
     waveforms_present: set[str]
     supplemental: bool
     netcdf_path: str | None = None
