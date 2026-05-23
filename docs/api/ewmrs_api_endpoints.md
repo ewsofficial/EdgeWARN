@@ -198,7 +198,7 @@ NEXRAD render intermediates are served from `<BASE_DIR>/gui/NEXRAD`.
 Runtime layout:
 
 ```text
-<BASE_DIR>/gui/NEXRAD/<SITE>/<YYYYMMDD-HHMMSS>/<ELEVATION>/<PRODUCT>.bin.gz
+<BASE_DIR>/gui/NEXRAD/<SITE>/<ELEVATION>/<SITE>_<PRODUCT>_<ELEVATION>_<YYYYMMDD-HHMMSS>.bin.gz
 ```
 
 Allowed products:
@@ -222,7 +222,15 @@ Security and validation rules:
 
 ### GET /nexrad
 
-Returns active radar site folders that contain at least one valid timestamp/elevation/product path.
+Returns active radar site folders that contain at least one valid NEXRAD GUI file.
+
+Runtime layout:
+
+```text
+<BASE_DIR>/gui/NEXRAD/<SITE>/<ELEVATION>/<SITE>_<PRODUCT>_<ELEVATION>_<YYYYMMDD-HHMMSS>.bin.gz
+```
+
+EWMRS populates these files by polling local ingest outputs under `<BASE_DIR>/data/NEXRAD_Level2` every 30 seconds. If a same-timestamp GUI file already exists for an elevation artifact, that artifact is skipped instead of being re-rendered.
 
 Responses:
 
@@ -236,7 +244,7 @@ Example:
 
 ### GET /nexrad/{site}
 
-Returns valid timestamps for one radar site mapped to their available elevations.
+Returns valid timestamps for one radar site mapped to their available elevations. Timestamps are parsed from NEXRAD GUI filenames rather than timestamp-named directories.
 
 Responses:
 
@@ -399,7 +407,7 @@ else:
 NEXRAD intermediate outputs are served from:
 
 ```text
-<BASE_DIR>/gui/NEXRAD/<SITE>/<YYYYMMDD-HHMMSS>/<ELEVATION>/<VARIABLE>.bin.gz
+<BASE_DIR>/gui/NEXRAD/<SITE>/<ELEVATION>/<SITE>_<VARIABLE>_<ELEVATION>_<YYYYMMDD-HHMMSS>.bin.gz
 ```
 
 Each `.bin.gz` payload decompresses to:

@@ -4,9 +4,9 @@ import {
   directoryExists,
   fileExists,
   getNexradRoot,
-  listElevationsWithAllowedProducts,
+  listSiteTimestampElevations,
   listSafeDirectories,
-  listTimestampDirectories,
+  resolveNexradProductFile,
   resolveUnder,
   siteHasAnyData,
 } from './filesystem.js';
@@ -33,7 +33,7 @@ router.get('/', async (req, res) => {
 
     for (const site of candidateSites) {
       const siteDir = resolveUnder(nexradRoot, site);
-      if (await siteHasAnyData(siteDir)) {
+      if (await siteHasAnyData(siteDir, site)) {
         sites.push(site);
       }
     }
@@ -67,16 +67,7 @@ router.get('/:site/', async (req, res) => {
       return res.status(404).json({ error: 'NEXRAD site not found', site });
     }
 
-    const timestamps = await listTimestampDirectories(siteDir);
-    const payload = {};
-
-    for (const timestamp of timestamps) {
-      const timestampDir = resolveUnder(siteDir, timestamp);
-      const elevations = await listElevationsWithAllowedProducts(timestampDir);
-      if (elevations.length > 0) {
-        payload[timestamp] = elevations;
-      }
-    }
+    const payload = await listSiteTimestampElevations(siteDir, site);
 
     res.set('Cache-Control', 'public, max-age=5');
     res.json(payload);
@@ -113,7 +104,7 @@ router.get('/:site/:timestamp/:elevation', async (req, res) => {
   const nexradRoot = getNexradRoot(req);
 
   try {
-    const filePath = resolveUnder(nexradRoot, site, timestamp, elevation, `${product}.bin.gz`);
+    const filePath = resolveNexradProductFile(nexradRoot, site, timestamp, elevation, product);
     if (!await fileExists(filePath)) {
       return res.status(404).json({ error: 'NEXRAD product file not found', site, timestamp, elevation, product });
     }

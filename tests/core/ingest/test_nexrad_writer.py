@@ -4,8 +4,11 @@ from pathlib import Path
 
 import netCDF4
 import numpy as np
+import util.file as fs
 import xarray as xr
-from EWMRS.render.nexrad import NEXRAD_FIELD_MAGIC, serialize_nexrad_render_intermediate
+from EWMRS.render.nexrad import NEXRAD_FIELD_MAGIC, serialize_nexrad_elevation_artifacts, serialize_nexrad_render_intermediate
+
+from common.ingest.nexrad.models import ElevationArtifact
 
 from common.ingest.nexrad.writer import _dataset_encoding, _write_grouped_netcdf
 
@@ -21,6 +24,7 @@ class _Group:
 class _Tree:
     def __init__(self, dataset):
         self._dataset = dataset
+        self.groups = ["/sweep_00"]
 
     def __getitem__(self, key):
         assert key == "/sweep_00"
@@ -109,6 +113,7 @@ def test_write_grouped_netcdf_preserves_all_variables(tmp_path):
 
 
 def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(tmp_path):
+    fs.initialize_filesystem(tmp_path)
     dataset = xr.Dataset(
         {
             "DBZH": (("azimuth", "range"), np.array([[1.5, np.nan, 2.5], [3.5, 4.5, 5.5]], dtype=np.float32)),
@@ -143,7 +148,7 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
     assert manifest["layers"][0]["canonical_elevation"] == "0.5"
 
     layer = manifest["layers"][0]
-    assert layer["bin_path"].endswith("/gui/NEXRAD/KTLH/20260507-150000/0.5/DBZH.bin.gz")
+    assert layer["bin_path"].endswith("/gui/NEXRAD/KTLH/0.5/KTLH_DBZH_0.5_20260507-150000.bin.gz")
     assert layer["colormap_key"] == "NWS_Reflectivity"
     assert manifest["layers"][1]["colormap_key"] == "VRADH"
     assert manifest["layers"][2]["colormap_key"] is None
@@ -203,6 +208,7 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
 
 
 def test_serialize_nexrad_render_intermediate_skips_dbzh_for_contiguous_doppler_sweeps(tmp_path):
+    fs.initialize_filesystem(tmp_path)
     dataset = xr.Dataset(
         {
             "DBZH": (("azimuth", "range"), np.array([[1.0, 2.0]], dtype=np.float32)),
@@ -234,3 +240,44 @@ def test_serialize_nexrad_render_intermediate_skips_dbzh_for_contiguous_doppler_
     assert [layer["variable_name"] for layer in manifest["layers"]] == ["VRADH", "WRADH"]
     assert all(layer["canonical_elevation"] == "0.5" for layer in manifest["layers"])
     assert [layer["colormap_key"] for layer in manifest["layers"]] == ["VRADH", "WRADH"]
+
+
+def test_serialize_nexrad_elevation_artifacts_uses_artifact_timestamp_and_new_gui_layout(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    dataset = xr.Dataset(
+        {
+            "DBZH": (("azimuth", "range"), np.array([[1.0, 2.0]], dtype=np.float32)),
+        },
+        coords={
+            "azimuth": np.array([0.0], dtype=np.float32),
+            "range": np.array([1000.0, 2000.0], dtype=np.float32),
+        },
+    )
+    artifact_path = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5" / "KTLH_0.5_20260507-150001.nc"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_grouped_netcdf(artifact_path, {}, _Tree(dataset), ["/sweep_00"])
+
+    artifact = ElevationArtifact(
+        site="KTLH",
+        volume_id="999",
+        volume_timestamp="20260507-150000",
+        scan_timestamp="20260507-150000",
+        elevation="0.5",
+        elevation_timestamp="20260507-150001",
+        first_sweep_index=0,
+        last_sweep_index=0,
+        first_sweep_timestamp=None,
+        last_sweep_timestamp=None,
+        member_group_names=[],
+        member_sweeps=[],
+        waveforms_present=set(),
+        supplemental=False,
+        netcdf_path=str(artifact_path),
+    )
+
+    manifest_path = serialize_nexrad_elevation_artifacts("KTLH", "999", "20260507-150000", [artifact])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["scan_timestamp"] == "20260507-150000"
+    assert manifest["layers"][0]["scan_timestamp"] == "20260507-150001"
+    assert manifest["layers"][0]["bin_path"].endswith("/gui/NEXRAD/KTLH/0.5/KTLH_DBZH_0.5_20260507-150001.bin.gz")

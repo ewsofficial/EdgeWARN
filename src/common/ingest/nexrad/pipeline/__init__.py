@@ -9,7 +9,6 @@ from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.s3_chunks import required_volume_chunks
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
-from common.ingest.nexrad.pipeline.emitter import NexradDownloadEmitter
 from common.ingest.nexrad.pipeline.models import PendingVolume
 from common.ingest.nexrad.pipeline.pending import NexradPendingVolumeTracker
 from common.ingest.nexrad.pipeline.station_filter import NexradStationFilter
@@ -37,7 +36,6 @@ class NexradRealtimeIngestionPipeline:
         async_volume_lister=None,
         async_chunk_lister=None,
         async_ingest_trigger=None,
-        download_emitter=None,
         base_dir=None,
         sites=None,
         max_site_tasks=16,
@@ -66,7 +64,6 @@ class NexradRealtimeIngestionPipeline:
         self.async_ingest_trigger = (
             async_ingest_trigger or self._ingest_service.ingest_allowed_vcp_volume_async
         )
-        self.download_emitter = NexradDownloadEmitter(download_emitter)
         self.pending_tracker = NexradPendingVolumeTracker()
         self.last_seen_by_site: dict[str, str] = {}
 
@@ -156,7 +153,6 @@ class NexradRealtimeIngestionPipeline:
                 continue
             if result is not None:
                 downloaded_records.append(result)
-        self.download_emitter.emit_downloaded_sites(downloaded_records)
         return downloaded_records
 
     async def check_pending_once(self, *, s3_client=None, weather_session=None):
@@ -196,7 +192,6 @@ class NexradRealtimeIngestionPipeline:
                 self.pending_tracker.remove(site, volume_id)
                 downloaded_records.append(_completion_record_from_result(result))
 
-        self.download_emitter.emit_downloaded_sites(downloaded_records)
         return downloaded_records
 
     async def run_forever(self, *, s3_client=None, weather_session=None):

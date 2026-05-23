@@ -34,16 +34,16 @@ describe('EWMRS NEXRAD routes', () => {
     app.use('/nexrad', nexradRouter);
 
     await writeFile(path.join(guiDir, 'secret', 'DBZH.bin.gz'), sentinelBytes);
-    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '20260512-004336', '0.5', 'DBZH.bin.gz'), Buffer.from('dbzh-bytes'));
-    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '20260512-004336', '0.9', 'VRADH.bin.gz'), Buffer.from('vradh-bytes'));
-    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '20260512-004753', '1.3', 'PHIDP.bin.gz'), Buffer.from('phidp-bytes'));
-    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLX', '20260512-004336', '0.5', 'ZDR.bin.gz'), Buffer.from('zdr-bytes'));
+    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '0.5', 'KTLH_DBZH_0.5_20260512-004336.bin.gz'), Buffer.from('dbzh-bytes'));
+    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '0.9', 'KTLH_VRADH_0.9_20260512-004336.bin.gz'), Buffer.from('vradh-bytes'));
+    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '1.3', 'KTLH_PHIDP_1.3_20260512-004753.bin.gz'), Buffer.from('phidp-bytes'));
+    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLX', '0.5', 'KTLX_ZDR_0.5_20260512-004336.bin.gz'), Buffer.from('zdr-bytes'));
     await fs.promises.mkdir(path.join(guiDir, 'NEXRAD', 'BAD..'), { recursive: true });
-    await fs.promises.mkdir(path.join(guiDir, 'NEXRAD', 'KTLH', 'bad-ts', '0.5'), { recursive: true });
-    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', 'bad-ts', '0.5', 'DBZH.bin.gz'), Buffer.from('bad'));
-    await fs.promises.mkdir(path.join(guiDir, 'NEXRAD', 'KTLH', '20260512-004336', '0.5..'), { recursive: true });
-    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '20260512-004336', '0.5..', 'DBZH.bin.gz'), Buffer.from('bad-elev'));
-    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '20260512-004336', '0.5', 'NOT_ALLOWED.bin.gz'), Buffer.from('bad-product'));
+    await fs.promises.mkdir(path.join(guiDir, 'NEXRAD', 'KTLH', '0.5..'), { recursive: true });
+    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '0.5..', 'KTLH_DBZH_0.5.._20260512-004336.bin.gz'), Buffer.from('bad-elev'));
+    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '0.5', 'KTLH_NOT_ALLOWED_0.5_20260512-004336.bin.gz'), Buffer.from('bad-product'));
+    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '0.5', 'KTLH_DBZH_0.5_bad-ts.bin.gz'), Buffer.from('bad-ts'));
+    await writeFile(path.join(guiDir, 'NEXRAD', 'KTLH', '0.5', 'KTLX_DBZH_0.5_20260512-004336.bin.gz'), Buffer.from('wrong-site'));
   });
 
   afterEach(async () => {
