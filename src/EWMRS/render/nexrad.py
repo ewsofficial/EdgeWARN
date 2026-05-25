@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 import util.file as fs
+from util.nexrad_loader import open_nexrad_artifact_datatree, open_nexrad_level2_datatree
 
 
 VCP_SWEEP_ELEVATION_LABELS = {
@@ -244,14 +245,21 @@ def serialize_nexrad_elevation_artifacts(
             continue
 
         try:
-            datatree = _open_elevation_datatree(artifact_path)
+            if artifact_path.suffix == ".ar2v":
+                datatree = open_nexrad_artifact_datatree(
+                    artifact_path=artifact_path,
+                    site=site,
+                    volume_id=volume_id,
+                )
+            else:
+                datatree = _open_elevation_datatree(artifact_path)
         except Exception:
             continue
 
         elevation_dir = nexrad_render_elevation_dir(site, elevation_label)
         elevation_dir.mkdir(parents=True, exist_ok=True)
 
-        for group_name in sorted(g for g in datatree.groups if g.startswith("/sweep_")):
+        for group_name in _iter_artifact_group_names(artifact, datatree):
             node = datatree[group_name]
             dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
             if "azimuth" not in dataset.coords or "range" not in dataset.coords:
@@ -304,12 +312,18 @@ def serialize_nexrad_elevation_artifacts(
     return manifest_path
 
 
+def _iter_artifact_group_names(artifact, datatree) -> list[str]:
+    available = {str(group_name) for group_name in getattr(datatree, "groups", [])}
+    requested = [str(group_name) for group_name in getattr(artifact, "member_group_names", []) if str(group_name) in available]
+    if requested:
+        return sorted(requested)
+    return sorted(g for g in available if g.startswith("/sweep_"))
+
+
 def _open_elevation_datatree(path: Path):
     """Open an elevation NetCDF or AR2V as a datatree-like structure."""
     if path.suffix == ".ar2v":
-        from common.ingest.nexrad.parser import open_partial_volume
-
-        return open_partial_volume(path)
+        return open_nexrad_level2_datatree(path)
 
     import netCDF4
     import xarray as xr
