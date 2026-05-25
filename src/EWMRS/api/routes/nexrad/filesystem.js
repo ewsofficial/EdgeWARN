@@ -104,9 +104,9 @@ async function listTimestampEntriesForElevation(site, elevation, elevationDir) {
   return [...timestamps].sort().reverse();
 }
 
-export async function listSiteTimestampElevations(siteDir, site) {
+export async function listSiteElevationTimestamps(siteDir, site) {
   const entries = await fs.readdir(siteDir, { withFileTypes: true });
-  const timestamps = new Map();
+  const elevations = new Map();
 
   for (const entry of entries) {
     if (!entry.isDirectory() || !isSafeNexradElevation(entry.name)) {
@@ -114,23 +114,19 @@ export async function listSiteTimestampElevations(siteDir, site) {
     }
 
     const elevationDir = resolveUnder(siteDir, entry.name);
-    for (const timestamp of await listTimestampEntriesForElevation(site, entry.name, elevationDir)) {
-      const elevations = timestamps.get(timestamp) || new Set();
-      elevations.add(parseNexradElevationNumber(entry.name));
-      timestamps.set(timestamp, elevations);
-    }
+    elevations.set(entry.name, await listTimestampEntriesForElevation(site, entry.name, elevationDir));
   }
 
   return Object.fromEntries(
-    [...timestamps.entries()]
-      .sort(([left], [right]) => right.localeCompare(left))
-      .map(([timestamp, elevations]) => [timestamp, [...elevations].sort((left, right) => left - right)])
+    [...elevations.entries()]
+      .filter(([, timestamps]) => timestamps.length > 0)
+      .sort(([left], [right]) => parseNexradElevationNumber(left) - parseNexradElevationNumber(right))
   );
 }
 
 export async function siteHasAnyData(siteDir, site) {
-  const timestampMap = await listSiteTimestampElevations(siteDir, site);
-  return Object.keys(timestampMap).length > 0;
+  const elevationMap = await listSiteElevationTimestamps(siteDir, site);
+  return Object.keys(elevationMap).length > 0;
 }
 
 export function resolveNexradProductFile(nexradRoot, site, timestamp, elevation, product) {

@@ -47,7 +47,6 @@ VCP_SWEEP_ELEVATION_LABELS = {
     },
 }
 
-OPERATIONAL_ELEVATION_LABELS = frozenset({"0.5", "0.9"})
 NEXRAD_FIELD_MAGIC = b"EWFFv1S0"
 NEXRAD_VARIABLE_COLORMAP_KEYS = {
     "DBZH": "NWS_Reflectivity",
@@ -89,15 +88,6 @@ def _canonical_elevation_label(scan_name: str | None, sweep_index: int) -> str |
     if normalized_scan_name is None:
         return None
     return VCP_SWEEP_ELEVATION_LABELS.get(normalized_scan_name, {}).get(sweep_index)
-
-
-def _resolve_operational_elevation_label(scan_name: str | None, sweep_index: int) -> str | None:
-    elevation_label = _canonical_elevation_label(scan_name, sweep_index)
-    if elevation_label in OPERATIONAL_ELEVATION_LABELS:
-        return elevation_label
-    return None
-
-
 def nexrad_render_elevation_dir(site: str, elevation_label: str) -> Path:
     return nexrad_render_site_dir(site) / str(elevation_label)
 
@@ -151,7 +141,7 @@ def serialize_nexrad_render_intermediate(
     scan_name = getattr(parsed_volume, "scan_name", None)
     if datatree is not None:
         for sweep_index, sweep in enumerate(parsed_volume.sweeps):
-            canonical_elevation = _resolve_operational_elevation_label(scan_name, sweep_index)
+            canonical_elevation = _canonical_elevation_label(scan_name, sweep_index)
             if canonical_elevation is None:
                 continue
             node = datatree[sweep.group_name]
@@ -228,9 +218,6 @@ def serialize_nexrad_elevation_artifacts(
     manifest_timestamp = scan_timestamp
     for artifact in elevation_artifacts:
         elevation_label = artifact.elevation
-        if elevation_label not in OPERATIONAL_ELEVATION_LABELS:
-            continue
-
         artifact_timestamp = artifact.elevation_timestamp or artifact.scan_timestamp or scan_timestamp
         if artifact_timestamp is None:
             continue

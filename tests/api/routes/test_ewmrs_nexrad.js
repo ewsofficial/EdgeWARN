@@ -71,12 +71,13 @@ describe('EWMRS NEXRAD routes', () => {
     expect(response.headers['cache-control']).toContain('max-age=5');
   });
 
-  it('returns timestamps mapped to sorted numeric elevations', async () => {
+  it('returns elevations mapped to reverse-sorted valid timestamps', async () => {
     const response = await request(app).get('/nexrad/KTLH').expect(200);
 
     expect(response.body).toEqual({
-      '20260512-004753': [1.3],
-      '20260512-004336': [0.5, 0.9]
+      '0.5': ['20260512-004336'],
+      '0.9': ['20260512-004336'],
+      '1.3': ['20260512-004753']
     });
     expect(response.headers['cache-control']).toContain('max-age=5');
   });

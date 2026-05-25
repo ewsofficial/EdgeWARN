@@ -244,11 +244,11 @@ Example:
 
 ### GET /nexrad/{site}
 
-Returns valid timestamps for one radar site mapped to their available elevations. Timestamps are parsed from NEXRAD GUI filenames rather than timestamp-named directories.
+Returns valid elevations for one radar site mapped to their available timestamps. Timestamps are parsed from NEXRAD GUI filenames rather than timestamp-named directories.
 
 Responses:
 
-- `200`: object mapping timestamps to numeric elevation arrays
+- `200`: object mapping elevation labels to timestamp arrays
 - `400`: invalid site parameter
 - `404`: site not found
 
@@ -256,8 +256,9 @@ Example:
 
 ```json
 {
-  "20260512-004753": [1.3],
-  "20260512-004336": [0.5, 0.9]
+  "0.5": ["20260512-004336"],
+  "0.9": ["20260512-004336"],
+  "1.3": ["20260512-004753"]
 }
 ```
 
