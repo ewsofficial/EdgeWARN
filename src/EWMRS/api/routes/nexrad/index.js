@@ -4,7 +4,7 @@ import {
   directoryExists,
   fileExists,
   getNexradRoot,
-  listSiteTimestampElevations,
+  listSiteElevationTimestamps,
   listSafeDirectories,
   resolveNexradProductFile,
   resolveUnder,
@@ -67,7 +67,7 @@ router.get('/:site/', async (req, res) => {
       return res.status(404).json({ error: 'NEXRAD site not found', site });
     }
 
-    const payload = await listSiteTimestampElevations(siteDir, site);
+    const payload = await listSiteElevationTimestamps(siteDir, site);
 
     res.set('Cache-Control', 'public, max-age=5');
     res.json(payload);
