@@ -14,6 +14,7 @@ import rasterio.transform
 import rioxarray  # noqa: F401  Ensures xarray .rio accessor is registered.
 from rasterio.enums import Resampling
 
+from common.ingest.nexrad.s3_chunks import format_nexrad_timestamp, parse_nexrad_timestamp
 from EWMRS.render.config import (
     get_file_list,
     get_goes_file_list,
@@ -394,18 +395,33 @@ def _load_nexrad_artifact_metadata(artifact_path: Path) -> dict | None:
 
     stem_prefix = f"{artifact_path.parent.parent.name}_{artifact_path.parent.name}_"
     filename_timestamp = artifact_path.stem[len(stem_prefix):] if artifact_path.stem.startswith(stem_prefix) else None
-    timestamp = sidecar_payload.get("elevation_timestamp") or sidecar_payload.get("scan_timestamp") or filename_timestamp
-    if timestamp is None or not _NEXRAD_TIMESTAMP_PATTERN.fullmatch(str(timestamp)):
+    normalized_filename_timestamp = _normalize_nexrad_timestamp(filename_timestamp)
+    elevation_timestamp = _normalize_nexrad_timestamp(sidecar_payload.get("elevation_timestamp")) or normalized_filename_timestamp
+    scan_timestamp = _normalize_nexrad_timestamp(sidecar_payload.get("scan_timestamp")) or elevation_timestamp
+    if elevation_timestamp is None:
         return None
 
     return {
         "site": artifact_path.parent.parent.name,
         "elevation": artifact_path.parent.name,
-        "scan_timestamp": sidecar_payload.get("scan_timestamp") or str(timestamp),
-        "elevation_timestamp": str(timestamp),
+        "scan_timestamp": scan_timestamp,
+        "elevation_timestamp": elevation_timestamp,
         "volume_id": str(sidecar_payload.get("volume_id") or artifact_path.stem),
+        "member_group_names": list(sidecar_payload.get("member_group_names") or []),
+        "member_sweeps": list(sidecar_payload.get("member_sweeps") or []),
         "artifact_path": artifact_path,
     }
+
+
+def _normalize_nexrad_timestamp(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if _NEXRAD_TIMESTAMP_PATTERN.fullmatch(text):
+        return text
+    return format_nexrad_timestamp(parse_nexrad_timestamp(text))
 
 
 def _nexrad_source_artifact_is_fresh(artifact_path: Path, *, now: float, max_age_minutes: int) -> bool:
@@ -490,8 +506,8 @@ def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: in
             last_sweep_index=0,
             first_sweep_timestamp=None,
             last_sweep_timestamp=None,
-            member_group_names=[],
-            member_sweeps=[],
+            member_group_names=list(metadata.get("member_group_names") or []),
+            member_sweeps=list(metadata.get("member_sweeps") or []),
             waveforms_present=set(),
             supplemental=False,
             netcdf_path=str(artifact_path) if artifact_path.suffix == ".nc" else None,

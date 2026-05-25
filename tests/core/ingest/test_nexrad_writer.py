@@ -281,3 +281,52 @@ def test_serialize_nexrad_elevation_artifacts_uses_artifact_timestamp_and_new_gu
     assert manifest["scan_timestamp"] == "20260507-150000"
     assert manifest["layers"][0]["scan_timestamp"] == "20260507-150001"
     assert manifest["layers"][0]["bin_path"].endswith("/gui/NEXRAD/KTLH/0.5/KTLH_DBZH_0.5_20260507-150001.bin.gz")
+
+
+def test_serialize_nexrad_elevation_artifacts_falls_back_to_runtime_volume_for_grouped_ar2v(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    dataset = xr.Dataset(
+        {
+            "DBZH": (("azimuth", "range"), np.array([[1.0, 2.0]], dtype=np.float32)),
+        },
+        coords={
+            "azimuth": np.array([0.0], dtype=np.float32),
+            "range": np.array([1000.0, 2000.0], dtype=np.float32),
+        },
+    )
+    grouped_path = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5" / "KTLH_0.5_20260507-150001.ar2v"
+    runtime_path = tmp_path / "data" / "NEXRAD_Level2" / ".runtime" / "KTLH" / "KTLH_999.ar2v"
+    grouped_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    grouped_path.write_bytes(b"grouped")
+    runtime_path.write_bytes(b"runtime")
+
+    def _fake_open(path):
+        if Path(path) == grouped_path:
+            raise RuntimeError("grouped ar2v unreadable")
+        return _Tree(dataset)
+
+    monkeypatch.setattr("util.nexrad_loader.open_nexrad_level2_datatree", _fake_open)
+
+    artifact = ElevationArtifact(
+        site="KTLH",
+        volume_id="999",
+        volume_timestamp="20260507-150000",
+        scan_timestamp="20260507-150000",
+        elevation="0.5",
+        elevation_timestamp="20260507-150001",
+        first_sweep_index=0,
+        last_sweep_index=0,
+        first_sweep_timestamp=None,
+        last_sweep_timestamp=None,
+        member_group_names=["/sweep_00"],
+        member_sweeps=[],
+        waveforms_present=set(),
+        supplemental=False,
+        ar2v_path=str(grouped_path),
+    )
+
+    manifest_path = serialize_nexrad_elevation_artifacts("KTLH", "999", "20260507-150000", [artifact])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["layers"][0]["bin_path"].endswith("/gui/NEXRAD/KTLH/0.5/KTLH_DBZH_0.5_20260507-150001.bin.gz")
