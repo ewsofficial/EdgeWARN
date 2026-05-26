@@ -59,14 +59,14 @@ def test_group_sweeps_groups_surveillance_then_doppler_into_one_elevation():
     assert len(groups[1].members) == 1
 
 
-def test_group_sweeps_assigns_pair_using_surveillance_anchor_angle():
+def test_group_sweeps_assigns_pair_using_doppler_angle_when_available():
     sweeps = [
         _sweep(0, 0.84, waveform="contiguous_surveillance", timestamp="2026-01-01T00:00:00Z"),
         _sweep(1, 0.47, waveform="contiguous_doppler", timestamp="2026-01-01T00:01:00Z"),
     ]
     groups = group_sweeps_by_elevation(sweeps)
     assert len(groups) == 1
-    assert groups[0].canonical_angle_deg == 0.9
+    assert groups[0].canonical_angle_deg == 0.5
 
 
 def test_group_sweeps_ignores_incomplete():
@@ -181,6 +181,19 @@ def test_group_sweeps_keeps_revisit_groups_separate_but_in_same_canonical_folder
     assert low_groups[1].first_timestamp == "2026-01-01T00:02:00Z"
     assert [member.group_name for member in low_groups[0].members] == ["/sweep_00", "/sweep_01"]
     assert [member.group_name for member in low_groups[1].members] == ["/sweep_03", "/sweep_04"]
+
+
+def test_group_sweeps_uses_doppler_angle_for_revisit_bin_selection():
+    sweeps = [
+        _sweep(0, 0.73333740234375, waveform="contiguous_surveillance", timestamp="2026-01-01T00:00:00Z"),
+        _sweep(1, 0.8349609375, waveform="contiguous_doppler", timestamp="2026-01-01T00:00:10Z"),
+        _sweep(2, 1.08489990234375, waveform="contiguous_surveillance", timestamp="2026-01-01T00:01:00Z"),
+        _sweep(3, 1.23046875, waveform="contiguous_doppler", timestamp="2026-01-01T00:01:10Z"),
+    ]
+
+    groups = group_sweeps_by_elevation(sweeps)
+
+    assert [group.canonical_angle_deg for group in groups] == [0.9, 1.3]
 
 
 def test_group_sweeps_falls_back_to_raw_elevation_number_when_waveform_missing():
