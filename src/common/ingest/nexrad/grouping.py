@@ -31,9 +31,9 @@ def _first_non_null_timestamp(members: list[SweepRecord]) -> str | None:
 
 
 def _group_representative_angle(group: ElevationGroup) -> float:
-    """Prefer the surveillance anchor angle, otherwise the first member angle."""
+    """Prefer the doppler angle when present, otherwise the first member angle."""
     for member in group.members:
-        if _waveform_key(member.waveform) == SURVEILLANCE_WAVEFORM:
+        if _waveform_key(member.waveform) == DOPPLER_WAVEFORM:
             return float(member.fixed_angle)
     return float(group.members[0].fixed_angle)
 

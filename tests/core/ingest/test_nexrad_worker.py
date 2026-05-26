@@ -69,4 +69,4 @@ def test_extract_worker_sweep_records_reindex_for_grouping_contract():
     groups = group_sweeps_by_elevation(records)
 
     assert [record.index for record in records] == [0, 1, 2]
-    assert [group.canonical_angle_deg for group in groups] == [0.9, 1.3]
+    assert [group.canonical_angle_deg for group in groups] == [0.5, 1.3]
