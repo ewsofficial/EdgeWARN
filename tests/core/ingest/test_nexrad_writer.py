@@ -1,5 +1,6 @@
 import gzip
 import json
+import struct
 from pathlib import Path
 
 import netCDF4
@@ -38,6 +39,106 @@ class _ParsedTree:
     def __getitem__(self, key):
         assert key == "/sweep_00"
         return _Group(self._dataset)
+
+
+def _read_nexrad_bin(path: Path):
+    with gzip.open(path, "rb") as handle:
+        raw = handle.read()
+
+    count_start = len(NEXRAD_FIELD_MAGIC)
+    count_end = count_start + 2 * np.dtype("<u4").itemsize
+    azimuth_count, range_count = np.frombuffer(raw[count_start:count_end], dtype="<u4")
+    data_shape = (int(range_count), int(azimuth_count))
+    data_count = data_shape[0] * data_shape[1]
+    data_byte_length = data_count * np.dtype("<f2").itemsize
+    azimuth_byte_length = int(azimuth_count) * np.dtype("<f4").itemsize
+    range_byte_length = int(range_count) * np.dtype("<f4").itemsize
+    data_start = count_end
+    data_end = data_start + data_byte_length
+    azimuth_end = data_end + azimuth_byte_length
+    range_end = azimuth_end + range_byte_length
+    data = np.frombuffer(raw[data_start:data_end], dtype="<f2").reshape(data_shape)
+    azimuths = np.frombuffer(raw[data_end:azimuth_end], dtype="<f4")
+    ranges = np.frombuffer(raw[azimuth_end:range_end], dtype="<f4")
+    return data, azimuths, ranges
+
+
+def _build_msg31_record(*, radial_status: int, azimuth_angle: float, elevation_angle: float, block_payloads: list[bytes]) -> bytes:
+    body = bytearray()
+    body.extend(
+        struct.pack(
+            ">4sIHHfBBHBBBBfBBH",
+            b"AR2V",
+            0,
+            1,
+            1,
+            azimuth_angle,
+            0,
+            0,
+            0,
+            1,
+            radial_status,
+            1,
+            0,
+            elevation_angle,
+            0,
+            0,
+            len(block_payloads),
+        )
+    )
+    next_offset = 72
+    pointers = []
+    payload = bytearray()
+    for block in block_payloads:
+        pointers.append(next_offset)
+        payload.extend(block)
+        next_offset += len(block)
+    pointers.extend([0] * (10 - len(pointers)))
+    body.extend(struct.pack(">" + "I" * 10, *pointers))
+    body.extend(payload)
+    if len(body) % 2 != 0:
+        body.append(0)
+
+    message_header = struct.pack(
+        ">HBBHHIHH",
+        (16 + len(body)) // 2,
+        1,
+        31,
+        1,
+        1,
+        0,
+        1,
+        1,
+    )
+    return b"\x00" * 12 + message_header + bytes(body)
+
+
+def _build_generic_block(name: bytes, values, *, first_gate: int = 1000, gate_spacing: int = 1000, scale: float = 2.0, offset: float = 66.0, word_size: int = 8) -> bytes:
+    dtype = ">u1" if word_size == 8 else ">u2"
+    gate_bytes = np.asarray(values, dtype=dtype).tobytes()
+    header = struct.pack(
+        ">4sI H h h h h B B f f",
+        name,
+        0,
+        len(values),
+        first_gate,
+        gate_spacing,
+        0,
+        0,
+        0,
+        word_size,
+        scale,
+        offset,
+    )
+    return header + gate_bytes
+
+
+def _write_grouped_ar2v(path: Path, records: list[bytes], *, site: str = "KTLH") -> None:
+    header = bytearray(b"AR2V")
+    header.extend(b" " * 16)
+    header.extend(site.encode("ascii")[:4].ljust(4, b" "))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(header) + b"".join(records))
 
 
 def test_write_grouped_netcdf_sanitizes_boolean_attrs(tmp_path):
@@ -370,3 +471,69 @@ def test_serialize_nexrad_elevation_artifacts_falls_back_to_runtime_volume_for_g
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert manifest["layers"][0]["bin_path"].endswith("/gui/NEXRAD/KTLH/0.5/KTLH_DBZH_0.5_20260507-150001.bin.gz")
+
+
+def test_serialize_nexrad_elevation_artifacts_decodes_grouped_ar2v_directly(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    artifact_path = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5" / "KTLH_0.5_20260507-150001.ar2v"
+    records = [
+        _build_msg31_record(
+            radial_status=0,
+            azimuth_angle=0.0,
+            elevation_angle=0.5,
+            block_payloads=[
+                _build_generic_block(b"DREF", [68, 70, 72]),
+                _build_generic_block(b"DPHI", [1025, 1026, 1027], scale=2.0, offset=0.0, word_size=16),
+            ],
+        ),
+        _build_msg31_record(
+            radial_status=2,
+            azimuth_angle=90.0,
+            elevation_angle=0.5,
+            block_payloads=[
+                _build_generic_block(b"DREF", [74, 76, 78]),
+                _build_generic_block(b"DPHI", [1028, 1029, 1030], scale=2.0, offset=0.0, word_size=16),
+            ],
+        ),
+    ]
+    _write_grouped_ar2v(artifact_path, records)
+
+    def _fail_xradar(*args, **kwargs):
+        raise AssertionError("xradar fallback should not be used for grouped artifact decode")
+
+    monkeypatch.setattr("util.nexrad_loader.open_nexrad_level2_datatree", _fail_xradar)
+
+    artifact = ElevationArtifact(
+        site="KTLH",
+        volume_id="999",
+        volume_timestamp="20260507-150000",
+        scan_timestamp="20260507-150000",
+        elevation="0.5",
+        elevation_timestamp="20260507-150001",
+        first_sweep_index=0,
+        last_sweep_index=0,
+        first_sweep_timestamp=None,
+        last_sweep_timestamp=None,
+        member_group_names=["/sweep_0"],
+        member_sweeps=[],
+        waveforms_present={"contiguous_surveillance"},
+        supplemental=False,
+        ar2v_path=str(artifact_path),
+    )
+
+    manifest_path = serialize_nexrad_elevation_artifacts("KTLH", "999", "20260507-150000", [artifact])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert [layer["variable_name"] for layer in manifest["layers"]] == ["DBZH", "PHIDP"]
+
+    dbzh_layer = manifest["layers"][0]
+    phidp_layer = manifest["layers"][1]
+    dbzh_data, dbzh_azimuths, dbzh_ranges = _read_nexrad_bin(Path(dbzh_layer["bin_path"]))
+    phidp_data, phidp_azimuths, phidp_ranges = _read_nexrad_bin(Path(phidp_layer["bin_path"]))
+
+    np.testing.assert_allclose(dbzh_azimuths, np.array([0.0, 90.0], dtype=np.float32))
+    np.testing.assert_allclose(phidp_azimuths, np.array([0.0, 90.0], dtype=np.float32))
+    np.testing.assert_allclose(dbzh_ranges, np.array([1000.0, 2000.0, 3000.0], dtype=np.float32))
+    np.testing.assert_allclose(phidp_ranges, np.array([1000.0, 2000.0, 3000.0], dtype=np.float32))
+    np.testing.assert_allclose(dbzh_data, np.array([[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]], dtype=np.float16))
+    np.testing.assert_allclose(phidp_data, np.array([[0.5, 2.0], [1.0, 2.5], [1.5, 3.0]], dtype=np.float16))
