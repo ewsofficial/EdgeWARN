@@ -399,6 +399,48 @@ def test_render_pending_nexrad_gui_files_normalizes_iso_sidecar_timestamps(monke
     assert captured == [("KTLH", "999", "20260519-132157", "20260519-132157")]
 
 
+def test_render_pending_nexrad_gui_files_uses_eight_workers(monkeypatch, tmp_path):
+    gui_root = tmp_path / "gui" / "NEXRAD"
+    nexrad_root = tmp_path / "data" / "NEXRAD_Level2"
+    created = {}
+
+    metadata_items = []
+    for index in range(10):
+        timestamp = f"20260507-1500{index:02d}"
+        artifact_path = nexrad_root / f"K{index:03d}" / "0.5" / f"K{index:03d}_0.5_{timestamp}.nc"
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_bytes(b"artifact")
+        metadata_items.append(
+            {
+                "site": f"K{index:03d}",
+                "volume_id": str(index),
+                "scan_timestamp": timestamp,
+                "elevation": "0.5",
+                "elevation_timestamp": timestamp,
+                "artifact_path": str(artifact_path),
+                "member_group_names": [],
+                "member_sweeps": [],
+            }
+        )
+
+    monkeypatch.setattr(ewmrs_pipeline.fs, "NEXRAD_LEVEL2_DIR", nexrad_root)
+    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", gui_root)
+    monkeypatch.setattr(ewmrs_pipeline, "_iter_latest_nexrad_artifacts", lambda: metadata_items)
+    monkeypatch.setattr(ewmrs_pipeline, "_nexrad_source_artifact_is_fresh", lambda *args, **kwargs: True)
+    monkeypatch.setattr(ewmrs_pipeline, "_nexrad_gui_timestamp_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(ewmrs_pipeline, "_render_pending_nexrad_gui_artifact", lambda metadata: True)
+    monkeypatch.setattr(
+        "concurrent.futures.ThreadPoolExecutor",
+        lambda max_workers: created.setdefault("executor", _FakeExecutor(max_workers=max_workers)),
+    )
+    monkeypatch.setattr("concurrent.futures.as_completed", lambda futures: list(futures))
+
+    rendered = ewmrs_pipeline.render_pending_nexrad_gui_files()
+
+    assert rendered == 10
+    assert created["executor"].max_workers == 8
+
+
 def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monkeypatch):
     queue = _FakeQueue()
     mrms_ready_event = _FakeEvent()

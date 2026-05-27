@@ -624,6 +624,40 @@ def parse_raw_volume_file_mmap(
             )
 
 
+def parse_grouped_ar2v_file_mmap(path: str | Path) -> RawVolume:
+    """Parse an uncompressed grouped-elevation AR2V file written by this repo.
+
+    Grouped elevation artifacts currently persist the 24-byte volume header
+    followed directly by metadata and message-31 records, without the standard
+    4-byte compression-record count used by full runtime volumes.
+    """
+    path = Path(path)
+    file_size = path.stat().st_size
+    if file_size < VOLUME_HEADER_BYTES:
+        raise ValueError("Volume is too short to contain an AR2V header")
+
+    with open(path, "rb") as f:
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            volume_header = bytes(mm[:VOLUME_HEADER_BYTES])
+            if not any(volume_header.startswith(magic) for magic in VOLUME_MAGICS):
+                raise ValueError("Volume does not start with AR2V/ARCHIVE2 magic")
+
+            site = volume_header[20:24].decode("ascii", errors="ignore").strip() or "UNKNOWN"
+            metadata_records: list[bytes] = []
+            sweeps: list[RawSweep] = []
+            final_offset, _ = _walk_records(mm, VOLUME_HEADER_BYTES, metadata_records, sweeps)
+            trailing = bytes(mm[final_offset:])
+
+            return RawVolume(
+                volume_header=volume_header,
+                site=site.upper(),
+                metadata_records=metadata_records,
+                sweeps=sweeps,
+                trailing_bytes=trailing,
+                compression_record_count=0,
+            )
+
+
 def open_partial_volume(path: str | Path):
     """Open a partial NEXRAD Level-II file with xradar, dropping incomplete sweeps."""
     try:

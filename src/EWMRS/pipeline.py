@@ -58,6 +58,7 @@ _NEXRAD_SITE_DIR_PATTERN = re.compile(r"^[A-Z0-9]{4}$")
 _NEXRAD_ELEVATION_DIR_PATTERN = re.compile(r"^\d{1,3}(?:\.\d{1,2})?$")
 _NEXRAD_TIMESTAMP_PATTERN = re.compile(r"^\d{8}-\d{6}$")
 _NEXRAD_POLL_INTERVAL_SECONDS = 30.0
+_NEXRAD_RENDER_MAX_WORKERS = 8
 
 
 def _load_timestamp_tile_index(tile_dir: Path) -> tuple[list[list[int]], dict | None] | None:
@@ -476,15 +477,45 @@ def _nexrad_gui_timestamp_exists(site: str, elevation: str, timestamp: str) -> b
     return any(elevation_dir.glob(pattern))
 
 
-def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: int = _NEXRAD_GUI_RETENTION_MINUTES) -> int:
+def _render_pending_nexrad_gui_artifact(metadata: dict) -> bool:
     from EWMRS.render.nexrad import serialize_nexrad_elevation_artifacts
     from common.ingest.nexrad.models import ElevationArtifact
+
+    site = str(metadata["site"]).upper()
+    elevation = str(metadata["elevation"])
+    timestamp = str(metadata["elevation_timestamp"])
+    artifact_path = Path(metadata["artifact_path"])
+
+    artifact = ElevationArtifact(
+        site=site,
+        volume_id=str(metadata["volume_id"]),
+        volume_timestamp=str(metadata["scan_timestamp"]),
+        scan_timestamp=str(metadata["scan_timestamp"]),
+        elevation=elevation,
+        elevation_timestamp=timestamp,
+        first_sweep_index=0,
+        last_sweep_index=0,
+        first_sweep_timestamp=None,
+        last_sweep_timestamp=None,
+        member_group_names=list(metadata.get("member_group_names") or []),
+        member_sweeps=list(metadata.get("member_sweeps") or []),
+        waveforms_present=set(),
+        supplemental=False,
+        netcdf_path=str(artifact_path) if artifact_path.suffix == ".nc" else None,
+        ar2v_path=str(artifact_path) if artifact_path.suffix == ".ar2v" else None,
+    )
+    serialize_nexrad_elevation_artifacts(site, str(metadata["volume_id"]), str(metadata["scan_timestamp"]), [artifact])
+    return _nexrad_gui_timestamp_exists(site, elevation, timestamp)
+
+
+def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: int = _NEXRAD_GUI_RETENTION_MINUTES) -> int:
+    import concurrent.futures
 
     if base_dir:
         fs.initialize_filesystem(base_dir)
 
-    rendered_count = 0
     now = time.time()
+    pending_metadata = []
     for metadata in _iter_latest_nexrad_artifacts() or ():
         site = str(metadata["site"]).upper()
         elevation = str(metadata["elevation"])
@@ -494,28 +525,18 @@ def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: in
             continue
         if _nexrad_gui_timestamp_exists(site, elevation, timestamp):
             continue
+        pending_metadata.append(metadata)
 
-        artifact = ElevationArtifact(
-            site=site,
-            volume_id=str(metadata["volume_id"]),
-            volume_timestamp=str(metadata["scan_timestamp"]),
-            scan_timestamp=str(metadata["scan_timestamp"]),
-            elevation=elevation,
-            elevation_timestamp=timestamp,
-            first_sweep_index=0,
-            last_sweep_index=0,
-            first_sweep_timestamp=None,
-            last_sweep_timestamp=None,
-            member_group_names=list(metadata.get("member_group_names") or []),
-            member_sweeps=list(metadata.get("member_sweeps") or []),
-            waveforms_present=set(),
-            supplemental=False,
-            netcdf_path=str(artifact_path) if artifact_path.suffix == ".nc" else None,
-            ar2v_path=str(artifact_path) if artifact_path.suffix == ".ar2v" else None,
-        )
-        serialize_nexrad_elevation_artifacts(site, str(metadata["volume_id"]), str(metadata["scan_timestamp"]), [artifact])
-        if _nexrad_gui_timestamp_exists(site, elevation, timestamp):
-            rendered_count += 1
+    if not pending_metadata:
+        return 0
+
+    max_workers = min(_NEXRAD_RENDER_MAX_WORKERS, len(pending_metadata))
+    rendered_count = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_render_pending_nexrad_gui_artifact, metadata) for metadata in pending_metadata]
+        for future in concurrent.futures.as_completed(futures):
+            if future.result():
+                rendered_count += 1
 
     return rendered_count
 
