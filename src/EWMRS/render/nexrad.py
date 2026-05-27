@@ -142,6 +142,18 @@ def _write_nexrad_variable_bin(path: Path, dense_data: np.ndarray, azimuths: np.
         handle.write(range_values.tobytes(order="C"))
 
 
+def _normalize_azimuth_axis(dense_data: np.ndarray, azimuths: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    azimuth_values = np.asarray(azimuths, dtype=np.float32)
+    if azimuth_values.ndim != 1 or azimuth_values.shape[0] <= 1:
+        return dense_data, azimuth_values
+
+    normalized = np.mod(azimuth_values, np.float32(360.0))
+    order = np.argsort(normalized, kind="stable")
+    if np.array_equal(order, np.arange(order.shape[0])):
+        return dense_data, azimuth_values
+    return dense_data[:, order], azimuth_values[order]
+
+
 def _read_msg31_azimuth(record: bytes) -> float | None:
     azimuth_offset = 12 + MSG_HEADER_LEN + 12
     if len(record) < azimuth_offset + 4:
@@ -286,10 +298,11 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
         for variable_name, (ranges, dense_data) in decoded_moments.items():
             if not _should_serialize_variable(sweep, variable_name):
                 continue
+            dense_data, ordered_azimuths = _normalize_azimuth_axis(dense_data, azimuths)
             layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
             bin_path = nexrad_render_variable_bin_path(site, artifact_timestamp, elevation_label, variable_name)
             if not bin_path.exists():
-                _write_nexrad_variable_bin(bin_path, dense_data, azimuths, ranges)
+                _write_nexrad_variable_bin(bin_path, dense_data, ordered_azimuths, ranges)
 
             manifest_layers.append(
                 {
@@ -304,7 +317,7 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
                     "variable_name": variable_name,
                     "colormap_key": NEXRAD_VARIABLE_COLORMAP_KEYS.get(variable_name),
                     "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
-                    "azimuth_count": int(azimuths.shape[0]),
+                    "azimuth_count": int(ordered_azimuths.shape[0]),
                     "range_count": int(ranges.shape[0]),
                 }
             )
@@ -346,6 +359,7 @@ def serialize_nexrad_render_intermediate(
 
                 values = np.asarray(data_array.values, dtype=np.float32)
                 dense_data = values.T.astype(np.float16, copy=False)
+                dense_data, azimuths = _normalize_azimuth_axis(dense_data, azimuths)
 
                 layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
                 elevation_dir = nexrad_render_elevation_dir(site, canonical_elevation)
@@ -458,6 +472,7 @@ def serialize_nexrad_elevation_artifacts(
 
                 values = np.asarray(data_array.values, dtype=np.float32)
                 dense_data = values.T.astype(np.float16, copy=False)
+                dense_data, azimuths = _normalize_azimuth_axis(dense_data, azimuths)
 
                 layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
                 bin_path = nexrad_render_variable_bin_path(site, artifact_timestamp, elevation_label, variable_name)
