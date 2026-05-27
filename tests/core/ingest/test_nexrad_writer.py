@@ -343,6 +343,61 @@ def test_serialize_nexrad_render_intermediate_skips_dbzh_for_contiguous_doppler_
     assert [layer["colormap_key"] for layer in manifest["layers"]] == ["VRADH", "WRADH"]
 
 
+def test_serialize_nexrad_render_intermediate_normalizes_azimuth_order_for_consistent_orientation(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    dataset = xr.Dataset(
+        {
+            "DBZH": (
+                ("azimuth", "range"),
+                np.array(
+                    [
+                        [1.0, 2.0],
+                        [3.0, 4.0],
+                        [5.0, 6.0],
+                        [7.0, 8.0],
+                    ],
+                    dtype=np.float32,
+                ),
+            ),
+        },
+        coords={
+            "azimuth": np.array([180.0, 270.0, 0.0, 90.0], dtype=np.float32),
+            "range": np.array([1000.0, 2000.0], dtype=np.float32),
+        },
+    )
+    parsed = type(
+        "ParsedVolumeFixture",
+        (),
+        {
+            "scan_name": "VCP-212",
+            "dynamic_scan_type": "standard",
+            "sweeps": [type("SweepFixture", (), {"group_name": "/sweep_00", "fixed_angle": 0.5, "waveform": "contiguous_surveillance"})()],
+            "datatree": _ParsedTree(dataset),
+        },
+    )()
+    volume_path = tmp_path / "KTLH_20260507-150000_999.ar2v"
+    volume_path.parent.mkdir(parents=True, exist_ok=True)
+    volume_path.write_bytes(b"volume")
+
+    manifest_path = serialize_nexrad_render_intermediate("KTLH", "999", "20260507-150000", volume_path, parsed)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    data, azimuths, ranges = _read_nexrad_bin(Path(manifest["layers"][0]["bin_path"]))
+
+    np.testing.assert_allclose(azimuths, np.array([0.0, 90.0, 180.0, 270.0], dtype=np.float32))
+    np.testing.assert_allclose(ranges, np.array([1000.0, 2000.0], dtype=np.float32))
+    np.testing.assert_allclose(
+        data,
+        np.array(
+            [
+                [5.0, 7.0, 1.0, 3.0],
+                [6.0, 8.0, 2.0, 4.0],
+            ],
+            dtype=np.float16,
+        ),
+    )
+
+
 def test_serialize_nexrad_elevation_artifacts_uses_artifact_timestamp_and_new_gui_layout(tmp_path, monkeypatch):
     fs.initialize_filesystem(tmp_path)
     dataset = xr.Dataset(
