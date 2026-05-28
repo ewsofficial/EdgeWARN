@@ -568,13 +568,14 @@ def run_hybrid_assignment(tracks: List[Dict[str, Any]],
     unmatched_detections = list(all_detection_ids - matched_detection_ids)
     
     # Build cost dictionary
+    tracks_by_id = {int(t['id']): t for t in tracks}
+    detections_by_id = {int(d['id']): d for d in detections}
     costs = {}
     for track_id, det_id in matched:
-        # Find the track and detection
-        track = next((t for t in tracks if int(t['id']) == track_id), None)
-        detection = next((d for d in detections if int(d['id']) == det_id), None)
+        track = tracks_by_id.get(track_id)
+        detection = detections_by_id.get(det_id)
         kf = kalman_filters.get(track_id)
-        
+
         if track and detection and kf:
             cost = calculator.compute_cost(track, detection, kf, dt_seconds)
             costs[(track_id, det_id)] = cost
