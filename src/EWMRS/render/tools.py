@@ -90,12 +90,14 @@ class TransformUtils:
                     except Exception as e:
                         io_manager.write_warning(f"Fast GRIB loader failed ({e}); falling back to xarray/cfgrib")
 
-                ds = xr.open_dataset(ds_path, decode_timedelta=True)
+                with xr.open_dataset(ds_path, decode_timedelta=True) as opened:
+                    ds = opened.load()
                 io_manager.write_debug(f"Successfully loaded dataset: {ds_path}")
                 return ds
-        
+
             if str(ds_path).endswith(".nc"):
-                ds = xr.open_dataset(ds_path, decode_timedelta=True)
+                with xr.open_dataset(ds_path, decode_timedelta=True) as opened:
+                    ds = opened.load()
 
                 if lat_limits and lon_limits:
                     # Latitude/Longitude variables: 'latitude', 'longitude'
