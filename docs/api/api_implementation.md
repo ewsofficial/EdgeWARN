@@ -194,8 +194,8 @@ Special behavior:
 - `RATE_LIMIT_MAX_SEC`
 - `RATE_LIMIT_WINDOW_MS_MIN`
 - `RATE_LIMIT_MAX_MIN`
-- `TRUST_PROXY`
-- `TRUST_PROXY_IPS`
+- `TRUST_PROXY` — `false` explicitly disables Express trust-proxy. Other values (including `true`) only take effect when `TRUST_PROXY_IPS` is also set; the `TRUST_PROXY=true` value alone is consumed by the rate-limiter `keyGenerator` (so `req.ip` is used for rate-limit keys) but does not call `app.set('trust proxy', true)`.
+- `TRUST_PROXY_IPS` — comma-separated allowlist; when present, sets Express `trust proxy` to that array.
 - `EDGEWARN_BASE_DIR`
 
 EWMRS-specific environment variables are documented in `docs/api/ewmrs_api_endpoints.md`.

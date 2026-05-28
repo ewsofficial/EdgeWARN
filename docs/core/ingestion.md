@@ -6,11 +6,13 @@ EdgeWARN-Core uses shared ingest modules in `src/common/ingest` so EdgeWARN and 
 
 ```text
 src/common/ingest/
-├── mrms/            # MRMS + GOES discovery/download and staging
-├── nws/             # NWS active alert ingest + registry/snapshots
-├── synoptic/        # RAP ingest
-├── metar.py         # METAR ingest and parsing
-└── wpc/             # WPC surface analysis ingest and GeoJSON conversion
+├── mrms/                  # MRMS + GOES discovery/download and staging
+├── nws/                   # NWS active alert ingest + registry/snapshots
+├── synoptic/              # RAP ingest
+├── nexrad/                # NEXRAD Level II ingest, parser, and pipeline
+├── metar.py               # METAR ingest and parsing
+├── wpc/                   # WPC surface analysis ingest and GeoJSON conversion
+└── aws_async_compat.py    # AWS async/sync compatibility shim used by ingest helpers
 ```
 
 ## Staged Tandem Ingest

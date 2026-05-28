@@ -29,8 +29,10 @@ src/EdgeWARN/process/integrate/
 Primary call pattern:
 
 ```python
-main(json_path, remove_old_cells=True, disable_ctam=False)
+main(json_path=None, remove_old_cells=True, disable_ctam=False)
 ```
+
+`json_path` defaults to `None` in the signature but is required at runtime — `main()` raises `ValueError` if it is not supplied.
 
 ## Integration Stages
 
