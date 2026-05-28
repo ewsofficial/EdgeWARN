@@ -19,7 +19,10 @@ const cache = new LRUCache({
  */
 export function isSafeFilename(name) {
   if (!name) return false;
+  if (typeof name !== 'string') return false;
   if (name.includes('..') || name.includes('/') || name.includes('\\')) return false;
+  if (/[\x00-\x1f<>:"|?*]/.test(name)) return false;
+  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$/i.test(name)) return false;
   return name.toLowerCase().endsWith('.json') && path.basename(name) === name;
 }
 
