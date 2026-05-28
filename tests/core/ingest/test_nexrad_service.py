@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +14,27 @@ from common.ingest.nexrad.writer import (
     runtime_scan_path,
     site_manifest_path,
 )
+
+
+def _artifact(site, volume_id, elevation, timestamp, *, group_names=None):
+    return SimpleNamespace(
+        site=site,
+        volume_id=volume_id,
+        volume_timestamp=timestamp,
+        scan_timestamp=timestamp,
+        elevation=elevation,
+        elevation_timestamp=timestamp,
+        first_sweep_index=0,
+        last_sweep_index=1,
+        first_sweep_timestamp=timestamp,
+        last_sweep_timestamp=timestamp,
+        member_group_names=list(group_names or [f"{elevation}-group"]),
+        member_sweeps=[],
+        waveforms_present=set(),
+        supplemental=False,
+        netcdf_path=None,
+        ar2v_path=None,
+    )
 
 
 def _chunks(site="KTLH", volume_id="999", stamp="20260507-150000", last_number=2):
@@ -249,3 +271,176 @@ async def test_stream_ingest_async_writes_site_manifest_only_after_completion(tm
             "waveform": "batch",
         },
     ]
+
+
+def test_run_worker_parse_advances_latest_elevation_timestamp(monkeypatch, tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    service = NexradIngestService()
+    runtime_path = runtime_scan_path("KTLH", "999")
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_bytes(b"partial")
+
+    payloads = iter([
+        SimpleNamespace(
+            visible_sweeps=2,
+            saved_sweeps=["g0"],
+            saved_elevations=[_artifact("KTLH", "999", "0.5", "20260507-150001", group_names=["g0"])],
+            parse_error=None,
+            child_rss_kb=123.0,
+        ),
+        SimpleNamespace(
+            visible_sweeps=2,
+            saved_sweeps=["g0"],
+            saved_elevations=[_artifact("KTLH", "999", "0.5", "20260507-150011", group_names=["g0"])],
+            parse_error=None,
+            child_rss_kb=123.0,
+        ),
+    ])
+
+    class _FakeFuture:
+        def result(self):
+            return next(payloads)
+
+    class _FakePool:
+        def submit(self, **_kwargs):
+            return _FakeFuture()
+
+    monkeypatch.setattr(nexrad_service_module, "get_nexrad_pool", lambda: _FakePool())
+
+    state = SimpleNamespace(file_path=str(runtime_path), parse_errors=[], parse_offset=0)
+    seen_elevation_exports = {"0.5:g0": "20260507-150001"}
+    elevation_timestamps_by_id = {"0.5": "20260507-150001"}
+
+    first_timestamp = service._run_worker_parse(
+        state,
+        "KTLH",
+        "999",
+        "20260507-150000",
+        seen_elevation_exports,
+        "20260507-150001",
+        elevation_timestamps_by_id=elevation_timestamps_by_id,
+        base_dir=tmp_path,
+    )
+    second_timestamp = service._run_worker_parse(
+        state,
+        "KTLH",
+        "999",
+        "20260507-150000",
+        seen_elevation_exports,
+        first_timestamp,
+        elevation_timestamps_by_id=elevation_timestamps_by_id,
+        base_dir=tmp_path,
+    )
+
+    assert first_timestamp == "20260507-150001"
+    assert second_timestamp == "20260507-150001"
+    assert seen_elevation_exports == {"0.5:g0": "20260507-150011"}
+    assert elevation_timestamps_by_id == {"0.5": "20260507-150011"}
+
+
+def test_stream_ingest_sync_resets_volume_state_after_boundary(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    service = NexradIngestService(chunk_fetcher=lambda *_args, **_kwargs: b"payload")
+    parse_calls = []
+
+    monkeypatch.setattr(
+        nexrad_service_module,
+        "_required_elevation_paths_complete",
+        lambda *_args, **_kwargs: False,
+    )
+
+    boundary_states = iter([(True, 1), (False, 0)])
+    monkeypatch.setattr(
+        nexrad_service_module,
+        "detect_next_volume_offset",
+        lambda *_args, **_kwargs: next(boundary_states),
+    )
+    monkeypatch.setattr(
+        nexrad_service_module,
+        "split_at_boundary",
+        lambda payload, _offset: (payload[:1], payload[1:]),
+    )
+
+    def _fake_run_worker_parse(state, site, volume_id, scan_timestamp, seen_elevation_exports, first_elevation_timestamp, **kwargs):
+        elevation_timestamps_by_id = kwargs["elevation_timestamps_by_id"]
+        parse_calls.append({
+            "bytes_written": state.bytes_written,
+            "seen": dict(seen_elevation_exports),
+            "timestamps": dict(elevation_timestamps_by_id),
+            "first": first_elevation_timestamp,
+        })
+        seen_elevation_exports["0.5:g0"] = "20260507-150001"
+        elevation_timestamps_by_id["0.5"] = "20260507-150001"
+        return first_elevation_timestamp or "20260507-150001"
+
+    monkeypatch.setattr(service, "_run_worker_parse", _fake_run_worker_parse)
+
+    service._stream_ingest_volume(
+        "KTLH",
+        "999",
+        _chunks(last_number=1),
+        s3_client=object(),
+        base_dir=tmp_path,
+    )
+
+    assert parse_calls == [
+        {
+            "bytes_written": 1,
+            "seen": {},
+            "timestamps": {},
+            "first": None,
+        },
+        {
+            "bytes_written": len(b"ayload"),
+            "seen": {},
+            "timestamps": {},
+            "first": None,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stream_ingest_async_persists_latest_group_export_timestamp(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+
+    async def _async_chunk_fetcher(chunk, **_kwargs):
+        return f"chunk-{chunk.chunk_number}".encode("ascii")
+
+    service = NexradIngestService(async_chunk_fetcher=_async_chunk_fetcher)
+    parse_timestamps = iter(["20260507-150001", "20260507-150011"])
+
+    monkeypatch.setattr(
+        nexrad_service_module,
+        "_required_elevation_paths_complete",
+        lambda *_args, **_kwargs: False,
+    )
+
+    def _fake_run_worker_parse(state, site, volume_id, scan_timestamp, seen_elevation_exports, first_elevation_timestamp, **kwargs):
+        timestamp = next(parse_timestamps)
+        seen_elevation_exports["0.5:g0"] = timestamp
+        kwargs["elevation_timestamps_by_id"]["0.5"] = timestamp
+        return first_elevation_timestamp or timestamp
+
+    monkeypatch.setattr(service, "_run_worker_parse", _fake_run_worker_parse)
+
+    await service._stream_ingest_volume_async(
+        "KTLH",
+        "999",
+        _chunks(last_number=1),
+        s3_client=object(),
+        base_dir=tmp_path,
+    )
+    await service._stream_ingest_volume_async(
+        "KTLH",
+        "999",
+        _chunks(last_number=2),
+        s3_client=object(),
+        base_dir=tmp_path,
+    )
+
+    state_path = service._runtime_state_path("KTLH", "999")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+
+    assert state["seen_elevation_exports"] == {"0.5:g0": "20260507-150011"}
+    assert state["seen_elevation_keys"] == ["0.5:g0"]
+    assert state["elevation_timestamps_by_id"] == {"0.5": "20260507-150011"}

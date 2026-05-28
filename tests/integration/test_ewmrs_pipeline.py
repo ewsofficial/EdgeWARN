@@ -441,6 +441,40 @@ def test_render_pending_nexrad_gui_files_uses_eight_workers(monkeypatch, tmp_pat
     assert created["executor"].max_workers == 8
 
 
+def test_render_pending_nexrad_gui_files_renders_all_fresh_source_timestamps(monkeypatch, tmp_path):
+    nexrad_root = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5"
+    gui_root = tmp_path / "gui" / "NEXRAD"
+    rendered_timestamps = []
+
+    for timestamp in ("20260507-150001", "20260507-150011", "20260507-150021"):
+        artifact_path = nexrad_root / f"KTLH_0.5_{timestamp}.nc"
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_bytes(b"artifact")
+        artifact_path.with_suffix(".json").write_text(json.dumps({
+            "site": "KTLH",
+            "volume_id": "999",
+            "scan_timestamp": timestamp,
+            "elevation": "0.5",
+            "elevation_timestamp": timestamp,
+        }))
+
+    def _fake_serialize(site, volume_id, scan_timestamp, artifacts):
+        artifact = artifacts[0]
+        rendered_timestamps.append(artifact.elevation_timestamp)
+        out_dir = gui_root / site / artifact.elevation
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / f"{site}_DBZH_{artifact.elevation}_{artifact.elevation_timestamp}.bin.gz").write_bytes(b"rendered")
+
+    monkeypatch.setattr(ewmrs_pipeline.fs, "NEXRAD_LEVEL2_DIR", tmp_path / "data" / "NEXRAD_Level2")
+    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", gui_root)
+    monkeypatch.setattr("EWMRS.render.nexrad.serialize_nexrad_elevation_artifacts", _fake_serialize)
+
+    rendered = ewmrs_pipeline.render_pending_nexrad_gui_files()
+
+    assert rendered == 3
+    assert rendered_timestamps == ["20260507-150001", "20260507-150011", "20260507-150021"]
+
+
 def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monkeypatch):
     queue = _FakeQueue()
     mrms_ready_event = _FakeEvent()
