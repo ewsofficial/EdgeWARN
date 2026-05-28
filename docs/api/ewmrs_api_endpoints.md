@@ -27,20 +27,22 @@ Response:
   "service": "EWMRS API",
   "base_dir": "...",
   "gui_dir": "...",
-    "endpoints": [
-      "/renders/get-items",
-      "/renders/fetch",
-      "/renders/download",
-      "/nexrad",
-      "/rap/layers",
-      "/rap/fetch",
-      "/rap/metadata",
-      "/rap/data",
-      "/healthz",
-      "/colormaps"
-    ]
-  }
+  "endpoints": [
+    "/renders/get-items",
+    "/renders/fetch",
+    "/renders/download",
+    "/nexrad",
+    "/rap/layers",
+    "/rap/fetch",
+    "/rap/metadata",
+    "/rap/data",
+    "/healthz",
+    "/colormaps"
+  ]
+}
 ```
+
+The `endpoints` array advertised at `/` is a curated subset and does not enumerate every mounted route. The server also mounts `/renders/tile`, `/renders/tile-info`, `/rap/mappings`, and the `/wpc` router; those are documented in their own sections below.
 
 ### GET /healthz
 
@@ -215,7 +217,7 @@ Security and validation rules:
 
 - Site identifiers are normalized to uppercase and must be exactly 4 alphanumeric characters.
 - Timestamps must use `YYYYMMDD-HHMMSS` and pass calendar/time validation.
-- Elevations must be simple numeric directory labels such as `0.5`, `0.9`, or `1.3`.
+- Elevations must match the regex `^\d{1,3}(?:\.\d{1,2})?$` — common operational labels include `0.5`, `0.9`, `1.2`, `1.3`, `1.8`, `2.4`, and `3.1`.
 - Product names must match the exact allowlist above.
 - Path traversal attempts and malformed parameters are rejected.
 - Unsafe on-disk directory names are ignored during listing.
@@ -234,7 +236,7 @@ EWMRS populates these files by polling local ingest outputs under `<BASE_DIR>/da
 
 Responses:
 
-- `200`: `string[]`
+- `200`: `string[]` with `Cache-Control: public, max-age=5`
 
 Example:
 
@@ -248,7 +250,7 @@ Returns valid elevations for one radar site mapped to their available timestamps
 
 Responses:
 
-- `200`: object mapping elevation labels to timestamp arrays
+- `200`: object mapping elevation labels to timestamp arrays, `Cache-Control: public, max-age=5`
 - `400`: invalid site parameter
 - `404`: site not found
 
@@ -308,6 +310,16 @@ Example:
 ```json
 ["CAPE_0-3km", "Temperature_2m", "UWind_925mb"]
 ```
+
+### GET /rap/mappings
+
+Serves `src/EWMRS/mappings.json`, the RAP layer-to-colormap mapping table used by client renderers.
+
+Responses:
+
+- `200`: parsed JSON contents of `mappings.json`
+- `404`: `mappings.json` not found
+- `500`: read/parse failure
 
 ### GET /rap/fetch?layer={layer}
 
@@ -419,10 +431,13 @@ Each `.bin.gz` payload decompresses to:
 
 Stored `data` values remain range-major with shape `[range_count, azimuth_count]`.
 
-Operational mapping currently writes low paired sweeps into canonical elevation folders:
+Operational mapping writes paired sweeps into canonical elevation folders. Per-VCP mappings (from `src/EWMRS/render/nexrad.py`):
 
-- `sweep 00/01 -> 0.5`
-- `sweep 02/03 -> 0.9`
+| VCP | Sweep indices → elevation label |
+| --- | --- |
+| `VCP-212` | `0/1 → 0.5`, `2/3 → 0.9`, `4/5 → 1.3`, `6 → 1.8`, `7 → 2.4`, `8 → 3.1` |
+| `VCP-215` | `0/1 → 0.5`, `2/3 → 0.9`, `4/5 → 1.2`, `8 → 1.8`, `9 → 2.4`, `10 → 3.1` |
+| `VCP-12`  | `0/1 → 0.5`, `2/3 → 0.9`, `4/5 → 1.2`, `6 → 1.8`, `7 → 2.4`, `8 → 3.1` |
 
 For paired low sweeps, `DBZH` is persisted only from `contiguous_surveillance` and skipped for `contiguous_doppler`.
 

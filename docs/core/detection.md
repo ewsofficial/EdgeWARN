@@ -29,7 +29,9 @@ main(
     lat_bounds,
     lon_bounds,
     json_output,
-    ...,                      # cached datasets optional
+    radar_old_obj=None,       # cached prior-radar dataset, optional
+    ps_old_obj=None,          # cached prior-ProbSevere dataset, optional
+    pt_old_obj=None,          # cached prior-PrecipType dataset, optional
     disable_tracking=False,
     cleanup_stormcells=True,
     refl_threshold=37.5,

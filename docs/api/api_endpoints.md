@@ -150,9 +150,7 @@ Responses:
   - `id`, `name`, `urn_oid`, `effective`, `expires`, `severity`, `geometry`
 - `200` timestamp mode (`edgewarn`): array of EdgeWARN alert summaries such as:
   - `id`, `severity`
-- `200` id mode:
-  - `official`: usually returns nested `feature` object when available
-  - `edgewarn`: returns stored alert object
+- `200` id mode: returns the stored alert object, with an automatic unwrap to the nested `feature` payload when one is present. The unwrap applies uniformly to both `official` and `edgewarn` endpoints — official records always carry a `feature`, while edgewarn records typically do not and so return as-is.
 - `400/404/500` error envelope:
 
 ```json

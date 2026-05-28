@@ -8,20 +8,36 @@ This document summarizes the current runtime architecture implemented under `src
 src/
 ├── run.py                           # Real-time tandem scheduler entry point
 ├── process_historical.py            # Historical reprocessing entry point
+├── util/                            # Shared filesystem, I/O, GRIB, performance, release helpers
 ├── common/
-│   ├── ingest/                      # Shared ingest implementations (MRMS/NWS/Synoptic/METAR/WPC)
-│   └── pipeline/coordinator.py      # Shared staged-ingest coordination
+│   ├── ingest/                      # Shared ingest implementations (MRMS/NWS/Synoptic/METAR/WPC/NEXRAD)
+│   │   ├── mrms/                    # MRMS + GOES discovery/download/staging
+│   │   ├── nws/                     # NWS active alert ingest + zone sync
+│   │   ├── synoptic/                # RAP ingest
+│   │   ├── nexrad/                  # NEXRAD Level II ingest + parser
+│   │   ├── wpc/                     # WPC surface analysis ingest
+│   │   ├── metar.py                 # METAR ingest
+│   │   └── aws_async_compat.py      # AWS async/sync compatibility shim
+│   └── pipeline/                    # Tandem coordination (coordinator.py, goes_readiness.py)
 ├── EdgeWARN/
+│   ├── pipeline.py                  # Top-level EdgeWARN orchestration
 │   ├── process/detect/              # Storm-cell detection and tracking
 │   ├── process/integrate/           # Per-cell data integration pipeline
 │   ├── ctam/                        # CTAM framework + modules
 │   ├── alerts/                      # EdgeWARN alert schema + manager
 │   ├── api_integration/             # API index management for generated files
-│   └── api/                         # EdgeWARN HTTP API service
+│   ├── api/                         # EdgeWARN HTTP API service
+│   ├── ingest/                      # Compatibility re-exports of shared ingest code
+│   ├── schedule/                    # Update-checking and scheduling helpers
+│   └── ui/                          # UI assets (placeholder package)
 └── EWMRS/
     ├── pipeline.py                  # Render pipeline orchestration
+    ├── scheduler.py                 # Scheduling helpers
     ├── render/                      # Layer rendering and tile generation
-    └── api/                         # EWMRS HTTP API service
+    ├── rap/                         # RAP Uint16 conversion pipeline + config
+    ├── api/                         # EWMRS HTTP API service
+    ├── colormaps.json               # Colormap source blocks served by /colormaps
+    └── mappings.json                # RAP layer/colormap mapping served by /rap/mappings
 ```
 
 ## High-Level Flow
