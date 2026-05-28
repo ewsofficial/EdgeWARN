@@ -1,24 +1,25 @@
 # Changelog
 
-## [2.5.2] 2026-05-02
+## [2.6.0] 2026-05-28
 
 ### Added
-- CLI flags and environment-variable overrides for configuring EdgeWARN and EWMRS API rate limits
-- Runtime controls to disable EWMRS processing and optional background ingest components when running the tandem pipeline
-- API and unit test coverage for the new server controls, tandem coordinator behavior, and I/O helpers
-
+- Realtime NEXRAD ingest pipeline with VCP-gated chunk ingest, scan coordinator, and timestamped retention logging
+- Event-driven NEXRAD sweep rendering pipeline serving raw layer artifacts from GUI storage
+- EWMRS NEXRAD discovery routes with gzipped data payloads, exposing all scan elevations through the API
+- Full NEXRAD network downloads across available K* radars with downloaded sites returned from coordinator runs
+- Consolidated NEXRAD bin payload format for render intermediates, with documentation of the layout
 
 ### Changed
-- Optimized integration processing by reusing spatial lookups, reducing worker copy overhead, and parallelizing selected pipeline work
-- Improved storm-cell detection performance with parallel radar and precip-type loading plus more compact gate-expansion label reduction
-- Updated tandem pipeline coordination and run-time flow to support the new component toggles and related API documentation
-
+- Streaming BZ2 ingest with mmap worker parsing, direct AR2V volume writes, and incremental offset tracking
+- Reduced NEXRAD worker and pipeline peak memory via streaming writes, deferred imports, library cache clearing, record cleanup, and malloc_trim
+- Refactored NEXRAD pipeline into service classes and a realtime subpackage with centralized timestamp and chunk helpers
+- Aligned NEXRAD colormaps with official variable keys and added interpolation for VRADH and WRADH
+- Parallelized NEXRAD latest-scan ingest with capped shared chunk concurrency and async S3 compatibility patches
+- Doppler-angle elevation binning with grouped AR2V renders decoded directly and paired low sweeps preserved
+- Polled local artifacts for GUI rendering and moved render serialization into the EWMRS render module
+- Updated API, core, and plans documentation to reflect current source behavior and performance optimization work
 
 ### Fixed
-- RGB values in colormap causing render pipeline fails
-- Clamped negative GOES reflectance values before masking in EWMRS rendering
-- Removed redundant alert logging noise during processing
-- Corrected StormCast package exports by dropping an unused compatibility import
 
 ### Testing
-- Added regression coverage for EWMRS API behavior, API rate-limit configuration, gate-mapper connectivity, integration parallelism, tandem coordinator toggles, and utility I/O handling
+- Added coverage for streamed NEXRAD grouping regressions, bin payload serialization, AR2V-only storage ingest, and the realtime pipeline subpackage imports
