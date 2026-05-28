@@ -7,6 +7,7 @@
 import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
+import { resolveUnder } from './nexrad/filesystem.js';
 const router = express.Router();
 
 // Get BASE_DIR from app.locals (set in server.js)
@@ -102,13 +103,16 @@ router.get('/download', async (req, res) => {
         }
 
         const wpcDir = getWpcDir(req);
-        const filePath = path.join(wpcDir, `wpc_sfc_${timestamp}.geojson`);
+        const filePath = resolveUnder(wpcDir, `wpc_sfc_${timestamp}.geojson`);
 
         const data = await fs.readFile(filePath, 'utf-8');
         const geojson = JSON.parse(data);
 
         res.json(geojson);
     } catch (err) {
+        if (err.statusCode) {
+            return res.status(err.statusCode).json({ error: err.message });
+        }
         if (err.code === 'ENOENT') {
             res.status(404).json({
                 error: 'File not found',
