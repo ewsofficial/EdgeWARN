@@ -55,6 +55,18 @@ def configure_proj_runtime() -> str | None:
 
 PROJ_DATA_DIR = configure_proj_runtime()
 
+# Pre-compiled timestamp patterns for find_timestamp. Sequential first-match
+# semantics are preserved; only the per-call compile cost is removed.
+_TIMESTAMP_PATTERNS = tuple(
+    re.compile(p) for p in (
+        r'MRMS_MergedReflectivityQC_(\d{8})-(\d{6})',
+        r'(\d{8})-(\d{6})_renamed',
+        r'(\d{8}-\d{6})',
+        r'.*(\d{8})-(\d{6}).*',
+        r's(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)',
+    )
+)
+
 # Cached transformer for EPSG:4326 to EPSG:3857 (thread-safe per pyproj docs)
 _TRANSFORMER_4326_TO_3857 = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
 
@@ -124,17 +136,9 @@ class TransformUtils:
         """
         filename = Path(filepath).name
         io_manager.write_debug(f"Extracting timestamp from filename: {filename}")
-        
-        patterns = [
-            r'MRMS_MergedReflectivityQC_(\d{8})-(\d{6})',
-            r'(\d{8})-(\d{6})_renamed',
-            r'(\d{8}-\d{6})',
-            r'.*(\d{8})-(\d{6}).*',
-            r's(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)'
-        ]
-        
-        for pattern_idx, pattern in enumerate(patterns):
-            match = re.search(pattern, filename)
+
+        for pattern in _TIMESTAMP_PATTERNS:
+            match = pattern.search(filename)
             if match:
                 groups = match.groups()
                 
