@@ -281,9 +281,8 @@ def wpc_loop():
     except KeyboardInterrupt:
         return
 
-def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue):
+def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue, manager):
     log_queue = multiprocessing.Queue()
-    manager = multiprocessing.Manager()
     shared_state = manager.dict()
 
     detection_ready_event = multiprocessing.Event()
@@ -302,7 +301,6 @@ def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue):
         )
     except Exception as exc:
         _drain_log_queue(log_queue)
-        manager.shutdown()
         print(f"[Scheduler] Tandem ingest cycle failed for {dt}: {exc}")
         return False
 
@@ -463,7 +461,6 @@ def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue):
         ewmrs_proc_exitcode = ewmrs_proc.exitcode
     _drain_log_queue(log_queue)
     _drain_log_queue(goes_render_log_queue)
-    manager.shutdown()
     return edgewarn_proc.exitcode == 0 and ewmrs_proc_exitcode == 0
 
 
@@ -517,6 +514,10 @@ def main():
         print(f"[Scheduler] Failed to initialize last_processed: {e}")
 
     print("[Scheduler] Starting background accessory ingests...")
+    # Hoisted out of _run_tandem_cycle: a Manager spawns a child server
+    # process and IPC machinery on construction; reusing one across cycles
+    # avoids that startup cost every minute.
+    manager = multiprocessing.Manager()
     metar_proc = multiprocessing.Process(target=metar_loop, daemon=True) if METAR_ENABLED else None
     nws_proc = multiprocessing.Process(target=nws_loop, daemon=True) if NWS_ENABLED else None
     wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True)
@@ -607,7 +608,7 @@ def main():
                 dt = latest_common
                 last_processed = latest_common
 
-                cycle_ok = _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue)
+                cycle_ok = _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue, manager)
                 if cycle_ok:
                     print(f"Tandem cycle for {dt} finished")
                 else:
@@ -632,6 +633,10 @@ def main():
             pass
         for process, name in background_processes:
             _stop_process(process, name)
+        try:
+            manager.shutdown()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     try:
