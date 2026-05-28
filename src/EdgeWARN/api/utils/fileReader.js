@@ -59,9 +59,26 @@ export async function readJsonFileSafe(dir, name, options = { useCache: true }) 
     return cache.get(full);
   }
 
+  // Symlink-escape defense: realpath then re-check containment.
+  let realFull;
+  try {
+    realFull = await fs.promises.realpath(resolvedFull);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      throw err;
+    }
+    throw err;
+  }
+  const realDir = await fs.promises.realpath(resolvedDir);
+  if (!realFull.startsWith(realDir + path.sep) && realFull !== realDir) {
+    const e = new Error('Path outside allowed directory');
+    e.code = 'EACCES';
+    throw e;
+  }
+
   // Optimization: Remove fs.existsSync to avoid double I/O and race condition
   // If file doesn't exist, readFile will throw ENOENT
-  const txt = await fs.promises.readFile(full, 'utf8');
+  const txt = await fs.promises.readFile(realFull, 'utf8');
   const json = JSON.parse(txt);
 
   // Cache the result.
