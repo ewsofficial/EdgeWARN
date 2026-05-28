@@ -1,4 +1,3 @@
-import asyncio
 import sys
 import traceback
 from datetime import datetime, timezone, timedelta
@@ -12,7 +11,6 @@ import util.file as fs
 import common.ingest.mrms.main as ingest_main
 from common.ingest.mrms.config import get_goes_modifiers, get_mrms_modifiers
 from common.ingest.mrms.pipeline import get_output_dirs
-from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.api_integration.index_manager import APIIndexManager
 from common.ingest.synoptic.main import download_rap
 from util.io import IOManager, QueueWriter
@@ -247,89 +245,6 @@ def _find_historical_file(directory, target_dt, io_manager):
 
     io_manager.write_debug(f"Found {files[-1]}")
     return str(files[-1])
-
-
-def realtime_pipeline(log_queue, dt, lat_limits, lon_limits, profile=False):
-    sys.stdout = QueueWriter(log_queue)
-    sys.stderr = QueueWriter(log_queue)
-
-    def log(message):
-        log_queue.put(message)
-
-    perf_tracker.reset()
-    perf_tracker.start("Total Pipeline")
-
-    async def run_pipeline_async():
-        detection_ready = asyncio.Event()
-        integration_ready = asyncio.Event()
-        cycle_state_holder = {}
-
-        def on_detection_ready(state):
-            cycle_state_holder["state"] = state
-            detection_ready.set()
-
-        def on_integration_ready(state):
-            cycle_state_holder["state"] = state
-            integration_ready.set()
-
-        perf_tracker.start("Ingestion - Shared Cycle")
-        cycle_task = asyncio.create_task(
-            run_tandem_ingest_cycle(
-                dt,
-                log,
-                on_detection_ready=on_detection_ready,
-                on_edgewarn_integration_ready=on_integration_ready,
-            )
-        )
-
-        await detection_ready.wait()
-        cycle_state = cycle_state_holder.get("state")
-
-        if not cycle_state.detection_inputs_ready:
-            log("ERROR: Detection ingest did not complete successfully, skipping EdgeWARN pipeline")
-            await cycle_task
-            perf_tracker.stop("Ingestion - Shared Cycle")
-            return
-
-        log("INFO: Starting Storm Cell Detection")
-        perf_tracker.start("Detection")
-        generated_file = await asyncio.to_thread(
-            run_edgewarn_detection_phase,
-            log,
-            lat_limits,
-            lon_limits,
-        )
-        perf_tracker.stop("Detection")
-
-        if not generated_file:
-            log("ERROR: Detection failed to generate a file, skipping integration.")
-            await cycle_task
-            perf_tracker.stop("Ingestion - Shared Cycle")
-            return
-
-        await integration_ready.wait()
-        cycle_state = cycle_state_holder.get("state", cycle_state)
-        await cycle_task
-        perf_tracker.stop("Ingestion - Shared Cycle")
-
-        if not cycle_state.edgewarn_integration_inputs_ready:
-            log("ERROR: Integration ingest did not complete successfully, skipping integration.")
-            return
-
-        perf_tracker.start("Integration")
-        await asyncio.to_thread(run_edgewarn_integration_phase, log, generated_file)
-        perf_tracker.stop("Integration")
-
-    try:
-        asyncio.run(run_pipeline_async())
-        perf_tracker.stop("Total Pipeline")
-        log("Pipeline completed successfully")
-
-        if profile:
-            _write_profile_summary(log)
-    except Exception as exc:
-        log(f"Error in pipeline: {exc}")
-        log(traceback.format_exc())
 
 
 def historical_pipeline(
