@@ -82,8 +82,17 @@ export function createApp(env = process.env, options = {}) {
     }
   }));
 
-  // Compression
-  app.use(compression());
+  // Compression — skip already-compressed payloads (PNG/JPEG/etc.) where
+  // gzip wastes CPU for ~0% size win.
+  app.use(compression({
+    filter: (req, res) => {
+      const contentType = res.getHeader('Content-Type');
+      if (typeof contentType === 'string' && /^image\//i.test(contentType)) {
+        return false;
+      }
+      return compression.filter(req, res);
+    }
+  }));
 
   // CORS configuration
   // Use ALLOWED_ORIGINS if set, otherwise allow all origins (for development/testing)
