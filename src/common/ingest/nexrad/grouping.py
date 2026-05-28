@@ -38,8 +38,18 @@ def _group_representative_angle(group: ElevationGroup) -> float:
     return float(group.members[0].fixed_angle)
 
 
+def _group_has_required_waveforms(group: ElevationGroup) -> bool:
+    """Only export surveillance groups once their doppler mate is present."""
+    waveforms_present = {_waveform_key(member.waveform) for member in group.members}
+    if SURVEILLANCE_WAVEFORM in waveforms_present:
+        return DOPPLER_WAVEFORM in waveforms_present
+    return len(group.members) > 0
+
+
 def _finalize_group(group: ElevationGroup | None, result: list[ElevationGroup]) -> None:
     if group is None:
+        return
+    if not _group_has_required_waveforms(group):
         return
     representative_angle = _group_representative_angle(group)
     canonical_angle = _canonical_angle(representative_angle)

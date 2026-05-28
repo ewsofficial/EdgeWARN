@@ -21,6 +21,7 @@ from pathlib import Path
 from common.ingest.nexrad.grouping import elevation_group_key, group_sweeps_by_elevation
 from common.ingest.nexrad.models import ElevationArtifact, SweepRecord, WorkerParseResult
 from common.ingest.nexrad.parser import parse_raw_volume_file_mmap
+from common.ingest.nexrad.s3_chunks import format_nexrad_timestamp, parse_nexrad_timestamp
 from common.ingest.nexrad.writer import write_elevation_artifacts
 
 
@@ -50,13 +51,41 @@ def _clear_worker_caches() -> None:
         pass
 
 
+def _timestamp_sort_key(value: str | None) -> tuple[int, str]:
+    if not value:
+        return (0, "")
+    parsed = parse_nexrad_timestamp(value)
+    if parsed is not None:
+        normalized = format_nexrad_timestamp(parsed)
+        if normalized:
+            return (1, normalized)
+    return (0, str(value))
+
+
+def _normalize_seen_elevation_exports(value: dict[str, str | None] | set[str] | None) -> dict[str, str | None]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return {str(key): (str(timestamp) if timestamp else None) for key, timestamp in value.items()}
+    return {str(key): None for key in value}
+
+
+def _should_export_group(group_key: str, group_timestamp: str | None, seen_elevation_exports: dict[str, str | None]) -> bool:
+    previous_timestamp = seen_elevation_exports.get(group_key)
+    if previous_timestamp is None:
+        return group_key not in seen_elevation_exports or group_timestamp is not None
+    if group_timestamp is None:
+        return False
+    return _timestamp_sort_key(group_timestamp) > _timestamp_sort_key(previous_timestamp)
+
+
 def parse_and_export(
     volume_path: str | Path,
     output_root: str | Path,
     site: str,
     volume_id: str,
     scan_timestamp: str | None,
-    seen_elevation_keys: set[str] | None = None,
+    seen_elevation_keys: dict[str, str | None] | set[str] | None = None,
     trim_buffer: bool = False,
     parse_offset: int = 0,
 ) -> WorkerParseResult:
@@ -68,14 +97,13 @@ def parse_and_export(
         site: Radar site ID (upper-case).
         volume_id: Volume identifier.
         scan_timestamp: Scan-level timestamp for manifest tracking.
-        seen_elevation_keys: Set of already-exported elevation group keys.
+        seen_elevation_keys: Already-exported group keys or group-key timestamp metadata.
         parse_offset: Byte offset to resume parsing from (0 = full parse).
 
     Returns:
         WorkerParseResult with metadata about newly exported artifacts.
     """
-    if seen_elevation_keys is None:
-        seen_elevation_keys = set()
+    seen_elevation_exports = _normalize_seen_elevation_exports(seen_elevation_keys)
 
     saved_sweeps: list[str] = []
     saved_elevations: list[ElevationArtifact] = []
@@ -95,7 +123,7 @@ def parse_and_export(
         first_elevation_written = False
         for group in elevation_groups:
             key = elevation_group_key(group)
-            if key in seen_elevation_keys:
+            if not _should_export_group(key, group.first_timestamp, seen_elevation_exports):
                 dropped_group_names.update(member.group_name for member in group.members)
                 continue
 
@@ -115,7 +143,7 @@ def parse_and_export(
 
             for artifact in artifacts:
                 saved_elevations.append(artifact)
-                seen_elevation_keys.add(key)
+                seen_elevation_exports[key] = artifact.elevation_timestamp or artifact.scan_timestamp
 
             saved_sweeps.extend(m.group_name for m in group.members)
             dropped_group_names.update(member.group_name for member in group.members)
