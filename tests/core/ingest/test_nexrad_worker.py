@@ -70,3 +70,11 @@ def test_extract_worker_sweep_records_reindex_for_grouping_contract():
 
     assert [record.index for record in records] == [0, 1, 2]
     assert [group.canonical_angle_deg for group in groups] == [0.5, 1.3]
+
+
+def test_should_export_group_only_when_timestamp_advances():
+    seen = {"0.5:/sweep_0,/sweep_1": "20260507-150001"}
+
+    assert worker_module._should_export_group("0.5:/sweep_0,/sweep_1", "20260507-150011", seen) is True
+    assert worker_module._should_export_group("0.5:/sweep_0,/sweep_1", "20260507-150001", seen) is False
+    assert worker_module._should_export_group("0.5:/sweep_0,/sweep_1", "20260507-145959", seen) is False

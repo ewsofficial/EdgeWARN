@@ -76,8 +76,45 @@ def test_group_sweeps_ignores_incomplete():
         _sweep(2, 0.9, waveform="batch", azimuth_count=720),
     ]
     groups = group_sweeps_by_elevation(sweeps)
-    assert len(groups) == 2
-    assert len(groups[0].members) == 1
+    assert len(groups) == 1
+    assert groups[0].canonical_angle_deg == 0.9
+
+
+def test_group_sweeps_does_not_export_surveillance_without_matching_doppler():
+    sweeps = [
+        _sweep(0, 1.07, waveform="contiguous_surveillance", timestamp="2026-01-01T00:00:00Z"),
+        _sweep(1, 1.8, waveform="staggered_pulse_pair", timestamp="2026-01-01T00:01:00Z"),
+    ]
+
+    groups = group_sweeps_by_elevation(sweeps)
+
+    assert len(groups) == 1
+    assert groups[0].canonical_angle_deg == 1.8
+    assert [member.group_name for member in groups[0].members] == ["/sweep_01"]
+
+
+def test_group_sweeps_mesosails_revisit_stays_out_of_partial_mid_elevation_bin():
+    sweeps = [
+        _sweep(0, 0.62896728515625, waveform="contiguous_surveillance", timestamp="2026-05-28T13:18:33Z"),
+        _sweep(1, 0.50811767578125, waveform="contiguous_doppler", timestamp="2026-05-28T13:18:56Z"),
+        _sweep(2, 0.758056640625, waveform="contiguous_surveillance", timestamp="2026-05-28T13:19:22Z"),
+        _sweep(3, 0.8349609375, waveform="contiguous_doppler", timestamp="2026-05-28T13:19:45Z"),
+        _sweep(4, 1.0711669921875, waveform="contiguous_surveillance", timestamp="2026-05-28T13:20:08Z"),
+        _sweep(5, 1.23046875, waveform="contiguous_doppler", timestamp="2026-05-28T13:20:30Z"),
+        _sweep(6, 1.746826171875, waveform="staggered_pulse_pair", timestamp="2026-05-28T13:20:52Z"),
+        _sweep(7, 2.21923828125, waveform="staggered_pulse_pair", timestamp="2026-05-28T13:21:10Z"),
+        _sweep(8, 2.87567138671875, waveform="staggered_pulse_pair", timestamp="2026-05-28T13:21:28Z"),
+        _sweep(9, 0.6536865234375, waveform="contiguous_surveillance", timestamp="2026-05-28T13:22:00Z"),
+        _sweep(10, 0.52734375, waveform="contiguous_doppler", timestamp="2026-05-28T13:22:23Z"),
+        _sweep(11, 3.790283203125, waveform="staggered_pulse_pair", timestamp="2026-05-28T13:22:42Z"),
+    ]
+
+    groups = group_sweeps_by_elevation(sweeps)
+
+    assert [group.canonical_angle_deg for group in groups] == [0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 0.5, 4.0]
+    assert [member.group_name for member in groups[0].members] == ["/sweep_00", "/sweep_01"]
+    assert [member.group_name for member in groups[2].members] == ["/sweep_04", "/sweep_05"]
+    assert all([member.group_name for member in group.members] != ["/sweep_04"] for group in groups)
 
 
 def test_group_sweeps_first_timestamp():
