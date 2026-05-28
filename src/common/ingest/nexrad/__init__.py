@@ -10,7 +10,6 @@ __all__ = [
     "ingest_allowed_vcp_volume",
     "ingest_latest_allowed_vcp_scans",
     "ingest_latest_station_scans_async",
-    "poll_latest_station_scans_forever_async",
     "run_realtime_ingestion_pipeline",
     "run_realtime_ingestion_pipeline_async",
 ]
@@ -30,12 +29,6 @@ def ingest_latest_allowed_vcp_scans(*args, **kwargs):
 
 async def ingest_latest_station_scans_async(*args, **kwargs):
     from .coordinator import ingest_latest_station_scans_async as _impl
-
-    return await _impl(*args, **kwargs)
-
-
-async def poll_latest_station_scans_forever_async(*args, **kwargs):
-    from .coordinator import poll_latest_station_scans_forever_async as _impl
 
     return await _impl(*args, **kwargs)
 
