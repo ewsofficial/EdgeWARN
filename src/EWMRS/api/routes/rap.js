@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs/promises';
+import { fileURLToPath } from 'url';
 
 const router = express.Router();
 
@@ -180,7 +181,7 @@ router.get('/layers', async (req, res) => {
 });
 
 router.get('/mappings', async (req, res) => {
-  const mappingsPath = path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'mappings.json');
+  const mappingsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'mappings.json');
 
   try {
     const data = await fs.readFile(mappingsPath, 'utf-8');
