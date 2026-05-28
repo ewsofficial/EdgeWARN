@@ -99,52 +99,54 @@ class AssignmentCostCalculator:
         return total_cost
     
     def prefilter_candidates(self, track: Dict[str, Any],
-                              detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+                              detections: List[Dict[str, Any]],
+                              det_lats: Optional[np.ndarray] = None,
+                              det_lons: Optional[np.ndarray] = None) -> List[Dict[str, Any]]:
         """
         Stage 1: Filter detections within prefilter_radius_km.
-        
+
         This reduces the problem size before running the Hungarian algorithm.
-        
+
         Args:
             track: Tracked storm cell dictionary
             detections: List of all new detections
-            
+            det_lats, det_lons: Optional pre-built numpy arrays of detection
+                centroid lats/lons (parallel to ``detections``). If supplied,
+                the per-call extraction loop is skipped — callers running a
+                per-track loop should build these once and reuse them.
+
         Returns:
             List of detections within the pre-filter radius
         """
         if not detections:
             return []
-            
+
         # Get predicted position from Kalman state or centroid
         kalman_state = track.get('kalman_state', {})
         pred_lat = kalman_state.get('lat')
         pred_lon = kalman_state.get('lon')
-        
+
         if pred_lat is None or pred_lon is None:
             # Fall back to current centroid
             centroid = track.get('centroid', [0, 0])
             pred_lat, pred_lon = centroid[0], centroid[1]
-        
-        # Extract all detection centroids into numpy arrays for vectorized distance calc
-        det_lats = np.zeros(len(detections))
-        det_lons = np.zeros(len(detections))
-        
-        for i, det in enumerate(detections):
-            det_centroid = det.get('centroid', [0, 0])
-            det_lats[i] = det_centroid[0]
-            det_lons[i] = det_centroid[1]
-            
+
+        if det_lats is None or det_lons is None:
+            det_lats = np.zeros(len(detections))
+            det_lons = np.zeros(len(detections))
+
+            for i, det in enumerate(detections):
+                det_centroid = det.get('centroid', [0, 0])
+                det_lats[i] = det_centroid[0]
+                det_lons[i] = det_centroid[1]
+
         from .state import vectorized_haversine_distance
-        
+
         # Calculate distances to all detections at once
         distances = vectorized_haversine_distance(pred_lat, pred_lon, det_lats, det_lons)
-        
-        candidates = []
-        for i, dist in enumerate(distances):
-            if dist <= self.config.prefilter_radius_km:
-                candidates.append(detections[i])
-        
-        return candidates
+
+        radius = self.config.prefilter_radius_km
+        return [detections[i] for i in np.flatnonzero(distances <= radius)]
 
     def _get_reference_position(
         self,
@@ -534,12 +536,25 @@ def run_hybrid_assignment(tracks: List[Dict[str, Any]],
         AssignmentResult with matched pairs and unmatched lists
     """
     calculator = AssignmentCostCalculator(config)
-    
-    # Stage 1: Pre-filter candidates for each track
+
+    # Stage 1: Pre-filter candidates for each track.
+    # Build the detection centroid arrays once and reuse across every track —
+    # the centroid set does not change during prefiltering.
+    if detections:
+        det_lats = np.empty(len(detections), dtype=np.float64)
+        det_lons = np.empty(len(detections), dtype=np.float64)
+        for i, det in enumerate(detections):
+            det_centroid = det.get('centroid', [0, 0])
+            det_lats[i] = det_centroid[0]
+            det_lons[i] = det_centroid[1]
+    else:
+        det_lats = None
+        det_lons = None
+
     track_candidates = {}
     for track in tracks:
         track_id = int(track['id'])
-        candidates = calculator.prefilter_candidates(track, detections)
+        candidates = calculator.prefilter_candidates(track, detections, det_lats, det_lons)
         track_candidates[track_id] = candidates
     
     # Stage 2: Build filtered cost matrix
