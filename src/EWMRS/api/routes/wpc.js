@@ -16,6 +16,22 @@ function getWpcDir(req) {
     return path.join(baseDir, 'wpc', 'surface_analysis');
 }
 
+async function readJsonFileUnder(root, ...segments) {
+    const filePath = resolveUnder(root, ...segments);
+    const [realRoot, realFilePath] = await Promise.all([
+        fs.realpath(root),
+        fs.realpath(filePath)
+    ]);
+    const relative = path.relative(realRoot, realFilePath);
+
+    if (relative !== '' && (relative.startsWith('..') || path.isAbsolute(relative))) {
+        throw Object.assign(new Error('Resolved path escapes WPC root'), { statusCode: 400 });
+    }
+
+    const data = await fs.readFile(realFilePath, 'utf-8');
+    return JSON.parse(data);
+}
+
 /**
  * GET /wpc/fetch
  * 
@@ -103,10 +119,7 @@ router.get('/download', async (req, res) => {
         }
 
         const wpcDir = getWpcDir(req);
-        const filePath = resolveUnder(wpcDir, `wpc_sfc_${timestamp}.geojson`);
-
-        const data = await fs.readFile(filePath, 'utf-8');
-        const geojson = JSON.parse(data);
+        const geojson = await readJsonFileUnder(wpcDir, `wpc_sfc_${timestamp}.geojson`);
 
         res.json(geojson);
     } catch (err) {
