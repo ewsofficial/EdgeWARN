@@ -131,7 +131,7 @@ def test_run_worker_parse_uses_pool_and_updates_seen_keys(tmp_path):
         file_path=str(tmp_path / "scan.ar2v"),
     )
     Path(state.file_path).write_bytes(b"data")
-    seen_keys = set()
+    seen_keys = {}
     first_ts = None
 
     artifact = ElevationArtifact(
@@ -175,7 +175,7 @@ def test_run_worker_parse_uses_pool_and_updates_seen_keys(tmp_path):
         )
 
     assert result_ts == "2026-05-19T13:21:57Z"
-    assert seen_keys == {"0.5:/sweep_0,/sweep_1"}
+    assert seen_keys == {"0.5:/sweep_0,/sweep_1": "2026-05-19T13:21:57Z"}
     pool_mock.return_value.submit.assert_called_once()
 
 
