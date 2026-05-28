@@ -186,6 +186,11 @@ router.get('/fetch', async (req, res) => {
     return res.status(400).json({ error: 'Invalid product name' });
   }
 
+  // Allowlist: only known products may be fetched
+  if (!Object.prototype.hasOwnProperty.call(PRODUCT_MAPPING, product)) {
+    return res.status(404).json({ error: 'Unknown product or no mapping found' });
+  }
+
   const productDir = path.join(GUI_DIR, product);
   const indexFile = path.join(productDir, 'index.json');
 
