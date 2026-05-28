@@ -364,29 +364,33 @@ def build_filtered_cost_matrix(tracks: List[Dict[str, Any]],
                                track_candidates: Dict[int, List[Dict[str, Any]]],
                                kalman_filters: Dict[int, KalmanFilter],
                                config: AssignmentConfig = DEFAULT_ASSIGNMENT_CONFIG,
-                               dt_seconds: float = 120.0) -> Tuple[np.ndarray, Dict[int, int], Dict[int, int], List[Tuple[int, int]]]:
+                               dt_seconds: float = 120.0) -> Tuple[np.ndarray, Dict[int, int], Dict[int, int], List[Tuple[int, int]], Dict[Tuple[int, int], float]]:
     """
     Build reduced cost matrix for pre-filtered candidates.
-    
+
     This is Stage 2 of the hybrid approach. The cost matrix only includes
     track-detection pairs that passed the pre-filter.
-    
+
     Args:
         tracks: List of tracked storm cells
         track_candidates: Map from track ID to list of candidate detections
         kalman_filters: Dictionary mapping track IDs to Kalman filters
         config: Assignment configuration
         dt_seconds: Time since last update
-    
+
     Returns:
-        Tuple of (cost_matrix, track_id_map, detection_id_map, single_assignments)
+        Tuple of (cost_matrix, track_id_map, detection_id_map, single_assignments, single_assignment_costs)
         - cost_matrix: N x M matrix of assignment costs
         - track_id_map: Map from row index to track ID
         - detection_id_map: Map from column index to detection ID
         - single_assignments: List of (track_id, detection_id) for single-candidate tracks
+        - single_assignment_costs: Map from (track_id, detection_id) to the cost
+          already computed during single-candidate gating, so callers don't need
+          to recompute it.
     """
     # First, handle single-candidate tracks (direct assignment)
     single_assignments = []
+    single_assignment_costs: Dict[Tuple[int, int], float] = {}
     multi_candidate_tracks = []
     all_candidate_detections = set()
 
@@ -411,15 +415,16 @@ def build_filtered_cost_matrix(tracks: List[Dict[str, Any]],
                     if cost <= max_cost:
                         det_id = int(candidates[0]['id'])
                         single_assignments.append((track_id, det_id))
+                        single_assignment_costs[(track_id, det_id)] = cost
                         continue
-        
+
         if len(candidates) >= 1:
             multi_candidate_tracks.append(track)
             for det in candidates:
                 all_candidate_detections.add(int(det['id']))
-    
+
     if len(multi_candidate_tracks) == 0 or len(all_candidate_detections) == 0:
-        return np.array([]), {}, {}, single_assignments
+        return np.array([]), {}, {}, single_assignments, single_assignment_costs
     
     # Create detection list and maps
     detection_list = list(all_candidate_detections)
@@ -428,38 +433,38 @@ def build_filtered_cost_matrix(tracks: List[Dict[str, Any]],
     
     n_tracks = len(multi_candidate_tracks)
     n_detections = len(detection_list)
-    
+
     # Create track map
     track_id_map = {i: int(multi_candidate_tracks[i]['id']) for i in range(n_tracks)}
-    
+
     # Build cost matrix
     cost_matrix = np.full((n_tracks, n_detections), np.inf)
 
     for i, track in enumerate(multi_candidate_tracks):
         track_id = int(track['id'])
         kf = kalman_filters.get(track_id)
-        
+
         if kf is None:
             continue
-        
+
         candidates = track_candidates.get(track_id, [])
-        
+
         for det in candidates:
             det_id = int(det['id'])
             if det_id not in detection_id_to_idx:
                 continue
-            
+
             j = detection_id_to_idx[det_id]
-            
+
             # Check gating
             if not calculator.is_within_gate(track, det, kf):
                 continue
-            
+
             # Compute cost
             cost = calculator.compute_cost(track, det, kf, dt_seconds)
             cost_matrix[i, j] = cost
-    
-    return cost_matrix, track_id_map, detection_id_map, single_assignments
+
+    return cost_matrix, track_id_map, detection_id_map, single_assignments, single_assignment_costs
 
 
 def solve_assignment(cost_matrix: np.ndarray,
@@ -538,19 +543,22 @@ def run_hybrid_assignment(tracks: List[Dict[str, Any]],
         track_candidates[track_id] = candidates
     
     # Stage 2: Build filtered cost matrix
-    cost_matrix, track_id_map, detection_id_map, single_assignments = build_filtered_cost_matrix(
+    cost_matrix, track_id_map, detection_id_map, single_assignments, single_assignment_costs = build_filtered_cost_matrix(
         tracks, track_candidates, kalman_filters, config, dt_seconds
     )
-    
+
     # Add single assignments to result
     matched = list(single_assignments)
     matched_track_ids = {pair[0] for pair in matched}
     matched_detection_ids = {pair[1] for pair in matched}
-    
+
+    # Costs already computed during single-candidate gating; reuse them.
+    costs: Dict[Tuple[int, int], float] = dict(single_assignment_costs)
+
     # Stage 3: Solve assignment for multi-candidate tracks
     if cost_matrix.size > 0:
         pairs, unmatched_rows, unmatched_cols = solve_assignment(cost_matrix)
-        
+
         # Convert indices to IDs
         for row_idx, col_idx in pairs:
             track_id = track_id_map[row_idx]
@@ -558,26 +566,15 @@ def run_hybrid_assignment(tracks: List[Dict[str, Any]],
             matched.append((track_id, det_id))
             matched_track_ids.add(track_id)
             matched_detection_ids.add(det_id)
-    
+            # Reuse the cost already stored in cost_matrix for this pair.
+            costs[(track_id, det_id)] = float(cost_matrix[row_idx, col_idx])
+
     # Build unmatched lists
     all_track_ids = {int(t['id']) for t in tracks}
     all_detection_ids = {int(d['id']) for d in detections}
-    
+
     unmatched_tracks = list(all_track_ids - matched_track_ids)
     unmatched_detections = list(all_detection_ids - matched_detection_ids)
-    
-    # Build cost dictionary
-    tracks_by_id = {int(t['id']): t for t in tracks}
-    detections_by_id = {int(d['id']): d for d in detections}
-    costs = {}
-    for track_id, det_id in matched:
-        track = tracks_by_id.get(track_id)
-        detection = detections_by_id.get(det_id)
-        kf = kalman_filters.get(track_id)
-
-        if track and detection and kf:
-            cost = calculator.compute_cost(track, detection, kf, dt_seconds)
-            costs[(track_id, det_id)] = cost
     
     return AssignmentResult(
         matched=matched,
