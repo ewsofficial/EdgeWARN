@@ -658,11 +658,6 @@ def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str 
     return results
 
 
-def run_ewmrs_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
-    """Run the EWMRS rendering pipeline using locally staged files only."""
-    return run_render_pipeline(dt, max_entries=max_entries)
-
-
 def run_mrms_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
     """Run the MRMS-backed EWMRS render phase."""
     return run_render_pipeline(
