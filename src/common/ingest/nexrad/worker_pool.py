@@ -37,7 +37,7 @@ def _worker_parse(
     site: str,
     volume_id: str,
     scan_timestamp: str | None,
-    seen_keys: set[str],
+    seen_keys: dict[str, str | None],
     trim_buffer: bool,
     parse_offset: int,
 ) -> dict[str, Any]:
@@ -134,7 +134,7 @@ class NexradWorkerPool:
         site: str,
         volume_id: str,
         scan_timestamp: str | None,
-        seen_keys: set[str],
+        seen_keys: dict[str, str | None],
         trim_buffer: bool = False,
         parse_offset: int = 0,
     ) -> Future[WorkerParseResult]:
