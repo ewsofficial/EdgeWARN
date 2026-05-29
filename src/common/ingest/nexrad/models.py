@@ -169,3 +169,28 @@ class NexradCoordinatorRunResults(list[NexradCoordinatorResult]):
     def __init__(self, results=(), *, downloaded_sites=()):
         super().__init__(results)
         self.downloaded_sites = tuple(downloaded_sites)
+
+
+@dataclass
+class RawSweepRange:
+    index: int
+    group_name: str
+    elevation_number: int
+    fixed_angle: float
+    first_timestamp: str | None
+    last_timestamp: str | None
+    radial_count: int = 0
+    waveform: str | None = None
+    record_ranges: list[tuple[int, int]] = field(default_factory=list)
+    complete: bool = False
+
+
+@dataclass
+class RawVolumeBuffer:
+    volume_header: bytes
+    site: str
+    record_buffer: bytes
+    metadata_ranges: list[tuple[int, int]] = field(default_factory=list)
+    sweeps: list[RawSweepRange] = field(default_factory=list)
+    trailing_bytes: bytes = b""
+    compression_record_count: int = 0

@@ -10,12 +10,13 @@ ordered chunk streams without dataset decoders for sweep boundaries.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import bz2
 import mmap
 import struct
+
+from common.ingest.nexrad.models import RawSweepRange, RawVolumeBuffer
 
 
 RECORD_BYTES = 2432
@@ -63,8 +64,8 @@ def _decompress_chunked_record_stream(volume_bytes: bytes) -> bytes:
 def _decompress_and_parse_stream(
     data: bytes,
     start_offset: int,
-    metadata_records: list[bytes],
-    sweeps: list[RawSweep],
+    metadata_ranges: list[tuple[int, int]],
+    sweeps: list[RawSweepRange],
 ) -> int:
     """Streaming BZ2 decompression: decompress one block, parse records, discard.
 
@@ -78,7 +79,7 @@ def _decompress_and_parse_stream(
         cursor = len(data)
 
     offset = 0
-    offset = _walk_records(decompressed, offset, metadata_records, sweeps)
+    offset = _walk_records(decompressed, offset, metadata_ranges, sweeps)
 
     while cursor + 4 <= len(data):
         block_size = struct.unpack(">I", data[cursor : cursor + 4])[0]
@@ -88,7 +89,7 @@ def _decompress_and_parse_stream(
         compressed_block = data[cursor : cursor + block_size]
         cursor += block_size
         decompressed_block = bz2.decompress(compressed_block)
-        offset = _walk_records(decompressed_block, offset, metadata_records, sweeps)
+        offset = _walk_records(decompressed_block, offset, metadata_ranges, sweeps)
         del decompressed_block
 
     return offset
@@ -97,8 +98,8 @@ def _decompress_and_parse_stream(
 def _walk_records(
     record_stream,
     offset: int,
-    metadata_records: list[bytes],
-    sweeps: list[RawSweep],
+    metadata_ranges: list[tuple[int, int]],
+    sweeps: list[RawSweepRange],
     sweep_index: int | None = None,
 ) -> tuple[int, int]:
     """Walk message-31 records from a byte-like stream starting at offset.
@@ -109,7 +110,7 @@ def _walk_records(
     if sweep_index is None:
         sweep_index = len(sweeps)
 
-    current: RawSweep | None = None
+    current: RawSweepRange | None = None
     if sweeps and not sweeps[-1].complete:
         current = sweeps.pop()
 
@@ -125,7 +126,7 @@ def _walk_records(
         offset += record_len
 
         if msg_type in SUPPORTED_METADATA_TYPES:
-            metadata_records.append(bytes(record) if not isinstance(record, bytes) else record)
+            metadata_ranges.append((offset - record_len, offset))
             continue
 
         if msg_type != 31:
@@ -134,7 +135,7 @@ def _walk_records(
         radial_status, elevation_number, _collect_ms, elevation_angle, timestamp = _read_msg31_metadata(record)
         sweep_angle = float(elevation_angle)
         if sweep_angle < MIN_SWEEP_ANGLE_DEG:
-            if radial_status in START_STATUSES and current is not None and current.records:
+            if radial_status in START_STATUSES and current is not None and current.record_ranges:
                 sweeps.append(current)
                 sweep_index = current.index + 1
                 current = None
@@ -142,10 +143,10 @@ def _walk_records(
         waveform = _classify_msg31_waveform(record, sweep_angle)
 
         if radial_status in START_STATUSES:
-            if current is not None and current.records:
+            if current is not None and current.record_ranges:
                 sweeps.append(current)
                 sweep_index = current.index + 1
-            current = RawSweep(
+            current = RawSweepRange(
                 index=sweep_index,
                 group_name=f"/sweep_{sweep_index}",
                 elevation_number=elevation_number,
@@ -156,7 +157,7 @@ def _walk_records(
             )
             sweep_index += 1
         elif current is None:
-            current = RawSweep(
+            current = RawSweepRange(
                 index=sweep_index,
                 group_name=f"/sweep_{sweep_index}",
                 elevation_number=elevation_number,
@@ -170,7 +171,7 @@ def _walk_records(
         if current.waveform is None and waveform is not None:
             current.waveform = waveform
 
-        current.records.append(bytes(record) if not isinstance(record, bytes) else record)
+        current.record_ranges.append((offset - record_len, offset))
         current.radial_count += 1
         current.last_timestamp = timestamp or current.last_timestamp
 
@@ -179,34 +180,10 @@ def _walk_records(
             sweeps.append(current)
             current = None
 
-    if current is not None and current.records:
+    if current is not None and current.record_ranges:
         sweeps.append(current)
 
     return offset, sweep_index
-
-
-@dataclass
-class RawSweep:
-    index: int
-    group_name: str
-    elevation_number: int
-    fixed_angle: float
-    first_timestamp: str | None
-    last_timestamp: str | None
-    radial_count: int = 0
-    waveform: str | None = None
-    records: list[bytes] = field(default_factory=list)
-    complete: bool = False
-
-
-@dataclass
-class RawVolume:
-    volume_header: bytes
-    site: str
-    metadata_records: list[bytes] = field(default_factory=list)
-    sweeps: list[RawSweep] = field(default_factory=list)
-    trailing_bytes: bytes = b""
-    compression_record_count: int = 0
 
 
 def normalize_chunk_payload(payload: bytes, *, first_chunk_of_volume: bool) -> bytes:
@@ -420,7 +397,7 @@ def split_stream_into_volumes(stream_bytes: bytes) -> list[bytes]:
     return volumes
 
 
-def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
+def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolumeBuffer:
     """Parse raw AR2V bytes into ordered sweep metadata.
 
     This parser intentionally handles the modern message-31 path used by the
@@ -446,9 +423,9 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
 
     del volume_bytes
 
-    metadata_records: list[bytes] = []
-    sweeps: list[RawSweep] = []
-    current: RawSweep | None = None
+    metadata_ranges: list[tuple[int, int]] = []
+    sweeps: list[RawSweepRange] = []
+    current: RawSweepRange | None = None
     sweep_index = 0
 
     while offset + 12 + MSG_HEADER_LEN <= len(record_stream):
@@ -462,7 +439,7 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
         offset += record_len
 
         if msg_type in SUPPORTED_METADATA_TYPES:
-            metadata_records.append(record)
+            metadata_ranges.append((offset - record_len, offset))
             continue
 
         if msg_type != 31:
@@ -472,16 +449,16 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
         sweep_angle = float(elevation_angle)
         if sweep_angle < MIN_SWEEP_ANGLE_DEG:
             if radial_status in START_STATUSES:
-                if current is not None and current.records:
+                if current is not None and current.record_ranges:
                     sweeps.append(current)
                 current = None
             continue
         waveform = _classify_msg31_waveform(record, sweep_angle)
 
         if radial_status in START_STATUSES:
-            if current is not None and current.records:
+            if current is not None and current.record_ranges:
                 sweeps.append(current)
-            current = RawSweep(
+            current = RawSweepRange(
                 index=sweep_index,
                 group_name=f"/sweep_{sweep_index}",
                 elevation_number=elevation_number,
@@ -492,7 +469,7 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
             )
             sweep_index += 1
         elif current is None:
-            current = RawSweep(
+            current = RawSweepRange(
                 index=sweep_index,
                 group_name=f"/sweep_{sweep_index}",
                 elevation_number=elevation_number,
@@ -506,7 +483,7 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
         if current.waveform is None and waveform is not None:
             current.waveform = waveform
 
-        current.records.append(record)
+        current.record_ranges.append((offset - record_len, offset))
         current.radial_count += 1
         current.last_timestamp = timestamp or current.last_timestamp
 
@@ -515,23 +492,24 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
             sweeps.append(current)
             current = None
 
-    if current is not None and current.records:
+    if current is not None and current.record_ranges:
         sweeps.append(current)
 
+    buffer_bytes = record_stream
     trailing = record_stream[offset:]
-    del record_stream
 
-    return RawVolume(
+    return RawVolumeBuffer(
         volume_header=volume_header,
         site=site.upper(),
-        metadata_records=metadata_records,
+        record_buffer=buffer_bytes,
+        metadata_ranges=metadata_ranges,
         sweeps=sweeps,
         trailing_bytes=trailing,
         compression_record_count=compression_record_count,
     )
 
 
-def parse_raw_volume_file(path: str | Path) -> RawVolume:
+def parse_raw_volume_file(path: str | Path) -> RawVolumeBuffer:
     return parse_raw_volume_bytes(Path(path).read_bytes())
 
 
@@ -539,7 +517,7 @@ def parse_raw_volume_file_mmap(
     path: str | Path,
     *,
     parse_offset: int = 0,
-) -> RawVolume:
+) -> RawVolumeBuffer:
     """Parse AR2V file using mmap for zero-copy, on-demand paging.
 
     Args:
@@ -560,69 +538,33 @@ def parse_raw_volume_file_mmap(
             site = volume_header[20:24].decode("ascii", errors="ignore").strip() or "UNKNOWN"
             compression_record_count = struct.unpack(">I", mm[24:28])[0] if file_size >= 28 else 0
 
-            metadata_records: list[bytes] = []
-            sweeps: list[RawSweep] = []
+            metadata_ranges: list[tuple[int, int]] = []
+            sweeps: list[RawSweepRange] = []
             final_offset: int = 0
 
             if compression_record_count > 0:
-                metadata_records = []
-                sweeps = []
-                sweep_index = 0
-                cursor = 28
-                current_uncompressed = bytearray()
-
-                if mm[cursor:cursor+4] == b"BZh9":
-                    decompressor = bz2.BZ2Decompressor()
-                    decompressed = decompressor.decompress(bytes(mm[cursor:]))
-                    current_uncompressed.extend(decompressed)
-                    if decompressor.unused_data:
-                        cursor = file_size - len(decompressor.unused_data)
-                    else:
-                        cursor = file_size
-
-                    final_offset, sweep_index = _walk_records(
-                        current_uncompressed, 0, metadata_records, sweeps, sweep_index=sweep_index,
-                    )
-                    if final_offset > 0:
-                        current_uncompressed = current_uncompressed[final_offset:]
-
-                while cursor + 4 <= file_size:
-                    block_size = struct.unpack(">I", mm[cursor : cursor + 4])[0]
-                    cursor += 4
-                    if block_size <= 0 or cursor + block_size > file_size:
-                        break
-
-                    compressed_block = mm[cursor : cursor + block_size]
-                    cursor += block_size
-
-                    current_uncompressed.extend(bz2.decompress(compressed_block))
-
-                    final_offset, sweep_index = _walk_records(
-                        current_uncompressed, 0, metadata_records, sweeps, sweep_index=sweep_index,
-                    )
-
-                    if final_offset > 0:
-                        current_uncompressed = current_uncompressed[final_offset:]
-
-                trailing = bytes(current_uncompressed)
-                del current_uncompressed
+                record_buffer = _decompress_chunked_record_stream(bytes(mm[:]))
+                final_offset, _ = _walk_records(record_buffer, 0, metadata_ranges, sweeps)
+                trailing = record_buffer[final_offset:]
             else:
+                record_buffer = bytes(mm[:])
                 data_start = VOLUME_HEADER_BYTES
                 start = parse_offset if parse_offset > 0 else data_start
-                final_offset, _ = _walk_records(mm, start, metadata_records, sweeps)
-                trailing = bytes(mm[final_offset:])
+                final_offset, _ = _walk_records(record_buffer, start, metadata_ranges, sweeps)
+                trailing = record_buffer[final_offset:]
 
-            return RawVolume(
+            return RawVolumeBuffer(
                 volume_header=volume_header,
                 site=site.upper(),
-                metadata_records=metadata_records,
+                record_buffer=record_buffer,
+                metadata_ranges=metadata_ranges,
                 sweeps=sweeps,
                 trailing_bytes=trailing,
                 compression_record_count=compression_record_count,
             )
 
 
-def parse_grouped_ar2v_file_mmap(path: str | Path) -> RawVolume:
+def parse_grouped_ar2v_file_mmap(path: str | Path) -> RawVolumeBuffer:
     """Parse an uncompressed grouped-elevation AR2V file written by this repo.
 
     Grouped elevation artifacts currently persist the 24-byte volume header
@@ -641,19 +583,36 @@ def parse_grouped_ar2v_file_mmap(path: str | Path) -> RawVolume:
                 raise ValueError("Volume does not start with AR2V/ARCHIVE2 magic")
 
             site = volume_header[20:24].decode("ascii", errors="ignore").strip() or "UNKNOWN"
-            metadata_records: list[bytes] = []
-            sweeps: list[RawSweep] = []
-            final_offset, _ = _walk_records(mm, VOLUME_HEADER_BYTES, metadata_records, sweeps)
-            trailing = bytes(mm[final_offset:])
+            record_buffer = bytes(mm[:])
+            metadata_ranges: list[tuple[int, int]] = []
+            sweeps: list[RawSweepRange] = []
+            final_offset, _ = _walk_records(record_buffer, VOLUME_HEADER_BYTES, metadata_ranges, sweeps)
+            trailing = record_buffer[final_offset:]
 
-            return RawVolume(
+            return RawVolumeBuffer(
                 volume_header=volume_header,
                 site=site.upper(),
-                metadata_records=metadata_records,
+                record_buffer=record_buffer,
+                metadata_ranges=metadata_ranges,
                 sweeps=sweeps,
                 trailing_bytes=trailing,
                 compression_record_count=0,
             )
+
+
+def materialize_record_range(raw_volume: RawVolumeBuffer, record_range: tuple[int, int]) -> bytes:
+    start, end = record_range
+    return raw_volume.record_buffer[start:end]
+
+
+def iter_metadata_records(raw_volume: RawVolumeBuffer):
+    for record_range in raw_volume.metadata_ranges:
+        yield materialize_record_range(raw_volume, record_range)
+
+
+def iter_sweep_records(raw_volume: RawVolumeBuffer, sweep: RawSweepRange):
+    for record_range in sweep.record_ranges:
+        yield materialize_record_range(raw_volume, record_range)
 def extract_azimuth_count(ds) -> int:
     """Extract azimuth count from sweep dataset."""
     try:
