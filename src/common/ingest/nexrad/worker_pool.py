@@ -73,6 +73,8 @@ def _worker_parse(
         ],
         "parse_error": result.parse_error,
         "child_rss_kb": result.child_rss_kb,
+        "buffer_trimmed": result.buffer_trimmed,
+        "runtime_size": result.runtime_size,
     }
 
 
@@ -103,6 +105,8 @@ def _dict_to_result(payload: dict[str, Any]) -> WorkerParseResult:
         ],
         parse_error=payload.get("parse_error"),
         child_rss_kb=payload.get("child_rss_kb"),
+        buffer_trimmed=bool(payload.get("buffer_trimmed", False)),
+        runtime_size=payload.get("runtime_size"),
     )
 
 
