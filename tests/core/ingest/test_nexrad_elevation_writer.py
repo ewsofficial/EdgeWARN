@@ -157,12 +157,13 @@ class _FakeRawSweep:
     def __init__(self, group_name, waveform):
         self.group_name = group_name
         self.waveform = waveform
-        self.records = [b"record"]
+        self.record_ranges = [(0, 6)]
 
 
 class _FakeRawVolume:
     volume_header = b"header"
-    metadata_records = []
+    record_buffer = b"record"
+    metadata_ranges = []
 
     def __init__(self, sweeps):
         self.sweeps = sweeps

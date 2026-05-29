@@ -2,11 +2,12 @@ import json
 import re
 import shutil
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 
 import util.file as fs
 from common.ingest.nexrad.grouping import DOPPLER_WAVEFORM
-from common.ingest.nexrad.parser import filter_msg31_blocks
+from common.ingest.nexrad.parser import filter_msg31_blocks, iter_metadata_records, iter_sweep_records
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, format_nexrad_timestamp, parse_nexrad_timestamp, required_volume_chunks
 from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
 
@@ -14,6 +15,18 @@ IMPORTANT_DATA_VARS = None
 NEXRAD_SCAN_DIRS_TO_KEEP = 3
 NEXRAD_ELEVATION_DIRS_TO_KEEP = 3
 SCAN_TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
+STALE_MANIFEST_MAX_AGE_HOURS = 12
+
+
+def _write_text_if_changed(path: Path, content: str) -> Path:
+    if path.exists():
+        try:
+            if path.read_text(encoding="utf-8") == content:
+                return path
+        except Exception:
+            pass
+    path.write_text(content, encoding="utf-8")
+    return path
 
 
 def _filename_timestamp(timestamp: str | None) -> str:
@@ -218,6 +231,43 @@ def _site_manifest_candidate_dirs(site_dir: Path):
         yield child
 
 
+def prune_stale_site_manifests(base_dir: Path | None = None, *, max_age_hours: int = STALE_MANIFEST_MAX_AGE_HOURS) -> int:
+    if base_dir:
+        fs.initialize_filesystem(base_dir)
+    root = fs.NEXRAD_LEVEL2_DIR
+    now = datetime.now(UTC)
+    removed = 0
+    runtime_root = root / '.runtime'
+    if not root.exists():
+        return 0
+    for site_dir in root.iterdir():
+        if not site_dir.is_dir() or not site_dir.name.startswith('K'):
+            continue
+        manifest = site_dir / 'manifest.json'
+        if not manifest.exists():
+            continue
+        runtime_dir = runtime_root / site_dir.name
+        if runtime_dir.exists() and any(runtime_dir.glob('*.json')):
+            continue
+        try:
+            payload = json.loads(manifest.read_text(encoding='utf-8'))
+        except Exception:
+            continue
+        volumes = payload.get('volumes') or []
+        if not volumes:
+            continue
+        ts = volumes[0].get('volume_timestamp') or volumes[0].get('scan_timestamp')
+        parsed = parse_nexrad_timestamp(ts)
+        if parsed is None:
+            continue
+        age_hours = (now - parsed).total_seconds() / 3600
+        if age_hours < max_age_hours:
+            continue
+        manifest.unlink(missing_ok=True)
+        removed += 1
+    return removed
+
+
 def _load_elevation_manifest_payload(manifest_path: Path) -> dict | None:
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -381,8 +431,7 @@ def write_site_manifest(
         current_volume_id=current_volume_id,
         current_volume_timestamp=current_volume_timestamp,
     )
-    path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-    return path
+    return _write_text_if_changed(path, json.dumps(payload, separators=(",", ":")))
 
 
 def chunk_output_dir(site: str, volume_id: str, chunks) -> Path:
@@ -555,7 +604,7 @@ def write_outputs(probe, parsed_volume, classified_sweeps, chunks_downloaded, *,
         "high_path": str(high_path) if high_groups else None,
         "sweeps": [asdict(sweep) for sweep in classified_sweeps],
     }
-    manifest_path.write_text(json.dumps(manifest_payload, separators=(",", ":")), encoding="utf-8")
+    _write_text_if_changed(manifest_path, json.dumps(manifest_payload, separators=(",", ":")))
     return low_path if low_groups else None, high_path if high_groups else None, manifest_path
 
 
@@ -600,8 +649,7 @@ def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
         "netcdf_path": artifact.netcdf_path,
         "ar2v_path": artifact.ar2v_path,
     }
-    path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-    return path
+    return _write_text_if_changed(path, json.dumps(payload, separators=(",", ":")))
 
 
 def _write_elevation_ar2v(path: Path, raw_volume, group_names: list[str]) -> Path:
@@ -610,13 +658,13 @@ def _write_elevation_ar2v(path: Path, raw_volume, group_names: list[str]) -> Pat
     sweeps_by_group = {sweep.group_name: sweep for sweep in getattr(raw_volume, "sweeps", [])}
     with open(path, "wb") as f:
         f.write(raw_volume.volume_header)
-        for record in getattr(raw_volume, "metadata_records", []):
+        for record in iter_metadata_records(raw_volume):
             f.write(record)
         for group_name in group_names:
             sweep = sweeps_by_group.get(group_name)
             if sweep is None:
                 continue
-            for record in sweep.records:
+            for record in iter_sweep_records(raw_volume, sweep):
                 output_record = record
                 if str(getattr(sweep, "waveform", "") or "").strip().lower() == DOPPLER_WAVEFORM:
                     output_record = filter_msg31_blocks(record, {"DREF"})
@@ -671,7 +719,7 @@ def write_elevation_artifacts(
         }
         for member in group.members
     ]
-    if hasattr(source, "volume_header") and hasattr(source, "metadata_records"):
+    if hasattr(source, "volume_header") and hasattr(source, "record_buffer"):
         ar2v_path = store.elevation_ar2v_path(site, elevation_label, ts_for_filename)
         _write_elevation_ar2v(ar2v_path, source, group_names)
     else:

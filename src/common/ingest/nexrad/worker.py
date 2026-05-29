@@ -21,7 +21,7 @@ from pathlib import Path
 
 from common.ingest.nexrad.grouping import elevation_group_key, group_sweeps_by_elevation
 from common.ingest.nexrad.models import ElevationArtifact, SweepRecord, WorkerParseResult
-from common.ingest.nexrad.parser import parse_raw_volume_file_mmap
+from common.ingest.nexrad.parser import iter_metadata_records, iter_sweep_records, parse_raw_volume_file_mmap
 from common.ingest.nexrad.s3_chunks import format_nexrad_timestamp, parse_nexrad_timestamp
 from common.ingest.nexrad.writer import write_elevation_artifacts
 
@@ -160,24 +160,24 @@ def parse_and_export(
             for member in group.members:
                 sweep = sweeps_by_group.get(member.group_name)
                 if sweep is not None:
-                    sweep.records.clear()
+                    sweep.record_ranges.clear()
 
             if not first_elevation_written:
                 first_elevation_written = True
-                del raw_volume.metadata_records
-                raw_volume.metadata_records = []
+                del raw_volume.metadata_ranges
+                raw_volume.metadata_ranges = []
                 del raw_volume.trailing_bytes
                 raw_volume.trailing_bytes = b""
 
         if trim_buffer and raw_volume.compression_record_count == 0:
             with open(volume_path, "wb") as f:
                 f.write(raw_volume.volume_header)
-                for record in raw_volume.metadata_records:
+                for record in iter_metadata_records(raw_volume):
                     f.write(record)
                 for raw_sweep in raw_volume.sweeps:
                     if raw_sweep.group_name in dropped_group_names:
                         continue
-                    for record in raw_sweep.records:
+                    for record in iter_sweep_records(raw_volume, raw_sweep):
                         f.write(record)
                 f.write(raw_volume.trailing_bytes)
             buffer_trimmed = bool(dropped_group_names)

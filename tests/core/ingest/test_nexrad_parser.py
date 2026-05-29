@@ -208,5 +208,7 @@ def test_worker_parse_and_export_drops_dref_from_contiguous_doppler_raw_ar2v(tmp
     reparsed = parser.parse_raw_volume_bytes(saved_path.read_bytes())
 
     assert len(reparsed.sweeps) == 2
-    assert parser._message31_block_names(reparsed.sweeps[0].records[0]) == ["RVOL", "RELV", "RRAD", "DREF", "DZDR", "DPHI", "DRHO", "DCFP"]
-    assert parser._message31_block_names(reparsed.sweeps[1].records[0]) == ["RVOL", "RELV", "RRAD", "DVEL", "DSW "]
+    first_record = parser.materialize_record_range(reparsed, reparsed.sweeps[0].record_ranges[0])
+    second_record = parser.materialize_record_range(reparsed, reparsed.sweeps[1].record_ranges[0])
+    assert parser._message31_block_names(first_record) == ["RVOL", "RELV", "RRAD", "DREF", "DZDR", "DPHI", "DRHO", "DCFP"]
+    assert parser._message31_block_names(second_record) == ["RVOL", "RELV", "RRAD", "DVEL", "DSW "]

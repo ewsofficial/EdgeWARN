@@ -41,6 +41,7 @@ from common.ingest.nexrad.worker_pool import get_nexrad_pool, record_volume_and_
 from common.ingest.nexrad.writer import (
     NexradLocalChunkStore,
     NexradElevationStore,
+    prune_stale_site_manifests,
     runtime_scan_path,
     local_scan_elevations_complete,
     write_site_manifest,
@@ -48,6 +49,16 @@ from common.ingest.nexrad.writer import (
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]", include_timestamps=True)
+
+
+def _write_text_if_changed(path: Path, content: str) -> None:
+    if path.exists():
+        try:
+            if path.read_text(encoding="utf-8") == content:
+                return
+        except Exception:
+            pass
+    path.write_text(content, encoding="utf-8")
 
 def _artifact_group_key(artifact: ElevationArtifact) -> str:
     return f"{artifact.elevation}:{','.join(artifact.member_group_names)}"
@@ -123,6 +134,7 @@ class NexradIngestService:
         max_site_tasks=24,
         max_chunk_downloads=64,
         parse_checkpoint_chunk_interval=8,
+        in_volume_prefetch=4,
     ):
         self.chunk_lister = chunk_lister or list_volume_chunks
         self.chunk_fetcher = chunk_fetcher or get_chunk_bytes
@@ -135,6 +147,7 @@ class NexradIngestService:
         self.max_site_tasks = max_site_tasks
         self.max_chunk_downloads = max_chunk_downloads
         self.parse_checkpoint_chunk_interval = max(1, int(parse_checkpoint_chunk_interval))
+        self.in_volume_prefetch = max(1, int(in_volume_prefetch))
         self._stream_chunk_downloads = async_chunk_fetcher is None
         self._shared_chunk_download_semaphore = None
         self.local_chunk_store = NexradLocalChunkStore()
@@ -190,7 +203,7 @@ class NexradIngestService:
             "first_elevation_timestamp": first_elevation_timestamp,
             "parse_offset": max(0, int(parse_offset)),
         }
-        state_path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+        _write_text_if_changed(state_path, json.dumps(payload, separators=(",", ":")))
 
     def _clear_runtime_state(self, site: str, volume_id: str) -> None:
         self._runtime_state_path(site, volume_id).unlink(missing_ok=True)
@@ -517,9 +530,11 @@ class NexradIngestService:
             if first_elevation_timestamp is None:
                 first_elevation_timestamp = elevation_timestamps_by_id
             elevation_timestamps_by_id = {}
+        had_first_elevation = first_elevation_timestamp is not None
 
         output_root = fs.NEXRAD_LEVEL2_DIR
         pool = get_nexrad_pool()
+        submit_started_at = time.perf_counter()
 
         try:
             future = pool.submit(
@@ -532,7 +547,10 @@ class NexradIngestService:
                 trim_buffer=True,
                 parse_offset=state.parse_offset,
             )
+            queued_elapsed_ms = format_perf_ms(submit_started_at)
+            future_wait_started_at = time.perf_counter()
             payload = future.result()
+            execute_elapsed_ms = format_perf_ms(future_wait_started_at)
             result = WorkerParseResult(
                 visible_sweeps=payload.visible_sweeps,
                 saved_sweep_count=payload.saved_sweep_count,
@@ -578,6 +596,14 @@ class NexradIngestService:
                     f"{len(result.saved_elevations)} elevations "
                     f"(visible={result.visible_sweeps}, rss_kb={result.child_rss_kb})"
                 )
+                io_manager.write_perf(
+                    f"[VOL {site}/{volume_id}] worker_parse: queued={queued_elapsed_ms:.2f}ms "
+                    f"execute={execute_elapsed_ms:.2f}ms trimmed={result.buffer_trimmed}"
+                )
+                if not had_first_elevation and first_elevation_timestamp is not None:
+                    io_manager.write_perf(
+                        f"[VOL {site}/{volume_id}] first_useful_export: elevation_ts={first_elevation_timestamp}"
+                    )
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or "").strip()
             stdout = (exc.stdout or "").strip()
@@ -645,8 +671,11 @@ class NexradIngestService:
         import aiofiles
 
         async with aiofiles.open(runtime_path, "ab" if existing_size > 0 else "wb") as scan_file:
-            for chunk in pending_chunks:
-                payload = await self._fetch_chunk_bytes(chunk, s3_client)
+            async for chunk, payload in self._prefetch_pending_chunks(
+                pending_chunks,
+                s3_client=s3_client,
+                chunk_download_semaphore=chunk_download_semaphore,
+            ):
                 if not payload:
                     continue
 
@@ -853,6 +882,29 @@ class NexradIngestService:
                 else:
                     payload = await body.read()
             return payload
+
+    async def _prefetch_pending_chunks(self, pending_chunks, *, s3_client, chunk_download_semaphore=None):
+        semaphore = chunk_download_semaphore or asyncio.Semaphore(self.max_chunk_downloads)
+        prefetch = max(1, min(self.in_volume_prefetch, len(pending_chunks)))
+
+        async def _fetch_one(chunk):
+            async with semaphore:
+                return await self._fetch_chunk_bytes(chunk, s3_client)
+
+        tasks = {}
+        next_submit = 0
+        next_yield = 0
+        try:
+            while next_yield < len(pending_chunks):
+                while next_submit < len(pending_chunks) and len(tasks) < prefetch:
+                    tasks[next_submit] = asyncio.create_task(_fetch_one(pending_chunks[next_submit]))
+                    next_submit += 1
+                payload = await tasks.pop(next_yield)
+                yield pending_chunks[next_yield], payload
+                next_yield += 1
+        finally:
+            for task in tasks.values():
+                task.cancel()
 
     def ingest_allowed_vcp_volume(
         self,
@@ -1071,6 +1123,7 @@ class NexradIngestService:
             )
 
         filter_started_at = time.perf_counter()
+        pruned_stale = prune_stale_site_manifests(base_dir=base_dir)
         filtered_sites = [
             site
             for site in sites
@@ -1078,7 +1131,7 @@ class NexradIngestService:
         ]
         io_manager.write_perf(
             f"[RUN] site_filter: {format_perf_ms(filter_started_at):.2f}ms "
-            f"(input={len(sites)}, allowed={len(filtered_sites)})"
+            f"(input={len(sites)}, allowed={len(filtered_sites)}, pruned_stale={pruned_stale})"
         )
         if not filtered_sites:
             return []
