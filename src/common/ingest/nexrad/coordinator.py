@@ -22,7 +22,7 @@ class NexradScanCoordinator:
         async_volume_lister=None,
         async_chunk_lister=None,
         async_ingest_trigger=None,
-        max_site_tasks=16,
+        max_site_tasks=24,
         max_candidate_volumes_per_site=3,
     ):
         self.station_fetcher = station_fetcher or fetch_radar_station_vcps

@@ -38,10 +38,10 @@ class NexradRealtimeIngestionPipeline:
         async_ingest_trigger=None,
         base_dir=None,
         sites=None,
-        max_site_tasks=16,
+        max_site_tasks=24,
         max_candidate_volumes_per_site=3,
-        scan_interval_seconds=60,
-        completion_interval_seconds=20,
+        scan_interval_seconds=20,
+        completion_interval_seconds=10,
         sleeper=asyncio.sleep,
         monotonic=time.monotonic,
     ):
@@ -238,8 +238,8 @@ def _build_parser():
     parser = argparse.ArgumentParser(description="Run the NEXRAD real-time ingestion pipeline")
     parser.add_argument("--site", action="append")
     parser.add_argument("--base-dir")
-    parser.add_argument("--scan-interval-seconds", type=float, default=60)
-    parser.add_argument("--completion-interval-seconds", type=float, default=20)
+    parser.add_argument("--scan-interval-seconds", type=float, default=20)
+    parser.add_argument("--completion-interval-seconds", type=float, default=10)
     parser.add_argument("--max-candidate-volumes-per-site", type=int, default=3)
     return parser
 

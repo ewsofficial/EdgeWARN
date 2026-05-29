@@ -120,8 +120,8 @@ class NexradIngestService:
         async_chunk_lister=None,
         async_chunk_fetcher=None,
         async_volume_lister=None,
-        max_site_tasks=16,
-        max_chunk_downloads=32,
+        max_site_tasks=24,
+        max_chunk_downloads=64,
     ):
         self.chunk_lister = chunk_lister or list_volume_chunks
         self.chunk_fetcher = chunk_fetcher or get_chunk_bytes
