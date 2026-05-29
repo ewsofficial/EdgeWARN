@@ -381,7 +381,7 @@ def write_site_manifest(
         current_volume_id=current_volume_id,
         current_volume_timestamp=current_volume_timestamp,
     )
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     return path
 
 
@@ -555,7 +555,7 @@ def write_outputs(probe, parsed_volume, classified_sweeps, chunks_downloaded, *,
         "high_path": str(high_path) if high_groups else None,
         "sweeps": [asdict(sweep) for sweep in classified_sweeps],
     }
-    manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest_payload, separators=(",", ":")), encoding="utf-8")
     return low_path if low_groups else None, high_path if high_groups else None, manifest_path
 
 
@@ -600,7 +600,7 @@ def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
         "netcdf_path": artifact.netcdf_path,
         "ar2v_path": artifact.ar2v_path,
     }
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     return path
 
 

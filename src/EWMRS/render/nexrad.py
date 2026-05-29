@@ -10,7 +10,6 @@ import numpy as np
 
 import util.file as fs
 from common.ingest.nexrad.parser import MSG_31_BLOCK_POINTERS, MSG_HEADER_LEN, MSG_31_PREFIX_LEN, parse_grouped_ar2v_file_mmap
-from util.nexrad_loader import open_nexrad_artifact_datatree, open_nexrad_level2_datatree
 
 
 VCP_SWEEP_ELEVATION_LABELS = {
@@ -441,14 +440,7 @@ def serialize_nexrad_elevation_artifacts(
                 continue
 
         try:
-            if artifact_path.suffix == ".ar2v":
-                datatree = open_nexrad_artifact_datatree(
-                    artifact_path=artifact_path,
-                    site=site,
-                    volume_id=volume_id,
-                )
-            else:
-                datatree = _open_elevation_datatree(artifact_path)
+            datatree = _open_elevation_datatree(artifact_path)
         except Exception:
             continue
 
@@ -520,7 +512,7 @@ def _iter_artifact_group_names(artifact, datatree) -> list[str]:
 def _open_elevation_datatree(path: Path):
     """Open an elevation NetCDF or AR2V as a datatree-like structure."""
     if path.suffix == ".ar2v":
-        return open_nexrad_level2_datatree(path)
+        raise RuntimeError("AR2V elevation artifacts must be decoded through the direct grouped parser path")
 
     import netCDF4
     import xarray as xr

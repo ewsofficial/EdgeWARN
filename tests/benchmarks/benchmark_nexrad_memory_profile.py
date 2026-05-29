@@ -3,7 +3,7 @@
 Breaks down memory usage at each stage:
 1. After parsing raw volume
 2. After grouping sweeps
-3. After opening datatree via xradar
+3. After opening synthetic datatree
 4. During NetCDF write (per group)
 5. Final peak
 
@@ -152,7 +152,6 @@ def _child_profile(site: str, volume_id: str, output_root: str, volume_path: str
     ]
 
     # Stage 2: parse raw volume (mocked)
-    worker.open_partial_volume = lambda _path: tree
     worker.parse_raw_volume_file = lambda _path: raw_volume
 
     raw_vol = worker.parse_raw_volume_file(volume_path)
@@ -180,7 +179,7 @@ def _child_profile(site: str, volume_id: str, output_root: str, volume_path: str
     stages["after_group_sweeps_tracemalloc_mb"] = tm_total
 
     # Stage 4: process each elevation group
-    datatree = worker.open_partial_volume(volume_path)
+    datatree = tree
     stages["after_open_datatree_rss_mb"] = _rss_mb()
     tm_total, tm_top = _tracemalloc_mb()
     stages["after_open_datatree_tracemalloc_mb"] = tm_total

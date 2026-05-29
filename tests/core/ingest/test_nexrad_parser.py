@@ -150,8 +150,6 @@ def test_parse_raw_volume_bytes_supports_bzip2_compressed_record_stream():
 
 
 def test_parser_surface_exposes_runtime_helpers():
-    assert hasattr(parser, "open_partial_volume")
-    assert hasattr(parser, "extract_sweep_timestamp")
     assert hasattr(parser, "parse_raw_volume_file")
 
 

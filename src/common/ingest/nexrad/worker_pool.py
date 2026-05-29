@@ -61,25 +61,13 @@ def _worker_parse(
 
     return {
         "visible_sweeps": result.visible_sweeps,
-        "saved_sweeps": result.saved_sweeps,
+        "saved_sweep_count": result.saved_sweep_count,
         "saved_elevations": [
             {
-                "site": a.site,
-                "volume_id": a.volume_id,
-                "volume_timestamp": a.volume_timestamp,
                 "scan_timestamp": a.scan_timestamp,
                 "elevation": a.elevation,
                 "elevation_timestamp": a.elevation_timestamp,
-                "first_sweep_index": a.first_sweep_index,
-                "last_sweep_index": a.last_sweep_index,
-                "first_sweep_timestamp": a.first_sweep_timestamp,
-                "last_sweep_timestamp": a.last_sweep_timestamp,
                 "member_group_names": a.member_group_names,
-                "member_sweeps": a.member_sweeps,
-                "waveforms_present": list(a.waveforms_present),
-                "supplemental": a.supplemental,
-                "netcdf_path": a.netcdf_path,
-                "ar2v_path": a.ar2v_path,
             }
             for a in result.saved_elevations
         ],
@@ -91,25 +79,25 @@ def _worker_parse(
 def _dict_to_result(payload: dict[str, Any]) -> WorkerParseResult:
     return WorkerParseResult(
         visible_sweeps=payload.get("visible_sweeps", 0),
-        saved_sweeps=list(payload.get("saved_sweeps") or []),
+        saved_sweep_count=int(payload.get("saved_sweep_count", 0) or 0),
         saved_elevations=[
             ElevationArtifact(
-                site=a["site"],
-                volume_id=a["volume_id"],
-                volume_timestamp=a.get("volume_timestamp"),
+                site="",
+                volume_id="",
+                volume_timestamp=None,
                 scan_timestamp=a.get("scan_timestamp"),
                 elevation=a["elevation"],
                 elevation_timestamp=a.get("elevation_timestamp"),
-                first_sweep_index=a["first_sweep_index"],
-                last_sweep_index=a["last_sweep_index"],
-                first_sweep_timestamp=a.get("first_sweep_timestamp"),
-                last_sweep_timestamp=a.get("last_sweep_timestamp"),
+                first_sweep_index=0,
+                last_sweep_index=0,
+                first_sweep_timestamp=None,
+                last_sweep_timestamp=None,
                 member_group_names=list(a.get("member_group_names") or []),
-                member_sweeps=list(a.get("member_sweeps") or []),
-                waveforms_present=set(a.get("waveforms_present") or []),
-                supplemental=bool(a.get("supplemental", False)),
-                netcdf_path=a.get("netcdf_path"),
-                ar2v_path=a.get("ar2v_path"),
+                member_sweeps=[],
+                waveforms_present=set(),
+                supplemental=False,
+                netcdf_path=None,
+                ar2v_path=None,
             )
             for a in payload.get("saved_elevations") or []
         ],

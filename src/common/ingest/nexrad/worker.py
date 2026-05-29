@@ -16,6 +16,7 @@ from __future__ import annotations
 import ctypes
 import gc
 import resource
+import sys
 from pathlib import Path
 
 from common.ingest.nexrad.grouping import elevation_group_key, group_sweeps_by_elevation
@@ -33,20 +34,26 @@ def _get_child_rss_kb() -> float:
 
 def _clear_worker_caches() -> None:
     """Clear internal caches held by heavy libraries and return freed heap to OS."""
-    try:
-        import dask.base
-        dask.base._seen.clear()
-    except Exception:
-        pass
-    try:
-        import netCDF4
-        netCDF4.Dataset._cls_dict.clear()
-    except Exception:
-        pass
+    dask_base = sys.modules.get("dask.base")
+    if dask_base is not None:
+        try:
+            dask_base._seen.clear()
+        except Exception:
+            pass
+
+    netcdf4 = sys.modules.get("netCDF4")
+    if netcdf4 is not None:
+        try:
+            netcdf4.Dataset._cls_dict.clear()
+        except Exception:
+            pass
+
     gc.collect()
     try:
-        # Move malloc_trim(0) out of the hot inner loop to avoid fragmentation
-        pass
+        libc = ctypes.CDLL("libc.so.6")
+        malloc_trim = getattr(libc, "malloc_trim", None)
+        if malloc_trim is not None:
+            malloc_trim(0)
     except Exception:
         pass
 
@@ -105,7 +112,7 @@ def parse_and_export(
     """
     seen_elevation_exports = _normalize_seen_elevation_exports(seen_elevation_keys)
 
-    saved_sweeps: list[str] = []
+    saved_sweep_count = 0
     saved_elevations: list[ElevationArtifact] = []
     parse_error: str | None = None
     visible_sweeps = 0
@@ -145,7 +152,7 @@ def parse_and_export(
                 saved_elevations.append(artifact)
                 seen_elevation_exports[key] = artifact.elevation_timestamp or artifact.scan_timestamp
 
-            saved_sweeps.extend(m.group_name for m in group.members)
+            saved_sweep_count += len(group.members)
             dropped_group_names.update(member.group_name for member in group.members)
 
             for member in group.members:
@@ -181,7 +188,7 @@ def parse_and_export(
 
     return WorkerParseResult(
         visible_sweeps=visible_sweeps,
-        saved_sweeps=saved_sweeps,
+        saved_sweep_count=saved_sweep_count,
         saved_elevations=saved_elevations,
         parse_error=parse_error,
         child_rss_kb=_get_child_rss_kb(),
