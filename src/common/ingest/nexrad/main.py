@@ -53,8 +53,8 @@ class NexradIngestService(_BaseNexradIngestService):
         async_chunk_lister=None,
         async_chunk_fetcher=None,
         async_volume_lister=None,
-        max_site_tasks=16,
-        max_chunk_downloads=32,
+        max_site_tasks=24,
+        max_chunk_downloads=64,
     ):
         defaults = _service_defaults()
         super().__init__(
