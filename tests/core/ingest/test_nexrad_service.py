@@ -98,6 +98,41 @@ async def test_stream_ingest_async_only_downloads_new_chunks_for_partial_volume(
 
 
 @pytest.mark.asyncio
+async def test_stream_ingest_async_checkpoints_large_volume_before_download_end(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    parse_calls = []
+
+    async def _async_chunk_fetcher(chunk, **_kwargs):
+        return f"chunk-{chunk.chunk_number}".encode("ascii")
+
+    service = NexradIngestService(
+        async_chunk_fetcher=_async_chunk_fetcher,
+        parse_checkpoint_chunk_interval=2,
+    )
+    monkeypatch.setattr(
+        nexrad_service_module,
+        "_required_elevation_paths_complete",
+        lambda *_args, **_kwargs: False,
+    )
+
+    def _fake_run_worker_parse(state, site, volume_id, scan_timestamp, seen_elevation_keys, first_elevation_timestamp, **_kwargs):
+        parse_calls.append(state.bytes_written)
+        return first_elevation_timestamp
+
+    monkeypatch.setattr(service, "_run_worker_parse", _fake_run_worker_parse)
+
+    await service._stream_ingest_volume_async(
+        "KTLH",
+        "999",
+        _chunks(last_number=5),
+        s3_client=object(),
+        base_dir=tmp_path,
+    )
+
+    assert parse_calls == [14, 28, 35]
+
+
+@pytest.mark.asyncio
 async def test_stream_ingest_async_clears_runtime_state_after_completion(tmp_path, monkeypatch):
     fs.initialize_filesystem(tmp_path)
     completion_states = iter([False, True])
@@ -283,17 +318,21 @@ def test_run_worker_parse_advances_latest_elevation_timestamp(monkeypatch, tmp_p
     payloads = iter([
         SimpleNamespace(
             visible_sweeps=2,
-            saved_sweeps=["g0"],
+            saved_sweep_count=1,
             saved_elevations=[_artifact("KTLH", "999", "0.5", "20260507-150001", group_names=["g0"])],
             parse_error=None,
             child_rss_kb=123.0,
+            buffer_trimmed=False,
+            runtime_size=None,
         ),
         SimpleNamespace(
             visible_sweeps=2,
-            saved_sweeps=["g0"],
+            saved_sweep_count=1,
             saved_elevations=[_artifact("KTLH", "999", "0.5", "20260507-150011", group_names=["g0"])],
             parse_error=None,
             child_rss_kb=123.0,
+            buffer_trimmed=False,
+            runtime_size=None,
         ),
     ])
 
@@ -307,7 +346,7 @@ def test_run_worker_parse_advances_latest_elevation_timestamp(monkeypatch, tmp_p
 
     monkeypatch.setattr(nexrad_service_module, "get_nexrad_pool", lambda: _FakePool())
 
-    state = SimpleNamespace(file_path=str(runtime_path), parse_errors=[], parse_offset=0)
+    state = SimpleNamespace(file_path=str(runtime_path), parse_errors=[], parse_offset=0, bytes_written=len(b"partial"))
     seen_elevation_exports = {"0.5:g0": "20260507-150001"}
     elevation_timestamps_by_id = {"0.5": "20260507-150001"}
 

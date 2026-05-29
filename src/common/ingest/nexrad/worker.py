@@ -116,6 +116,8 @@ def parse_and_export(
     saved_elevations: list[ElevationArtifact] = []
     parse_error: str | None = None
     visible_sweeps = 0
+    buffer_trimmed = False
+    runtime_size: int | None = None
 
     try:
         raw_volume = parse_raw_volume_file_mmap(volume_path, parse_offset=parse_offset)
@@ -178,6 +180,8 @@ def parse_and_export(
                     for record in raw_sweep.records:
                         f.write(record)
                 f.write(raw_volume.trailing_bytes)
+            buffer_trimmed = bool(dropped_group_names)
+            runtime_size = Path(volume_path).stat().st_size
 
         del raw_volume
 
@@ -192,6 +196,8 @@ def parse_and_export(
         saved_elevations=saved_elevations,
         parse_error=parse_error,
         child_rss_kb=_get_child_rss_kb(),
+        buffer_trimmed=buffer_trimmed,
+        runtime_size=runtime_size,
     )
 
 

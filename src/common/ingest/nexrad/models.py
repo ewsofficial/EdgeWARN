@@ -118,6 +118,8 @@ class WorkerParseResult:
     saved_elevations: list[ElevationArtifact]
     parse_error: str | None
     child_rss_kb: float | None = None
+    buffer_trimmed: bool = False
+    runtime_size: int | None = None
 
 
 @dataclass(frozen=True)
