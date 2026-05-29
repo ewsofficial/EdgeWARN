@@ -188,7 +188,7 @@ class NexradIngestService:
             "first_elevation_timestamp": first_elevation_timestamp,
             "parse_offset": max(0, int(parse_offset)),
         }
-        state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        state_path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
 
     def _clear_runtime_state(self, site: str, volume_id: str) -> None:
         self._runtime_state_path(site, volume_id).unlink(missing_ok=True)
@@ -505,7 +505,7 @@ class NexradIngestService:
             payload = future.result()
             result = WorkerParseResult(
                 visible_sweeps=payload.visible_sweeps,
-                saved_sweeps=payload.saved_sweeps,
+                saved_sweep_count=payload.saved_sweep_count,
                 saved_elevations=payload.saved_elevations,
                 parse_error=payload.parse_error,
                 child_rss_kb=payload.child_rss_kb,
@@ -534,9 +534,9 @@ class NexradIngestService:
                     if first_elevation_timestamp is None:
                         first_elevation_timestamp = artifact_timestamp
 
-            if result.saved_sweeps:
+            if result.saved_sweep_count:
                 io_manager.write_info(
-                    f"[VOL {site}/{volume_id}] worker exported {len(result.saved_sweeps)} sweeps, "
+                    f"[VOL {site}/{volume_id}] worker exported {result.saved_sweep_count} sweeps, "
                     f"{len(result.saved_elevations)} elevations "
                     f"(visible={result.visible_sweeps}, rss_kb={result.child_rss_kb})"
                 )
@@ -606,25 +606,55 @@ class NexradIngestService:
 
         async with aiofiles.open(runtime_path, "ab" if existing_size > 0 else "wb") as scan_file:
             for chunk in pending_chunks:
-                async for payload in self._fetch_chunk_stream(chunk, s3_client):
-                    if not payload:
-                        continue
+                payload = await self._fetch_chunk_bytes(chunk, s3_client)
+                if not payload:
+                    continue
 
-                    downloaded_chunk_keys.add(self._chunk_identity(chunk))
+                downloaded_chunk_keys.add(self._chunk_identity(chunk))
 
-                    await scan_file.write(payload)
-                    current_state.bytes_written += len(payload)
+                await scan_file.write(payload)
+                current_state.bytes_written += len(payload)
 
-                    found_boundary, boundary_offset = detect_next_volume_offset(
-                        previous_tail, payload, stream_has_started,
+                found_boundary, boundary_offset = detect_next_volume_offset(
+                    previous_tail, payload, stream_has_started,
+                )
+
+                if found_boundary and boundary_offset > 0:
+                    _before, after = split_at_boundary(payload, boundary_offset)
+
+                    await scan_file.flush()
+
+                    current_state.finalized = True
+                    first_elevation_timestamp = await asyncio.to_thread(
+                        self._run_worker_parse,
+                        current_state,
+                        site_upper,
+                        volume_id,
+                        scan_timestamp,
+                        seen_elevation_exports,
+                        first_elevation_timestamp,
+                        elevation_timestamps_by_id=elevation_timestamps_by_id,
+                        base_dir=base_dir,
                     )
+                    current_state.parse_offset = current_state.bytes_written
 
-                    if found_boundary and boundary_offset > 0:
-                        before, after = split_at_boundary(payload, boundary_offset)
-                        
+                    seen_elevation_exports = {}
+                    elevation_timestamps_by_id = {}
+                    first_elevation_timestamp = None
+
+                    current_state = ScanStreamState(
+                        index=current_state.index + 1,
+                        volume_id=volume_id,
+                        scan_timestamp=scan_timestamp,
+                        file_path=str(runtime_path),
+                    )
+                    await scan_file.seek(0)
+                    await scan_file.truncate()
+
+                    if after:
+                        await scan_file.write(after)
+                        current_state.bytes_written = len(after)
                         await scan_file.flush()
-
-                        current_state.finalized = True
                         first_elevation_timestamp = await asyncio.to_thread(
                             self._run_worker_parse,
                             current_state,
@@ -638,42 +668,12 @@ class NexradIngestService:
                         )
                         current_state.parse_offset = current_state.bytes_written
 
-                        seen_elevation_exports = {}
-                        elevation_timestamps_by_id = {}
-                        first_elevation_timestamp = None
-                        
-                        current_state = ScanStreamState(
-                            index=current_state.index + 1,
-                            volume_id=volume_id,
-                            scan_timestamp=scan_timestamp,
-                            file_path=str(runtime_path),
-                        )
-                        await scan_file.seek(0)
-                        await scan_file.truncate()
-
-                        if after:
-                            await scan_file.write(after)
-                            current_state.bytes_written = len(after)
-                            await scan_file.flush()
-                            first_elevation_timestamp = await asyncio.to_thread(
-                                self._run_worker_parse,
-                                current_state,
-                                site_upper,
-                                volume_id,
-                                scan_timestamp,
-                                seen_elevation_exports,
-                                first_elevation_timestamp,
-                                elevation_timestamps_by_id=elevation_timestamps_by_id,
-                                base_dir=base_dir,
-                            )
-                            current_state.parse_offset = current_state.bytes_written
-
-                        stream_has_started = True
-                        previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
-                        continue
-
                     stream_has_started = True
-                    previous_tail = (previous_tail + payload)[-MAX_MAGIC_OVERLAP:]
+                    previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
+                    continue
+
+                stream_has_started = True
+                previous_tail = (previous_tail + payload)[-MAX_MAGIC_OVERLAP:]
 
             if current_state.bytes_written > current_state.parse_offset:
                 await scan_file.flush()

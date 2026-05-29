@@ -114,7 +114,7 @@ class ScanStreamState:
 @dataclass
 class WorkerParseResult:
     visible_sweeps: int
-    saved_sweeps: list[str]
+    saved_sweep_count: int
     saved_elevations: list[ElevationArtifact]
     parse_error: str | None
     child_rss_kb: float | None = None

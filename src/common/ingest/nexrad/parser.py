@@ -1,12 +1,11 @@
 """NEXRAD Level-II parser helpers.
 
-This module centralizes both:
-- lightweight byte-level AR2V/message-31 parsing used for sweep discovery
-- dataset opening/helpers used by downstream NetCDF and render writers
+This module centralizes lightweight byte-level AR2V/message-31 parsing used for
+sweep discovery and grouped AR2V inspection.
 
 The byte-level parsing follows the same basic approach as
 `scripts/demo_nexrad_chunk_elevations.py` so the worker can reason about
-ordered chunk streams without depending on xradar for sweep boundaries.
+ordered chunk streams without dataset decoders for sweep boundaries.
 """
 
 from __future__ import annotations
@@ -17,7 +16,6 @@ from pathlib import Path
 import bz2
 import mmap
 import struct
-import warnings
 
 
 RECORD_BYTES = 2432
@@ -427,8 +425,8 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolume:
 
     This parser intentionally handles the modern message-31 path used by the
     current chunk-ingest flow. It preserves raw records and sweep boundaries so
-    downstream code can reason about complete sweeps without asking xradar to do
-    that work.
+    downstream code can reason about complete sweeps directly from the raw byte
+    stream.
     """
     if len(volume_bytes) < VOLUME_HEADER_BYTES:
         raise ValueError("Volume is too short to contain an AR2V header")
@@ -656,67 +654,6 @@ def parse_grouped_ar2v_file_mmap(path: str | Path) -> RawVolume:
                 trailing_bytes=trailing,
                 compression_record_count=0,
             )
-
-
-def open_partial_volume(path: str | Path):
-    """Open a partial NEXRAD Level-II file with xradar, dropping incomplete sweeps."""
-    try:
-        import xradar as xd
-    except ImportError as exc:
-        raise RuntimeError("xradar is required for NEXRAD dataset decoding") from exc
-
-    opener = getattr(xd.io.backends.nexrad_level2, "open_nexradlevel2_datatree", None)
-    if opener is None:
-        raise RuntimeError("xradar nexrad Level-II DataTree opener is unavailable")
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            return opener(str(path), loaddata=False, incomplete_sweep="drop")
-        except TypeError:
-            return opener(str(path))
-
-
-def extract_sweep_timestamp(ds) -> str | None:
-    """Extract sweep timestamp from xarray time coordinate."""
-    import numpy as np
-
-    try:
-        values = np.asarray(ds["time"].values).reshape(-1)
-        values = values[~np.isnat(values)]
-        if len(values) == 0:
-            return None
-        return np.datetime_as_string(values.max(), unit="s", timezone="UTC")
-    except Exception:
-        return None
-
-
-def extract_sweep_angle(ds) -> float | None:
-    """Extract fixed angle from sweep dataset."""
-    try:
-        angle_var = ds.get("sweep_fixed_angle")
-        if angle_var is None:
-            return None
-        return float(angle_var.values.item())
-    except Exception:
-        return None
-
-
-def extract_waveform(node) -> str | None:
-    """Extract waveform type from sweep node."""
-    try:
-        attrs = getattr(node, "attrs", {}) or {}
-        dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
-        return (
-            attrs.get("waveform_type")
-            or dataset.attrs.get("waveform_type")
-            or dataset.attrs.get("prt_mode")
-            or dataset.attrs.get("sweep_mode")
-        )
-    except Exception:
-        return None
-
-
 def extract_azimuth_count(ds) -> int:
     """Extract azimuth count from sweep dataset."""
     try:
