@@ -35,9 +35,27 @@ Treat these as guard rails — if a PR re-introduces the old form, reject it.
 
 ## Track A — Deletions (lowest risk, do first or in parallel)
 
+**Track A checklist**
+
+- [ ] Complete A1 pure-deletion bundle
+- [ ] Complete A2 compat shim removal
+- [ ] Re-run Track A verification gates after each PR
+
 Each item is a separate PR with prefix `REM[ingest]:` or `REM[dead]:`. Verification: post-deletion `grep -r <symbol> src/ tests/ scripts/` returns zero hits.
 
 ### A1 — Pure-deletion bundle (~435 LOC, 1 PR)
+
+**A1 checklist**
+
+- [ ] D2 delete stale EWMRS scheduler fork
+- [ ] D3 delete `realtime_pipeline` and related benchmark if now orphaned
+- [ ] D4 delete NEXRAD polling wrappers while keeping one-shot helpers and `NexradScanCoordinator`
+- [ ] D6 delete NWS legacy ingest functions
+- [ ] D7 delete `run_ewmrs_pipeline` passthrough
+- [ ] D8 / L14 remove explicit `gc.collect()` calls
+- [ ] Run `pytest tests/`
+- [ ] Run `npm test`
+- [ ] Run 1-cycle real-time smoke per §7.2
 
 Single PR; each commit is one of:
 
@@ -54,6 +72,17 @@ Single PR; each commit is one of:
 
 ### A2 — Compat shim removal (D1 / R1, ~120 LOC, 1 PR)
 
+**A2 checklist**
+
+- [ ] Migrate scheduler imports from `EdgeWARN.ingest.mrms.*` to `common.ingest.mrms.*`
+- [ ] Migrate 7 test files under `tests/core/ingest/` to `common.ingest.*`
+- [ ] Drop the comment-only reference in `src/EdgeWARN/ctam/modules/__init__.py`
+- [ ] Run full test suite before deletion
+- [ ] Delete `src/EdgeWARN/ingest/` tree
+- [ ] Re-run full test suite after deletion
+- [ ] Run 1-cycle real-time smoke
+- [ ] Verify `from EdgeWARN.ingest` grep returns zero hits
+
 Multi-step; ordering matters:
 
 1. Migrate `src/EdgeWARN/schedule/scheduler.py:5-9, 198` imports from `EdgeWARN.ingest.mrms.{...}` → `common.ingest.mrms.{...}`.
@@ -69,9 +98,25 @@ Multi-step; ordering matters:
 
 ## Track B — Security (parallelizable with Track A; can start immediately)
 
+**Track B checklist**
+
+- [ ] Complete B1 CORS lockdown
+- [ ] Complete B2 path-traversal hygiene
+- [ ] Complete B3 request-body and middleware hardening
+- [ ] Complete B4 medium-severity polish
+- [ ] Run per-item exploit verification and end-of-phase ZAP baseline
+
 Each item ships as its own PR with prefix `FIX[sec]:`. Verification: §7.2 manual exploit attempt for each H-item; OWASP ZAP baseline scan at end of phase.
 
 ### B1 — CORS lockdown (S-H6 + S-H7, 1 PR)
+
+**B1 checklist**
+
+- [ ] Force safe default when `ALLOWED_ORIGINS` is unset in `src/EdgeWARN/api/server.js`
+- [ ] Replace permissive EWMRS CORS middleware with allowlist-driven config
+- [ ] Introduce `EWMRS_ALLOWED_ORIGINS`
+- [ ] Add `Vary: Origin, Accept-Encoding` middleware
+- [ ] Verify same-origin success and cross-origin rejection when allowlist is unset
 
 - `src/EdgeWARN/api/server.js:96-109`: when `ALLOWED_ORIGINS` unset, force `credentials: false` (or refuse to start in production).
 - `src/EWMRS/api/server.js:183`: replace `app.use(cors())` with allowlist-driven config; introduce `EWMRS_ALLOWED_ORIGINS` env var.
@@ -80,12 +125,30 @@ Each item ships as its own PR with prefix `FIX[sec]:`. Verification: §7.2 manua
 
 ### B2 — Path-traversal hygiene (S-H1, S-H2, S-H3 `/fetch`, S-H4, 1 PR)
 
+**B2 checklist**
+
+- [ ] Tighten `isSafeFilename` against control characters and Windows-reserved names
+- [ ] Add `realpath` containment check with ENOENT mapped to 404
+- [ ] Add `PRODUCT_MAPPING` allowlist guard to EWMRS `/fetch`
+- [ ] Reuse `resolveUnder` in `wpc.js`
+- [ ] Verify manual traversal and reserved-name exploit attempts fail with 404
+
 - `src/EdgeWARN/api/utils/fileReader.js:20-24`: tighten `isSafeFilename` against control chars + Windows-reserved names per audit snippet.
 - `src/EdgeWARN/api/utils/fileReader.js:44-52`: add `await fs.promises.realpath(...)` containment check; ENOENT → 404.
 - `src/EWMRS/api/routes/renders.js:185` (`/fetch`): add `PRODUCT_MAPPING` allowlist guard (mirror existing `/tile-info` form at line 372). `/tile-info` is already done; do NOT re-edit.
 - `src/EWMRS/api/routes/wpc.js:97-107`: import `resolveUnder` from `nexrad/filesystem.js` and apply.
 
 ### B3 — Request-body + middleware hardening (S-H5 + M17 + S-L15 + S-M9/10, 1 PR)
+
+**B3 checklist**
+
+- [ ] Replace `express.json()` with bounded strict JSON parsing
+- [ ] Mount rate limiting before JSON parsing
+- [ ] Optionally scope JSON parsing to mutating routes if that is the cleaner implementation
+- [ ] Add non-string guards in validation helpers
+- [ ] Replace `new URL(import.meta.url).pathname` with `fileURLToPath(import.meta.url)` in RAP route
+- [ ] Verify 17KB JSON returns 413
+- [ ] Verify abusive requests hit rate limiting before parsing
 
 These edits cluster on `EdgeWARN/api/server.js` and validation helpers:
 
@@ -97,6 +160,13 @@ These edits cluster on `EdgeWARN/api/server.js` and validation helpers:
 
 ### B4 — Medium-severity polish (S-M3, S-M4, S-M7, 1 PR)
 
+**B4 checklist**
+
+- [ ] Document `keyGenerator` behavior and add startup warning for proxy misconfiguration
+- [ ] Add short-TTL `LRUCache` wrappers around unbounded `fs.readdir` call sites
+- [ ] Remove raw error-message details from EWMRS 500 responses while preserving server logs
+- [ ] Defer internal-check token bypass unless coordinated client changes are ready
+
 - S-M3: `keyGenerator` doc + production startup warning when `trust-proxy=false` and `X-Forwarded-For` observed.
 - S-M4: wrap unbounded `fs.readdir` in `LRUCache(ttl: 5_000)` for `alerts.js:13-34`, `mesocyclones.js:9-23`, `metar.js:14-36`, `nexrad/filesystem.js:88-105, 107-125`.
 - S-M7: drop `details: err.message` from EWMRS 500 bodies in `wpc.js`, `colormaps.js`; keep server-side log.
@@ -107,9 +177,32 @@ These edits cluster on `EdgeWARN/api/server.js` and validation helpers:
 
 ## Track C — Performance (start after Track A1; numeric items wait for Track C2)
 
+**Track C checklist**
+
+- [ ] Complete C1 zero-numeric-change perf work
+- [ ] Complete C2 numeric and algorithmic refactors with parity proof
+- [ ] Complete C3 medium/low rolling cleanups
+- [ ] Run Track C verification matrix per §7.3
+
 Prefix `IMP[perf]:`. Verification matrix per §7.3.
 
 ### C1 — Zero-numeric-change perf (1-2 PRs)
+
+**C1 checklist**
+
+- [ ] H2 `os.scandir` in `latest_files`
+- [ ] H4 hoist `multiprocessing.Manager()` to `main()` lifetime
+- [ ] H6 cache `cost_matrix[row, col]` into the `costs` dict
+- [ ] H7 hoist `AssignmentCostCalculator(config)` at line 401 only
+- [ ] H8 build candidate centroid array once outside the per-track loop
+- [ ] H11 context-manage `xr.open_dataset`
+- [ ] H12 gate `perf_tracker` behind env var
+- [ ] M3 add `compression()` filter for image responses in both API servers
+- [ ] M14 add `lru_cache((path, mtime))` for `_load_timestamp_tile_index`
+- [ ] M16 combine regex in `find_timestamp`
+- [ ] L20 cache colormap loading in `EWMRS/render/render.py`
+- [ ] L24 add `tracks_by_id` dict in `assignment.py`
+- [ ] Verify no filename or JSON envelope diffs versus baseline artifacts
 
 Bundle by file/module to keep PRs focused. None of these alter byte output:
 
@@ -128,6 +221,16 @@ Bundle by file/module to keep PRs focused. None of these alter byte output:
 
 ### C2 — Numeric/algorithmic refactors (separate PRs, each with diff verification)
 
+**C2 checklist**
+
+- [ ] H1 route `RAPPointExtractor.extract` callers through `extract_batch`
+- [ ] H3 narrow `deepcopy(vector_previous_entries)`
+- [ ] H5 replace Kalman gain `inv(S)` with a `solve` form only at `filter.py:236`
+- [ ] H8 / H9 implement RGBA LUT single-pass while preserving the documented two-path split
+- [ ] M21 switch RAP read to float32 at `rap/uint16_pipeline.py:199`
+- [ ] Verify stormcell numeric diffs with `np.allclose(rtol=1e-5, atol=1e-8)`
+- [ ] Verify render pixel diffs on sample tiles
+
 Each ships in its own PR with stormcell JSON byte-diff + render PNG pixel-diff in the test plan. Strict §6 invariant compliance:
 
 - **H1** route `RAPPointExtractor.extract` callers through `extract_batch` (`util/grib_loader.py:86-124`).
@@ -138,6 +241,13 @@ Each ships in its own PR with stormcell JSON byte-diff + render PNG pixel-diff i
 
 ### C3 — Medium/Low rolling cleanups (rolling, batched by module)
 
+**C3 checklist**
+
+- [ ] Land M1, M2, M4, M5, M6, M7, M9, M10, M11, M12, M13, M15, M18, M19
+- [ ] Land L1-L7, L9, L11, L12, L16, L18, L19, L22, L25
+- [ ] Keep grouping by file/module so diffs remain reviewable
+- [ ] Confirm no numeric impact for each batch
+
 Items: M1, M2, M4, M5, M6, M7, M9, M10, M11, M12, M13, M15, M18, M19; plus L1–L7, L9, L11, L12, L16, L18, L19, L22, L25.
 
 Group by file to keep diffs reviewable. No numeric impact on any of these. Land as bandwidth permits — not on the critical path.
@@ -146,9 +256,24 @@ Group by file to keep diffs reviewable. No numeric impact on any of these. Land 
 
 ## Track D — Optional / Gated (final phase)
 
+**Track D checklist**
+
+- [ ] Complete D1 MRMS sync fallback removal if parity proof passes
+- [ ] Complete D2 historical pipeline consolidation if parity proof passes
+- [ ] Complete D3 synoptic dual-path collapse if still worth review bandwidth
+- [ ] Complete D4 opportunistic dead-code sweep category by category
+- [ ] Run final gated parity checks before merge
+
 Each requires explicit parity verification before merge. Land only after Tracks A/B/C are settled.
 
 ### D1 — MRMS sync fallback removal (D5 / R6, 1 PR)
+
+**D1 checklist**
+
+- [ ] Delete `download_all_files_sync_fallback`
+- [ ] Delete `download_modifier_sync`
+- [ ] Update `download_all_files` to call `asyncio.run(download_all_files_async_internal(...))` directly
+- [ ] Produce one full real-time cycle artifact diff with no divergence
 
 - Delete `download_all_files_sync_fallback`, `download_modifier_sync` (`common/ingest/mrms/downloader.py`).
 - Update `download_all_files` in `mrms/main.py` to call `asyncio.run(download_all_files_async_internal(...))` directly.
@@ -156,16 +281,34 @@ Each requires explicit parity verification before merge. Land only after Tracks 
 
 ### D2 — Historical pipeline consolidation (R4, 1 PR)
 
+**D2 checklist**
+
+- [ ] Switch `process_historical.py` to `run_tandem_ingest_cycle(include_goes=True, include_ewmrs=False)`
+- [ ] Run fixed-window historical parity comparison
+- [ ] Reject merge on any `<BASE_DIR>/data/` divergence
+
 - Switch `process_historical.py` to `run_tandem_ingest_cycle(include_goes=True, include_ewmrs=False)`.
 - **Mandatory parity proof:** byte-level diff `<BASE_DIR>/data/` over a fixed historical window (`process_historical.py --start <T0> --end <T0+1m>`) against pre-change run. Reject merge on any divergence.
 
 ### D3 — Synoptic dual-path collapse (R7, 1 PR, lowest priority)
+
+**D3 checklist**
+
+- [ ] Replace `SynopticFileDownloader` with `asyncio.run(...)` of the async function in a fresh loop
+- [ ] Preserve async-first, sync-fallback, previous-hour retry semantics in `download_synoptic`
+- [ ] Skip this PR if review bandwidth is tight
 
 - Replace `SynopticFileDownloader` (sync class) with `asyncio.run(...)` of the async function in a fresh loop.
 - Keep the per-call fallback semantics in `download_synoptic` (lines 64-99) — async first, sync fallback, retry previous hour.
 - ~50 LOC saved. Skip if review bandwidth is tight.
 
 ### D4 — Opportunistic dead-code sweep (D9, rolling)
+
+**D4 checklist**
+
+- [ ] Split each sweep into one category per PR
+- [ ] Keep any code that cannot be conclusively proven dead
+- [ ] Include grep-proof in each PR before deletion
 
 Per §4 D9 categories — each sweep entry survives only with grep-proof. Do **not** batch into one giant PR; one sweep category per PR (e.g. "remove unused heavy imports across `EdgeWARN/process`"). Default to keeping anything that cannot be conclusively proven dead.
 
