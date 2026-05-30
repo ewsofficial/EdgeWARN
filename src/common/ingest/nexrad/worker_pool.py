@@ -10,7 +10,7 @@ Usage:
 
     pool = get_nexrad_pool(max_workers=4)
     future = pool.submit_parse(volume_path, output_root, site, volume_id,
-                               scan_timestamp, seen_keys, trim_buffer, parse_offset)
+                               scan_timestamp, seen_keys, trim_buffer)
     result = future.result()
 """
 
@@ -39,7 +39,6 @@ def _worker_parse(
     scan_timestamp: str | None,
     seen_keys: dict[str, str | None],
     trim_buffer: bool,
-    parse_offset: int,
 ) -> dict[str, Any]:
     """Run parse_and_export inside a pool worker.
 
@@ -56,7 +55,6 @@ def _worker_parse(
         scan_timestamp=scan_timestamp,
         seen_elevation_keys=seen_keys,
         trim_buffer=trim_buffer,
-        parse_offset=parse_offset,
     )
 
     return {
@@ -128,7 +126,6 @@ class NexradWorkerPool:
         scan_timestamp: str | None,
         seen_keys: dict[str, str | None],
         trim_buffer: bool = False,
-        parse_offset: int = 0,
     ) -> Future[WorkerParseResult]:
         future = self._executor.submit(
             _worker_parse,
@@ -139,7 +136,6 @@ class NexradWorkerPool:
             scan_timestamp,
             seen_keys,
             trim_buffer,
-            parse_offset,
         )
 
         wrapped: Future[WorkerParseResult] = Future()

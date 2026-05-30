@@ -94,7 +94,6 @@ def parse_and_export(
     scan_timestamp: str | None,
     seen_elevation_keys: dict[str, str | None] | set[str] | None = None,
     trim_buffer: bool = False,
-    parse_offset: int = 0,
 ) -> WorkerParseResult:
     """Parse a partial .ar2v and emit newly-complete elevation artifacts.
 
@@ -105,7 +104,6 @@ def parse_and_export(
         volume_id: Volume identifier.
         scan_timestamp: Scan-level timestamp for manifest tracking.
         seen_elevation_keys: Already-exported group keys or group-key timestamp metadata.
-        parse_offset: Byte offset to resume parsing from (0 = full parse).
 
     Returns:
         WorkerParseResult with metadata about newly exported artifacts.
@@ -120,7 +118,7 @@ def parse_and_export(
     runtime_size: int | None = None
 
     try:
-        raw_volume = parse_raw_volume_file_mmap(volume_path, parse_offset=parse_offset)
+        raw_volume = parse_raw_volume_file_mmap(volume_path)
 
         visible_sweeps = len(raw_volume.sweeps)
         sweep_records = _extract_worker_sweep_records(raw_volume)
@@ -169,7 +167,7 @@ def parse_and_export(
                 del raw_volume.trailing_bytes
                 raw_volume.trailing_bytes = b""
 
-        if trim_buffer and raw_volume.compression_record_count == 0:
+        if trim_buffer:
             with open(volume_path, "wb") as f:
                 f.write(raw_volume.volume_header)
                 for record in iter_metadata_records(raw_volume):
