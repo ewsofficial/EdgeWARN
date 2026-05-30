@@ -35,6 +35,7 @@ from common.ingest.nexrad.stream import (
     split_at_boundary,
 )
 from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
+from common.ingest.nexrad.parser import normalize_chunk_payload
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from common.ingest.nexrad.worker_pool import get_nexrad_pool, record_volume_and_maybe_recycle
@@ -188,7 +189,6 @@ class NexradIngestService:
         seen_elevation_exports: dict[str, str | None],
         elevation_timestamps_by_id: dict[str, str],
         first_elevation_timestamp: str | None,
-        parse_offset: int,
         scan_timestamp: str | None,
     ) -> None:
         state_path = self._runtime_state_path(site, volume_id)
@@ -201,7 +201,6 @@ class NexradIngestService:
             "seen_elevation_keys": sorted(seen_elevation_exports),
             "elevation_timestamps_by_id": elevation_timestamps_by_id,
             "first_elevation_timestamp": first_elevation_timestamp,
-            "parse_offset": max(0, int(parse_offset)),
         }
         _write_text_if_changed(state_path, json.dumps(payload, separators=(",", ":")))
 
@@ -215,6 +214,12 @@ class NexradIngestService:
         with runtime_path.open("rb") as handle:
             handle.seek(max(0, runtime_path.stat().st_size - MAX_MAGIC_OVERLAP))
             return handle.read()
+
+    @staticmethod
+    def _normalize_runtime_chunk(payload: bytes, *, first_chunk_of_volume: bool) -> bytes:
+        if not payload:
+            return b""
+        return normalize_chunk_payload(payload, first_chunk_of_volume=first_chunk_of_volume)
 
     @staticmethod
     def _volume_timestamp(volume_id: str, chunks) -> str:
@@ -335,13 +340,12 @@ class NexradIngestService:
             scan_timestamp=scan_timestamp,
             file_path=str(runtime_path),
             bytes_written=existing_size,
-            parse_offset=min(int(persisted_state.get("parse_offset", 0) or 0), existing_size),
         )
 
         previous_tail = self._read_runtime_tail(runtime_path)
         stream_has_started = existing_size > 0
         chunks_since_parse = 0
-        parsed_since_last_write = current_state.bytes_written <= current_state.parse_offset
+        parsed_since_last_write = True
         seen_elevation_exports = _normalize_seen_elevation_exports(
             persisted_state.get("seen_elevation_exports"),
             persisted_state.get("seen_elevation_keys"),
@@ -366,9 +370,14 @@ class NexradIngestService:
                     before, after = split_at_boundary(payload, boundary_offset)
                     del payload
                     if before:
-                        scan_file.write(before)
-                        current_state.bytes_written += len(before)
+                        normalized_before = self._normalize_runtime_chunk(
+                            before,
+                            first_chunk_of_volume=current_state.bytes_written == 0,
+                        )
+                        scan_file.write(normalized_before)
+                        current_state.bytes_written += len(normalized_before)
                         parsed_since_last_write = False
+                        del normalized_before
                     del before
 
                     scan_file.flush()
@@ -401,8 +410,12 @@ class NexradIngestService:
                     scan_file.truncate()
 
                     if after:
-                        scan_file.write(after)
-                        current_state.bytes_written = len(after)
+                        normalized_after = self._normalize_runtime_chunk(
+                            after,
+                            first_chunk_of_volume=True,
+                        )
+                        scan_file.write(normalized_after)
+                        current_state.bytes_written = len(normalized_after)
                         parsed_since_last_write = False
                         scan_file.flush()
                         prior_bytes_written = current_state.bytes_written
@@ -419,9 +432,11 @@ class NexradIngestService:
                         stream_has_started = True
                         if current_state.bytes_written != prior_bytes_written:
                             previous_tail = self._read_runtime_tail(runtime_path)
+                            scan_file.seek(current_state.bytes_written)
                         else:
                             previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
                         parsed_since_last_write = True
+                        del normalized_after
                         del after
                     else:
                         stream_has_started = True
@@ -429,14 +444,18 @@ class NexradIngestService:
                     
                     continue
 
-                scan_file.write(payload)
-                current_state.bytes_written += len(payload)
+                normalized_payload = self._normalize_runtime_chunk(
+                    payload,
+                    first_chunk_of_volume=current_state.bytes_written == 0,
+                )
+                scan_file.write(normalized_payload)
+                current_state.bytes_written += len(normalized_payload)
                 stream_has_started = True
                 previous_tail = (previous_tail + payload)[-MAX_MAGIC_OVERLAP:]
                 parsed_since_last_write = False
                 chunks_since_parse += 1
 
-                if chunks_since_parse >= self.parse_checkpoint_chunk_interval and current_state.bytes_written > current_state.parse_offset:
+                if chunks_since_parse >= self.parse_checkpoint_chunk_interval and current_state.bytes_written > 0:
                     scan_file.flush()
                     prior_bytes_written = current_state.bytes_written
                     first_elevation_timestamp = self._run_worker_parse(
@@ -451,11 +470,13 @@ class NexradIngestService:
                     )
                     if current_state.bytes_written != prior_bytes_written:
                         previous_tail = self._read_runtime_tail(runtime_path)
+                        scan_file.seek(current_state.bytes_written)
                     parsed_since_last_write = True
                     chunks_since_parse = 0
+                del normalized_payload
                 del payload
 
-            if not parsed_since_last_write and current_state.bytes_written > current_state.parse_offset:
+            if not parsed_since_last_write and current_state.bytes_written > 0:
                 scan_file.flush()
                 first_elevation_timestamp = self._run_worker_parse(
                     current_state,
@@ -489,7 +510,6 @@ class NexradIngestService:
                 seen_elevation_exports=seen_elevation_exports,
                 elevation_timestamps_by_id=elevation_timestamps_by_id,
                 first_elevation_timestamp=first_elevation_timestamp,
-                parse_offset=current_state.parse_offset,
                 scan_timestamp=scan_timestamp,
             )
 
@@ -545,7 +565,6 @@ class NexradIngestService:
                 scan_timestamp=scan_timestamp,
                 seen_keys=seen_elevation_exports,
                 trim_buffer=True,
-                parse_offset=state.parse_offset,
             )
             queued_elapsed_ms = format_perf_ms(submit_started_at)
             future_wait_started_at = time.perf_counter()
@@ -563,9 +582,6 @@ class NexradIngestService:
 
             if result.buffer_trimmed and result.runtime_size is not None:
                 state.bytes_written = max(0, int(result.runtime_size))
-                state.parse_offset = 0
-            else:
-                state.parse_offset = state.bytes_written
 
             if result.parse_error:
                 state.parse_errors.append(result.parse_error)
@@ -654,13 +670,12 @@ class NexradIngestService:
             scan_timestamp=scan_timestamp,
             file_path=str(runtime_path),
             bytes_written=existing_size,
-            parse_offset=min(int(persisted_state.get("parse_offset", 0) or 0), existing_size),
         )
 
         previous_tail = self._read_runtime_tail(runtime_path)
         stream_has_started = existing_size > 0
         chunks_since_parse = 0
-        parsed_since_last_write = current_state.bytes_written <= current_state.parse_offset
+        parsed_since_last_write = True
         seen_elevation_exports = _normalize_seen_elevation_exports(
             persisted_state.get("seen_elevation_exports"),
             persisted_state.get("seen_elevation_keys"),
@@ -681,16 +696,22 @@ class NexradIngestService:
 
                 downloaded_chunk_keys.add(self._chunk_identity(chunk))
 
-                await scan_file.write(payload)
-                current_state.bytes_written += len(payload)
-                parsed_since_last_write = False
-
                 found_boundary, boundary_offset = detect_next_volume_offset(
                     previous_tail, payload, stream_has_started,
                 )
 
                 if found_boundary and boundary_offset > 0:
-                    _before, after = split_at_boundary(payload, boundary_offset)
+                    before, after = split_at_boundary(payload, boundary_offset)
+
+                    if before:
+                        normalized_before = self._normalize_runtime_chunk(
+                            before,
+                            first_chunk_of_volume=current_state.bytes_written == 0,
+                        )
+                        await scan_file.write(normalized_before)
+                        current_state.bytes_written += len(normalized_before)
+                        parsed_since_last_write = False
+                        del normalized_before
 
                     await scan_file.flush()
 
@@ -723,8 +744,12 @@ class NexradIngestService:
                     await scan_file.truncate()
 
                     if after:
-                        await scan_file.write(after)
-                        current_state.bytes_written = len(after)
+                        normalized_after = self._normalize_runtime_chunk(
+                            after,
+                            first_chunk_of_volume=True,
+                        )
+                        await scan_file.write(normalized_after)
+                        current_state.bytes_written = len(normalized_after)
                         parsed_since_last_write = False
                         await scan_file.flush()
                         prior_bytes_written = current_state.bytes_written
@@ -742,16 +767,25 @@ class NexradIngestService:
                     stream_has_started = True
                     if current_state.bytes_written != prior_bytes_written:
                         previous_tail = self._read_runtime_tail(runtime_path)
+                        await scan_file.seek(current_state.bytes_written)
                     else:
                         previous_tail = after[-MAX_MAGIC_OVERLAP:] if len(after) >= MAX_MAGIC_OVERLAP else after
                     parsed_since_last_write = True
+                    del normalized_after
                     continue
 
+                normalized_payload = self._normalize_runtime_chunk(
+                    payload,
+                    first_chunk_of_volume=current_state.bytes_written == 0,
+                )
+                await scan_file.write(normalized_payload)
+                current_state.bytes_written += len(normalized_payload)
+                parsed_since_last_write = False
                 stream_has_started = True
                 previous_tail = (previous_tail + payload)[-MAX_MAGIC_OVERLAP:]
                 chunks_since_parse += 1
 
-                if chunks_since_parse >= self.parse_checkpoint_chunk_interval and current_state.bytes_written > current_state.parse_offset:
+                if chunks_since_parse >= self.parse_checkpoint_chunk_interval and current_state.bytes_written > 0:
                     await scan_file.flush()
                     prior_bytes_written = current_state.bytes_written
                     first_elevation_timestamp = await asyncio.to_thread(
@@ -767,10 +801,13 @@ class NexradIngestService:
                     )
                     if current_state.bytes_written != prior_bytes_written:
                         previous_tail = self._read_runtime_tail(runtime_path)
+                        await scan_file.seek(current_state.bytes_written)
                     parsed_since_last_write = True
                     chunks_since_parse = 0
+                del normalized_payload
+                del payload
 
-            if not parsed_since_last_write and current_state.bytes_written > current_state.parse_offset:
+            if not parsed_since_last_write and current_state.bytes_written > 0:
                 await scan_file.flush()
                 first_elevation_timestamp = await asyncio.to_thread(
                     self._run_worker_parse,
@@ -805,7 +842,6 @@ class NexradIngestService:
                 seen_elevation_exports=seen_elevation_exports,
                 elevation_timestamps_by_id=elevation_timestamps_by_id,
                 first_elevation_timestamp=first_elevation_timestamp,
-                parse_offset=current_state.parse_offset,
                 scan_timestamp=scan_timestamp,
             )
 

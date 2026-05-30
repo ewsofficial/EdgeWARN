@@ -61,6 +61,14 @@ def _decompress_chunked_record_stream(volume_bytes: bytes) -> bytes:
     return result
 
 
+def _is_chunked_bzip_volume(volume_bytes: bytes) -> bool:
+    """Return True when bytes follow the chunked-compressed AR2V layout."""
+    if len(volume_bytes) < 31:
+        return False
+    compression_record_count = struct.unpack(">I", volume_bytes[24:28])[0]
+    return compression_record_count > 0 and volume_bytes[28:31] == b"BZh"
+
+
 def _decompress_and_parse_stream(
     data: bytes,
     start_offset: int,
@@ -412,9 +420,10 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolumeBuffer:
 
     volume_header = volume_bytes[:VOLUME_HEADER_BYTES]
     site = volume_header[20:24].decode("ascii", errors="ignore").strip() or "UNKNOWN"
-    compression_record_count = struct.unpack(">I", volume_bytes[24:28])[0] if len(volume_bytes) >= 28 else 0
+    compressed_stream = _is_chunked_bzip_volume(volume_bytes)
+    compression_record_count = struct.unpack(">I", volume_bytes[24:28])[0] if compressed_stream else 0
 
-    if compression_record_count > 0:
+    if compressed_stream:
         record_stream = _decompress_chunked_record_stream(volume_bytes)
         offset = 0
     else:
@@ -515,17 +524,10 @@ def parse_raw_volume_file(path: str | Path) -> RawVolumeBuffer:
 
 def parse_raw_volume_file_mmap(
     path: str | Path,
-    *,
-    parse_offset: int = 0,
 ) -> RawVolumeBuffer:
     """Parse AR2V file using mmap for zero-copy, on-demand paging.
 
-    Args:
-        path: Path to the .ar2v file.
-        parse_offset: Byte offset to resume parsing from (0 = full parse).
-
-    Returns:
-        RawVolume with parsed sweep metadata.
+    Returns a RawVolume with parsed sweep metadata.
     """
     path = Path(path)
     file_size = path.stat().st_size
@@ -536,21 +538,21 @@ def parse_raw_volume_file_mmap(
         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
             volume_header = bytes(mm[:VOLUME_HEADER_BYTES])
             site = volume_header[20:24].decode("ascii", errors="ignore").strip() or "UNKNOWN"
-            compression_record_count = struct.unpack(">I", mm[24:28])[0] if file_size >= 28 else 0
+            mm_bytes = mm[:] if file_size >= 31 else b""
+            compressed_stream = _is_chunked_bzip_volume(mm_bytes if mm_bytes else volume_header)
+            compression_record_count = struct.unpack(">I", mm[24:28])[0] if compressed_stream else 0
 
             metadata_ranges: list[tuple[int, int]] = []
             sweeps: list[RawSweepRange] = []
             final_offset: int = 0
 
-            if compression_record_count > 0:
-                record_buffer = _decompress_chunked_record_stream(bytes(mm[:]))
+            if compressed_stream:
+                record_buffer = _decompress_chunked_record_stream(mm_bytes)
                 final_offset, _ = _walk_records(record_buffer, 0, metadata_ranges, sweeps)
                 trailing = record_buffer[final_offset:]
             else:
                 record_buffer = bytes(mm[:])
-                data_start = VOLUME_HEADER_BYTES
-                start = parse_offset if parse_offset > 0 else data_start
-                final_offset, _ = _walk_records(record_buffer, start, metadata_ranges, sweeps)
+                final_offset, _ = _walk_records(record_buffer, VOLUME_HEADER_BYTES, metadata_ranges, sweeps)
                 trailing = record_buffer[final_offset:]
 
             return RawVolumeBuffer(
