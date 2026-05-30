@@ -27,9 +27,38 @@ from common.ingest.nexrad.writer import write_elevation_artifacts
 
 
 def _get_child_rss_kb() -> float:
-    """Return peak RSS of the current process in KB."""
+    """Return current RSS of the current process in KB.
+
+    Prefer the live resident set so post-export cleanup is visible in logs.
+    Fall back to ``ru_maxrss`` when procfs is unavailable.
+    """
+    try:
+        with open("/proc/self/status", encoding="utf-8") as status_file:
+            for line in status_file:
+                if not line.startswith("VmRSS:"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 2:
+                    return float(parts[1])
+                break
+    except OSError:
+        pass
+
     ru = resource.getrusage(resource.RUSAGE_SELF)
     return ru.ru_maxrss
+
+
+def _release_raw_volume_buffers(raw_volume) -> None:
+    """Drop large parsed buffers before the final GC/malloc trim pass."""
+    try:
+        raw_volume.record_buffer = b""
+        raw_volume.metadata_ranges.clear()
+        raw_volume.trailing_bytes = b""
+        for sweep in raw_volume.sweeps:
+            sweep.record_ranges.clear()
+        raw_volume.sweeps.clear()
+    except Exception:
+        pass
 
 
 def _clear_worker_caches() -> None:
@@ -116,6 +145,7 @@ def parse_and_export(
     visible_sweeps = 0
     buffer_trimmed = False
     runtime_size: int | None = None
+    raw_volume = None
 
     try:
         raw_volume = parse_raw_volume_file_mmap(volume_path)
@@ -167,7 +197,7 @@ def parse_and_export(
                 del raw_volume.trailing_bytes
                 raw_volume.trailing_bytes = b""
 
-        if trim_buffer:
+        if trim_buffer and dropped_group_names:
             with open(volume_path, "wb") as f:
                 f.write(raw_volume.volume_header)
                 for record in iter_metadata_records(raw_volume):
@@ -178,15 +208,16 @@ def parse_and_export(
                     for record in iter_sweep_records(raw_volume, raw_sweep):
                         f.write(record)
                 f.write(raw_volume.trailing_bytes)
-            buffer_trimmed = bool(dropped_group_names)
+            buffer_trimmed = True
             runtime_size = Path(volume_path).stat().st_size
-
-        del raw_volume
 
     except Exception as exc:
         parse_error = str(exc)
-
-    _clear_worker_caches()
+    finally:
+        if raw_volume is not None:
+            _release_raw_volume_buffers(raw_volume)
+            del raw_volume
+        _clear_worker_caches()
 
     return WorkerParseResult(
         visible_sweeps=visible_sweeps,

@@ -31,6 +31,7 @@ END_STATUSES = {2, 4}
 DUALPOL_BLOCKS = {"DZDR", "DPHI", "DRHO", "DCFP"}
 DOPPLER_BLOCKS = {"DVEL", "DSW "}
 MIN_SWEEP_ANGLE_DEG = 0.4
+DREF_BLOCK = frozenset({"DREF"})
 
 
 def _decompress_chunked_record_stream(volume_bytes: bytes) -> bytes:
@@ -67,6 +68,14 @@ def _is_chunked_bzip_volume(volume_bytes: bytes) -> bool:
         return False
     compression_record_count = struct.unpack(">I", volume_bytes[24:28])[0]
     return compression_record_count > 0 and volume_bytes[28:31] == b"BZh"
+
+
+def _is_chunked_bzip_volume_buffer(buffer, length: int) -> bool:
+    """Return True when a byte-like buffer follows the chunked BZip layout."""
+    if length < 31:
+        return False
+    compression_record_count = struct.unpack(">I", buffer[24:28])[0]
+    return compression_record_count > 0 and bytes(buffer[28:31]) == b"BZh"
 
 
 def _decompress_and_parse_stream(
@@ -321,11 +330,8 @@ def filter_msg31_blocks(record: bytes, drop_block_names: set[str] | frozenset[st
     body_end = record_end - msg31_start
     selected_blocks: list[bytes] = []
 
-    for index, offset in enumerate(offsets):
-        if offset <= 0:
-            continue
-        next_offsets = [candidate for candidate in offsets[index + 1 :] if candidate > offset]
-        next_offset = min(next_offsets) if next_offsets else body_end
+    boundaries = positive_offsets[1:] + [body_end]
+    for offset, next_offset in zip(positive_offsets, boundaries):
         block_start = msg31_start + offset
         block_end = msg31_start + next_offset
         if block_end > record_end or block_start + 4 > block_end:
@@ -538,8 +544,7 @@ def parse_raw_volume_file_mmap(
         with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
             volume_header = bytes(mm[:VOLUME_HEADER_BYTES])
             site = volume_header[20:24].decode("ascii", errors="ignore").strip() or "UNKNOWN"
-            mm_bytes = mm[:] if file_size >= 31 else b""
-            compressed_stream = _is_chunked_bzip_volume(mm_bytes if mm_bytes else volume_header)
+            compressed_stream = _is_chunked_bzip_volume_buffer(mm, file_size)
             compression_record_count = struct.unpack(">I", mm[24:28])[0] if compressed_stream else 0
 
             metadata_ranges: list[tuple[int, int]] = []
@@ -547,12 +552,12 @@ def parse_raw_volume_file_mmap(
             final_offset: int = 0
 
             if compressed_stream:
-                record_buffer = _decompress_chunked_record_stream(mm_bytes)
+                record_buffer = _decompress_chunked_record_stream(mm)
                 final_offset, _ = _walk_records(record_buffer, 0, metadata_ranges, sweeps)
                 trailing = record_buffer[final_offset:]
             else:
-                record_buffer = bytes(mm[:])
-                final_offset, _ = _walk_records(record_buffer, VOLUME_HEADER_BYTES, metadata_ranges, sweeps)
+                final_offset, _ = _walk_records(mm, VOLUME_HEADER_BYTES, metadata_ranges, sweeps)
+                record_buffer = bytes(mm)
                 trailing = record_buffer[final_offset:]
 
             return RawVolumeBuffer(
