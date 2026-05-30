@@ -18,11 +18,9 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ProcessPoolExecutor, Future
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import util.file as fs
 from common.ingest.nexrad.models import ElevationArtifact, WorkerParseResult
 
 
@@ -159,7 +157,7 @@ class NexradWorkerPool:
 
 def get_nexrad_pool(max_workers: int | None = None) -> NexradWorkerPool:
     """Return a singleton pool, creating one if needed."""
-    global _POOL, _POOL_SIZE
+    global _POOL, _POOL_SIZE, _VOLUME_COUNT
 
     target = max_workers or int(os.environ.get("NEXRAD_WORKER_POOL_SIZE", "4"))
 
@@ -168,21 +166,39 @@ def get_nexrad_pool(max_workers: int | None = None) -> NexradWorkerPool:
             _POOL.shutdown(wait=True)
         _POOL = NexradWorkerPool(max_workers=target)
         _POOL_SIZE = target
+        _VOLUME_COUNT = 0
 
     return _POOL
 
 
 def record_volume_and_maybe_recycle(max_workers: int | None = None) -> None:
-    """No-op placeholder. Worker recycling was removed because forking new
-    workers from a grown parent process produces children with higher RSS
-    baselines than keeping the existing workers and relying on malloc_trim.
+    """Recycle long-lived workers after a bounded number of completed volumes.
+
+    This caps allocator fragmentation and import/cache buildup inside pool
+    workers during long realtime runs. The threshold is configurable via
+    ``NEXRAD_WORKER_RECYCLE_INTERVAL`` and defaults to 24 completed volumes.
+    Set the value to ``0`` to disable recycling.
     """
-    pass
+    global _POOL, _POOL_SIZE, _VOLUME_COUNT
+
+    recycle_interval = int(os.environ.get("NEXRAD_WORKER_RECYCLE_INTERVAL", "24"))
+    if recycle_interval <= 0:
+        return
+
+    _VOLUME_COUNT += 1
+    if _POOL is None or _VOLUME_COUNT < recycle_interval:
+        return
+
+    _POOL.shutdown(wait=True)
+    _POOL = None
+    _POOL_SIZE = 0
+    _VOLUME_COUNT = 0
 
 
 def shutdown_nexrad_pool(wait: bool = True) -> None:
-    global _POOL, _POOL_SIZE
+    global _POOL, _POOL_SIZE, _VOLUME_COUNT
     if _POOL is not None:
         _POOL.shutdown(wait=wait)
         _POOL = None
         _POOL_SIZE = 0
+    _VOLUME_COUNT = 0
