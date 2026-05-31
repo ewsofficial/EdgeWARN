@@ -108,8 +108,6 @@ export function createApp(env = process.env, options = {}) {
     allowedHeaders: ['Content-Type', 'Authorization']
   }));
 
-  app.use(express.json());
-
   // Trust proxy configuration
   const trustProxy = env.TRUST_PROXY === 'true' || !!env.TRUST_PROXY_IPS;
   if (env.TRUST_PROXY === 'false') {
@@ -120,7 +118,9 @@ export function createApp(env = process.env, options = {}) {
     app.set('trust proxy', false);
   }
 
-  // Rate Limiting - configurable via environment variables
+  // Rate Limiting - configurable via environment variables.
+  // Mounted before express.json() so abusive bodies are rejected before
+  // we spend CPU parsing them.
   const {
     rateLimitWindowMsSec,
     rateLimitMaxSec,
@@ -158,6 +158,10 @@ export function createApp(env = process.env, options = {}) {
   if (rateLimitMaxMin > 0) {
     app.use(buildLimiter(rateLimitWindowMsMin, rateLimitMaxMin));
   }
+
+  // Bounded JSON body parser (no v2 route accepts a JSON body, but defend
+  // against unbounded body abuse should one be added).
+  app.use(express.json({ limit: '16kb', strict: true, type: 'application/json' }));
 
   // Routes
   app.get('/', (req, res) => {

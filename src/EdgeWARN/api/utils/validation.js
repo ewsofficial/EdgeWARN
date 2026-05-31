@@ -20,7 +20,7 @@ export function validateResourceType(type) {
  * @returns {boolean} True if valid format
  */
 export function validateTimestamp(timestamp) {
-  if (!timestamp) return false;
+  if (typeof timestamp !== 'string' || timestamp.length === 0) return false;
   return TIMESTAMP_REGEX.test(timestamp);
 }
 
@@ -30,7 +30,7 @@ export function validateTimestamp(timestamp) {
  * @returns {boolean} True if valid format
  */
 export function validateTimestampV2(timestamp) {
-  if (!timestamp) return false;
+  if (typeof timestamp !== 'string' || timestamp.length === 0) return false;
   return TIMESTAMP_REGEX.test(timestamp);
 }
 
@@ -53,6 +53,8 @@ export function validateMutualExclusion(params, key1, key2) {
  * @returns {boolean} True if valid
  */
 export function validateCellId(id) {
+  if (typeof id !== 'string' && typeof id !== 'number') return false;
+  if (typeof id === 'number' && !Number.isFinite(id)) return false;
   const num = parseInt(id, 10);
   return !isNaN(num) && num > 0 && num.toString() === id.toString();
 }
