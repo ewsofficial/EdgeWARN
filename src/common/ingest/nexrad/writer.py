@@ -13,7 +13,7 @@ from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
 
 IMPORTANT_DATA_VARS = None
 NEXRAD_SCAN_DIRS_TO_KEEP = 3
-NEXRAD_ELEVATION_DIRS_TO_KEEP = 3
+NEXRAD_ELEVATION_DIRS_TO_KEEP = 5
 SCAN_TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
 STALE_MANIFEST_MAX_AGE_HOURS = 12
 
@@ -38,6 +38,10 @@ def _filename_timestamp(timestamp: str | None) -> str:
         if formatted is not None:
             return formatted
     return str(timestamp).replace(":", "-")
+
+
+def _utc_now_timestamp() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class NexradLocalChunkStore:
@@ -283,6 +287,7 @@ def _normalize_sidecar_payload(
     *,
     fallback_volume_id: str | None = None,
     fallback_volume_timestamp: str | None = None,
+    fallback_download_started_at: str | None = None,
 ) -> dict | None:
     volume_id = payload.get("volume_id") or fallback_volume_id
     if not volume_id:
@@ -298,6 +303,7 @@ def _normalize_sidecar_payload(
         "volume_id": str(volume_id),
         "volume_timestamp": volume_timestamp,
         "scan_timestamp": payload.get("scan_timestamp") or volume_timestamp,
+        "download_started_at": payload.get("download_started_at") or fallback_download_started_at,
         "elevation": str(elevation) if elevation is not None else None,
         "elevation_timestamp": payload.get("elevation_timestamp"),
         "first_sweep_index": payload.get("first_sweep_index"),
@@ -308,6 +314,7 @@ def _normalize_sidecar_payload(
         "member_sweeps": list(payload.get("member_sweeps") or []),
         "waveforms_present": list(payload.get("waveforms_present") or []),
         "supplemental": bool(payload.get("supplemental", False)),
+        "file_written_at": payload.get("file_written_at"),
         "netcdf_path": payload.get("netcdf_path"),
         "ar2v_path": payload.get("ar2v_path"),
     }
@@ -345,6 +352,7 @@ def build_site_manifest(
     *,
     current_volume_id: str | None = None,
     current_volume_timestamp: str | None = None,
+    current_download_started_at: str | None = None,
 ) -> dict:
     site_upper = str(site).upper()
     site_dir = fs.NEXRAD_LEVEL2_DIR / site_upper
@@ -360,6 +368,7 @@ def build_site_manifest(
                     payload,
                     fallback_volume_id=current_volume_id,
                     fallback_volume_timestamp=current_volume_timestamp,
+                    fallback_download_started_at=current_download_started_at,
                 )
                 if normalized is None:
                     continue
@@ -372,6 +381,7 @@ def build_site_manifest(
                         "volume_id": volume_id,
                         "volume_timestamp": normalized["volume_timestamp"],
                         "scan_timestamp": normalized["scan_timestamp"],
+                        "download_started_at": normalized["download_started_at"],
                         "sweeps": [],
                         "_seen_sweeps": set(),
                     },
@@ -382,6 +392,8 @@ def build_site_manifest(
                     volume["volume_timestamp"] = volume_timestamp
                 if volume.get("scan_timestamp") is None and normalized["scan_timestamp"] is not None:
                     volume["scan_timestamp"] = normalized["scan_timestamp"]
+                if volume.get("download_started_at") is None and normalized["download_started_at"] is not None:
+                    volume["download_started_at"] = normalized["download_started_at"]
 
                 if normalized["elevation"] is None:
                     continue
@@ -423,6 +435,7 @@ def write_site_manifest(
     *,
     current_volume_id: str | None = None,
     current_volume_timestamp: str | None = None,
+    current_download_started_at: str | None = None,
 ) -> Path:
     path = site_manifest_path(site)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -430,6 +443,7 @@ def write_site_manifest(
         site,
         current_volume_id=current_volume_id,
         current_volume_timestamp=current_volume_timestamp,
+        current_download_started_at=current_download_started_at,
     )
     return _write_text_if_changed(path, json.dumps(payload, separators=(",", ":")))
 
@@ -636,6 +650,7 @@ def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
         "volume_id": artifact.volume_id,
         "volume_timestamp": artifact.volume_timestamp,
         "scan_timestamp": artifact.scan_timestamp,
+        "download_started_at": artifact.download_started_at,
         "elevation": artifact.elevation,
         "elevation_timestamp": artifact.elevation_timestamp,
         "first_sweep_index": artifact.first_sweep_index,
@@ -646,6 +661,7 @@ def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
         "member_sweeps": artifact.member_sweeps,
         "waveforms_present": list(artifact.waveforms_present),
         "supplemental": artifact.supplemental,
+        "file_written_at": artifact.file_written_at,
         "netcdf_path": artifact.netcdf_path,
         "ar2v_path": artifact.ar2v_path,
     }
@@ -679,6 +695,7 @@ def write_elevation_artifacts(
     site: str,
     volume_id: str,
     scan_timestamp: str | None,
+    download_started_at: str | None,
     elevation_label: str,
     elevation_timestamp: str | None,
     output_root: str | Path | None = None,
@@ -725,6 +742,7 @@ def write_elevation_artifacts(
     else:
         nc_path = store.elevation_netcdf_path(site, elevation_label, ts_for_filename)
         _write_elevation_netcdf(nc_path, root_attrs, source, group_names)
+    file_written_at = _utc_now_timestamp()
 
     artifact = ElevationArtifact(
         site=site,
@@ -741,6 +759,8 @@ def write_elevation_artifacts(
         member_sweeps=member_sweeps,
         waveforms_present=group.waveforms_present,
         supplemental=group.supplemental,
+        download_started_at=download_started_at,
+        file_written_at=file_written_at,
         netcdf_path=str(nc_path) if nc_path is not None else None,
         ar2v_path=str(ar2v_path) if ar2v_path is not None else None,
     )

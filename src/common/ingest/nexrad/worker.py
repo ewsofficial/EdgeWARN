@@ -121,6 +121,7 @@ def parse_and_export(
     site: str,
     volume_id: str,
     scan_timestamp: str | None,
+    download_started_at: str | None = None,
     seen_elevation_keys: dict[str, str | None] | set[str] | None = None,
     trim_buffer: bool = False,
 ) -> WorkerParseResult:
@@ -173,6 +174,7 @@ def parse_and_export(
                 site=str(site).upper(),
                 volume_id=str(volume_id),
                 scan_timestamp=scan_timestamp,
+                download_started_at=download_started_at,
                 elevation_label=elevation_label,
                 elevation_timestamp=first_ts,
                 output_root=output_root,

@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 import json
 import subprocess
 import time
@@ -60,6 +61,10 @@ def _write_text_if_changed(path: Path, content: str) -> None:
         except Exception:
             pass
     path.write_text(content, encoding="utf-8")
+
+
+def _utc_now_timestamp() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 def _artifact_group_key(artifact: ElevationArtifact) -> str:
     return f"{artifact.elevation}:{','.join(artifact.member_group_names)}"
@@ -190,12 +195,14 @@ class NexradIngestService:
         elevation_timestamps_by_id: dict[str, str],
         first_elevation_timestamp: str | None,
         scan_timestamp: str | None,
+        download_started_at: str | None,
     ) -> None:
         state_path = self._runtime_state_path(site, volume_id)
         payload = {
             "site": str(site).upper(),
             "volume_id": str(volume_id),
             "scan_timestamp": scan_timestamp,
+            "download_started_at": download_started_at,
             "downloaded_chunk_keys": sorted(downloaded_chunk_keys),
             "seen_elevation_exports": seen_elevation_exports,
             "seen_elevation_keys": sorted(seen_elevation_exports),
@@ -329,6 +336,7 @@ class NexradIngestService:
         runtime_path = runtime_scan_path(site_upper, volume_id)
         persisted_state = self._load_runtime_state(site_upper, volume_id, runtime_path)
         downloaded_chunk_keys = set(persisted_state.get("downloaded_chunk_keys", []))
+        download_started_at = persisted_state.get("download_started_at") or _utc_now_timestamp()
         pending_chunks = [
             chunk for chunk in sorted_chunks
             if self._chunk_identity(chunk) not in downloaded_chunk_keys
@@ -391,6 +399,7 @@ class NexradIngestService:
                         scan_timestamp,
                         seen_elevation_exports,
                         first_elevation_timestamp,
+                        download_started_at=download_started_at,
                         elevation_timestamps_by_id=elevation_timestamps_by_id,
                         base_dir=base_dir,
                     )
@@ -426,6 +435,7 @@ class NexradIngestService:
                             scan_timestamp,
                             seen_elevation_exports,
                             first_elevation_timestamp,
+                            download_started_at=download_started_at,
                             elevation_timestamps_by_id=elevation_timestamps_by_id,
                             base_dir=base_dir,
                         )
@@ -465,6 +475,7 @@ class NexradIngestService:
                         scan_timestamp,
                         seen_elevation_exports,
                         first_elevation_timestamp,
+                        download_started_at=download_started_at,
                         elevation_timestamps_by_id=elevation_timestamps_by_id,
                         base_dir=base_dir,
                     )
@@ -485,6 +496,7 @@ class NexradIngestService:
                     scan_timestamp,
                     seen_elevation_exports,
                     first_elevation_timestamp,
+                    download_started_at=download_started_at,
                     elevation_timestamps_by_id=elevation_timestamps_by_id,
                     base_dir=base_dir,
                 )
@@ -498,6 +510,7 @@ class NexradIngestService:
                 site_upper,
                 current_volume_id=volume_id,
                 current_volume_timestamp=scan_timestamp,
+                current_download_started_at=download_started_at,
             )
             if runtime_path.exists():
                 runtime_path.unlink(missing_ok=True)
@@ -511,6 +524,7 @@ class NexradIngestService:
                 elevation_timestamps_by_id=elevation_timestamps_by_id,
                 first_elevation_timestamp=first_elevation_timestamp,
                 scan_timestamp=scan_timestamp,
+                download_started_at=download_started_at,
             )
 
         return NexradIngestResult(
@@ -536,6 +550,7 @@ class NexradIngestService:
         seen_elevation_exports: dict[str, str | None],
         first_elevation_timestamp: str | None,
         *,
+        download_started_at: str | None = None,
         elevation_timestamps_by_id: dict[str, str] | None = None,
         base_dir=None,
     ) -> str | None:
@@ -563,6 +578,7 @@ class NexradIngestService:
                 site=site,
                 volume_id=volume_id,
                 scan_timestamp=scan_timestamp,
+                download_started_at=download_started_at,
                 seen_keys=seen_elevation_exports,
                 trim_buffer=True,
             )
@@ -658,6 +674,7 @@ class NexradIngestService:
         runtime_path.parent.mkdir(parents=True, exist_ok=True)
         persisted_state = self._load_runtime_state(site_upper, volume_id, runtime_path)
         downloaded_chunk_keys = set(persisted_state.get("downloaded_chunk_keys", []))
+        download_started_at = persisted_state.get("download_started_at") or _utc_now_timestamp()
         pending_chunks = [
             chunk for chunk in sorted_chunks
             if self._chunk_identity(chunk) not in downloaded_chunk_keys
@@ -725,6 +742,7 @@ class NexradIngestService:
                         scan_timestamp,
                         seen_elevation_exports,
                         first_elevation_timestamp,
+                        download_started_at=download_started_at,
                         elevation_timestamps_by_id=elevation_timestamps_by_id,
                         base_dir=base_dir,
                     )
@@ -761,6 +779,7 @@ class NexradIngestService:
                             scan_timestamp,
                             seen_elevation_exports,
                             first_elevation_timestamp,
+                            download_started_at=download_started_at,
                             elevation_timestamps_by_id=elevation_timestamps_by_id,
                             base_dir=base_dir,
                         )
@@ -796,6 +815,7 @@ class NexradIngestService:
                         scan_timestamp,
                         seen_elevation_exports,
                         first_elevation_timestamp,
+                        download_started_at=download_started_at,
                         elevation_timestamps_by_id=elevation_timestamps_by_id,
                         base_dir=base_dir,
                     )
@@ -817,6 +837,7 @@ class NexradIngestService:
                     scan_timestamp,
                     seen_elevation_exports,
                     first_elevation_timestamp,
+                    download_started_at=download_started_at,
                     elevation_timestamps_by_id=elevation_timestamps_by_id,
                     base_dir=base_dir,
                 )
@@ -830,6 +851,7 @@ class NexradIngestService:
                 site_upper,
                 current_volume_id=volume_id,
                 current_volume_timestamp=scan_timestamp,
+                current_download_started_at=download_started_at,
             )
             if runtime_path.exists():
                 runtime_path.unlink(missing_ok=True)
@@ -843,6 +865,7 @@ class NexradIngestService:
                 elevation_timestamps_by_id=elevation_timestamps_by_id,
                 first_elevation_timestamp=first_elevation_timestamp,
                 scan_timestamp=scan_timestamp,
+                download_started_at=download_started_at,
             )
 
         return NexradIngestResult(
