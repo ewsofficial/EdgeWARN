@@ -35,6 +35,7 @@ def _worker_parse(
     site: str,
     volume_id: str,
     scan_timestamp: str | None,
+    download_started_at: str | None,
     seen_keys: dict[str, str | None],
     trim_buffer: bool,
 ) -> dict[str, Any]:
@@ -51,6 +52,7 @@ def _worker_parse(
         site=site,
         volume_id=volume_id,
         scan_timestamp=scan_timestamp,
+        download_started_at=download_started_at,
         seen_elevation_keys=seen_keys,
         trim_buffer=trim_buffer,
     )
@@ -61,6 +63,7 @@ def _worker_parse(
         "saved_elevations": [
             {
                 "scan_timestamp": a.scan_timestamp,
+                "download_started_at": a.download_started_at,
                 "elevation": a.elevation,
                 "elevation_timestamp": a.elevation_timestamp,
                 "member_group_names": a.member_group_names,
@@ -94,6 +97,7 @@ def _dict_to_result(payload: dict[str, Any]) -> WorkerParseResult:
                 member_sweeps=[],
                 waveforms_present=set(),
                 supplemental=False,
+                download_started_at=a.get("download_started_at"),
                 netcdf_path=None,
                 ar2v_path=None,
             )
@@ -122,6 +126,7 @@ class NexradWorkerPool:
         site: str,
         volume_id: str,
         scan_timestamp: str | None,
+        download_started_at: str | None,
         seen_keys: dict[str, str | None],
         trim_buffer: bool = False,
     ) -> Future[WorkerParseResult]:
@@ -132,6 +137,7 @@ class NexradWorkerPool:
             str(site).upper(),
             str(volume_id),
             scan_timestamp,
+            download_started_at,
             seen_keys,
             trim_buffer,
         )

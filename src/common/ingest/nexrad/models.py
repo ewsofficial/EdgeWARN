@@ -95,6 +95,8 @@ class ElevationArtifact:
     supplemental: bool
     netcdf_path: str | None = None
     ar2v_path: str | None = None
+    download_started_at: str | None = None
+    file_written_at: str | None = None
 
 
 @dataclass
