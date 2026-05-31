@@ -70,7 +70,8 @@ export async function readJsonFileSafe(dir, name, options = { useCache: true }) 
     throw err;
   }
   const realDir = await fs.promises.realpath(resolvedDir);
-  if (!realFull.startsWith(realDir + path.sep) && realFull !== realDir) {
+  const relative = path.relative(realDir, realFull);
+  if (relative !== '' && (relative.startsWith('..') || path.isAbsolute(relative))) {
     const e = new Error('Path outside allowed directory');
     e.code = 'EACCES';
     throw e;
