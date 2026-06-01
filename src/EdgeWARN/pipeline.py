@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import traceback
 from datetime import datetime, timezone, timedelta
@@ -11,6 +12,7 @@ import util.file as fs
 import common.ingest.mrms.main as ingest_main
 from common.ingest.mrms.config import get_goes_modifiers, get_mrms_modifiers
 from common.ingest.mrms.pipeline import get_output_dirs
+from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.api_integration.index_manager import APIIndexManager
 from common.ingest.synoptic.main import download_rap
 from util.io import IOManager, QueueWriter
@@ -169,6 +171,8 @@ def edgewarn_tandem_worker(
     def log(message):
         log_queue.put(message)
 
+    if profile:
+        perf_tracker.set_enabled(True)
     perf_tracker.reset()
     perf_tracker.start("Total Pipeline")
 
@@ -264,6 +268,8 @@ def historical_pipeline(
     pipeline_io = io_manager or IOManager("[HistoricalProcess]")
 
     try:
+        if profile:
+            perf_tracker.set_enabled(True)
         perf_tracker.reset()
         perf_tracker.start("Total Pipeline")
 
