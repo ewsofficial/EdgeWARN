@@ -6,6 +6,7 @@ import re
 import sys
 import time
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -61,12 +62,19 @@ _NEXRAD_POLL_INTERVAL_SECONDS = 30.0
 _NEXRAD_RENDER_MAX_WORKERS = 8
 
 
-def _load_timestamp_tile_index(tile_dir: Path) -> tuple[list[list[int]], dict | None] | None:
-    index_file = tile_dir / "index.json"
-    if not index_file.exists():
-        return None
+@lru_cache(maxsize=512)
+def _load_timestamp_tile_index_cached(
+    index_path_str: str,
+    mtime_ns: int,
+) -> tuple[list[list[int]], dict | None] | None:
+    """Cached read of a tile-dir index.json keyed on (path, mtime).
 
-    with open(index_file, "r") as f:
+    The mtime is part of the cache key, so any rewrite of index.json
+    invalidates the entry automatically and the next call re-reads from
+    disk. ``index_path_str`` and ``mtime_ns`` are passed in to keep all
+    cache key components hashable primitives.
+    """
+    with open(index_path_str, "r") as f:
         data = json.load(f)
 
     if isinstance(data, list):
@@ -80,6 +88,16 @@ def _load_timestamp_tile_index(tile_dir: Path) -> tuple[list[list[int]], dict | 
         return None
 
     return tiles, tile_grid if isinstance(tile_grid, dict) else None
+
+
+def _load_timestamp_tile_index(tile_dir: Path) -> tuple[list[list[int]], dict | None] | None:
+    index_file = tile_dir / "index.json"
+    try:
+        stat_result = index_file.stat()
+    except FileNotFoundError:
+        return None
+
+    return _load_timestamp_tile_index_cached(str(index_file), stat_result.st_mtime_ns)
 
 
 def _ensure_dt(dt_in) -> datetime:

@@ -183,7 +183,15 @@ export function createApp(options = {}) {
   app.use(cors());
   app.use(morgan('tiny'));
   app.use(helmet());
-  app.use(compression());
+  app.use(compression({
+    filter: (req, res) => {
+      const contentType = res.getHeader('Content-Type');
+      if (typeof contentType === 'string' && /^image\//i.test(contentType)) {
+        return false;
+      }
+      return compression.filter(req, res);
+    }
+  }));
 
   const buildLimiter = (windowMs, max) => rateLimit({
     windowMs,

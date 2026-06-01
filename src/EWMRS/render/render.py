@@ -1,10 +1,12 @@
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from pathlib import Path
 from typing import Tuple, List
 import json
 import os
 import time
 import re
+import threading
 import numpy as np
 from PIL import Image
 from .tools import TransformUtils
@@ -13,47 +15,51 @@ import util.file as fs
 from xarray import Dataset
 from util.io import IOManager
 from datetime import datetime
-import threading
 
 io_manager = IOManager("[Transform]")
 _TILE_FILENAME_RE = re.compile(r"^tile_\d+_\d+\.png$")
 
-# Colormap cache to avoid re-reading JSON on every render
-_COLORMAP_CACHE = {}
-_COLORMAP_CACHE_LOCK = threading.Lock()
 
-
+@lru_cache(maxsize=128)
 def _get_cached_cmap(colormap_key: str):
-    if colormap_key in _COLORMAP_CACHE:
-        return _COLORMAP_CACHE[colormap_key]
+    """Cache parsed colormap arrays. lru_cache provides thread-safe
+    insertion via the GIL and replaces the previous double-checked-lock
+    dict. Cache key is just the colormap name, matching the original
+    semantics."""
+    with open(fs.GUI_COLORMAP_JSON, 'r') as f:
+        cmaps_json = json.load(f)
 
-    with _COLORMAP_CACHE_LOCK:
-        if colormap_key in _COLORMAP_CACHE:
-            return _COLORMAP_CACHE[colormap_key]
+    for source in cmaps_json:
+        for cmap in source.get("colormaps", []):
+            if cmap.get("name") == colormap_key:
+                thresholds = np.array([t["value"] for t in cmap["thresholds"]], dtype=np.float32)
+                # Use "rgba" for RAP colormaps, "rgb" for others
+                color_key = "rgba" if colormap_key.startswith("RAP_") else "rgb"
+                raw_colors = []
+                for threshold in cmap["thresholds"]:
+                    color = list(threshold[color_key])
+                    if len(color) == 3:
+                        color.append(255)
+                    raw_colors.append(color)
+                colors = np.array(raw_colors, dtype=np.float32)
+                colors_uint8 = colors.astype(np.uint8)
+                interpolate = cmap.get("interpolate", True)
+                return (thresholds, colors, colors_uint8, interpolate)
 
-        with open(fs.GUI_COLORMAP_JSON, 'r') as f:
-            cmaps_json = json.load(f)
+    raise ValueError(f"Colormap '{colormap_key}' not found in {fs.GUI_COLORMAP_JSON}")
 
-        for source in cmaps_json:
-            for cmap in source.get("colormaps", []):
-                if cmap.get("name") == colormap_key:
-                    thresholds = np.array([t["value"] for t in cmap["thresholds"]], dtype=np.float32)
-                    # Use "rgba" for RAP colormaps, "rgb" for others
-                    color_key = "rgba" if colormap_key.startswith("RAP_") else "rgb"
-                    raw_colors = []
-                    for threshold in cmap["thresholds"]:
-                        color = list(threshold[color_key])
-                        if len(color) == 3:
-                            color.append(255)
-                        raw_colors.append(color)
-                    colors = np.array(raw_colors, dtype=np.float32)
-                    colors_uint8 = colors.astype(np.uint8)
-                    interpolate = cmap.get("interpolate", True)
-                    result = (thresholds, colors, colors_uint8, interpolate)
-                    _COLORMAP_CACHE[colormap_key] = result
-                    return result
 
-        raise ValueError(f"Colormap '{colormap_key}' not found in {fs.GUI_COLORMAP_JSON}")
+class _ColormapCacheView:
+    """Tests call ``_COLORMAP_CACHE.clear()`` to force a re-read between
+    cases. Expose that surface against the lru_cache without resurrecting
+    the dict."""
+
+    @staticmethod
+    def clear():
+        _get_cached_cmap.cache_clear()
+
+
+_COLORMAP_CACHE = _ColormapCacheView()
 
 
 def _scalar_data_to_rgba(

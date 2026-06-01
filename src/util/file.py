@@ -3,6 +3,7 @@ from functools import partial
 from pathlib import Path
 import heapq
 import asyncio
+import os
 import platform
 import sys
 
@@ -214,27 +215,46 @@ def latest_files(directory, count):
         _log("write_warning", f"{directory} doesn't exist!")
         return None
 
-    files = []
-    for file_path in directory.glob("*"):
-        if not file_path.is_file() or file_path.suffix.lower() == ".idx":
-            continue
-
-        if file_path.suffix.lower() == ".gz" and file_path.with_suffix("").exists():
-            continue
-
-        try:
-            mtime = file_path.stat().st_mtime
-        except Exception:
-            continue
-
-        files.append((mtime, file_path.suffix.lower() == ".gz", file_path))
-
     if count <= 0:
         return []
 
+    try:
+        scandir_iter = os.scandir(directory)
+    except Exception:
+        _log("write_warning", f"{directory} could not be scanned!")
+        return None
+
+    file_entries = []
+    names_present = set()
+    with scandir_iter as it:
+        for entry in it:
+            names_present.add(entry.name)
+            try:
+                if entry.is_file():
+                    file_entries.append(entry)
+            except OSError:
+                continue
+
+    files = []
+    for entry in file_entries:
+        name = entry.name
+        dot = name.rfind(".")
+        suffix_lower = name[dot:].lower() if dot >= 0 else ""
+        if suffix_lower == ".idx":
+            continue
+        if suffix_lower == ".gz" and name[:dot] in names_present:
+            continue
+
+        try:
+            mtime = entry.stat().st_mtime
+        except OSError:
+            continue
+
+        files.append((mtime, suffix_lower == ".gz", entry.path))
+
     top_files = heapq.nlargest(count, files, key=lambda item: (item[0], item[1]))
     top_files.sort(key=lambda item: (item[0], item[1]))
-    return [str(item[2]) for item in top_files]
+    return [item[2] for item in top_files]
 
 
 def clean_idx_files(folders):
