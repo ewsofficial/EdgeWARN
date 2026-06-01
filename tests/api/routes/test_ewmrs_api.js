@@ -13,13 +13,16 @@ import rendersRouter from '../../../src/EWMRS/api/routes/renders.js';
 import colormapsRouter from '../../../src/EWMRS/api/routes/colormaps.js';
 import rapRouter from '../../../src/EWMRS/api/routes/rap.js';
 import nexradRouter from '../../../src/EWMRS/api/routes/nexrad/index.js';
+import wpcRouter from '../../../src/EWMRS/api/routes/wpc.js';
 
 function createApp(tempDir) {
     const app = express();
+    app.locals.BASE_DIR = tempDir;
     app.locals.GUI_DIR = path.join(tempDir, 'gui');
     app.use('/renders', rendersRouter);
     app.use('/nexrad', nexradRouter);
     app.use('/rap', rapRouter);
+    app.use('/wpc', wpcRouter);
     return app;
 }
 
@@ -155,9 +158,14 @@ describe('GET /renders/fetch', () => {
         expect(res.body.error).toContain('Missing product');
     });
 
-    it('returns 400 for directory traversal attempt', async () => {
-        const res = await request(app).get('/renders/fetch?product=../../../etc').expect(400);
-        expect(res.body.error).toContain('Invalid');
+    it('returns 404 for directory traversal attempt', async () => {
+        const res = await request(app).get('/renders/fetch?product=../../../etc').expect(404);
+        expect(res.body.error).toContain('Unknown');
+    });
+
+    it('returns 404 for reserved-name style product probes', async () => {
+        const res = await request(app).get('/renders/fetch?product=CON').expect(404);
+        expect(res.body.error).toContain('Unknown');
     });
 
     it('returns empty array when index.json missing', async () => {
@@ -224,6 +232,15 @@ describe('GET /renders/download', () => {
     it('returns 400 for directory traversal in timestamp', async () => {
         const res = await request(app).get('/renders/download?product=CompRefQC&timestamp=../20260317').expect(400);
         expect(res.body.error).toContain('Invalid');
+    });
+
+    it('returns 400 for repeated timestamp query values', async () => {
+        const res = await request(app)
+            .get('/renders/download')
+            .query({ product: 'CompRefQC', timestamp: ['20260317-200000', '../../../../outside'] })
+            .expect(400);
+
+        expect(res.body.error).toContain('Missing');
     });
 
     it('returns 404 for unknown product', async () => {
@@ -491,6 +508,69 @@ describe('GET /renders/tile', () => {
 
         const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000').expect(404);
         expect(res.body.error).toContain('tile index');
+    });
+
+    it('returns 400 for repeated x query values', async () => {
+        const res = await request(app)
+            .get('/renders/tile')
+            .query({ product: 'CompRefQC', timestamp: '20260317-200000', x: ['0', '../../../../0'], y: '0' })
+            .expect(400);
+
+        expect(res.body.error).toContain('integers');
+    });
+});
+
+describe('GET /wpc', () => {
+    let app, tempDir, surfaceDir;
+
+    beforeEach(async () => {
+        tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ewmrs-wpc-'));
+        surfaceDir = path.join(tempDir, 'wpc', 'surface_analysis');
+        await fs.promises.mkdir(surfaceDir, { recursive: true });
+        app = createApp(tempDir);
+    });
+
+    afterEach(async () => {
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+    });
+
+    it('lists available WPC timestamps', async () => {
+        await fs.promises.writeFile(
+            path.join(surfaceDir, 'wpc_sfc_20260317-120000.geojson'),
+            JSON.stringify({ type: 'FeatureCollection', features: [] })
+        );
+        await fs.promises.writeFile(
+            path.join(surfaceDir, 'wpc_sfc_20260317-110000.geojson'),
+            JSON.stringify({ type: 'FeatureCollection', features: [] })
+        );
+
+        const res = await request(app).get('/wpc/fetch?type=sfc').expect(200);
+        expect(res.body).toEqual(['20260317-120000', '20260317-110000']);
+    });
+
+    it('downloads a valid WPC GeoJSON file', async () => {
+        const payload = { type: 'FeatureCollection', features: [] };
+        await fs.promises.writeFile(
+            path.join(surfaceDir, 'wpc_sfc_20260317-120000.geojson'),
+            JSON.stringify(payload)
+        );
+
+        const res = await request(app).get('/wpc/download?type=sfc&timestamp=20260317-120000').expect(200);
+        expect(res.body).toEqual(payload);
+    });
+
+    it('returns 404 for missing WPC timestamps', async () => {
+        const res = await request(app).get('/wpc/download?type=sfc&timestamp=20260317-120000').expect(404);
+        expect(res.body.error).toContain('File not found');
+    });
+
+    it('rejects symlink targets outside the WPC directory', async () => {
+        const outsidePath = path.join(tempDir, 'outside.json');
+        await fs.promises.writeFile(outsidePath, JSON.stringify({ escaped: true }));
+        await fs.promises.symlink(outsidePath, path.join(surfaceDir, 'wpc_sfc_20260317-120000.geojson'));
+
+        const res = await request(app).get('/wpc/download?type=sfc&timestamp=20260317-120000').expect(400);
+        expect(res.body.error).toContain('escapes WPC root');
     });
 });
 

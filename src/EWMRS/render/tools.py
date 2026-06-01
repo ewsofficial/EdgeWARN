@@ -55,6 +55,18 @@ def configure_proj_runtime() -> str | None:
 
 PROJ_DATA_DIR = configure_proj_runtime()
 
+# Pre-compiled timestamp patterns for find_timestamp. Sequential first-match
+# semantics are preserved; only the per-call compile cost is removed.
+_TIMESTAMP_PATTERNS = tuple(
+    re.compile(p) for p in (
+        r'MRMS_MergedReflectivityQC_(\d{8})-(\d{6})',
+        r'(\d{8})-(\d{6})_renamed',
+        r'(\d{8}-\d{6})',
+        r'.*(\d{8})-(\d{6}).*',
+        r's(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)',
+    )
+)
+
 # Cached transformer for EPSG:4326 to EPSG:3857 (thread-safe per pyproj docs)
 _TRANSFORMER_4326_TO_3857 = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
 
@@ -90,23 +102,22 @@ class TransformUtils:
                     except Exception as e:
                         io_manager.write_warning(f"Fast GRIB loader failed ({e}); falling back to xarray/cfgrib")
 
-                ds = xr.open_dataset(ds_path, decode_timedelta=True)
+                with xr.open_dataset(ds_path, decode_timedelta=True) as opened:
+                    ds = opened.load()
                 io_manager.write_debug(f"Successfully loaded dataset: {ds_path}")
                 return ds
-        
+
             if str(ds_path).endswith(".nc"):
-                ds = xr.open_dataset(ds_path, decode_timedelta=True)
-
-                if lat_limits and lon_limits:
-                    # Latitude/Longitude variables: 'latitude', 'longitude'
-                    ds = ds.sel(
-                        latitude=slice(lat_limits[0], lat_limits[1]),
-                        longitude=slice(lon_limits[0], lon_limits[1])
-                    )
-                    io_manager.write_debug(f"Loaded dataset subset with lat {lat_limits}, lon {lon_limits}")
-
-                else:
-                    io_manager.write_warning("lat/lon coordinates not specified, loading full dataset")
+                with xr.open_dataset(ds_path, decode_timedelta=True) as opened:
+                    if lat_limits and lon_limits:
+                        ds = opened.sel(
+                            latitude=slice(lat_limits[0], lat_limits[1]),
+                            longitude=slice(lon_limits[0], lon_limits[1])
+                        ).load()
+                        io_manager.write_debug(f"Loaded dataset subset with lat {lat_limits}, lon {lon_limits}")
+                    else:
+                        ds = opened.load()
+                        io_manager.write_warning("lat/lon coordinates not specified, loading full dataset")
 
                 io_manager.write_debug("Successfully loaded full dataset")
                 return ds
@@ -122,17 +133,9 @@ class TransformUtils:
         """
         filename = Path(filepath).name
         io_manager.write_debug(f"Extracting timestamp from filename: {filename}")
-        
-        patterns = [
-            r'MRMS_MergedReflectivityQC_(\d{8})-(\d{6})',
-            r'(\d{8})-(\d{6})_renamed',
-            r'(\d{8}-\d{6})',
-            r'.*(\d{8})-(\d{6}).*',
-            r's(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)'
-        ]
-        
-        for pattern_idx, pattern in enumerate(patterns):
-            match = re.search(pattern, filename)
+
+        for pattern in _TIMESTAMP_PATTERNS:
+            match = pattern.search(filename)
             if match:
                 groups = match.groups()
                 

@@ -142,6 +142,21 @@ describe('API v2 Features Cells Route', () => {
             expect(response.body).toEqual(cellData);
         });
 
+        it('should return 404 for symlinked cells that escape the cell directory', async () => {
+            const outsidePath = path.join(os.tmpdir(), `edgewarn-outside-${Date.now()}.json`);
+            await fs.promises.writeFile(outsidePath, JSON.stringify({ escaped: true }));
+            await fs.promises.symlink(outsidePath, path.join(tempCellDir, '123.json'));
+
+            const response = await request(app)
+                .get('/api/v2/features/cells?id=123')
+                .expect(404);
+
+            expect(response.body.error).toContain('not found');
+            expect(response.body.id).toBe('123');
+
+            await fs.promises.rm(outsidePath, { force: true });
+        });
+
         it('should set appropriate cache headers for single cell', async () => {
             const cellData = { id: 123, history: [] };
             const cellPath = path.join(tempCellDir, '123.json');

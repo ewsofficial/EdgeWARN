@@ -1,5 +1,3 @@
-import gc
-
 import numpy as np
 import xarray as xr
 
@@ -270,7 +268,6 @@ class StormCellIntegrator:
 
         ds.close()
         del ds
-        gc.collect()
         return storm_cells
 
     def integrate_multi_stats(self, dataset_path, storm_cells, stats_config_list, cell_contexts=None):
@@ -370,7 +367,6 @@ class StormCellIntegrator:
 
         ds.close()
         del ds
-        gc.collect()
         return storm_cells
 
     def integrate_probsevere(self, probsevere_data, storm_cells):

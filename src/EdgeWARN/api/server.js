@@ -82,8 +82,17 @@ export function createApp(env = process.env, options = {}) {
     }
   }));
 
-  // Compression
-  app.use(compression());
+  // Compression — skip already-compressed payloads (PNG/JPEG/etc.) where
+  // gzip wastes CPU for ~0% size win.
+  app.use(compression({
+    filter: (req, res) => {
+      const contentType = res.getHeader('Content-Type');
+      if (typeof contentType === 'string' && /^image\//i.test(contentType)) {
+        return false;
+      }
+      return compression.filter(req, res);
+    }
+  }));
 
   // CORS configuration
   // Use ALLOWED_ORIGINS if set, otherwise allow all origins (for development/testing)
@@ -108,8 +117,6 @@ export function createApp(env = process.env, options = {}) {
     allowedHeaders: ['Content-Type', 'Authorization']
   }));
 
-  app.use(express.json());
-
   // Trust proxy configuration
   const trustProxy = env.TRUST_PROXY === 'true' || !!env.TRUST_PROXY_IPS;
   if (env.TRUST_PROXY === 'false') {
@@ -120,7 +127,9 @@ export function createApp(env = process.env, options = {}) {
     app.set('trust proxy', false);
   }
 
-  // Rate Limiting - configurable via environment variables
+  // Rate Limiting - configurable via environment variables.
+  // Mounted before express.json() so abusive bodies are rejected before
+  // we spend CPU parsing them.
   const {
     rateLimitWindowMsSec,
     rateLimitMaxSec,
@@ -159,10 +168,14 @@ export function createApp(env = process.env, options = {}) {
     app.use(buildLimiter(rateLimitWindowMsMin, rateLimitMaxMin));
   }
 
+  // Bounded JSON body parser (no v2 route accepts a JSON body, but defend
+  // against unbounded body abuse should one be added).
+  app.use(express.json({ limit: '16kb', strict: true, type: 'application/json' }));
+
   // Routes
   app.get('/', (req, res) => {
     // Only expose detailed version in non-production environments
-    const version = env.NODE_ENV === 'production' ? '2.x' : '2.6.0';
+    const version = env.NODE_ENV === 'production' ? '2.x' : '2.6.1';
     res.json({ message: 'EdgeWARN Backend API', version: version });
   });
 
@@ -205,11 +218,26 @@ export function createApp(env = process.env, options = {}) {
   // Error handling middleware
   app.use((err, req, res, next) => {
     const isDev = env.NODE_ENV !== 'production';
+    const status = Number.isInteger(err?.status)
+      ? err.status
+      : (Number.isInteger(err?.statusCode) ? err.statusCode : 500);
+    const responseStatus = status >= 400 && status < 600 ? status : 500;
+
     // Only log stack traces in development
     console.error(isDev ? err.stack : `Error: ${err.message}`);
-    // Only expose error details in development
+
+    if (responseStatus === 413) {
+      return res.status(413).json({ error: 'Payload too large' });
+    }
+
+    if (responseStatus >= 400 && responseStatus < 500) {
+      return res.status(responseStatus).json({
+        error: isDev ? err.message : 'Bad request'
+      });
+    }
+
     res.status(500).json({
-        error: isDev ? err.message : 'Internal server error'
+      error: isDev ? err.message : 'Internal server error'
     });
   });
 

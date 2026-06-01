@@ -149,9 +149,19 @@ def test_parse_raw_volume_bytes_supports_bzip2_compressed_record_stream():
     assert parsed.sweeps[0].complete is True
 
 
+def test_parse_raw_volume_bytes_treats_non_bzip_runtime_stream_as_uncompressed():
+    first_record = bytearray(_msg31_record(radial_status=0))
+    first_record[:4] = b"\x00\x00\x00\x02"
+    volume_bytes = _volume_header("KTLH") + bytes(first_record) + _msg31_record(radial_status=2, collect_ms=2000)
+
+    parsed = parser.parse_raw_volume_bytes(volume_bytes)
+
+    assert parsed.site == "KTLH"
+    assert len(parsed.sweeps) == 1
+    assert parsed.sweeps[0].complete is True
+
+
 def test_parser_surface_exposes_runtime_helpers():
-    assert hasattr(parser, "open_partial_volume")
-    assert hasattr(parser, "extract_sweep_timestamp")
     assert hasattr(parser, "parse_raw_volume_file")
 
 
@@ -210,5 +220,100 @@ def test_worker_parse_and_export_drops_dref_from_contiguous_doppler_raw_ar2v(tmp
     reparsed = parser.parse_raw_volume_bytes(saved_path.read_bytes())
 
     assert len(reparsed.sweeps) == 2
-    assert parser._message31_block_names(reparsed.sweeps[0].records[0]) == ["RVOL", "RELV", "RRAD", "DREF", "DZDR", "DPHI", "DRHO", "DCFP"]
-    assert parser._message31_block_names(reparsed.sweeps[1].records[0]) == ["RVOL", "RELV", "RRAD", "DVEL", "DSW "]
+    first_record = parser.materialize_record_range(reparsed, reparsed.sweeps[0].record_ranges[0])
+    second_record = parser.materialize_record_range(reparsed, reparsed.sweeps[1].record_ranges[0])
+    assert parser._message31_block_names(first_record) == ["RVOL", "RELV", "RRAD", "DREF", "DZDR", "DPHI", "DRHO", "DCFP"]
+    assert parser._message31_block_names(second_record) == ["RVOL", "RELV", "RRAD", "DVEL", "DSW "]
+
+
+def test_worker_parse_and_export_trims_exported_sweeps_from_runtime_file(tmp_path):
+    volume_bytes = (
+        _volume_header("KTLH")
+        + _msg31_record(radial_status=0, elevation_number=1, elevation_angle=0.5, collect_ms=1000)
+        + _msg31_record(radial_status=2, elevation_number=1, elevation_angle=0.5, collect_ms=2000)
+        + _msg31_record(radial_status=0, elevation_number=2, elevation_angle=0.9, collect_ms=3000)
+        + _msg31_record(radial_status=2, elevation_number=2, elevation_angle=0.9, collect_ms=4000)
+    )
+    volume_path = tmp_path / "scan.ar2v"
+    volume_path.write_bytes(volume_bytes)
+
+    result = parse_and_export(
+        volume_path=volume_path,
+        output_root=tmp_path,
+        site="KTLH",
+        volume_id="999",
+        scan_timestamp="20260507-150000",
+        seen_elevation_keys=set(),
+        trim_buffer=True,
+    )
+
+    trimmed = parser.parse_raw_volume_file_mmap(volume_path)
+
+    assert result.parse_error is None
+    assert result.buffer_trimmed is True
+    assert result.runtime_size == volume_path.stat().st_size
+    assert result.runtime_size < len(volume_bytes)
+    assert len(trimmed.sweeps) == 0
+
+
+def test_worker_parse_and_export_needs_full_reparse_for_split_low_elevation_group(tmp_path):
+    first_pass = (
+        _volume_header("KTLH")
+        + _msg31_record(
+            radial_status=0,
+            elevation_number=1,
+            elevation_angle=0.5,
+            collect_ms=1000,
+            block_names=["RVOL", "RELV", "RRAD", "DREF", "DZDR", "DPHI", "DRHO", "DCFP"],
+        )
+        + _msg31_record(
+            radial_status=2,
+            elevation_number=1,
+            elevation_angle=0.5,
+            collect_ms=2000,
+            block_names=["RVOL", "RELV", "RRAD", "DREF", "DZDR", "DPHI", "DRHO", "DCFP"],
+        )
+    )
+    second_pass_tail = (
+        _msg31_record(
+            radial_status=0,
+            elevation_number=1,
+            elevation_angle=0.5,
+            collect_ms=3000,
+            block_names=["RVOL", "RELV", "RRAD", "DREF", "DVEL", "DSW "],
+        )
+        + _msg31_record(
+            radial_status=2,
+            elevation_number=1,
+            elevation_angle=0.5,
+            collect_ms=4000,
+            block_names=["RVOL", "RELV", "RRAD", "DREF", "DVEL", "DSW "],
+        )
+    )
+    volume_path = tmp_path / "scan.ar2v"
+    volume_path.write_bytes(first_pass)
+
+    first_result = parse_and_export(
+        volume_path=volume_path,
+        output_root=tmp_path,
+        site="KTLH",
+        volume_id="999",
+        scan_timestamp="20260507-150000",
+        seen_elevation_keys=set(),
+        trim_buffer=False,
+    )
+    volume_path.write_bytes(first_pass + second_pass_tail)
+
+    full_reparse_result = parse_and_export(
+        volume_path=volume_path,
+        output_root=tmp_path,
+        site="KTLH",
+        volume_id="999",
+        scan_timestamp="20260507-150000",
+        seen_elevation_keys=set(),
+        trim_buffer=False,
+    )
+
+    assert first_result.saved_sweep_count == 0
+    assert full_reparse_result.saved_sweep_count == 2
+    assert [artifact.elevation for artifact in full_reparse_result.saved_elevations] == ["0.5"]

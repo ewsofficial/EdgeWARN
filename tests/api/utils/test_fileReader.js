@@ -41,6 +41,12 @@ describe('isSafeFilename', () => {
     it('should return false for empty string', () => {
         expect(isSafeFilename('')).toBe(false);
     });
+
+    it('should return false for reserved names and control characters', () => {
+        expect(isSafeFilename('CON.json')).toBe(false);
+        expect(isSafeFilename('LPT1.json')).toBe(false);
+        expect(isSafeFilename('bad\u0000name.json')).toBe(false);
+    });
 });
 
 describe('readJsonFileSafe', () => {
