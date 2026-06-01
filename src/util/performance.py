@@ -17,20 +17,17 @@ def _resolve_enabled() -> bool:
 
 
 # Module-level flag with three states:
-#   None  → defer to _ENV_ENABLED (first access computes it)
-#   True  → explicitly enabled  (via set_enabled or env var)
+#   None  → defer to env var (re-evaluated on every _is_enabled call)
+#   True  → explicitly enabled (via set_enabled or env var)
 #   False → explicitly disabled
-_ENABLED = None
-_ENV_ENABLED = None
+_ENABLED: bool | None = None
 
 
 def _is_enabled() -> bool:
-    global _ENABLED, _ENV_ENABLED
+    global _ENABLED
     if _ENABLED is not None:
         return _ENABLED
-    if _ENV_ENABLED is None:
-        _ENV_ENABLED = _resolve_enabled()
-    return _ENV_ENABLED
+    return _resolve_enabled()
 
 
 class TimingTracker:
@@ -69,12 +66,13 @@ class TimingTracker:
             self._initialized = True
 
     @staticmethod
-    def set_enabled(enabled: bool):
+    def set_enabled(enabled: bool | None):
         """Override the enabled flag at runtime.
 
         Called by pipeline entry points when ``--profile`` is passed so
         the tracker activates without requiring the ``EDGEWARN_PERF_TRACKER``
-        env var.  Pass ``None`` to re-defer to the environment variable.
+        env var.  Pass ``None`` to re-defer to the environment variable for
+        the next ``start``/``stop`` call.
         """
         global _ENABLED
         _ENABLED = enabled

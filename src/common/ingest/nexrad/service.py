@@ -964,6 +964,8 @@ class NexradIngestService:
         finally:
             for task in tasks.values():
                 task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     def ingest_allowed_vcp_volume(
         self,

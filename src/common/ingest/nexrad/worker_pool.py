@@ -6,11 +6,11 @@ needs them. This reduces the baseline RSS of idle workers from ~180-190 MB
 to ~120-150 MB while still benefiting from CoW for active workers.
 
 Usage:
-    from common.ingest.nexrad.worker_pool import get_nexrad_pool, submit_parse
+    from common.ingest.nexrad.worker_pool import get_nexrad_pool
 
     pool = get_nexrad_pool(max_workers=4)
-    future = pool.submit_parse(volume_path, output_root, site, volume_id,
-                               scan_timestamp, seen_keys, trim_buffer)
+    future = pool.submit(volume_path, output_root, site, volume_id,
+                         scan_timestamp, seen_keys, trim_buffer)
     result = future.result()
 """
 
