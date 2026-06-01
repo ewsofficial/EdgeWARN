@@ -82,7 +82,8 @@ class FileHandler:
 
             if ds is None:
                 try:
-                    ds = xr.open_dataset(filepath, engine="cfgrib", decode_timedelta=True)
+                    with xr.open_dataset(filepath, engine="cfgrib", decode_timedelta=True) as opened:
+                        ds = opened.load()
                     self.io.write_debug(f"Loaded GRIB file from {filepath}")
                 except Exception as e:
                     self.io.write_error(f"Failed to load GRIB file: {e}")
@@ -90,13 +91,18 @@ class FileHandler:
         elif filepath.endswith(".nc"):
             self.io.write_info(f"Loading netCDF file from {filepath}")
             try:
-                ds = xr.open_dataset(filepath, engine="netcdf4", decode_timedelta=True)
+                with xr.open_dataset(filepath, engine="netcdf4", decode_timedelta=True) as opened:
+                    if lat_limits and lon_limits:
+                        ds = self.subset_dataset(opened, lat_limits, lon_limits)
+                    else:
+                        ds = opened
+                    ds = ds.load()
                 self.io.write_debug(f"Loaded netCDF file from {filepath}")
             except Exception as e:
                 self.io.write_error(f"Failed to load netCDF file: {e}")
                 return None
 
-        if ds is not None and lat_limits and lon_limits:
+        if ds is not None and lat_limits and lon_limits and not filepath.endswith(".nc"):
             ds = self.subset_dataset(ds, lat_limits, lon_limits)
         return ds
 

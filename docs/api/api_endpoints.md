@@ -10,7 +10,7 @@ For backing file schemas, see `docs/api/data_keys.md`.
 - Response format: JSON
 - Version behavior:
   - `2.x` when `NODE_ENV=production`
-  - `2.6.0` otherwise
+  - `2.6.1` otherwise
 
 ## Root Endpoints
 
@@ -23,7 +23,7 @@ Response:
 ```json
 {
   "message": "EdgeWARN Backend API",
-  "version": "2.6.0"
+  "version": "2.6.1"
 }
 ```
 
@@ -36,7 +36,7 @@ Response:
 ```json
 {
   "message": "EdgeWARN API v2",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "endpoints": {
     "features": {
       "cells": "/api/v2/features/cells[?id={int}]",

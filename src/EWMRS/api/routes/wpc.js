@@ -7,12 +7,29 @@
 import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
+import { resolveUnder } from './nexrad/filesystem.js';
 const router = express.Router();
 
 // Get BASE_DIR from app.locals (set in server.js)
 function getWpcDir(req) {
     const baseDir = req.app.locals.BASE_DIR;
     return path.join(baseDir, 'wpc', 'surface_analysis');
+}
+
+async function readJsonFileUnder(root, ...segments) {
+    const filePath = resolveUnder(root, ...segments);
+    const [realRoot, realFilePath] = await Promise.all([
+        fs.realpath(root),
+        fs.realpath(filePath)
+    ]);
+    const relative = path.relative(realRoot, realFilePath);
+
+    if (relative !== '' && (relative.startsWith('..') || path.isAbsolute(relative))) {
+        throw Object.assign(new Error('Resolved path escapes WPC root'), { statusCode: 400 });
+    }
+
+    const data = await fs.readFile(realFilePath, 'utf-8');
+    return JSON.parse(data);
 }
 
 /**
@@ -102,13 +119,13 @@ router.get('/download', async (req, res) => {
         }
 
         const wpcDir = getWpcDir(req);
-        const filePath = path.join(wpcDir, `wpc_sfc_${timestamp}.geojson`);
-
-        const data = await fs.readFile(filePath, 'utf-8');
-        const geojson = JSON.parse(data);
+        const geojson = await readJsonFileUnder(wpcDir, `wpc_sfc_${timestamp}.geojson`);
 
         res.json(geojson);
     } catch (err) {
+        if (err.statusCode) {
+            return res.status(err.statusCode).json({ error: err.message });
+        }
         if (err.code === 'ENOENT') {
             res.status(404).json({
                 error: 'File not found',

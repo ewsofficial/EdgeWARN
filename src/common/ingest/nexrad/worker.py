@@ -16,37 +16,73 @@ from __future__ import annotations
 import ctypes
 import gc
 import resource
+import sys
 from pathlib import Path
 
 from common.ingest.nexrad.grouping import elevation_group_key, group_sweeps_by_elevation
 from common.ingest.nexrad.models import ElevationArtifact, SweepRecord, WorkerParseResult
-from common.ingest.nexrad.parser import parse_raw_volume_file_mmap
+from common.ingest.nexrad.parser import iter_metadata_records, iter_sweep_records, parse_raw_volume_file_mmap
 from common.ingest.nexrad.s3_chunks import format_nexrad_timestamp, parse_nexrad_timestamp
 from common.ingest.nexrad.writer import write_elevation_artifacts
 
 
 def _get_child_rss_kb() -> float:
-    """Return peak RSS of the current process in KB."""
+    """Return current RSS of the current process in KB.
+
+    Prefer the live resident set so post-export cleanup is visible in logs.
+    Fall back to ``ru_maxrss`` when procfs is unavailable.
+    """
+    try:
+        with open("/proc/self/status", encoding="utf-8") as status_file:
+            for line in status_file:
+                if not line.startswith("VmRSS:"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 2:
+                    return float(parts[1])
+                break
+    except OSError:
+        pass
+
     ru = resource.getrusage(resource.RUSAGE_SELF)
     return ru.ru_maxrss
 
 
+def _release_raw_volume_buffers(raw_volume) -> None:
+    """Drop large parsed buffers before the final GC/malloc trim pass."""
+    try:
+        raw_volume.record_buffer = b""
+        raw_volume.metadata_ranges.clear()
+        raw_volume.trailing_bytes = b""
+        for sweep in raw_volume.sweeps:
+            sweep.record_ranges.clear()
+        raw_volume.sweeps.clear()
+    except Exception:
+        pass
+
+
 def _clear_worker_caches() -> None:
     """Clear internal caches held by heavy libraries and return freed heap to OS."""
-    try:
-        import dask.base
-        dask.base._seen.clear()
-    except Exception:
-        pass
-    try:
-        import netCDF4
-        netCDF4.Dataset._cls_dict.clear()
-    except Exception:
-        pass
+    dask_base = sys.modules.get("dask.base")
+    if dask_base is not None:
+        try:
+            dask_base._seen.clear()
+        except Exception:
+            pass
+
+    netcdf4 = sys.modules.get("netCDF4")
+    if netcdf4 is not None:
+        try:
+            netcdf4.Dataset._cls_dict.clear()
+        except Exception:
+            pass
+
     gc.collect()
     try:
-        # Move malloc_trim(0) out of the hot inner loop to avoid fragmentation
-        pass
+        libc = ctypes.CDLL("libc.so.6")
+        malloc_trim = getattr(libc, "malloc_trim", None)
+        if malloc_trim is not None:
+            malloc_trim(0)
     except Exception:
         pass
 
@@ -85,9 +121,9 @@ def parse_and_export(
     site: str,
     volume_id: str,
     scan_timestamp: str | None,
+    download_started_at: str | None = None,
     seen_elevation_keys: dict[str, str | None] | set[str] | None = None,
     trim_buffer: bool = False,
-    parse_offset: int = 0,
 ) -> WorkerParseResult:
     """Parse a partial .ar2v and emit newly-complete elevation artifacts.
 
@@ -98,20 +134,22 @@ def parse_and_export(
         volume_id: Volume identifier.
         scan_timestamp: Scan-level timestamp for manifest tracking.
         seen_elevation_keys: Already-exported group keys or group-key timestamp metadata.
-        parse_offset: Byte offset to resume parsing from (0 = full parse).
 
     Returns:
         WorkerParseResult with metadata about newly exported artifacts.
     """
     seen_elevation_exports = _normalize_seen_elevation_exports(seen_elevation_keys)
 
-    saved_sweeps: list[str] = []
+    saved_sweep_count = 0
     saved_elevations: list[ElevationArtifact] = []
     parse_error: str | None = None
     visible_sweeps = 0
+    buffer_trimmed = False
+    runtime_size: int | None = None
+    raw_volume = None
 
     try:
-        raw_volume = parse_raw_volume_file_mmap(volume_path, parse_offset=parse_offset)
+        raw_volume = parse_raw_volume_file_mmap(volume_path)
 
         visible_sweeps = len(raw_volume.sweeps)
         sweep_records = _extract_worker_sweep_records(raw_volume)
@@ -136,6 +174,7 @@ def parse_and_export(
                 site=str(site).upper(),
                 volume_id=str(volume_id),
                 scan_timestamp=scan_timestamp,
+                download_started_at=download_started_at,
                 elevation_label=elevation_label,
                 elevation_timestamp=first_ts,
                 output_root=output_root,
@@ -145,46 +184,51 @@ def parse_and_export(
                 saved_elevations.append(artifact)
                 seen_elevation_exports[key] = artifact.elevation_timestamp or artifact.scan_timestamp
 
-            saved_sweeps.extend(m.group_name for m in group.members)
+            saved_sweep_count += len(group.members)
             dropped_group_names.update(member.group_name for member in group.members)
 
             for member in group.members:
                 sweep = sweeps_by_group.get(member.group_name)
                 if sweep is not None:
-                    sweep.records.clear()
+                    sweep.record_ranges.clear()
 
             if not first_elevation_written:
                 first_elevation_written = True
-                del raw_volume.metadata_records
-                raw_volume.metadata_records = []
+                del raw_volume.metadata_ranges
+                raw_volume.metadata_ranges = []
                 del raw_volume.trailing_bytes
                 raw_volume.trailing_bytes = b""
 
-        if trim_buffer and raw_volume.compression_record_count == 0:
+        if trim_buffer and dropped_group_names:
             with open(volume_path, "wb") as f:
                 f.write(raw_volume.volume_header)
-                for record in raw_volume.metadata_records:
+                for record in iter_metadata_records(raw_volume):
                     f.write(record)
                 for raw_sweep in raw_volume.sweeps:
                     if raw_sweep.group_name in dropped_group_names:
                         continue
-                    for record in raw_sweep.records:
+                    for record in iter_sweep_records(raw_volume, raw_sweep):
                         f.write(record)
                 f.write(raw_volume.trailing_bytes)
-
-        del raw_volume
+            buffer_trimmed = True
+            runtime_size = Path(volume_path).stat().st_size
 
     except Exception as exc:
         parse_error = str(exc)
-
-    _clear_worker_caches()
+    finally:
+        if raw_volume is not None:
+            _release_raw_volume_buffers(raw_volume)
+            del raw_volume
+        _clear_worker_caches()
 
     return WorkerParseResult(
         visible_sweeps=visible_sweeps,
-        saved_sweeps=saved_sweeps,
+        saved_sweep_count=saved_sweep_count,
         saved_elevations=saved_elevations,
         parse_error=parse_error,
         child_rss_kb=_get_child_rss_kb(),
+        buffer_trimmed=buffer_trimmed,
+        runtime_size=runtime_size,
     )
 
 

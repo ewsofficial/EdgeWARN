@@ -16,7 +16,7 @@ describe('API server', () => {
 
     expect(response.body).toEqual({
       message: 'EdgeWARN Backend API',
-      version: '2.6.0'
+      version: '2.6.1'
     });
   });
 
@@ -108,6 +108,62 @@ describe('API server', () => {
     await request(app).get('/').expect(200);
     await request(app).get('/').expect(200);
     await request(app).get('/').expect(429);
+  });
+
+  it('returns 413 for JSON bodies over 16kb', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const app = createApp(
+      {
+        NODE_ENV: 'test',
+        RATE_LIMIT_WINDOW_MS_SEC: '1000',
+        RATE_LIMIT_MAX_SEC: '100',
+        RATE_LIMIT_WINDOW_MS_MIN: '60000',
+        RATE_LIMIT_MAX_MIN: '1000'
+      },
+      {
+        beforeErrorHandler(targetApp) {
+          targetApp.post('/json-check', (req, res) => res.json({ ok: true, body: req.body }));
+        }
+      }
+    );
+
+    const oversizedBody = JSON.stringify({ payload: 'x'.repeat(17 * 1024) });
+    const response = await request(app)
+      .post('/json-check')
+      .set('Content-Type', 'application/json')
+      .send(oversizedBody)
+      .expect(413);
+
+    expect(response.body).toEqual({ error: 'Payload too large' });
+  });
+
+  it('rate limits abusive JSON requests before body parsing', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const app = createApp(
+      {
+        NODE_ENV: 'test',
+        RATE_LIMIT_WINDOW_MS_SEC: '1000',
+        RATE_LIMIT_MAX_SEC: '1',
+        RATE_LIMIT_WINDOW_MS_MIN: '60000',
+        RATE_LIMIT_MAX_MIN: '100'
+      },
+      {
+        beforeErrorHandler(targetApp) {
+          targetApp.post('/json-check', (req, res) => res.json({ ok: true, body: req.body }));
+        }
+      }
+    );
+
+    await request(app)
+      .post('/json-check')
+      .send({ ok: true })
+      .expect(200);
+
+    await request(app)
+      .post('/json-check')
+      .set('Content-Type', 'application/json')
+      .send('{"unterminated":')
+      .expect(429);
   });
 
   it('returns development error details from error middleware', async () => {

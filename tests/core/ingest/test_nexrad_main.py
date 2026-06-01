@@ -154,7 +154,7 @@ def test_run_worker_parse_uses_pool_and_updates_seen_keys(tmp_path):
     )
     payload = WorkerParseResult(
         visible_sweeps=2,
-        saved_sweeps=["/sweep_0", "/sweep_1"],
+        saved_sweep_count=2,
         saved_elevations=[artifact],
         parse_error=None,
         child_rss_kb=1234.0,
@@ -445,32 +445,6 @@ async def _return_chunks(chunks):
     return chunks
 
 
-@pytest.mark.asyncio
-async def test_ingest_latest_station_scans_async_forwards_to_coordinator():
-    captured = {}
-
-    async def _impl(sites=None, **kwargs):
-        captured["sites"] = sites
-        captured.update(kwargs)
-        return ["ok"]
-
-    with patch("common.ingest.nexrad.coordinator.ingest_latest_station_scans_async", side_effect=_impl):
-        result = await nexrad_main.ingest_latest_station_scans_async(
-            ["KTLH"],
-            base_dir="/tmp/base",
-            max_candidate_volumes_per_site=5,
-        )
-
-    assert result == ["ok"]
-    assert captured == {
-        "sites": ["KTLH"],
-        "base_dir": "/tmp/base",
-        "s3_client": None,
-        "weather_session": None,
-        "max_candidate_volumes_per_site": 5,
-    }
-
-
 def test_main_uses_latest_scan_coordinator_for_default_path():
     args = SimpleNamespace(
         site=None,
@@ -495,13 +469,15 @@ def test_main_uses_latest_scan_coordinator_for_default_path():
         ]
 
     parser = SimpleNamespace(parse_args=lambda: args)
+    coordinator_instance = SimpleNamespace(ingest_latest_station_scans_async=AsyncMock(side_effect=_ingest_latest_station_scans_async))
 
     with patch.object(nexrad_main, "_build_parser", return_value=parser), \
-         patch.object(nexrad_main, "ingest_latest_station_scans_async", side_effect=_ingest_latest_station_scans_async), \
+         patch.object(nexrad_main, "NexradScanCoordinator", return_value=coordinator_instance) as coordinator_cls, \
          patch.object(nexrad_main.io_manager, "write_info") as write_info, \
          patch.object(nexrad_main.io_manager, "write_error") as write_error:
         nexrad_main.main()
 
-    assert parsed_sites == [(None, {"base_dir": None, "max_candidate_volumes_per_site": 4})]
+    coordinator_cls.assert_called_once_with(max_candidate_volumes_per_site=4)
+    assert parsed_sites == [(None, {"base_dir": None})]
     write_error.assert_not_called()
     assert any("action=skipped_already_downloaded" in call.args[0] for call in write_info.call_args_list)

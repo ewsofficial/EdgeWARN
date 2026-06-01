@@ -150,19 +150,20 @@ def test_prune_elevation_artifacts_keeps_recent(tmp_path):
     prune_elevation_artifacts("KTLH", "0.5")
 
     remaining_nc = list(elev_dir.glob("*.nc"))
-    assert len(remaining_nc) <= 3
+    assert len(remaining_nc) <= 5
 
 
 class _FakeRawSweep:
     def __init__(self, group_name, waveform):
         self.group_name = group_name
         self.waveform = waveform
-        self.records = [b"record"]
+        self.record_ranges = [(0, 6)]
 
 
 class _FakeRawVolume:
     volume_header = b"header"
-    metadata_records = []
+    record_buffer = b"record"
+    metadata_ranges = []
 
     def __init__(self, sweeps):
         self.sweeps = sweeps
@@ -197,6 +198,7 @@ def _write_test_artifact(site, volume_id, scan_timestamp, elevation, member_spec
         site=site,
         volume_id=volume_id,
         scan_timestamp=scan_timestamp,
+        download_started_at="2026-05-07T15:00:00Z",
         elevation_label=elevation,
         elevation_timestamp=member_specs[0][2],
     )
@@ -221,8 +223,10 @@ def test_write_elevation_manifest_includes_member_sweep_timestamps(tmp_path):
     )
 
     assert manifest["volume_timestamp"] == "20260507-150000"
+    assert manifest["download_started_at"] == "2026-05-07T15:00:00Z"
     assert manifest["first_sweep_timestamp"] == "20260507-150001"
     assert manifest["last_sweep_timestamp"] == "20260507-150004"
+    assert manifest["file_written_at"].endswith("Z")
     assert manifest["member_sweeps"] == [
         {
             "group_name": "sweep_0",
@@ -243,14 +247,16 @@ def test_write_elevation_manifest_includes_member_sweep_timestamps(tmp_path):
     ]
 
 
-def test_site_manifest_keeps_latest_three_volumes_by_volume_timestamp(tmp_path):
+def test_site_manifest_keeps_latest_five_volumes_by_volume_timestamp(tmp_path):
     fs.initialize_filesystem(tmp_path)
 
     volume_specs = [
+        ("VOL-F", "20260507-155000"),
         ("VOL-C", "20260507-152000"),
         ("VOL-A", "20260507-150000"),
         ("VOL-D", "20260507-153000"),
         ("VOL-B", "20260507-151000"),
+        ("VOL-E", "20260507-154000"),
     ]
     for volume_id, volume_timestamp in volume_specs:
         _write_test_artifact(
@@ -277,32 +283,35 @@ def test_site_manifest_keeps_latest_three_volumes_by_volume_timestamp(tmp_path):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert manifest_path == site_manifest_path("KTLH")
-    assert [volume["volume_id"] for volume in manifest["volumes"]] == ["VOL-D", "VOL-C", "VOL-B"]
+    assert [volume["volume_id"] for volume in manifest["volumes"]] == ["VOL-F", "VOL-E", "VOL-D", "VOL-C", "VOL-B"]
     assert [volume["volume_timestamp"] for volume in manifest["volumes"]] == [
+        "20260507-155000",
+        "20260507-154000",
         "20260507-153000",
         "20260507-152000",
         "20260507-151000",
     ]
+    assert manifest["volumes"][0]["download_started_at"] == "2026-05-07T15:00:00Z"
     assert manifest["volumes"][0]["sweeps"] == [
         {
             "sweep_index": 0,
-            "group_name": "VOL-D_0",
+            "group_name": "VOL-F_0",
             "elevation": 0.5,
-            "timestamp": "20260507-153001",
+            "timestamp": "20260507-155001",
             "waveform": "contiguous_surveillance",
         },
         {
             "sweep_index": 0,
-            "group_name": "VOL-D_2",
+            "group_name": "VOL-F_2",
             "elevation": 0.9,
-            "timestamp": "20260507-153006",
+            "timestamp": "20260507-155006",
             "waveform": "batch",
         },
         {
             "sweep_index": 1,
-            "group_name": "VOL-D_1",
+            "group_name": "VOL-F_1",
             "elevation": 0.5,
-            "timestamp": "20260507-153004",
+            "timestamp": "20260507-155004",
             "waveform": "batch",
         },
     ]
@@ -312,6 +321,8 @@ def test_site_manifest_keeps_latest_three_volumes_by_volume_timestamp(tmp_path):
         "KTLH_0.5_20260507-151001.json",
         "KTLH_0.5_20260507-152001.json",
         "KTLH_0.5_20260507-153001.json",
+        "KTLH_0.5_20260507-154001.json",
+        "KTLH_0.5_20260507-155001.json",
     ]
 
 

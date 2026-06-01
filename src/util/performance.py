@@ -1,7 +1,33 @@
 
+import os
 import time
 import threading
 from collections import OrderedDict
+
+
+def _resolve_enabled() -> bool:
+    """
+    perf_tracker is opt-in. Enable when EDGEWARN_PERF_TRACKER is set to a
+    truthy value ("1", "true", "yes", "on" — case-insensitive). When
+    disabled, start/stop become no-ops to avoid the global RLock acquired
+    on every call inside per-cell, per-modifier, per-render hot paths.
+    """
+    raw = os.environ.get("EDGEWARN_PERF_TRACKER", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+# Module-level flag with three states:
+#   None  → defer to env var (re-evaluated on every _is_enabled call)
+#   True  → explicitly enabled (via set_enabled or env var)
+#   False → explicitly disabled
+_ENABLED: bool | None = None
+
+
+def _is_enabled() -> bool:
+    global _ENABLED
+    if _ENABLED is not None:
+        return _ENABLED
+    return _resolve_enabled()
 
 
 class TimingTracker:
@@ -39,13 +65,34 @@ class TimingTracker:
             self.active_timers = {}
             self._initialized = True
 
+    @staticmethod
+    def set_enabled(enabled: bool | None):
+        """Override the enabled flag at runtime.
+
+        Called by pipeline entry points when ``--profile`` is passed so
+        the tracker activates without requiring the ``EDGEWARN_PERF_TRACKER``
+        env var.  Pass ``None`` to re-defer to the environment variable for
+        the next ``start``/``stop`` call.
+        """
+        global _ENABLED
+        _ENABLED = enabled
+
     def start(self, name):
-        """Start a timer with the given name. Thread-safe."""
+        """Start a timer with the given name. Thread-safe.
+
+        No-op when EDGEWARN_PERF_TRACKER is not set and set_enabled(True)
+        has not been called, so production hot paths skip the lock
+        acquisition entirely.
+        """
+        if not _is_enabled():
+            return
         with self._instance_lock:
             self.active_timers[name] = time.time()
 
     def stop(self, name):
         """Stop the timer with the given name and record the duration. Thread-safe."""
+        if not _is_enabled():
+            return
         with self._instance_lock:
             if name in self.active_timers:
                 start_time = self.active_timers.pop(name)

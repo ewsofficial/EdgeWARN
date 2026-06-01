@@ -191,16 +191,18 @@ def test_group_sweeps_ordered_by_first_sweep_index():
     assert groups[2].canonical_angle_deg == 1.3
 
 
-def test_group_sweeps_stops_once_angle_reaches_four_degrees():
+def test_group_sweeps_skips_above_four_degrees_but_keeps_later_low_levels():
     sweeps = [
         _sweep(0, 0.68, waveform="contiguous_surveillance"),
         _sweep(1, 0.47, waveform="contiguous_doppler"),
         _sweep(2, 3.78, waveform="batch"),
         _sweep(3, 4.94, waveform="staggered_pulse_pair"),
-        _sweep(4, 1.3, waveform="staggered_pulse_pair"),
+        _sweep(4, 0.70, waveform="contiguous_surveillance"),
+        _sweep(5, 0.45, waveform="contiguous_doppler"),
     ]
     groups = group_sweeps_by_elevation(sweeps)
-    assert [group.canonical_angle_deg for group in groups] == [0.5, 4.0]
+    assert [group.canonical_angle_deg for group in groups] == [0.5, 4.0, 0.5]
+    assert [member.group_name for member in groups[2].members] == ["/sweep_04", "/sweep_05"]
 
 
 def test_group_sweeps_keeps_revisit_groups_separate_but_in_same_canonical_folder():
