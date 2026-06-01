@@ -47,12 +47,12 @@ Each item is a separate PR with prefix `REM[ingest]:` or `REM[dead]:`. Verificat
 
 **A1 checklist**
 
-- [ ] D2 delete stale EWMRS scheduler fork
+- [x] D2 delete stale EWMRS scheduler fork
 - [ ] D3 delete `realtime_pipeline` and related benchmark if now orphaned
-- [ ] D4 delete NEXRAD polling wrappers while keeping one-shot helpers and `NexradScanCoordinator`
-- [ ] D6 delete NWS legacy ingest functions
-- [ ] D7 delete `run_ewmrs_pipeline` passthrough
-- [ ] D8 / L14 remove explicit `gc.collect()` calls
+- [x] D4 delete NEXRAD polling wrappers while keeping one-shot helpers and `NexradScanCoordinator`
+- [x] D6 delete NWS legacy ingest functions
+- [x] D7 delete `run_ewmrs_pipeline` passthrough
+- [x] D8 / L14 remove explicit `gc.collect()` calls
 - [ ] Run `pytest tests/`
 - [ ] Run `npm test`
 - [ ] Run 1-cycle real-time smoke per §7.2
@@ -127,10 +127,10 @@ Each item ships as its own PR with prefix `FIX[sec]:`. Verification: §7.2 manua
 
 **B2 checklist**
 
-- [ ] Tighten `isSafeFilename` against control characters and Windows-reserved names
-- [ ] Add `realpath` containment check with ENOENT mapped to 404
-- [ ] Add `PRODUCT_MAPPING` allowlist guard to EWMRS `/fetch`
-- [ ] Reuse `resolveUnder` in `wpc.js`
+- [x] Tighten `isSafeFilename` against control characters and Windows-reserved names
+- [x] Add `realpath` containment check with ENOENT mapped to 404
+- [x] Add `PRODUCT_MAPPING` allowlist guard to EWMRS `/fetch`
+- [x] Reuse `resolveUnder` in `wpc.js`
 - [ ] Verify manual traversal and reserved-name exploit attempts fail with 404
 
 - `src/EdgeWARN/api/utils/fileReader.js:20-24`: tighten `isSafeFilename` against control chars + Windows-reserved names per audit snippet.
@@ -142,11 +142,11 @@ Each item ships as its own PR with prefix `FIX[sec]:`. Verification: §7.2 manua
 
 **B3 checklist**
 
-- [ ] Replace `express.json()` with bounded strict JSON parsing
-- [ ] Mount rate limiting before JSON parsing
+- [x] Replace `express.json()` with bounded strict JSON parsing
+- [x] Mount rate limiting before JSON parsing
 - [ ] Optionally scope JSON parsing to mutating routes if that is the cleaner implementation
-- [ ] Add non-string guards in validation helpers
-- [ ] Replace `new URL(import.meta.url).pathname` with `fileURLToPath(import.meta.url)` in RAP route
+- [x] Add non-string guards in validation helpers
+- [x] Replace `new URL(import.meta.url).pathname` with `fileURLToPath(import.meta.url)` in RAP route
 - [ ] Verify 17KB JSON returns 413
 - [ ] Verify abusive requests hit rate limiting before parsing
 
@@ -190,17 +190,17 @@ Prefix `IMP[perf]:`. Verification matrix per §7.3.
 
 **C1 checklist**
 
-- [ ] H2 `os.scandir` in `latest_files`
-- [ ] H4 hoist `multiprocessing.Manager()` to `main()` lifetime
-- [ ] H6 cache `cost_matrix[row, col]` into the `costs` dict
-- [ ] H7 hoist `AssignmentCostCalculator(config)` at line 401 only
-- [ ] H8 build candidate centroid array once outside the per-track loop
-- [ ] H11 context-manage `xr.open_dataset`
-- [ ] H12 gate `perf_tracker` behind env var
-- [ ] M3 add `compression()` filter for image responses in both API servers
-- [ ] M14 add `lru_cache((path, mtime))` for `_load_timestamp_tile_index`
-- [ ] M16 combine regex in `find_timestamp`
-- [ ] L20 cache colormap loading in `EWMRS/render/render.py`
+- [x] H2 `os.scandir` in `latest_files`
+- [x] H4 hoist `multiprocessing.Manager()` to `main()` lifetime
+- [x] H6 cache `cost_matrix[row, col]` into the `costs` dict
+- [x] H7 hoist `AssignmentCostCalculator(config)` at line 401 only
+- [x] H8 build candidate centroid array once outside the per-track loop
+- [x] H11 context-manage `xr.open_dataset`
+- [x] H12 gate `perf_tracker` behind env var
+- [x] M3 add `compression()` filter for image responses in both API servers
+- [x] M14 add `lru_cache((path, mtime))` for `_load_timestamp_tile_index`
+- [x] M16 combine regex in `find_timestamp`
+- [x] L20 cache colormap loading in `EWMRS/render/render.py`
 - [ ] L24 add `tracks_by_id` dict in `assignment.py`
 - [ ] Verify no filename or JSON envelope diffs versus baseline artifacts
 
