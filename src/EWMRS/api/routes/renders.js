@@ -190,9 +190,10 @@ router.get('/fetch', async (req, res) => {
     return res.status(400).json({ error: 'Missing product parameter' });
   }
 
-  // Security: Prevent directory traversal
+  // Treat invalid/traversal-like product values the same as unknown products so
+  // the endpoint does not reveal path-validation details.
   if (!isSingleSegmentString(product)) {
-    return res.status(400).json({ error: 'Invalid product name' });
+    return res.status(404).json({ error: 'Unknown product or no mapping found' });
   }
 
   // Allowlist: only known products may be fetched

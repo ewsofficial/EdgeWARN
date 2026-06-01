@@ -3,6 +3,7 @@ import asyncio
 import time
 
 from common.ingest.nexrad.config import ALLOWED_VCPS, format_perf_ms
+from common.ingest.nexrad.coordinator import NexradScanCoordinator
 from common.ingest.nexrad.service import NexradIngestService as _BaseNexradIngestService
 from common.ingest.nexrad.s3_async import (
     async_get_chunk_bytes,
@@ -163,25 +164,6 @@ async def ingest_latest_allowed_vcp_scans_async(
     )
 
 
-async def ingest_latest_station_scans_async(
-    sites=None,
-    *,
-    base_dir=None,
-    s3_client=None,
-    weather_session=None,
-    max_candidate_volumes_per_site=3,
-):
-    from common.ingest.nexrad.coordinator import ingest_latest_station_scans_async as _impl
-
-    return await _impl(
-        sites,
-        base_dir=base_dir,
-        s3_client=s3_client,
-        weather_session=weather_session,
-        max_candidate_volumes_per_site=max_candidate_volumes_per_site,
-    )
-
-
 def list_allowed_vcp_sites(*, weather_session=None, stations=None):
     service = _new_service()
     return service.list_allowed_vcp_sites(weather_session=weather_session, stations=stations)
@@ -252,11 +234,13 @@ def main():
         return
 
     try:
+        coordinator = NexradScanCoordinator(
+            max_candidate_volumes_per_site=args.max_candidate_volumes_per_site,
+        )
         results = asyncio.run(
-            ingest_latest_station_scans_async(
+            coordinator.ingest_latest_station_scans_async(
                 [args.site] if args.site else None,
                 base_dir=args.base_dir,
-                max_candidate_volumes_per_site=args.max_candidate_volumes_per_site,
             )
         )
     except Exception as exc:

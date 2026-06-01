@@ -53,8 +53,8 @@ Each item is a separate PR with prefix `REM[ingest]:` or `REM[dead]:`. Verificat
 - [x] D6 delete NWS legacy ingest functions
 - [x] D7 delete `run_ewmrs_pipeline` passthrough
 - [x] D8 / L14 remove explicit `gc.collect()` calls
-- [ ] Run `pytest tests/`
-- [ ] Run `npm test`
+- [x] Run `pytest tests/`
+- [x] Run `npm test`
 - [ ] Run 1-cycle real-time smoke per §7.2
 
 Single PR; each commit is one of:
@@ -131,7 +131,7 @@ Each item ships as its own PR with prefix `FIX[sec]:`. Verification: §7.2 manua
 - [x] Add `realpath` containment check with ENOENT mapped to 404
 - [x] Add `PRODUCT_MAPPING` allowlist guard to EWMRS `/fetch`
 - [x] Reuse `resolveUnder` in `wpc.js`
-- [ ] Verify manual traversal and reserved-name exploit attempts fail with 404
+- [x] Verify manual traversal and reserved-name exploit attempts fail with 404
 
 - `src/EdgeWARN/api/utils/fileReader.js:20-24`: tighten `isSafeFilename` against control chars + Windows-reserved names per audit snippet.
 - `src/EdgeWARN/api/utils/fileReader.js:44-52`: add `await fs.promises.realpath(...)` containment check; ENOENT → 404.
@@ -144,11 +144,11 @@ Each item ships as its own PR with prefix `FIX[sec]:`. Verification: §7.2 manua
 
 - [x] Replace `express.json()` with bounded strict JSON parsing
 - [x] Mount rate limiting before JSON parsing
-- [ ] Optionally scope JSON parsing to mutating routes if that is the cleaner implementation
+- [x] Optionally scope JSON parsing to mutating routes if that is the cleaner implementation
 - [x] Add non-string guards in validation helpers
 - [x] Replace `new URL(import.meta.url).pathname` with `fileURLToPath(import.meta.url)` in RAP route
-- [ ] Verify 17KB JSON returns 413
-- [ ] Verify abusive requests hit rate limiting before parsing
+- [x] Verify 17KB JSON returns 413
+- [x] Verify abusive requests hit rate limiting before parsing
 
 These edits cluster on `EdgeWARN/api/server.js` and validation helpers:
 
@@ -201,8 +201,8 @@ Prefix `IMP[perf]:`. Verification matrix per §7.3.
 - [x] M14 add `lru_cache((path, mtime))` for `_load_timestamp_tile_index`
 - [x] M16 combine regex in `find_timestamp`
 - [x] L20 cache colormap loading in `EWMRS/render/render.py`
-- [ ] L24 add `tracks_by_id` dict in `assignment.py`
-- [ ] Verify no filename or JSON envelope diffs versus baseline artifacts
+- [x] L24 add `tracks_by_id` dict in `assignment.py`
+- [x] Verify no filename or JSON envelope diffs versus baseline artifacts
 
 Bundle by file/module to keep PRs focused. None of these alter byte output:
 

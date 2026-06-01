@@ -9,7 +9,6 @@ __all__ = [
     "VolumeVcpProber",
     "ingest_allowed_vcp_volume",
     "ingest_latest_allowed_vcp_scans",
-    "ingest_latest_station_scans_async",
     "run_realtime_ingestion_pipeline",
     "run_realtime_ingestion_pipeline_async",
 ]
@@ -25,12 +24,6 @@ def ingest_latest_allowed_vcp_scans(*args, **kwargs):
     from .main import ingest_latest_allowed_vcp_scans as _impl
 
     return _impl(*args, **kwargs)
-
-
-async def ingest_latest_station_scans_async(*args, **kwargs):
-    from .coordinator import ingest_latest_station_scans_async as _impl
-
-    return await _impl(*args, **kwargs)
 
 
 async def run_realtime_ingestion_pipeline_async(*args, **kwargs):

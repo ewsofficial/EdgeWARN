@@ -536,6 +536,7 @@ def run_hybrid_assignment(tracks: List[Dict[str, Any]],
         AssignmentResult with matched pairs and unmatched lists
     """
     calculator = AssignmentCostCalculator(config)
+    tracks_by_id = {int(track['id']): track for track in tracks}
 
     # Stage 1: Pre-filter candidates for each track.
     # Build the detection centroid arrays once and reuse across every track —
@@ -552,8 +553,7 @@ def run_hybrid_assignment(tracks: List[Dict[str, Any]],
         det_lons = None
 
     track_candidates = {}
-    for track in tracks:
-        track_id = int(track['id'])
+    for track_id, track in tracks_by_id.items():
         candidates = calculator.prefilter_candidates(track, detections, det_lats, det_lons)
         track_candidates[track_id] = candidates
     
@@ -585,7 +585,7 @@ def run_hybrid_assignment(tracks: List[Dict[str, Any]],
             costs[(track_id, det_id)] = float(cost_matrix[row_idx, col_idx])
 
     # Build unmatched lists
-    all_track_ids = {int(t['id']) for t in tracks}
+    all_track_ids = set(tracks_by_id)
     all_detection_ids = {int(d['id']) for d in detections}
 
     unmatched_tracks = list(all_track_ids - matched_track_ids)

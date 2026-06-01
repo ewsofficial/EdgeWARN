@@ -158,9 +158,14 @@ describe('GET /renders/fetch', () => {
         expect(res.body.error).toContain('Missing product');
     });
 
-    it('returns 400 for directory traversal attempt', async () => {
-        const res = await request(app).get('/renders/fetch?product=../../../etc').expect(400);
-        expect(res.body.error).toContain('Invalid');
+    it('returns 404 for directory traversal attempt', async () => {
+        const res = await request(app).get('/renders/fetch?product=../../../etc').expect(404);
+        expect(res.body.error).toContain('Unknown');
+    });
+
+    it('returns 404 for reserved-name style product probes', async () => {
+        const res = await request(app).get('/renders/fetch?product=CON').expect(404);
+        expect(res.body.error).toContain('Unknown');
     });
 
     it('returns empty array when index.json missing', async () => {

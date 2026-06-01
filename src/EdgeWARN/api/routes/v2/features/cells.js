@@ -58,9 +58,13 @@ router.get('/', async (req, res) => {
       return res.json([]);
     }
     if (err.code === 'EINVAL' || err.code === 'EACCES') {
-      return res.status(400).json({
-        error: 'Invalid filename or access denied'
-      });
+      if (id) {
+        return res.status(404).json({
+          error: 'Cell not found',
+          id: id
+        });
+      }
+      return res.json([]);
     }
     console.error('Error reading cell data:', err);
     res.status(500).json({ error: 'Failed to fetch cell data' });

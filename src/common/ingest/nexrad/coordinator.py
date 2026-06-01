@@ -152,20 +152,3 @@ class NexradScanCoordinator:
             f"(sites={len(site_items)}, downloaded={downloaded}, skipped={len(results) - downloaded})"
         )
         return NexradCoordinatorRunResults(results, downloaded_sites=downloaded_sites)
-
-
-async def ingest_latest_station_scans_async(
-    sites=None,
-    *,
-    base_dir=None,
-    s3_client=None,
-    weather_session=None,
-    max_candidate_volumes_per_site=3,
-):
-    coordinator = NexradScanCoordinator(max_candidate_volumes_per_site=max_candidate_volumes_per_site)
-    return await coordinator.ingest_latest_station_scans_async(
-        sites,
-        base_dir=base_dir,
-        s3_client=s3_client,
-        weather_session=weather_session,
-    )
