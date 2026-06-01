@@ -1,10 +1,14 @@
 import json
+import bz2
+import struct
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import util.file as fs
 import common.ingest.nexrad.service as nexrad_service_module
+from common.ingest.nexrad import parser as nexrad_parser
 from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
 from common.ingest.nexrad.models import ChunkKey
 from common.ingest.nexrad.service import NexradIngestService
@@ -48,6 +52,58 @@ def _chunks(site="KTLH", volume_id="999", stamp="20260507-150000", last_number=2
         )
         for number in range(1, last_number + 1)
     ]
+
+
+def _volume_header(site="KTLH"):
+    header = bytearray(24)
+    header[:4] = b"AR2V"
+    header[20:24] = site.encode("ascii")[:4]
+    return bytes(header)
+
+
+def _msg31_record(*, radial_status, elevation_number=1, elevation_angle=0.5, collect_ms=1000, collect_date=1):
+    prefix = struct.pack(
+        ">4sIHHfBBHBBBBf",
+        b"TEST",
+        collect_ms,
+        collect_date,
+        1,
+        90.0,
+        0,
+        0,
+        nexrad_parser.MSG_31_PREFIX_LEN,
+        1,
+        radial_status,
+        elevation_number,
+        0,
+        elevation_angle,
+    )
+
+    block_pointer_table = bytearray(struct.pack(">HH", 0, 0))
+    block_pointer_table.extend(struct.pack(">" + "I" * nexrad_parser.MSG_31_BLOCK_POINTERS, *([0] * nexrad_parser.MSG_31_BLOCK_POINTERS)))
+    body = prefix + bytes(block_pointer_table)
+
+    size_words = (12 + nexrad_parser.MSG_HEADER_LEN + len(body) - 12) // 2
+    msg_header = struct.pack(
+        ">HBBHHIHH",
+        size_words,
+        0,
+        31,
+        1,
+        collect_date,
+        collect_ms,
+        1,
+        1,
+    )
+    return (b"\x00" * 12) + msg_header + body
+
+
+def _compressed_first_chunk(site="KTLH"):
+    record_stream = _msg31_record(radial_status=0) + _msg31_record(radial_status=2, collect_ms=2000)
+    payload = bytearray(_volume_header(site))
+    payload.extend(struct.pack(">I", 1))
+    payload.extend(bz2.compress(record_stream))
+    return bytes(payload)
 
 
 @pytest.mark.asyncio
@@ -95,6 +151,41 @@ async def test_stream_ingest_async_only_downloads_new_chunks_for_partial_volume(
     assert fetch_calls == [1, 2, 3, 4]
     assert runtime_path.read_bytes() == b"chunk-1chunk-2chunk-3chunk-4"
     assert len(state["downloaded_chunk_keys"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_stream_ingest_async_checkpoints_large_volume_before_download_end(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    parse_calls = []
+
+    async def _async_chunk_fetcher(chunk, **_kwargs):
+        return f"chunk-{chunk.chunk_number}".encode("ascii")
+
+    service = NexradIngestService(
+        async_chunk_fetcher=_async_chunk_fetcher,
+        parse_checkpoint_chunk_interval=2,
+    )
+    monkeypatch.setattr(
+        nexrad_service_module,
+        "_required_elevation_paths_complete",
+        lambda *_args, **_kwargs: False,
+    )
+
+    def _fake_run_worker_parse(state, site, volume_id, scan_timestamp, seen_elevation_keys, first_elevation_timestamp, **_kwargs):
+        parse_calls.append(state.bytes_written)
+        return first_elevation_timestamp
+
+    monkeypatch.setattr(service, "_run_worker_parse", _fake_run_worker_parse)
+
+    await service._stream_ingest_volume_async(
+        "KTLH",
+        "999",
+        _chunks(last_number=5),
+        s3_client=object(),
+        base_dir=tmp_path,
+    )
+
+    assert parse_calls == [14, 28, 35]
 
 
 @pytest.mark.asyncio
@@ -283,17 +374,21 @@ def test_run_worker_parse_advances_latest_elevation_timestamp(monkeypatch, tmp_p
     payloads = iter([
         SimpleNamespace(
             visible_sweeps=2,
-            saved_sweeps=["g0"],
+            saved_sweep_count=1,
             saved_elevations=[_artifact("KTLH", "999", "0.5", "20260507-150001", group_names=["g0"])],
             parse_error=None,
             child_rss_kb=123.0,
+            buffer_trimmed=False,
+            runtime_size=None,
         ),
         SimpleNamespace(
             visible_sweeps=2,
-            saved_sweeps=["g0"],
+            saved_sweep_count=1,
             saved_elevations=[_artifact("KTLH", "999", "0.5", "20260507-150011", group_names=["g0"])],
             parse_error=None,
             child_rss_kb=123.0,
+            buffer_trimmed=False,
+            runtime_size=None,
         ),
     ])
 
@@ -307,7 +402,7 @@ def test_run_worker_parse_advances_latest_elevation_timestamp(monkeypatch, tmp_p
 
     monkeypatch.setattr(nexrad_service_module, "get_nexrad_pool", lambda: _FakePool())
 
-    state = SimpleNamespace(file_path=str(runtime_path), parse_errors=[], parse_offset=0)
+    state = SimpleNamespace(file_path=str(runtime_path), parse_errors=[], bytes_written=len(b"partial"))
     seen_elevation_exports = {"0.5:g0": "20260507-150001"}
     elevation_timestamps_by_id = {"0.5": "20260507-150001"}
 
@@ -336,6 +431,96 @@ def test_run_worker_parse_advances_latest_elevation_timestamp(monkeypatch, tmp_p
     assert second_timestamp == "20260507-150001"
     assert seen_elevation_exports == {"0.5:g0": "20260507-150011"}
     assert elevation_timestamps_by_id == {"0.5": "20260507-150011"}
+
+
+def test_run_worker_parse_resets_offsets_after_trim(monkeypatch, tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    service = NexradIngestService()
+    runtime_path = runtime_scan_path("KTLH", "999")
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_bytes(b"partial-runtime")
+
+    class _FakeFuture:
+        def result(self):
+            return SimpleNamespace(
+                visible_sweeps=1,
+                saved_sweep_count=1,
+                saved_elevations=[_artifact("KTLH", "999", "0.5", "20260507-150001", group_names=["g0"])],
+                parse_error=None,
+                child_rss_kb=123.0,
+                buffer_trimmed=True,
+                runtime_size=12,
+            )
+
+    class _FakePool:
+        def submit(self, **_kwargs):
+            return _FakeFuture()
+
+    monkeypatch.setattr(nexrad_service_module, "get_nexrad_pool", lambda: _FakePool())
+
+    state = SimpleNamespace(file_path=str(runtime_path), parse_errors=[], bytes_written=len(b"partial-runtime"))
+    seen_elevation_exports = {}
+    elevation_timestamps_by_id = {}
+
+    first_timestamp = service._run_worker_parse(
+        state,
+        "KTLH",
+        "999",
+        "20260507-150000",
+        seen_elevation_exports,
+        None,
+        elevation_timestamps_by_id=elevation_timestamps_by_id,
+        base_dir=tmp_path,
+    )
+
+    assert first_timestamp == "20260507-150001"
+    assert state.bytes_written == 12
+    assert seen_elevation_exports == {"0.5:g0": "20260507-150001"}
+    assert elevation_timestamps_by_id == {"0.5": "20260507-150001"}
+
+
+def test_run_worker_parse_submits_runtime_file_without_offset_bookkeeping(monkeypatch, tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    service = NexradIngestService()
+    runtime_path = runtime_scan_path("KTLH", "999")
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_bytes(b"normalized-runtime")
+    captured = {}
+
+    class _FakeFuture:
+        def result(self):
+            return SimpleNamespace(
+                visible_sweeps=0,
+                saved_sweep_count=0,
+                saved_elevations=[],
+                parse_error=None,
+                child_rss_kb=123.0,
+                buffer_trimmed=False,
+                runtime_size=None,
+            )
+
+    class _FakePool:
+        def submit(self, **kwargs):
+            captured.update(kwargs)
+            return _FakeFuture()
+
+    monkeypatch.setattr(nexrad_service_module, "get_nexrad_pool", lambda: _FakePool())
+
+    state = SimpleNamespace(file_path=str(runtime_path), parse_errors=[], bytes_written=len(b"normalized-runtime"))
+
+    service._run_worker_parse(
+        state,
+        "KTLH",
+        "999",
+        "20260507-150000",
+        {},
+        None,
+        elevation_timestamps_by_id={},
+        base_dir=tmp_path,
+    )
+
+    assert "volume_path" in captured
+    assert "trim_buffer" in captured
 
 
 def test_stream_ingest_sync_resets_volume_state_after_boundary(tmp_path, monkeypatch):
@@ -397,6 +582,39 @@ def test_stream_ingest_sync_resets_volume_state_after_boundary(tmp_path, monkeyp
             "first": None,
         },
     ]
+
+
+def test_stream_ingest_sync_normalizes_runtime_temp_file(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    service = NexradIngestService(chunk_fetcher=lambda *_args, **_kwargs: _compressed_first_chunk())
+
+    monkeypatch.setattr(
+        nexrad_service_module,
+        "_required_elevation_paths_complete",
+        lambda *_args, **_kwargs: False,
+    )
+
+    def _fake_run_worker_parse(state, *_args, **_kwargs):
+        runtime_bytes = Path(state.file_path).read_bytes()
+        parsed = nexrad_parser.parse_raw_volume_file_mmap(state.file_path)
+        assert runtime_bytes.startswith(b"AR2V")
+        assert runtime_bytes[28:31] != b"BZh"
+        assert len(parsed.sweeps) == 1
+        return None
+
+    monkeypatch.setattr(service, "_run_worker_parse", _fake_run_worker_parse)
+
+    service._stream_ingest_volume(
+        "KTLH",
+        "999",
+        _chunks(last_number=1),
+        s3_client=object(),
+        base_dir=tmp_path,
+    )
+
+    runtime_path = runtime_scan_path("KTLH", "999")
+    assert runtime_path.exists()
+    assert runtime_path.read_bytes()[28:31] != b"BZh"
 
 
 @pytest.mark.asyncio

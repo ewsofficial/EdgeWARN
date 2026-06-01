@@ -52,6 +52,15 @@ function getGuiDir(req) {
   return req.app.locals.GUI_DIR;
 }
 
+function isSingleSegmentString(value) {
+  return typeof value === 'string' && value.length > 0 &&
+    !value.includes('..') && !value.includes('/') && !value.includes('\\');
+}
+
+function readRequiredQueryString(value) {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 async function loadProductIndex(productDir) {
   const indexFile = path.join(productDir, 'index.json');
 
@@ -174,7 +183,7 @@ router.get('/get-items', async (req, res) => {
 // GET /fetch?product=[product]
 // Returns a list of all available timestamps of a specific product in YYYYMMDD-HHMMSS format
 router.get('/fetch', async (req, res) => {
-  const product = req.query.product;
+  const product = readRequiredQueryString(req.query.product);
   const GUI_DIR = getGuiDir(req);
 
   if (!product) {
@@ -182,8 +191,13 @@ router.get('/fetch', async (req, res) => {
   }
 
   // Security: Prevent directory traversal
-  if (product.includes('..') || product.includes('/') || product.includes('\\')) {
+  if (!isSingleSegmentString(product)) {
     return res.status(400).json({ error: 'Invalid product name' });
+  }
+
+  // Allowlist: only known products may be fetched
+  if (!Object.prototype.hasOwnProperty.call(PRODUCT_MAPPING, product)) {
+    return res.status(404).json({ error: 'Unknown product or no mapping found' });
   }
 
   const productDir = path.join(GUI_DIR, product);
@@ -222,7 +236,8 @@ router.get('/fetch', async (req, res) => {
 // GET /download?product=[product]&timestamp=[timestamp]
 // Downloads a specific timestamp of a specific product
 router.get('/download', async (req, res) => {
-  const { product, timestamp } = req.query;
+  const product = readRequiredQueryString(req.query.product);
+  const timestamp = readRequiredQueryString(req.query.timestamp);
   const GUI_DIR = getGuiDir(req);
 
   if (!product || !timestamp) {
@@ -230,7 +245,7 @@ router.get('/download', async (req, res) => {
   }
 
   // Security checks
-  if (product.includes('..') || timestamp.includes('..') || product.includes('/') || product.includes('\\') || timestamp.includes('/') || timestamp.includes('\\')) {
+  if (!isSingleSegmentString(product) || !isSingleSegmentString(timestamp)) {
     return res.status(400).json({ error: 'Invalid parameters' });
   }
 
@@ -260,7 +275,10 @@ router.get('/download', async (req, res) => {
 // Returns a specific tile for a product at a given timestamp
 // File path: {GUI_DIR}/{product}/{timestamp}/tile_{x}_{y}.png
 router.get('/tile', async (req, res) => {
-  const { product, timestamp, x, y } = req.query;
+  const product = readRequiredQueryString(req.query.product);
+  const timestamp = readRequiredQueryString(req.query.timestamp);
+  const x = req.query.x;
+  const y = req.query.y;
   const GUI_DIR = getGuiDir(req);
   const hasX = x !== undefined;
   const hasY = y !== undefined;
@@ -275,10 +293,12 @@ router.get('/tile', async (req, res) => {
   }
 
   // 2. Security: Prevent directory traversal (same pattern as /download)
-  if (product.includes('..') || timestamp.includes('..') ||
-    product.includes('/') || product.includes('\\') ||
-    timestamp.includes('/') || timestamp.includes('\\')) {
+  if (!isSingleSegmentString(product) || !isSingleSegmentString(timestamp)) {
     return res.status(400).json({ error: 'Invalid parameters' });
+  }
+
+  if ((hasX && typeof x !== 'string') || (hasY && typeof y !== 'string')) {
+    return res.status(400).json({ error: 'x and y must be integers' });
   }
 
   // 3. Validate product using existing mapping (same pattern as /download)
@@ -356,7 +376,7 @@ router.get('/tile', async (req, res) => {
 // GET /tile-info?product=[product]
 // Returns tile grid configuration for a product
 router.get('/tile-info', async (req, res) => {
-  const { product } = req.query;
+  const product = readRequiredQueryString(req.query.product);
   const GUI_DIR = getGuiDir(req);
 
   // Same validation pattern as /fetch
@@ -364,7 +384,7 @@ router.get('/tile-info', async (req, res) => {
     return res.status(400).json({ error: 'Missing product parameter' });
   }
 
-  if (product.includes('..') || product.includes('/') || product.includes('\\')) {
+  if (!isSingleSegmentString(product)) {
     return res.status(400).json({ error: 'Invalid product name' });
   }
 

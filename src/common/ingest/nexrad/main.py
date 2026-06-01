@@ -53,8 +53,8 @@ class NexradIngestService(_BaseNexradIngestService):
         async_chunk_lister=None,
         async_chunk_fetcher=None,
         async_volume_lister=None,
-        max_site_tasks=16,
-        max_chunk_downloads=32,
+        max_site_tasks=24,
+        max_chunk_downloads=64,
     ):
         defaults = _service_defaults()
         super().__init__(
@@ -179,27 +179,6 @@ async def ingest_latest_station_scans_async(
         s3_client=s3_client,
         weather_session=weather_session,
         max_candidate_volumes_per_site=max_candidate_volumes_per_site,
-    )
-
-
-async def poll_latest_station_scans_forever_async(
-    sites=None,
-    *,
-    base_dir=None,
-    s3_client=None,
-    weather_session=None,
-    max_candidate_volumes_per_site=3,
-    poll_interval_seconds=60,
-):
-    from common.ingest.nexrad.coordinator import poll_latest_station_scans_forever_async as _impl
-
-    await _impl(
-        sites,
-        base_dir=base_dir,
-        s3_client=s3_client,
-        weather_session=weather_session,
-        max_candidate_volumes_per_site=max_candidate_volumes_per_site,
-        poll_interval_seconds=poll_interval_seconds,
     )
 
 

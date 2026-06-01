@@ -101,7 +101,6 @@ raw_volume = RawVolume(
     ],
 )
 
-worker.open_partial_volume = lambda _path: tree
 worker.parse_raw_volume_file = lambda _path: raw_volume
 
 result = worker.parse_and_export(
@@ -176,7 +175,6 @@ def _pool_parse_task(src_root: str, site: str, volume_id: str, output_root: str,
         ],
     )
 
-    worker.open_partial_volume = lambda _path: tree
     worker.parse_raw_volume_file = lambda _path: raw_volume
 
     result = worker.parse_and_export(

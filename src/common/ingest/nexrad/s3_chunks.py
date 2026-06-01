@@ -6,7 +6,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from common.ingest.nexrad.config import CHUNKS_BUCKET, MIN_VOLUME_FILE_CHUNKS
+from common.ingest.nexrad.config import CHUNKS_BUCKET
 from common.ingest.nexrad.models import ChunkKey
 from util.handler import extract_timestamp
 
@@ -18,6 +18,7 @@ _CHUNK_KEY_RE = re.compile(
 _TIMESTAMP_RE = re.compile(r"(?P<stamp>[0-9]{8}-[0-9]{6})")
 _VOLUME_ID_TS_RE = re.compile(r"(?P<date>[0-9]{8})[_-](?P<time>[0-9]{6})")
 _TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
+MIN_REQUIRED_VOLUME_CHUNKS = 25
 
 
 @lru_cache(maxsize=1)
@@ -99,10 +100,36 @@ def extract_volume_timestamp(volume_id: str, chunks) -> str:
 
 
 def required_volume_chunks(chunks):
-    needed = [chunk for chunk in chunks if chunk.chunk_number <= MIN_VOLUME_FILE_CHUNKS]
-    if len(needed) < MIN_VOLUME_FILE_CHUNKS:
+    ordered_chunks = sorted(chunks, key=lambda item: (item.chunk_number, item.chunk_type))
+    if not ordered_chunks:
         return []
-    return needed
+
+    contiguous_chunks = []
+    expected_chunk_number = 1
+    index = 0
+    while index < len(ordered_chunks):
+        chunk = ordered_chunks[index]
+        if chunk.chunk_number < expected_chunk_number:
+            index += 1
+            continue
+        if chunk.chunk_number > expected_chunk_number:
+            break
+
+        same_number = []
+        while index < len(ordered_chunks) and ordered_chunks[index].chunk_number == expected_chunk_number:
+            same_number.append(ordered_chunks[index])
+            index += 1
+
+        if expected_chunk_number == 1:
+            selected = next((candidate for candidate in same_number if candidate.chunk_type == "S"), same_number[0])
+        else:
+            selected = same_number[0]
+        contiguous_chunks.append(selected)
+        expected_chunk_number += 1
+
+    if len(contiguous_chunks) < MIN_REQUIRED_VOLUME_CHUNKS:
+        return []
+    return contiguous_chunks
 
 
 class NexradChunkStore:

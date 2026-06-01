@@ -22,7 +22,7 @@ class NexradScanCoordinator:
         async_volume_lister=None,
         async_chunk_lister=None,
         async_ingest_trigger=None,
-        max_site_tasks=16,
+        max_site_tasks=24,
         max_candidate_volumes_per_site=3,
     ):
         self.station_fetcher = station_fetcher or fetch_radar_station_vcps
@@ -153,30 +153,6 @@ class NexradScanCoordinator:
         )
         return NexradCoordinatorRunResults(results, downloaded_sites=downloaded_sites)
 
-    async def poll_latest_station_scans_forever_async(
-        self,
-        sites=None,
-        *,
-        base_dir=None,
-        s3_client=None,
-        weather_session=None,
-        max_candidate_volumes_per_site=None,
-        poll_interval_seconds=60,
-    ):
-        interval = max(1.0, float(poll_interval_seconds))
-        while True:
-            try:
-                await self.ingest_latest_station_scans_async(
-                    sites,
-                    base_dir=base_dir,
-                    s3_client=s3_client,
-                    weather_session=weather_session,
-                    max_candidate_volumes_per_site=max_candidate_volumes_per_site,
-                )
-            except Exception as exc:
-                io_manager.write_warning(f"[RUN] periodic station scan poll failed: {exc}")
-            await asyncio.sleep(interval)
-
 
 async def ingest_latest_station_scans_async(
     sites=None,
@@ -192,23 +168,4 @@ async def ingest_latest_station_scans_async(
         base_dir=base_dir,
         s3_client=s3_client,
         weather_session=weather_session,
-    )
-
-
-async def poll_latest_station_scans_forever_async(
-    sites=None,
-    *,
-    base_dir=None,
-    s3_client=None,
-    weather_session=None,
-    max_candidate_volumes_per_site=3,
-    poll_interval_seconds=60,
-):
-    coordinator = NexradScanCoordinator(max_candidate_volumes_per_site=max_candidate_volumes_per_site)
-    await coordinator.poll_latest_station_scans_forever_async(
-        sites,
-        base_dir=base_dir,
-        s3_client=s3_client,
-        weather_session=weather_session,
-        poll_interval_seconds=poll_interval_seconds,
     )

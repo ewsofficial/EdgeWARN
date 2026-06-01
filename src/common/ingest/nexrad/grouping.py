@@ -52,6 +52,8 @@ def _finalize_group(group: ElevationGroup | None, result: list[ElevationGroup]) 
     if not _group_has_required_waveforms(group):
         return
     representative_angle = _group_representative_angle(group)
+    if representative_angle > MAX_ELEVATION_DEG:
+        return
     canonical_angle = _canonical_angle(representative_angle)
     group.elevation_id = str(canonical_angle)
     group.canonical_angle_deg = canonical_angle
@@ -77,9 +79,6 @@ def _group_by_waveform(valid: list[SweepRecord]) -> list[ElevationGroup]:
     current_group: ElevationGroup | None = None
 
     for sweep in valid:
-        if sweep.fixed_angle > MAX_ELEVATION_DEG:
-            break
-
         waveform = _waveform_key(sweep.waveform)
 
         if waveform == SURVEILLANCE_WAVEFORM:
@@ -118,9 +117,6 @@ def _group_without_waveforms(valid: list[SweepRecord]) -> list[ElevationGroup]:
     current_sweep: SweepRecord | None = None
 
     for sweep in valid:
-        if sweep.fixed_angle > MAX_ELEVATION_DEG:
-            break
-
         waveform = _waveform_key(sweep.waveform)
         if current_group is None:
             current_group = _start_group(sweep, waveform)
@@ -151,7 +147,8 @@ def group_sweeps_by_elevation(
     - Sort sweeps by sweep index
     - Ignore incomplete sweeps (azimuth_count <= 0)
     - Force grouped elevations into the fixed levels 0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0
-    - Stop processing the volume once the sweep angle exceeds 4.0 degrees
+    - Continue parsing the full volume, including any low-level revisits after higher sweeps
+    - Do not export grouped elevations whose representative angle exceeds 4.0 degrees
     - A grouped elevation starts with `contiguous_surveillance`
     - Following contiguous `contiguous_doppler` sweeps join that elevation
     - `staggered_pulse_pair` and `batch` each become single-sweep elevations
