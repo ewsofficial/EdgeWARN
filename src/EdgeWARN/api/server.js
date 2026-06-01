@@ -218,11 +218,26 @@ export function createApp(env = process.env, options = {}) {
   // Error handling middleware
   app.use((err, req, res, next) => {
     const isDev = env.NODE_ENV !== 'production';
+    const status = Number.isInteger(err?.status)
+      ? err.status
+      : (Number.isInteger(err?.statusCode) ? err.statusCode : 500);
+    const responseStatus = status >= 400 && status < 600 ? status : 500;
+
     // Only log stack traces in development
     console.error(isDev ? err.stack : `Error: ${err.message}`);
-    // Only expose error details in development
+
+    if (responseStatus === 413) {
+      return res.status(413).json({ error: 'Payload too large' });
+    }
+
+    if (responseStatus >= 400 && responseStatus < 500) {
+      return res.status(responseStatus).json({
+        error: isDev ? err.message : 'Bad request'
+      });
+    }
+
     res.status(500).json({
-        error: isDev ? err.message : 'Internal server error'
+      error: isDev ? err.message : 'Internal server error'
     });
   });
 
