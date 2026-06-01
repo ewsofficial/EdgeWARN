@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 import util.file as fs
-from common.ingest.nexrad.parser import MSG_31_BLOCK_POINTERS, MSG_HEADER_LEN, MSG_31_PREFIX_LEN, parse_grouped_ar2v_file_mmap
+from common.ingest.nexrad.parser import MSG_31_BLOCK_POINTERS, MSG_HEADER_LEN, MSG_31_PREFIX_LEN, iter_sweep_records, parse_grouped_ar2v_file_mmap
 
 
 VCP_SWEEP_ELEVATION_LABELS = {
@@ -184,11 +184,11 @@ def _iter_msg31_data_blocks(record: bytes):
         yield record[block_start:block_start + 4].decode("ascii", errors="ignore"), block_start + 4, block_end
 
 
-def _decode_grouped_ar2v_sweep(sweep):
+def _decode_grouped_ar2v_sweep(records, sweep):
     azimuths: list[float] = []
     moments: dict[str, dict[str, object]] = {}
 
-    for ray_index, record in enumerate(getattr(sweep, "records", [])):
+    for ray_index, record in enumerate(records):
         azimuth = _read_msg31_azimuth(record)
         if azimuth is None:
             continue
@@ -289,7 +289,7 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
         sweep = sweeps_by_group.get(group_name)
         if sweep is None:
             continue
-        decoded = _decode_grouped_ar2v_sweep(sweep)
+        decoded = _decode_grouped_ar2v_sweep(iter_sweep_records(grouped_volume, sweep), sweep)
         if decoded is None:
             continue
         azimuths, decoded_moments = decoded
