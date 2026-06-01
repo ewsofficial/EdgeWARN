@@ -171,6 +171,8 @@ def edgewarn_tandem_worker(
     def log(message):
         log_queue.put(message)
 
+    if profile:
+        perf_tracker.set_enabled(True)
     perf_tracker.reset()
     perf_tracker.start("Total Pipeline")
 
@@ -256,6 +258,8 @@ def realtime_pipeline(log_queue, dt, lat_limits, lon_limits, profile=False):
     def log(message):
         log_queue.put(message)
 
+    if profile:
+        perf_tracker.set_enabled(True)
     perf_tracker.reset()
     perf_tracker.start("Total Pipeline")
 
@@ -349,6 +353,8 @@ def historical_pipeline(
     pipeline_io = io_manager or IOManager("[HistoricalProcess]")
 
     try:
+        if profile:
+            perf_tracker.set_enabled(True)
         perf_tracker.reset()
         perf_tracker.start("Total Pipeline")
 

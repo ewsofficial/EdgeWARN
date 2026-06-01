@@ -109,18 +109,15 @@ class TransformUtils:
 
             if str(ds_path).endswith(".nc"):
                 with xr.open_dataset(ds_path, decode_timedelta=True) as opened:
-                    ds = opened.load()
-
-                if lat_limits and lon_limits:
-                    # Latitude/Longitude variables: 'latitude', 'longitude'
-                    ds = ds.sel(
-                        latitude=slice(lat_limits[0], lat_limits[1]),
-                        longitude=slice(lon_limits[0], lon_limits[1])
-                    )
-                    io_manager.write_debug(f"Loaded dataset subset with lat {lat_limits}, lon {lon_limits}")
-
-                else:
-                    io_manager.write_warning("lat/lon coordinates not specified, loading full dataset")
+                    if lat_limits and lon_limits:
+                        ds = opened.sel(
+                            latitude=slice(lat_limits[0], lat_limits[1]),
+                            longitude=slice(lon_limits[0], lon_limits[1])
+                        ).load()
+                        io_manager.write_debug(f"Loaded dataset subset with lat {lat_limits}, lon {lon_limits}")
+                    else:
+                        ds = opened.load()
+                        io_manager.write_warning("lat/lon coordinates not specified, loading full dataset")
 
                 io_manager.write_debug("Successfully loaded full dataset")
                 return ds
