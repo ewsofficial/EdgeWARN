@@ -154,7 +154,7 @@ def test_run_worker_parse_uses_pool_and_updates_seen_keys(tmp_path):
     )
     payload = WorkerParseResult(
         visible_sweeps=2,
-        saved_sweeps=["/sweep_0", "/sweep_1"],
+        saved_sweep_count=2,
         saved_elevations=[artifact],
         parse_error=None,
         child_rss_kb=1234.0,

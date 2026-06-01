@@ -140,7 +140,6 @@ def _child_entry(site: str, volume_id: str, output_root: str, volume_path: str, 
         ],
     )
 
-    worker.open_partial_volume = lambda _path: tree
     worker.parse_raw_volume_file = lambda _path: raw_volume
 
     start_event.wait()

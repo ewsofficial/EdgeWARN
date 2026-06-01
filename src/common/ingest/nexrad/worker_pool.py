@@ -10,7 +10,7 @@ Usage:
 
     pool = get_nexrad_pool(max_workers=4)
     future = pool.submit_parse(volume_path, output_root, site, volume_id,
-                               scan_timestamp, seen_keys, trim_buffer, parse_offset)
+                               scan_timestamp, seen_keys, trim_buffer)
     result = future.result()
 """
 
@@ -18,11 +18,9 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ProcessPoolExecutor, Future
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import util.file as fs
 from common.ingest.nexrad.models import ElevationArtifact, WorkerParseResult
 
 
@@ -37,9 +35,9 @@ def _worker_parse(
     site: str,
     volume_id: str,
     scan_timestamp: str | None,
+    download_started_at: str | None,
     seen_keys: dict[str, str | None],
     trim_buffer: bool,
-    parse_offset: int,
 ) -> dict[str, Any]:
     """Run parse_and_export inside a pool worker.
 
@@ -54,67 +52,61 @@ def _worker_parse(
         site=site,
         volume_id=volume_id,
         scan_timestamp=scan_timestamp,
+        download_started_at=download_started_at,
         seen_elevation_keys=seen_keys,
         trim_buffer=trim_buffer,
-        parse_offset=parse_offset,
     )
 
     return {
         "visible_sweeps": result.visible_sweeps,
-        "saved_sweeps": result.saved_sweeps,
+        "saved_sweep_count": result.saved_sweep_count,
         "saved_elevations": [
             {
-                "site": a.site,
-                "volume_id": a.volume_id,
-                "volume_timestamp": a.volume_timestamp,
                 "scan_timestamp": a.scan_timestamp,
+                "download_started_at": a.download_started_at,
                 "elevation": a.elevation,
                 "elevation_timestamp": a.elevation_timestamp,
-                "first_sweep_index": a.first_sweep_index,
-                "last_sweep_index": a.last_sweep_index,
-                "first_sweep_timestamp": a.first_sweep_timestamp,
-                "last_sweep_timestamp": a.last_sweep_timestamp,
                 "member_group_names": a.member_group_names,
-                "member_sweeps": a.member_sweeps,
-                "waveforms_present": list(a.waveforms_present),
-                "supplemental": a.supplemental,
-                "netcdf_path": a.netcdf_path,
-                "ar2v_path": a.ar2v_path,
             }
             for a in result.saved_elevations
         ],
         "parse_error": result.parse_error,
         "child_rss_kb": result.child_rss_kb,
+        "buffer_trimmed": result.buffer_trimmed,
+        "runtime_size": result.runtime_size,
     }
 
 
 def _dict_to_result(payload: dict[str, Any]) -> WorkerParseResult:
     return WorkerParseResult(
         visible_sweeps=payload.get("visible_sweeps", 0),
-        saved_sweeps=list(payload.get("saved_sweeps") or []),
+        saved_sweep_count=int(payload.get("saved_sweep_count", 0) or 0),
         saved_elevations=[
             ElevationArtifact(
-                site=a["site"],
-                volume_id=a["volume_id"],
-                volume_timestamp=a.get("volume_timestamp"),
+                site="",
+                volume_id="",
+                volume_timestamp=None,
                 scan_timestamp=a.get("scan_timestamp"),
                 elevation=a["elevation"],
                 elevation_timestamp=a.get("elevation_timestamp"),
-                first_sweep_index=a["first_sweep_index"],
-                last_sweep_index=a["last_sweep_index"],
-                first_sweep_timestamp=a.get("first_sweep_timestamp"),
-                last_sweep_timestamp=a.get("last_sweep_timestamp"),
+                first_sweep_index=0,
+                last_sweep_index=0,
+                first_sweep_timestamp=None,
+                last_sweep_timestamp=None,
                 member_group_names=list(a.get("member_group_names") or []),
-                member_sweeps=list(a.get("member_sweeps") or []),
-                waveforms_present=set(a.get("waveforms_present") or []),
-                supplemental=bool(a.get("supplemental", False)),
-                netcdf_path=a.get("netcdf_path"),
-                ar2v_path=a.get("ar2v_path"),
+                member_sweeps=[],
+                waveforms_present=set(),
+                supplemental=False,
+                download_started_at=a.get("download_started_at"),
+                netcdf_path=None,
+                ar2v_path=None,
             )
             for a in payload.get("saved_elevations") or []
         ],
         parse_error=payload.get("parse_error"),
         child_rss_kb=payload.get("child_rss_kb"),
+        buffer_trimmed=bool(payload.get("buffer_trimmed", False)),
+        runtime_size=payload.get("runtime_size"),
     )
 
 
@@ -134,9 +126,9 @@ class NexradWorkerPool:
         site: str,
         volume_id: str,
         scan_timestamp: str | None,
+        download_started_at: str | None,
         seen_keys: dict[str, str | None],
         trim_buffer: bool = False,
-        parse_offset: int = 0,
     ) -> Future[WorkerParseResult]:
         future = self._executor.submit(
             _worker_parse,
@@ -145,9 +137,9 @@ class NexradWorkerPool:
             str(site).upper(),
             str(volume_id),
             scan_timestamp,
+            download_started_at,
             seen_keys,
             trim_buffer,
-            parse_offset,
         )
 
         wrapped: Future[WorkerParseResult] = Future()
@@ -171,7 +163,7 @@ class NexradWorkerPool:
 
 def get_nexrad_pool(max_workers: int | None = None) -> NexradWorkerPool:
     """Return a singleton pool, creating one if needed."""
-    global _POOL, _POOL_SIZE
+    global _POOL, _POOL_SIZE, _VOLUME_COUNT
 
     target = max_workers or int(os.environ.get("NEXRAD_WORKER_POOL_SIZE", "4"))
 
@@ -180,21 +172,39 @@ def get_nexrad_pool(max_workers: int | None = None) -> NexradWorkerPool:
             _POOL.shutdown(wait=True)
         _POOL = NexradWorkerPool(max_workers=target)
         _POOL_SIZE = target
+        _VOLUME_COUNT = 0
 
     return _POOL
 
 
 def record_volume_and_maybe_recycle(max_workers: int | None = None) -> None:
-    """No-op placeholder. Worker recycling was removed because forking new
-    workers from a grown parent process produces children with higher RSS
-    baselines than keeping the existing workers and relying on malloc_trim.
+    """Recycle long-lived workers after a bounded number of completed volumes.
+
+    This caps allocator fragmentation and import/cache buildup inside pool
+    workers during long realtime runs. The threshold is configurable via
+    ``NEXRAD_WORKER_RECYCLE_INTERVAL`` and defaults to 24 completed volumes.
+    Set the value to ``0`` to disable recycling.
     """
-    pass
+    global _POOL, _POOL_SIZE, _VOLUME_COUNT
+
+    recycle_interval = int(os.environ.get("NEXRAD_WORKER_RECYCLE_INTERVAL", "24"))
+    if recycle_interval <= 0:
+        return
+
+    _VOLUME_COUNT += 1
+    if _POOL is None or _VOLUME_COUNT < recycle_interval:
+        return
+
+    _POOL.shutdown(wait=True)
+    _POOL = None
+    _POOL_SIZE = 0
+    _VOLUME_COUNT = 0
 
 
 def shutdown_nexrad_pool(wait: bool = True) -> None:
-    global _POOL, _POOL_SIZE
+    global _POOL, _POOL_SIZE, _VOLUME_COUNT
     if _POOL is not None:
         _POOL.shutdown(wait=wait)
         _POOL = None
         _POOL_SIZE = 0
+    _VOLUME_COUNT = 0
