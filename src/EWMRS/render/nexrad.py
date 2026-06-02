@@ -272,26 +272,10 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
 
     grouped_volume = parse_grouped_ar2v_file_mmap(artifact_path)
     sweeps_by_group = {sweep.group_name: sweep for sweep in grouped_volume.sweeps}
-    requested_groups = []
-    seen_groups = set()
-
-    for member_sweep in getattr(artifact, "member_sweeps", []) or []:
-        sweep_index = member_sweep.get("sweep_index") if isinstance(member_sweep, dict) else None
-        if sweep_index is None:
-            continue
-        group_name = f"/sweep_{int(sweep_index)}"
-        if group_name in sweeps_by_group and group_name not in seen_groups:
-            requested_groups.append(group_name)
-            seen_groups.add(group_name)
-
-    if not requested_groups:
-        requested_groups = [
-            str(group_name)
-            for group_name in getattr(artifact, "member_group_names", [])
-            if str(group_name) in sweeps_by_group
-        ]
-    if not requested_groups:
-        requested_groups = sorted(sweeps_by_group)
+    # Grouped elevation artifacts can be renumbered locally when written, so
+    # render every sweep present in the elevation file instead of trusting
+    # upstream per-volume sweep indexes.
+    requested_groups = sorted(sweeps_by_group)
 
     manifest_layers = []
     elevation_label = artifact.elevation
