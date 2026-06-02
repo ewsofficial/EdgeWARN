@@ -28,7 +28,8 @@ from EdgeWARN import initialize_runtime
 from EdgeWARN.pipeline import edgewarn_tandem_worker
 from EWMRS.pipeline import ewmrs_goes_worker, ewmrs_tandem_worker, run_nexrad_render_loop
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
-from util.io import TimestampedOutput, IOManager
+from util.io import QueueWriter, TimestampedOutput, IOManager
+from util.runtime import StartedProcessRegistry
 from util.release import get_release_version
 
 sys.stdout = TimestampedOutput(sys.stdout)
@@ -150,7 +151,9 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
         return
 
 
-def nexrad_ingest_loop():
+def nexrad_ingest_loop(log_queue):
+    sys.stdout = QueueWriter(log_queue)
+    sys.stderr = QueueWriter(log_queue)
     try:
         run_realtime_ingestion_pipeline(base_dir=args.base_dir)
     except KeyboardInterrupt:
@@ -222,25 +225,6 @@ def _download_glm_for_scan(dt):
         return []
 
     return download_goes_product(glm_spec, dt)
-
-
-def _stop_process(process, name, *, join_timeout=5):
-    if process is None:
-        return
-
-    try:
-        if process.is_alive():
-            print(f"[Scheduler] Stopping {name} process...")
-            process.terminate()
-
-        process.join(timeout=join_timeout)
-
-        if process.is_alive():
-            print(f"[Scheduler] {name} did not stop in time; killing...")
-            process.kill()
-            process.join(timeout=1)
-    except Exception as exc:
-        print(f"[Scheduler] Failed to stop {name} process cleanly: {exc}")
 
 
 def metar_loop():
@@ -370,9 +354,9 @@ def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue, manager
             args=(log_queue, shared_state, ewmrs_mrms_ready_event, ewmrs_goes_ready_event, dt),
         )
 
-    edgewarn_proc.start()
-    if ewmrs_proc is not None:
-        ewmrs_proc.start()
+    started_processes = StartedProcessRegistry()
+    started_processes.start(edgewarn_proc, "EdgeWARN")
+    started_processes.start(ewmrs_proc, "EWMRS")
 
     detection_ready_event.set()
     if EWMRS_ENABLED:
@@ -449,18 +433,20 @@ def _run_tandem_cycle(dt, goes_render_task_queue, goes_render_log_queue, manager
         if EWMRS_ENABLED:
             ewmrs_goes_ready_event.set()
 
-    while edgewarn_proc.is_alive() or (ewmrs_proc is not None and ewmrs_proc.is_alive()) or not log_queue.empty():
+    try:
+        while edgewarn_proc.is_alive() or (ewmrs_proc is not None and ewmrs_proc.is_alive()) or not log_queue.empty():
+            _drain_log_queue(log_queue)
+            _drain_log_queue(goes_render_log_queue)
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("CTRL+C detected, stopping tandem cycle workers...")
+        raise
+    finally:
+        started_processes.shutdown()
         _drain_log_queue(log_queue)
         _drain_log_queue(goes_render_log_queue)
-        time.sleep(1)
 
-    edgewarn_proc.join()
-    ewmrs_proc_exitcode = 0
-    if ewmrs_proc is not None:
-        ewmrs_proc.join()
-        ewmrs_proc_exitcode = ewmrs_proc.exitcode
-    _drain_log_queue(log_queue)
-    _drain_log_queue(goes_render_log_queue)
+    ewmrs_proc_exitcode = 0 if ewmrs_proc is None else ewmrs_proc.exitcode
     return edgewarn_proc.exitcode == 0 and ewmrs_proc_exitcode == 0
 
 
@@ -523,6 +509,7 @@ def main():
     wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True)
     goes_render_task_queue = multiprocessing.Queue()
     goes_render_log_queue = multiprocessing.Queue()
+    nexrad_log_queue = multiprocessing.Queue()
     goes_render_proc = multiprocessing.Process(
         target=goes_render_loop,
         args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
@@ -531,35 +518,21 @@ def main():
     nexrad_render_proc = multiprocessing.Process(target=nexrad_render_loop, daemon=True) if EWMRS_ENABLED else None
     # NEXRAD ingest uses a ProcessPoolExecutor for parser workers, so this
     # process must not be daemonic or child worker creation will fail.
-    nexrad_ingest_proc = multiprocessing.Process(target=nexrad_ingest_loop, daemon=False) if EWMRS_ENABLED else None
-    if metar_proc is not None:
-        metar_proc.start()
-    if nws_proc is not None:
-        nws_proc.start()
-    wpc_proc.start()
+    nexrad_ingest_proc = multiprocessing.Process(target=nexrad_ingest_loop, args=(nexrad_log_queue,), daemon=False) if EWMRS_ENABLED else None
+    started_processes = StartedProcessRegistry()
+    started_processes.start(metar_proc, "METAR")
+    started_processes.start(nws_proc, "NWS")
+    started_processes.start(wpc_proc, "WPC")
     goes_proc = multiprocessing.Process(target=goes_loop, args=(GOES_CYCLE_ACTIVE, GOES_RENDER_ACTIVE), daemon=True) if GOES_ENABLED else None
-    if goes_proc is not None:
-        goes_proc.start()
-    if goes_render_proc is not None:
-        goes_render_proc.start()
-    if nexrad_render_proc is not None:
-        nexrad_render_proc.start()
-    if nexrad_ingest_proc is not None:
-        nexrad_ingest_proc.start()
-
-    background_processes = [
-        (metar_proc, "METAR"),
-        (nws_proc, "NWS"),
-        (wpc_proc, "WPC"),
-        (goes_proc, "GOES"),
-        (goes_render_proc, "GOES Render"),
-        (nexrad_render_proc, "NEXRAD Render"),
-        (nexrad_ingest_proc, "NEXRAD Ingest"),
-    ]
+    started_processes.start(goes_proc, "GOES")
+    started_processes.start(goes_render_proc, "GOES Render")
+    started_processes.start(nexrad_render_proc, "NEXRAD Render")
+    started_processes.start(nexrad_ingest_proc, "NEXRAD Ingest")
 
     try:
         while True:
             _drain_log_queue(goes_render_log_queue)
+            _drain_log_queue(nexrad_log_queue)
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
             # Pass last_processed to allow StartAfter optimization
@@ -627,16 +600,8 @@ def main():
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")
     finally:
-        try:
-            goes_render_task_queue.put(None)
-        except Exception:
-            pass
-        for process, name in background_processes:
-            _stop_process(process, name)
-        try:
-            manager.shutdown()
-        except Exception:
-            pass
+        started_processes.shutdown(queue_sentinels=[(goes_render_task_queue, None)], manager=manager)
+        _drain_log_queue(nexrad_log_queue)
 
 if __name__ == "__main__":
     try:
