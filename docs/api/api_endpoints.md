@@ -247,6 +247,15 @@ The EWMRS service also exposes RAP Uint16 array outputs from `<BASE_DIR>/gui/RAP
 
 `/rap/data` returns raw little-endian `uint16` bytes with `65535` reserved as no-data. Clients should use the matching `/rap/metadata` response for shape, scale, units, and GRIB metadata. RAP layer names are the on-disk folders under `gui/RAP`, such as `Temperature_2m`, `CAPE_0-3km`, or `UWind_925mb`.
 
+## EWMRS WPC Surface Analysis
+
+The EWMRS service exposes WPC surface-analysis GeoJSON artifacts through:
+
+- `GET /wpc/fetch?type=sfc`
+- `GET /wpc/download?type=sfc&timestamp={YYYYMMDD-HHMMSS}`
+
+These routes read `<BASE_DIR>/wpc/surface_analysis/wpc_sfc_{timestamp}.geojson`. See `docs/api/ewmrs_api_endpoints.md` for full response semantics.
+
 ### GET /health
 
 Response:
