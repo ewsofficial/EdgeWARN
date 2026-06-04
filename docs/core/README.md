@@ -32,7 +32,6 @@ src/
 │   └── ui/                          # UI assets (placeholder package)
 └── EWMRS/
     ├── pipeline.py                  # Render pipeline orchestration
-    ├── scheduler.py                 # Scheduling helpers
     ├── render/                      # Layer rendering and tile generation
     ├── rap/                         # RAP Uint16 conversion pipeline + config
     ├── api/                         # EWMRS HTTP API service
@@ -51,6 +50,30 @@ graph TD
     E --> F[CTAM Modules]
     F --> G[Alert Manager]
     E --> H[API Index Updates]
+```
+
+## Runtime Base Directory
+
+Generated products are written outside the repository under the configured base directory. The default is `~/EdgeWARN_input` on Linux/macOS and `C:\EdgeWARN_input` on Windows.
+
+The active runtime layout is:
+
+```text
+<BASE_DIR>/
+├── data/
+│   ├── stormcells/                  # detection snapshots and stormcell_index.json
+│   ├── cells/                       # per-cell history/API files and cell_index.json
+│   ├── Alerts/                      # official NWS and EdgeWARN alert registries/snapshots
+│   ├── Mesocyclones/                # mesocyclones_YYYYMMDD-HHMMSS.json sidecars
+│   ├── METAR/                       # hourly METAR snapshots
+│   ├── RAP/                         # staged RAP GRIB files for integration/conversion
+│   ├── NEXRAD_Level2/               # staged Level II volume artifacts
+│   └── <MRMS/GOES product dirs>/     # MRMS, FLASH, GLM, ABI channel inputs
+├── gui/
+│   ├── <MRMS/GOES product>/          # tile-first PNG products plus index.json files
+│   ├── RAP/                         # Uint16 RAP layer folders
+│   └── NEXRAD/                      # gzip-compressed polar intermediate fields
+└── wpc/surface_analysis/            # WPC surface-analysis GeoJSON
 ```
 
 ## Tandem Readiness Stages

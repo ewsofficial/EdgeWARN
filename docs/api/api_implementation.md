@@ -37,8 +37,8 @@ src/EdgeWARN/api/
    - `helmet`
    - `compression`
    - `cors`
-   - `express.json()`
    - per-second and per-minute `express-rate-limit`
+   - `express.json({ limit: "16kb" })`
 4. Routes are mounted:
    - `/`
    - `/health`
@@ -169,7 +169,7 @@ Provides validators for:
 
 ### Rate Limiting
 
-Two global limiters are applied:
+Two global limiters are applied before JSON body parsing so abusive request bodies can be rejected before parsing work is performed:
 
 - per-second limiter (defaults: `windowMs=1000`, `max=40`)
 - per-minute limiter (defaults: `windowMs=60000`, `max=2000`)
