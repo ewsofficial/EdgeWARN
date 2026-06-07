@@ -49,7 +49,7 @@ def order_recent_volume_ids(volume_ids):
 
     numeric_values = [value for _text, value in numeric_pairs]
     if 1 not in numeric_values or len(numeric_pairs) < 2:
-        return ordered
+        return [text for text, _value in sorted(numeric_pairs, key=lambda item: item[1], reverse=True)]
 
     ascending = sorted(numeric_pairs, key=lambda item: item[1])
     largest_gap = 0
@@ -61,12 +61,12 @@ def order_recent_volume_ids(volume_ids):
             gap_index = index
 
     if largest_gap <= 1 or gap_index < 0:
-        return ordered
+        return [text for text, _value in sorted(numeric_pairs, key=lambda item: item[1], reverse=True)]
 
     wrapped_segment = ascending[: gap_index + 1]
     prior_segment = ascending[gap_index + 1 :]
     if not wrapped_segment or wrapped_segment[0][1] != 1:
-        return ordered
+        return [text for text, _value in sorted(numeric_pairs, key=lambda item: item[1], reverse=True)]
 
     wrapped_ordered = sorted(wrapped_segment, key=lambda item: item[1], reverse=True)
     wrapped_ordered.extend(sorted(prior_segment, key=lambda item: item[1], reverse=True))

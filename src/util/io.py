@@ -26,7 +26,7 @@ class QueueWriter:
     def write(self, message):
         if message.strip():
             timestamp = datetime.now(timezone.utc).isoformat()
-            self.queue.put(f"[{timestamp}] {message}")
+            self.queue.put(f"[{timestamp}] {message.rstrip()}")
 
     def flush(self):
         pass

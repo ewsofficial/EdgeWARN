@@ -247,7 +247,7 @@ def test_write_elevation_manifest_includes_member_sweep_timestamps(tmp_path):
     ]
 
 
-def test_site_manifest_keeps_latest_five_volumes_by_volume_timestamp(tmp_path):
+def test_site_manifest_keeps_latest_two_volumes_by_volume_timestamp(tmp_path):
     fs.initialize_filesystem(tmp_path)
 
     volume_specs = [
@@ -283,13 +283,10 @@ def test_site_manifest_keeps_latest_five_volumes_by_volume_timestamp(tmp_path):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     assert manifest_path == site_manifest_path("KTLH")
-    assert [volume["volume_id"] for volume in manifest["volumes"]] == ["VOL-F", "VOL-E", "VOL-D", "VOL-C", "VOL-B"]
+    assert [volume["volume_id"] for volume in manifest["volumes"]] == ["VOL-F", "VOL-E"]
     assert [volume["volume_timestamp"] for volume in manifest["volumes"]] == [
         "20260507-155000",
         "20260507-154000",
-        "20260507-153000",
-        "20260507-152000",
-        "20260507-151000",
     ]
     assert manifest["volumes"][0]["download_started_at"] == "2026-05-07T15:00:00Z"
     assert manifest["volumes"][0]["sweeps"] == [
@@ -318,9 +315,6 @@ def test_site_manifest_keeps_latest_five_volumes_by_volume_timestamp(tmp_path):
 
     pruned_sidecars = sorted(path.name for path in elevation_dir("KTLH", "0.5").glob("*.json"))
     assert pruned_sidecars == [
-        "KTLH_0.5_20260507-151001.json",
-        "KTLH_0.5_20260507-152001.json",
-        "KTLH_0.5_20260507-153001.json",
         "KTLH_0.5_20260507-154001.json",
         "KTLH_0.5_20260507-155001.json",
     ]

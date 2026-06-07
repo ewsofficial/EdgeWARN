@@ -28,6 +28,8 @@ This ordering preserves low-latency detection while allowing render and integrat
 
 For realtime tandem execution in `src/run.py`, GOES ingest remains decoupled from the shared MRMS ingest cycle. The runner performs a best-effort local GOES availability check and always releases the GOES render phase so MRMS rendering is never blocked. EWMRS GOES readiness is tied to the full configured ABI scalar render set, currently `GOES_ABI_C01` through `GOES_ABI_C16`, while EdgeWARN integration readiness still checks GLM availability separately.
 
+Realtime execution also starts background loops for METAR, NWS, WPC, GOES ABI, GOES rendering, and NEXRAD ingest/render. Those loops are independent from the per-MRMS tandem cycle and write into the same configured runtime base directory.
+
 ## MRMS + GOES
 
 `src/common/ingest/mrms/main.py` provides async-first ingestion with sync fallback paths.
@@ -111,6 +113,26 @@ Entry points:
 Output file pattern:
 
 - `METAR_YYYYMMDD-HHz.json`
+
+## NEXRAD Level II
+
+`src/common/ingest/nexrad` manages realtime Level II discovery, chunked S3 download, parsing, and staged output under `<BASE_DIR>/data/NEXRAD_Level2`.
+
+Current components include:
+
+- `main.py` / `service.py`: realtime ingest entry points
+- `coordinator.py`: volume coordination
+- `s3_chunks.py`, `s3_async.py`, `worker_pool.py`, `worker.py`: download and worker execution
+- `parser.py`, `models.py`, `writer.py`: Level II parsing and staged artifact writing
+- `pipeline/`: station filtering, volume discovery, pending-volume models, and a standalone `__main__.py`
+
+EWMRS polls staged NEXRAD outputs and writes gzip-compressed polar intermediate fields to:
+
+```text
+<BASE_DIR>/gui/NEXRAD/<SITE>/<ELEVATION>/<SITE>_<PRODUCT>_<ELEVATION>_<YYYYMMDD-HHMMSS>.bin.gz
+```
+
+Those files are served through the EWMRS `/nexrad` routes documented in `docs/api/ewmrs_api_endpoints.md`.
 
 ## WPC Surface Analysis
 

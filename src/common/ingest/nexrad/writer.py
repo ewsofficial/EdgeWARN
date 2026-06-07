@@ -13,7 +13,7 @@ from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
 
 IMPORTANT_DATA_VARS = None
 NEXRAD_SCAN_DIRS_TO_KEEP = 3
-NEXRAD_ELEVATION_DIRS_TO_KEEP = 5
+NEXRAD_ELEVATION_DIRS_TO_KEEP = 2
 SCAN_TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
 STALE_MANIFEST_MAX_AGE_HOURS = 12
 

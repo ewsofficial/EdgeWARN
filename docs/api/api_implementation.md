@@ -37,8 +37,8 @@ src/EdgeWARN/api/
    - `helmet`
    - `compression`
    - `cors`
-   - `express.json()`
    - per-second and per-minute `express-rate-limit`
+   - `express.json({ limit: "16kb" })`
 4. Routes are mounted:
    - `/`
    - `/health`
@@ -52,7 +52,8 @@ src/EdgeWARN/api/
 
 1. CLI arg: `--base-dir` or `--base-dir=...`
 2. `EDGEWARN_BASE_DIR`
-3. Platform fallback defaults
+3. Linux fallback chain: `~/EdgeWARN_input`, then `/home/EdgeWARN_input`, then `/workspaces/EdgeWARN_input`, then `./EdgeWARN_input`
+4. Windows fallback: `C:\EdgeWARN_input`
 
 EdgeWARN rate-limit CLI overrides:
 
@@ -114,6 +115,7 @@ Also serves `GET /api/v2` endpoint metadata.
 - Supports mutually exclusive query params: `id` or `timestamp`
 - ID mode resolves filename-safe IDs in `ids/`
 - Timestamp mode reads `{timestamp}.json` in `timestamps/` and returns `alerts` array
+- Timestamp mode returns `[]` when the snapshot file is absent
 - List mode scans timestamp files and returns sorted timestamp keys
 
 ### `routes/v2/data/metar.js`
@@ -169,7 +171,7 @@ Provides validators for:
 
 ### Rate Limiting
 
-Two global limiters are applied:
+Two global limiters are applied before JSON body parsing so abusive request bodies can be rejected before parsing work is performed:
 
 - per-second limiter (defaults: `windowMs=1000`, `max=40`)
 - per-minute limiter (defaults: `windowMs=60000`, `max=2000`)

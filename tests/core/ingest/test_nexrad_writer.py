@@ -398,20 +398,26 @@ def test_serialize_nexrad_render_intermediate_normalizes_azimuth_order_for_consi
     )
 
 
-def test_serialize_nexrad_elevation_artifacts_uses_artifact_timestamp_and_new_gui_layout(tmp_path, monkeypatch):
+def test_serialize_nexrad_elevation_artifacts_uses_artifact_timestamp_and_new_gui_layout(tmp_path):
     fs.initialize_filesystem(tmp_path)
-    dataset = xr.Dataset(
-        {
-            "DBZH": (("azimuth", "range"), np.array([[1.0, 2.0]], dtype=np.float32)),
-        },
-        coords={
-            "azimuth": np.array([0.0], dtype=np.float32),
-            "range": np.array([1000.0, 2000.0], dtype=np.float32),
-        },
+    artifact_path = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5" / "KTLH_0.5_20260507-150001.ar2v"
+    _write_grouped_ar2v(
+        artifact_path,
+        [
+            _build_msg31_record(
+                radial_status=0,
+                azimuth_angle=0.0,
+                elevation_angle=0.5,
+                block_payloads=[_build_generic_block(b"DREF", [68, 70])],
+            ),
+            _build_msg31_record(
+                radial_status=2,
+                azimuth_angle=90.0,
+                elevation_angle=0.5,
+                block_payloads=[_build_generic_block(b"DREF", [72, 74])],
+            ),
+        ],
     )
-    artifact_path = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5" / "KTLH_0.5_20260507-150001.nc"
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    _write_grouped_netcdf(artifact_path, {}, _Tree(dataset), ["/sweep_00"])
 
     artifact = ElevationArtifact(
         site="KTLH",
@@ -428,7 +434,7 @@ def test_serialize_nexrad_elevation_artifacts_uses_artifact_timestamp_and_new_gu
         member_sweeps=[],
         waveforms_present=set(),
         supplemental=False,
-        netcdf_path=str(artifact_path),
+        ar2v_path=str(artifact_path),
     )
 
     manifest_path = serialize_nexrad_elevation_artifacts("KTLH", "999", "20260507-150000", [artifact])
@@ -441,18 +447,24 @@ def test_serialize_nexrad_elevation_artifacts_uses_artifact_timestamp_and_new_gu
 
 def test_serialize_nexrad_elevation_artifacts_writes_non_operational_elevations(tmp_path):
     fs.initialize_filesystem(tmp_path)
-    dataset = xr.Dataset(
-        {
-            "DBZH": (("azimuth", "range"), np.array([[1.0, 2.0]], dtype=np.float32)),
-        },
-        coords={
-            "azimuth": np.array([0.0], dtype=np.float32),
-            "range": np.array([1000.0, 2000.0], dtype=np.float32),
-        },
+    artifact_path = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "1.3" / "KTLH_1.3_20260507-150001.ar2v"
+    _write_grouped_ar2v(
+        artifact_path,
+        [
+            _build_msg31_record(
+                radial_status=0,
+                azimuth_angle=0.0,
+                elevation_angle=1.3,
+                block_payloads=[_build_generic_block(b"DREF", [68, 70])],
+            ),
+            _build_msg31_record(
+                radial_status=2,
+                azimuth_angle=90.0,
+                elevation_angle=1.3,
+                block_payloads=[_build_generic_block(b"DREF", [72, 74])],
+            ),
+        ],
     )
-    artifact_path = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "1.3" / "KTLH_1.3_20260507-150001.nc"
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    _write_grouped_netcdf(artifact_path, {}, _Tree(dataset), ["/sweep_00"])
 
     artifact = ElevationArtifact(
         site="KTLH",
@@ -469,7 +481,7 @@ def test_serialize_nexrad_elevation_artifacts_writes_non_operational_elevations(
         member_sweeps=[],
         waveforms_present=set(),
         supplemental=False,
-        netcdf_path=str(artifact_path),
+        ar2v_path=str(artifact_path),
     )
 
     manifest_path = serialize_nexrad_elevation_artifacts("KTLH", "999", "20260507-150000", [artifact])
@@ -538,3 +550,72 @@ def test_serialize_nexrad_elevation_artifacts_decodes_grouped_ar2v_directly(tmp_
     np.testing.assert_allclose(phidp_ranges, np.array([1000.0, 2000.0, 3000.0], dtype=np.float32))
     np.testing.assert_allclose(dbzh_data, np.array([[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]], dtype=np.float16))
     np.testing.assert_allclose(phidp_data, np.array([[0.5, 2.0], [1.0, 2.5], [1.5, 3.0]], dtype=np.float16))
+
+
+def test_serialize_nexrad_elevation_artifacts_matches_grouped_ar2v_by_member_sweep_index(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    artifact_path = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5" / "KTLH_0.5_20260507-150001.ar2v"
+    records = [
+        _build_msg31_record(
+            radial_status=0,
+            azimuth_angle=0.0,
+            elevation_angle=0.5,
+            block_payloads=[
+                _build_generic_block(b"DREF", [68, 70, 72]),
+            ],
+        ),
+        _build_msg31_record(
+            radial_status=2,
+            azimuth_angle=90.0,
+            elevation_angle=0.5,
+            block_payloads=[
+                _build_generic_block(b"DREF", [74, 76, 78]),
+            ],
+        ),
+        _build_msg31_record(
+            radial_status=0,
+            azimuth_angle=0.0,
+            elevation_angle=0.5,
+            block_payloads=[
+                _build_generic_block(b"DVEL", [132, 134, 136]),
+                _build_generic_block(b"DSW ", [68, 70, 72]),
+            ],
+        ),
+        _build_msg31_record(
+            radial_status=2,
+            azimuth_angle=90.0,
+            elevation_angle=0.5,
+            block_payloads=[
+                _build_generic_block(b"DVEL", [138, 140, 142]),
+                _build_generic_block(b"DSW ", [74, 76, 78]),
+            ],
+        ),
+    ]
+    _write_grouped_ar2v(artifact_path, records)
+
+    artifact = ElevationArtifact(
+        site="KTLH",
+        volume_id="999",
+        volume_timestamp="20260507-150000",
+        scan_timestamp="20260507-150000",
+        elevation="0.5",
+        elevation_timestamp="20260507-150001",
+        first_sweep_index=0,
+        last_sweep_index=1,
+        first_sweep_timestamp=None,
+        last_sweep_timestamp=None,
+        member_group_names=["/sweep_1", "/sweep_2"],
+        member_sweeps=[
+            {"group_name": "/sweep_1", "sweep_index": 0, "waveform": "contiguous_surveillance"},
+            {"group_name": "/sweep_2", "sweep_index": 1, "waveform": "contiguous_doppler"},
+        ],
+        waveforms_present={"contiguous_surveillance", "contiguous_doppler"},
+        supplemental=False,
+        ar2v_path=str(artifact_path),
+    )
+
+    manifest_path = serialize_nexrad_elevation_artifacts("KTLH", "999", "20260507-150000", [artifact])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert [layer["variable_name"] for layer in manifest["layers"]] == ["DBZH", "VRADH", "WRADH"]
+    assert [layer["sweep_group"] for layer in manifest["layers"]] == ["/sweep_0", "/sweep_1", "/sweep_1"]

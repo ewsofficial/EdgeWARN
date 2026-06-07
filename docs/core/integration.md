@@ -63,3 +63,9 @@ After save, integration updates:
 - stale cell cleanup policy (default: remove inactive cells older than 2 hours)
 
 These side effects are required for stable API behavior.
+
+## Integrated Data Sources
+
+The current integration configuration enriches storm cells with MRMS statistic groups such as reflectivity, NLDN density, echo tops, VIL/VIL density, VII, MESH, precipitation rate, RALA, and azimuthal shear summaries. It also copies selected ProbSevere fields, adds GLM flash count/energy when scan-time GLM files are available, and attaches RAP wind/environment fields used by CTAM modules such as StormCast and MorphoWind.
+
+The optional AzShear support-feature integration path exists in `integrate_azshear.py` and `azshear/`, but the pipeline-level feature flag is currently disabled.

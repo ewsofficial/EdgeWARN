@@ -77,3 +77,5 @@ processed_cells = run_ctam(storm_cells, timestamp="20260101-120000")
 ```
 
 Module outputs are stored under each cell's `modules` key, with optional `_grid_outputs` for attachable grid products.
+
+Grid modules can also write sidecar products outside storm-cell records. Current examples are FLOHAR GeoJSON-style flash-flood region output under the flash-flood runtime directory and Mesocyclone JSON snapshots under `data/Mesocyclones`. Mesocyclone results are intentionally not attached to storm-cell records and are consumed through `GET /api/v2/features/mesocyclones`.
