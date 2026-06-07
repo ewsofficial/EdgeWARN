@@ -79,7 +79,7 @@ Used by `GET /api/v2/features/alerts/official?id={id}`.
 
 The stored file is a registry entry. The API normally returns the nested `feature` object when it exists.
 
-- `id` (`string`): Alert ID, usually the NWS `urn:oid` or source URL.
+- `id` (`string`): Alert ID, usually the NWS `urn:oid` or another slash-free identifier accepted by the API validator.
 - `first_seen` (`string`): ISO 8601 timestamp for when the alert was first observed.
 - `last_seen` (`string`): ISO 8601 timestamp for when the alert was last observed.
 - `expires` (`string|null`): ISO 8601 expiration timestamp when available.
@@ -94,7 +94,9 @@ Common keys inside `feature`:
 
 ### `Alerts/official/timestamps/{timestamp}.json`
 
-Used by `GET /api/v2/features/alerts/official?timestamp={YYYYMMDD-HHMMSS}`.
+Backs `GET /api/v2/features/alerts/official?timestamp={YYYYMMDD-HHMMSS}`.
+
+The on-disk file is a wrapper object, but the API response returns only the `alerts` array from that object. If the timestamp file is absent, the API returns `[]`.
 
 - `count` (`number`): Number of summarized alerts in the snapshot.
 - `alerts` (`object[]`): Alert summary rows for that timestamp.
@@ -127,7 +129,9 @@ Used by `GET /api/v2/features/alerts/edgewarn?id={id}`.
 
 ### `Alerts/EdgeWARN/timestamps/{timestamp}.json`
 
-Used by `GET /api/v2/features/alerts/edgewarn?timestamp={YYYYMMDD-HHMMSS}`.
+Backs `GET /api/v2/features/alerts/edgewarn?timestamp={YYYYMMDD-HHMMSS}`.
+
+The on-disk file is a wrapper object, but the API response returns only the `alerts` array from that object. If the timestamp file is absent, the API returns `[]`.
 
 - `timestamp` (`string`): ISO 8601 timestamp for the snapshot time.
 - `count` (`number`): Number of active alerts in the snapshot.

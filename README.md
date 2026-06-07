@@ -10,7 +10,7 @@ It ingests operational weather datasets, processes storm-cell products, renders 
 - EdgeWARN storm-cell detection, optional tracking/lineage, integration, CTAM analytics, and alert generation
 - EWMRS raster rendering, tiling, WPC surface-analysis serving, and colormap delivery
 - Historical reprocessing via `src/process_historical.py`
-- File-backed APIs for EdgeWARN (`/api/v2`) and EWMRS (`/renders`, `/wpc`, `/colormaps`)
+- File-backed APIs for EdgeWARN (`/api/v2`) and EWMRS (`/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/healthz`)
 
 ## Requirements
 
@@ -66,6 +66,8 @@ Key realtime flags include `--disable-ewmrs`, `--disable-nws`, `--disable-metar`
 
 Historical processing supports `--output`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
+`--output` is currently a compatibility argument only. Historical runs still persist the final stormcell artifacts to `<BASE_DIR>/data/stormcells/` using the runtime timestamped filenames.
+
 ## Runtime Base Directory
 
 Runtime output defaults to:
@@ -73,11 +75,18 @@ Runtime output defaults to:
 - Linux/macOS: `~/EdgeWARN_input`
 - Windows: `C:\EdgeWARN_input`
 
+Notes:
+
+- Python CLIs and the EWMRS API use the platform defaults above when no override is provided.
+- The EdgeWARN API has a broader Linux fallback chain: `~/EdgeWARN_input`, then `/home/EdgeWARN_input`, then `/workspaces/EdgeWARN_input`, then `./EdgeWARN_input`.
+
 Supported overrides:
 
 - Python CLI: `--base_dir` / `--base-dir`
 - EdgeWARN API: `--base-dir` or `EDGEWARN_BASE_DIR`
 - EWMRS API: `--base_dir` or `BASE_DIR`
+
+Both Node APIs also honor `PORT`.
 
 See `INSTALLATION.md` for the full CLI reference, including API debug and rate-limit flags plus the `zone_sync.py` maintenance utility.
 

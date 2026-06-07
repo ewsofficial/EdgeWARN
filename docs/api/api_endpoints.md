@@ -71,8 +71,9 @@ Responses:
 
 - `200` list mode: `number[]`
 - `200` id mode: JSON object from file (passthrough)
-- `400`: invalid `id` or invalid filename/access
-- `404`: cell file not found
+- `200` list mode fallback when `cell_index.json` is absent: `[]`
+- `400`: invalid `id`
+- `404`: cell file not found, or file access/path validation rejects the requested id
 - `500`: read/server failure
 
 Cache:
@@ -150,6 +151,7 @@ Responses:
   - `id`, `name`, `urn_oid`, `effective`, `expires`, `severity`, `geometry`
 - `200` timestamp mode (`edgewarn`): array of EdgeWARN alert summaries such as:
   - `id`, `severity`
+- `200` timestamp mode when the snapshot file is absent: `[]`
 - `200` id mode: returns the stored alert object, with an automatic unwrap to the nested `feature` payload when one is present. The unwrap applies uniformly to both `official` and `edgewarn` endpoints — official records always carry a `feature`, while edgewarn records typically do not and so return as-is.
 - `400/404/500` error envelope:
 
@@ -168,6 +170,10 @@ Validation:
 - `timestamp` and `id` cannot be sent together
 - `timestamp` must match `YYYYMMDD-HHMMSS`
 - `id` must pass alert ID validation
+
+Timestamp-mode note:
+
+- The API returns the snapshot file's `alerts` array only. It does not return the wrapper object stored on disk.
 
 Cache:
 

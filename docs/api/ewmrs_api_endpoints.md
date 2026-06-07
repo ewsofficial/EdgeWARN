@@ -96,7 +96,8 @@ Responses:
 
 - `200`: `string[]`
 - `400`: missing product parameter
-- `404`: invalid path-like product, unknown product, or missing product folder
+- `404`: invalid path-like product or unknown product
+- `200`: `[]` when the mapped product has no `index.json` yet
 - `500`: read/server failure
 
 ### GET /renders/download?product={product}&timestamp={YYYYMMDD-HHMMSS}
@@ -192,6 +193,7 @@ Responses:
 
 - `400`: invalid product parameter
 - `404`: unknown product
+- `200`: default tile-grid metadata with `timestamps: []` when the mapped product has no `index.json` yet
 - `500`: read/server failure
 
 ## NEXRAD Endpoints
