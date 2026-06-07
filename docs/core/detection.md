@@ -40,6 +40,8 @@ main(
 )
 ```
 
+`json_output` is accepted by the historical pipeline call path, but the detector currently writes its persisted runtime artifact to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json`. It does not use `json_output` to relocate the final saved file.
+
 ## Detection Modes
 
 - **Dual-frame mode**: runs detection on new scan, uses prior scan/context for tracking

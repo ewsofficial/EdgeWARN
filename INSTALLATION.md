@@ -37,6 +37,11 @@ Defaults:
 - Linux/macOS: `~/EdgeWARN_input`
 - Windows: `C:\EdgeWARN_input`
 
+Notes:
+
+- Python CLIs and the EWMRS API use the platform defaults above when no override is supplied.
+- The EdgeWARN API has a broader Linux fallback chain: `~/EdgeWARN_input`, then `/home/EdgeWARN_input`, then `/workspaces/EdgeWARN_input`, then `./EdgeWARN_input`.
+
 Overrides:
 
 - Python CLIs (`run.py`, `process_historical.py`): `--base_dir` or `--base-dir`
@@ -62,11 +67,15 @@ npm run debug:ewmrs
 CLI and environment overrides:
 
 - EdgeWARN API base directory: `--base-dir <path>` or `EDGEWARN_BASE_DIR`
+- EdgeWARN API port override: `PORT`
 - EdgeWARN API debug mode: `--debug_server`
 - EdgeWARN API rate limits: `--edgewarn-rate-limit-1s <count>`, `--edgewarn-rate-limit-1m <count>`
+- EdgeWARN API rate-limit env vars: `RATE_LIMIT_WINDOW_MS_SEC`, `RATE_LIMIT_MAX_SEC`, `RATE_LIMIT_WINDOW_MS_MIN`, `RATE_LIMIT_MAX_MIN`
 - EWMRS API base directory: `--base_dir <path>` or `BASE_DIR`
+- EWMRS API port override: `PORT`
 - EWMRS API debug mode: `--debug-server` or `--debug_server`
 - EWMRS API rate limits: `--ewmrs-rate-limit-1s <count>`, `--ewmrs-rate-limit-1m <count>`
+- EWMRS API rate-limit env vars: `EWMRS_RATE_LIMIT_MAX_SEC`, `EWMRS_RATE_LIMIT_MAX_MIN`
 - For both APIs, a rate-limit value of `0` disables that limiter window
 
 ## Running Real-Time Tandem Processing
@@ -113,7 +122,7 @@ Common optional flags:
 - `--end <ISO8601>` required
 - `--lat <LAT_MIN> <LAT_MAX>` default `20 55`
 - `--lon <LON_MIN> <LON_MAX>` default `-130 -60`
-- `--output <path>` default `stormcell_test.json`
+- `--output <path>` compatibility argument; currently does not redirect the final runtime stormcell output path
 - `--base_dir` / `--base-dir`
 - `--profile`
 - `--disable-ctam`
@@ -121,6 +130,10 @@ Common optional flags:
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
+
+Historical-processing note:
+
+- `process_historical.py` still writes its actual stormcell products to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json` through the normal detection and integration pipeline. `--output` is parsed and checked for existence logging, but is not currently used to relocate the final persisted runtime artifact.
 
 ## Maintaining NWS Zone Assets
 

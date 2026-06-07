@@ -4,9 +4,10 @@
 
 EdgeWARN-Core is the backend server for the EdgeWARN severe weather nowcasting system. It processes meteorological data from various sources (NOAA MRMS, ProbSevere v3, RAP, GOES-19 GLM, NWS Alerts, METAR) to provide real-time and historical weather analysis.
 
-The system consists of two main components:
+The system consists of three main runtime components:
 1.  **Python Core:** Handles data ingestion, processing, and analysis (real-time and historical). Includes the **Context-aware Threat Assessment Module (CTAM)** for specialized detection (MorphoWind, StormCast).
-2.  **Node.js API (v2):** A high-performance RESTful API server (Express.js) that serves processed data and features to frontends.
+2.  **EdgeWARN Node.js API (v2):** An Express.js service that serves processed EdgeWARN data and features.
+3.  **EWMRS Node.js API:** An Express.js service that serves rendered products, RAP arrays, NEXRAD intermediates, WPC surface analysis, and colormaps.
 
 ### Key Technologies
 *   **Python:** 3.13+ (Managed via Conda)
@@ -47,7 +48,7 @@ python src/run.py [options]
 **Options:**
 *   `--lat_limits <min> <max>`: Latitude limits
 *   `--lon_limits <min> <max>`: Longitude limits
-*   `--base_dir <path>` or `--base-dir <path>`: Output directory (Default: `~/EdgeWARN_input`)
+*   `--base_dir <path>` or `--base-dir <path>`: Runtime base directory override (default `~/EdgeWARN_input` on Linux/macOS, `C:\EdgeWARN_input` on Windows)
 *   `--profile`: Enable performance profiling
 *   `--disable-ctam`: Skip CTAM execution during integration
 *   `--disable-tracking`: Skip lineage detection and Kalman tracking
@@ -60,7 +61,7 @@ python src/run.py [options]
 *   `--drop-offset <value>`: Override dynamic reflectivity drop offset
 
 #### 2. Historical Analysis
-Process historical data (available back to Jan 1, 2021):
+Process historical data for whatever input files are available near the requested timestamps:
 ```bash
 python src/process_historical.py --start <ISO8601> --end <ISO8601> [options]
 ```
@@ -68,7 +69,7 @@ python src/process_historical.py --start <ISO8601> --end <ISO8601> [options]
 **Options:**
 *   `--lat <min> <max>`: Latitude limits
 *   `--lon <min> <max>`: Longitude limits
-*   `--output <path>`: Output JSON path
+*   `--output <path>`: Compatibility argument; final runtime stormcell artifacts still write under `<BASE_DIR>/data/stormcells/`
 *   `--base_dir <path>` or `--base-dir <path>`: Runtime base directory override
 *   `--profile`: Enable performance profiling
 *   `--disable-ctam`: Skip CTAM execution during integration
@@ -84,6 +85,7 @@ npm run api:edgewarn
 ```
 *   **Default Port:** 5000
 *   **Debug Port:** 3001 (via `npm run debug:edgewarn`)
+*   **Port Override:** `PORT`
 *   **Health Check:** `http://localhost:5000/health`
 *   **EWMRS API:** `npm run api:ewmrs`
 *   **EWMRS Debug API:** `npm run debug:ewmrs`

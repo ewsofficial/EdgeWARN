@@ -29,7 +29,7 @@ src/
 │   ├── api/                         # EdgeWARN HTTP API service
 │   ├── ingest/                      # Compatibility re-exports of shared ingest code
 │   ├── schedule/                    # Update-checking and scheduling helpers
-│   └── ui/                          # UI assets (placeholder package)
+│   └── ui/                          # Reserved path; currently only contains repo metadata
 └── EWMRS/
     ├── pipeline.py                  # Render pipeline orchestration
     ├── render/                      # Layer rendering and tile generation
@@ -54,7 +54,9 @@ graph TD
 
 ## Runtime Base Directory
 
-Generated products are written outside the repository under the configured base directory. The default is `~/EdgeWARN_input` on Linux/macOS and `C:\EdgeWARN_input` on Windows.
+Generated products are written under the configured base directory. For the Python pipelines and the EWMRS API, the default is `~/EdgeWARN_input` on Linux/macOS and `C:\EdgeWARN_input` on Windows.
+
+The EdgeWARN API has a broader Linux fallback chain when no override is provided: `~/EdgeWARN_input`, then `/home/EdgeWARN_input`, then `/workspaces/EdgeWARN_input`, then `./EdgeWARN_input`.
 
 The active runtime layout is:
 
@@ -103,7 +105,7 @@ The GOES render path uses a unified cycle that reuses shared channel reprojectio
 Current CLI coverage:
 
 - `run.py`: `--lat_limits`, `--lon_limits`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
-- `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--output`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--output` (compatibility arg; final runtime artifacts still land under `<BASE_DIR>/data/stormcells`), `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
 - `common/ingest/nws/zone_sync.py`: `--assets-dir`, `--zone-types`, `--timeout-seconds`, `--max-retries`, `--max-workers`, `--pause-seconds`, `--no-progress`, `--apply`, `--report-path`
 
 ## Additional References
