@@ -124,9 +124,9 @@ storm_entry["modules"]["MorphoWind"]
 
 | Risk Type | Threshold | Description |
 |-----------|-----------|-------------|
-| None | < 0.5 | No significant wind threat |
-| QLCS | ≥ 0.5 | Quasi-Linear Convective System (bow echo) |
-| Microburst | ≥ 0.5 | Downburst/microburst potential |
+| None | <= 0.5 | No significant wind threat |
+| QLCS | > 0.5 | Quasi-Linear Convective System (bow echo) |
+| Microburst | > 0.5 | Downburst/microburst potential |
 
 ## Key Features
 
@@ -139,7 +139,7 @@ storm_entry["modules"]["MorphoWind"]
 ## Requirements
 
 - Python 3.13+
-- NumPy, SciPy (for math.erf)
+- Python standard library `math` (`math.erf`)
 - Storm cell properties with morphology fields
 
 ## References

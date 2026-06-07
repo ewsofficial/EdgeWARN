@@ -10,7 +10,7 @@ For backing file schemas, see `docs/api/data_keys.md`.
 - Response format: JSON
 - Version behavior:
   - `2.x` when `NODE_ENV=production`
-  - `2.6.1` otherwise
+  - `2.6.2` otherwise
 
 ## Root Endpoints
 
@@ -23,7 +23,7 @@ Response:
 ```json
 {
   "message": "EdgeWARN Backend API",
-  "version": "2.6.1"
+  "version": "2.6.2"
 }
 ```
 
@@ -36,7 +36,7 @@ Response:
 ```json
 {
   "message": "EdgeWARN API v2",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "endpoints": {
     "features": {
       "cells": "/api/v2/features/cells[?id={int}]",
@@ -71,8 +71,9 @@ Responses:
 
 - `200` list mode: `number[]`
 - `200` id mode: JSON object from file (passthrough)
-- `400`: invalid `id` or invalid filename/access
-- `404`: cell file not found
+- `200` list mode fallback when `cell_index.json` is absent: `[]`
+- `400`: invalid `id`
+- `404`: cell file not found, or file access/path validation rejects the requested id
 - `500`: read/server failure
 
 Cache:
@@ -150,6 +151,7 @@ Responses:
   - `id`, `name`, `urn_oid`, `effective`, `expires`, `severity`, `geometry`
 - `200` timestamp mode (`edgewarn`): array of EdgeWARN alert summaries such as:
   - `id`, `severity`
+- `200` timestamp mode when the snapshot file is absent: `[]`
 - `200` id mode: returns the stored alert object, with an automatic unwrap to the nested `feature` payload when one is present. The unwrap applies uniformly to both `official` and `edgewarn` endpoints — official records always carry a `feature`, while edgewarn records typically do not and so return as-is.
 - `400/404/500` error envelope:
 
@@ -168,6 +170,10 @@ Validation:
 - `timestamp` and `id` cannot be sent together
 - `timestamp` must match `YYYYMMDD-HHMMSS`
 - `id` must pass alert ID validation
+
+Timestamp-mode note:
+
+- The API returns the snapshot file's `alerts` array only. It does not return the wrapper object stored on disk.
 
 Cache:
 
@@ -246,6 +252,15 @@ The EWMRS service also exposes RAP Uint16 array outputs from `<BASE_DIR>/gui/RAP
 - `GET /rap/data?layer={layer}&timestamp={YYYYMMDD-HHMMSS}`
 
 `/rap/data` returns raw little-endian `uint16` bytes with `65535` reserved as no-data. Clients should use the matching `/rap/metadata` response for shape, scale, units, and GRIB metadata. RAP layer names are the on-disk folders under `gui/RAP`, such as `Temperature_2m`, `CAPE_0-3km`, or `UWind_925mb`.
+
+## EWMRS WPC Surface Analysis
+
+The EWMRS service exposes WPC surface-analysis GeoJSON artifacts through:
+
+- `GET /wpc/fetch?type=sfc`
+- `GET /wpc/download?type=sfc&timestamp={YYYYMMDD-HHMMSS}`
+
+These routes read `<BASE_DIR>/wpc/surface_analysis/wpc_sfc_{timestamp}.geojson`. See `docs/api/ewmrs_api_endpoints.md` for full response semantics.
 
 ### GET /health
 

@@ -95,7 +95,9 @@ Behavior:
 Responses:
 
 - `200`: `string[]`
-- `400`: invalid product parameter
+- `400`: missing product parameter
+- `404`: invalid path-like product or unknown product
+- `200`: `[]` when the mapped product has no `index.json` yet
 - `500`: read/server failure
 
 ### GET /renders/download?product={product}&timestamp={YYYYMMDD-HHMMSS}
@@ -191,6 +193,7 @@ Responses:
 
 - `400`: invalid product parameter
 - `404`: unknown product
+- `200`: default tile-grid metadata with `timestamps: []` when the mapped product has no `index.json` yet
 - `500`: read/server failure
 
 ## NEXRAD Endpoints
@@ -441,6 +444,47 @@ Operational mapping writes paired sweeps into canonical elevation folders. Per-V
 
 For paired low sweeps, `DBZH` is persisted only from `contiguous_surveillance` and skipped for `contiguous_doppler`.
 
+## WPC Surface Analysis Endpoints
+
+WPC outputs are served from:
+
+```text
+<BASE_DIR>/wpc/surface_analysis/
+```
+
+The current API supports only the surface-analysis type `sfc`.
+
+### GET /wpc/fetch?type=sfc
+
+Lists available timestamped WPC surface-analysis GeoJSON artifacts. The route scans files matching `wpc_sfc_YYYYMMDD-HHMMSS.geojson`, ignores `latest.geojson`, and returns timestamps newest first.
+
+Responses:
+
+- `200`: `string[]`; returns `[]` when the WPC output directory does not exist
+- `400`: missing or unsupported `type`
+- `500`: directory read failure
+
+Example:
+
+```json
+["20260604-120000", "20260604-090000"]
+```
+
+### GET /wpc/download?type=sfc&timestamp={YYYYMMDD-HHMMSS}
+
+Returns the parsed GeoJSON payload from:
+
+```text
+<BASE_DIR>/wpc/surface_analysis/wpc_sfc_{timestamp}.geojson
+```
+
+Responses:
+
+- `200`: GeoJSON object
+- `400`: missing/unsupported `type`, missing timestamp, malformed timestamp, or resolved path escaping the WPC root
+- `404`: requested timestamp file not found
+- `500`: read/parse failure
+
 ## Colormap Endpoint
 
 ### GET /colormaps
@@ -450,6 +494,7 @@ Returns `src/EWMRS/colormaps.json`.
 Responses:
 
 - `200`: `array` of colormap source blocks
+- `404`: `colormaps.json` not found
 - `500`: read/server failure
 
 ## GOES Product Notes

@@ -272,13 +272,10 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
 
     grouped_volume = parse_grouped_ar2v_file_mmap(artifact_path)
     sweeps_by_group = {sweep.group_name: sweep for sweep in grouped_volume.sweeps}
-    requested_groups = [
-        str(group_name)
-        for group_name in getattr(artifact, "member_group_names", [])
-        if str(group_name) in sweeps_by_group
-    ]
-    if not requested_groups:
-        requested_groups = sorted(sweeps_by_group)
+    # Grouped elevation artifacts can be renumbered locally when written, so
+    # render every sweep present in the elevation file instead of trusting
+    # upstream per-volume sweep indexes.
+    requested_groups = sorted(sweeps_by_group)
 
     manifest_layers = []
     elevation_label = artifact.elevation
@@ -407,7 +404,7 @@ def serialize_nexrad_elevation_artifacts(
 ) -> Path:
     """Serialize render intermediates from grouped elevation artifacts.
 
-    Reads pre-written elevation NetCDF or AR2V files and produces GUI bin.gz outputs:
+    Reads grouped elevation AR2V files and produces GUI bin.gz outputs:
         gui/NEXRAD/<SITE>/<ELEVATION>/<SITE>_<VARIABLE>_<ELEVATION>_<TIMESTAMP>.bin.gz
     """
     render_dir = nexrad_render_manifest_dir(site)
@@ -416,78 +413,24 @@ def serialize_nexrad_elevation_artifacts(
     manifest_layers = []
     manifest_timestamp = scan_timestamp
     for artifact in elevation_artifacts:
-        elevation_label = artifact.elevation
         artifact_timestamp = artifact.elevation_timestamp or artifact.scan_timestamp or scan_timestamp
         if artifact_timestamp is None:
             continue
         manifest_timestamp = manifest_timestamp or artifact_timestamp
 
-        artifact_path = None
-        if artifact.netcdf_path:
-            artifact_path = Path(artifact.netcdf_path)
-        elif getattr(artifact, "ar2v_path", None):
-            artifact_path = Path(artifact.ar2v_path)
+        artifact_path = Path(artifact.ar2v_path) if getattr(artifact, "ar2v_path", None) else None
         if artifact_path is None or not artifact_path.exists():
             continue
 
-        if artifact_path.suffix == ".ar2v":
-            try:
-                direct_layers = _serialize_direct_grouped_ar2v_artifact(site, volume_id, artifact, artifact_timestamp)
-            except Exception:
-                direct_layers = None
-            if direct_layers is not None:
-                manifest_layers.extend(direct_layers)
-                continue
-
-        try:
-            datatree = _open_elevation_datatree(artifact_path)
-        except Exception:
+        if artifact_path.suffix != ".ar2v":
             continue
 
-        elevation_dir = nexrad_render_elevation_dir(site, elevation_label)
-        elevation_dir.mkdir(parents=True, exist_ok=True)
-
-        for group_name in _iter_artifact_group_names(artifact, datatree):
-            node = datatree[group_name]
-            dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
-            if "azimuth" not in dataset.coords or "range" not in dataset.coords:
-                continue
-
-            azimuths = np.asarray(dataset["azimuth"].values, dtype=np.float32)
-            ranges = np.asarray(dataset["range"].values, dtype=np.float32)
-
-            sweep_index = int(group_name.split("_")[-1]) if "_" in group_name else 0
-            for variable_name in dataset.data_vars:
-                data_array = dataset[variable_name]
-                if tuple(data_array.dims)[:2] != ("azimuth", "range"):
-                    continue
-
-                values = np.asarray(data_array.values, dtype=np.float32)
-                dense_data = values.T.astype(np.float16, copy=False)
-                dense_data, azimuths = _normalize_azimuth_axis(dense_data, azimuths)
-
-                layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
-                bin_path = nexrad_render_variable_bin_path(site, artifact_timestamp, elevation_label, variable_name)
-                if not bin_path.exists():
-                    _write_nexrad_variable_bin(bin_path, dense_data, azimuths, ranges)
-
-                manifest_layers.append(
-                    {
-                        "name": layer_name,
-                        "site": str(site).upper(),
-                        "volume_id": str(volume_id),
-                        "scan_timestamp": artifact_timestamp,
-                        "sweep_index": sweep_index,
-                        "sweep_group": group_name,
-                        "canonical_elevation": elevation_label,
-                        "bin_path": str(bin_path),
-                        "variable_name": variable_name,
-                        "colormap_key": NEXRAD_VARIABLE_COLORMAP_KEYS.get(variable_name),
-                        "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
-                        "azimuth_count": int(azimuths.shape[0]),
-                        "range_count": int(ranges.shape[0]),
-                    }
-                )
+        try:
+            direct_layers = _serialize_direct_grouped_ar2v_artifact(site, volume_id, artifact, artifact_timestamp)
+        except Exception:
+            direct_layers = None
+        if direct_layers is not None:
+            manifest_layers.extend(direct_layers)
 
     manifest_path = render_dir / f"{str(site).upper()}_{manifest_timestamp or 'unknown'}_{volume_id}.json"
     manifest_payload = {
@@ -499,62 +442,3 @@ def serialize_nexrad_elevation_artifacts(
     }
     manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
     return manifest_path
-
-
-def _iter_artifact_group_names(artifact, datatree) -> list[str]:
-    available = {str(group_name) for group_name in getattr(datatree, "groups", [])}
-    requested = [str(group_name) for group_name in getattr(artifact, "member_group_names", []) if str(group_name) in available]
-    if requested:
-        return sorted(requested)
-    return sorted(g for g in available if g.startswith("/sweep_"))
-
-
-def _open_elevation_datatree(path: Path):
-    """Open an elevation NetCDF or AR2V as a datatree-like structure."""
-    if path.suffix == ".ar2v":
-        raise RuntimeError("AR2V elevation artifacts must be decoded through the direct grouped parser path")
-
-    import netCDF4
-    import xarray as xr
-    import warnings
-
-    with netCDF4.Dataset(path) as handle:
-        group_names = [f"/{name}" for name in handle.groups.keys()]
-    if not group_names:
-        group_names = ["/sweep_00"]
-
-    class _Node:
-        def __init__(self, dataset):
-            self._ds = dataset
-
-        @property
-        def ds(self):
-            return self._ds
-
-        def to_dataset(self):
-            return self._ds
-
-    class _DataTree:
-        def __init__(self, dataset_path: Path, groups: list[str]):
-            self._dataset_path = dataset_path
-            self.groups = groups
-            self._cache: dict[str, _Node] = {}
-
-        def __getitem__(self, key):
-            normalized = str(key).lstrip("/")
-            cache_key = normalized or "/"
-            cached = self._cache.get(cache_key)
-            if cached is not None:
-                return cached
-
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                if normalized:
-                    dataset = xr.open_dataset(self._dataset_path, group=normalized)
-                else:
-                    dataset = xr.open_dataset(self._dataset_path)
-            node = _Node(dataset)
-            self._cache[cache_key] = node
-            return node
-
-    return _DataTree(path, group_names)
