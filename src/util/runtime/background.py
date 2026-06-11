@@ -2,6 +2,7 @@ import asyncio
 import ctypes
 from datetime import datetime, timezone
 import queue
+import signal
 import sys
 import traceback
 
@@ -33,6 +34,32 @@ def _set_process_name(name: str) -> None:
         libc.prctl(pr_set_name, ctypes.c_char_p(encoded), 0, 0, 0)
     except Exception:
         pass
+
+
+def _set_parent_death_signal(sig: int = signal.SIGTERM) -> None:
+    try:
+        libc = ctypes.CDLL(None)
+        pr_set_pdeathsig = 1
+        libc.prctl(pr_set_pdeathsig, sig, 0, 0, 0)
+    except Exception:
+        pass
+
+
+def _install_exit_signal_handlers() -> None:
+    def _raise_system_exit(signum, _frame):
+        raise SystemExit(signum)
+
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(signum, _raise_system_exit)
+        except Exception:
+            pass
+
+
+def _configure_process_runtime(name: str) -> None:
+    _set_process_name(name)
+    _set_parent_death_signal()
+    _install_exit_signal_handlers()
 
 
 def goes_loop(activity_event, render_active_event, pause_during_render=False, poll_seconds=60):
@@ -113,29 +140,34 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
 
 
 def nexrad_ingest_loop(log_queue, base_dir):
-    _set_process_name("NEXRAD-Ingest")
+    from common.ingest.nexrad.worker_pool import shutdown_nexrad_pool
+
+    _configure_process_runtime("NEXRAD-Ingest")
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
-    while True:
-        try:
-            queue_log(log_queue, "INFO: Starting NEXRAD ingest pipeline")
-            run_realtime_ingestion_pipeline(base_dir=base_dir)
-            queue_log(log_queue, "WARNING: NEXRAD ingest pipeline exited; restarting in 5s")
-        except KeyboardInterrupt:
-            return
-        except Exception as exc:
-            queue_log(log_queue, f"ERROR: NEXRAD ingest pipeline crashed: {exc}")
-            for line in traceback.format_exc().splitlines():
-                queue_log(log_queue, f"ERROR: {line}")
+    try:
+        while True:
+            try:
+                queue_log(log_queue, "INFO: Starting NEXRAD ingest pipeline")
+                run_realtime_ingestion_pipeline(base_dir=base_dir)
+                queue_log(log_queue, "WARNING: NEXRAD ingest pipeline exited; restarting in 5s")
+            except (KeyboardInterrupt, SystemExit):
+                return
+            except Exception as exc:
+                queue_log(log_queue, f"ERROR: NEXRAD ingest pipeline crashed: {exc}")
+                for line in traceback.format_exc().splitlines():
+                    queue_log(log_queue, f"ERROR: {line}")
 
-        sleep_for(5, interval=0.2)
+            sleep_for(5, interval=0.2)
+    finally:
+        shutdown_nexrad_pool(wait=False)
 
 
 def nexrad_render_loop(base_dir):
-    _set_process_name("NEXRAD-Render")
+    _configure_process_runtime("NEXRAD-Render")
     try:
         _run_nexrad_render_loop(base_dir=base_dir)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         return
 
 
