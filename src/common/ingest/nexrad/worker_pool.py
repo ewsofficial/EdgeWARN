@@ -19,6 +19,7 @@ from __future__ import annotations
 import ctypes
 import multiprocessing
 import os
+import signal
 from concurrent.futures import ProcessPoolExecutor, Future
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,12 @@ def _initialize_worker_name() -> None:
         os_name = f"NXParse-{process.pid}"
         encoded = os_name.encode("utf-8")[:15]
         libc.prctl(pr_set_name, ctypes.c_char_p(encoded), 0, 0, 0)
+    except Exception:
+        pass
+    try:
+        libc = ctypes.CDLL(None)
+        pr_set_pdeathsig = 1
+        libc.prctl(pr_set_pdeathsig, signal.SIGTERM, 0, 0, 0)
     except Exception:
         pass
 
