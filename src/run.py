@@ -112,10 +112,20 @@ def main():
         args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
         daemon=True,
     ) if EWMRS_ENABLED and GOES_ENABLED else None
-    nexrad_render_proc = multiprocessing.Process(target=nexrad_render_loop, args=(args.base_dir,), daemon=True) if EWMRS_ENABLED else None
+    nexrad_render_proc = multiprocessing.Process(
+        target=nexrad_render_loop,
+        args=(args.base_dir,),
+        name="NEXRAD-Render",
+        daemon=True,
+    ) if EWMRS_ENABLED else None
     # NEXRAD ingest uses a ProcessPoolExecutor for parser workers, so this
     # process must not be daemonic or child worker creation will fail.
-    nexrad_ingest_proc = multiprocessing.Process(target=nexrad_ingest_loop, args=(nexrad_log_queue, args.base_dir), daemon=False) if EWMRS_ENABLED else None
+    nexrad_ingest_proc = multiprocessing.Process(
+        target=nexrad_ingest_loop,
+        args=(nexrad_log_queue, args.base_dir),
+        name="NEXRAD-Ingest",
+        daemon=False,
+    ) if EWMRS_ENABLED else None
     started_processes = StartedProcessRegistry()
     started_processes.start(metar_proc, "METAR")
     started_processes.start(nws_proc, "NWS")

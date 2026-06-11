@@ -1,4 +1,5 @@
 import asyncio
+import ctypes
 from datetime import datetime, timezone
 import queue
 import sys
@@ -15,6 +16,23 @@ from util.io import QueueWriter
 
 from .logging import queue_log
 from .timing import sleep_for, sleep_until_boundary
+
+
+def _set_process_name(name: str) -> None:
+    try:
+        import multiprocessing
+
+        multiprocessing.current_process().name = name
+    except Exception:
+        pass
+
+    try:
+        libc = ctypes.CDLL(None)
+        pr_set_name = 15
+        encoded = name.encode("utf-8")[:15]
+        libc.prctl(pr_set_name, ctypes.c_char_p(encoded), 0, 0, 0)
+    except Exception:
+        pass
 
 
 def goes_loop(activity_event, render_active_event, pause_during_render=False, poll_seconds=60):
@@ -95,6 +113,7 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
 
 
 def nexrad_ingest_loop(log_queue, base_dir):
+    _set_process_name("NEXRAD-Ingest")
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
     while True:
@@ -113,6 +132,7 @@ def nexrad_ingest_loop(log_queue, base_dir):
 
 
 def nexrad_render_loop(base_dir):
+    _set_process_name("NEXRAD-Render")
     try:
         _run_nexrad_render_loop(base_dir=base_dir)
     except KeyboardInterrupt:

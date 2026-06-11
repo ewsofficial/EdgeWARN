@@ -16,6 +16,8 @@ Usage:
 
 from __future__ import annotations
 
+import ctypes
+import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor, Future
 from pathlib import Path
@@ -27,6 +29,20 @@ from common.ingest.nexrad.models import ElevationArtifact, WorkerParseResult
 _POOL: ProcessPoolExecutor | None = None
 _POOL_SIZE: int = 0
 _VOLUME_COUNT: int = 0
+
+
+def _initialize_worker_name() -> None:
+    process = multiprocessing.current_process()
+    name = f"NEXRAD-Parser-{process.pid}"
+    process.name = name
+    try:
+        libc = ctypes.CDLL(None)
+        pr_set_name = 15
+        os_name = f"NXParse-{process.pid}"
+        encoded = os_name.encode("utf-8")[:15]
+        libc.prctl(pr_set_name, ctypes.c_char_p(encoded), 0, 0, 0)
+    except Exception:
+        pass
 
 
 def _worker_parse(
@@ -116,6 +132,7 @@ class NexradWorkerPool:
     def __init__(self, max_workers: int = 4):
         self._executor = ProcessPoolExecutor(
             max_workers=max_workers,
+            initializer=_initialize_worker_name,
         )
         self._max_workers = max_workers
 
