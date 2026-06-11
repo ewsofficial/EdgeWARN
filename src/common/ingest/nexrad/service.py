@@ -71,7 +71,7 @@ def _utc_now_timestamp() -> str:
 
 
 def _nexrad_worker_timeout_seconds() -> float:
-    return max(1.0, float(os.environ.get("NEXRAD_WORKER_TIMEOUT_SECONDS", "60")))
+    return max(1.0, float(os.environ.get("NEXRAD_WORKER_TIMEOUT_SECONDS", "40")))
 
 def _artifact_group_key(artifact: ElevationArtifact) -> str:
     return f"{artifact.elevation}:{','.join(artifact.member_group_names)}"
