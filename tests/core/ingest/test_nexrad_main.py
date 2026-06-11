@@ -160,7 +160,7 @@ def test_run_worker_parse_uses_pool_and_updates_seen_keys(tmp_path):
         child_rss_kb=1234.0,
     )
 
-    mock_future = type("Future", (), {"result": lambda self: payload})()
+    mock_future = type("Future", (), {"result": lambda self, timeout=None: payload})()
 
     with patch("common.ingest.nexrad.service.get_nexrad_pool") as pool_mock:
         pool_mock.return_value.submit.return_value = mock_future
