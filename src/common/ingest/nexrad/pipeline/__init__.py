@@ -42,7 +42,6 @@ class NexradRealtimeIngestionPipeline:
         max_candidate_volumes_per_site=3,
         scan_interval_seconds=20,
         completion_interval_seconds=10,
-        heartbeat_callback=None,
         sleeper=asyncio.sleep,
         monotonic=time.monotonic,
     ):
@@ -51,7 +50,6 @@ class NexradRealtimeIngestionPipeline:
         self.max_site_tasks = max_site_tasks
         self.scan_interval_seconds = max(1.0, float(scan_interval_seconds))
         self.completion_interval_seconds = max(1.0, float(completion_interval_seconds))
-        self.heartbeat_callback = heartbeat_callback
         self.sleeper = sleeper
         self.monotonic = monotonic
         self._ingest_service = NexradIngestService(max_site_tasks=max_site_tasks)
@@ -68,14 +66,6 @@ class NexradRealtimeIngestionPipeline:
         )
         self.pending_tracker = NexradPendingVolumeTracker()
         self.last_seen_by_site: dict[str, str] = {}
-
-    def _heartbeat(self):
-        if self.heartbeat_callback is None:
-            return
-        try:
-            self.heartbeat_callback()
-        except Exception as exc:
-            io_manager.write_warning(f"[RUN] heartbeat callback failed: {exc}")
 
     async def scan_for_new_volumes_once(self, *, s3_client=None, weather_session=None):
         if self.base_dir:
@@ -208,11 +198,9 @@ class NexradRealtimeIngestionPipeline:
         next_scan_at = self.monotonic()
         next_completion_at = self.monotonic()
         while True:
-            self._heartbeat()
             now = self.monotonic()
             if now >= next_scan_at:
                 try:
-                    self._heartbeat()
                     await self.scan_for_new_volumes_once(
                         s3_client=s3_client,
                         weather_session=weather_session,
@@ -221,12 +209,9 @@ class NexradRealtimeIngestionPipeline:
                     raise
                 except Exception as exc:
                     io_manager.write_warning(f"[RUN] scan cycle failed: {exc}")
-                finally:
-                    self._heartbeat()
                 next_scan_at = now + self.scan_interval_seconds
             if now >= next_completion_at:
                 try:
-                    self._heartbeat()
                     await self.check_pending_once(
                         s3_client=s3_client,
                         weather_session=weather_session,
@@ -235,11 +220,8 @@ class NexradRealtimeIngestionPipeline:
                     raise
                 except Exception as exc:
                     io_manager.write_warning(f"[RUN] pending cycle failed: {exc}")
-                finally:
-                    self._heartbeat()
                 next_completion_at = now + self.completion_interval_seconds
             delay = max(0.0, min(next_scan_at, next_completion_at) - self.monotonic())
-            self._heartbeat()
             await self.sleeper(delay)
 
 
