@@ -1,7 +1,11 @@
 import asyncio
 from datetime import datetime, timezone
+import multiprocessing
+import os
 import queue
 import sys
+import time
+import traceback
 
 import common.ingest.metar as metar_ingest
 import common.ingest.nws.main as nws_ingest
@@ -96,10 +100,104 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
 def nexrad_ingest_loop(log_queue, base_dir):
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
+    stall_timeout_seconds = _nexrad_pipeline_stall_timeout_seconds()
+    restart_delay_seconds = _NEXRAD_PIPELINE_RESTART_DELAY_SECONDS
+    heartbeat_poll_seconds = _NEXRAD_PIPELINE_HEARTBEAT_POLL_SECONDS
+
+    while True:
+        heartbeat_queue = multiprocessing.Queue()
+        process = multiprocessing.Process(
+            target=_nexrad_ingest_pipeline_entry,
+            args=(log_queue, heartbeat_queue, base_dir),
+            daemon=False,
+        )
+        process.start()
+
+        try:
+            queue_log(log_queue, f"INFO: Starting NEXRAD ingest pipeline supervisor (pid={process.pid})")
+            stalled = _supervise_nexrad_pipeline_process(
+                log_queue,
+                process,
+                heartbeat_queue,
+                stall_timeout_seconds=stall_timeout_seconds,
+                heartbeat_poll_seconds=heartbeat_poll_seconds,
+            )
+            if not stalled and process.exitcode == 0:
+                queue_log(log_queue, "WARNING: NEXRAD ingest pipeline exited cleanly; restarting")
+            elif not stalled and process.exitcode is not None:
+                queue_log(log_queue, f"ERROR: NEXRAD ingest pipeline exited with code {process.exitcode}; restarting")
+        except KeyboardInterrupt:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+            return
+        finally:
+            try:
+                heartbeat_queue.close()
+            except Exception:
+                pass
+
+        sleep_for(restart_delay_seconds, interval=0.2)
+
+
+_NEXRAD_PIPELINE_STALL_TIMEOUT_SECONDS = 60.0
+_NEXRAD_PIPELINE_RESTART_DELAY_SECONDS = 5.0
+_NEXRAD_PIPELINE_HEARTBEAT_POLL_SECONDS = 1.0
+
+
+def _nexrad_pipeline_stall_timeout_seconds() -> float:
+    return max(30.0, float(os.environ.get("NEXRAD_PIPELINE_STALL_TIMEOUT_SECONDS", _NEXRAD_PIPELINE_STALL_TIMEOUT_SECONDS)))
+
+
+def _supervise_nexrad_pipeline_process(
+    log_queue,
+    process,
+    heartbeat_queue,
+    *,
+    stall_timeout_seconds: float,
+    heartbeat_poll_seconds: float,
+) -> bool:
+    last_heartbeat_monotonic = time.monotonic()
+    while process.is_alive():
+        try:
+            heartbeat_queue.get(timeout=heartbeat_poll_seconds)
+            last_heartbeat_monotonic = time.monotonic()
+        except queue.Empty:
+            if (time.monotonic() - last_heartbeat_monotonic) >= stall_timeout_seconds:
+                queue_log(
+                    log_queue,
+                    "ERROR: NEXRAD ingest pipeline stalled; terminating and restarting child process",
+                )
+                process.terminate()
+                process.join(timeout=5)
+                if process.is_alive():
+                    process.kill()
+                    process.join(timeout=1)
+                return True
+
+    return False
+
+
+def _nexrad_heartbeat_writer(heartbeat_queue):
+    heartbeat_queue.put_nowait(time.monotonic())
+
+
+def _nexrad_ingest_pipeline_entry(log_queue, heartbeat_queue, base_dir):
+    sys.stdout = QueueWriter(log_queue)
+    sys.stderr = QueueWriter(log_queue)
     try:
-        run_realtime_ingestion_pipeline(base_dir=base_dir)
+        queue_log(log_queue, "INFO: Starting NEXRAD ingest pipeline")
+        run_realtime_ingestion_pipeline(
+            base_dir=base_dir,
+            heartbeat_callback=lambda: _nexrad_heartbeat_writer(heartbeat_queue),
+        )
     except KeyboardInterrupt:
         return
+    except Exception as exc:
+        queue_log(log_queue, f"ERROR: NEXRAD ingest pipeline crashed: {exc}")
+        for line in traceback.format_exc().splitlines():
+            queue_log(log_queue, f"ERROR: {line}")
+        raise
 
 
 def nexrad_render_loop(base_dir):

@@ -1,7 +1,10 @@
 import asyncio
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from concurrent.futures.process import BrokenProcessPool
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -39,7 +42,7 @@ from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
 from common.ingest.nexrad.parser import normalize_chunk_payload
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
-from common.ingest.nexrad.worker_pool import get_nexrad_pool, record_volume_and_maybe_recycle
+from common.ingest.nexrad.worker_pool import get_nexrad_pool, record_volume_and_maybe_recycle, shutdown_nexrad_pool
 from common.ingest.nexrad.writer import (
     NexradLocalChunkStore,
     NexradElevationStore,
@@ -65,6 +68,10 @@ def _write_text_if_changed(path: Path, content: str) -> None:
 
 def _utc_now_timestamp() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _nexrad_worker_timeout_seconds() -> float:
+    return max(1.0, float(os.environ.get("NEXRAD_WORKER_TIMEOUT_SECONDS", "180")))
 
 def _artifact_group_key(artifact: ElevationArtifact) -> str:
     return f"{artifact.elevation}:{','.join(artifact.member_group_names)}"
@@ -584,7 +591,7 @@ class NexradIngestService:
             )
             queued_elapsed_ms = format_perf_ms(submit_started_at)
             future_wait_started_at = time.perf_counter()
-            payload = future.result()
+            payload = future.result(timeout=_nexrad_worker_timeout_seconds())
             execute_elapsed_ms = format_perf_ms(future_wait_started_at)
             result = WorkerParseResult(
                 visible_sweeps=payload.visible_sweeps,
@@ -636,6 +643,21 @@ class NexradIngestService:
                     io_manager.write_perf(
                         f"[VOL {site}/{volume_id}] first_useful_export: elevation_ts={first_elevation_timestamp}"
                     )
+        except FuturesTimeoutError:
+            future.cancel()
+            shutdown_nexrad_pool(wait=False)
+            message = (
+                f"worker parse timed out after {_nexrad_worker_timeout_seconds():.0f}s; "
+                "recycling NEXRAD worker pool"
+            )
+            state.parse_errors.append(message)
+            io_manager.write_warning(f"[VOL {site}/{volume_id}] {message}")
+        except BrokenProcessPool as exc:
+            shutdown_nexrad_pool(wait=False)
+            state.parse_errors.append(str(exc))
+            io_manager.write_warning(
+                f"[VOL {site}/{volume_id}] worker pool broke; recycled pool: {exc}"
+            )
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or "").strip()
             stdout = (exc.stdout or "").strip()
@@ -645,6 +667,8 @@ class NexradIngestService:
                 f"[VOL {site}/{volume_id}] worker parse failed: {message}"
             )
         except Exception as exc:
+            if "terminated abruptly" in str(exc).lower():
+                shutdown_nexrad_pool(wait=False)
             state.parse_errors.append(str(exc))
             io_manager.write_warning(
                 f"[VOL {site}/{volume_id}] worker parse failed: {exc}"

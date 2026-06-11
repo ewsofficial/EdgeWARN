@@ -1,5 +1,7 @@
 import json
 import bz2
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from concurrent.futures.process import BrokenProcessPool
 import struct
 from pathlib import Path
 from types import SimpleNamespace
@@ -393,7 +395,7 @@ def test_run_worker_parse_advances_latest_elevation_timestamp(monkeypatch, tmp_p
     ])
 
     class _FakeFuture:
-        def result(self):
+        def result(self, timeout=None):
             return next(payloads)
 
     class _FakePool:
@@ -441,7 +443,7 @@ def test_run_worker_parse_resets_offsets_after_trim(monkeypatch, tmp_path):
     runtime_path.write_bytes(b"partial-runtime")
 
     class _FakeFuture:
-        def result(self):
+        def result(self, timeout=None):
             return SimpleNamespace(
                 visible_sweeps=1,
                 saved_sweep_count=1,
@@ -521,6 +523,84 @@ def test_run_worker_parse_submits_runtime_file_without_offset_bookkeeping(monkey
 
     assert "volume_path" in captured
     assert "trim_buffer" in captured
+
+
+def test_run_worker_parse_recycles_pool_after_timeout(monkeypatch, tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    service = NexradIngestService()
+    runtime_path = runtime_scan_path("KTLH", "999")
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_bytes(b"partial")
+    recycle_calls = []
+
+    class _FakeFuture:
+        def cancel(self):
+            recycle_calls.append("cancel")
+
+        def result(self, timeout=None):
+            raise FuturesTimeoutError()
+
+    class _FakePool:
+        def submit(self, **_kwargs):
+            return _FakeFuture()
+
+    monkeypatch.setenv("NEXRAD_WORKER_TIMEOUT_SECONDS", "1")
+    monkeypatch.setattr(nexrad_service_module, "get_nexrad_pool", lambda: _FakePool())
+    monkeypatch.setattr(nexrad_service_module, "shutdown_nexrad_pool", lambda wait=False: recycle_calls.append(("shutdown", wait)))
+
+    state = SimpleNamespace(file_path=str(runtime_path), parse_errors=[], bytes_written=len(b"partial"))
+
+    result = service._run_worker_parse(
+        state,
+        "KTLH",
+        "999",
+        "20260507-150000",
+        {},
+        None,
+        elevation_timestamps_by_id={},
+        base_dir=tmp_path,
+    )
+
+    assert result is None
+    assert recycle_calls == ["cancel", ("shutdown", False)]
+    assert state.parse_errors == ["worker parse timed out after 1s; recycling NEXRAD worker pool"]
+
+
+def test_run_worker_parse_recycles_pool_after_broken_worker(monkeypatch, tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    service = NexradIngestService()
+    runtime_path = runtime_scan_path("KTLH", "999")
+    runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime_path.write_bytes(b"partial")
+    recycle_calls = []
+
+    class _FakeFuture:
+        def result(self, timeout=None):
+            raise BrokenProcessPool("worker terminated abruptly")
+
+    class _FakePool:
+        def submit(self, **_kwargs):
+            return _FakeFuture()
+
+    monkeypatch.setattr(nexrad_service_module, "get_nexrad_pool", lambda: _FakePool())
+    monkeypatch.setattr(nexrad_service_module, "shutdown_nexrad_pool", lambda wait=False: recycle_calls.append(wait))
+
+    state = SimpleNamespace(file_path=str(runtime_path), parse_errors=[], bytes_written=len(b"partial"))
+
+    result = service._run_worker_parse(
+        state,
+        "KTLH",
+        "999",
+        "20260507-150000",
+        {},
+        None,
+        elevation_timestamps_by_id={},
+        base_dir=tmp_path,
+    )
+
+    assert result is None
+    assert recycle_calls == [False]
+    assert state.parse_errors == ["worker terminated abruptly"]
 
 
 def test_stream_ingest_sync_resets_volume_state_after_boundary(tmp_path, monkeypatch):
