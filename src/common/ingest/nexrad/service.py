@@ -46,6 +46,7 @@ from common.ingest.nexrad.worker_pool import get_nexrad_pool, record_volume_and_
 from common.ingest.nexrad.writer import (
     NexradLocalChunkStore,
     NexradElevationStore,
+    prune_runtime_volumes,
     prune_stale_site_manifests,
     runtime_scan_path,
     local_scan_elevations_complete,
@@ -341,6 +342,7 @@ class NexradIngestService:
         sorted_chunks = sorted(chunks, key=lambda c: (c.chunk_number, c.chunk_type))
 
         runtime_path = runtime_scan_path(site_upper, volume_id)
+        prune_runtime_volumes(site_upper, volume_id)
         persisted_state = self._load_runtime_state(site_upper, volume_id, runtime_path)
         downloaded_chunk_keys = set(persisted_state.get("downloaded_chunk_keys", []))
         download_started_at = persisted_state.get("download_started_at") or _utc_now_timestamp()
@@ -695,6 +697,7 @@ class NexradIngestService:
         sorted_chunks = sorted(chunks, key=lambda c: (c.chunk_number, c.chunk_type))
 
         runtime_path = runtime_scan_path(site_upper, volume_id)
+        prune_runtime_volumes(site_upper, volume_id)
         runtime_path.parent.mkdir(parents=True, exist_ok=True)
         persisted_state = self._load_runtime_state(site_upper, volume_id, runtime_path)
         downloaded_chunk_keys = set(persisted_state.get("downloaded_chunk_keys", []))

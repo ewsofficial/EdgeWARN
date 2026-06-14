@@ -16,6 +16,7 @@ from common.ingest.nexrad.writer import (
     local_elevation_complete,
     local_scan_elevations_complete,
     prune_elevation_artifacts,
+    prune_runtime_volumes,
     site_manifest_path,
     write_elevation_artifacts,
     write_site_manifest,
@@ -92,6 +93,29 @@ def test_runtime_scan_path_helper(tmp_path):
     assert p.suffix == ".ar2v"
     assert "KTLH" in str(p)
     assert "VOL456" in str(p)
+
+
+def test_prune_runtime_volumes_keeps_only_requested_volume(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    runtime = runtime_dir("KTLH")
+    runtime.mkdir(parents=True, exist_ok=True)
+
+    keep_ar2v = runtime / "KTLH_VOL456.ar2v"
+    keep_json = runtime / "KTLH_VOL456.json"
+    drop_ar2v = runtime / "KTLH_VOL123.ar2v"
+    drop_json = runtime / "KTLH_VOL123.json"
+    drop_part = runtime / "KTLH_VOL123.ar2v.part"
+
+    for path in (keep_ar2v, keep_json, drop_ar2v, drop_json, drop_part):
+        path.write_text("x", encoding="utf-8")
+
+    prune_runtime_volumes("KTLH", "VOL456")
+
+    assert keep_ar2v.exists()
+    assert keep_json.exists()
+    assert not drop_ar2v.exists()
+    assert not drop_json.exists()
+    assert not drop_part.exists()
 
 
 def test_local_elevation_complete_false_when_missing(tmp_path):
