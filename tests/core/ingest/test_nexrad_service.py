@@ -17,6 +17,7 @@ from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.writer import (
     elevation_manifest_path,
     elevation_netcdf_path,
+    runtime_dir,
     runtime_scan_path,
     site_manifest_path,
 )
@@ -235,6 +236,44 @@ async def test_stream_ingest_async_clears_runtime_state_after_completion(tmp_pat
     assert result.chunks_downloaded == 1
     assert not runtime_path.exists()
     assert not state_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_stream_ingest_async_prunes_previous_runtime_volume_when_new_one_starts(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+
+    async def _async_chunk_fetcher(chunk, **_kwargs):
+        return f"chunk-{chunk.chunk_number}".encode("ascii")
+
+    service = NexradIngestService(async_chunk_fetcher=_async_chunk_fetcher)
+    monkeypatch.setattr(
+        nexrad_service_module,
+        "_required_elevation_paths_complete",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(
+        service,
+        "_run_worker_parse",
+        lambda state, site, volume_id, scan_timestamp, seen_elevation_keys, first_elevation_timestamp, **_kwargs: first_elevation_timestamp,
+    )
+
+    prior_runtime_path = runtime_scan_path("KTLH", "998")
+    prior_state_path = runtime_dir("KTLH") / "KTLH_998.json"
+    prior_runtime_path.parent.mkdir(parents=True, exist_ok=True)
+    prior_runtime_path.write_bytes(b"complete-volume")
+    prior_state_path.write_text("{}", encoding="utf-8")
+
+    await service._stream_ingest_volume_async(
+        "KTLH",
+        "999",
+        _chunks(last_number=1),
+        s3_client=object(),
+        base_dir=tmp_path,
+    )
+
+    assert not prior_runtime_path.exists()
+    assert not prior_state_path.exists()
+    assert runtime_scan_path("KTLH", "999").exists()
 
 
 def _write_completion_sidecars(site, volume_id, scan_timestamp):

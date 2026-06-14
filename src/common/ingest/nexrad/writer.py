@@ -121,6 +121,20 @@ class NexradElevationStore:
         runtime.mkdir(parents=True, exist_ok=True)
         return runtime / f"{str(site).upper()}_{volume_id}.ar2v"
 
+    def prune_runtime_volumes(self, site: str, keep_volume_id: str) -> None:
+        runtime = self.runtime_dir(site)
+        if not runtime.exists():
+            return
+
+        keep_prefix = f"{str(site).upper()}_{keep_volume_id}"
+        for child in runtime.iterdir():
+            if child.name.startswith(keep_prefix):
+                continue
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+                continue
+            child.unlink(missing_ok=True)
+
     def site_manifest_path(self, site: str) -> Path:
         return fs.NEXRAD_LEVEL2_DIR / str(site).upper() / "manifest.json"
 
@@ -176,6 +190,10 @@ def runtime_dir(site: str) -> Path:
 
 def runtime_scan_path(site: str, volume_id: str) -> Path:
     return _elevation_store().runtime_scan_path(site, volume_id)
+
+
+def prune_runtime_volumes(site: str, keep_volume_id: str):
+    _elevation_store().prune_runtime_volumes(site, keep_volume_id)
 
 
 def site_manifest_path(site: str) -> Path:
