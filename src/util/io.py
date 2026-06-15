@@ -64,6 +64,7 @@ class IOManager:
         parser.add_argument("--disable-nws", action="store_true", help="Disable background NWS alert ingestion")
         parser.add_argument("--disable-metar", action="store_true", help="Disable background METAR ingestion")
         parser.add_argument("--disable-goes", action="store_true", help="Disable GOES ingest, GLM ingest, and GOES rendering components")
+        parser.add_argument("--disable-polygon-expansion", action="store_true", help="Use original ProbSevere polygons directly and skip radar gate mapping plus watershed expansion")
         parser.add_argument("--refl-threshold", type=float, default=37.5, help="Override the baseline reflectivity threshold used by storm cell detection (default: 37.5)")
         parser.add_argument("--min-seed-percentage", type=float, default=0.001, help="Override the minimum polygon seed coverage ratio used during gate expansion (default: 0.001)")
         parser.add_argument("--drop-offset", type=float, default=10.0, help="Override the dynamic reflectivity drop offset used during gate expansion (default: 10.0)")

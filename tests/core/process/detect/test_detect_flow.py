@@ -126,3 +126,33 @@ def test_detect_return_datasets(mock_dependencies):
 
     assert entries == []
     assert dataset_context == (radar_ds_mock, ps_ds_mock, pt_ds_mock)
+
+
+def test_detect_cells_bypasses_gate_mapper_when_polygon_expansion_disabled(mock_dependencies):
+    handler, mapper, saver, io_manager = mock_dependencies
+    ps_ds_mock = {"features": [{"properties": {"ID": 1}, "geometry": {"type": "Polygon", "coordinates": [[[-97.0, 35.0], [-96.5, 35.0], [-96.5, 35.5], [-97.0, 35.5], [-97.0, 35.0]]]}}]}
+    handler.load_probsevere.return_value = ps_ds_mock
+
+    with patch("EdgeWARN.process.detect.detect.DetectionDataHandler", return_value=handler), \
+         patch("EdgeWARN.process.detect.detect.GateMapper", return_value=mapper), \
+         patch("EdgeWARN.process.detect.detect.CellDataSaver", return_value=saver) as saver_cls:
+
+        entries = detect_cells(
+            "radar.grib2", "ps.json", "pt.grib2", io_manager,
+            30, 40, -100, -90, disable_polygon_expansion=True
+        )
+
+    assert entries == []
+    mapper.map_gates_to_polygons.assert_not_called()
+    mapper.expand_gates.assert_not_called()
+    mapper.draw_bbox.assert_not_called()
+    saver_cls.assert_called_once_with(
+        None,
+        handler.load_subset.return_value,
+        None,
+        None,
+        ps_ds_mock,
+        handler.load_preciptype.return_value,
+        use_probsevere_geometry=True,
+    )
+    saver.create_entry.assert_called_once()
