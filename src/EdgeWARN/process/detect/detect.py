@@ -20,6 +20,7 @@ def detect_cells(
     *,
     return_probsevere=False,
     return_datasets=False,
+    disable_polygon_expansion=False,
     refl_threshold=37.5,
     min_seed_percentage=0.001,
     drop_offset=10.0,
@@ -70,6 +71,33 @@ def detect_cells(
 
     if preciptype_ds is None:
          io_manager.write_warning("Failed to load precipitation type data, stratiform discrimination will be limited")
+
+    if disable_polygon_expansion:
+        io_manager.write_info("Polygon expansion disabled: using original ProbSevere geometries for cell footprints")
+        saver = CellDataSaver(
+            None,
+            radar_ds,
+            None,
+            None,
+            ps_ds,
+            preciptype_ds,
+            use_probsevere_geometry=True,
+        )
+
+        perf_tracker.start("Detection - Create Entry")
+        entries = saver.create_entry()
+        perf_tracker.stop("Detection - Create Entry")
+
+        if return_datasets:
+            dataset_context = (radar_ds, ps_ds, preciptype_ds)
+            if return_probsevere:
+                return entries, ps_ds, dataset_context
+            return entries, dataset_context
+
+        if return_probsevere:
+            return entries, ps_ds
+
+        return entries
 
     mapper = GateMapper(
         radar_ds,

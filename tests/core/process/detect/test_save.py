@@ -212,3 +212,69 @@ def test_centroid_is_rounded_to_three_decimals():
 
     assert entry['centroid'][0] == round(entry['centroid'][0], 3)
     assert entry['centroid'][1] == round(entry['centroid'][1], 3)
+
+
+def test_create_entry_uses_original_probsevere_geometry_when_requested():
+    lats = np.array([35.0, 35.5, 36.0])
+    lons = np.array([263.0, 263.5, 264.0])
+    refl = np.array([
+        [10.0, 20.0, 0.0],
+        [30.0, 60.0, 0.0],
+        [0.0, 0.0, 0.0],
+    ])
+    precip = np.array([
+        [0.0, 0.0, 0.0],
+        [0.0, 6.0, 0.0],
+        [0.0, 0.0, 0.0],
+    ])
+
+    radar_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), refl)},
+        coords={'latitude': lats, 'longitude': lons}
+    )
+    preciptype_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), precip)},
+        coords={'latitude': lats, 'longitude': lons}
+    )
+    ps_ds = {
+        "features": [
+            {
+                "properties": {"ID": 7},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-97.0, 35.0],
+                        [-96.5, 35.0],
+                        [-96.5, 35.5],
+                        [-97.0, 35.5],
+                        [-97.0, 35.0],
+                    ]],
+                },
+            }
+        ]
+    }
+
+    saver = CellDataSaver(
+        None,
+        radar_ds,
+        None,
+        None,
+        ps_ds,
+        preciptype_ds,
+        use_probsevere_geometry=True,
+    )
+    entry = saver.create_entry()[0]
+
+    assert entry['id'] == 7
+    assert entry['bbox'] == [
+        [35.0, 263.0],
+        [35.0, 263.5],
+        [35.5, 263.5],
+        [35.5, 263.0],
+        [35.0, 263.0],
+    ]
+    assert entry['num_gates'] > 0
+    assert isinstance(entry['max_refl'], float)
+    assert entry['centroid'][0] == round(entry['centroid'][0], 3)
+    assert entry['centroid'][1] == round(entry['centroid'][1], 3)
+    assert isinstance(entry['hail_core'], list)

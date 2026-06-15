@@ -2,6 +2,7 @@ import re
 import datetime
 from datetime import datetime
 from pathlib import Path
+from shapely.geometry import shape
 from util.io import IOManager
 from util.handler import FileHandler
 
@@ -120,19 +121,27 @@ class DetectionDataHandler:
         filtered_features = []
 
         for feature in data.get('features', []):
-            coords = feature['geometry']['coordinates'][0]
-            lons, lats = zip(*coords)
+            geometry = feature.get('geometry')
+            if not geometry:
+                continue
+
+            geom = shape(geometry)
+            if geom.is_empty:
+                continue
+
+            min_lon, min_lat, max_lon, max_lat = geom.bounds
 
             if (
-                min(lons) <= lon_max
-                and max(lons) >= lon_min
-                and min(lats) <= lat_max
-                and max(lats) >= lat_min
+                min_lon <= lon_max
+                and max_lon >= lon_min
+                and min_lat <= lat_max
+                and max_lat >= lat_min
             ):
                 filtered_features.append(feature)
 
-        data['features'] = filtered_features
-        return data
+        filtered_data = dict(data)
+        filtered_data['features'] = filtered_features
+        return filtered_data
     
     @staticmethod
     def find_timestamp(filepath):

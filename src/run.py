@@ -58,6 +58,7 @@ cycle_config = TandemCycleConfig(
     profile=args.profile,
     disable_ctam=args.disable_ctam,
     disable_tracking=args.disable_tracking,
+    disable_polygon_expansion=args.disable_polygon_expansion,
     refl_threshold=args.refl_threshold,
     min_seed_percentage=args.min_seed_percentage,
     drop_offset=args.drop_offset,
@@ -76,6 +77,8 @@ def main():
         print("[Scheduler] CTAM execution disabled via --disable-ctam")
     if args.disable_tracking:
         print("[Scheduler] Tracking disabled via --disable-tracking")
+    if args.disable_polygon_expansion:
+        print("[Scheduler] Polygon expansion disabled via --disable-polygon-expansion; using original ProbSevere polygons")
     if args.disable_ewmrs:
         print("[Scheduler] EWMRS pipeline disabled via --disable-ewmrs")
     if args.disable_nws:
@@ -86,6 +89,7 @@ def main():
         print("[Scheduler] GOES/GLM ingest and GOES rendering disabled via --disable-goes")
     print(
         "[Scheduler] Detection thresholds: "
+        f"disable_polygon_expansion={args.disable_polygon_expansion}, "
         f"refl_threshold={args.refl_threshold}, "
         f"min_seed_percentage={args.min_seed_percentage}, "
         f"drop_offset={args.drop_offset}"

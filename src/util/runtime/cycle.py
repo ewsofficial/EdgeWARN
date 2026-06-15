@@ -27,6 +27,7 @@ class TandemCycleConfig:
     profile: bool
     disable_ctam: bool
     disable_tracking: bool
+    disable_polygon_expansion: bool
     refl_threshold: float
     min_seed_percentage: float
     drop_offset: float
@@ -121,6 +122,7 @@ def run_tandem_cycle_once(
             config.profile,
             config.disable_ctam,
             config.disable_tracking,
+            config.disable_polygon_expansion,
             config.refl_threshold,
             config.min_seed_percentage,
             config.drop_offset,
