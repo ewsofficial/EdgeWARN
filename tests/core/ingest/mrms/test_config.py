@@ -2,10 +2,13 @@ from common.ingest.mrms.config import (
     ABI_RADC_PRODUCT,
     DEFAULT_ABI_RADC_CHANNEL_IDS,
     GoesIngestSpec,
+    get_check_modifiers,
     get_abi_radc_channel_specs,
     get_goes_modifiers,
+    get_mrms_modifiers,
     normalize_goes_modifier,
 )
+import util.file as fs
 
 
 def test_get_abi_radc_channel_specs_includes_all_channels():
@@ -29,3 +32,11 @@ def test_normalize_goes_modifier_supports_legacy_tuple(tmp_path):
     spec = normalize_goes_modifier(("GLM-L2-LCFA", tmp_path / "GLM"))
 
     assert spec == GoesIngestSpec("GLM-L2-LCFA", tmp_path / "GLM")
+
+
+def test_get_mrms_modifiers_includes_echotop50():
+    assert ("CONUS", "EchoTop_50_00.50", fs.MRMS_ECHOTOP50_DIR) in get_mrms_modifiers()
+
+
+def test_get_check_modifiers_includes_echotop50():
+    assert ("CONUS", "EchoTop_50_00.50", fs.MRMS_ECHOTOP50_DIR) in get_check_modifiers()

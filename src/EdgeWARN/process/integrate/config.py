@@ -63,6 +63,14 @@ def get_datasets_config():
             "method": "percentile",
             "percentile": 90
         },
+        # ET 50
+        {
+            "name": "EchoTop50 (90th)",
+            "filepath": fs.MRMS_ECHOTOP50_DIR,
+            "key": "p90EchoTop50",
+            "method": "percentile",
+            "percentile": 90
+        },
         # === VIL and VIL Density ===
         {
             "name": "VIL",

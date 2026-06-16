@@ -171,6 +171,19 @@ def test_datasets_config_includes_p90_echotop30():
     } in configs
 
 
+def test_datasets_config_includes_p90_echotop50_only():
+    configs = get_datasets_config()
+
+    assert {
+        "name": "EchoTop50 (90th)",
+        "filepath": fs.MRMS_ECHOTOP50_DIR,
+        "key": "p90EchoTop50",
+        "method": "percentile",
+        "percentile": 90,
+    } in configs
+    assert not any(conf.get("key") == "maxEchoTop50" for conf in configs)
+
+
 def test_integrate_ds_via_max_rounds_to_two_decimals(integrator, tmp_path):
     lat = np.array([30.0, 30.01, 30.02])
     lon = np.array([-95.02, -95.01, -95.0])
