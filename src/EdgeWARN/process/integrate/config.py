@@ -56,6 +56,13 @@ def get_datasets_config():
             "key": "maxEchoTop30",
             "method": "max"
         },
+        {
+            "name": "EchoTop30 (90th)",
+            "filepath": fs.MRMS_ECHOTOP30_DIR,
+            "key": "p90EchoTop30",
+            "method": "percentile",
+            "percentile": 90
+        },
         # === VIL and VIL Density ===
         {
             "name": "VIL",
