@@ -52,6 +52,7 @@ def get_mrms_modifiers():
     return [
         ("CONUS", "EchoTop_18_00.50", fs.MRMS_ECHOTOP18_DIR), # Region / Product / Outdir
         ("CONUS", "EchoTop_30_00.50", fs.MRMS_ECHOTOP30_DIR),
+        ("CONUS", "EchoTop_50_00.50", fs.MRMS_ECHOTOP50_DIR),
         ("CONUS", "FLASH_CREST_MAXUNITSTREAMFLOW_00.00", fs.MRMS_FLASH_CREST_MAXUNIT_DIR),
         ("CONUS", "FLASH_QPE_ARIMAX_00.00", fs.MRMS_FLASH_ARIMAX_DIR),
         ("CONUS", "FLASH_QPE_ARI30M_00.00", fs.MRMS_FLASH_ARI30M_DIR),
@@ -83,6 +84,7 @@ def get_check_modifiers():
     return [
         ("CONUS", "EchoTop_18_00.50", fs.MRMS_ECHOTOP18_DIR), # Region / Product / Outdir
         ("CONUS", "EchoTop_30_00.50", fs.MRMS_ECHOTOP30_DIR),
+        ("CONUS", "EchoTop_50_00.50", fs.MRMS_ECHOTOP50_DIR),
         ("CONUS", "PrecipRate_00.00", fs.MRMS_PRECIPRATE_DIR),
         ("CONUS", "MergedAzShear_0-2kmAGL_00.50", fs.MRMS_AZSHEARLOW_DIR),
         ("CONUS", "MergedAzShear_3-6kmAGL_00.50", fs.MRMS_AZSHEARMID_DIR),
