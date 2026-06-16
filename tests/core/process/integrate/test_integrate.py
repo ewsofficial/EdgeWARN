@@ -6,6 +6,7 @@ import xarray as xr
 import util.file as fs
 from unittest.mock import MagicMock, patch
 from EdgeWARN.process.integrate.core import integrator as integrator_module
+from EdgeWARN.process.integrate.config import get_datasets_config
 from EdgeWARN.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.process.integrate.azshear.integration import _build_search_polygons, _open_azshear_dataset
 from EdgeWARN.process.integrate.azshear.metrics import compute_component_metrics
@@ -156,6 +157,18 @@ def test_integrate_multi_stats(integrator, synthetic_dataset):
     assert props["p90Test"] > 0.0
     assert props["MeanTest"] == round(props["MeanTest"], 2)
     assert props["p90Test"] == round(props["p90Test"], 2)
+
+
+def test_datasets_config_includes_p90_echotop30():
+    configs = get_datasets_config()
+
+    assert {
+        "name": "EchoTop30 (90th)",
+        "filepath": fs.MRMS_ECHOTOP30_DIR,
+        "key": "p90EchoTop30",
+        "method": "percentile",
+        "percentile": 90,
+    } in configs
 
 
 def test_integrate_ds_via_max_rounds_to_two_decimals(integrator, tmp_path):
