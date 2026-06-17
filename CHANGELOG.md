@@ -1,18 +1,16 @@
 # Changelog
 
-## [2.6.2] 2026-06-07
+## [2.6.3] 2026-06-17
 
 ### Added
+- ``--disable-polygon-expansion``: skip ProbSevere polygon expansion and use the raw geometry only
+- Added ``p90EchoTop30`` and ``p90EchoTop50`` keys as well as MRMS EchoTop50 ingestion
 
 ### Changed
-- Split `run.py` helpers into `util.runtime` package
+- Update historical processing pipeline to use updated arguments
 
 ### Fixed
-- Route NEXRAD ingest process output through QueueWriter to prevent stdout pipe buffer blocking
-- `order_recent_volume_ids` sorts numeric IDs by string value instead of integer value
-- Render grouped NEXRAD elevations from AR2V sweeps only
-- Adjust NEXRAD file retention to 2
-- Render all available fields from grouped NEXRAD elevation artifacts
+- Added heartbeat emission on NEXRAD parse workers to prevent them from timing out after a while
+- Prune stale NEXRAD runtime volumes to prevent disk usage from ballooning
 
 ### Testing
-- Add `StartedProcessRegistry` unit tests
