@@ -1,4 +1,5 @@
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from EdgeWARN import pipeline
 
@@ -37,11 +38,13 @@ def test_historical_cleanup_skips_cells_and_stormcells(tmp_path):
 
 def test_historical_pipeline_preserves_cell_and_stormcell_dirs():
     with patch.object(pipeline, "_cleanup_historical_data_dirs"), \
-         patch.object(pipeline.ingest_main, "download_all_files"), \
-         patch.object(pipeline, "download_rap"), \
-         patch.object(pipeline, "_find_historical_file", side_effect=["radar_new", "ps_new", "pt_new", "radar_old", "ps_old", "pt_old"]), \
-         patch.object(pipeline.detect, "main", return_value=("generated.json", (None, None, None))) as mock_detect, \
-         patch.object(pipeline.integration, "main") as mock_integrate:
+         patch.object(
+             pipeline,
+             "run_tandem_ingest_cycle",
+             return_value=SimpleNamespace(detection_inputs_ready=True, errors={}),
+         ) as mock_ingest, \
+         patch.object(pipeline, "run_edgewarn_detection_phase", return_value="generated.json") as mock_detect, \
+         patch.object(pipeline, "run_edgewarn_integration_phase", return_value=True) as mock_integrate:
         generated_file, _ = pipeline.historical_pipeline(
             dt=pipeline.datetime(2024, 1, 1, 12, 0, tzinfo=pipeline.timezone.utc),
             lat_limits=(20, 55),
@@ -50,5 +53,29 @@ def test_historical_pipeline_preserves_cell_and_stormcell_dirs():
         )
 
     assert generated_file == "generated.json"
-    assert mock_detect.call_args.kwargs["cleanup_stormcells"] is False
+    assert mock_ingest.call_args.kwargs["include_goes"] is False
+    assert mock_ingest.call_args.kwargs["include_ewmrs"] is False
     assert mock_integrate.call_args.kwargs["remove_old_cells"] is False
+
+
+def test_historical_pipeline_skips_integration_when_realtime_staged_inputs_are_incomplete():
+    with patch.object(pipeline, "_cleanup_historical_data_dirs"), \
+         patch.object(
+             pipeline,
+             "run_tandem_ingest_cycle",
+             return_value=SimpleNamespace(
+                 detection_inputs_ready=True,
+                 errors={"rap_ingest": "RAP inputs unavailable"},
+             ),
+         ), \
+         patch.object(pipeline, "run_edgewarn_detection_phase", return_value="generated.json"), \
+         patch.object(pipeline, "run_edgewarn_integration_phase") as mock_integrate:
+        generated_file, _ = pipeline.historical_pipeline(
+            dt=pipeline.datetime(2024, 1, 1, 12, 0, tzinfo=pipeline.timezone.utc),
+            lat_limits=(20, 55),
+            lon_limits=(-130, -60),
+            json_output="stormcell_test.json",
+        )
+
+    assert generated_file == "generated.json"
+    mock_integrate.assert_not_called()

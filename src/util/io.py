@@ -52,22 +52,32 @@ class IOManager:
         args, _ = parser.parse_known_args()
         return args.base_dir
 
-    def get_args(self):
-        parser = argparse.ArgumentParser(description="EdgeWARN modifier specification")
-        parser.add_argument("--lat_limits", type=float, nargs=2, metavar=("LAT_MIN", "LAT_MAX"), default=[20, 55], help="Latitude limits for processing (default: 20 55)")
-        parser.add_argument("--lon_limits", type=float, nargs=2, metavar=("LON_MIN", "LON_MAX"), default=[230, 300], help="Longitude limits for processing (default: 230 300)")
+    @staticmethod
+    def _validate_common_args(args):
+        if args.min_seed_percentage < 0:
+            print("ERROR: --min-seed-percentage must be non-negative.")
+            sys.exit(1)
+
+    @staticmethod
+    def _add_common_processing_args(parser):
         parser.add_argument("--base_dir", "--base-dir", dest="base_dir", type=str, default=None, help="Custom base directory for input/output data")
         parser.add_argument("--profile", action="store_true", help="Enable performance profiling")
         parser.add_argument("--disable-ctam", action="store_true", help="Skip CTAM module execution during integration")
         parser.add_argument("--disable-tracking", action="store_true", help="Skip lineage detection and Kalman tracking in storm cell detection")
-        parser.add_argument("--disable-ewmrs", action="store_true", help="Disable EWMRS workers and rendering pipeline")
-        parser.add_argument("--disable-nws", action="store_true", help="Disable background NWS alert ingestion")
-        parser.add_argument("--disable-metar", action="store_true", help="Disable background METAR ingestion")
-        parser.add_argument("--disable-goes", action="store_true", help="Disable GOES ingest, GLM ingest, and GOES rendering components")
         parser.add_argument("--disable-polygon-expansion", action="store_true", help="Use original ProbSevere polygons directly and skip radar gate mapping plus watershed expansion")
         parser.add_argument("--refl-threshold", type=float, default=37.5, help="Override the baseline reflectivity threshold used by storm cell detection (default: 37.5)")
         parser.add_argument("--min-seed-percentage", type=float, default=0.001, help="Override the minimum polygon seed coverage ratio used during gate expansion (default: 0.001)")
         parser.add_argument("--drop-offset", type=float, default=10.0, help="Override the dynamic reflectivity drop offset used during gate expansion (default: 10.0)")
+
+    def get_args(self):
+        parser = argparse.ArgumentParser(description="EdgeWARN modifier specification")
+        parser.add_argument("--lat_limits", type=float, nargs=2, metavar=("LAT_MIN", "LAT_MAX"), default=[20, 55], help="Latitude limits for processing (default: 20 55)")
+        parser.add_argument("--lon_limits", type=float, nargs=2, metavar=("LON_MIN", "LON_MAX"), default=[230, 300], help="Longitude limits for processing (default: 230 300)")
+        self._add_common_processing_args(parser)
+        parser.add_argument("--disable-ewmrs", action="store_true", help="Disable EWMRS workers and rendering pipeline")
+        parser.add_argument("--disable-nws", action="store_true", help="Disable background NWS alert ingestion")
+        parser.add_argument("--disable-metar", action="store_true", help="Disable background METAR ingestion")
+        parser.add_argument("--disable-goes", action="store_true", help="Disable GOES ingest, GLM ingest, and GOES rendering components")
         args = parser.parse_args()
 
         if len(args.lat_limits) != 2 or len(args.lon_limits) != 2:
@@ -76,11 +86,21 @@ class IOManager:
         if args.lat_limits == [0, 0] or args.lon_limits == [0, 0]:
             print("ERROR: lat_limits or lon_limits not specified! They must be two numeric values each.")
             sys.exit(1)
-        if args.min_seed_percentage < 0:
-            print("ERROR: --min-seed-percentage must be non-negative.")
-            sys.exit(1)
+        self._validate_common_args(args)
 
         args.lon_limits = [lon % 360 for lon in args.lon_limits]
+        return args
+
+    def get_historical_args(self):
+        parser = argparse.ArgumentParser(description="Process EdgeWARN data historically.")
+        parser.add_argument("--start", type=str, required=True, help="Start timestamp (ISO, e.g. 2023-01-01T12:00:00)")
+        parser.add_argument("--end", type=str, required=True, help="End timestamp (ISO)")
+        parser.add_argument("--lat", nargs=2, type=float, default=[20, 55], help="Latitude limits (min max)")
+        parser.add_argument("--lon", nargs=2, type=float, default=[-130, -60], help="Longitude limits (min max)")
+        parser.add_argument("--output", type=str, default="stormcell_test.json", help="Output JSON file")
+        self._add_common_processing_args(parser)
+        args = parser.parse_args()
+        self._validate_common_args(args)
         return args
 
     def write_info(self, msg):
