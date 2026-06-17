@@ -1,7 +1,7 @@
 import asyncio
 import sys
 import traceback
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 import xarray as xr
@@ -9,12 +9,10 @@ import xarray as xr
 import EdgeWARN.process.detect.main as detect
 import EdgeWARN.process.integrate.main as integration
 import util.file as fs
-import common.ingest.mrms.main as ingest_main
 from common.ingest.mrms.config import get_goes_modifiers, get_mrms_modifiers
 from common.ingest.mrms.pipeline import get_output_dirs
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.api_integration.index_manager import APIIndexManager
-from common.ingest.synoptic.main import download_rap
 from util.io import IOManager, QueueWriter
 from util.performance import tracker as perf_tracker
 
@@ -265,6 +263,7 @@ def historical_pipeline(
     io_manager=None,
     disable_ctam=False,
     disable_tracking=False,
+    disable_polygon_expansion=False,
     refl_threshold=37.5,
     min_seed_percentage=0.001,
     drop_offset=10.0,
@@ -277,58 +276,64 @@ def historical_pipeline(
         perf_tracker.reset()
         perf_tracker.start("Total Pipeline")
 
-        pipeline_io.write_info(f"Starting Data Ingestion for timestamp {dt}")
+        pipeline_io.write_info(f"Starting staged ingest for timestamp {dt}")
         perf_tracker.start("Ingestion")
         _cleanup_historical_data_dirs(pipeline_io)
-        ingest_main.download_all_files(dt, remove_old_files=False)
-        download_rap(dt)
+        cycle_state = asyncio.run(
+            run_tandem_ingest_cycle(
+                dt,
+                lambda message: pipeline_io.write_info(message),
+                include_goes=False,
+                include_ewmrs=False,
+            )
+        )
         perf_tracker.stop("Ingestion")
+
+        if not cycle_state.detection_inputs_ready:
+            pipeline_io.write_warning("Detection inputs were not staged successfully; skipping historical pipeline")
+            perf_tracker.stop("Total Pipeline")
+            return None, (None, None, None)
+
+        if "mrms_integration_ingest" in cycle_state.errors or "rap_ingest" in cycle_state.errors:
+            pipeline_io.write_warning(
+                "Historical integration inputs are incomplete after staged ingest; "
+                "detection will run but integration may be skipped"
+            )
 
         pipeline_io.write_info("Starting Storm Cell Detection")
 
-        radar_new = _find_historical_file(fs.MRMS_COMPOSITE_DIR, dt, pipeline_io)
-        ps_new = _find_historical_file(fs.MRMS_PROBSEVERE_DIR, dt, pipeline_io)
-        pt_new = _find_historical_file(fs.MRMS_PRECIPTYP_DIR, dt, pipeline_io)
-
-        dt_old = dt - timedelta(minutes=2)
-        radar_old = _find_historical_file(fs.MRMS_COMPOSITE_DIR, dt_old, pipeline_io)
-        ps_old = _find_historical_file(fs.MRMS_PROBSEVERE_DIR, dt_old, pipeline_io)
-        pt_old = _find_historical_file(fs.MRMS_PRECIPTYP_DIR, dt_old, pipeline_io)
-
         perf_tracker.start("Detection")
-        rad_old_obj, ps_old_obj, pt_old_obj = cached_objs
-        generated_file, new_objs = detect.main(
-            radar_old,
-            radar_new,
-            ps_old,
-            ps_new,
-            pt_old,
-            pt_new,
+        generated_file = run_edgewarn_detection_phase(
+            pipeline_io.write_info,
             lat_limits,
             lon_limits,
             json_output,
-            radar_old_obj=rad_old_obj,
-            ps_old_obj=ps_old_obj,
-            pt_old_obj=pt_old_obj,
             disable_tracking=disable_tracking,
-            cleanup_stormcells=False,
+            disable_polygon_expansion=disable_polygon_expansion,
             refl_threshold=refl_threshold,
             min_seed_percentage=min_seed_percentage,
             drop_offset=drop_offset,
         )
         perf_tracker.stop("Detection")
 
-        if generated_file:
+        can_integrate = (
+            generated_file
+            and "mrms_integration_ingest" not in cycle_state.errors
+            and "rap_ingest" not in cycle_state.errors
+        )
+
+        if can_integrate:
             pipeline_io.write_info("Starting Integration")
             perf_tracker.start("Integration")
-            integration.main(
+            run_edgewarn_integration_phase(
+                pipeline_io.write_info,
                 generated_file,
                 remove_old_cells=False,
                 disable_ctam=disable_ctam,
             )
             perf_tracker.stop("Integration")
         else:
-            pipeline_io.write_warning("Detection failed or produced no output, skipping integration")
+            pipeline_io.write_warning("Detection failed or staged integration inputs were unavailable; skipping integration")
 
         perf_tracker.stop("Total Pipeline")
         pipeline_io.write_info("Pipeline completed successfully")
@@ -336,7 +341,7 @@ def historical_pipeline(
         if profile:
             perf_tracker.print_summary()
 
-        return generated_file, new_objs
+        return generated_file, (None, None, None)
     except Exception as exc:
         pipeline_io.write_error(f"Pipeline failed: {exc}")
         traceback.print_exc()

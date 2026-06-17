@@ -217,3 +217,43 @@ class TestIOManager:
         with patch.object(sys, 'argv', ['script', '--lat_limits', '0', '0']):
             with pytest.raises(SystemExit):
                 io.get_args()
+
+    def test_get_historical_args_default_values(self):
+        """Test historical args with default values."""
+        io = IOManager("[Test]")
+
+        with patch.object(sys, 'argv', ['script', '--start', '2024-01-01T00:00:00', '--end', '2024-01-01T01:00:00']):
+            args = io.get_historical_args()
+
+            assert args.start == '2024-01-01T00:00:00'
+            assert args.end == '2024-01-01T01:00:00'
+            assert args.lat == [20, 55]
+            assert args.lon == [-130, -60]
+            assert args.output == 'stormcell_test.json'
+            assert args.base_dir is None
+
+    def test_get_historical_args_common_flags(self):
+        """Test historical args reuse shared processing flags."""
+        io = IOManager("[Test]")
+
+        with patch.object(sys, 'argv', [
+            'script',
+            '--start', '2024-01-01T00:00:00',
+            '--end', '2024-01-01T01:00:00',
+            '--base-dir', '/custom/path',
+            '--disable-ctam',
+            '--disable-tracking',
+            '--disable-polygon-expansion',
+            '--refl-threshold', '40',
+            '--min-seed-percentage', '0.01',
+            '--drop-offset', '12',
+        ]):
+            args = io.get_historical_args()
+
+            assert args.base_dir == '/custom/path'
+            assert args.disable_ctam is True
+            assert args.disable_tracking is True
+            assert args.disable_polygon_expansion is True
+            assert args.refl_threshold == 40.0
+            assert args.min_seed_percentage == 0.01
+            assert args.drop_offset == 12.0
