@@ -10,7 +10,7 @@ It ingests operational weather datasets, processes storm-cell products, renders 
 - EdgeWARN storm-cell detection, optional tracking/lineage, integration, CTAM analytics, and alert generation
 - EWMRS raster rendering, tiling, WPC surface-analysis serving, and colormap delivery
 - Historical reprocessing via `src/process_historical.py`
-- File-backed APIs for EdgeWARN (`/api/v2`) and EWMRS (`/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/healthz`)
+- File-backed APIs for EdgeWARN (`/health`, `/api/v2/features/cells`, `/api/v2/features/mesocyclones`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`) and EWMRS (`/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/healthz`)
 
 ## Requirements
 
@@ -62,11 +62,13 @@ python run.py --lat_limits 20 55 --lon_limits 230 300
 python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:00 --lat 20 55 --lon -130 -60
 ```
 
-Key realtime flags include `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-ctam`, `--disable-tracking`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
+Key realtime flags include `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
-Historical processing supports `--output`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
+Historical processing supports `--output`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
-`--output` is currently a compatibility argument only. Historical runs still persist the final stormcell artifacts to `<BASE_DIR>/data/stormcells/` using the runtime timestamped filenames.
+`run.py` normalizes `--lon_limits` into the `0-360` domain internally.
+
+`--output` is currently a compatibility argument only. Historical runs still persist the final stormcell artifacts to `<BASE_DIR>/data/stormcells/` using the runtime timestamped filenames, even though `process_historical.py` still checks whether the provided output path exists after each run.
 
 ## Runtime Base Directory
 
@@ -86,7 +88,7 @@ Supported overrides:
 - EdgeWARN API: `--base-dir` or `EDGEWARN_BASE_DIR`
 - EWMRS API: `--base_dir` or `BASE_DIR`
 
-Both Node APIs also honor `PORT`.
+Both Node APIs also honor `PORT`. The EdgeWARN API also supports `--debug_server`, `--edgewarn-rate-limit-1s`, and `--edgewarn-rate-limit-1m`. The EWMRS API supports `--debug-server` / `--debug_server`, `--ewmrs-rate-limit-1s`, and `--ewmrs-rate-limit-1m`.
 
 See `INSTALLATION.md` for the full CLI reference, including API debug and rate-limit flags plus the `zone_sync.py` maintenance utility.
 

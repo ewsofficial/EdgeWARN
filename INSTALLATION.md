@@ -64,6 +64,11 @@ npm run debug:ewmrs
 - EWMRS API default port: `3003`
 - EWMRS debug mode port: `3004`
 
+Current API surfaces:
+
+- EdgeWARN: `/health`, `/api/v2/features/cells`, `/api/v2/features/mesocyclones`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`
+- EWMRS: `/renders/*`, `/nexrad/*`, `/rap/*`, `/wpc/*`, `/colormaps`, `/healthz`
+
 CLI and environment overrides:
 
 - EdgeWARN API base directory: `--base-dir <path>` or `EDGEWARN_BASE_DIR`
@@ -94,6 +99,7 @@ Common optional flags:
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
+- `--disable-polygon-expansion`
 - `--disable-ewmrs`
 - `--disable-nws`
 - `--disable-metar`
@@ -127,13 +133,14 @@ Common optional flags:
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
+- `--disable-polygon-expansion`
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
 
 Historical-processing note:
 
-- `process_historical.py` still writes its actual stormcell products to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json` through the normal detection and integration pipeline. `--output` is parsed and checked for existence logging, but is not currently used to relocate the final persisted runtime artifact.
+- `process_historical.py` still writes its actual stormcell products to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json` through the normal detection and integration pipeline. `--output` is parsed and later checked for existence logging, but is not currently used to relocate the final persisted runtime artifact.
 
 ## Maintaining NWS Zone Assets
 
