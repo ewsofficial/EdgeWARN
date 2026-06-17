@@ -247,20 +247,21 @@ See `docs/api/ewmrs_api_endpoints.md` for the full EWMRS route contracts and `do
 The EWMRS service also exposes RAP Uint16 array outputs from `<BASE_DIR>/gui/RAP` through:
 
 - `GET /rap/layers`
+- `GET /rap/mappings`
 - `GET /rap/fetch?layer={layer}`
-- `GET /rap/metadata?layer={layer}&timestamp={YYYYMMDD-HHMMSS}`
-- `GET /rap/data?layer={layer}&timestamp={YYYYMMDD-HHMMSS}`
+- `GET /rap/metadata?layer={layer}&timestamp={YYYYMMDD-HHMM00}`
+- `GET /rap/data?layer={layer}&timestamp={YYYYMMDD-HHMM00}`
 
-`/rap/data` returns raw little-endian `uint16` bytes with `65535` reserved as no-data. Clients should use the matching `/rap/metadata` response for shape, scale, units, and GRIB metadata. RAP layer names are the on-disk folders under `gui/RAP`, such as `Temperature_2m`, `CAPE_0-3km`, or `UWind_925mb`.
+RAP timestamp folders are minute-aligned as `YYYYMMDD-HHMM00`. `/rap/data` returns raw little-endian `uint16` bytes with `65535` reserved as no-data. Clients should use the matching `/rap/metadata` response for shape, scale, units, and GRIB metadata. RAP layer names are the on-disk folders under `gui/RAP`, such as `Temperature_2m`, `CAPE_0-3km`, or `UWind_925mb`.
 
 ## EWMRS WPC Surface Analysis
 
 The EWMRS service exposes WPC surface-analysis GeoJSON artifacts through:
 
 - `GET /wpc/fetch?type=sfc`
-- `GET /wpc/download?type=sfc&timestamp={YYYYMMDD-HHMMSS}`
+- `GET /wpc/download?type=sfc&timestamp={YYYYMMDD-HH0000}`
 
-These routes read `<BASE_DIR>/wpc/surface_analysis/wpc_sfc_{timestamp}.geojson`. See `docs/api/ewmrs_api_endpoints.md` for full response semantics.
+These routes read analysis-hour files from `<BASE_DIR>/wpc/surface_analysis/wpc_sfc_{timestamp}.geojson`, where `timestamp` uses the form `YYYYMMDD-HH0000`. See `docs/api/ewmrs_api_endpoints.md` for full response semantics.
 
 ### GET /health
 

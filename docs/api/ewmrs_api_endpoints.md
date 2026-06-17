@@ -328,6 +328,8 @@ Responses:
 
 Returns available RAP timestamps for a layer from `<BASE_DIR>/gui/RAP/<layer>/index.json`.
 
+RAP timestamp folders are minute-aligned in the form `YYYYMMDD-HHMM00`.
+
 Accepted index formats:
 
 - `string[]`
@@ -340,7 +342,7 @@ Responses:
 - `404`: layer folder not found
 - `500`: JSON parse/read/server failure
 
-### GET /rap/metadata?layer={layer}&timestamp={YYYYMMDD-HHMMSS}
+### GET /rap/metadata?layer={layer}&timestamp={YYYYMMDD-HHMM00}
 
 Returns parsed `metadata.json` for the selected layer timestamp.
 
@@ -382,7 +384,7 @@ Responses:
 
 `colormap_key` matches the RAP layer identifier configured in the converter and maps directly to a same-named entry from `GET /colormaps`. RAP colormaps use NOAA/SPC/GEMPAK lineage palettes where practical source tables exist, with documented project fallbacks for variables without a usable standard reference.
 
-### GET /rap/data?layer={layer}&timestamp={YYYYMMDD-HHMMSS}
+### GET /rap/data?layer={layer}&timestamp={YYYYMMDD-HHMM00}
 
 Streams the raw `<BASE_DIR>/gui/RAP/<layer>/<timestamp>/data.u16` bytes exactly as written by the RAP Uint16 converter.
 
@@ -456,7 +458,7 @@ The current API supports only the surface-analysis type `sfc`.
 
 ### GET /wpc/fetch?type=sfc
 
-Lists available timestamped WPC surface-analysis GeoJSON artifacts. The route scans files matching `wpc_sfc_YYYYMMDD-HHMMSS.geojson`, ignores `latest.geojson`, and returns timestamps newest first.
+Lists available timestamped WPC surface-analysis GeoJSON artifacts. The route scans files matching `wpc_sfc_YYYYMMDD-HH0000.geojson`, ignores `latest.geojson`, and returns timestamps newest first.
 
 Responses:
 
@@ -470,13 +472,15 @@ Example:
 ["20260604-120000", "20260604-090000"]
 ```
 
-### GET /wpc/download?type=sfc&timestamp={YYYYMMDD-HHMMSS}
+### GET /wpc/download?type=sfc&timestamp={YYYYMMDD-HH0000}
 
 Returns the parsed GeoJSON payload from:
 
 ```text
 <BASE_DIR>/wpc/surface_analysis/wpc_sfc_{timestamp}.geojson
 ```
+
+WPC surface-analysis artifacts are written on 3-hour analysis times, so the timestamp form is `YYYYMMDD-HH0000`.
 
 Responses:
 
