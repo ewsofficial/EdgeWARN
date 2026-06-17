@@ -64,6 +64,26 @@ class CellDataSaver:
         from affine import Affine
         return Affine.translation(lons[0] - lon_res / 2, lats[0] - lat_res / 2) * Affine.scale(lon_res, lat_res)
 
+    @staticmethod
+    def __axis_slice_indices(coord_vals, min_val, max_val):
+        coord_asc = coord_vals[0] <= coord_vals[-1]
+        lo = min(min_val, max_val)
+        hi = max(min_val, max_val)
+
+        if coord_asc:
+            start = int(np.searchsorted(coord_vals, lo, side='left'))
+            stop = int(np.searchsorted(coord_vals, hi, side='right'))
+        else:
+            reversed_vals = coord_vals[::-1]
+            rev_start = int(np.searchsorted(reversed_vals, lo, side='left'))
+            rev_stop = int(np.searchsorted(reversed_vals, hi, side='right'))
+            start = len(coord_vals) - rev_stop
+            stop = len(coord_vals) - rev_start
+
+        start = max(0, min(start, len(coord_vals)))
+        stop = max(start, min(stop, len(coord_vals)))
+        return slice(start, stop)
+
     def __geometry_to_mask(self, geometry):
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
@@ -76,6 +96,38 @@ class CellDataSaver:
             dtype=np.uint8,
         )
         return mask.astype(bool)
+
+    def __geometry_to_mask_and_slice(self, geometry):
+        lats = self.radar_ds['latitude'].values
+        lons = self.radar_ds['longitude'].values
+
+        min_lon, min_lat, max_lon, max_lat = geometry.bounds
+        lat_slice = self.__axis_slice_indices(lats, min_lat, max_lat)
+        lon_slice = self.__axis_slice_indices(lons, min_lon, max_lon)
+
+        if lat_slice.start == lat_slice.stop or lon_slice.start == lon_slice.stop:
+            return None, None
+
+        local_lats = lats[lat_slice]
+        local_lons = lons[lon_slice]
+        lat_res = local_lats[1] - local_lats[0] if len(local_lats) > 1 else (lats[1] - lats[0])
+        lon_res = local_lons[1] - local_lons[0] if len(local_lons) > 1 else (lons[1] - lons[0])
+
+        from affine import Affine
+
+        transform = (
+            Affine.translation(local_lons[0] - lon_res / 2, local_lats[0] - lat_res / 2)
+            * Affine.scale(lon_res, lat_res)
+        )
+        mask = rasterio.features.rasterize(
+            [(mapping(geometry), 1)],
+            out_shape=(len(local_lats), len(local_lons)),
+            transform=transform,
+            fill=0,
+            all_touched=True,
+            dtype=np.uint8,
+        )
+        return mask.astype(bool), (lat_slice, lon_slice)
 
     @staticmethod
     def __geometry_to_bbox_points(geometry):
@@ -175,7 +227,7 @@ class CellDataSaver:
 
         return polygon_points
 
-    def __create_direct_hailcore_polygon(self, mask, step=5):
+    def __create_direct_hailcore_polygon(self, mask, step=5, slice_offset=None):
         if self.preciptype_ds is None:
             return []
 
@@ -188,11 +240,16 @@ class CellDataSaver:
 
         rmin, rmax = rows.min(), rows.max() + 1
         cmin, cmax = cols.min(), cols.max() + 1
-        sl = (slice(rmin, rmax), slice(cmin, cmax))
+        row_offset = 0 if slice_offset is None else slice_offset[0].start
+        col_offset = 0 if slice_offset is None else slice_offset[1].start
+        sl = (
+            slice(rmin + row_offset, rmax + row_offset),
+            slice(cmin + col_offset, cmax + col_offset),
+        )
 
-        mask_slice = mask[sl]
+        local_mask_slice = mask[rmin:rmax, cmin:cmax]
         precip_slice = self.preciptype_ds['unknown'].values[sl]
-        hail_mask = (precip_slice == 6) & mask_slice
+        hail_mask = (precip_slice == 6) & local_mask_slice
         if not np.any(hail_mask):
             return []
 
@@ -205,8 +262,8 @@ class CellDataSaver:
 
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
-        r_global = (sampled[:, 0] + rmin).astype(int)
-        c_global = (sampled[:, 1] + cmin).astype(int)
+        r_global = (sampled[:, 0] + rmin + row_offset).astype(int)
+        c_global = (sampled[:, 1] + cmin + col_offset).astype(int)
 
         np.clip(r_global, 0, lats.shape[0] - 1, out=r_global)
         np.clip(c_global, 0, lons.shape[0] - 1, out=c_global)
@@ -290,20 +347,62 @@ class CellDataSaver:
                 continue
 
             normalized_geometry = self.__normalize_geometry(geometry)
-            mask = self.__geometry_to_mask(normalized_geometry)
+            mask, mask_slice = self.__geometry_to_mask_and_slice(normalized_geometry)
+            if mask is None or mask_slice is None:
+                continue
+
             bbox = self.__geometry_to_bbox_points(normalized_geometry)
-            entry = self.__create_entry_from_mask(
-                poly_id,
-                bbox,
-                mask,
-                refl_grid,
-                lats,
-                lons,
-                is_1d_coords,
-                morphology_engine,
-            )
-            if entry is not None:
-                results.append(entry)
+            rows, cols = np.nonzero(mask)
+            if rows.size == 0 or cols.size == 0:
+                continue
+
+            refl_slice = refl_grid[mask_slice]
+            local_lats = lats[mask_slice[0]] if is_1d_coords else lats[mask_slice]
+            local_lons = lons[mask_slice[1]] if is_1d_coords else lons[mask_slice]
+            morph_stats = morphology_engine.process_cell(mask, refl_slice)
+            refl_vals = refl_slice[mask]
+            valid_refl_mask = ~np.isnan(refl_vals)
+            refl_vals = refl_vals[valid_refl_mask]
+
+            if refl_vals.size > 0:
+                valid_rows = rows[valid_refl_mask] + mask_slice[0].start
+                valid_cols = cols[valid_refl_mask] + mask_slice[1].start
+                if is_1d_coords:
+                    lat_vals = lats[valid_rows]
+                    lon_vals = lons[valid_cols]
+                else:
+                    lat_vals = local_lats[rows[valid_refl_mask], cols[valid_refl_mask]]
+                    lon_vals = local_lons[rows[valid_refl_mask], cols[valid_refl_mask]]
+
+                max_refl_val = float(np.nanmax(refl_vals))
+                weights = np.exp(refl_vals - max_refl_val)
+                sum_weights = np.sum(weights)
+                if sum_weights > 0:
+                    lat_centroid = float(np.sum(lat_vals * weights) / sum_weights)
+                    lon_centroid = float(np.sum(lon_vals * weights) / sum_weights) % 360
+                    centroid = (round(lat_centroid, 3), round(lon_centroid, 3))
+                else:
+                    centroid = (np.nan, np.nan)
+            else:
+                max_refl_val = float('nan')
+                centroid = (np.nan, np.nan)
+
+            hail_core = self.__create_direct_hailcore_polygon(mask, slice_offset=mask_slice)
+            entry = {
+                "id": int(poly_id),
+                "num_gates": int(np.count_nonzero(mask)),
+                "centroid": centroid,
+                "bbox": self.__round_polygon_points(bbox),
+                "hail_core": self.__round_polygon_points(hail_core),
+                "max_refl": max_refl_val,
+                "event_type": "ACTIVE",
+                "parent_ids": [],
+                "split_from": None,
+                "properties": {
+                    "morphology": morph_stats,
+                },
+            }
+            results.append(entry)
 
         return results
 
