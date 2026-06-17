@@ -278,3 +278,62 @@ def test_create_entry_uses_original_probsevere_geometry_when_requested():
     assert entry['centroid'][0] == round(entry['centroid'][0], 3)
     assert entry['centroid'][1] == round(entry['centroid'][1], 3)
     assert isinstance(entry['hail_core'], list)
+
+
+def test_probsevere_geometry_rasterizes_local_window(monkeypatch):
+    lats = np.linspace(30.0, 40.0, 11)
+    lons = np.linspace(260.0, 270.0, 11)
+    refl = np.ones((11, 11), dtype=float)
+    precip = np.zeros((11, 11), dtype=float)
+
+    radar_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), refl)},
+        coords={'latitude': lats, 'longitude': lons}
+    )
+    preciptype_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), precip)},
+        coords={'latitude': lats, 'longitude': lons}
+    )
+    ps_ds = {
+        "features": [
+            {
+                "properties": {"ID": 7},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-97.0, 35.0],
+                        [-96.5, 35.0],
+                        [-96.5, 35.5],
+                        [-97.0, 35.5],
+                        [-97.0, 35.0],
+                    ]],
+                },
+            }
+        ]
+    }
+
+    out_shapes = []
+    original_rasterize = sys.modules['rasterio.features'].rasterize
+
+    def recording_rasterize(*args, **kwargs):
+        out_shapes.append(kwargs['out_shape'])
+        return original_rasterize(*args, **kwargs)
+
+    monkeypatch.setattr('rasterio.features.rasterize', recording_rasterize)
+
+    saver = CellDataSaver(
+        None,
+        radar_ds,
+        None,
+        None,
+        ps_ds,
+        preciptype_ds,
+        use_probsevere_geometry=True,
+    )
+
+    entries = saver.create_entry()
+
+    assert len(entries) == 1
+    assert out_shapes
+    assert out_shapes[0][0] < len(lats)
+    assert out_shapes[0][1] < len(lons)
