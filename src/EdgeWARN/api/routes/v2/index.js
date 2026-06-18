@@ -19,7 +19,7 @@ router.use('/data/metar', metarRouter);
 // Root v2 endpoint
 router.get('/', (req, res) => {
   // Only expose detailed version in non-production environments
-  const version = process.env.NODE_ENV === 'production' ? '2.x' : '2.6.2';
+  const version = process.env.NODE_ENV === 'production' ? '2.x' : '2.6.3';
   res.json({
     message: 'EdgeWARN API v2',
     version: version,

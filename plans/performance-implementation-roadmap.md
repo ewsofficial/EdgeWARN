@@ -1,7 +1,7 @@
 # Performance / Security / Dead-Code Implementation Roadmap
 
 **Source audit:** `plans/performance-optmization-plan.md` (re-audited 2026-05-28 against 2.6.0)
-**Branch:** `version-test/2.6.2`
+**Branch:** `version-test/2.6.3`
 **Total scope (after subtracting items already shipped):** ~75 actionable findings across performance, security, dead-code, and pipeline consolidation.
 
 ---
