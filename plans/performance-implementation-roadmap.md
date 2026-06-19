@@ -1,8 +1,8 @@
 # Performance / Security / Dead-Code Implementation Roadmap
 
-**Source audit:** `plans/performance-optmization-plan.md` (re-audited 2026-05-28 against 2.6.0)
-**Branch:** `version-test/2.6.3`
-**Total scope (after subtracting items already shipped):** ~75 actionable findings across performance, security, dead-code, and pipeline consolidation.
+**Source audit:** `plans/performance-optmization-plan.md` (re-audited 2026-06-19 against 2.6.3)
+**Branch:** `version-test/2.6.4` (validated against package version `2.6.3`)
+**Total scope (after subtracting items already shipped):** roughly high-60s actionable findings remain across performance, security, dead-code, and pipeline consolidation.
 
 ---
 
@@ -10,7 +10,7 @@
 
 The audit document enumerates 58 performance, 36 security, 8 dead-code, and 9 redundant-pipeline findings. Each item already includes file:line, the proposed change, and a behavior-preservation rationale, so this roadmap does **not** re-derive the technical detail. Its job is to:
 
-1. Skip items already shipped (H10, M8, L8, L13, L21, L23 fully; H7/L17/S-H3 partially).
+1. Skip items already shipped (H10, M8, L8, L13, L21, L23, S-H3, S-H5, S-L15, D2, D3, D4, D6, D7, D8/L14 fully; H7/L17 partially).
 2. Group the remainder into three **parallelizable tracks** (Deletions, Security, Performance) so multiple PRs can land concurrently without merge friction.
 3. Sequence within each track from "no behavior change" → "byte-identical numeric change" → "verified parity required."
 4. Surface the cross-track dependencies (e.g. S-H5 + M17 share a middleware edit).
@@ -22,42 +22,41 @@ The post-execution outcome: ~485 LOC of pure deletions, the high-severity securi
 
 ## Already shipped — do NOT re-PR
 
-Per the 2026-05-28 re-audit + verification grep:
+Per the 2026-06-19 re-audit + verification grep:
 
-- **Fully done:** H10, M8, L8, L13, L21, L23, L17 (rate-limit gating at `EdgeWARN/api/server.js:154,158`)
-- **`/tile-info` half of S-H3:** `EWMRS/api/routes/renders.js:372` validates `PRODUCT_MAPPING`
+- **Fully done:** H10, M8, L8, L13, L21, L23, S-H3, S-H5, S-L15, D2, D3, D4, D6, D7, D8/L14
 - **H7 line 437:** already hoisted; **only line 401 remains**
-- **H5 Mahalanobis:** already uses `np.linalg.solve` at `filter.py:470`; **only Kalman gain `inv(S)` at filter.py:236 remains**
+- **H5 tracker math:** Mahalanobis already uses `np.linalg.solve` at `filter.py:470`; **only Kalman gain `inv(S)` at filter.py:236 remains**
 
 Treat these as guard rails — if a PR re-introduces the old form, reject it.
 
 ---
 
-## Track A — Deletions (lowest risk, do first or in parallel)
+## Track A — Deletions (A1 shipped in 2.6.3; A2 still open)
 
 **Track A checklist**
 
-- [ ] Complete A1 pure-deletion bundle
+- [x] Complete A1 pure-deletion bundle
 - [ ] Complete A2 compat shim removal
 - [ ] Re-run Track A verification gates after each PR
 
 Each item is a separate PR with prefix `REM[ingest]:` or `REM[dead]:`. Verification: post-deletion `grep -r <symbol> src/ tests/ scripts/` returns zero hits.
 
-### A1 — Pure-deletion bundle (~435 LOC, 1 PR)
+### A1 — Pure-deletion bundle (~435 LOC, shipped in 2.6.3)
 
 **A1 checklist**
 
 - [x] D2 delete stale EWMRS scheduler fork
-- [ ] D3 delete `realtime_pipeline` and related benchmark if now orphaned
+- [x] D3 delete `realtime_pipeline` and related benchmark if now orphaned
 - [x] D4 delete NEXRAD polling wrappers while keeping one-shot helpers and `NexradScanCoordinator`
 - [x] D6 delete NWS legacy ingest functions
 - [x] D7 delete `run_ewmrs_pipeline` passthrough
 - [x] D8 / L14 remove explicit `gc.collect()` calls
-- [x] Run `pytest tests/`
-- [x] Run `npm test`
-- [ ] Run 1-cycle real-time smoke per §7.2
+- [ ] Re-run `pytest tests/` if replaying this bundle on another branch
+- [ ] Re-run `npm test` if replaying this bundle on another branch
+- [ ] Re-run the 1-cycle real-time smoke in §7.2 if replaying this bundle on another branch
 
-Single PR; each commit is one of:
+This bundle is already present in the 2.6.3 tree. Keep the itemization below only as replay/cherry-pick guidance for other branches:
 
 | ID | Action | File | LOC |
 |----|--------|------|-----|
@@ -68,7 +67,7 @@ Single PR; each commit is one of:
 | D7 | Delete `run_ewmrs_pipeline` passthrough | `src/EWMRS/pipeline.py:661-663` | 3 |
 | D8 / L14 | Remove explicit `gc.collect()` calls | `src/EdgeWARN/process/integrate/core/integrator.py:273, 373` | 2 |
 
-**Verification:** full `pytest tests/`, `npm test`, plus a 1-cycle real-time smoke per §7.2.
+**Verification (if replayed elsewhere):** full `pytest tests/`, `npm test`, plus a 1-cycle real-time smoke per §7.2.
 
 ### A2 — Compat shim removal (D1 / R1, ~120 LOC, 1 PR)
 
@@ -96,13 +95,13 @@ Multi-step; ordering matters:
 
 ---
 
-## Track B — Security (parallelizable with Track A; can start immediately)
+## Track B — Security (B2/B3 shipped in 2.6.3; B1/B4 still open)
 
 **Track B checklist**
 
 - [ ] Complete B1 CORS lockdown
-- [ ] Complete B2 path-traversal hygiene
-- [ ] Complete B3 request-body and middleware hardening
+- [x] Complete B2 path-traversal hygiene
+- [x] Complete B3 request-body and middleware hardening
 - [ ] Complete B4 medium-severity polish
 - [ ] Run per-item exploit verification and end-of-phase ZAP baseline
 
@@ -175,11 +174,11 @@ These edits cluster on `EdgeWARN/api/server.js` and validation helpers:
 
 ---
 
-## Track C — Performance (start after Track A1; numeric items wait for Track C2)
+## Track C — Performance (A1 is already landed; numeric items still wait for Track C2)
 
 **Track C checklist**
 
-- [ ] Complete C1 zero-numeric-change perf work
+- [x] Complete C1 zero-numeric-change perf work
 - [ ] Complete C2 numeric and algorithmic refactors with parity proof
 - [ ] Complete C3 medium/low rolling cleanups
 - [ ] Run Track C verification matrix per §7.3
@@ -319,7 +318,7 @@ Per §4 D9 categories — each sweep entry survives only with grep-proof. Do **n
 | If you ship | You must coordinate with |
 |-------------|--------------------------|
 | B3 (`express.json` limit + reorder) | M17 — same edit; pick one PR to own it |
-| A1 D2 (delete `src/EWMRS/scheduler.py`) | M7 reference at "or surviving copy in `EdgeWARN/schedule/scheduler.py` after §4 cleanup" — retarget M7 to `EdgeWARN/schedule/scheduler.py:120` |
+| A1 D2 (delete `src/EWMRS/scheduler.py`) | Closed in the current tree; treat M7 as targeting only `EdgeWARN/schedule/scheduler.py` |
 | C2 H5 (Kalman gain `solve`) | §6 invariants 1, 2, 4 — diff stormcell associations within `np.allclose(rtol=1e-5)` |
 | C2 H9 (RGBA LUT) | §6 invariants 8, 9, 10 — preserve two-path split, exact cache key tuple, `alpha.any()` filter |
 | A2 (compat shim removal) | All callers of `EdgeWARN.ingest.*` — none should remain; greenlight rule 6 |
@@ -350,9 +349,9 @@ Reusable helpers to leverage rather than reinvent:
 
 - `extract_batch` (`src/util/grib_loader.py:126-206`) — already vectorized; H1 just routes to it.
 - `resolveUnder` (`src/EWMRS/api/routes/nexrad/filesystem.js`) — reuse for S-H4.
-- `PRODUCT_MAPPING` (`src/EWMRS/api/routes/renders.js`) — already used by `/download`, `/tile`, `/tile-info`; extend to `/fetch`.
+- `PRODUCT_MAPPING` (`src/EWMRS/api/routes/renders.js`) — now consistently used by `/download`, `/tile`, `/tile-info`, and `/fetch`.
 - `LRUCache` (already present in `fileReader.js`) — reuse for S-M4.
-- `fileURLToPath` (Node stdlib) — replace `new URL().pathname` for S-L15.
+- `fileURLToPath` (Node stdlib) — already adopted for the RAP route; reuse it for any future `import.meta.url` path resolution.
 
 ---
 

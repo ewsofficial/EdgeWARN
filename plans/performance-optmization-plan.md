@@ -1,17 +1,18 @@
 # EdgeWARN-Core — Detailed Performance, Security, Dead-Code & Pipeline Audit
 
-**Repo:** EdgeWARN-Core · **Version:** 2.6.3 (per `package.json`, branch `version-test/2.6.3`) · **Original Date:** 2026-05-27 · **Last Audit:** 2026-05-28
+**Repo:** EdgeWARN-Core · **Version:** 2.6.3 (per `package.json`; audited from branch `version-test/2.6.4`) · **Original Date:** 2026-05-27 · **Last Audit:** 2026-06-19
 **Scope:** `src/` only — Python (`common/`, `EdgeWARN/`, `EWMRS/`, `util/`) and Node.js (`EdgeWARN/api/`, `EWMRS/api/`)
 **Guiding principle:** every recommendation in this document is **behavior-preserving**. Externally-observable outputs (HTTP responses, on-disk artifacts, numeric pipeline results, CLI semantics) must remain identical for legitimate inputs.
 
 ---
 
-## Audit status (2026-05-28)
+## Audit status (2026-06-19)
 
-The plan was originally written against v2.5.2. A re-audit against the current 2.6.0 tree found the following changes. Items marked **DONE** below are already shipped; items marked **STALE** have premises that no longer hold; items marked **PARTIAL** have been fixed in part. Each affected item has an inline `> Status (2026-05-28):` note in §2/§3/§4.
+The plan was originally written against v2.5.2. A re-audit against the current 2.6.3 release found the following changes. Items marked **DONE** below are already shipped; items marked **STALE** have premises that no longer hold; items marked **PARTIAL** have been fixed in part. Each affected item has an inline `> Status (2026-06-19):` note in §2/§3/§4.
 
 - **DONE:** H10, M8, L8, L13, L21, L23
-- **PARTIAL:** S-H3 (only `/tile-info` validates `PRODUCT_MAPPING`; `/fetch` still doesn't), H7 (line 437 hoisted; line 401 not), L17 (gating present, refinements possible), H5 (Mahalanobis already uses `solve`; only the Kalman-gain `inv` at filter.py:236 remains, with a different risk profile — see updated entry)
+- **DONE:** S-H3, S-H5, S-L15, D2, D3, D4, D6, D7, D8/L14
+- **PARTIAL:** H7 (line 437 hoisted; line 401 not), L17 (gating present, refinements possible), H5 (Mahalanobis already uses `solve`; only the Kalman-gain `inv` at filter.py:236 remains, with a different risk profile — see updated entry)
 - **STALE (path/premise no longer valid):** L10 (parser uses `bytes.find` at the cited lines, not regex), L15 (CTAM lookup is already dict O(1)), M20 (cells endpoint now keyed on `id`, not `timestamp`)
 - **DRIFT (recommendation still valid; identifier renamed):** H3 (`entries_old` → `vector_previous_entries`)
 
@@ -107,7 +108,7 @@ Each finding is formatted:
 #### H3. Narrow `deepcopy` in detection main loop
 **File:** `src/EdgeWARN/process/detect/main.py:298`
 **Current:** `vector_previous_entries = copy.deepcopy(entries_old) if entries_old else None` (variable was renamed from `entries_old` since 2.5.2).
-> Status (2026-05-28): DRIFT — recommendation still valid against the renamed binding.
+> Status (2026-06-19): DRIFT — recommendation still valid against the renamed binding.
 **Proposed:** the subsequent loop only mutates a handful of leaf fields; replace with shallow copy plus targeted copying of mutated keys, or treat `entries_old` as read-only and write into a fresh dict.
 **Why behavior-preserved:** deep copy was defensive — actual mutation surface is small and local.
 **Impact:** H · CPU + memory (O(N×depth) Python overhead per cycle).
@@ -126,7 +127,7 @@ Each finding is formatted:
 **Why behavior-preserved:** mathematically identical for non-singular S; `solve` is more numerically stable and faster.
 **Caution:** §6 invariant — verify diff against existing test fixtures; ill-conditioned S can produce different outputs.
 **Impact:** H · CPU (per track per frame).
-> Status (2026-05-28): RETARGETED — Mahalanobis (formerly cited at this line) already uses `np.linalg.solve(S, y)` in current code. The remaining `inv(S)` at filter.py:236 is the Kalman-gain step. The recommendation is preserved against the new target; treat as a separate change with its own diff verification.
+> Status (2026-06-19): RETARGETED — Mahalanobis (formerly cited at this line) already uses `np.linalg.solve(S, y)` in current code. The remaining `inv(S)` at filter.py:236 is the Kalman-gain step. The recommendation is preserved against the new target; treat as a separate change with its own diff verification.
 
 #### H6. Cache cost matrix entry in Hungarian assignment
 **File:** `src/EdgeWARN/process/detect/kalman/assignment.py` (cost-matrix build + costs-dict population)
@@ -141,7 +142,7 @@ Each finding is formatted:
 **Proposed:** construct once outside the loop; pass it in.
 **Why behavior-preserved:** stateless w.r.t. iteration index.
 **Impact:** H · CPU.
-> Status (2026-05-28): PARTIAL — line 437 already hoisted; line 401 still constructs inside the loop.
+> Status (2026-06-19): PARTIAL — line 437 already hoisted; line 401 still constructs inside the loop.
 
 #### H8. Build candidate centroid array once in `prefilter_candidates`
 **File:** `src/EdgeWARN/process/detect/kalman/assignment.py:101-147`
@@ -165,7 +166,7 @@ Each finding is formatted:
 **Why behavior-preserved:** output array contents and dtype unchanged.
 **Caution:** §6 invariant — `_normalize_azimuth_axis` must keep `kind="stable"`.
 **Impact:** H · CPU + memory (sweep decode is the bottleneck of NEXRAD render frames).
-> Status (2026-05-28): DONE — current code uses `np.frombuffer(record[data_start:data_end], dtype=f">u{width}")` and `np.full((max_ngates, ...), np.nan, dtype=np.float16)` for dense buffers.
+> Status (2026-06-19): DONE — current code uses `np.frombuffer(record[data_start:data_end], dtype=f">u{width}")` and `np.full((max_ngates, ...), np.nan, dtype=np.float16)` for dense buffers.
 
 #### H11. Context-manage `xr.open_dataset`
 **Files:**
@@ -242,7 +243,7 @@ app.use(compression({
 **Proposed:** module-level constants; `.copy()` only when an instance must mutate.
 **Why behavior-preserved:** read-only arrays are shareable.
 **Impact:** M · memory.
-> Status (2026-05-28): DONE — `_H` is a class-level dataclass field; `_F` follows the same pattern. Re-verify before reopening if you encounter per-instance allocations.
+> Status (2026-06-19): DONE — `_H` is a class-level dataclass field; `_F` follows the same pattern. Re-verify before reopening if you encounter per-instance allocations.
 
 #### M9. Vectorize 6×6 process-noise build
 **File:** `src/EdgeWARN/process/detect/kalman/filter.py:327-333`
@@ -316,7 +317,7 @@ app.use(compression({
 **File:** `src/EdgeWARN/api/routes/v2/features/cells.js`
 **Proposed:** memoize `path.join` result keyed by `timestamp`; rely on existing LRU for re-reads.
 **Impact:** M · CPU.
-> Status (2026-05-28): STALE — endpoint is now keyed on `id`, not `timestamp`. Original premise no longer applies; close as obsolete or rewrite against the current shape.
+> Status (2026-06-19): STALE — endpoint is now keyed on `id`, not `timestamp`. Original premise no longer applies; close as obsolete or rewrite against the current shape.
 
 #### M21. Float32 RAP read
 **File:** `src/EWMRS/rap/uint16_pipeline.py:199`
@@ -335,22 +336,22 @@ app.use(compression({
 | L5 | `src/EdgeWARN/alerts/manager.py:57` | `indent=None` (or `separators=(",",":")`) on production writes | I/O + CPU |
 | L6 | `src/EdgeWARN/process/detect/lineage/detector.py:325-370` | Use existing R-tree `new_index` for split-overlap prefilter | CPU |
 | L7 | `src/EdgeWARN/process/detect/lineage/detector.py:163-260` | Build `cell_lineage` dict literals once outside hot branches | CPU |
-| L8 | `src/common/ingest/nexrad/parser.py:37-62` | ~~`bytearray.extend` vs `b"".join(record_parts)`~~ — DONE (2026-05-28): code already uses `list.append` + `b"".join(record_parts)` | memory |
+| L8 | `src/common/ingest/nexrad/parser.py:37-62` | ~~`bytearray.extend` vs `b"".join(record_parts)`~~ — DONE (2026-06-19): code already uses `list.append` + `b"".join(record_parts)` | memory |
 | L9 | `src/common/ingest/nexrad/parser.py:537` | Default to mmap path (`parse_raw_volume_file_mmap`) | memory |
-| L10 | `src/common/ingest/nexrad/parser.py:399-422` | ~~Combined regex `re.compile(b"AR2V|ARCHIVE2")` + `finditer` for split-stream~~ — STALE (2026-05-28): cited lines now use `bytes.find`, not regex; recommendation no longer fits | CPU |
+| L10 | `src/common/ingest/nexrad/parser.py:399-422` | ~~Combined regex `re.compile(b"AR2V|ARCHIVE2")` + `finditer` for split-stream~~ — STALE (2026-06-19): cited lines now use `bytes.find`, not regex; recommendation no longer fits | CPU |
 | L11 | `src/common/ingest/mrms/downloader.py:496-501` | Dedicated `ThreadPoolExecutor(max_workers=2)` for `merge_glm_files` | concurrency |
 | L12 | `src/common/ingest/mrms/downloader.py` | Collapse duplicate `perf_tracker` spans wrapping the same `PerformanceTimer` | CPU |
-| L13 | `src/EdgeWARN/process/integrate/core/integrator.py:386-389` | ~~List-comprehension for `feature_lookup` keys~~ — DONE (2026-05-28) | CPU |
+| L13 | `src/EdgeWARN/process/integrate/core/integrator.py:386-389` | ~~List-comprehension for `feature_lookup` keys~~ — DONE (2026-06-19) | CPU |
 | L14 | `src/EdgeWARN/process/integrate/core/integrator.py:273, 373` | Remove explicit `gc.collect()` (also see §4 D8) | CPU |
-| L15 | `src/EdgeWARN/ctam/engine.py:44-51` | ~~Hoist `module_names_set = set(module_names)` once~~ — STALE (2026-05-28): current lookup is dict-based (O(1)); set hoist no longer applicable | CPU |
+| L15 | `src/EdgeWARN/ctam/engine.py:44-51` | ~~Hoist `module_names_set = set(module_names)` once~~ — STALE (2026-06-19): current lookup is dict-based (O(1)); set hoist no longer applicable | CPU |
 | L16 | `src/util/io.py:11-19` | Cache last-known-second ISO string in `TimestampedOutput.write` | CPU |
-| L17 | `src/EdgeWARN/api/server.js` | Gate `app.use(rateLimit(...))` on `cfg.rateLimit.enabled` — PARTIAL (2026-05-28): limiter is now gated on `Max > 0` at server.js:154,158; further config-shape polish optional | CPU + memory |
+| L17 | `src/EdgeWARN/api/server.js` | Gate `app.use(rateLimit(...))` on `cfg.rateLimit.enabled` — PARTIAL (2026-06-19): limiter is now gated on `Max > 0`; further config-shape polish optional | CPU + memory |
 | L18 | `src/EWMRS/scheduler.py:39` (or surviving) | `itertools.chain.from_iterable` for glob concat | memory |
 | L19 | `src/EWMRS/render/goes_rgb.py:537` | Conditional copy in `_channel_data_from_registry` (only when dtype/order mismatch) | memory |
 | L20 | `src/EWMRS/render/render.py:26-56` | `functools.lru_cache(maxsize=N)` instead of manual RLock | CPU |
-| L21 | `src/common/ingest/nexrad/parser.py:425-533` | ~~Free `record_stream` between sweep boundaries (non-mmap path)~~ — DONE (2026-05-28): `del record_stream` at parser.py:524 | memory |
+| L21 | `src/common/ingest/nexrad/parser.py:425-533` | ~~Free `record_stream` between sweep boundaries (non-mmap path)~~ — DONE (2026-06-19): `del record_stream` at parser.py:524 | memory |
 | L22 | `src/common/ingest/nexrad/parser.py:536-537` | Once mmap path is proven, drop the bytes-only fallback | memory |
-| L23 | `src/EdgeWARN/process/detect/kalman/filter.py:327-333` | ~~`np.zeros((6,6))` + slicing assignment vs Python list → `np.array`~~ — DONE (2026-05-28): construction is `np.zeros((6, 6), dtype=np.float64)` | memory |
+| L23 | `src/EdgeWARN/process/detect/kalman/filter.py:327-333` | ~~`np.zeros((6,6))` + slicing assignment vs Python list → `np.array`~~ — DONE (2026-06-19): construction is `np.zeros((6, 6), dtype=np.float64)` | memory |
 | L24 | `src/EdgeWARN/process/detect/kalman/assignment.py:572-580` | `tracks_by_id = {t.id: t for t in tracks}` for O(1) lookup | CPU |
 | L25 | `src/EdgeWARN/api/server.js`, `src/EWMRS/api/server.js` | Mount `rateLimit` before helmet/cors | CPU |
 
@@ -390,7 +391,7 @@ if (!resolvedFull.startsWith(resolvedDir + path.sep) && resolvedFull !== resolve
 **Behavior preserved on legitimate input:** yes — no legitimate file is a symlink in this deployment.
 
 #### S-H3. EWMRS `/renders/fetch` and `/renders/tile-info` skip the `PRODUCT_MAPPING` allowlist
-> Status (2026-05-28): PARTIAL — `/tile-info` now validates `PRODUCT_MAPPING[product]` (renders.js:372-374). `/fetch` still only blocks `..`, `/`, `\\` at renders.js:185 and must be tightened.
+> Status (2026-06-19): DONE — both `/tile-info` and `/fetch` now validate `PRODUCT_MAPPING[product]`, so this finding is fully closed in the current 2.6.3 tree.
 **File:** `src/EWMRS/api/routes/renders.js:185-189` (`fetch`), `367-378` (`tile-info`)
 **Vulnerable code:**
 ```js
@@ -415,6 +416,7 @@ Also tighten `isSafeFilename` per H1.
 **Behavior preserved on legitimate input:** yes.
 
 #### S-H5. Bound `express.json` and reorder middleware
+> Status (2026-06-19): DONE — `src/EdgeWARN/api/server.js` now mounts rate limiting before `express.json({ limit: '16kb', strict: true, type: 'application/json' })`, so this finding is closed in the current tree.
 **File:** `src/EdgeWARN/api/server.js:111`
 **Vulnerable code:** `app.use(express.json());`
 **Exploit:** default 100 KB limit is implicit; no body should ever reach this GET-only API. Body parser runs before rate-limit, so abusive bodies waste CPU before rate-limit kicks in.
@@ -476,15 +478,15 @@ app.use(cors({ origin: corsOrigin, credentials: true, ... }));
 | S-L12 | EWMRS/EdgeWARN `helmet()` | `crossOriginResourcePolicy: 'same-origin'` may block cross-origin embedding — deliberate choice |
 | S-L13 | `EdgeWARN/api/server.js:86`, `EWMRS/api/server.js:186` | `compression()` enabled — BREACH-like risk for any future authenticated, secret-bearing response |
 | S-L14 | `EWMRS/api/routes/colormaps.js:18` | Path resolved relative to `__filename` with no containment check (currently fixed input) |
-| S-L15 | `EWMRS/api/routes/rap.js:183` | `new URL(import.meta.url).pathname` is broken on Windows; use `fileURLToPath` |
+| S-L15 | `EWMRS/api/routes/rap.js:183` | ~~`new URL(import.meta.url).pathname` is broken on Windows; use `fileURLToPath`~~ — DONE (2026-06-19): current code uses `fileURLToPath(import.meta.url)` |
 | S-L16 | `EdgeWARN/api/config.js:13` | `args[i].split('=')[1]` loses `=`-containing values (functional bug) |
 | S-L17 | `EdgeWARN/api/config.js:24-47`, EWMRS `server.js:88-105` | `BASE_DIR` resolved without root/system-path guard; `mkdirSync` creates subdirs under any path |
 
 ### 3.4 Top-3 fix order
 
 1. **S-H6 / S-H7 — CORS:** gate `credentials: true` on an explicit origin allowlist; replace EWMRS `cors()` with allowlisted config.
-2. **S-H3 / S-H1 — Path-traversal hygiene:** enforce `PRODUCT_MAPPING` allowlist on `/renders/fetch` + `/tile-info`; tighten `isSafeFilename` against control chars and Windows-reserved names.
-3. **S-H5 — Body limit + middleware order:** `express.json({ limit: '16kb' })`; rate-limit before body parser.
+2. **S-H1 / S-H2 — EdgeWARN path-traversal hygiene:** keep tightening filename validation and realpath containment around JSON file reads.
+3. **S-M3 / S-M7 — remaining request-hardening polish:** close the health-check bypass and stop echoing raw filesystem error details in EWMRS 500 responses.
 
 ---
 
@@ -507,18 +509,21 @@ Each finding cites file:line, kind, grep-evidence note, and removable LOC. All d
 **Grep evidence:** `grep "EWMRS.scheduler|from EWMRS import scheduler"` returns zero hits. The active scheduler is imported by `src/run.py:30,494` and `src/process_historical.py:9,55` from `EdgeWARN.schedule.scheduler`.
 **Action:** delete the file outright.
 **Removable LOC:** ~195.
+> Status (2026-06-19): DONE — `src/EWMRS/scheduler.py` is already absent from the current tree.
 
 ### D3. `EdgeWARN.pipeline.realtime_pipeline` (~80 LOC)
 **File:** `src/EdgeWARN/pipeline.py:252-332` + `__init__.py:1,7` re-export.
 **Grep evidence:** zero call sites in `src/`, `tests/`, `scripts/`. Production uses `edgewarn_tandem_worker` (called from `src/run.py:351`).
 **Action:** delete the function and remove from `EdgeWARN/__init__.py.__all__`.
 **Removable LOC:** ~80.
+> Status (2026-06-19): DONE — `realtime_pipeline` has been removed; only `historical_pipeline` remains in `src/EdgeWARN/pipeline.py`.
 
 ### D4. NEXRAD coordinator polling wrappers (~70 LOC)
 **File:** `src/common/ingest/nexrad/coordinator.py:156-178` (`NexradScanCoordinator.poll_latest_station_scans_forever_async`) and module-level wrapper at `:198-214`, plus the `main.py` re-export at lines 185-203.
 **Grep evidence:** superseded by `NexradRealtimeIngestionPipeline.run_forever` (used at `src/run.py:13, 155`). The `poll_*` wrappers have no internal callers.
 **Action:** delete the polling wrappers; keep `ingest_latest_station_scans_async` / `NexradScanCoordinator` for one-shot use (still referenced by `tests/core/ingest/test_nexrad_coordinator.py`).
 **Removable LOC:** ~70.
+> Status (2026-06-19): DONE — the polling wrappers are gone; the one-shot coordinator helpers remain and are still exercised by the coordinator tests.
 
 ### D5. MRMS sync fallback path (~50 LOC)
 **File:** `src/common/ingest/mrms/downloader.py::download_all_files_sync_fallback`, `download_modifier_sync`.
@@ -532,12 +537,14 @@ Each finding cites file:line, kind, grep-evidence note, and removable LOC. All d
 **Grep evidence:** zero callers in `src/` or `tests/`. Production uses `download_alerts_async` (called from `src/run.py::nws_loop`).
 **Action:** delete both functions.
 **Removable LOC:** ~85.
+> Status (2026-06-19): DONE — the legacy NWS ingest helpers are no longer present in `src/common/ingest/nws/main.py`.
 
 ### D7. `EWMRS.pipeline.run_ewmrs_pipeline` passthrough (~3 LOC)
 **File:** `src/EWMRS/pipeline.py:661-663`.
 **Grep evidence:** zero in-tree callers. Pure forward to `run_render_pipeline`.
 **Action:** delete.
 **Removable LOC:** 3.
+> Status (2026-06-19): DONE — the passthrough has already been removed from `src/EWMRS/pipeline.py`.
 
 ### D8. Explicit `gc.collect()` calls (2 LOC)
 **File:** `src/EdgeWARN/process/integrate/core/integrator.py:273, 373`.
@@ -545,6 +552,7 @@ Each finding cites file:line, kind, grep-evidence note, and removable LOC. All d
 **Action:** delete both lines.
 **Behavior preserved:** reference counts already free closed datasets immediately.
 **Removable LOC:** 2.
+> Status (2026-06-19): DONE — the explicit `gc.collect()` calls were removed from `src/EdgeWARN/process/integrate/core/integrator.py`. Other `gc.collect()` calls elsewhere remain out of scope for this item.
 
 ### D9. Opportunistic dead-code sweeps to perform during execution
 The following categories require per-symbol grep verification (the dead-code subagent's Phase 4 protocol). They are intentionally not enumerated symbol-by-symbol here because each candidate must be verified against the live tree at execution time:
@@ -643,7 +651,7 @@ Every recommendation in §2–§5 was vetted by a behavior-preservation auditor 
 ### 6.1 Numerical / scientific invariants
 
 1. **Kalman matrices stay `float64`** — `src/EdgeWARN/process/detect/kalman/filter.py` `state`, `P`, `F`, `Q`, `R`, `H` matrices are not downcast. Crossing the `gating_threshold=6.0` boundary on borderline associations would shift tracker output. Reject patches introducing `astype(np.float32)` or `dtype=np.float32` in this module.
-2. **`np.linalg.solve` not `inv` in Mahalanobis** — H5 in §2.1 explicitly proposes substituting `solve` for `inv`; the auditor confirmed `solve` is the existing convention in the codebase. Reject any reverse substitution.
+2. **`np.linalg.solve` not `inv` in the tracker math** — Mahalanobis already uses `solve`; the remaining H5 target is the Kalman-gain `inv(S)` at `filter.py:236`. Reject any reverse substitution where `solve` is already in place.
 3. **`cos(lat)` floor at `1e-6`** — guards polar-region division. Removing or changing the floor breaks lat=±90 handling.
 4. **Centroid log-sum-exp weighting** in `src/EdgeWARN/process/detect/tools/save.py` — replacing with a plain mean shifts centroid lat/lon by ~0.01°, perturbing tracker associations.
 5. **Polygon point rounding** `round(x, 3)` and `lon % 360` in the same file — any precision change alters byte-identical JSON output that consumers diff.
@@ -730,7 +738,7 @@ python src/run.py --lat_limits 20 55 --lon_limits 230 300 \
   --disable-ctam --disable-tracking
 ```
 - Run for one tandem cycle.
-- Diff `<BASE_DIR>/{data,gui,wpc}` filenames and JSON envelopes against a pre-change baseline. Numeric tolerance applies only to intentional float-pipeline edits (H5 `solve` vs `inv`, H9 LUT, M21 float32 RAP) — verify with `np.allclose(rtol=1e-5, atol=1e-8)`.
+- Diff `<BASE_DIR>/{data,gui,wpc}` filenames and JSON envelopes against a pre-change baseline. Numeric tolerance applies only to intentional float-pipeline edits (H5 Kalman-gain `solve` vs `inv`, H9 LUT, M21 float32 RAP) — verify with `np.allclose(rtol=1e-5, atol=1e-8)`.
 
 #### Historical pipeline regression
 ```
@@ -745,7 +753,7 @@ python src/process_historical.py --start <T0> --end <T0+1m> \
 | Section | Verification |
 |---------|--------------|
 | §2 Performance — H1, H8, H10 (vectorization) | Numeric diff via `np.allclose`; perf delta via `util.performance` or benchmarks |
-| §2 Performance — H5 `solve` vs `inv` | Tracker output diff: feed the test fixture in `tests/core/process/detect/kalman/` and confirm associations match within tolerance |
+| §2 Performance — H5 Kalman-gain `solve` vs `inv` | Tracker output diff: feed the test fixture in `tests/core/process/detect/kalman/` and confirm associations match within tolerance |
 | §2 Performance — H9 RGBA LUT | Pixel-perfect PNG diff for sample tiles; tolerance only on continuous-cmap path |
 | §2 Performance — H11 context manager | RSS curve over a 30-min run before/after |
 | §3 Security — H1–H7 | OWASP ZAP baseline scan + manual exploit attempt for each |
@@ -766,9 +774,9 @@ Each batch in §8 should be a separate PR. Bisect-friendly commit prefixes (per 
 Ordered list of safe-first batches. Each batch is one or two PRs.
 
 ### Items already shipped before execution (skip in batches below)
-As of 2026-05-28: **H10, M8, L8, L13, L21, L23** are already in the codebase and do not need PRs. **H7** is half-done (line 437 already hoisted). **L17** is gated. **S-H3** `/tile-info` half is done; only `/fetch` remains.
+As of 2026-06-19: **H10, M8, L8, L13, L21, L23, S-H3, S-H5, S-L15, D2, D3, D4, D6, D7, D8/L14** are already in the codebase and do not need PRs. **H7** is still half-done (line 437 already hoisted). **L17** is gated. The remaining high-priority open items are H5, B1, B4, A2, D1, and the unreconciled numeric/perf items in §2.
 
-### Batch 1 — Pure deletions, zero importers (safest, ~430 LOC)
+### Batch 1 — Closed in 2.6.3: pure deletions, zero importers (~430 LOC)
 - D2: delete `src/EWMRS/scheduler.py` (~195)
 - D3: delete `EdgeWARN.pipeline.realtime_pipeline` (~80)
 - D4: delete NEXRAD polling wrappers (~70)
@@ -777,15 +785,12 @@ As of 2026-05-28: **H10, M8, L8, L13, L21, L23** are already in the codebase and
 - D8: remove explicit `gc.collect()` calls (2)
 - §2 L14 (drop explicit GC) and §2 L17 (gate rate limiters) bundle here as they share the "safe edit, zero functional change" profile.
 
-### Batch 2 — Security high-priority hardening
+### Batch 2 — Security hardening still open after 2.6.3
 - S-H6 / S-H7 (CORS allowlist + credentials gating).
-- S-H3 (PRODUCT_MAPPING allowlist on `/renders/fetch` and `/tile-info`).
 - S-H1 / S-H2 (path-traversal hygiene: control chars, Windows-reserved names, `realpath` containment).
-- S-H4 (`resolveUnder` in `wpc.js`).
-- S-H5 (`express.json({ limit: '16kb' })` + middleware reorder).
-- S-M9 / S-M10 (`typeof !== 'string'` guards).
+- S-M3 (health-check bypass tokenization / skip hardening).
+- S-M4 (short-TTL directory listing caches).
 - S-M7 (drop `err.message` from EWMRS 500 bodies).
-- S-L15 (`fileURLToPath` fix in `rap.js:183`).
 
 ### Batch 3 — Low-risk performance with no numeric output change
 - H2 `os.scandir`
@@ -797,7 +802,7 @@ As of 2026-05-28: **H10, M8, L8, L13, L21, L23** are already in the codebase and
 - M3 `compression` filter for image responses
 - M14 LRU index cache by (path, mtime)
 - M16 combined regex in `find_timestamp`
-- M17 `express.json({ limit })` (paired with S-H5 if not already shipped)
+- ~~M17 `express.json({ limit })`~~ (DONE in 2.6.3 with S-H5)
 - L20 `lru_cache` for cmap
 - L24 `tracks_by_id` dict
 
@@ -811,10 +816,10 @@ As of 2026-05-28: **H10, M8, L8, L13, L21, L23** are already in the codebase and
 ### Batch 5 — Numeric / algorithmic refactors (require diff verification)
 - H1 vectorize `RAPPointExtractor.extract` via `extract_batch`
 - H3 narrow `deepcopy` in detection
-- H5 `solve` vs `inv` for Mahalanobis
+- H5 Kalman-gain `solve` vs `inv`
 - H8 prefilter centroid array hoist
 - H9 RGBA LUT single-pass
-- ~~H10 `_decode_grouped_ar2v_sweep` vectorization~~ (DONE 2026-05-28)
+- ~~H10 `_decode_grouped_ar2v_sweep` vectorization~~ (DONE 2026-06-19)
 - M21 float32 RAP read
 
 Each item ships in its own PR with a stormcell JSON byte-diff and a render PNG pixel-diff in the test plan.
