@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timezone, timedelta
-from EdgeWARN.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
+from common.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 
 # === Tests for round_to_nearest_even_minute ===
 
