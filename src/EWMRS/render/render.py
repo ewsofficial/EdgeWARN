@@ -76,11 +76,26 @@ def _scalar_data_to_rgba(
     safe_data = np.where(valid_mask, flat_data, thresholds[0])
 
     if interpolate:
+        # Single-pass equivalent of four per-channel np.interp calls: locate the
+        # interval index once (shared across RGBA) instead of binary-searching the
+        # data four times. Arithmetic mirrors np.interp exactly to stay
+        # byte-identical: np.interp promotes to float64, returns fp[j] verbatim at
+        # threshold nodes and at the top endpoint, and otherwise evaluates
+        # slope*(x - xp[j]) + fp[j]. Assumes strictly increasing thresholds (true
+        # for continuous colormaps), matching np.interp's no-NaN-slope case.
         safe_data = np.clip(safe_data, thresholds[0], thresholds[-1])
-        rgba_flat[:, 0] = np.interp(safe_data, thresholds, colors[:, 0]).astype(np.uint8)
-        rgba_flat[:, 1] = np.interp(safe_data, thresholds, colors[:, 1]).astype(np.uint8)
-        rgba_flat[:, 2] = np.interp(safe_data, thresholds, colors[:, 2]).astype(np.uint8)
-        rgba_flat[:, 3] = np.interp(safe_data, thresholds, colors[:, 3]).astype(np.uint8)
+        xp = thresholds.astype(np.float64)
+        fp = colors.astype(np.float64)
+        x = safe_data.astype(np.float64)
+        n = xp.shape[0]
+        j = np.searchsorted(xp, x, side="right") - 1
+        np.clip(j, 0, n - 1, out=j)
+        exact = (j == n - 1) | (xp[j] == x)
+        j_lo = np.where(exact, 0, j)
+        slopes = (fp[1:] - fp[:-1]) / (xp[1:] - xp[:-1])[:, None]
+        interp = slopes[j_lo] * (x - xp[j_lo])[:, None] + fp[j_lo]
+        rgba_float = np.where(exact[:, None], fp[j], interp)
+        rgba_flat[:, :4] = rgba_float.astype(np.uint8)
         below_min_mask = valid_mask & (flat_data < thresholds[0])
         rgba_flat[below_min_mask] = 0
     else:
