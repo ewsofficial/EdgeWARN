@@ -216,7 +216,7 @@ At runtime, the code expects a base directory that typically looks like this:
 - Add or update Jest/Supertest coverage in `tests/api/`
 
 ### Data and Pipeline Development
-- `src/common/ingest/` is the primary ingest implementation surface; `src/EdgeWARN/ingest/` currently exists as a compatibility re-export layer
+- `src/common/ingest/` is the primary ingest implementation surface
 - Preserve the tandem readiness flow in the shared ingest coordinator: detection inputs first, EWMRS render readiness second, EdgeWARN integration readiness last
 - Treat the runtime base directory as the source of truth for generated artifacts; avoid introducing hard-coded repository-local output paths
 - When changing detection or integration behavior, consider downstream impacts on CTAM, alerts, API indexes, and GUI render availability
