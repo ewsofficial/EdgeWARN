@@ -52,9 +52,9 @@ Each item is a separate PR with prefix `REM[ingest]:` or `REM[dead]:`. Verificat
 - [x] D6 delete NWS legacy ingest functions
 - [x] D7 delete `run_ewmrs_pipeline` passthrough
 - [x] D8 / L14 remove explicit `gc.collect()` calls
-- [ ] Re-run `pytest tests/` if replaying this bundle on another branch
-- [ ] Re-run `npm test` if replaying this bundle on another branch
-- [ ] Re-run the 1-cycle real-time smoke in §7.2 if replaying this bundle on another branch
+- [X] Re-run `pytest tests/` if replaying this bundle on another branch
+- [X] Re-run `npm test` if replaying this bundle on another branch
+- [X] Re-run the 1-cycle real-time smoke in §7.2 if replaying this bundle on another branch
 
 This bundle is already present in the 2.6.3 tree. Keep the itemization below only as replay/cherry-pick guidance for other branches:
 
@@ -102,8 +102,8 @@ Multi-step; ordering matters:
 - [ ] Complete B1 CORS lockdown
 - [x] Complete B2 path-traversal hygiene
 - [x] Complete B3 request-body and middleware hardening
-- [ ] Complete B4 medium-severity polish
-- [ ] Run per-item exploit verification and end-of-phase ZAP baseline
+- [X] Complete B4 medium-severity polish
+- [X] Run per-item exploit verification and end-of-phase ZAP baseline
 
 Each item ships as its own PR with prefix `FIX[sec]:`. Verification: §7.2 manual exploit attempt for each H-item; OWASP ZAP baseline scan at end of phase.
 
