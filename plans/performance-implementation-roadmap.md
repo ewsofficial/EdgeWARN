@@ -103,7 +103,7 @@ Multi-step; ordering matters:
 - [ ] Complete B1 CORS lockdown
 - [ ] Complete B2 path-traversal hygiene
 - [ ] Complete B3 request-body and middleware hardening
-- [ ] Complete B4 medium-severity polish
+- [x] Complete B4 medium-severity polish
 - [ ] Run per-item exploit verification and end-of-phase ZAP baseline
 
 Each item ships as its own PR with prefix `FIX[sec]:`. Verification: §7.2 manual exploit attempt for each H-item; OWASP ZAP baseline scan at end of phase.
@@ -162,10 +162,10 @@ These edits cluster on `EdgeWARN/api/server.js` and validation helpers:
 
 **B4 checklist**
 
-- [ ] Document `keyGenerator` behavior and add startup warning for proxy misconfiguration
-- [ ] Add short-TTL `LRUCache` wrappers around unbounded `fs.readdir` call sites
-- [ ] Remove raw error-message details from EWMRS 500 responses while preserving server logs
-- [ ] Defer internal-check token bypass unless coordinated client changes are ready
+- [x] Document `keyGenerator` behavior and add startup warning for proxy misconfiguration
+- [x] Add short-TTL `LRUCache` wrappers around unbounded `fs.readdir` call sites
+- [x] Remove raw error-message details from EWMRS 500 responses while preserving server logs
+- [x] Defer internal-check token bypass unless coordinated client changes are ready
 
 - S-M3: `keyGenerator` doc + production startup warning when `trust-proxy=false` and `X-Forwarded-For` observed.
 - S-M4: wrap unbounded `fs.readdir` in `LRUCache(ttl: 5_000)` for `alerts.js:13-34`, `mesocyclones.js:9-23`, `metar.js:14-36`, `nexrad/filesystem.js:88-105, 107-125`.
