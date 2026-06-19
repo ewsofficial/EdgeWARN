@@ -282,6 +282,18 @@ def _ensure_runtime_configured() -> None:
 
 def _worker_initializer() -> None:
     _ensure_runtime_configured()
+    # Warm the heavy render-module imports (xarray/rioxarray/rasterio chains)
+    # at worker startup so the first _render_layer task per worker does not pay
+    # the import cost. Identical import semantics, just earlier; a failure here
+    # is non-fatal because the per-task imports in _render_layer would surface
+    # any genuinely missing dependency.
+    try:
+        import EWMRS.render.goes_rgb  # noqa: F401
+        import EWMRS.render.render  # noqa: F401
+        import EWMRS.render.goes_transform  # noqa: F401
+        import EWMRS.render.tools  # noqa: F401
+    except Exception:
+        pass
 
 
 def _latest_source_file(src_dir: Path) -> Optional[Path]:
@@ -573,9 +585,70 @@ def run_nexrad_render_loop(*, base_dir=None, poll_interval_seconds: float = _NEX
         time.sleep(poll_interval_seconds)
 
 
+def _cleanup_gui_out_dir(out_dir: Path, now: float, max_age_seconds: float) -> int:
+    """Clean one GUI output directory; returns the count of removed files/folders."""
+    import shutil
+
+    if not out_dir.exists():
+        return 0
+
+    removed = 0
+    existing_timestamps = set()
+
+    for png_file in out_dir.glob("*.png"):
+        try:
+            file_age = now - png_file.stat().st_mtime
+            if file_age > max_age_seconds:
+                png_file.unlink()
+                removed += 1
+            else:
+                stem = png_file.stem
+                if "_" in stem:
+                    existing_timestamps.add(stem.split("_")[-1])
+        except Exception as exc:
+            io_manager.write_warning(f"Failed to process {png_file}: {exc}")
+
+    for ts_folder in out_dir.iterdir():
+        if ts_folder.is_dir() and not ts_folder.name.startswith("."):
+            try:
+                folder_age = now - ts_folder.stat().st_mtime
+                if folder_age > max_age_seconds:
+                    shutil.rmtree(ts_folder)
+                    removed += 1
+                    io_manager.write_debug(f"Removed old timestamp folder: {ts_folder}")
+                else:
+                    existing_timestamps.add(ts_folder.name)
+            except Exception as exc:
+                io_manager.write_warning(f"Failed to process folder {ts_folder}: {exc}")
+
+    index_file = out_dir / "index.json"
+    if index_file.exists():
+        try:
+            with open(index_file, "r") as f:
+                data = json.load(f)
+
+            if isinstance(data, list):
+                timestamps = data
+                tile_grid = None
+            else:
+                timestamps = data.get("timestamps", [])
+                tile_grid = data.get("tile_grid")
+
+            timestamps = [ts for ts in timestamps if ts in existing_timestamps]
+
+            output_data = {"timestamps": timestamps, "tile_grid": tile_grid} if tile_grid is not None else timestamps
+
+            with open(index_file, "w") as f:
+                json.dump(output_data, f)
+        except Exception as exc:
+            io_manager.write_warning(f"Failed to update index.json in {out_dir}: {exc}")
+
+    return removed
+
+
 def cleanup_old_gui_files(max_age_minutes: int = 120):
     """Remove old files/folders from GUI output directories."""
-    import shutil
+    from concurrent.futures import ThreadPoolExecutor
 
     now = time.time()
     max_age_seconds = max_age_minutes * 60
@@ -589,59 +662,18 @@ def cleanup_old_gui_files(max_age_minutes: int = 120):
 
         candidate_dirs.append(Path(output_path))
 
-    for out_dir in candidate_dirs:
-        if not out_dir.exists():
-            continue
-
-        existing_timestamps = set()
-
-        for png_file in out_dir.glob("*.png"):
-            try:
-                file_age = now - png_file.stat().st_mtime
-                if file_age > max_age_seconds:
-                    png_file.unlink()
-                    total_removed += 1
-                else:
-                    stem = png_file.stem
-                    if "_" in stem:
-                        existing_timestamps.add(stem.split("_")[-1])
-            except Exception as exc:
-                io_manager.write_warning(f"Failed to process {png_file}: {exc}")
-
-        for ts_folder in out_dir.iterdir():
-            if ts_folder.is_dir() and not ts_folder.name.startswith("."):
-                try:
-                    folder_age = now - ts_folder.stat().st_mtime
-                    if folder_age > max_age_seconds:
-                        shutil.rmtree(ts_folder)
-                        total_removed += 1
-                        io_manager.write_debug(f"Removed old timestamp folder: {ts_folder}")
-                    else:
-                        existing_timestamps.add(ts_folder.name)
-                except Exception as exc:
-                    io_manager.write_warning(f"Failed to process folder {ts_folder}: {exc}")
-
-        index_file = out_dir / "index.json"
-        if index_file.exists():
-            try:
-                with open(index_file, "r") as f:
-                    data = json.load(f)
-
-                if isinstance(data, list):
-                    timestamps = data
-                    tile_grid = None
-                else:
-                    timestamps = data.get("timestamps", [])
-                    tile_grid = data.get("tile_grid")
-
-                timestamps = [ts for ts in timestamps if ts in existing_timestamps]
-
-                output_data = {"timestamps": timestamps, "tile_grid": tile_grid} if tile_grid is not None else timestamps
-
-                with open(index_file, "w") as f:
-                    json.dump(output_data, f)
-            except Exception as exc:
-                io_manager.write_warning(f"Failed to update index.json in {out_dir}: {exc}")
+    # Each output directory is independent, so the per-dir cleanups commute and
+    # can run concurrently. On-disk results are identical to the serial form;
+    # only debug log ordering may interleave.
+    if candidate_dirs:
+        max_workers = min(8, len(candidate_dirs))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            total_removed += sum(
+                executor.map(
+                    lambda out_dir: _cleanup_gui_out_dir(out_dir, now, max_age_seconds),
+                    candidate_dirs,
+                )
+            )
 
     total_removed += _cleanup_old_nexrad_gui_files(max_age_minutes=max_age_minutes)
 
