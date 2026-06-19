@@ -182,8 +182,8 @@ class KalmanFilter:
         
         # Get current state as array
         x = self.state.to_array()
-        P = self.covariance.to_array()
-        
+        P = self.covariance.to_array(copy=False)  # read-only below
+
         # Apply control input if provided (StormCast velocity)
         if control_u is not None and control_v is not None:
             # Update velocity in state to match StormCast prediction
@@ -221,8 +221,8 @@ class KalmanFilter:
         
         # Get current state and covariance
         x = self.state.to_array()
-        P = self.covariance.to_array()
-        
+        P = self.covariance.to_array(copy=False)  # read-only below
+
         # Observation vector z (position only)
         z = np.array([observation.lat, observation.lon], dtype=np.float64)
         
@@ -327,13 +327,11 @@ class KalmanFilter:
         # State layout is interleaved: [lat, lon, u, v, a_lat, a_lon]
         # Lat axis → indices 0, 2, 4     Lon axis → indices 1, 3, 5
         Q = np.zeros((6, 6), dtype=np.float64)
-        lat_idx = [0, 2, 4]
-        lon_idx = [1, 3, 5]
-        for ri in range(3):
-            for ci in range(3):
-                Q[lat_idx[ri], lat_idx[ci]] = blk[ri, ci]
-                Q[lon_idx[ri], lon_idx[ci]] = blk[ri, ci]
-        
+        lat_idx = np.array([0, 2, 4])
+        lon_idx = np.array([1, 3, 5])
+        Q[np.ix_(lat_idx, lat_idx)] = blk
+        Q[np.ix_(lon_idx, lon_idx)] = blk
+
         return Q
     
     def get_predicted_position(self, dt: float) -> Tuple[float, float]:
@@ -426,9 +424,9 @@ class KalmanFilter:
             # Return identity if not initialized
             return np.eye(2, dtype=np.float64)
         
-        P = self.covariance.to_array()
+        P = self.covariance.to_array(copy=False)  # read-only below
         S = self._H @ P @ self._H.T + self._R
-        
+
         # Add regularization for numerical stability
         S += np.eye(2) * regularization
         
