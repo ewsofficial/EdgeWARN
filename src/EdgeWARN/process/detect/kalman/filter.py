@@ -233,7 +233,9 @@ class KalmanFilter:
         S = self._H @ P @ self._H.T + self._R
         
         # Kalman gain: K = P * H^T * S^-1
-        K = P @ self._H.T @ np.linalg.inv(S)
+        # Solve K @ S = P @ H^T (i.e. S^T @ K^T = (P @ H^T)^T) instead of forming
+        # inv(S): mathematically identical for non-singular S, more stable and faster.
+        K = np.linalg.solve(S.T, (P @ self._H.T).T).T
         
         # Updated state: x' = x + K * y
         x_updated = x + K @ y
