@@ -1,7 +1,7 @@
 import express from 'express';
-import fs from 'fs/promises';
 import apiConfig from '../../../config.js';
 import { readJsonFileSafe } from '../../../utils/fileReader.js';
+import { listDirCached } from '../../../utils/dirListing.js';
 import { validateTimestampV2, validateMutualExclusion, validateAlertId } from '../../../utils/validation.js';
 
 const router = express.Router();
@@ -12,7 +12,7 @@ const router = express.Router();
  */
 async function getTimestamps(tsDir) {
   try {
-    const files = await fs.readdir(tsDir);
+    const files = await listDirCached(tsDir);
     const timestamps = [];
 
     for (const file of files) {
