@@ -1,6 +1,5 @@
 from EdgeWARN.process.detect.tools.utils import DetectionDataHandler
 from pathlib import Path
-import copy
 from EdgeWARN.process.detect.tools.save import CellDataSaver
 from EdgeWARN.process.detect.tools.vecmath import StormVectorCalculator
 from EdgeWARN.process.detect.tools.alert_matcher import match_alerts_to_cells
@@ -295,7 +294,13 @@ def main(
 
     perf_tracker.start("Detection - Tracking")
     saver = CellDataSaver(None, radar_new, None, None, ps_new_data, None)
-    vector_previous_entries = copy.deepcopy(entries_old) if entries_old else None
+    # Snapshot the pre-update entries for StormVectorCalculator, which reads only
+    # each entry's id, centroid, and timestamp. update_cells mutates old entries
+    # by rebinding top-level keys (e.g. cell['centroid'] = updated['centroid']),
+    # never by mutating nested objects in place, so a shallow per-entry copy
+    # preserves the old centroid/timestamp identically to a deepcopy while
+    # skipping deep recursion through bbox/polygon/CTAM payloads.
+    vector_previous_entries = [dict(entry) for entry in entries_old] if entries_old else None
 
     stormcell_dir = fs.STORMCELL_DIR
     stormcell_dir.mkdir(exist_ok=True)
