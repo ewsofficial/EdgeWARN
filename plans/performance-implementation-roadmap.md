@@ -222,13 +222,13 @@ Bundle by file/module to keep PRs focused. None of these alter byte output:
 
 **C2 checklist**
 
-- [ ] H1 route `RAPPointExtractor.extract` callers through `extract_batch`
-- [ ] H3 narrow `deepcopy(vector_previous_entries)`
-- [ ] H5 replace Kalman gain `inv(S)` with a `solve` form only at `filter.py:236`
-- [ ] H8 / H9 implement RGBA LUT single-pass while preserving the documented two-path split
-- [ ] M21 switch RAP read to float32 at `rap/uint16_pipeline.py:199`
-- [ ] Verify stormcell numeric diffs with `np.allclose(rtol=1e-5, atol=1e-8)`
-- [ ] Verify render pixel diffs on sample tiles
+- [x] H1 route `RAPPointExtractor.extract` callers through `extract_batch` (callers already migrated; removed dead per-cell path)
+- [x] H3 narrow `deepcopy(vector_previous_entries)` (shallow per-entry copy)
+- [x] H5 replace Kalman gain `inv(S)` with a `solve` form only at `filter.py:236`
+- [x] H8 / H9 implement RGBA LUT single-pass while preserving the documented two-path split
+- [x] M21 switch RAP read to float32 at `rap/uint16_pipeline.py:199`
+- [ ] Verify stormcell numeric diffs with `np.allclose(rtol=1e-5, atol=1e-8)` (deferred — no test env)
+- [ ] Verify render pixel diffs on sample tiles (deferred — no test env)
 
 Each ships in its own PR with stormcell JSON byte-diff + render PNG pixel-diff in the test plan. Strict §6 invariant compliance:
 

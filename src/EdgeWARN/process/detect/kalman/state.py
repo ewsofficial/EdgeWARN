@@ -144,9 +144,14 @@ class CovarianceMatrix:
         ]
         return cls.from_diagonal(variances)
     
-    def to_array(self) -> np.ndarray:
-        """Get the covariance matrix as numpy array."""
-        return self._matrix.copy()
+    def to_array(self, copy: bool = True) -> np.ndarray:
+        """Get the covariance matrix as numpy array.
+
+        copy defaults to True for external callers. Internal read-only
+        callers may pass copy=False to avoid the per-call allocation; the
+        returned array must not be mutated in that case.
+        """
+        return self._matrix.copy() if copy else self._matrix
     
     def get_position_variance(self) -> Tuple[float, float]:
         """Get position variances as (var_lat, var_lon) in degrees²."""
