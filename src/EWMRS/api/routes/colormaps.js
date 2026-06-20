@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
       return res.status(404).json({ error: 'Colormaps configuration not found' });
     }
     console.error('Error reading colormaps.json:', err);
-    res.status(500).json({ error: 'Failed to read colormaps.json', details: err.message });
+    res.status(500).json({ error: 'Failed to read colormaps.json' });
   }
 });
 

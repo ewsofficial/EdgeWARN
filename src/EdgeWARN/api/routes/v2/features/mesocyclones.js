@@ -1,14 +1,14 @@
 import express from 'express';
-import fs from 'fs/promises';
 import apiConfig from '../../../config.js';
 import { readJsonFileSafe } from '../../../utils/fileReader.js';
+import { listDirCached } from '../../../utils/dirListing.js';
 import { validateTimestampV2 } from '../../../utils/validation.js';
 
 const router = express.Router();
 
 async function getMesocycloneTimestamps(dir) {
   try {
-    const files = await fs.readdir(dir);
+    const files = await listDirCached(dir);
     return files
       .map((file) => file.match(/^mesocyclones_(\d{8}-\d{6})\.json$/)?.[1])
       .filter(Boolean)

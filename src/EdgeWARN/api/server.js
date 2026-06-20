@@ -137,6 +137,9 @@ export function createApp(env = process.env, options = {}) {
     rateLimitMaxMin
   } = getEdgewarnRateLimitConfig(env, argv);
 
+  // Emit at most one warning per process about a likely proxy misconfiguration.
+  let warnedProxyMisconfig = false;
+
   const buildLimiter = (windowMs, max) => rateLimit({
     windowMs,
     max,
@@ -147,7 +150,26 @@ export function createApp(env = process.env, options = {}) {
       // Optionally skip rate limiting for health checks from internal monitoring
       return req.path === '/health' && req.headers['x-internal-check'] === 'true';
     },
+    // Rate-limit key derivation.
+    //
+    // When trustProxy is enabled, Express resolves req.ip from the configured
+    // trusted X-Forwarded-For chain, so we key on the real client IP. When it
+    // is disabled, X-Forwarded-For is attacker-controlled and MUST be ignored;
+    // we key on the raw socket peer address instead. ipKeyGenerator normalizes
+    // IPv6 addresses so a single client cannot evade the limit via address
+    // expansion. Misconfiguring trustProxy (true behind no proxy) lets clients
+    // spoof X-Forwarded-For to bypass limits; leaving it false behind a real
+    // proxy collapses every client onto the proxy IP.
     keyGenerator: (req) => {
+      if (!trustProxy && env.NODE_ENV === 'production' && !warnedProxyMisconfig &&
+          req.headers['x-forwarded-for'] !== undefined) {
+        warnedProxyMisconfig = true;
+        console.warn('[Security] X-Forwarded-For observed while trust proxy is disabled. ' +
+          'Rate limiting will key on the proxy/socket address, collapsing all forwarded ' +
+          'clients onto one key. Set TRUST_PROXY_IPS to the proxy address(es) if running ' +
+          'behind a trusted reverse proxy.');
+      }
+
       let clientIp;
       if (trustProxy) {
         clientIp = req.ip;
