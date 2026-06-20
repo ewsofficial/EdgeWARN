@@ -5,7 +5,7 @@ Tests for Synoptic ingest main module
 import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, call, patch, AsyncMock
-from EdgeWARN.ingest.synoptic.main import download_rap, download_rap_async
+from common.ingest.synoptic.main import download_rap, download_rap_async
 
 
 class TestDownloadRapAsync:
@@ -14,10 +14,10 @@ class TestDownloadRapAsync:
     @pytest.mark.asyncio
     async def test_async_download_cleans_old_files(self):
         """Test that async download cleans old files"""
-        with patch('EdgeWARN.ingest.synoptic.main.fs.async_clean_old_files') as mock_clean:
+        with patch('common.ingest.synoptic.main.fs.async_clean_old_files') as mock_clean:
             mock_clean.return_value = None  # Not a coroutine, just returns None
             
-            with patch('EdgeWARN.ingest.synoptic.main._download_rap') as mock_download:
+            with patch('common.ingest.synoptic.main._download_rap') as mock_download:
                 mock_download.return_value = "test_file.grib2"
                 
                 result = await download_rap_async(datetime(2023, 10, 15, 14, 30))
@@ -34,8 +34,8 @@ class TestDownloadRapAsync:
         """Test async download with specific datetime"""
         test_dt = datetime(2023, 10, 15, 14, 30, 0)
         
-        with patch('EdgeWARN.ingest.synoptic.main.fs.async_clean_old_files'):
-            with patch('EdgeWARN.ingest.synoptic.main._download_rap') as mock_download:
+        with patch('common.ingest.synoptic.main.fs.async_clean_old_files'):
+            with patch('common.ingest.synoptic.main._download_rap') as mock_download:
                 mock_download.return_value = "test_file.grib2"
                 
                 result = await download_rap_async(test_dt)
@@ -55,9 +55,9 @@ class TestDownloadRap:
 
     def test_download_with_sync_context(self, mock_io):
         """Test download when no event loop exists"""
-        with patch('EdgeWARN.ingest.synoptic.main.asyncio.get_running_loop', side_effect=RuntimeError):
-            with patch('EdgeWARN.ingest.synoptic.main.fs.clean_old_files'):
-                with patch('EdgeWARN.ingest.synoptic.main.asyncio.run') as mock_run:
+        with patch('common.ingest.synoptic.main.asyncio.get_running_loop', side_effect=RuntimeError):
+            with patch('common.ingest.synoptic.main.fs.clean_old_files'):
+                with patch('common.ingest.synoptic.main.asyncio.run') as mock_run:
                     mock_run.return_value = "success"
 
                     result = download_rap(datetime(2023, 10, 15, 14, 30))
@@ -72,7 +72,7 @@ class TestDownloadRap:
         mock_task = MagicMock()
         mock_loop.create_task.return_value = mock_task
         
-        with patch('EdgeWARN.ingest.synoptic.main.asyncio.get_running_loop', return_value=mock_loop):
+        with patch('common.ingest.synoptic.main.asyncio.get_running_loop', return_value=mock_loop):
             result = download_rap(datetime(2023, 10, 15, 14, 30))
             
             # Should use loop.create_task
@@ -81,8 +81,8 @@ class TestDownloadRap:
 
     def test_download_cleans_old_files(self, mock_io):
         """Test that old files are cleaned"""
-        with patch('EdgeWARN.ingest.synoptic.main.fs.clean_old_files') as mock_clean:
-            with patch('EdgeWARN.ingest.synoptic.main.asyncio.run'):
+        with patch('common.ingest.synoptic.main.fs.clean_old_files') as mock_clean:
+            with patch('common.ingest.synoptic.main.asyncio.run'):
                 download_rap(datetime(2023, 10, 15, 14, 30))
                 
                 # Should pre-clean to leave room for the new file, then enforce the final 3-file limit
@@ -95,10 +95,10 @@ class TestDownloadRap:
         """Test download with specific datetime"""
         test_dt = datetime(2023, 10, 15, 14, 30, 0)
         
-        with patch('EdgeWARN.ingest.synoptic.main._download_rap') as mock_download:
+        with patch('common.ingest.synoptic.main._download_rap') as mock_download:
             mock_download.return_value = "test_file.nc"
             
-            with patch('EdgeWARN.ingest.synoptic.main.asyncio.run') as mock_run:
+            with patch('common.ingest.synoptic.main.asyncio.run') as mock_run:
                 mock_run.return_value = "test_file.nc"
                 result = download_rap(test_dt)
                 
@@ -108,7 +108,7 @@ class TestDownloadRap:
 
     def test_download_handles_errors(self, mock_io):
         """Test error handling - function should raise exception on failure"""
-        with patch('EdgeWARN.ingest.synoptic.main.asyncio.run') as mock_run:
+        with patch('common.ingest.synoptic.main.asyncio.run') as mock_run:
             mock_run.side_effect = Exception("Download failed")
             
             # Should raise exception

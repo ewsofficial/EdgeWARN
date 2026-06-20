@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timezone, timedelta
-from EdgeWARN.ingest.mrms.parse import parse_mrms_bucket_path, parse_goes_bucket_path
+from common.ingest.mrms.parse import parse_mrms_bucket_path, parse_goes_bucket_path
 
 # === Tests for parse_mrms_bucket_path ===
 

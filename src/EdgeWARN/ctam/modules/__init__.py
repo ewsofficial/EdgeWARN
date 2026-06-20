@@ -24,7 +24,7 @@ GridModuleRegistry.register(MesocycloneModule())
 # 4. Post-Analysis Modules
 
 # GeoMapper is a file processor, not a per-entry module, so we don't register it
-# It's accessed directly via: from EdgeWARN.ingest.nws.geomapper import process_warning
+# It's accessed directly via: from common.ingest.nws.geomapper import process_warning
 
 __all__ = [
     "StormCastModule",
