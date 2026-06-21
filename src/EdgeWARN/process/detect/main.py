@@ -1,6 +1,5 @@
 from EdgeWARN.process.detect.tools.utils import DetectionDataHandler
 from pathlib import Path
-import copy
 from EdgeWARN.process.detect.tools.save import CellDataSaver
 from EdgeWARN.process.detect.tools.vecmath import StormVectorCalculator
 from EdgeWARN.process.detect.tools.alert_matcher import match_alerts_to_cells
@@ -10,6 +9,7 @@ from EdgeWARN.process.detect.detect import detect_cells
 from util.io import IOManager
 import util.file as fs
 import json as js
+import os
 from datetime import datetime
 from util.performance import tracker as perf_tracker
 
@@ -160,10 +160,17 @@ def main(
         stormcell_dir = fs.STORMCELL_DIR
         if stormcell_dir.exists():
             latest_json = None
-            for candidate in stormcell_dir.glob("stormcells_*.json"):
-                if candidate.stem < f"stormcells_{final_ts}":
-                    if latest_json is None or candidate.stem > latest_json.stem:
-                        latest_json = candidate
+            latest_stem = None
+            cutoff_stem = f"stormcells_{final_ts}"
+            with os.scandir(stormcell_dir) as it:
+                for entry in it:
+                    name = entry.name
+                    if not (name.startswith("stormcells_") and name.endswith(".json")):
+                        continue
+                    stem = name[:-len(".json")]
+                    if stem < cutoff_stem and (latest_stem is None or stem > latest_stem):
+                        latest_json = Path(entry.path)
+                        latest_stem = stem
 
             if latest_json is not None:
                 io_manager.write_debug(f"Loading previous cells from {latest_json}")
@@ -301,7 +308,13 @@ def main(
 
     perf_tracker.start("Detection - Tracking")
     saver = CellDataSaver(None, radar_new, None, None, ps_new_data, None)
-    vector_previous_entries = copy.deepcopy(entries_old) if entries_old else None
+    # Snapshot the pre-update entries for StormVectorCalculator, which reads only
+    # each entry's id, centroid, and timestamp. update_cells mutates old entries
+    # by rebinding top-level keys (e.g. cell['centroid'] = updated['centroid']),
+    # never by mutating nested objects in place, so a shallow per-entry copy
+    # preserves the old centroid/timestamp identically to a deepcopy while
+    # skipping deep recursion through bbox/polygon/CTAM payloads.
+    vector_previous_entries = [dict(entry) for entry in entries_old] if entries_old else None
 
     stormcell_dir = fs.STORMCELL_DIR
     stormcell_dir.mkdir(exist_ok=True)

@@ -196,7 +196,7 @@ def _matching_layer(message: dict[str, Any], layers) -> dict[str, Any] | None:
 def _read_message_values(gid) -> tuple[np.ndarray, dict[str, int]]:
     ni = int(eccodes.codes_get_long(gid, "Ni"))
     nj = int(eccodes.codes_get_long(gid, "Nj"))
-    values = np.asarray(eccodes.codes_get_double_array(gid, "values"), dtype=np.float64)
+    values = np.asarray(eccodes.codes_get_double_array(gid, "values"), dtype=np.float32)
     expected_size = ni * nj
     if values.size != expected_size:
         raise ValueError(f"RAP message value count {values.size} does not match grid shape {nj}x{ni}")

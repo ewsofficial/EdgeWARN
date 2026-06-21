@@ -1,8 +1,7 @@
 import express from 'express';
-import fs from 'fs/promises';
-import path from 'path';
 import apiConfig from '../../../config.js';
 import { readJsonFileSafe } from '../../../utils/fileReader.js';
+import { listDirCached } from '../../../utils/dirListing.js';
 import { validateTimestampV2 } from '../../../utils/validation.js';
 
 const router = express.Router();
@@ -13,7 +12,7 @@ const router = express.Router();
  */
 async function getMetarTimestamps() {
   try {
-    const files = await fs.readdir(apiConfig.METAR_DIR);
+    const files = await listDirCached(apiConfig.METAR_DIR);
     const timestamps = [];
 
     for (const file of files) {

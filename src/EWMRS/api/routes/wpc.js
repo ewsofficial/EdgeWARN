@@ -74,9 +74,9 @@ router.get('/fetch', async (req, res) => {
         if (err.code === 'ENOENT') {
             res.json([]);
         } else {
+            console.error('Error listing WPC timestamps:', err);
             res.status(500).json({
-                error: 'Failed to list timestamps',
-                details: err.message
+                error: 'Failed to list timestamps'
             });
         }
     }
@@ -132,9 +132,9 @@ router.get('/download', async (req, res) => {
                 message: `No data found for timestamp: ${req.query.timestamp}`
             });
         } else {
+            console.error('Error downloading WPC file:', err);
             res.status(500).json({
-                error: 'Failed to download file',
-                details: err.message
+                error: 'Failed to download file'
             });
         }
     }

@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { LRUCache } from 'lru-cache';
 
 import {
   ALLOWED_NEXRAD_PRODUCTS,
@@ -7,6 +8,24 @@ import {
   isSafeNexradTimestamp,
   parseNexradElevationNumber,
 } from './validation.js';
+
+// Short-TTL cache for directory listings. Bounds repeated unbounded
+// fs.readdir scans of NEXRAD site/elevation dirs under request load.
+const dirListingCache = new LRUCache({
+  max: 256,
+  ttl: 5 * 1000
+});
+
+async function readdirWithTypesCached(dirPath) {
+  const cached = dirListingCache.get(dirPath);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  dirListingCache.set(dirPath, entries);
+  return entries;
+}
 
 export function getNexradRoot(req) {
   return path.resolve(req.app.locals.GUI_DIR, 'NEXRAD');
@@ -87,7 +106,7 @@ function parseNexradProductFilename(site, elevation, fileName) {
 }
 
 async function listTimestampEntriesForElevation(site, elevation, elevationDir) {
-  const entries = await fs.readdir(elevationDir, { withFileTypes: true });
+  const entries = await readdirWithTypesCached(elevationDir);
   const timestamps = new Set();
 
   for (const entry of entries) {
@@ -105,7 +124,7 @@ async function listTimestampEntriesForElevation(site, elevation, elevationDir) {
 }
 
 export async function listSiteElevationTimestamps(siteDir, site) {
-  const entries = await fs.readdir(siteDir, { withFileTypes: true });
+  const entries = await readdirWithTypesCached(siteDir);
   const elevations = new Map();
 
   for (const entry of entries) {

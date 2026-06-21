@@ -161,10 +161,10 @@ These edits cluster on `EdgeWARN/api/server.js` and validation helpers:
 
 **B4 checklist**
 
-- [ ] Document `keyGenerator` behavior and add startup warning for proxy misconfiguration
-- [ ] Add short-TTL `LRUCache` wrappers around unbounded `fs.readdir` call sites
-- [ ] Remove raw error-message details from EWMRS 500 responses while preserving server logs
-- [ ] Defer internal-check token bypass unless coordinated client changes are ready
+- [x] Document `keyGenerator` behavior and add startup warning for proxy misconfiguration
+- [x] Add short-TTL `LRUCache` wrappers around unbounded `fs.readdir` call sites
+- [x] Remove raw error-message details from EWMRS 500 responses while preserving server logs
+- [x] Defer internal-check token bypass unless coordinated client changes are ready
 
 - S-M3: `keyGenerator` doc + production startup warning when `trust-proxy=false` and `X-Forwarded-For` observed.
 - S-M4: wrap unbounded `fs.readdir` in `LRUCache(ttl: 5_000)` for `alerts.js:13-34`, `mesocyclones.js:9-23`, `metar.js:14-36`, `nexrad/filesystem.js:88-105, 107-125`.
@@ -222,13 +222,13 @@ Bundle by file/module to keep PRs focused. None of these alter byte output:
 
 **C2 checklist**
 
-- [ ] H1 route `RAPPointExtractor.extract` callers through `extract_batch`
-- [ ] H3 narrow `deepcopy(vector_previous_entries)`
-- [ ] H5 replace Kalman gain `inv(S)` with a `solve` form only at `filter.py:236`
-- [ ] H8 / H9 implement RGBA LUT single-pass while preserving the documented two-path split
-- [ ] M21 switch RAP read to float32 at `rap/uint16_pipeline.py:199`
-- [ ] Verify stormcell numeric diffs with `np.allclose(rtol=1e-5, atol=1e-8)`
-- [ ] Verify render pixel diffs on sample tiles
+- [x] H1 route `RAPPointExtractor.extract` callers through `extract_batch` (callers already migrated; removed dead per-cell path)
+- [x] H3 narrow `deepcopy(vector_previous_entries)` (shallow per-entry copy)
+- [x] H5 replace Kalman gain `inv(S)` with a `solve` form only at `filter.py:236`
+- [x] H8 / H9 implement RGBA LUT single-pass while preserving the documented two-path split
+- [x] M21 switch RAP read to float32 at `rap/uint16_pipeline.py:199`
+- [ ] Verify stormcell numeric diffs with `np.allclose(rtol=1e-5, atol=1e-8)` (deferred — no test env)
+- [ ] Verify render pixel diffs on sample tiles (deferred — no test env)
 
 Each ships in its own PR with stormcell JSON byte-diff + render PNG pixel-diff in the test plan. Strict §6 invariant compliance:
 
