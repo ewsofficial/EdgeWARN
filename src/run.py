@@ -3,12 +3,14 @@ import os
 from datetime import datetime, timezone
 import time
 import multiprocessing
+from multiprocessing.managers import SyncManager
 
 import util.file as fs
 from common.ingest.mrms.config import get_check_modifiers
 from EdgeWARN import initialize_runtime
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
+from util.process_name import configure_process_runtime
 from util.runtime import (
     StartedProcessRegistry,
     TandemCycleConfig,
@@ -69,9 +71,14 @@ cycle_config = TandemCycleConfig(
 )
 
 
+def _manager_process_initializer():
+    configure_process_runtime("Tandem-Manager")
+
+
 
 def main():
     """Scheduler: run a shared ingest cycle and launch EdgeWARN/EWMRS in tandem."""
+    configure_process_runtime("EdgeWARN-Run")
     print("Scheduler started. Press CTRL+C to exit.")
     if args.disable_ctam:
         print("[Scheduler] CTAM execution disabled via --disable-ctam")
@@ -104,16 +111,18 @@ def main():
     # Hoisted out of _run_tandem_cycle: a Manager spawns a child server
     # process and IPC machinery on construction; reusing one across cycles
     # avoids that startup cost every minute.
-    manager = multiprocessing.Manager()
-    metar_proc = multiprocessing.Process(target=metar_loop, daemon=True) if METAR_ENABLED else None
-    nws_proc = multiprocessing.Process(target=nws_loop, daemon=True) if NWS_ENABLED else None
-    wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True)
+    manager = SyncManager()
+    manager.start(initializer=_manager_process_initializer)
+    metar_proc = multiprocessing.Process(target=metar_loop, name="METAR-Ingest", daemon=True) if METAR_ENABLED else None
+    nws_proc = multiprocessing.Process(target=nws_loop, name="NWS-Ingest", daemon=True) if NWS_ENABLED else None
+    wpc_proc = multiprocessing.Process(target=wpc_loop, name="WPC-Ingest", daemon=True)
     goes_render_task_queue = multiprocessing.Queue()
     goes_render_log_queue = multiprocessing.Queue()
     nexrad_log_queue = multiprocessing.Queue()
     goes_render_proc = multiprocessing.Process(
         target=goes_render_loop,
         args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
+        name="GOES-Render",
         daemon=True,
     ) if EWMRS_ENABLED and GOES_ENABLED else None
     nexrad_render_proc = multiprocessing.Process(
@@ -137,6 +146,7 @@ def main():
     goes_proc = multiprocessing.Process(
         target=goes_loop,
         args=(GOES_CYCLE_ACTIVE, GOES_RENDER_ACTIVE, GOES_PAUSE_INGEST_DURING_RENDER, GOES_POLL_SECONDS),
+        name="GOES-Ingest",
         daemon=True,
     ) if GOES_ENABLED else None
     started_processes.start(goes_proc, "GOES")

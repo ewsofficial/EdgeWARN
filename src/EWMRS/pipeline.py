@@ -24,6 +24,7 @@ from EWMRS.render.config import (
 from EWMRS.render.tools import configure_proj_runtime
 import util.file as fs
 from util.io import IOManager, QueueWriter
+from util.process_name import configure_process_runtime
 
 RenderOutput = Optional[list[Path]]
 
@@ -281,6 +282,7 @@ def _ensure_runtime_configured() -> None:
 
 
 def _worker_initializer() -> None:
+    configure_process_runtime("EWMRS-Render")
     _ensure_runtime_configured()
     # Warm the heavy render-module imports (xarray/rioxarray/rasterio chains)
     # at worker startup so the first _render_layer task per worker does not pay
@@ -1108,6 +1110,7 @@ def ewmrs_tandem_worker(
     max_entries: int = 10,
 ): 
     """Process target for staged EWMRS rendering within the tandem runner."""
+    configure_process_runtime("EWMRS-Cycle")
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
 
@@ -1135,6 +1138,7 @@ def ewmrs_tandem_worker(
 
 def ewmrs_goes_worker(log_queue, dt, max_entries: int = 10):
     """Process target for decoupled GOES rendering outside tandem completion."""
+    configure_process_runtime("GOES-Render")
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
 

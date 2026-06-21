@@ -1,8 +1,6 @@
 import asyncio
-import ctypes
 from datetime import datetime, timezone
 import queue
-import signal
 import sys
 import traceback
 
@@ -14,55 +12,14 @@ from common.ingest.nexrad.pipeline import run_realtime_ingestion_pipeline
 from common.ingest.wpc.main import run_wpc_ingest
 from EWMRS.pipeline import ewmrs_goes_worker, run_nexrad_render_loop as _run_nexrad_render_loop
 from util.io import QueueWriter
+from util.process_name import configure_process_runtime
 
 from .logging import queue_log
 from .timing import sleep_for, sleep_until_boundary
 
 
-def _set_process_name(name: str) -> None:
-    try:
-        import multiprocessing
-
-        multiprocessing.current_process().name = name
-    except Exception:
-        pass
-
-    try:
-        libc = ctypes.CDLL(None)
-        pr_set_name = 15
-        encoded = name.encode("utf-8")[:15]
-        libc.prctl(pr_set_name, ctypes.c_char_p(encoded), 0, 0, 0)
-    except Exception:
-        pass
-
-
-def _set_parent_death_signal(sig: int = signal.SIGTERM) -> None:
-    try:
-        libc = ctypes.CDLL(None)
-        pr_set_pdeathsig = 1
-        libc.prctl(pr_set_pdeathsig, sig, 0, 0, 0)
-    except Exception:
-        pass
-
-
-def _install_exit_signal_handlers() -> None:
-    def _raise_system_exit(signum, _frame):
-        raise SystemExit(signum)
-
-    for signum in (signal.SIGTERM, signal.SIGINT):
-        try:
-            signal.signal(signum, _raise_system_exit)
-        except Exception:
-            pass
-
-
-def _configure_process_runtime(name: str) -> None:
-    _set_process_name(name)
-    _set_parent_death_signal()
-    _install_exit_signal_handlers()
-
-
 def goes_loop(activity_event, render_active_event, pause_during_render=False, poll_seconds=60):
+    configure_process_runtime("GOES-Ingest")
     try:
         abi_specs = get_abi_radc_channel_specs()
         while True:
@@ -88,6 +45,7 @@ def goes_loop(activity_event, render_active_event, pause_during_render=False, po
 
 
 def goes_render_loop(task_queue, log_queue, render_active_event):
+    configure_process_runtime("GOES-Render")
     try:
         while True:
             task = task_queue.get()
@@ -142,7 +100,7 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
 def nexrad_ingest_loop(log_queue, base_dir):
     from common.ingest.nexrad.worker_pool import shutdown_nexrad_pool
 
-    _configure_process_runtime("NEXRAD-Ingest")
+    configure_process_runtime("NEXRAD-Ingest")
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
     try:
@@ -164,7 +122,7 @@ def nexrad_ingest_loop(log_queue, base_dir):
 
 
 def nexrad_render_loop(base_dir):
-    _configure_process_runtime("NEXRAD-Render")
+    configure_process_runtime("NEXRAD-Render")
     try:
         _run_nexrad_render_loop(base_dir=base_dir)
     except (KeyboardInterrupt, SystemExit):
@@ -172,6 +130,7 @@ def nexrad_render_loop(base_dir):
 
 
 def metar_loop():
+    configure_process_runtime("METAR-Ingest")
     try:
         while True:
             sleep_until_boundary(5)
@@ -185,6 +144,7 @@ def metar_loop():
 
 
 def nws_loop():
+    configure_process_runtime("NWS-Ingest")
     try:
         while True:
             try:
@@ -198,6 +158,7 @@ def nws_loop():
 
 
 def wpc_loop():
+    configure_process_runtime("WPC-Ingest")
     try:
         while True:
             sleep_until_boundary(15)

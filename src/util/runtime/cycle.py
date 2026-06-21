@@ -111,6 +111,7 @@ def run_tandem_cycle_once(
 
     edgewarn_proc = multiprocessing.Process(
         target=edgewarn_tandem_worker,
+        name="EdgeWARN-Cycle",
         args=(
             log_queue,
             shared_state,
@@ -132,6 +133,7 @@ def run_tandem_cycle_once(
     if config.ewmrs_enabled:
         ewmrs_proc = multiprocessing.Process(
             target=ewmrs_tandem_worker,
+            name="EWMRS-Cycle",
             args=(log_queue, shared_state, ewmrs_mrms_ready_event, ewmrs_goes_ready_event, dt),
         )
 

@@ -15,6 +15,7 @@ from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.api_integration.index_manager import APIIndexManager
 from util.io import IOManager, QueueWriter
 from util.performance import tracker as perf_tracker
+from util.process_name import configure_process_runtime
 
 # Suppress cfgrib/xarray compatibility warnings.
 xr.set_options(use_new_combine_kwarg_defaults=True)
@@ -168,6 +169,7 @@ def edgewarn_tandem_worker(
     drop_offset=10.0,
 ):
     """Process target for staged EdgeWARN execution within the tandem runner."""
+    configure_process_runtime("EdgeWARN-Cycle")
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
 
