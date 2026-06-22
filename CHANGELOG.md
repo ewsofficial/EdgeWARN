@@ -1,8 +1,9 @@
 # Changelog
 
-## [2.6.4] 2026-06-21
+## [2.6.4] 2026-06-22
 
 ### Added
+- Named run.py processes
 
 ### Changed
 - Accelerated previous-stormcell lookup by switching detection scans to `os.scandir`.
