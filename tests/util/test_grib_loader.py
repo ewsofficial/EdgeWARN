@@ -55,7 +55,7 @@ def test_extract_batch_supports_variable_aliases():
 def test_extract_batch_reenables_multifield_support():
     extractor = RAPPointExtractor("dummy.grib2")
 
-    with patch("util.grib_loader.eccodes.codes_grib_multi_support_on") as mock_multi_on:
+    with patch("util.grib_loader._enable_grib_multifield_support") as mock_multi_on:
         with patch.object(extractor, "_get_product_vars", return_value=[]):
             with patch("builtins.open", mock_open(read_data=b"grib")), \
                  patch("util.grib_loader.eccodes.codes_grib_new_from_file", return_value=None):

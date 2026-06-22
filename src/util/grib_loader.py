@@ -7,7 +7,13 @@ import eccodes
 import numpy as np
 import xarray as xr
 
-eccodes.codes_grib_multi_support_on()
+
+def _enable_grib_multifield_support() -> None:
+    """Enable eccodes multi-message support for packed GRIB fields."""
+    eccodes.codes_grib_multi_support_on()
+
+
+_enable_grib_multifield_support()
 
 
 def load_grib_fast(filepath: str) -> xr.Dataset:
@@ -63,7 +69,7 @@ class RAPPointExtractor:
     def extract_batch(self, products: list, cell_coords: dict) -> dict:
         from scipy.spatial import cKDTree
 
-        eccodes.codes_grib_multi_support_on()
+        _enable_grib_multifield_support()
         wanted = {}
         for product in products:
             short_names = self._get_product_vars(product)
