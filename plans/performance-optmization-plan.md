@@ -1,6 +1,6 @@
 # EdgeWARN-Core — Detailed Performance, Security, Dead-Code & Pipeline Audit
 
-**Repo:** EdgeWARN-Core · **Version:** 2.6.3 (per `package.json`; audited from branch `version-test/2.6.4`) · **Original Date:** 2026-05-27 · **Last Audit:** 2026-06-19
+**Repo:** EdgeWARN-Core · **Version:** 2.6.4 (per `package.json`; audited from branch `version-test/2.6.4`) · **Original Date:** 2026-05-27 · **Last Audit:** 2026-06-19
 **Scope:** `src/` only — Python (`common/`, `EdgeWARN/`, `EWMRS/`, `util/`) and Node.js (`EdgeWARN/api/`, `EWMRS/api/`)
 **Guiding principle:** every recommendation in this document is **behavior-preserving**. Externally-observable outputs (HTTP responses, on-disk artifacts, numeric pipeline results, CLI semantics) must remain identical for legitimate inputs.
 
@@ -8,7 +8,7 @@
 
 ## Audit status (2026-06-19)
 
-The plan was originally written against v2.5.2. A re-audit against the current 2.6.3 release found the following changes. Items marked **DONE** below are already shipped; items marked **STALE** have premises that no longer hold; items marked **PARTIAL** have been fixed in part. Each affected item has an inline `> Status (2026-06-19):` note in §2/§3/§4.
+The plan was originally written against v2.5.2. A re-audit against the current 2.6.4 release found the following changes. Items marked **DONE** below are already shipped; items marked **STALE** have premises that no longer hold; items marked **PARTIAL** have been fixed in part. Each affected item has an inline `> Status (2026-06-19):` note in §2/§3/§4.
 
 - **DONE:** H10, M8, L8, L13, L21, L23
 - **DONE:** S-H3, S-H5, S-L15, D2, D3, D4, D6, D7, D8/L14
@@ -391,7 +391,7 @@ if (!resolvedFull.startsWith(resolvedDir + path.sep) && resolvedFull !== resolve
 **Behavior preserved on legitimate input:** yes — no legitimate file is a symlink in this deployment.
 
 #### S-H3. EWMRS `/renders/fetch` and `/renders/tile-info` skip the `PRODUCT_MAPPING` allowlist
-> Status (2026-06-19): DONE — both `/tile-info` and `/fetch` now validate `PRODUCT_MAPPING[product]`, so this finding is fully closed in the current 2.6.3 tree.
+> Status (2026-06-19): DONE — both `/tile-info` and `/fetch` now validate `PRODUCT_MAPPING[product]`, so this finding is fully closed in the current 2.6.4 tree.
 **File:** `src/EWMRS/api/routes/renders.js:185-189` (`fetch`), `367-378` (`tile-info`)
 **Vulnerable code:**
 ```js
@@ -776,7 +776,7 @@ Ordered list of safe-first batches. Each batch is one or two PRs.
 ### Items already shipped before execution (skip in batches below)
 As of 2026-06-19: **H10, M8, L8, L13, L21, L23, S-H3, S-H5, S-L15, D2, D3, D4, D6, D7, D8/L14** are already in the codebase and do not need PRs. **H7** is still half-done (line 437 already hoisted). **L17** is gated. The remaining high-priority open items are H5, B1, B4, A2, D1, and the unreconciled numeric/perf items in §2.
 
-### Batch 1 — Closed in 2.6.3: pure deletions, zero importers (~430 LOC)
+### Batch 1 — Closed in 2.6.4: pure deletions, zero importers (~430 LOC)
 - D2: delete `src/EWMRS/scheduler.py` (~195)
 - D3: delete `EdgeWARN.pipeline.realtime_pipeline` (~80)
 - D4: delete NEXRAD polling wrappers (~70)
@@ -785,7 +785,7 @@ As of 2026-06-19: **H10, M8, L8, L13, L21, L23, S-H3, S-H5, S-L15, D2, D3, D4, D
 - D8: remove explicit `gc.collect()` calls (2)
 - §2 L14 (drop explicit GC) and §2 L17 (gate rate limiters) bundle here as they share the "safe edit, zero functional change" profile.
 
-### Batch 2 — Security hardening still open after 2.6.3
+### Batch 2 — Security hardening still open after 2.6.4
 - S-H6 / S-H7 (CORS allowlist + credentials gating).
 - S-H1 / S-H2 (path-traversal hygiene: control chars, Windows-reserved names, `realpath` containment).
 - S-M3 (health-check bypass tokenization / skip hardening).
@@ -802,7 +802,7 @@ As of 2026-06-19: **H10, M8, L8, L13, L21, L23, S-H3, S-H5, S-L15, D2, D3, D4, D
 - M3 `compression` filter for image responses
 - M14 LRU index cache by (path, mtime)
 - M16 combined regex in `find_timestamp`
-- ~~M17 `express.json({ limit })`~~ (DONE in 2.6.3 with S-H5)
+- ~~M17 `express.json({ limit })`~~ (DONE in 2.6.4 with S-H5)
 - L20 `lru_cache` for cmap
 - L24 `tracks_by_id` dict
 

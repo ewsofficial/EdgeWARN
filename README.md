@@ -110,6 +110,6 @@ python -m pytest tests/
 
 ## Release
 
-Current package version: **2.6.3**
+Current package version: **2.6.4**
 
 See `CHANGELOG.md` for release history.

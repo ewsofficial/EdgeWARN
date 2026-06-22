@@ -1,7 +1,7 @@
 # Performance / Security / Dead-Code Implementation Roadmap
 
-**Source audit:** `plans/performance-optmization-plan.md` (re-audited 2026-06-19 against 2.6.3)
-**Branch:** `version-test/2.6.4` (validated against package version `2.6.3`)
+**Source audit:** `plans/performance-optmization-plan.md` (re-audited 2026-06-19 against 2.6.4)
+**Branch:** `version-test/2.6.4` (validated against package version `2.6.4`)
 **Total scope (after subtracting items already shipped):** roughly high-60s actionable findings remain across performance, security, dead-code, and pipeline consolidation.
 
 ---
@@ -32,7 +32,7 @@ Treat these as guard rails — if a PR re-introduces the old form, reject it.
 
 ---
 
-## Track A — Deletions (A1 shipped in 2.6.3; A2 still open)
+## Track A — Deletions (A1 shipped in 2.6.4; A2 still open)
 
 **Track A checklist**
 
@@ -42,7 +42,7 @@ Treat these as guard rails — if a PR re-introduces the old form, reject it.
 
 Each item is a separate PR with prefix `REM[ingest]:` or `REM[dead]:`. Verification: post-deletion `grep -r <symbol> src/ tests/ scripts/` returns zero hits.
 
-### A1 — Pure-deletion bundle (~435 LOC, shipped in 2.6.3)
+### A1 — Pure-deletion bundle (~435 LOC, shipped in 2.6.4)
 
 **A1 checklist**
 
@@ -56,7 +56,7 @@ Each item is a separate PR with prefix `REM[ingest]:` or `REM[dead]:`. Verificat
 - [X] Re-run `npm test` if replaying this bundle on another branch
 - [X] Re-run the 1-cycle real-time smoke in §7.2 if replaying this bundle on another branch
 
-This bundle is already present in the 2.6.3 tree. Keep the itemization below only as replay/cherry-pick guidance for other branches:
+This bundle is already present in the 2.6.4 tree. Keep the itemization below only as replay/cherry-pick guidance for other branches:
 
 | ID | Action | File | LOC |
 |----|--------|------|-----|
@@ -95,7 +95,7 @@ Multi-step; ordering matters:
 
 ---
 
-## Track B — Security (B2/B3 shipped in 2.6.3; B1/B4 still open)
+## Track B — Security (B2/B3 shipped in 2.6.4; B1/B4 still open)
 
 **Track B checklist**
 
