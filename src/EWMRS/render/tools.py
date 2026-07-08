@@ -83,8 +83,6 @@ class TransformUtils:
          - ds: Loaded dataset
         """
         
-        io_manager.write_debug(f"Opening file: {ds_path} ...")
-
         ds_path = Path(ds_path)
         if ds_path.suffix == ".gz" and ds_path.with_suffix("").exists():
             ds_path = ds_path.with_suffix("")
@@ -97,14 +95,12 @@ class TransformUtils:
                 if load_grib_fast is not None:
                     try:
                         ds = load_grib_fast(str(ds_path))
-                        io_manager.write_debug(f"Successfully loaded dataset via eccodes fast loader: {ds_path}")
                         return ds
                     except Exception as e:
                         io_manager.write_warning(f"Fast GRIB loader failed ({e}); falling back to xarray/cfgrib")
 
                 with xr.open_dataset(ds_path, decode_timedelta=True) as opened:
                     ds = opened.load()
-                io_manager.write_debug(f"Successfully loaded dataset: {ds_path}")
                 return ds
 
             if str(ds_path).endswith(".nc"):
@@ -114,12 +110,10 @@ class TransformUtils:
                             latitude=slice(lat_limits[0], lat_limits[1]),
                             longitude=slice(lon_limits[0], lon_limits[1])
                         ).load()
-                        io_manager.write_debug(f"Loaded dataset subset with lat {lat_limits}, lon {lon_limits}")
                     else:
                         ds = opened.load()
                         io_manager.write_warning("lat/lon coordinates not specified, loading full dataset")
 
-                io_manager.write_debug("Successfully loaded full dataset")
                 return ds
         
         except Exception as e:
@@ -132,7 +126,6 @@ class TransformUtils:
         Finds timestamps in a file based on predetermined patterns
         """
         filename = Path(filepath).name
-        io_manager.write_debug(f"Extracting timestamp from filename: {filename}")
 
         for pattern in _TIMESTAMP_PATTERNS:
             match = pattern.search(filename)
@@ -154,11 +147,11 @@ class TransformUtils:
                     io_manager.write_debug(f"Extracted timestamp: {formatted_time}")
                     return formatted_time
                 except (IndexError, ValueError) as e:
-                    io_manager.write_debug(f"Error formatting timestamp: {e}")
+                    io_manager.write_warning(f"Error formatting timestamp: {e}")
                     continue
         
         fallback = datetime.utcnow().isoformat()
-        io_manager.write_debug(f"Using fallback timestamp: {fallback}")
+        io_manager.write_warning(f"Using fallback timestamp: {fallback}")
         return fallback
     
     @staticmethod

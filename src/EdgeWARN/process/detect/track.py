@@ -547,14 +547,27 @@ class StormCellTracker:
 
     def _ensure_kalman_filters(self, entries: List[Dict]):
         """Ensure KF exists for all tracks."""
-        self.io_manager.write_debug("_ensure_kalman_filters called with entries:")
+        missing_ids: list[int] = []
+        existing_count = 0
+
         for track in entries:
             track_id = int(track['id'])
-            self.io_manager.write_debug(f"  Track ID: {track_id}, in _kalman_filters: {track_id in self._kalman_filters}")
             if track_id not in self._kalman_filters:
+                missing_ids.append(track_id)
                 kf = KalmanFilter(config=self.kalman_config)
                 kf.initialize_from_cell(track)
                 self._kalman_filters[track_id] = kf
+            else:
+                existing_count += 1
+
+        if entries:
+            sample = ", ".join(str(track_id) for track_id in missing_ids[:8])
+            more = "" if len(missing_ids) <= 8 else f", ... (+{len(missing_ids) - 8} more)"
+            missing_summary = "none" if not missing_ids else f"{sample}{more}"
+            self.io_manager.write_debug(
+                f"_ensure_kalman_filters: total={len(entries)}, existing={existing_count}, "
+                f"initialized={len(missing_ids)}, initialized_ids=[{missing_summary}]"
+            )
 
     def _find_entry(self, entries: List[Dict], entry_id: int) -> Optional[Dict]:
         """Helper to find entry by ID."""

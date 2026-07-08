@@ -1,9 +1,5 @@
-from datetime import datetime, timezone
-
-
 def queue_log(log_queue, message):
-    timestamp = datetime.now(timezone.utc).isoformat()
-    log_queue.put(f"[{timestamp}] {message}")
+    log_queue.put(str(message))
 
 
 def drain_log_queue(log_queue):

@@ -56,9 +56,4 @@ def select_target_file(dt, file_list, io_manager, context: str | None = None):
                 )
             return s3_path
 
-    suffix = f" for {context}" if context else ""
-    io_manager.write_warning(
-        f"No file found matching timestamp {target_rounded}{suffix}. "
-        "Falling back to latest available."
-    )
     return file_list[0][0]

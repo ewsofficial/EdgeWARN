@@ -175,8 +175,6 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
     src_dir = Path(source_path)
     out_dir = Path(output_path)
 
-    io_mgr.write_debug(f"Processing layer {name}: src={src_dir}, out={out_dir}")
-
     try:
         if not src_dir.exists():
             io_mgr.write_warning(f"Source directory missing for {name}: {src_dir}")
@@ -665,11 +663,24 @@ def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str 
     io_manager.write_info(
         f"Rendering {len(layers)} {phase_name} layers across {max_workers} CPU cores for {dt.isoformat()}..."
     )
+    rendered_layers: list[str] = []
+    failed_layers: list[str] = []
     with ProcessPoolExecutor(max_workers=max_workers, initializer=_worker_initializer) as executor:
         futures = {executor.submit(_render_layer, layer): layer for layer in layers}
         for future in as_completed(futures):
             name, png_path = future.result()
             results[name] = png_path
+            if png_path:
+                rendered_layers.append(name)
+                io_manager.write_info(f"Rendered layer: {name}")
+            else:
+                failed_layers.append(name)
+
+    io_manager.write_info(
+        f"{phase_name} rendered layers: {', '.join(rendered_layers) if rendered_layers else 'none'}"
+    )
+    if failed_layers:
+        io_manager.write_warning(f"{phase_name} failed layers: {', '.join(failed_layers)}")
 
     if cleanup_after:
         cleanup_old_gui_files(max_age_minutes=120)

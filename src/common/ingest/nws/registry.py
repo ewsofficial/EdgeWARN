@@ -404,12 +404,6 @@ class AlertRegistry:
 
         self._registry["last_updated"] = current_time.isoformat()
 
-        if alerts_to_remove:
-            io_manager.write_info(
-                f"Reconciled registry: removed {len(alerts_to_remove)} "
-                "alert(s) absent from latest upstream active feed"
-            )
-
         return len(alerts_to_remove)
     
     def cleanup_expired(self, current_time: datetime) -> int:

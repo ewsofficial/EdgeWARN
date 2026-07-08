@@ -42,6 +42,9 @@ def run_rap_uint16_pipeline(
 
     pending = {str(layer["name"]): _normalize_layer(layer) for layer in selected_layers}
     io_manager.write_info(f"Converting {len(pending)} RAP layer(s) to Uint16Array files from {rap_path.name}")
+    converted_layers: list[str] = []
+    reused_layers: list[str] = []
+    missing_layers: list[str] = []
 
     eccodes.codes_grib_multi_support_on()
     with open(rap_path, "rb") as file_obj:
@@ -59,9 +62,9 @@ def run_rap_uint16_pipeline(
                 output_path = _output_data_path(layer, timestamp)
                 metadata_path = output_path.with_name("metadata.json")
                 if output_path.is_file() and metadata_path.is_file() and not force:
-                    io_manager.write_debug(f"Reusing existing RAP Uint16Array output for {layer['name']}: {timestamp}")
                     _update_product_index(Path(layer["outdir"]), timestamp)
                     results[str(layer["name"])] = output_path
+                    reused_layers.append(str(layer["name"]))
                     _record_timing(
                         timings,
                         layer["name"],
@@ -92,11 +95,8 @@ def run_rap_uint16_pipeline(
                 metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
                 _update_product_index(Path(layer["outdir"]), timestamp, max_timestamps=3)
 
-                io_manager.write_info(
-                    f"Converted RAP layer {layer['name']} in {elapsed_seconds:.3f}s "
-                    f"({grid['point_count']} grid points)"
-                )
                 results[str(layer["name"])] = output_path
+                converted_layers.append(str(layer["name"]))
                 _record_timing(
                     timings,
                     layer["name"],
@@ -111,10 +111,19 @@ def run_rap_uint16_pipeline(
                 eccodes.codes_release(gid)
 
     for missing_name in pending:
-        io_manager.write_warning(f"Configured RAP layer not found in {rap_path.name}: {missing_name}")
+        missing_layers.append(str(missing_name))
         _record_timing(timings, missing_name, status="missing", seconds=None, output_path=None)
 
-    cleanup_old_rap_uint16_layers(max_timestamps=3)
+    removed_count = cleanup_old_rap_uint16_layers(max_timestamps=3)
+    if removed_count:
+        io_manager.write_info(
+            f"RAP Uint16 cleanup summary: removed={removed_count} old layer directories"
+        )
+    io_manager.write_info(
+        f"RAP Uint16 summary: converted={len(converted_layers)}, reused={len(reused_layers)}, missing={len(missing_layers)}"
+    )
+    if missing_layers:
+        io_manager.write_warning(f"RAP missing layers: {', '.join(missing_layers)}")
     return results
 
 
@@ -270,10 +279,11 @@ def _update_product_index(out_dir: Path, timestamp: str, max_timestamps: int = 3
     }
     index_path.write_text(json.dumps(index_data, indent=2), encoding="utf-8")
 
-def cleanup_old_rap_uint16_layers(max_timestamps: int = 3) -> None:
+def cleanup_old_rap_uint16_layers(max_timestamps: int = 3) -> int:
     """Remove old timestamp directories for RAP uint16 layers, keeping only max_timestamps per layer."""
     if not fs.GUI_RAP_DIR.exists():
-        return
+        return 0
+    removed_count = 0
     for layer_dir in fs.GUI_RAP_DIR.iterdir():
         if not layer_dir.is_dir():
             continue
@@ -284,9 +294,10 @@ def cleanup_old_rap_uint16_layers(max_timestamps: int = 3) -> None:
         for old_dir in timestamp_dirs[max_timestamps:]:
             try:
                 shutil.rmtree(old_dir)
-                io_manager.write_debug(f"Removed old RAP uint16 layer directory: {old_dir}")
+                removed_count += 1
             except Exception as exc:
                 io_manager.write_warning(f"Failed to remove old RAP uint16 directory {old_dir}: {exc}")
+    return removed_count
 
 
 def _record_timing(

@@ -54,7 +54,6 @@ async def download_all_files_async(dt, max_entries=10, remove_old_files=True):
         ],
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
-        cleanup_message=f"Starting async cleanup for {len(cleanup_dirs)} directories...",
         cleanup_kwargs={"max_age_minutes": 60},
     )
 
@@ -75,7 +74,6 @@ async def download_detection_files_async(dt, max_entries=10, remove_old_files=Tr
         ],
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
-        cleanup_message=f"Starting async cleanup for {len(cleanup_dirs)} detection directories...",
         cleanup_kwargs={"max_age_minutes": 60},
     )
 
@@ -97,7 +95,6 @@ async def download_integration_files_async(dt, max_entries=10, remove_old_files=
         ],
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
-        cleanup_message=f"Starting async cleanup for {len(cleanup_dirs)} integration directories...",
         cleanup_kwargs={"max_age_minutes": 60},
     )
 
@@ -119,7 +116,6 @@ async def download_ewmrs_files_async(dt, max_entries=10, remove_old_files=True):
         ],
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
-        cleanup_message=f"Starting async cleanup for {len(cleanup_dirs)} EWMRS directories...",
         cleanup_kwargs={"max_age_minutes": 60},
     )
 

@@ -73,6 +73,14 @@ cycle_config = TandemCycleConfig(
 def main():
     """Scheduler: run a shared ingest cycle and launch EdgeWARN/EWMRS in tandem."""
     print("Scheduler started. Press CTRL+C to exit.")
+    print(
+        "[Scheduler] Configuration: "
+        f"lat={lat_limits}, lon={lon_limits}, "
+        f"refl_threshold={args.refl_threshold}, "
+        f"min_seed_percentage={args.min_seed_percentage}, "
+        f"drop_offset={args.drop_offset}, "
+        f"goes_decoupled={'yes' if GOES_ENABLED else 'no'}"
+    )
     if args.disable_ctam:
         print("[Scheduler] CTAM execution disabled via --disable-ctam")
     if args.disable_tracking:
@@ -87,15 +95,6 @@ def main():
         print("[Scheduler] METAR background ingest disabled via --disable-metar")
     if args.disable_goes:
         print("[Scheduler] GOES/GLM ingest and GOES rendering disabled via --disable-goes")
-    print(
-        "[Scheduler] Detection thresholds: "
-        f"disable_polygon_expansion={args.disable_polygon_expansion}, "
-        f"refl_threshold={args.refl_threshold}, "
-        f"min_seed_percentage={args.min_seed_percentage}, "
-        f"drop_offset={args.drop_offset}"
-    )
-    if GOES_ENABLED:
-        print("[Scheduler] GOES ingest decoupled: running as independent background process")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
@@ -192,7 +191,6 @@ def main():
                      should_run_pipeline = True
 
             if should_run_pipeline:
-                print(f"[Scheduler] DEBUG: New latest common timestamp: {latest_common}")
                 dt = latest_common
                 last_processed = latest_common
 
@@ -228,7 +226,6 @@ def main():
 if __name__ == "__main__":
     try:
         print(f"Running EdgeWARN v{get_release_version()}")
-        print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
         main()
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")

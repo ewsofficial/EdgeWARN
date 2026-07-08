@@ -22,7 +22,6 @@ def _find_existing_path(candidates, missing_message=None):
     for candidate in candidates:
         candidate_path = Path(candidate)
         if candidate_path.exists():
-            io_manager.write_debug(f"Using path: {candidate_path}")
             return candidate_path
     if missing_message:
         io_manager.write_warning(missing_message)
@@ -323,10 +322,6 @@ def clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
             except Exception as e:
                 _log("write_error", f"Could not delete {file_path.name}: {e}")
 
-    if files_deleted > 0:
-        _log("write_debug", f"Deleted {files_deleted} files in {directory}")
-
-
 def clean_files_by_age(directory: Path, max_age_minutes=60):
     directory = Path(directory)
     base_dir = globals().get("BASE_DIR", Path("."))
@@ -346,10 +341,6 @@ def clean_files_by_age(directory: Path, max_age_minutes=60):
                 files_deleted += 1
         except Exception as e:
             _log("write_error", f"Could not process/delete {file_path.name}: {e}")
-    if files_deleted > 0:
-        _log("write_debug", f"Deleted {files_deleted} files in {directory}")
-
-
 async def async_clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, partial(clean_old_files, directory, max_age_minutes=max_age_minutes, max_files=max_files))

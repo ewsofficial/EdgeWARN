@@ -1,4 +1,6 @@
 import re
+from dataclasses import dataclass
+from statistics import fmean
 
 from common.ingest.mrms.config import (
     bucket,
@@ -12,7 +14,6 @@ from common.ingest.mrms.s3_async import AsyncFileFinder, AsyncFileDownloader
 from common.ingest.mrms.https_client import HttpsFileFinder, HttpsFileDownloader
 from common.ingest.mrms.parse import parse_mrms_bucket_path, parse_goes_bucket_path
 from common.ingest.mrms.utils import merge_glm_files, extract_timestamp
-from util.io import IOManager
 import util.file as fs
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import asyncio
@@ -28,6 +29,58 @@ import uuid
 io_manager = IOManager("[Ingest]")
 
 GOES_MAX_ENTRIES = 96
+
+
+@dataclass(frozen=True)
+class DownloadBatchResult:
+    attempted: tuple[str, ...]
+    downloaded: tuple[str, ...]
+    failed: tuple[str, ...]
+
+
+def _mrms_modifier_label(modifier):
+    return modifier if modifier else "ProbSevere"
+
+
+def _record_perf_metric(perf_maps, phase, label, elapsed_ms):
+    if perf_maps is None:
+        return
+    perf_maps.setdefault(phase, {})[str(label)] = round(float(elapsed_ms), 2)
+
+
+def _format_perf_summary(values):
+    if not values:
+        return ""
+    slowest_label, slowest_ms = max(values.items(), key=lambda item: item[1])
+    samples = tuple(values.values())
+    return (
+        f"count={len(samples)}, "
+        f"min={min(samples):.2f}, "
+        f"max={max(samples):.2f}, "
+        f"avg={fmean(samples):.2f}, "
+        f"slowest={slowest_label}"
+    )
+
+
+def _emit_perf_maps(trace_id, perf_maps):
+    if not perf_maps:
+        return
+    for phase in ("lookup_ms", "download_ms", "decompress_ms"):
+        values = perf_maps.get(phase)
+        if values:
+            io_manager.write_perf(f"[{trace_id}] {phase}: {_format_perf_summary(values)}")
+
+
+def _log_batch_summary(summary_label, downloaded, failed):
+    io_manager.write_info(
+        f"{summary_label} download summary: downloaded={len(downloaded)}, failed={len(failed)}"
+    )
+    if failed:
+        io_manager.write_warning(f"{summary_label} failed products: {', '.join(failed)}")
+
+
+def _should_log_per_product_success(attempted_count):
+    return attempted_count <= 5
 
 
 def _get_goes_spec_label(goes_spec):
@@ -70,14 +123,9 @@ def _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=60):
     """Run pre-download cleanup for a GOES product output directory (sync path)."""
     try:
         outdir = goes_spec.outdir
-        label = _get_goes_spec_label(goes_spec)
-        io_manager.write_debug(
-            f"[GOES:{label}] Running pre-download cleanup in {outdir} "
-            f"(max_age_minutes={max_age_minutes}, max_files={goes_spec.max_files})"
-        )
         fs.clean_old_files(outdir, max_age_minutes=max_age_minutes, max_files=goes_spec.max_files)
-        io_manager.write_debug(f"[GOES:{label}] Pre-download cleanup completed for {outdir}")
     except Exception as e:
+        label = _get_goes_spec_label(goes_spec)
         io_manager.write_warning(f"[GOES:{label}] Pre-download cleanup failed for {outdir}: {e}")
 
 
@@ -85,19 +133,31 @@ async def _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=60):
     """Run pre-download cleanup for a GOES product output directory (async path)."""
     try:
         outdir = goes_spec.outdir
-        label = _get_goes_spec_label(goes_spec)
-        io_manager.write_debug(
-            f"[{trace_id}] [GOES:{label}] Running async pre-download cleanup in {outdir} "
-            f"(max_age_minutes={max_age_minutes}, max_files={goes_spec.max_files})"
-        )
         await fs.async_clean_old_files(outdir, max_age_minutes=max_age_minutes, max_files=goes_spec.max_files)
-        io_manager.write_debug(
-            f"[{trace_id}] [GOES:{label}] Async pre-download cleanup completed for {outdir}"
-        )
     except Exception as e:
+        label = _get_goes_spec_label(goes_spec)
         io_manager.write_warning(
             f"[{trace_id}] [GOES:{label}] Async pre-download cleanup failed for {outdir}: {e}"
         )
+
+
+def _cleanup_goes_specs_sync(goes_specs, max_age_minutes=60):
+    for goes_spec in goes_specs:
+        _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=max_age_minutes)
+    if goes_specs:
+        io_manager.write_info(f"GOES pre-download cleanup completed for {len(goes_specs)} products")
+
+
+async def _cleanup_goes_specs_async(goes_specs, trace_id, max_age_minutes=60):
+    if not goes_specs:
+        return
+    await asyncio.gather(
+        *[
+            _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=max_age_minutes)
+            for goes_spec in goes_specs
+        ]
+    )
+    io_manager.write_info(f"[{trace_id}] GOES pre-download cleanup completed for {len(goes_specs)} products")
 
 async def download_all_files_async_internal(dt, max_entries, target_modifiers=None):
     """Internal async function that handles the actual download operations"""
@@ -107,33 +167,48 @@ async def download_all_files_async_internal(dt, max_entries, target_modifiers=No
     ensure_aiobotocore_endpoint_compat()
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         with PerformanceTimer(io_manager, "MRMS_Ingest_Total", trace_id):
-            io_manager.write_debug(f"[{trace_id}] Starting async downloads...")
+            perf_maps = {"lookup_ms": {}, "download_ms": {}, "decompress_ms": {}}
             
             # Create async tasks for all modifiers
             tasks = []
+            attempted = []
             for region, modifier, outdir in get_mrms_modifiers():
                 if target_modifiers is not None and modifier not in target_modifiers:
                     continue
+                attempted.append(_mrms_modifier_label(modifier))
                 task = download_modifier_async(
-                    region, modifier, outdir, dt, max_entries, s3, trace_id
+                    region, modifier, outdir, dt, max_entries, s3, trace_id, perf_maps=perf_maps
                 )
                 tasks.append(task)
             
-            # Execute all downloads concurrently using asyncio.gather
-            # This is the key performance improvement - all S3 operations run in parallel
-            io_manager.write_debug(f"[{trace_id}] Downloading from {len(tasks)} sources concurrently...")
-            await asyncio.gather(*tasks, return_exceptions=True)
+            downloaded = []
+            failed = []
+            log_per_product = _should_log_per_product_success(len(attempted))
+            for task in asyncio.as_completed(tasks):
+                label, ok = await task
+                if ok:
+                    downloaded.append(label)
+                    if log_per_product:
+                        io_manager.write_info(f"Downloaded: {label}")
+                else:
+                    failed.append(label)
             
-            io_manager.write_info(f"[{trace_id}] All async downloads completed")
+            _log_batch_summary("MRMS", downloaded, failed)
+            _emit_perf_maps(trace_id, perf_maps)
+            return DownloadBatchResult(
+                attempted=tuple(attempted),
+                downloaded=tuple(downloaded),
+                failed=tuple(failed),
+            )
 
-async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_client, parent_trace_id=None):
+async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_client, parent_trace_id=None, perf_maps=None):
     """Internal async version of download_modifier using aioboto3 for non-blocking S3 operations"""
     # Enforce minute-precision dt
     dt = dt.replace(second=0, microsecond=0)
     
     # Use parent trace ID or generate new one
     trace_id = parent_trace_id or f"MOD-{uuid.uuid4().hex[:8]}"
-    modifier_name = modifier if modifier else "ProbSevere"
+    modifier_name = _mrms_modifier_label(modifier)
 
     finder = AsyncFileFinder(dt, bucket, max_entries, io_manager, s3_client=s3_client)
     downloader = AsyncFileDownloader(dt, bucket, io_manager, s3_client=s3_client)
@@ -184,15 +259,17 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
             start_after = f"{bucket_path}MRMS_PROBSEVERE_{start_after_dt.strftime('%Y%m%d_%H')}"
         
         # Async file lookup (S3)
-        with PerformanceTimer(io_manager, f"Lookup_{modifier_name}", trace_id, threshold_ms=100):
-            perf_tracker.start(f"Ingest - MRMS - {modifier_name} - Lookup")
-            file_list = await finder.async_lookup_files(bucket_path, start_after=start_after)
-            perf_tracker.stop(f"Ingest - MRMS - {modifier_name} - Lookup")
+        lookup_started_at = asyncio.get_running_loop().time()
+        perf_tracker.start(f"Ingest - MRMS - {modifier_name} - Lookup")
+        file_list = await finder.async_lookup_files(bucket_path, start_after=start_after)
+        perf_tracker.stop(f"Ingest - MRMS - {modifier_name} - Lookup")
+        _record_perf_metric(perf_maps, "lookup_ms", modifier_name, (asyncio.get_running_loop().time() - lookup_started_at) * 1000)
 
         if not file_list:
             io_manager.write_warning(f"[{trace_id}] No files found in S3 for {bucket_path} at {dt}. Attempting HTTPS fallback...")
             
             # --- HTTPS FALLBACK ---
+            downloaded = None
             try:
                 https_finder = HttpsFileFinder(dt, io_manager)
                 https_file_list = await https_finder.find_files(region, modifier)
@@ -200,15 +277,18 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
                 if not https_file_list:
                     io_manager.write_error(f"[{trace_id}] HTTPS Fallback failed: No files found for {modifier} at {dt}")
                     perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
-                    return
+                    return modifier_name, False
 
                 https_downloader = HttpsFileDownloader(dt, io_manager)
+                download_started_at = asyncio.get_running_loop().time()
                 downloaded = await https_downloader.download_matching(https_file_list, outdir)
+                _record_perf_metric(perf_maps, "download_ms", modifier_name, (asyncio.get_running_loop().time() - download_started_at) * 1000)
                 
                 if downloaded:
                      if downloaded.suffix == ".gz":
-                        with PerformanceTimer(io_manager, f"Decompress_HTTPS_{modifier_name}", trace_id, threshold_ms=50):
-                            await downloader.async_decompress_file(downloaded) 
+                        decompress_started_at = asyncio.get_running_loop().time()
+                        await downloader.async_decompress_file(downloaded)
+                        _record_perf_metric(perf_maps, "decompress_ms", modifier_name, (asyncio.get_running_loop().time() - decompress_started_at) * 1000)
                 else:
                     io_manager.write_error(f"[{trace_id}] HTTPS Fallback failed: Could not download matching file for {modifier}")
 
@@ -216,32 +296,39 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
                 io_manager.write_error(f"[{trace_id}] HTTPS Fallback Exception: {e}")
             
             perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
-            return
+            return modifier_name, bool(downloaded)
         
         # Download most recent file asynchronously (S3)
         downloaded = None
-        with PerformanceTimer(io_manager, f"Download_{modifier_name}", trace_id, threshold_ms=100):
-            perf_tracker.start(f"Ingest - MRMS - {modifier_name} - Download")
-            downloaded = await downloader.async_download_matching(file_list, outdir)
-            perf_tracker.stop(f"Ingest - MRMS - {modifier_name} - Download")
+        download_started_at = asyncio.get_running_loop().time()
+        perf_tracker.start(f"Ingest - MRMS - {modifier_name} - Download")
+        downloaded = await downloader.async_download_matching(file_list, outdir)
+        perf_tracker.stop(f"Ingest - MRMS - {modifier_name} - Download")
+        _record_perf_metric(perf_maps, "download_ms", modifier_name, (asyncio.get_running_loop().time() - download_started_at) * 1000)
             
         if downloaded:
             if downloaded.suffix == ".gz":
-                with PerformanceTimer(io_manager, f"Decompress_{modifier_name}", trace_id, threshold_ms=50):
-                    await downloader.async_decompress_file(downloaded)
+                decompress_started_at = asyncio.get_running_loop().time()
+                await downloader.async_decompress_file(downloaded)
+                _record_perf_metric(perf_maps, "decompress_ms", modifier_name, (asyncio.get_running_loop().time() - decompress_started_at) * 1000)
         else:
             io_manager.write_error(f"[{trace_id}] Failed to download {bucket_path} file")
         
         perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
+        return modifier_name, downloaded is not None
     
     except Exception as e:
         io_manager.write_error(f"[{trace_id}] Failed to process {bucket_path} - {e}")
         perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
+        return modifier_name, False
 
 def download_all_files_sync_fallback(dt, max_entries):
     """Sync fallback for downloading all MRMS files"""
     # Multithread MRMS downloads
     mrms_modifiers_list = get_mrms_modifiers()
+    downloaded = []
+    failed = []
+    log_per_product = _should_log_per_product_success(len(mrms_modifiers_list))
     with ThreadPoolExecutor(max_workers=len(mrms_modifiers_list) + 2) as executor:
         futures = [
             executor.submit(download_modifier_sync, region, modifier, outdir, dt, max_entries)
@@ -249,7 +336,19 @@ def download_all_files_sync_fallback(dt, max_entries):
         ]
 
         for future in as_completed(futures):
-            future.result()
+            label, ok = future.result()
+            if ok:
+                downloaded.append(label)
+                if log_per_product:
+                    io_manager.write_info(f"Downloaded: {label}")
+            else:
+                failed.append(label)
+    _log_batch_summary("MRMS", downloaded, failed)
+    return DownloadBatchResult(
+        attempted=tuple(_mrms_modifier_label(modifier) for _, modifier, _ in mrms_modifiers_list),
+        downloaded=tuple(downloaded),
+        failed=tuple(failed),
+    )
 
 def download_modifier_sync(region, modifier, outdir, dt, max_entries):
     """Internal sync version of download_modifier for fallback"""
@@ -258,6 +357,7 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
 
     finder = FileFinder(dt, bucket, max_entries, io_manager)
     downloader = FileDownloader(dt, bucket, io_manager)
+    modifier_name = _mrms_modifier_label(modifier)
 
     try:
         bucket_path = parse_mrms_bucket_path(dt, region, modifier)
@@ -278,7 +378,7 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
 
         if not file_list:
             io_manager.write_warning(f"No files found for {bucket_path} at {dt}")
-            return
+            return modifier_name, False
         
         # Download most recent file that matches the target minute
         downloaded = downloader.download_matching(file_list, outdir)
@@ -286,9 +386,12 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
             downloader.decompress_file(downloaded)
         else:
             io_manager.write_error(f"Failed to download {bucket_path} file")
+            return modifier_name, False
     
     except Exception as e:
         io_manager.write_error(f"Failed to process {bucket_path} - {e}")
+        return modifier_name, False
+    return modifier_name, True
 
 # ==================== GOES-19 Download Functions ====================
 
@@ -313,8 +416,6 @@ def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3, preloa
     product = goes_spec.product
     outdir = goes_spec.outdir
     label = _get_goes_spec_label(goes_spec)
-
-    _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=60)
 
     search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
     finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
@@ -420,6 +521,7 @@ async def _download_goes_product_async(
     hour_lookback,
     s3_client,
     parent_trace_id=None,
+    perf_maps=None,
     preloaded_files=None,
 ):
     """
@@ -433,8 +535,6 @@ async def _download_goes_product_async(
     label = _get_goes_spec_label(goes_spec)
     trace_id = parent_trace_id or f"GOES-{uuid.uuid4().hex[:8]}"
 
-    await _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=60)
-    
     # Increase max_entries to ensure we find files in the past
     search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
     finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3_client)
@@ -446,10 +546,11 @@ async def _download_goes_product_async(
         if all_files is None:
             bucket_paths = _get_goes_bucket_paths(dt, product, hour_lookback)
             # Lookup files across all paths (AsyncFileFinder handles the loop and max_entries check)
-            with PerformanceTimer(io_manager, f"Lookup_GOES_{product}", trace_id, threshold_ms=100):
-                perf_tracker.start(f"Ingest - GOES - {label} - Lookup")
-                all_files = await finder.async_lookup_files(bucket_paths)
-                perf_tracker.stop(f"Ingest - GOES - {label} - Lookup")
+            lookup_started_at = asyncio.get_running_loop().time()
+            perf_tracker.start(f"Ingest - GOES - {label} - Lookup")
+            all_files = await finder.async_lookup_files(bucket_paths)
+            perf_tracker.stop(f"Ingest - GOES - {label} - Lookup")
+            _record_perf_metric(perf_maps, "lookup_ms", label, (asyncio.get_running_loop().time() - lookup_started_at) * 1000)
         
         if not all_files:
             io_manager.write_warning(f"[{trace_id}] No files found for GOES product {label} at {dt}")
@@ -463,14 +564,15 @@ async def _download_goes_product_async(
         
         
         # Download all matching files
-        with PerformanceTimer(io_manager, f"Download_GOES_{product}", trace_id, threshold_ms=100):
-            perf_tracker.start(f"Ingest - GOES - {label} - Download")
-            if goes_spec.is_glm:
-                downloaded_files = await downloader.async_download_all_matching(all_files, outdir)
-            else:
-                downloaded = await downloader.async_download_matching(all_files, outdir)
-                downloaded_files = [downloaded] if downloaded else []
-            perf_tracker.stop(f"Ingest - GOES - {label} - Download")
+        download_started_at = asyncio.get_running_loop().time()
+        perf_tracker.start(f"Ingest - GOES - {label} - Download")
+        if goes_spec.is_glm:
+            downloaded_files = await downloader.async_download_all_matching(all_files, outdir)
+        else:
+            downloaded = await downloader.async_download_matching(all_files, outdir)
+            downloaded_files = [downloaded] if downloaded else []
+        perf_tracker.stop(f"Ingest - GOES - {label} - Download")
+        _record_perf_metric(perf_maps, "download_ms", label, (asyncio.get_running_loop().time() - download_started_at) * 1000)
         
         if downloaded_files:
             processed_files = []
@@ -479,9 +581,15 @@ async def _download_goes_product_async(
             # Helper to handle decompression result mapping
             async def _decompress_wrapper(f):
                 if f.suffix == ".gz":
-                        with PerformanceTimer(io_manager, f"Decompress_GOES_{label}", trace_id, threshold_ms=50):
-                            res = await downloader.async_decompress_file(f)
-                            return res if res else f
+                        decompress_started_at = asyncio.get_running_loop().time()
+                        res = await downloader.async_decompress_file(f)
+                        _record_perf_metric(
+                            perf_maps,
+                            "decompress_ms",
+                            label,
+                            (asyncio.get_running_loop().time() - decompress_started_at) * 1000,
+                        )
+                        return res if res else f
                 return f
 
             # Gather all decompression tasks
@@ -562,6 +670,7 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
         return
 
     io_manager.write_info("Starting GOES-19 downloads...")
+    _cleanup_goes_specs_sync(goes_modifiers_list, max_age_minutes=60)
 
     # Use ThreadPoolExecutor for concurrent downloads
     shared_channel_files_by_product = {}
@@ -575,6 +684,8 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
         bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
         shared_channel_files_by_product[goes_spec.product] = finder.lookup_files(bucket_paths)
 
+    downloaded = 0
+    failed = 0
     with ThreadPoolExecutor(max_workers=len(goes_modifiers_list)) as executor:
         futures = [
             executor.submit(
@@ -594,11 +705,14 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
             try:
                 result = future.result()
                 if result:
-                    io_manager.write_debug(f"Successfully downloaded {len(result)} files")
+                    downloaded += 1
+                else:
+                    failed += 1
             except Exception as e:
+                failed += 1
                 io_manager.write_error(f"GOES download error: {e}")
 
-    io_manager.write_info("GOES-19 downloads completed")
+    io_manager.write_info(f"GOES download summary: downloaded={downloaded}, failed={failed}")
 
 
 def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
@@ -623,6 +737,8 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
     ensure_aiobotocore_endpoint_compat()
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         io_manager.write_info(f"[{trace_id}] Starting async GOES-19 downloads...")
+        perf_maps = {"lookup_ms": {}, "download_ms": {}, "decompress_ms": {}}
+        await _cleanup_goes_specs_async(goes_modifiers_list, trace_id, max_age_minutes=60)
         shared_channel_files_by_product = {}
 
         for goes_spec in goes_modifiers_list:
@@ -632,13 +748,14 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
             search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
             finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3)
             bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
-            with PerformanceTimer(
-                io_manager,
-                f"Lookup_GOES_{goes_spec.product}_shared",
-                trace_id,
-                threshold_ms=100,
-            ):
-                shared_channel_files_by_product[goes_spec.product] = await finder.async_lookup_files(bucket_paths)
+            lookup_started_at = asyncio.get_running_loop().time()
+            shared_channel_files_by_product[goes_spec.product] = await finder.async_lookup_files(bucket_paths)
+            _record_perf_metric(
+                perf_maps,
+                "lookup_ms",
+                f"{goes_spec.product}_shared",
+                (asyncio.get_running_loop().time() - lookup_started_at) * 1000,
+            )
 
         tasks = [
             _download_goes_product_async(
@@ -648,6 +765,7 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
                 hour_lookback,
                 s3,
                 trace_id,
+                perf_maps=perf_maps,
                 preloaded_files=(
                     shared_channel_files_by_product.get(goes_spec.product)
                     if goes_spec.channel_id
@@ -659,13 +777,21 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
+        downloaded = 0
+        failed = 0
         for result in results:
             if isinstance(result, Exception):
+                failed += 1
                 io_manager.write_error(f"[{trace_id}] GOES async download error: {result}")
             elif result:
-                io_manager.write_debug(f"[{trace_id}] Successfully downloaded {len(result)} files")
+                downloaded += 1
+            else:
+                failed += 1
 
-        io_manager.write_info(f"[{trace_id}] Async GOES-19 downloads completed")
+        io_manager.write_info(
+            f"[{trace_id}] GOES download summary: downloaded={downloaded}, failed={failed}"
+        )
+        _emit_perf_maps(trace_id, perf_maps)
 
 
 async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
