@@ -69,5 +69,5 @@ async def test_download_ewmrs_files_async_uses_render_subset(monkeypatch):
     assert captured["cleanup_dirs"] == ["/tmp/azshear"]
     assert captured["cleanup_async"] is fake_cleanup
     assert captured["cleanup_kwargs"] == {"max_age_minutes": 60}
-    assert captured["cleanup_message"] == "Starting async cleanup for 1 EWMRS directories..."
+    assert "cleanup_message" not in captured
     assert captured["async_downloads"] == ["download-task"]
