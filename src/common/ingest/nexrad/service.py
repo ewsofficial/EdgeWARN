@@ -54,7 +54,96 @@ from common.ingest.nexrad.writer import (
 )
 from util.io import IOManager
 
-io_manager = IOManager("[NEXRAD]", include_timestamps=True)
+io_manager = IOManager("[NEXRAD]")
+
+
+def _new_volume_perf_totals() -> dict[str, object]:
+    return {
+        "parse_runs": 0,
+        "saved_sweeps": 0,
+        "saved_elevations": 0,
+        "max_visible_sweeps": 0,
+        "max_child_rss_kb": None,
+        "queued_ms": 0.0,
+        "execute_ms": 0.0,
+        "buffer_trimmed": False,
+        "first_useful_export": None,
+        "chunk_list_ms": None,
+        "chunk_count": 0,
+    }
+
+
+def _record_worker_parse_totals(
+    totals: dict[str, object] | None,
+    *,
+    result: WorkerParseResult,
+    queued_elapsed_ms: float,
+    execute_elapsed_ms: float,
+    first_elevation_timestamp: str | None,
+    had_first_elevation: bool,
+) -> None:
+    if totals is None or not result.saved_sweep_count:
+        return
+
+    totals["parse_runs"] = int(totals["parse_runs"]) + 1
+    totals["saved_sweeps"] = int(totals["saved_sweeps"]) + int(result.saved_sweep_count)
+    totals["saved_elevations"] = int(totals["saved_elevations"]) + len(result.saved_elevations)
+    totals["max_visible_sweeps"] = max(int(totals["max_visible_sweeps"]), int(result.visible_sweeps))
+    totals["queued_ms"] = float(totals["queued_ms"]) + float(queued_elapsed_ms)
+    totals["execute_ms"] = float(totals["execute_ms"]) + float(execute_elapsed_ms)
+    totals["buffer_trimmed"] = bool(totals["buffer_trimmed"]) or bool(result.buffer_trimmed)
+
+    if result.child_rss_kb is not None:
+        current_rss = totals["max_child_rss_kb"]
+        totals["max_child_rss_kb"] = (
+            float(result.child_rss_kb)
+            if current_rss is None
+            else max(float(current_rss), float(result.child_rss_kb))
+        )
+
+    if not had_first_elevation and first_elevation_timestamp is not None and totals["first_useful_export"] is None:
+        totals["first_useful_export"] = first_elevation_timestamp
+
+
+def _emit_volume_perf_summary(
+    site: str,
+    volume_id: str,
+    *,
+    totals: dict[str, object],
+    total_elapsed_ms: float | None = None,
+    complete: bool | None = None,
+    chunks_downloaded: int | None = None,
+) -> None:
+    saved_sweeps = int(totals["saved_sweeps"])
+    if saved_sweeps:
+        rss_kb = totals["max_child_rss_kb"]
+        rss_text = "n/a" if rss_kb is None else f"{float(rss_kb):.0f}"
+        io_manager.write_info(
+            f"[VOL {site}/{volume_id}] exported {saved_sweeps} sweeps across "
+            f"{int(totals['saved_elevations'])} elevations "
+            f"(parse_runs={int(totals['parse_runs'])}, visible={int(totals['max_visible_sweeps'])}, rss_kb={rss_text})"
+        )
+
+    parts = []
+    if totals["chunk_list_ms"] is not None:
+        parts.append(
+            f"chunk_list={float(totals['chunk_list_ms']):.2f}ms (listed={int(totals['chunk_count'])})"
+        )
+    if int(totals["parse_runs"]):
+        parts.append(
+            f"worker_parse=queued:{float(totals['queued_ms']):.2f}ms "
+            f"execute:{float(totals['execute_ms']):.2f}ms"
+        )
+        parts.append(f"trimmed={bool(totals['buffer_trimmed'])}")
+    if totals["first_useful_export"] is not None:
+        parts.append(f"first_useful_export={totals['first_useful_export']}")
+    if total_elapsed_ms is not None:
+        parts.append(
+            f"total_async_ingest={float(total_elapsed_ms):.2f}ms "
+            f"(accepted=True, complete={bool(complete)}, chunks_downloaded={int(chunks_downloaded or 0)})"
+        )
+    if parts:
+        io_manager.write_perf(f"[VOL {site}/{volume_id}] " + " | ".join(parts))
 
 
 def _write_text_if_changed(path: Path, content: str) -> None:
@@ -369,6 +458,7 @@ class NexradIngestService:
         )
         elevation_timestamps_by_id = _normalize_elevation_timestamps(persisted_state.get("elevation_timestamps_by_id"))
         first_elevation_timestamp: str | None = persisted_state.get("first_elevation_timestamp")
+        perf_totals = _new_volume_perf_totals()
 
         runtime_path.parent.mkdir(parents=True, exist_ok=True)
         with open(runtime_path, "ab" if existing_size > 0 else "wb") as scan_file:
@@ -410,6 +500,7 @@ class NexradIngestService:
                         first_elevation_timestamp,
                         download_started_at=download_started_at,
                         elevation_timestamps_by_id=elevation_timestamps_by_id,
+                        perf_totals=perf_totals,
                         base_dir=base_dir,
                     )
                     seen_elevation_exports = {}
@@ -446,6 +537,7 @@ class NexradIngestService:
                             first_elevation_timestamp,
                             download_started_at=download_started_at,
                             elevation_timestamps_by_id=elevation_timestamps_by_id,
+                            perf_totals=perf_totals,
                             base_dir=base_dir,
                         )
                         stream_has_started = True
@@ -486,6 +578,7 @@ class NexradIngestService:
                         first_elevation_timestamp,
                         download_started_at=download_started_at,
                         elevation_timestamps_by_id=elevation_timestamps_by_id,
+                        perf_totals=perf_totals,
                         base_dir=base_dir,
                     )
                     if current_state.bytes_written != prior_bytes_written:
@@ -507,6 +600,7 @@ class NexradIngestService:
                     first_elevation_timestamp,
                     download_started_at=download_started_at,
                     elevation_timestamps_by_id=elevation_timestamps_by_id,
+                    perf_totals=perf_totals,
                     base_dir=base_dir,
                 )
 
@@ -536,6 +630,8 @@ class NexradIngestService:
                 download_started_at=download_started_at,
             )
 
+        _emit_volume_perf_summary(site_upper, volume_id, totals=perf_totals)
+
         return NexradIngestResult(
             site=site_upper,
             volume_id=volume_id,
@@ -561,6 +657,7 @@ class NexradIngestService:
         *,
         download_started_at: str | None = None,
         elevation_timestamps_by_id: dict[str, str] | None = None,
+        perf_totals: dict[str, object] | None = None,
         base_dir=None,
     ) -> str | None:
         """Run the worker parse/export via the shared process pool.
@@ -631,20 +728,14 @@ class NexradIngestService:
                     if first_elevation_timestamp is None:
                         first_elevation_timestamp = artifact_timestamp
 
-            if result.saved_sweep_count:
-                io_manager.write_info(
-                    f"[VOL {site}/{volume_id}] worker exported {result.saved_sweep_count} sweeps, "
-                    f"{len(result.saved_elevations)} elevations "
-                    f"(visible={result.visible_sweeps}, rss_kb={result.child_rss_kb})"
-                )
-                io_manager.write_perf(
-                    f"[VOL {site}/{volume_id}] worker_parse: queued={queued_elapsed_ms:.2f}ms "
-                    f"execute={execute_elapsed_ms:.2f}ms trimmed={result.buffer_trimmed}"
-                )
-                if not had_first_elevation and first_elevation_timestamp is not None:
-                    io_manager.write_perf(
-                        f"[VOL {site}/{volume_id}] first_useful_export: elevation_ts={first_elevation_timestamp}"
-                    )
+            _record_worker_parse_totals(
+                perf_totals,
+                result=result,
+                queued_elapsed_ms=queued_elapsed_ms,
+                execute_elapsed_ms=execute_elapsed_ms,
+                first_elevation_timestamp=first_elevation_timestamp,
+                had_first_elevation=had_first_elevation,
+            )
         except FuturesTimeoutError:
             future.cancel()
             shutdown_nexrad_pool(wait=False)
@@ -687,6 +778,7 @@ class NexradIngestService:
         s3_client,
         base_dir=None,
         chunk_download_semaphore=None,
+        perf_totals: dict[str, object] | None = None,
     ):
         """Async variant: streams chunks directly to disk, parses on boundary."""
         if base_dir:
@@ -771,6 +863,7 @@ class NexradIngestService:
                         first_elevation_timestamp,
                         download_started_at=download_started_at,
                         elevation_timestamps_by_id=elevation_timestamps_by_id,
+                        perf_totals=perf_totals,
                         base_dir=base_dir,
                     )
                     seen_elevation_exports = {}
@@ -808,6 +901,7 @@ class NexradIngestService:
                             first_elevation_timestamp,
                             download_started_at=download_started_at,
                             elevation_timestamps_by_id=elevation_timestamps_by_id,
+                            perf_totals=perf_totals,
                             base_dir=base_dir,
                         )
                     stream_has_started = True
@@ -844,6 +938,7 @@ class NexradIngestService:
                         first_elevation_timestamp,
                         download_started_at=download_started_at,
                         elevation_timestamps_by_id=elevation_timestamps_by_id,
+                        perf_totals=perf_totals,
                         base_dir=base_dir,
                     )
                     if current_state.bytes_written != prior_bytes_written:
@@ -866,6 +961,7 @@ class NexradIngestService:
                     first_elevation_timestamp,
                     download_started_at=download_started_at,
                     elevation_timestamps_by_id=elevation_timestamps_by_id,
+                    perf_totals=perf_totals,
                     base_dir=base_dir,
                 )
 
@@ -1107,15 +1203,18 @@ class NexradIngestService:
             list_started_at = time.perf_counter()
             chunks = await self.async_chunk_lister(site, volume_id, s3_client=active_s3_client)
             list_elapsed_ms = format_perf_ms(list_started_at)
-            io_manager.write_perf(
-                f"[VOL {probe_site}/{probe_volume_id}] chunk_list: {list_elapsed_ms:.2f}ms "
-                f"(listed={len(chunks)})"
-            )
+            perf_totals = _new_volume_perf_totals()
+            perf_totals["chunk_list_ms"] = list_elapsed_ms
+            perf_totals["chunk_count"] = len(chunks)
             if not chunks:
                 total_elapsed_ms = format_perf_ms(total_started_at)
-                io_manager.write_perf(
-                    f"[VOL {probe_site}/{probe_volume_id}] total_async_ingest: {total_elapsed_ms:.2f}ms "
-                    f"(accepted=True, complete=False, chunks_downloaded=0)"
+                _emit_volume_perf_summary(
+                    probe_site,
+                    probe_volume_id,
+                    totals=perf_totals,
+                    total_elapsed_ms=total_elapsed_ms,
+                    complete=False,
+                    chunks_downloaded=0,
                 )
                 return NexradIngestResult(
                     site=probe_site,
@@ -1138,12 +1237,17 @@ class NexradIngestService:
                 s3_client=active_s3_client,
                 base_dir=base_dir,
                 chunk_download_semaphore=chunk_download_semaphore or self._shared_chunk_download_semaphore,
+                perf_totals=perf_totals,
             )
             record_volume_and_maybe_recycle()
             total_elapsed_ms = format_perf_ms(total_started_at)
-            io_manager.write_perf(
-                f"[VOL {probe_site}/{probe_volume_id}] total_async_ingest: {total_elapsed_ms:.2f}ms "
-                f"(accepted=True, complete={result.complete}, chunks_downloaded={result.chunks_downloaded})"
+            _emit_volume_perf_summary(
+                probe_site,
+                probe_volume_id,
+                totals=perf_totals,
+                total_elapsed_ms=total_elapsed_ms,
+                complete=result.complete,
+                chunks_downloaded=result.chunks_downloaded,
             )
             return NexradIngestResult(
                 site=result.site,

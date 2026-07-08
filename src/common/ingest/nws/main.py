@@ -134,9 +134,10 @@ def download_alerts(dt: datetime):
 
         total_active = registry.alert_count
         io_manager.write_info(
-            f"Registry updated: {new_count} new, {updated_count} updated, "
-            f"{reconciled_removed_count} reconciled, {removed_count} expired removed, "
-            f"{total_active} total active"
+            "Registry updated: "
+            f"new={new_count}, updated={updated_count}, "
+            f"reconciled={reconciled_removed_count}, expired_removed={removed_count}, "
+            f"total_active={total_active}"
         )
 
     except Exception as e:
@@ -212,9 +213,10 @@ async def download_alerts_async(dt: datetime):
         
         total_active = registry.alert_count
         io_manager.write_info(
-            f"Registry updated (async): {new_count} new, {updated_count} updated, "
-            f"{reconciled_removed_count} reconciled, {removed_count} expired removed, "
-            f"{total_active} total active"
+            "Registry updated (async): "
+            f"new={new_count}, updated={updated_count}, "
+            f"reconciled={reconciled_removed_count}, expired_removed={removed_count}, "
+            f"total_active={total_active}"
         )
 
     except Exception as e:

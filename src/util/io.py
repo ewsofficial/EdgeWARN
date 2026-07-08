@@ -9,14 +9,32 @@ class TimestampedOutput:
         self.stream = stream
 
     def write(self, message):
-        if message.strip():
-            timestamp = datetime.now(timezone.utc).isoformat()
-            self.stream.write(f"[{timestamp}] {message}")
-        else:
+        if not message:
+            return
+
+        if "\r" in message:
             self.stream.write(message)
+            return
+
+        for chunk in message.splitlines(keepends=True):
+            if not chunk.strip():
+                self.stream.write(chunk)
+                continue
+
+            timestamp = datetime.now(timezone.utc).isoformat()
+            if chunk.endswith("\n"):
+                self.stream.write(f"[{timestamp}] {chunk[:-1]}\n")
+            else:
+                self.stream.write(f"[{timestamp}] {chunk}")
 
     def flush(self):
         self.stream.flush()
+
+    def isatty(self):
+        return bool(getattr(self.stream, "isatty", lambda: False)())
+
+    def fileno(self):
+        return self.stream.fileno()
 
 
 class QueueWriter:
@@ -25,11 +43,13 @@ class QueueWriter:
 
     def write(self, message):
         if message.strip():
-            timestamp = datetime.now(timezone.utc).isoformat()
-            self.queue.put(f"[{timestamp}] {message.rstrip()}")
+            self.queue.put(message.rstrip("\n"))
 
     def flush(self):
         pass
+
+    def isatty(self):
+        return False
 
 
 class IOManager:

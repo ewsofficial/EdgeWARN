@@ -4,7 +4,7 @@ from common.ingest.nexrad.config import ALLOWED_VCPS
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from util.io import IOManager
 
-io_manager = IOManager("[NEXRAD-PIPE]", include_timestamps=True)
+io_manager = IOManager("[NEXRAD-PIPE]")
 
 
 class NexradStationFilter:

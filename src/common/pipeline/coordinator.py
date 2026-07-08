@@ -163,7 +163,7 @@ async def run_tandem_ingest_cycle(
     else:
         goes_ok = False
         rap_path = await rap_task
-        log("INFO: GOES ingest is decoupled from this cycle; integration readiness does not wait for GOES")
+        log("INFO: GOES ingest is decoupled from this cycle; integration readiness does not wait for GOES availability")
 
     rap_ok = bool(rap_path)
 
