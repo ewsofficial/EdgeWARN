@@ -1,5 +1,6 @@
 from EdgeWARN.ctam.modules.StormCast import StormCastModule
 from unittest.mock import patch
+from datetime import datetime, timedelta, timezone
 
 
 def _make_wind_field():
@@ -100,3 +101,34 @@ def test_alerts_returns_payload_for_eligible_cell():
     assert alerts is not None
     assert len(alerts) == 1
     assert alerts[0].cell_id == 146904
+
+
+def test_alerts_records_refresh_suppression_without_per_cell_log():
+    module = StormCastModule()
+    effective = datetime(2026, 3, 22, 0, 22, 38, tzinfo=timezone.utc)
+    storm_entry = {
+        "id": 146904,
+        "timestamp": effective.isoformat(),
+        "modules": {
+            "StormCast": {
+                "status": "success",
+                "can_generate_alerts": True,
+                "polygon_0_30m": [
+                    (34.4, -82.2),
+                    (34.5, -82.1),
+                    (34.6, -82.0),
+                    (34.4, -82.2),
+                ],
+            },
+            "MorphoWind": {"severity_index": 0.7},
+        },
+    }
+    previous_alert = type("PreviousAlert", (), {"effective_time": effective - timedelta(minutes=5)})()
+
+    with patch("EdgeWARN.ctam.modules.StormCast.AlertManager.load", return_value=previous_alert):
+        alerts = module.alerts(storm_entry)
+
+    assert alerts is None
+    result = storm_entry["modules"]["StormCast"]
+    assert result["alert_outcome"] == "suppressed_refresh_spacing"
+    assert result["next_alert_eligible_minutes"] == 10.0
