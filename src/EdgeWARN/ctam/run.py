@@ -12,6 +12,7 @@ Supports both:
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from collections import Counter
 from .registry import CellModuleRegistry, GridModuleRegistry, ModuleRegistry
 from .engine import initialize_modules
 from EdgeWARN.alerts import AlertManager
@@ -116,6 +117,8 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
         False: 0,
         None: 0,
     }
+    stormcast_alert_outcome_counts = Counter()
+    stormcast_alert_blocker_counts = Counter()
 
     for cell in cells:
         stormcast_result = cell.get("modules", {}).get("StormCast")
@@ -133,6 +136,13 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
         else:
             stormcast_alert_eligibility_counts[None] += 1
 
+        alert_outcome = stormcast_result.get("alert_outcome")
+        if alert_outcome:
+            stormcast_alert_outcome_counts[alert_outcome] += 1
+
+        for blocker in stormcast_result.get("alert_blockers", []):
+            stormcast_alert_blocker_counts[str(blocker)] += 1
+
     if stormcast_status_counts:
         status_summary = ", ".join(
             f"{status}={count}" for status, count in sorted(stormcast_status_counts.items())
@@ -146,6 +156,16 @@ def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> Li
             "[CTAM] StormCast summary: "
             f"status[{status_summary}] can_generate_alerts[{eligibility_summary}]"
         )
+        if stormcast_alert_outcome_counts:
+            outcome_summary = ", ".join(
+                f"{name}={count}" for name, count in sorted(stormcast_alert_outcome_counts.items())
+            )
+            print(f"[CTAM] StormCast alert outcomes: {outcome_summary}")
+        if stormcast_alert_blocker_counts:
+            blocker_summary = ", ".join(
+                f"{name}={count}" for name, count in sorted(stormcast_alert_blocker_counts.items())
+            )
+            print(f"[CTAM] StormCast alert blockers: {blocker_summary}")
     
     # Step 2: Run grid-based modules
     grid_results = {}

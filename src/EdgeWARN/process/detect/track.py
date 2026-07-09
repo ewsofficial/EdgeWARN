@@ -99,6 +99,70 @@ class StormCellTracker:
         
         # Cache for prediction states (cell_id -> PredictionState)
         self._prediction_states: Dict[int, PredictionState] = {}
+
+    @staticmethod
+    def _format_id_sample(ids: List[Any], limit: int = 8) -> str:
+        """Render a compact ID sample for logs."""
+        if not ids:
+            return "none"
+
+        sample = ", ".join(str(cell_id) for cell_id in ids[:limit])
+        if len(ids) > limit:
+            sample = f"{sample}, ... (+{len(ids) - limit} more)"
+        return sample
+
+    def _log_entry_summary(self, entries: List[Dict[str, Any]]) -> None:
+        """Log a compact summary of existing entries before updates."""
+        mode_counts: Dict[str, int] = {}
+        entry_ids: List[Any] = []
+
+        for cell in entries:
+            mode = str(cell.get('tracking_mode', 'N/A'))
+            mode_counts[mode] = mode_counts.get(mode, 0) + 1
+            entry_ids.append(cell.get('id', 'unknown'))
+
+        mode_summary = ", ".join(
+            f"{mode}={count}" for mode, count in sorted(mode_counts.items())
+        ) or "none"
+        self.io_manager.write_debug(
+            f"update_cells: existing entries total={len(entries)}, modes=[{mode_summary}], "
+            f"sample_ids=[{self._format_id_sample(entry_ids)}]"
+        )
+
+    def _log_updated_data_summary(self, updated_data: List[Dict[str, Any]]) -> None:
+        """Log a compact summary of detection updates."""
+        updated_ids: List[Any] = []
+        centroid_samples: List[str] = []
+
+        for cell in updated_data:
+            updated_ids.append(cell.get('id', 'unknown'))
+            if len(centroid_samples) < 5 and 'centroid' in cell:
+                centroid_samples.append(f"{cell['id']}:{cell['centroid']}")
+
+        centroid_summary = ", ".join(centroid_samples) or "none"
+        self.io_manager.write_debug(
+            f"update_cells: updated detections total={len(updated_data)}, "
+            f"sample_ids=[{self._format_id_sample(updated_ids)}], "
+            f"sample_centroids=[{centroid_summary}]"
+        )
+
+    def _log_final_entry_summary(self, updated_entries: List[Dict[str, Any]]) -> None:
+        """Log a compact summary of updated entries before returning."""
+        mode_counts: Dict[str, int] = {}
+        final_ids: List[Any] = []
+
+        for cell in updated_entries:
+            mode = str(cell.get('tracking_mode', 'N/A'))
+            mode_counts[mode] = mode_counts.get(mode, 0) + 1
+            final_ids.append(cell.get('id', 'unknown'))
+
+        mode_summary = ", ".join(
+            f"{mode}={count}" for mode, count in sorted(mode_counts.items())
+        ) or "none"
+        self.io_manager.write_debug(
+            f"update_cells: returning entries total={len(updated_entries)}, modes=[{mode_summary}], "
+            f"sample_ids=[{self._format_id_sample(final_ids)}]"
+        )
     
     def detect_lineage_events(
         self,
@@ -158,24 +222,14 @@ class StormCellTracker:
         if len(valid_entries) < len(entries):
             self.io_manager.write_warning(f"Filtered out {len(entries) - len(valid_entries)} entries without 'id' field")
         entries = valid_entries
-        
-        self.io_manager.write_debug("Entries in update_cells:")
-        for cell in entries:
-            cell_id = cell.get('id')
-            if cell_id is None:
-                self.io_manager.write_warning("Skipping entry without 'id' field")
-                continue
-            self.io_manager.write_debug(f"  Entry ID: {cell_id}, Tracking Mode: {cell.get('tracking_mode', 'N/A')}")
+        self._log_entry_summary(entries)
         
         # Filter updated_data to ensure all entries have 'id' field
         valid_updated = [cell for cell in updated_data if 'id' in cell]
         if len(valid_updated) < len(updated_data):
             self.io_manager.write_warning(f"Filtered out {len(updated_data) - len(valid_updated)} updated cells without 'id' field")
         updated_data = valid_updated
-        
-        self.io_manager.write_debug("Updated data:")
-        for cell in updated_data:
-            self.io_manager.write_debug(f"  Updated cell ID: {cell['id']}, Centroid: {cell['centroid']}")
+        self._log_updated_data_summary(updated_data)
 
         # 1. Initialize/Sync Kalman Filters for all existing tracks
         self._ensure_kalman_filters(entries)
@@ -540,9 +594,7 @@ class StormCellTracker:
             del self._kalman_filters[oid]
             self._prediction_states.pop(oid, None)
         
-        self.io_manager.write_debug("Final updated_entries before returning:")
-        for cell in updated_entries:
-            self.io_manager.write_debug(f"  ID {cell['id']}, Mode {cell['tracking_mode']}")
+        self._log_final_entry_summary(updated_entries)
         return updated_entries
 
     def _ensure_kalman_filters(self, entries: List[Dict]):

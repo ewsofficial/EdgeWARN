@@ -357,10 +357,15 @@ def _cleanup_old_nexrad_gui_files(max_age_minutes: int = 120) -> int:
     now = time.time()
     max_age_seconds = max_age_minutes * 60
     total_removed = 0
+    affected_sites: set[str] = set()
+    files_removed = 0
+    dirs_removed = 0
 
     for site_dir in nexrad_root.iterdir():
         if not site_dir.is_dir() or site_dir.name.startswith(".") or not _NEXRAD_SITE_DIR_PATTERN.fullmatch(site_dir.name):
             continue
+
+        site_had_removals = False
 
         for child_dir in site_dir.iterdir():
             if not child_dir.is_dir() or child_dir.name.startswith("."):
@@ -376,25 +381,37 @@ def _cleanup_old_nexrad_gui_files(max_age_minutes: int = 120) -> int:
                     if file_age <= max_age_seconds:
                         continue
                     child_file.unlink(missing_ok=True)
+                    files_removed += 1
                     total_removed += 1
-                    io_manager.write_debug(f"Removed old NEXRAD GUI file: {child_file}")
+                    site_had_removals = True
 
                 if not any(child_dir.iterdir()):
                     child_dir.rmdir()
+                    dirs_removed += 1
                     total_removed += 1
-                    io_manager.write_debug(f"Removed empty NEXRAD directory: {child_dir}")
+                    site_had_removals = True
             except Exception as exc:
                 io_manager.write_warning(f"Failed to process NEXRAD directory {child_dir}: {exc}")
 
         try:
             if any(site_dir.iterdir()):
+                if site_had_removals:
+                    affected_sites.add(site_dir.name)
                 continue
 
             site_dir.rmdir()
+            dirs_removed += 1
             total_removed += 1
-            io_manager.write_debug(f"Removed empty NEXRAD site folder: {site_dir}")
+            affected_sites.add(site_dir.name)
         except Exception as exc:
             io_manager.write_warning(f"Failed to process NEXRAD site folder {site_dir}: {exc}")
+
+    if files_removed or dirs_removed:
+        sites_str = ", ".join(sorted(affected_sites))
+        io_manager.write_debug(
+            f"Cleaned up NEXRAD GUI: {files_removed} file(s), {dirs_removed} dir(s) "
+            f"across {len(affected_sites)} site(s): [{sites_str}]"
+        )
 
     return total_removed
 
