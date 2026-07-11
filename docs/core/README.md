@@ -82,8 +82,9 @@ The active runtime layout is:
 
 - Detection inputs ready
 - EWMRS MRMS inputs ready
+- Base EdgeWARN integration inputs ready (both MRMS groups plus raw RAP)
 - EWMRS GOES inputs ready
-- EdgeWARN integration inputs ready
+- EdgeWARN integration inputs ready (adds scan-time GLM when enabled)
 
 The GOES EWMRS stage renders the full configured GOES-East ABI set after local ABI readiness is met.
 Current outputs include the single-channel GUI products `GOES_ABI_C01` through `GOES_ABI_C16` plus six derived RGB composites built from staged `ABI-L1b-RadC` channels:
@@ -99,7 +100,7 @@ The GOES render path uses a unified cycle that reuses shared channel reprojectio
 
 ## Scheduling Modes
 
-- `run.py` performs a staged shared ingest cycle, then runs EdgeWARN and EWMRS workers in tandem
+- `run.py` starts waiting EdgeWARN/EWMRS workers, then releases each staged phase as its validated inputs arrive
 - `process_historical.py` iterates through a requested UTC time range and runs the historical EdgeWARN flow
 
 Current CLI coverage:

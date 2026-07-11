@@ -322,10 +322,13 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
         perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
         return modifier_name, False
 
-def download_all_files_sync_fallback(dt, max_entries):
-    """Sync fallback for downloading all MRMS files"""
+def download_files_sync_fallback(dt, max_entries, target_modifiers=None):
+    """Sync fallback for a selected MRMS phase (or all products)."""
     # Multithread MRMS downloads
-    mrms_modifiers_list = get_mrms_modifiers()
+    mrms_modifiers_list = [
+        spec for spec in get_mrms_modifiers()
+        if target_modifiers is None or spec[1] in target_modifiers
+    ]
     downloaded = []
     failed = []
     log_per_product = _should_log_per_product_success(len(mrms_modifiers_list))
@@ -349,6 +352,11 @@ def download_all_files_sync_fallback(dt, max_entries):
         downloaded=tuple(downloaded),
         failed=tuple(failed),
     )
+
+
+def download_all_files_sync_fallback(dt, max_entries):
+    """Backward-compatible full-MRMS sync fallback."""
+    return download_files_sync_fallback(dt, max_entries)
 
 def download_modifier_sync(region, modifier, outdir, dt, max_entries):
     """Internal sync version of download_modifier for fallback"""
