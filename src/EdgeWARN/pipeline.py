@@ -135,7 +135,13 @@ def run_edgewarn_detection_phase(
     return generated_file
 
 
-def run_edgewarn_integration_phase(log, generated_file, remove_old_cells=True, disable_ctam=False):
+def run_edgewarn_integration_phase(
+    log,
+    generated_file,
+    remove_old_cells=True,
+    disable_ctam=False,
+    mrms_core_only=False,
+):
     """Run only the integration phase from an existing detection artifact."""
     if not generated_file:
         log("WARN: No detection artifact was produced; skipping integration")
@@ -145,6 +151,7 @@ def run_edgewarn_integration_phase(log, generated_file, remove_old_cells=True, d
         generated_file,
         remove_old_cells=remove_old_cells,
         disable_ctam=disable_ctam,
+        mrms_core_only=mrms_core_only,
     )
     return True
 
@@ -164,6 +171,7 @@ def edgewarn_tandem_worker(
     refl_threshold=37.5,
     min_seed_percentage=0.001,
     drop_offset=10.0,
+    mrms_core_only=False,
 ):
     """Process target for staged EdgeWARN execution within the tandem runner."""
     sys.stdout = QueueWriter(log_queue)
@@ -211,6 +219,7 @@ def edgewarn_tandem_worker(
             log,
             shared_state.get("edgewarn_generated_file") or None,
             disable_ctam=disable_ctam,
+            mrms_core_only=mrms_core_only,
         )
         perf_tracker.stop("Integration")
         log("INFO: EdgeWARN worker completed successfully")

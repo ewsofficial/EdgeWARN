@@ -33,6 +33,7 @@ class TandemCycleConfig:
     drop_offset: float
     ewmrs_enabled: bool
     goes_enabled: bool
+    mrms_core_only: bool
     goes_render_wait_seconds: float
     goes_render_wait_interval_seconds: float
 
@@ -69,6 +70,7 @@ def run_tandem_cycle_once(
             config.disable_ctam, config.disable_tracking,
             config.disable_polygon_expansion, config.refl_threshold,
             config.min_seed_percentage, config.drop_offset,
+            config.mrms_core_only,
         ),
     )
     ewmrs_proc = (
@@ -141,6 +143,7 @@ def run_tandem_cycle_once(
 
             cycle_task = asyncio.create_task(run_tandem_ingest_cycle(
                 dt, lambda msg: queue_log(log_queue, msg), include_goes=False,
+                include_rap=not config.mrms_core_only,
                 include_ewmrs=config.ewmrs_enabled,
                 on_detection_ready=lambda state: publish(state, detection_ready_event, "detection_released"),
                 on_ewmrs_mrms_ready=lambda state: publish(state, ewmrs_mrms_ready_event, "ewmrs_mrms_released"),
@@ -177,7 +180,7 @@ def run_tandem_cycle_once(
         cycle_state
         and cycle_state.detection_inputs_ready
         and cycle_state.mrms_integration_inputs_ready
-        and cycle_state.rap_inputs_ready
+        and (cycle_state.rap_inputs_ready or config.mrms_core_only)
         and (glm_ready or not config.goes_enabled)
     )
     shared_state["edgewarn_integration_inputs_ready"] = edgewarn_integration_ready

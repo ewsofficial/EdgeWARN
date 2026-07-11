@@ -89,6 +89,7 @@ async def run_tandem_ingest_cycle(
     *,
     max_entries: int = 10,
     include_goes: bool = True,
+    include_rap: bool = True,
     include_ewmrs: bool = True,
     on_detection_ready: Optional[StateCallback] = None,
     on_ewmrs_mrms_ready: Optional[StateCallback] = None,
@@ -139,15 +140,19 @@ async def run_tandem_ingest_cycle(
                 3,
             )
         )
-    rap_task = asyncio.create_task(
-        _safe_ingest(
-            "RAP",
-            log,
-            download_rap_async,
-            download_rap,
-            dt,
-            require_result=True,
+    rap_task = (
+        asyncio.create_task(
+            _safe_ingest(
+                "RAP",
+                log,
+                download_rap_async,
+                download_rap,
+                dt,
+                require_result=True,
+            )
         )
+        if include_rap
+        else None
     )
 
     detection_result = await detection_task
@@ -175,11 +180,11 @@ async def run_tandem_ingest_cycle(
 
     # RAP is a source input; publish integration's non-GLM prerequisites before
     # the optional Uint16 conversion below.
-    rap_path = await rap_task
-    rap_ok = bool(rap_path)
+    rap_path = await rap_task if rap_task is not None else None
+    rap_ok = bool(rap_path) if include_rap else True
     state.rap_inputs_ready = rap_ok
 
-    if not rap_ok:
+    if include_rap and not rap_ok:
         state.errors["rap_ingest"] = "RAP inputs unavailable"
     state.edgewarn_integration_inputs_ready = detection_ok and mrms_integration_ok and rap_ok
     if on_base_integration_ready is not None:

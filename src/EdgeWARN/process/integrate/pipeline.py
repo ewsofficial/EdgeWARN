@@ -237,18 +237,20 @@ def _support_owned_keys():
     return set(PROBSEVERE_FIELD_MAP.keys()) | set(_GLM_OUTPUT_KEYS) | set(get_rap_output_roots())
 
 
-def _run_enrichment_serial(integrator, cells):
+def _run_enrichment_serial(integrator, cells, *, include_glm=True, include_rap=True):
     result_cells = cells
     result_cells = _integrate_dataset_groups(integrator, result_cells)
     if _AZSHEAR_SUPPORT_ENABLED:
         result_cells = _integrate_azshear(integrator, result_cells)
     result_cells = _integrate_probsevere(integrator, result_cells)
-    result_cells = _integrate_glm(result_cells)
-    result_cells = _integrate_rap(result_cells)
+    if include_glm:
+        result_cells = _integrate_glm(result_cells)
+    if include_rap:
+        result_cells = _integrate_rap(result_cells)
     return result_cells
 
 
-def _run_parallel_enrichment(integrator, cells):
+def _run_parallel_enrichment(integrator, cells, *, include_glm=True, include_rap=True):
     if not cells:
         return cells
 
@@ -276,8 +278,11 @@ def _run_parallel_enrichment(integrator, cells):
 
         def _run():
             staged_cells = _integrate_probsevere(integrator, worker_cells)
-            staged_cells = _integrate_glm(staged_cells)
-            return _integrate_rap(staged_cells)
+            if include_glm:
+                staged_cells = _integrate_glm(staged_cells)
+            if include_rap:
+                staged_cells = _integrate_rap(staged_cells)
+            return staged_cells
 
         worker_result = _run_step("Integration - Worker Support", _run)
         return _extract_patch_for_keys(worker_result, support_keys)
@@ -361,7 +366,7 @@ def _update_api_indexes(cells, remove_old_cells):
         io_manager.write_error(f"Failed to update API indexes: {e}")
 
 
-def main(json_path=None, remove_old_cells=True, disable_ctam=False):
+def main(json_path=None, remove_old_cells=True, disable_ctam=False, mrms_core_only=False):
     handler = StatFileHandler(io_manager)
     integrator = StormCellIntegrator(io_manager)
 
@@ -371,7 +376,12 @@ def main(json_path=None, remove_old_cells=True, disable_ctam=False):
     cells, timestamp = handler.load_json(json_path)
     result_cells = cells
 
-    result_cells = _run_parallel_enrichment(integrator, result_cells)
+    result_cells = _run_parallel_enrichment(
+        integrator,
+        result_cells,
+        include_glm=not mrms_core_only,
+        include_rap=not mrms_core_only,
+    )
     result_cells = _run_ctam_if_enabled(result_cells, timestamp, disable_ctam)
 
     try:

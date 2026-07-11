@@ -47,11 +47,12 @@ GOES_PAUSE_INGEST_DURING_RENDER = os.environ.get("EDGEWARN_PAUSE_GOES_INGEST_DUR
     "yes",
     "on",
 }
-EWMRS_ENABLED = not args.disable_ewmrs
-NWS_ENABLED = not args.disable_nws
-METAR_ENABLED = not args.disable_metar
-GOES_ENABLED = not args.disable_goes
-NEXRAD_ENABLED = not args.disable_nexrad
+MRMS_CORE_ONLY = args.mrms_core_only
+EWMRS_ENABLED = not args.disable_ewmrs and not MRMS_CORE_ONLY
+NWS_ENABLED = not args.disable_nws and not MRMS_CORE_ONLY
+METAR_ENABLED = not args.disable_metar and not MRMS_CORE_ONLY
+GOES_ENABLED = not args.disable_goes and not MRMS_CORE_ONLY
+NEXRAD_ENABLED = not args.disable_nexrad and not MRMS_CORE_ONLY
 
 cycle_config = TandemCycleConfig(
     lat_limits=lat_limits,
@@ -65,6 +66,7 @@ cycle_config = TandemCycleConfig(
     drop_offset=args.drop_offset,
     ewmrs_enabled=EWMRS_ENABLED,
     goes_enabled=GOES_ENABLED,
+    mrms_core_only=MRMS_CORE_ONLY,
     goes_render_wait_seconds=GOES_RENDER_WAIT_SECONDS,
     goes_render_wait_interval_seconds=GOES_RENDER_WAIT_INTERVAL_SECONDS,
 )
@@ -98,6 +100,8 @@ def main():
         print("[Scheduler] GOES/GLM ingest and GOES rendering disabled via --disable-goes")
     if args.disable_nexrad:
         print("[Scheduler] NEXRAD ingest and rendering disabled via --disable-nexrad")
+    if MRMS_CORE_ONLY:
+        print("[Scheduler] MRMS-core-only mode: running MRMS detection, MRMS integration, and CTAM only")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
@@ -109,7 +113,7 @@ def main():
     manager = multiprocessing.Manager()
     metar_proc = multiprocessing.Process(target=metar_loop, daemon=True) if METAR_ENABLED else None
     nws_proc = multiprocessing.Process(target=nws_loop, daemon=True) if NWS_ENABLED else None
-    wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True)
+    wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True) if not MRMS_CORE_ONLY else None
     goes_render_task_queue = multiprocessing.Queue()
     goes_render_log_queue = multiprocessing.Queue()
     nexrad_log_queue = multiprocessing.Queue()
