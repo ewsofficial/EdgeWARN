@@ -104,6 +104,8 @@ Common optional flags:
 - `--disable-nws`
 - `--disable-metar`
 - `--disable-goes`
+- `--disable-nexrad`
+- `--mrms-core-only`
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
@@ -112,6 +114,8 @@ Notes:
 
 - `run.py` normalizes `--lon_limits` into the `0-360` domain internally
 - `--disable-goes` disables GOES ingest, GLM ingest, and GOES rendering
+- `--disable-nexrad` disables NEXRAD Level II ingestion entirely
+- `--mrms-core-only` runs MRMS ingestion for EWMRS rendering without waiting on EdgeWARN detection outputs
 - `--disable-ewmrs` skips EWMRS workers and rendering while leaving EdgeWARN realtime processing enabled
 
 ## Running Historical Reprocessing
