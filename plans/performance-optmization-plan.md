@@ -1,6 +1,6 @@
 # EdgeWARN-Core — Detailed Performance, Security, Dead-Code & Pipeline Audit
 
-**Repo:** EdgeWARN-Core · **Version:** 2.6.3 (per `package.json`, branch `version-test/2.6.3`) · **Original Date:** 2026-05-27 · **Last Audit:** 2026-05-28
+**Repo:** EdgeWARN-Core · **Version:** 2.7.0 (per `package.json`, branch `version-test/2.7.0`) · **Original Date:** 2026-05-27 · **Last Audit:** 2026-05-28
 **Scope:** `src/` only — Python (`common/`, `EdgeWARN/`, `EWMRS/`, `util/`) and Node.js (`EdgeWARN/api/`, `EWMRS/api/`)
 **Guiding principle:** every recommendation in this document is **behavior-preserving**. Externally-observable outputs (HTTP responses, on-disk artifacts, numeric pipeline results, CLI semantics) must remain identical for legitimate inputs.
 
