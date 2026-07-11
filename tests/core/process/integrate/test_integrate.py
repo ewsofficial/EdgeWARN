@@ -475,7 +475,7 @@ def test_integrate_azshear_features_replaces_legacy_schema(integrator, synthetic
     assert cross["dominant_component_centroid_distance_km"] is not None
     assert cross["ll_ml_peak_ratio"] > 1.0
     assert cross["simultaneous_persistence"] == 0.0
-    assert cross["mesocyclone_pair_count"] == 1
+    assert cross["pair_count"] == 1
 
 
 def test_integrate_azshear_features_uses_fallback_buffer_for_centroid_cells(integrator, tmp_path):
@@ -763,7 +763,7 @@ def test_integrate_azshear_features_pairs_best_low_mid_match(integrator, tmp_pat
 
     assert azshear["low"]["core_structure"]["largest_component_peak_azshear"] == 9.2
     assert azshear["mid"]["core_structure"]["largest_component_peak_azshear"] == 6.8
-    assert cross["mesocyclone_pair_count"] == 2
+    assert cross["pair_count"] == 2
     assert cross["dominant_component_overlap_area"] > 0.0
     assert cross["dominant_component_centroid_distance_km"] < 1.0
     assert cross["ll_ml_peak_ratio"] == pytest.approx(1.278, abs=0.01)
@@ -814,7 +814,7 @@ def test_integrate_azshear_features_keeps_signal_with_single_non_overlapping_own
 
     assert result[0]["properties"]["azshear"] is None
     assert result[1]["properties"]["azshear"] is not None
-    assert result[1]["properties"]["azshear"]["cross_layer"]["mesocyclone_pair_count"] == 1
+    assert result[1]["properties"]["azshear"]["cross_layer"]["pair_count"] == 1
 
 
 def test_integrate_azshear_features_computes_history_based_persistence(integrator, synthetic_azshear_dataset_pair, tmp_path, monkeypatch):

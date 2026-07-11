@@ -46,7 +46,7 @@ src/
 │   ├── api/                                            Express API (port 5000 / debug 3001)
 │   ├── alerts/                                         Alert schema + manager
 │   ├── api_integration/                                API index/snapshot helpers
-│   ├── ctam/                                           CTAM framework + modules (FLOHAR, MorphoWind, StormCast, Mesocyclone)
+│   ├── ctam/                                           CTAM framework + modules (MorphoWind, StormCast)
 │   ├── ingest/                                         compat re-export layer for common/ingest (DEAD per §4)
 │   ├── process/{detect,integrate}/                     storm-cell detection + GLM/RAP/stat integration
 │   ├── schedule/                                       MRMS update checker
@@ -448,7 +448,7 @@ app.use(cors({ origin: corsOrigin, credentials: true, ... }));
 | S-M1 | `EWMRS/api/server.js:185` | No CSP on EWMRS | `helmet({ contentSecurityPolicy: { useDefaults: true, directives: { "default-src": ["'self'"] } } })` |
 | S-M2 | `EdgeWARN/api/server.js:114-150` | `keyGenerator` uses `req.ip`; behind a default reverse proxy this collapses to one bucket | Document required `TRUST_PROXY`; emit startup warning when production && trust-proxy=false && X-Forwarded-For observed |
 | S-M3 | `EdgeWARN/api/server.js:137-140` | `skip` allows trivial bypass via `x-internal-check: true` | Compare against `INTERNAL_CHECK_TOKEN` via `crypto.timingSafeEqual`; do not honor skip if token unset |
-| S-M4 | `alerts.js:13-34`, `mesocyclones.js:9-23`, `metar.js:14-36`, `nexrad/filesystem.js:88-105, 107-125` | Unbounded `fs.readdir` per request | Wrap in `LRUCache` keyed by directory with 5s TTL (matches advertised `max-age=5`) |
+| S-M4 | `alerts.js:13-34`, `metar.js:14-36`, `nexrad/filesystem.js:88-105, 107-125` | Unbounded `fs.readdir` per request | Wrap in `LRUCache` keyed by directory with 5s TTL (matches advertised `max-age=5`) |
 | S-M5 | `fileReader.js:61-62, 88-89`, `EWMRS/api/routes/{rap,renders,wpc,colormaps}.js` | `JSON.parse` with no size cap | Pre-`fs.stat`; reject if `size > 16MB` with 500 |
 | S-M6 | `renders.js:253, 346`, `rap.js:295`, `nexrad/index.js:117` | Streaming `sendFile` with no concurrency limit / timeout | `server.requestTimeout`, `res.setTimeout(30000)`, optional `p-limit` |
 | S-M7 | `wpc.js:62, 121`, `colormaps.js:27` | `details: err.message` leaks absolute paths | Drop `details` from response body; log server-side only |
@@ -667,21 +667,21 @@ Every recommendation in §2–§5 was vetted by a behavior-preservation auditor 
 ### 6.3 Concurrency / ordering
 
 19. **Staged readiness order** in `common/pipeline/coordinator.py`: detection → EWMRS MRMS → EWMRS GOES → EdgeWARN integration. Downstream services subscribe in this order. New stages append or insert with explicit rationale; never reorder existing four.
-20. **`mesocyclones.js` descending sort** — sorted by capture group `(\d{8}-\d{6})` from filename regex.
-21. **LRU eviction order in `fileReader.js`** — 60s TTL + 40MB sizeCalculation. Switching policy can mask stale-file bugs.
-22. **NEXRAD ingest non-daemon process** in `src/run.py` (`daemon=False`) is intentional: ingest survives Ctrl-C for in-flight volumes.
-23. **`get_nexrad_pool` reuse semantics** in `worker_pool.py` — recreates only when `max_workers` differs.
-24. **Cluster cap** `min(cpus, 4)` workers in `EdgeWARN/api/server.js` — rate-limit counters are per-worker.
+
+20. **LRU eviction order in `fileReader.js`** — 60s TTL + 40MB sizeCalculation. Switching policy can mask stale-file bugs.
+21. **NEXRAD ingest non-daemon process** in `src/run.py` (`daemon=False`) is intentional: ingest survives Ctrl-C for in-flight volumes.
+22. **`get_nexrad_pool` reuse semantics** in `worker_pool.py` — recreates only when `max_workers` differs.
+23. **Cluster cap** `min(cpus, 4)` workers in `EdgeWARN/api/server.js` — rate-limit counters are per-worker.
 
 ### 6.4 Validation contracts (tighten only, never loosen)
 
-25. **`validateAlertId`** blocks `__proto__`, `constructor`, `prototype`; allows `[a-zA-Z0-9_.:-]+`. Loosening enables path traversal via the alert-id-to-filename concatenation.
-26. **NEXRAD validation** — site `[A-Z0-9]{4}`, real UTC date, allowed product set `{DBZH, VRADH, WRADH, PHIDP, CCORH, RHOHV, ZDR}` linked to `worker.py` waveform extraction.
-27. **v1 `/features` and `/data` return 410** — deprecation contract; replace only with version bump.
+24. **`validateAlertId`** blocks `__proto__`, `constructor`, `prototype`; allows `[a-zA-Z0-9_.:-]+`. Loosening enables path traversal via the alert-id-to-filename concatenation.
+25. **NEXRAD validation** — site `[A-Z0-9]{4}`, real UTC date, allowed product set `{DBZH, VRADH, WRADH, PHIDP, CCORH, RHOHV, ZDR}` linked to `worker.py` waveform extraction.
+26. **v1 `/features` and `/data` return 410** — deprecation contract; replace only with version bump.
 
 ### 6.5 CLI / env-var contracts
 
-28. **`IOManager.get_args` `lon % 360`** in `util/io.py` mods `lon_limits` to 0–360 for `run.py` callers; `process_historical.py` deliberately does not. The asymmetry is intentional. A "unification" PR must touch both call sites with explicit rationale.
+27. **`IOManager.get_args` `lon % 360`** in `util/io.py` mods `lon_limits` to 0–360 for `run.py` callers; `process_historical.py` deliberately does not. The asymmetry is intentional. A "unification" PR must touch both call sites with explicit rationale.
 
 ### 6.6 Greenlight checklist (per-patch)
 
@@ -694,7 +694,7 @@ A proposed change is greenlight-safe iff **all** apply:
 5. No `kind="quicksort"` in `EWMRS/render/nexrad.py`.
 6. No removal of `src/EdgeWARN/ingest/` shim modules without first grepping `from EdgeWARN.ingest` across full repo + external `pyproject.toml` consumers, then migrating each.
 7. No reordering of `CellDataSaver.create_entry` field assembly.
-8. No changes to documented JSON envelope keys (stormcells, mesocyclones, alerts, METAR, RAP).
+8. No changes to documented JSON envelope keys (stormcells, alerts, METAR, RAP).
 9. No tile filename or grid-size changes (`TILE_SIZE=350`, `TILE_GRID_ROWS=10`, `TILE_GRID_COLS=20`, `tile_<x>_<y>.png`).
 10. No rate-limit defaults loosened (only tightened or made configurable).
 11. No `Cache-Control` `max-age` changes.
