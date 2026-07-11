@@ -29,10 +29,10 @@ src/EdgeWARN/process/integrate/
 Primary call pattern:
 
 ```python
-main(json_path=None, remove_old_cells=True, disable_ctam=False)
+main(json_path=None, remove_old_cells=True, disable_ctam=False, mrms_core_only=False)
 ```
 
-`json_path` defaults to `None` in the signature but is required at runtime — `main()` raises `ValueError` if it is not supplied.
+`json_path` defaults to `None` in the signature but is required at runtime — `main()` raises `ValueError` if it is not supplied. When `mrms_core_only=True`, GLM and RAP integration steps are skipped.
 
 ## Integration Stages
 
@@ -42,8 +42,8 @@ Major stages:
 
 1. Dataset stats integration (configured groups from `config.py`)
 2. ProbSevere field integration
-3. GLM integration (`GLM_FLASH_COUNT`, `GLM_TOTAL_ENERGY`)
-4. RAP integration (wind/environment fields)
+3. GLM integration (`GLM_FLASH_COUNT`, `GLM_TOTAL_ENERGY`) — skipped when `mrms_core_only=True`
+4. RAP integration (wind/environment fields) — skipped when `mrms_core_only=True`
 5. Optional AzShear support integration (currently feature-flagged)
 6. CTAM execution unless `disable_ctam=True`
 7. Save integrated stormcell JSON

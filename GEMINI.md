@@ -52,10 +52,13 @@ python src/run.py [options]
 *   `--profile`: Enable performance profiling
 *   `--disable-ctam`: Skip CTAM execution during integration
 *   `--disable-tracking`: Skip lineage detection and Kalman tracking
+*   `--disable-polygon-expansion`: Skip ProbSevere polygon-to-radar gate mapping
 *   `--disable-ewmrs`: Disable EWMRS workers and rendering
 *   `--disable-nws`: Disable background NWS alert ingestion
 *   `--disable-metar`: Disable background METAR ingestion
 *   `--disable-goes`: Disable GOES ingest, GLM ingest, and GOES rendering
+*   `--disable-nexrad`: Disable NEXRAD Level II ingestion entirely
+*   `--mrms-core-only`: Run MRMS ingestion for EWMRS rendering without waiting on EdgeWARN detection outputs
 *   `--refl-threshold <value>`: Override the baseline reflectivity threshold
 *   `--min-seed-percentage <value>`: Override polygon seed coverage ratio
 *   `--drop-offset <value>`: Override dynamic reflectivity drop offset
@@ -74,6 +77,7 @@ python src/process_historical.py --start <ISO8601> --end <ISO8601> [options]
 *   `--profile`: Enable performance profiling
 *   `--disable-ctam`: Skip CTAM execution during integration
 *   `--disable-tracking`: Skip lineage detection and Kalman tracking
+*   `--disable-polygon-expansion`: Skip ProbSevere polygon-to-radar gate mapping
 *   `--refl-threshold <value>`: Override the baseline reflectivity threshold
 *   `--min-seed-percentage <value>`: Override polygon seed coverage ratio
 *   `--drop-offset <value>`: Override dynamic reflectivity drop offset
