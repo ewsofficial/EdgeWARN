@@ -1099,7 +1099,6 @@ def ewmrs_tandem_worker(
     log_queue,
     shared_state,
     ewmrs_mrms_ready_event,
-    ewmrs_goes_ready_event,
     dt,
     max_entries: int = 10,
 ): 

@@ -21,10 +21,11 @@ src/common/ingest/
 
 1. Detection inputs ready (MRMS detection subset)
 2. EWMRS MRMS inputs ready (detection + MRMS integration subset)
-3. EWMRS GOES inputs ready (separate GOES ABI render phase boundary)
-4. EdgeWARN integration inputs ready (adds RAP and, when coupled, GOES)
+3. Base EdgeWARN integration inputs ready (both MRMS groups + raw RAP)
+4. EWMRS GOES inputs ready (separate GOES ABI render phase boundary)
+5. EdgeWARN integration inputs ready (base inputs + scan-time GLM when enabled)
 
-This ordering preserves low-latency detection while allowing render and integration stages to proceed only when required data are staged.
+Realtime workers are created before ingest starts and wait on these phase events. Detection is released as soon as its validated MRMS batch completes; EWMRS MRMS rendering follows once both validated MRMS groups complete. RAP Uint16 conversion and background ABI readiness do not delay either release.
 
 For realtime tandem execution in `src/run.py`, GOES ingest remains decoupled from the shared MRMS ingest cycle. The runner performs a best-effort local GOES availability check and always releases the GOES render phase so MRMS rendering is never blocked. EWMRS GOES readiness is tied to the full configured ABI scalar render set, currently `GOES_ABI_C01` through `GOES_ABI_C16`, while EdgeWARN integration readiness still checks GLM availability separately.
 

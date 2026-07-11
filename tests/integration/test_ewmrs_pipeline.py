@@ -478,7 +478,6 @@ def test_render_pending_nexrad_gui_files_renders_all_fresh_source_timestamps(mon
 def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monkeypatch):
     queue = _FakeQueue()
     mrms_ready_event = _FakeEvent()
-    goes_ready_event = _FakeEvent()
     shared_state = {
         "ewmrs_mrms_inputs_ready": True,
         "ewmrs_goes_inputs_ready": False,
@@ -501,12 +500,10 @@ def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monke
         queue,
         shared_state,
         mrms_ready_event,
-        goes_ready_event,
         datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc),
     )
 
     assert mrms_ready_event.wait_calls == 1
-    assert goes_ready_event.wait_calls == 0
     assert len(mrms_calls) == 1
     assert goes_calls == []
     assert any("Starting EWMRS MRMS render phase" in message for message in queue.messages)
@@ -516,7 +513,6 @@ def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monke
 def test_ewmrs_tandem_worker_skips_mrms_when_inputs_not_ready(monkeypatch):
     queue = _FakeQueue()
     mrms_ready_event = _FakeEvent()
-    goes_ready_event = _FakeEvent()
     shared_state = {"ewmrs_mrms_inputs_ready": False, "ewmrs_goes_inputs_ready": True}
     mrms_calls = []
 
@@ -530,12 +526,10 @@ def test_ewmrs_tandem_worker_skips_mrms_when_inputs_not_ready(monkeypatch):
         queue,
         shared_state,
         mrms_ready_event,
-        goes_ready_event,
         datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc),
     )
 
     assert mrms_ready_event.wait_calls == 1
-    assert goes_ready_event.wait_calls == 0
     assert mrms_calls == []
     assert any("skipping MRMS render" in message for message in queue.messages)
 
@@ -543,7 +537,6 @@ def test_ewmrs_tandem_worker_skips_mrms_when_inputs_not_ready(monkeypatch):
 def test_ewmrs_tandem_worker_runs_only_mrms_phase_when_inputs_ready(monkeypatch):
     queue = _FakeQueue()
     mrms_ready_event = _FakeEvent()
-    goes_ready_event = _FakeEvent()
     shared_state = {"ewmrs_mrms_inputs_ready": True, "ewmrs_goes_inputs_ready": True}
     captured = {}
 
@@ -555,10 +548,9 @@ def test_ewmrs_tandem_worker_runs_only_mrms_phase_when_inputs_ready(monkeypatch)
     monkeypatch.setattr(ewmrs_pipeline, "run_mrms_render_pipeline", fake_run_mrms_render_pipeline)
 
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    ewmrs_pipeline.ewmrs_tandem_worker(queue, shared_state, mrms_ready_event, goes_ready_event, dt, max_entries=3)
+    ewmrs_pipeline.ewmrs_tandem_worker(queue, shared_state, mrms_ready_event, dt, max_entries=3)
 
     assert mrms_ready_event.wait_calls == 1
-    assert goes_ready_event.wait_calls == 0
     assert captured == {
         "mrms_dt": dt,
         "mrms_max_entries": 3,
