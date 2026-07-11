@@ -1,16 +1,20 @@
 # Changelog
 
-## [2.6.3] 2026-06-17
+## [2.7.0] 2026-07-11
 
 ### Added
-- ``--disable-polygon-expansion``: skip ProbSevere polygon expansion and use the raw geometry only
-- Added ``p90EchoTop30`` and ``p90EchoTop50`` keys as well as MRMS EchoTop50 ingestion
+- ``--mrms-core-only``: run MRMS ingestion for EWMRS rendering without waiting on EdgeWARN detection outputs
+- ``--disable-nexrad`` CLI flag to skip NEXRAD ingestion entirely
+- StormCast alert outcome tracking and aggregated NEXRAD cleanup logging
 
 ### Changed
-- Update historical processing pipeline to use updated arguments
+- Removed FLOHAR and Mesocyclone CTAM modules and related code, tests, API routes, and documentation
+- Remediated runtime logging noise: condensed per-file summaries, cleaned up MRMS downloader log spam, reduced per-cycle output volume
+- Condensed tracking debug output to reduce verbosity
 
 ### Fixed
-- Added heartbeat emission on NEXRAD parse workers to prevent them from timing out after a while
-- Prune stale NEXRAD runtime volumes to prevent disk usage from ballooning
+- Release tandem MRMS ingestion phases (detection, render, integration) as soon as their respective inputs become available instead of waiting for all phases
 
 ### Testing
+- Added regression coverage for logging remediation across MRMS ingest, synoptic downloader, scheduler, RAP pipeline, IO utilities, and runtime background workers
+
