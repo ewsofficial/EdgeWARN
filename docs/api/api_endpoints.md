@@ -40,7 +40,6 @@ Response:
   "endpoints": {
     "features": {
       "cells": "/api/v2/features/cells[?id={int}]",
-      "mesocyclones": "/api/v2/features/mesocyclones[?timestamp={YYYYMMDD-HHMMSS}]",
       "timestamps": "/api/v2/features/timestamps[?timestamp={YYYYMMDD-HHMMSS}]",
       "alerts": {
         "official": "/api/v2/features/alerts/official[?id={urn:oid:...}|timestamp={YYYYMMDD-HHMMSS}]",
@@ -80,30 +79,6 @@ Cache:
 
 - list: `Cache-Control: public, max-age=5`
 - id: `Cache-Control: public, max-age=60`
-
-### GET /api/v2/features/mesocyclones
-
-Query:
-
-- `timestamp` (optional): `YYYYMMDD-HHMMSS`
-
-Behavior:
-
-- Without `timestamp`: returns available snapshot timestamps from `mesocyclones_*.json`
-- With `timestamp`: returns `mesocyclones_{timestamp}.json`
-
-Responses:
-
-- `200` list mode: `string[]`
-- `200` timestamp mode: mesocyclone payload JSON (passthrough)
-- `400`: invalid timestamp or invalid filename/access
-- `404`: snapshot not found
-- `500`: read/server failure
-
-Cache:
-
-- list: `Cache-Control: public, max-age=5`
-- timestamp: `Cache-Control: public, max-age=60`
 
 ### GET /api/v2/features/timestamps
 

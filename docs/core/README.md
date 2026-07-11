@@ -66,7 +66,6 @@ The active runtime layout is:
 │   ├── stormcells/                  # detection snapshots and stormcell_index.json
 │   ├── cells/                       # per-cell history/API files and cell_index.json
 │   ├── Alerts/                      # official NWS and EdgeWARN alert registries/snapshots
-│   ├── Mesocyclones/                # mesocyclones_YYYYMMDD-HHMMSS.json sidecars
 │   ├── METAR/                       # hourly METAR snapshots
 │   ├── RAP/                         # staged RAP GRIB files for integration/conversion
 │   ├── NEXRAD_Level2/               # staged Level II volume artifacts

@@ -19,7 +19,6 @@ src/EdgeWARN/api/
 │       ├── index.js
 │       ├── features/
 │       │   ├── cells.js
-│       │   ├── mesocyclones.js
 │       │   ├── timestamps.js
 │       │   └── alerts.js
 │       └── data/
@@ -61,7 +60,7 @@ EdgeWARN rate-limit CLI overrides:
 - `--edgewarn-rate-limit-1m`
 - `0` disables the respective limiter window
 
-Data directories are derived from `BASE_DIR/data/...`, including `cells`, `stormcells`, `Mesocyclones`, `METAR`, and alert directories.
+Data directories are derived from `BASE_DIR/data/...`, including `cells`, `stormcells`, `METAR`, and alert directories.
 
 At startup, required directories are created if missing.
 
@@ -79,7 +78,6 @@ Debug mode:
 Mounts:
 
 - `/features/cells`
-- `/features/mesocyclones`
 - `/features/timestamps`
 - `/features/alerts`
 - `/data/metar`
@@ -93,13 +91,6 @@ Also serves `GET /api/v2` endpoint metadata.
 - List mode reads `cell_index.json`
 - ID mode reads `{id}.json`
 - Validates positive integer IDs
-
-### `routes/v2/features/mesocyclones.js`
-
-- `GET /api/v2/features/mesocyclones`
-- Optional query: `timestamp` (`YYYYMMDD-HHMMSS`)
-- List mode scans `mesocyclones_*.json`
-- Timestamp mode reads `mesocyclones_{timestamp}.json`
 
 ### `routes/v2/features/timestamps.js`
 

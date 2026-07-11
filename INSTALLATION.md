@@ -66,7 +66,7 @@ npm run debug:ewmrs
 
 Current API surfaces:
 
-- EdgeWARN: `/health`, `/api/v2/features/cells`, `/api/v2/features/mesocyclones`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`
+- EdgeWARN: `/health`, `/api/v2/features/cells`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`
 - EWMRS: `/renders/*`, `/nexrad/*`, `/rap/*`, `/wpc/*`, `/colormaps`, `/healthz`
 
 CLI and environment overrides:

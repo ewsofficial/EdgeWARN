@@ -10,7 +10,7 @@ It ingests operational weather datasets, processes storm-cell products, renders 
 - EdgeWARN storm-cell detection, optional tracking/lineage, integration, CTAM analytics, and alert generation
 - EWMRS raster rendering, tiling, WPC surface-analysis serving, and colormap delivery
 - Historical reprocessing via `src/process_historical.py`
-- File-backed APIs for EdgeWARN (`/health`, `/api/v2/features/cells`, `/api/v2/features/mesocyclones`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`) and EWMRS (`/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/healthz`)
+- File-backed APIs for EdgeWARN (`/health`, `/api/v2/features/cells`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`) and EWMRS (`/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/healthz`)
 
 ## Requirements
 

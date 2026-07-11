@@ -148,7 +148,7 @@ EdgeWARN-Core/
 │   │   ├── api/                        # Express API server, config, routes, and file utilities
 │   │   ├── alerts/                     # EdgeWARN alert schema and alert manager
 │   │   ├── api_integration/            # API index/snapshot management helpers
-│   │   ├── ctam/                       # CTAM framework and modules (FLOHAR, MorphoWind, StormCast)
+│   │   ├── ctam/                       # CTAM framework and modules (MorphoWind, StormCast)
 │   │   ├── ingest/                     # Compatibility re-exports for shared ingest modules
 │   │   ├── process/
 │   │   │   ├── detect/                 # Storm-cell detection, tracking, Kalman, lineage, and save tools

@@ -46,7 +46,7 @@ def empty_cross_layer_output():
         "ll_ml_dominance_ratio_ratio": None,
         "ll_ml_peak_ratio": None,
         "simultaneous_persistence": 0.0,
-        "mesocyclone_pair_count": 0,
+        "pair_count": 0,
     }
 
 
