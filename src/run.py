@@ -51,6 +51,7 @@ EWMRS_ENABLED = not args.disable_ewmrs
 NWS_ENABLED = not args.disable_nws
 METAR_ENABLED = not args.disable_metar
 GOES_ENABLED = not args.disable_goes
+NEXRAD_ENABLED = not args.disable_nexrad
 
 cycle_config = TandemCycleConfig(
     lat_limits=lat_limits,
@@ -95,6 +96,8 @@ def main():
         print("[Scheduler] METAR background ingest disabled via --disable-metar")
     if args.disable_goes:
         print("[Scheduler] GOES/GLM ingest and GOES rendering disabled via --disable-goes")
+    if args.disable_nexrad:
+        print("[Scheduler] NEXRAD ingest and rendering disabled via --disable-nexrad")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
@@ -120,7 +123,7 @@ def main():
         args=(args.base_dir,),
         name="NEXRAD-Render",
         daemon=True,
-    ) if EWMRS_ENABLED else None
+    ) if EWMRS_ENABLED and NEXRAD_ENABLED else None
     # NEXRAD ingest uses a ProcessPoolExecutor for parser workers, so this
     # process must not be daemonic or child worker creation will fail.
     nexrad_ingest_proc = multiprocessing.Process(
@@ -128,7 +131,7 @@ def main():
         args=(nexrad_log_queue, args.base_dir),
         name="NEXRAD-Ingest",
         daemon=False,
-    ) if EWMRS_ENABLED else None
+    ) if EWMRS_ENABLED and NEXRAD_ENABLED else None
     started_processes = StartedProcessRegistry()
     started_processes.start(metar_proc, "METAR")
     started_processes.start(nws_proc, "NWS")

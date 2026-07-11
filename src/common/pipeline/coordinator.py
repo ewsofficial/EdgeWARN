@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
@@ -55,6 +56,8 @@ async def _safe_ingest(
             # Fallback is exceptional and phase-local; run it synchronously so
             # a cycle cannot retain an executor thread during teardown.
             result = sync_fallback(*args)
+            if inspect.isawaitable(result):
+                result = await result
             if require_result and not result:
                 raise RuntimeError(f"{task_name} sync fallback did not return a staged file path")
             log(f"INFO: Sync fallback for {task_name} successful")

@@ -201,6 +201,7 @@ class TestIOManager:
             '--disable-nws',
             '--disable-metar',
             '--disable-goes',
+            '--disable-nexrad',
         ]):
             args = io.get_args()
 
@@ -208,6 +209,7 @@ class TestIOManager:
             assert args.disable_nws is True
             assert args.disable_metar is True
             assert args.disable_goes is True
+            assert args.disable_nexrad is True
 
     def test_get_args_invalid_lat_limits_count(self):
         """Test validation of lat_limits count"""

@@ -98,6 +98,7 @@ class IOManager:
         parser.add_argument("--disable-nws", action="store_true", help="Disable background NWS alert ingestion")
         parser.add_argument("--disable-metar", action="store_true", help="Disable background METAR ingestion")
         parser.add_argument("--disable-goes", action="store_true", help="Disable GOES ingest, GLM ingest, and GOES rendering components")
+        parser.add_argument("--disable-nexrad", action="store_true", help="Disable background NEXRAD ingest and rendering")
         args = parser.parse_args()
 
         if len(args.lat_limits) != 2 or len(args.lon_limits) != 2:
