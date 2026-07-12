@@ -135,6 +135,34 @@ def test_update_cells_no_timestamp(tracker):
     # Should not add timestamp key
     assert "timestamp" not in result[0] or result[0].get("timestamp") is None
 
+def test_update_cells_logs_condensed_debug_summaries(tracker):
+    """Debug logging should summarize entry/update/final state instead of logging per cell."""
+    entries = [
+        {"id": 101, "centroid": [35.0, -97.0], "max_refl": 55, "bbox": _bbox(35.0, -97.0), "tracking_mode": "active"},
+        {"id": 102, "centroid": [36.0, -96.0], "max_refl": 45, "bbox": _bbox(36.0, -96.0), "tracking_mode": "predicted"},
+    ]
+    updated_data = [
+        {"id": 101, "centroid": [35.1, -97.1], "max_refl": 60, "bbox": _bbox(35.1, -97.1)},
+        {"id": 103, "centroid": [38.0, -94.0], "max_refl": 50, "bbox": _bbox(38.0, -94.0)},
+    ]
+
+    tracker.update_cells(entries, updated_data, timestamp="2023-10-15T12:00:00")
+
+    debug_messages = [call.args[0] for call in tracker.io_manager.write_debug.call_args_list]
+
+    assert any(
+        "update_cells: existing entries total=2, modes=[active=1, predicted=1], sample_ids=[101, 102]" in message
+        for message in debug_messages
+    )
+    assert any(
+        "update_cells: updated detections total=2, sample_ids=[101, 103], sample_centroids=[101:[35.1, -97.1], 103:[38.0, -94.0]]" in message
+        for message in debug_messages
+    )
+    assert any(
+        "update_cells: returning entries total=3, modes=[active=2, predicted=1], sample_ids=[101, 102, 103]" in message
+        for message in debug_messages
+    )
+
 def test_update_cells_handles_merge_with_links(tracker):
     """Test that merge events correctly populate merged_cells and merged_to keys."""
     from EdgeWARN.process.detect.lineage import LineageResult, MergeEvent

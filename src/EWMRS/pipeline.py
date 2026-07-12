@@ -175,8 +175,6 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
     src_dir = Path(source_path)
     out_dir = Path(output_path)
 
-    io_mgr.write_debug(f"Processing layer {name}: src={src_dir}, out={out_dir}")
-
     try:
         if not src_dir.exists():
             io_mgr.write_warning(f"Source directory missing for {name}: {src_dir}")
@@ -359,10 +357,15 @@ def _cleanup_old_nexrad_gui_files(max_age_minutes: int = 120) -> int:
     now = time.time()
     max_age_seconds = max_age_minutes * 60
     total_removed = 0
+    affected_sites: set[str] = set()
+    files_removed = 0
+    dirs_removed = 0
 
     for site_dir in nexrad_root.iterdir():
         if not site_dir.is_dir() or site_dir.name.startswith(".") or not _NEXRAD_SITE_DIR_PATTERN.fullmatch(site_dir.name):
             continue
+
+        site_had_removals = False
 
         for child_dir in site_dir.iterdir():
             if not child_dir.is_dir() or child_dir.name.startswith("."):
@@ -378,25 +381,37 @@ def _cleanup_old_nexrad_gui_files(max_age_minutes: int = 120) -> int:
                     if file_age <= max_age_seconds:
                         continue
                     child_file.unlink(missing_ok=True)
+                    files_removed += 1
                     total_removed += 1
-                    io_manager.write_debug(f"Removed old NEXRAD GUI file: {child_file}")
+                    site_had_removals = True
 
                 if not any(child_dir.iterdir()):
                     child_dir.rmdir()
+                    dirs_removed += 1
                     total_removed += 1
-                    io_manager.write_debug(f"Removed empty NEXRAD directory: {child_dir}")
+                    site_had_removals = True
             except Exception as exc:
                 io_manager.write_warning(f"Failed to process NEXRAD directory {child_dir}: {exc}")
 
         try:
             if any(site_dir.iterdir()):
+                if site_had_removals:
+                    affected_sites.add(site_dir.name)
                 continue
 
             site_dir.rmdir()
+            dirs_removed += 1
             total_removed += 1
-            io_manager.write_debug(f"Removed empty NEXRAD site folder: {site_dir}")
+            affected_sites.add(site_dir.name)
         except Exception as exc:
             io_manager.write_warning(f"Failed to process NEXRAD site folder {site_dir}: {exc}")
+
+    if files_removed or dirs_removed:
+        sites_str = ", ".join(sorted(affected_sites))
+        io_manager.write_debug(
+            f"Cleaned up NEXRAD GUI: {files_removed} file(s), {dirs_removed} dir(s) "
+            f"across {len(affected_sites)} site(s): [{sites_str}]"
+        )
 
     return total_removed
 
@@ -665,11 +680,24 @@ def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str 
     io_manager.write_info(
         f"Rendering {len(layers)} {phase_name} layers across {max_workers} CPU cores for {dt.isoformat()}..."
     )
+    rendered_layers: list[str] = []
+    failed_layers: list[str] = []
     with ProcessPoolExecutor(max_workers=max_workers, initializer=_worker_initializer) as executor:
         futures = {executor.submit(_render_layer, layer): layer for layer in layers}
         for future in as_completed(futures):
             name, png_path = future.result()
             results[name] = png_path
+            if png_path:
+                rendered_layers.append(name)
+                io_manager.write_info(f"Rendered layer: {name}")
+            else:
+                failed_layers.append(name)
+
+    io_manager.write_info(
+        f"{phase_name} rendered layers: {', '.join(rendered_layers) if rendered_layers else 'none'}"
+    )
+    if failed_layers:
+        io_manager.write_warning(f"{phase_name} failed layers: {', '.join(failed_layers)}")
 
     if cleanup_after:
         cleanup_old_gui_files(max_age_minutes=120)
@@ -1071,7 +1099,6 @@ def ewmrs_tandem_worker(
     log_queue,
     shared_state,
     ewmrs_mrms_ready_event,
-    ewmrs_goes_ready_event,
     dt,
     max_entries: int = 10,
 ): 

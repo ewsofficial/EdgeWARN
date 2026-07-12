@@ -22,7 +22,6 @@ def _find_existing_path(candidates, missing_message=None):
     for candidate in candidates:
         candidate_path = Path(candidate)
         if candidate_path.exists():
-            io_manager.write_debug(f"Using path: {candidate_path}")
             return candidate_path
     if missing_message:
         io_manager.write_warning(missing_message)
@@ -48,7 +47,7 @@ def _define_paths(base_path):
     global GOES_ABI_UPPER_LEVEL_WV_DIR, GOES_ABI_MID_LEVEL_WV_DIR, GOES_ABI_LOWER_LEVEL_WV_DIR
     global GOES_ABI_CLD_TOP_PHASE_DIR, GOES_ABI_OZONE_DIR, GOES_ABI_CLEAN_LWIR_DIR
     global GOES_ABI_LONGWAVE_IR_DIR, GOES_ABI_DIRTY_LWIR_DIR, GOES_ABI_CO2_LWIR_DIR
-    global RAP_DIR, STORMCELL_DIR, CELL_DIR, METAR_DIR, SURFACE_DIR, FLASH_FLOOD_DIR, MESOCYCLONE_DIR
+    global RAP_DIR, STORMCELL_DIR, CELL_DIR, METAR_DIR, SURFACE_DIR
     global GUI_DIR, GUI_NEXRAD_DIR, GUI_RALA_DIR, GUI_NLDN_DIR, GUI_ECHOTOP18_DIR, GUI_ECHOTOP30_DIR, GUI_QPE_DIR
     global GUI_AZSHEARLOW_DIR, GUI_AZSHEARMID_DIR, GUI_PRECIPRATE_DIR, GUI_PROBSEVERE_DIR, GUI_FLASH_DIR
     global GUI_VIL_DIR, GUI_VILD_DIR, GUI_VII_DIR, GUI_ROTATIONT_DIR, GUI_COMPOSITE_DIR, GUI_REF_0C_DIR, GUI_REFM5C_DIR, GUI_REFM15C_DIR, GUI_RHOHV_DIR, GUI_PRECIPTYP_DIR
@@ -132,8 +131,7 @@ def _define_paths(base_path):
     CELL_DIR = data_dir / "cells"
     METAR_DIR = data_dir / "METAR"
     SURFACE_DIR = data_dir / "surface_features"
-    FLASH_FLOOD_DIR = data_dir / "FlashFlood"
-    MESOCYCLONE_DIR = data_dir / "Mesocyclones"
+
     GUI_DIR = gui_dir
     GUI_NEXRAD_DIR = gui_dir / "NEXRAD"
     GUI_RALA_DIR = gui_dir / "RALA"
@@ -323,10 +321,6 @@ def clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
             except Exception as e:
                 _log("write_error", f"Could not delete {file_path.name}: {e}")
 
-    if files_deleted > 0:
-        _log("write_debug", f"Deleted {files_deleted} files in {directory}")
-
-
 def clean_files_by_age(directory: Path, max_age_minutes=60):
     directory = Path(directory)
     base_dir = globals().get("BASE_DIR", Path("."))
@@ -346,10 +340,6 @@ def clean_files_by_age(directory: Path, max_age_minutes=60):
                 files_deleted += 1
         except Exception as e:
             _log("write_error", f"Could not process/delete {file_path.name}: {e}")
-    if files_deleted > 0:
-        _log("write_debug", f"Deleted {files_deleted} files in {directory}")
-
-
 async def async_clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, partial(clean_old_files, directory, max_age_minutes=max_age_minutes, max_files=max_files))

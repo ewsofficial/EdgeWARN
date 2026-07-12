@@ -29,14 +29,12 @@ class AsyncSynopticFileDownloader:
         try:
             # Check if file already exists
             if local_path.exists():
-                self.io_manager.write_debug(f"File already exists on disk, skipping: {local_path}")
+                self.io_manager.write_debug(f"File already exists on disk, skipping: {local_path.name}")
                 return local_path
 
             # Ensure parent directory exists
             local_path.parent.mkdir(parents=True, exist_ok=True)
 
-            self.io_manager.write_info(f"Downloading synoptic file (Async): s3://{self.bucket}/{s3_key}")
-            
             # Download using async S3 client
             resp = await self.s3.get_object(Bucket=self.bucket, Key=s3_key)
             body = resp["Body"]
@@ -49,10 +47,8 @@ class AsyncSynopticFileDownloader:
             return local_path
             
         except Exception as e:
-            # Check for 404 errors and log as info/warning
             err_msg = str(e)
             if "404" in err_msg or "NoSuchKey" in err_msg:
-                self.io_manager.write_warning(f"Synoptic file not found on S3 (404): s3://{self.bucket}/{s3_key}")
-            else:
-                self.io_manager.write_error(f"Async error downloading synoptic file from {self.bucket}: {e}")
+                raise FileNotFoundError(f"s3://{self.bucket}/{s3_key}") from e
+            self.io_manager.write_error(f"Async error downloading synoptic file from {self.bucket}: {e}")
             return None

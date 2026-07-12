@@ -15,7 +15,7 @@ from common.ingest.nexrad.pipeline.station_filter import NexradStationFilter
 from common.ingest.nexrad.pipeline.volume_discovery import NexradVolumeDiscovery
 from util.io import IOManager
 
-io_manager = IOManager("[NEXRAD-PIPE]", include_timestamps=True)
+io_manager = IOManager("[NEXRAD-PIPE]")
 
 
 def _completion_record_from_result(result: NexradIngestResult) -> NexradCompletionRecord:

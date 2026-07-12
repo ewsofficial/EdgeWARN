@@ -27,24 +27,20 @@ class SynopticFileDownloader:
         try:
             # Check if file already exists
             if local_path.exists():
-                self.io_manager.write_debug(f"File already exists on disk, skipping: {local_path}")
+                self.io_manager.write_debug(f"File already exists on disk, skipping: {local_path.name}")
                 return local_path
 
             # Ensure parent directory exists
             local_path.parent.mkdir(parents=True, exist_ok=True)
 
-            self.io_manager.write_info(f"Downloading synoptic file: s3://{self.bucket}/{s3_key}")
-            
             self.client.download_file(self.bucket, s3_key, str(local_path))
             
             self.io_manager.write_info(f"Successfully downloaded: {local_path.name}")
             return local_path
             
         except Exception as e:
-            # Check for 404 errors and log as info/warning
             err_msg = str(e)
             if "404" in err_msg or "NoSuchKey" in err_msg:
-                self.io_manager.write_warning(f"Synoptic file not found on S3 (404): s3://{self.bucket}/{s3_key}")
-            else:
-                self.io_manager.write_error(f"Error downloading synoptic file from {self.bucket}: {e}")
+                raise FileNotFoundError(f"s3://{self.bucket}/{s3_key}") from e
+            self.io_manager.write_error(f"Error downloading synoptic file from {self.bucket}: {e}")
             return None

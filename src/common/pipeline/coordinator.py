@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 
 import common.ingest.mrms.main as mrms_ingest
 from common.ingest.mrms.downloader import (
+    DownloadBatchResult,
     download_all_goes_files,
     download_all_goes_files_async,
 )
@@ -27,6 +29,8 @@ class CycleState:
     detection_inputs_ready: bool = False
     ewmrs_mrms_inputs_ready: bool = False
     ewmrs_goes_inputs_ready: bool = False
+    mrms_integration_inputs_ready: bool = False
+    rap_inputs_ready: bool = False
     edgewarn_integration_inputs_ready: bool = False
     edgewarn_generated_file: str | None = None
     errors: dict[str, str] = field(default_factory=dict)
@@ -45,25 +49,32 @@ async def _safe_ingest(
         if require_result and not result:
             raise RuntimeError(f"{task_name} ingestion did not return a staged file path")
         log(f"INFO: Async {task_name} ingestion successful")
-        return result if require_result else True
+        return result
     except Exception as exc:
         log(f"WARN: Async {task_name} ingestion failed: {exc}. Falling back to sync.")
         try:
-            result = await asyncio.to_thread(sync_fallback, *args)
+            # Fallback is exceptional and phase-local; run it synchronously so
+            # a cycle cannot retain an executor thread during teardown.
+            result = sync_fallback(*args)
+            if inspect.isawaitable(result):
+                result = await result
             if require_result and not result:
                 raise RuntimeError(f"{task_name} sync fallback did not return a staged file path")
             log(f"INFO: Sync fallback for {task_name} successful")
-            return result if require_result else True
+            return result
         except Exception as fallback_exc:
             log(f"ERROR: Both async and sync ingestion failed for {task_name}: {fallback_exc}")
-            return None if require_result else False
+            return None
 
 
 async def _run_rap_uint16_conversion(rap_path, dt: datetime, log: LogFunc) -> bool:
     try:
         from EWMRS.pipeline import run_rap_uint16_pipeline
 
-        results = await asyncio.to_thread(run_rap_uint16_pipeline, rap_path, dt)
+        # The worker phases have already been released before this derived
+        # artifact starts, so keeping it in this coordinator avoids retaining
+        # a default-executor thread across a cycle shutdown.
+        results = run_rap_uint16_pipeline(rap_path, dt)
         successful_layers = sum(1 for path in results.values() if path is not None)
         log(f"INFO: EWMRS RAP Uint16Array conversion completed: {successful_layers}/{len(results)} layers succeeded")
         return True
@@ -78,11 +89,13 @@ async def run_tandem_ingest_cycle(
     *,
     max_entries: int = 10,
     include_goes: bool = True,
+    include_rap: bool = True,
     include_ewmrs: bool = True,
     on_detection_ready: Optional[StateCallback] = None,
     on_ewmrs_mrms_ready: Optional[StateCallback] = None,
     on_ewmrs_goes_ready: Optional[StateCallback] = None,
     on_edgewarn_integration_ready: Optional[StateCallback] = None,
+    on_base_integration_ready: Optional[StateCallback] = None,
 ) -> CycleState:
     """Run staged shared ingest and emit readiness transitions.
 
@@ -99,7 +112,7 @@ async def run_tandem_ingest_cycle(
             "MRMS Detection",
             log,
             mrms_ingest.download_detection_files_async,
-            mrms_ingest.download_all_files,
+            mrms_ingest.download_detection_files,
             dt,
             max_entries,
         )
@@ -109,7 +122,7 @@ async def run_tandem_ingest_cycle(
             "MRMS Integration",
             log,
             mrms_ingest.download_integration_files_async,
-            mrms_ingest.download_all_files,
+            mrms_ingest.download_integration_files,
             dt,
             max_entries,
         )
@@ -127,25 +140,32 @@ async def run_tandem_ingest_cycle(
                 3,
             )
         )
-    rap_task = asyncio.create_task(
-        _safe_ingest(
-            "RAP",
-            log,
-            download_rap_async,
-            download_rap,
-            dt,
-            require_result=True,
+    rap_task = (
+        asyncio.create_task(
+            _safe_ingest(
+                "RAP",
+                log,
+                download_rap_async,
+                download_rap,
+                dt,
+                require_result=True,
+            )
         )
+        if include_rap
+        else None
     )
 
-    detection_ok = await detection_task
+    detection_result = await detection_task
+    detection_ok = _batch_succeeded(detection_result)
     state.detection_inputs_ready = detection_ok
     if not detection_ok:
         state.errors["detection_ingest"] = "Detection inputs unavailable"
     if on_detection_ready is not None:
         on_detection_ready(state)
 
-    mrms_integration_ok = await mrms_integration_task
+    integration_result = await mrms_integration_task
+    mrms_integration_ok = _batch_succeeded(integration_result)
+    state.mrms_integration_inputs_ready = mrms_integration_ok
     if not mrms_integration_ok:
         state.errors["mrms_integration_ingest"] = "MRMS integration inputs unavailable"
 
@@ -158,23 +178,33 @@ async def run_tandem_ingest_cycle(
     if on_ewmrs_mrms_ready is not None:
         on_ewmrs_mrms_ready(state)
 
+    # RAP is a source input; publish integration's non-GLM prerequisites before
+    # the optional Uint16 conversion below.
+    rap_path = await rap_task if rap_task is not None else None
+    rap_ok = bool(rap_path) if include_rap else True
+    state.rap_inputs_ready = rap_ok
+
+    if include_rap and not rap_ok:
+        state.errors["rap_ingest"] = "RAP inputs unavailable"
+    state.edgewarn_integration_inputs_ready = detection_ok and mrms_integration_ok and rap_ok
+    if on_base_integration_ready is not None:
+        on_base_integration_ready(state)
+
     if goes_task is not None:
-        goes_ok, rap_path = await asyncio.gather(goes_task, rap_task)
+        # GOES wrappers historically return ``None`` on success, whereas a
+        # false value is the explicit failure signal from ``_safe_ingest``.
+        goes_ok = (await goes_task) is not False
     else:
         goes_ok = False
-        rap_path = await rap_task
-        log("INFO: GOES ingest is decoupled from this cycle; integration readiness does not wait for GOES")
-
-    rap_ok = bool(rap_path)
+        log("INFO: GOES ingest is decoupled from this cycle; integration readiness does not wait for GOES availability")
 
     if not goes_ok:
         state.errors["goes_ingest"] = "GOES inputs unavailable"
-    if not rap_ok:
-        state.errors["rap_ingest"] = "RAP inputs unavailable"
-    elif include_ewmrs:
-        rap_array_ok = await _run_rap_uint16_conversion(rap_path, dt, log)
-        if not rap_array_ok:
-            state.errors["ewmrs_rap_uint16"] = "EWMRS RAP Uint16Array conversion failed"
+
+    # This derived EWMRS artifact intentionally starts only after the raw-RAP
+    # transition was published above; it never delays a worker release.
+    if rap_ok and include_ewmrs and not await _run_rap_uint16_conversion(rap_path, dt, log):
+        state.errors["ewmrs_rap_uint16"] = "EWMRS RAP Uint16Array conversion failed"
 
     state.ewmrs_goes_inputs_ready = include_ewmrs and state.ewmrs_mrms_inputs_ready and goes_ok
     if include_ewmrs and not state.ewmrs_goes_inputs_ready:
@@ -186,7 +216,7 @@ async def run_tandem_ingest_cycle(
         on_ewmrs_goes_ready(state)
 
     state.edgewarn_integration_inputs_ready = (
-        detection_ok and mrms_integration_ok and goes_ok and rap_ok
+        state.edgewarn_integration_inputs_ready and goes_ok
     )
     if not state.edgewarn_integration_inputs_ready:
         state.errors.setdefault(
@@ -198,3 +228,14 @@ async def run_tandem_ingest_cycle(
 
     log(f"INFO: Shared ingest cycle finished for timestamp {dt}")
     return state
+
+
+def _batch_succeeded(result) -> bool:
+    """A phase batch is ready only when every requested MRMS product staged.
+
+    ``None`` remains accepted for legacy/custom ingest implementations that
+    predate batch results; production wrappers return ``DownloadBatchResult``.
+    """
+    if isinstance(result, DownloadBatchResult):
+        return bool(result.attempted) and not result.failed and set(result.downloaded) == set(result.attempted)
+    return result is None or bool(result)

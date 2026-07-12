@@ -24,11 +24,13 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch):
     async def fake_rap(dt):
         await asyncio.sleep(0.05)
         call_order.append("rap")
+        return "rap.grib2"
 
     monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files_async", fake_detection)
     monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
     monkeypatch.setattr(coordinator, "download_all_goes_files_async", fake_goes)
     monkeypatch.setattr(coordinator, "download_rap_async", fake_rap)
+    monkeypatch.setattr(coordinator, "_run_rap_uint16_conversion", lambda *args: asyncio.sleep(0, result=True))
 
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
 
@@ -71,7 +73,7 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch):
     assert [name for name, *_ in callbacks] == ["detection", "ewmrs_mrms", "ewmrs_goes", "integration"]
     assert callbacks[0] == ("detection", True, False, False, False)
     assert callbacks[1] == ("ewmrs_mrms", True, True, False, False)
-    assert callbacks[2] == ("ewmrs_goes", True, True, True, False)
+    assert callbacks[2] == ("ewmrs_goes", True, True, True, True)
     assert callbacks[3] == ("integration", True, True, True, True)
     assert state.detection_inputs_ready is True
     assert state.ewmrs_mrms_inputs_ready is True
@@ -96,11 +98,13 @@ def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch):
     async def fake_rap(dt):
         await asyncio.sleep(0.03)
         call_order.append("rap")
+        return "rap.grib2"
 
     monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files_async", fake_detection)
     monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
     monkeypatch.setattr(coordinator, "download_all_goes_files_async", fake_goes)
     monkeypatch.setattr(coordinator, "download_rap_async", fake_rap)
+    monkeypatch.setattr(coordinator, "_run_rap_uint16_conversion", lambda *args: asyncio.sleep(0, result=True))
 
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
     state = asyncio.run(

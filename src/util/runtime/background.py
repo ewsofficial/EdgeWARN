@@ -19,6 +19,9 @@ from .logging import queue_log
 from .timing import sleep_for, sleep_until_boundary
 
 
+_SHUTDOWN_REQUESTED = False
+
+
 def _set_process_name(name: str) -> None:
     try:
         import multiprocessing
@@ -47,6 +50,8 @@ def _set_parent_death_signal(sig: int = signal.SIGTERM) -> None:
 
 def _install_exit_signal_handlers() -> None:
     def _raise_system_exit(signum, _frame):
+        global _SHUTDOWN_REQUESTED
+        _SHUTDOWN_REQUESTED = True
         raise SystemExit(signum)
 
     for signum in (signal.SIGTERM, signal.SIGINT):
@@ -57,6 +62,8 @@ def _install_exit_signal_handlers() -> None:
 
 
 def _configure_process_runtime(name: str) -> None:
+    global _SHUTDOWN_REQUESTED
+    _SHUTDOWN_REQUESTED = False
     _set_process_name(name)
     _set_parent_death_signal()
     _install_exit_signal_handlers()
@@ -146,10 +153,14 @@ def nexrad_ingest_loop(log_queue, base_dir):
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
     try:
-        while True:
+        while not _SHUTDOWN_REQUESTED:
             try:
+                if _SHUTDOWN_REQUESTED:
+                    return
                 queue_log(log_queue, "INFO: Starting NEXRAD ingest pipeline")
                 run_realtime_ingestion_pipeline(base_dir=base_dir)
+                if _SHUTDOWN_REQUESTED:
+                    return
                 queue_log(log_queue, "WARNING: NEXRAD ingest pipeline exited; restarting in 5s")
             except (KeyboardInterrupt, SystemExit):
                 return
@@ -158,6 +169,8 @@ def nexrad_ingest_loop(log_queue, base_dir):
                 for line in traceback.format_exc().splitlines():
                     queue_log(log_queue, f"ERROR: {line}")
 
+            if _SHUTDOWN_REQUESTED:
+                return
             sleep_for(5, interval=0.2)
     finally:
         shutdown_nexrad_pool(wait=False)

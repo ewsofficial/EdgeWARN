@@ -92,6 +92,17 @@ def test_latest_common_minute_intersection(update_checker, mocker):
     
     assert common == TS_NEW
 
+
+def test_latest_common_minute_logs_only_when_timestamp_advances(update_checker, mocker):
+    mocker.patch.object(update_checker, "_get_modifier_times", return_value={TS_NEW})
+
+    modifiers = [("R", "Mod1", "D"), ("R", "Mod2", "D")]
+    with patch("builtins.print") as mock_print:
+        common = update_checker.latest_common_minute_1h(modifiers, last_processed=TS_OLD)
+
+    assert common == TS_NEW
+    mock_print.assert_any_call(f"[Scheduler] Latest common timestamp updated: {TS_NEW}")
+
 def test_latest_common_minute_no_intersection(update_checker, mocker):
     """Test behavior when no common timestamps exist."""
     def side_effect(mod, ref_dt, trace_id=None, last_processed=None):

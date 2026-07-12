@@ -10,7 +10,7 @@ Current codebase capabilities include:
 - Historical reprocessing via `src/process_historical.py`
 - Filesystem-first runtime using a configurable base directory, with remote ingestion from NOAA/AWS/HTTP sources
 
-The current package version defined in `package.json` is **2.6.3**.
+The current package version defined in `package.json` is **2.7.0**.
 
 ## Technology Stack
 - **API Services**: Node.js with Express.js and ES modules
@@ -86,10 +86,13 @@ Common optional flags:
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
+- `--disable-polygon-expansion`
 - `--disable-ewmrs`
 - `--disable-nws`
 - `--disable-metar`
 - `--disable-goes`
+- `--disable-nexrad`
+- `--mrms-core-only`
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
@@ -114,6 +117,7 @@ Supported historical flags include:
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
+- `--disable-polygon-expansion`
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
@@ -148,7 +152,7 @@ EdgeWARN-Core/
 │   │   ├── api/                        # Express API server, config, routes, and file utilities
 │   │   ├── alerts/                     # EdgeWARN alert schema and alert manager
 │   │   ├── api_integration/            # API index/snapshot management helpers
-│   │   ├── ctam/                       # CTAM framework and modules (FLOHAR, MorphoWind, StormCast)
+│   │   ├── ctam/                       # CTAM framework and modules (MorphoWind, StormCast)
 │   │   ├── ingest/                     # Compatibility re-exports for shared ingest modules
 │   │   ├── process/
 │   │   │   ├── detect/                 # Storm-cell detection, tracking, Kalman, lineage, and save tools
@@ -224,7 +228,7 @@ At runtime, the code expects a base directory that typically looks like this:
 ### API Development
 - EdgeWARN API currently exposes `/health`, `/api/v2`, `/api/v2/features/*`, and `/api/v2/data/metar`
 - Legacy v1-style `/features` and `/data` routes now return HTTP 410 with guidance to use API v2
-- EWMRS API currently exposes `/renders/*`, `/wpc/*`, `/colormaps`, and `/healthz`
+- EWMRS API currently exposes `/renders/*`, `/wpc/*`, `/colormaps`, `/healthz`, `/rap/*`, and `/nexrad/*`
 - Document public API changes in `docs/api/api_endpoints.md` and related docs
 
 ### Configuration Management

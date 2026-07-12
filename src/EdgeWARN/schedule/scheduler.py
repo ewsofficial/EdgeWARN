@@ -186,8 +186,8 @@ class MRMSUpdateChecker:
             return self.check_https_fallback(modifiers, reference_dt)
 
         latest_common = max(common_minutes)
-        if self.verbose:
-            print(f"[Scheduler] Latest common timestamp: {latest_common}")
+        if self.verbose and latest_common != last_processed:
+            print(f"[Scheduler] Latest common timestamp updated: {latest_common}")
         return latest_common
     
     def check_https_fallback(self, modifiers, reference_dt):

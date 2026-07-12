@@ -1,7 +1,7 @@
 # Performance / Security / Dead-Code Implementation Roadmap
 
 **Source audit:** `plans/performance-optmization-plan.md` (re-audited 2026-05-28 against 2.6.0)
-**Branch:** `version-test/2.6.3`
+**Branch:** `version-test/2.7.0`
 **Total scope (after subtracting items already shipped):** ~75 actionable findings across performance, security, dead-code, and pipeline consolidation.
 
 ---
@@ -168,7 +168,7 @@ These edits cluster on `EdgeWARN/api/server.js` and validation helpers:
 - [ ] Defer internal-check token bypass unless coordinated client changes are ready
 
 - S-M3: `keyGenerator` doc + production startup warning when `trust-proxy=false` and `X-Forwarded-For` observed.
-- S-M4: wrap unbounded `fs.readdir` in `LRUCache(ttl: 5_000)` for `alerts.js:13-34`, `mesocyclones.js:9-23`, `metar.js:14-36`, `nexrad/filesystem.js:88-105, 107-125`.
+- S-M4: wrap unbounded `fs.readdir` in `LRUCache(ttl: 5_000)` for `alerts.js:13-34`, `metar.js:14-36`, `nexrad/filesystem.js:88-105, 107-125`.
 - S-M7: drop `details: err.message` from EWMRS 500 bodies in `wpc.js`, `colormaps.js`; keep server-side log.
 
 (S-M3 internal-check token bypass S-M3 — defer if it requires coordinated client changes.)

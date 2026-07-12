@@ -418,16 +418,8 @@ class StormCastModule(AnalysisModule):
             if result.forecast_polygon_reason:
                 alert_blockers.append(result.forecast_polygon_reason)
 
-            if not can_generate_alerts:
-                io_manager.write_info(
-                    f"Cell {storm_entry.get('id', 'unknown')}: suppressing StormCast alert because forecast polygon_0_30m is unavailable"
-                )
-                if alert_blockers:
-                    io_manager.write_debug(
-                        f"Cell {storm_entry.get('id', 'unknown')}: alert blockers={','.join(dict.fromkeys(alert_blockers))}"
-                    )
-            
-            
+            alert_blockers = list(dict.fromkeys(alert_blockers))
+
             # Store results
             storm_entry["modules"][self.name] = {
                 "u": result.u,
@@ -437,7 +429,8 @@ class StormCastModule(AnalysisModule):
                 "polygon_0_30m": result.polygon_0_30m,
                 "status": "success",
                 "can_generate_alerts": can_generate_alerts,
-                "tracking_duration_min": round(duration_min, 2)
+                "tracking_duration_min": round(duration_min, 2),
+                "alert_blockers": alert_blockers,
             }
             
         except Exception as e:
@@ -462,13 +455,13 @@ class StormCastModule(AnalysisModule):
         result = storm_entry.get("modules", {}).get(self.name, {})
 
         if result.get("status") != "success" or not result.get("can_generate_alerts"):
+            if result.get("status") == "success":
+                result["alert_outcome"] = "not_eligible"
             return None
 
         polygon = result.get("polygon_0_30m")
         if not polygon:
-            io_manager.write_warning(
-                f"Cell {storm_entry.get('id', 'unknown')}: StormCast eligible for alert but polygon_0_30m is missing"
-            )
+            result["alert_outcome"] = "eligible_missing_polygon"
             return None
 
         cell_id = storm_entry.get("id", "unknown_cell")
@@ -488,11 +481,8 @@ class StormCastModule(AnalysisModule):
             next_allowed_time = previous_alert.effective_time + timedelta(minutes=15)
             if effective < next_allowed_time:
                 wait_minutes = (next_allowed_time - effective).total_seconds() / 60
-                io_manager.write_info(
-                    f"Cell {cell_id}: suppressing StormCast alert refresh because prior alert effective time "
-                    f"{previous_alert.effective_time.isoformat()} requires 15-minute spacing; "
-                    f"next eligible in {wait_minutes:.2f} min"
-                )
+                result["alert_outcome"] = "suppressed_refresh_spacing"
+                result["next_alert_eligible_minutes"] = round(wait_minutes, 2)
                 return None
 
         expiry = effective + timedelta(minutes=30)
@@ -501,6 +491,7 @@ class StormCastModule(AnalysisModule):
         morphowind_severity = morphowind_result.get("severity_index", 0.0)
         tstm_wind = "true" if morphowind_severity > 0.6 else "false"
 
+        result["alert_outcome"] = "published"
         return [
             AlertPayload(
                 alert_type="TSTM",

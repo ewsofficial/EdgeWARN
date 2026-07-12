@@ -98,6 +98,7 @@ def test_download_all_goes_files_async_iterates_glm_and_abi_specs(monkeypatch, t
         hour_lookback,
         s3_client,
         parent_trace_id=None,
+        perf_maps=None,
         preloaded_files=None,
     ):
         seen.append((goes_spec.product, goes_spec.channel_id, dt_arg, max_entries, hour_lookback))
@@ -160,6 +161,7 @@ def test_download_all_goes_files_async_uses_shared_abi_lookup(monkeypatch, tmp_p
         hour_lookback,
         s3_client,
         parent_trace_id=None,
+        perf_maps=None,
         preloaded_files=None,
     ):
         seen_preloaded.append((goes_spec.channel_id, preloaded_files))

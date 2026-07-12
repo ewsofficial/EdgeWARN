@@ -11,7 +11,7 @@ from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_li
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from util.io import IOManager
 
-io_manager = IOManager("[NEXRAD-COORD]", include_timestamps=True)
+io_manager = IOManager("[NEXRAD-COORD]")
 
 
 class NexradScanCoordinator:

@@ -44,17 +44,30 @@ async def run_ingestion_pipeline(
     cleanup_async: CleanupFunc | None = None,
     cleanup_message: str | None = None,
     cleanup_kwargs: dict | None = None,
-) -> None:
-    tasks = list(async_downloads)
+    wait_for_cleanup: bool = True,
+) -> list:
+    download_tasks = [asyncio.ensure_future(download) for download in async_downloads]
+    cleanup_tasks = []
 
     if cleanup_dirs and cleanup_async is not None:
         if cleanup_message:
             io_manager.write_debug(cleanup_message)
 
         cleanup_kwargs = cleanup_kwargs or {}
-        tasks.extend(cleanup_async(folder, **cleanup_kwargs) for folder in cleanup_dirs)
+        cleanup_tasks = [
+            asyncio.ensure_future(cleanup_async(folder, **cleanup_kwargs))
+            for folder in cleanup_dirs
+        ]
 
-    await asyncio.gather(*tasks)
+    results = await asyncio.gather(*download_tasks)
+    if wait_for_cleanup:
+        await asyncio.gather(*cleanup_tasks)
+    else:
+        for cleanup_task in cleanup_tasks:
+            # Retrieve exceptions so deferred housekeeping cannot produce an
+            # unhandled-task warning after the readiness phase is released.
+            cleanup_task.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
+    return results
 
 
 def run_with_async_fallback(

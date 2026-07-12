@@ -19,9 +19,8 @@ describe('API v2 index route', () => {
       .expect(200);
 
     expect(response.body.message).toBe('EdgeWARN API v2');
-    expect(response.body.version).toBe('2.6.3');
+    expect(response.body.version).toBe('2.7.0');
     expect(response.body.endpoints.features.cells).toBe('/api/v2/features/cells[?id={int}]');
-    expect(response.body.endpoints.features.mesocyclones).toBe('/api/v2/features/mesocyclones[?timestamp={YYYYMMDD-HHMMSS}]');
 
     process.env.NODE_ENV = originalNodeEnv;
   });
@@ -46,9 +45,7 @@ describe('API v2 index route', () => {
       .get('/api/v2/features/cells')
       .expect(200);
 
-    await request(app)
-      .get('/api/v2/features/mesocyclones')
-      .expect(200);
+
 
     await request(app)
       .get('/api/v2/features/timestamps')
