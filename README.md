@@ -10,7 +10,7 @@ It ingests operational weather datasets, processes storm-cell products, renders 
 - EdgeWARN storm-cell detection, optional tracking/lineage, integration, CTAM analytics, and alert generation
 - EWMRS raster rendering, tiling, WPC surface-analysis serving, and colormap delivery
 - Historical reprocessing via `src/process_historical.py`
-- File-backed APIs for EdgeWARN (`/health`, `/api/v2/features/cells`, `/api/v2/features/mesocyclones`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`) and EWMRS (`/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/healthz`)
+- File-backed APIs for EdgeWARN (`/health`, `/api/v2/features/cells`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`) and EWMRS (`/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/healthz`)
 
 ## Requirements
 
@@ -62,7 +62,7 @@ python run.py --lat_limits 20 55 --lon_limits 230 300
 python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:00 --lat 20 55 --lon -130 -60
 ```
 
-Key realtime flags include `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
+Key realtime flags include `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
 Historical processing supports `--output`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
@@ -110,6 +110,6 @@ python -m pytest tests/
 
 ## Release
 
-Current package version: **2.6.3**
+Current package version: **2.7.0**
 
 See `CHANGELOG.md` for release history.

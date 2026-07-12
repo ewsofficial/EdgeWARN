@@ -24,3 +24,33 @@ def test_ctam_runner_skips_non_attachable_grid_output():
             result = run_ctam(cells, timestamp="20240101-000000")
 
     assert "_grid_outputs" not in result[0]["modules"]
+
+
+def test_ctam_runner_emits_stormcast_alert_summaries(capsys):
+    from EdgeWARN.ctam.run import run_ctam
+
+    class DummyStormCastModule:
+        name = "StormCast"
+
+        def run(self, cell, environment=None, history_cache=None):
+            cell.setdefault("modules", {})
+            cell["modules"]["StormCast"] = {
+                "status": "success",
+                "can_generate_alerts": False,
+                "alert_blockers": ["missing_current_polygon", "forecast_polygon_unavailable"],
+                "alert_outcome": "not_eligible",
+            }
+
+        def alerts(self, cell):
+            return None
+
+    with patch("EdgeWARN.ctam.run.AlertManager.cleanup_expired", return_value=0):
+        with patch("EdgeWARN.ctam.run.CellModuleRegistry.get_all", return_value={"StormCast": DummyStormCastModule()}):
+            with patch("EdgeWARN.ctam.run.GridModuleRegistry.get_all", return_value={}):
+                cells = [{"id": 1, "modules": {}, "properties": {}}]
+                run_ctam(cells)
+
+    captured = capsys.readouterr().out
+    assert "StormCast summary: status[success=1] can_generate_alerts[true=0, false=1, none=0]" in captured
+    assert "StormCast alert outcomes: not_eligible=1" in captured
+    assert "StormCast alert blockers: forecast_polygon_unavailable=1, missing_current_polygon=1" in captured

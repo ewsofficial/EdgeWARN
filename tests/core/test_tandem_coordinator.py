@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from common.pipeline import coordinator
+from common.ingest.mrms.downloader import DownloadBatchResult
 
 
 def _run_cycle(logs, **kwargs):
@@ -78,3 +79,25 @@ def test_tandem_cycle_skips_rap_uint16_conversion_when_ewmrs_disabled(tmp_path):
     assert "ewmrs_rap_uint16" not in state.errors
     assert state.ewmrs_mrms_inputs_ready is False
     assert state.ewmrs_goes_inputs_ready is False
+
+
+def test_tandem_cycle_rejects_partial_detection_batch(tmp_path):
+    logs = []
+    rap_file = tmp_path / "RAP.20260427-13z.awp130pgrbf00.grib2"
+    rap_file.write_bytes(b"grib")
+    partial = DownloadBatchResult(
+        attempted=("Composite", "PrecipFlag"), downloaded=("Composite",), failed=("PrecipFlag",)
+    )
+    complete = DownloadBatchResult(
+        attempted=("EchoTop",), downloaded=("EchoTop",), failed=()
+    )
+
+    with patch.object(coordinator.mrms_ingest, "download_detection_files_async", new=AsyncMock(return_value=partial)), \
+         patch.object(coordinator.mrms_ingest, "download_integration_files_async", new=AsyncMock(return_value=complete)), \
+         patch.object(coordinator, "download_rap_async", new=AsyncMock(return_value=rap_file)), \
+         patch("EWMRS.pipeline.run_rap_uint16_pipeline", return_value={}):
+        state = _run_cycle(logs)
+
+    assert state.detection_inputs_ready is False
+    assert state.errors["detection_ingest"] == "Detection inputs unavailable"
+    assert state.ewmrs_mrms_inputs_ready is False

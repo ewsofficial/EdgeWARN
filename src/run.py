@@ -47,10 +47,12 @@ GOES_PAUSE_INGEST_DURING_RENDER = os.environ.get("EDGEWARN_PAUSE_GOES_INGEST_DUR
     "yes",
     "on",
 }
-EWMRS_ENABLED = not args.disable_ewmrs
-NWS_ENABLED = not args.disable_nws
-METAR_ENABLED = not args.disable_metar
-GOES_ENABLED = not args.disable_goes
+MRMS_CORE_ONLY = args.mrms_core_only
+EWMRS_ENABLED = not args.disable_ewmrs and not MRMS_CORE_ONLY
+NWS_ENABLED = not args.disable_nws and not MRMS_CORE_ONLY
+METAR_ENABLED = not args.disable_metar and not MRMS_CORE_ONLY
+GOES_ENABLED = not args.disable_goes and not MRMS_CORE_ONLY
+NEXRAD_ENABLED = not args.disable_nexrad and not MRMS_CORE_ONLY
 
 cycle_config = TandemCycleConfig(
     lat_limits=lat_limits,
@@ -64,6 +66,7 @@ cycle_config = TandemCycleConfig(
     drop_offset=args.drop_offset,
     ewmrs_enabled=EWMRS_ENABLED,
     goes_enabled=GOES_ENABLED,
+    mrms_core_only=MRMS_CORE_ONLY,
     goes_render_wait_seconds=GOES_RENDER_WAIT_SECONDS,
     goes_render_wait_interval_seconds=GOES_RENDER_WAIT_INTERVAL_SECONDS,
 )
@@ -73,6 +76,14 @@ cycle_config = TandemCycleConfig(
 def main():
     """Scheduler: run a shared ingest cycle and launch EdgeWARN/EWMRS in tandem."""
     print("Scheduler started. Press CTRL+C to exit.")
+    print(
+        "[Scheduler] Configuration: "
+        f"lat={lat_limits}, lon={lon_limits}, "
+        f"refl_threshold={args.refl_threshold}, "
+        f"min_seed_percentage={args.min_seed_percentage}, "
+        f"drop_offset={args.drop_offset}, "
+        f"goes_decoupled={'yes' if GOES_ENABLED else 'no'}"
+    )
     if args.disable_ctam:
         print("[Scheduler] CTAM execution disabled via --disable-ctam")
     if args.disable_tracking:
@@ -87,15 +98,10 @@ def main():
         print("[Scheduler] METAR background ingest disabled via --disable-metar")
     if args.disable_goes:
         print("[Scheduler] GOES/GLM ingest and GOES rendering disabled via --disable-goes")
-    print(
-        "[Scheduler] Detection thresholds: "
-        f"disable_polygon_expansion={args.disable_polygon_expansion}, "
-        f"refl_threshold={args.refl_threshold}, "
-        f"min_seed_percentage={args.min_seed_percentage}, "
-        f"drop_offset={args.drop_offset}"
-    )
-    if GOES_ENABLED:
-        print("[Scheduler] GOES ingest decoupled: running as independent background process")
+    if args.disable_nexrad:
+        print("[Scheduler] NEXRAD ingest and rendering disabled via --disable-nexrad")
+    if MRMS_CORE_ONLY:
+        print("[Scheduler] MRMS-core-only mode: running MRMS detection, MRMS integration, and CTAM only")
     checker = MRMSUpdateChecker(verbose=True)
     last_processed, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
@@ -107,7 +113,7 @@ def main():
     manager = multiprocessing.Manager()
     metar_proc = multiprocessing.Process(target=metar_loop, daemon=True) if METAR_ENABLED else None
     nws_proc = multiprocessing.Process(target=nws_loop, daemon=True) if NWS_ENABLED else None
-    wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True)
+    wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True) if not MRMS_CORE_ONLY else None
     goes_render_task_queue = multiprocessing.Queue()
     goes_render_log_queue = multiprocessing.Queue()
     nexrad_log_queue = multiprocessing.Queue()
@@ -121,7 +127,7 @@ def main():
         args=(args.base_dir,),
         name="NEXRAD-Render",
         daemon=True,
-    ) if EWMRS_ENABLED else None
+    ) if EWMRS_ENABLED and NEXRAD_ENABLED else None
     # NEXRAD ingest uses a ProcessPoolExecutor for parser workers, so this
     # process must not be daemonic or child worker creation will fail.
     nexrad_ingest_proc = multiprocessing.Process(
@@ -129,7 +135,7 @@ def main():
         args=(nexrad_log_queue, args.base_dir),
         name="NEXRAD-Ingest",
         daemon=False,
-    ) if EWMRS_ENABLED else None
+    ) if EWMRS_ENABLED and NEXRAD_ENABLED else None
     started_processes = StartedProcessRegistry()
     started_processes.start(metar_proc, "METAR")
     started_processes.start(nws_proc, "NWS")
@@ -192,7 +198,6 @@ def main():
                      should_run_pipeline = True
 
             if should_run_pipeline:
-                print(f"[Scheduler] DEBUG: New latest common timestamp: {latest_common}")
                 dt = latest_common
                 last_processed = latest_common
 
@@ -228,7 +233,6 @@ def main():
 if __name__ == "__main__":
     try:
         print(f"Running EdgeWARN v{get_release_version()}")
-        print(f"Latitude limits: {lat_limits}, Longitude limits: {lon_limits}")
         main()
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")

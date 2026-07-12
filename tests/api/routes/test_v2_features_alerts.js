@@ -314,15 +314,6 @@ describe('API v2 Features Alerts Route', () => {
                     expires: "2026-03-09T13:00:00Z"
                 })
             );
-            await fs.promises.writeFile(
-                path.join(tempVars.tempEdgewarnIdsDir, 'id_flash_flood_FLOHAR_C124_2026.03.09.10.00.00.json'),
-                JSON.stringify({
-                    id: "id:flash_flood:FLOHAR:C124:2026.03.09.10.00.00",
-                    alert_type: "flash_flood",
-                    effective: "2026-03-09T10:00:00Z",
-                    expires: "2026-03-09T11:30:00Z"
-                })
-            );
             // Write Timestamps
             await fs.promises.writeFile(
                 path.join(tempVars.tempEdgewarnTsDir, '20260309-120000.json'),
@@ -334,8 +325,8 @@ describe('API v2 Features Alerts Route', () => {
             await fs.promises.writeFile(
                 path.join(tempVars.tempEdgewarnTsDir, '20260309-110000.json'),
                 JSON.stringify({
-                    count: 2,
-                    alerts: ["id:severe_weather:StormCast:C123:2026.03.09.11.00.00", "id:flash_flood:FLOHAR:C124:2026.03.09.10.00.00"]
+                    count: 1,
+                    alerts: ["id:severe_weather:StormCast:C123:2026.03.09.11.00.00"]
                 })
             );
         });

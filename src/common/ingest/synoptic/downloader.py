@@ -13,6 +13,10 @@ from common.ingest.synoptic.s3_async import AsyncSynopticFileDownloader
 io_manager = IOManager("[DataIngestion]")
 
 
+def _log_synoptic_not_found(bucket, s3_key):
+    io_manager.write_warning(f"Synoptic file not found on S3 (404): s3://{bucket}/{s3_key}")
+
+
 def _build_synoptic_s3_params(dt, file_pattern, dir_pattern, out_dir):
     """
     Build the S3 key and local file path for a synoptic download.
@@ -67,10 +71,14 @@ async def download_synoptic(dt, bucket, file_pattern, dir_pattern, out_dir, data
     Retries with previous hour if original timestamp fails.
     """
     for current_dt in [dt, dt - timedelta(hours=1)]:
+        s3_key, _ = _build_synoptic_s3_params(current_dt, file_pattern, dir_pattern, out_dir)
         if current_dt != dt:
-            io_manager.write_info(f"Attempting {dataset_name} fallback to previous hour: {current_dt}")
+            io_manager.write_info(
+                f"Attempting {dataset_name} fallback to previous hour: {current_dt} "
+                f"(s3://{bucket}/{s3_key})"
+            )
         else:
-            io_manager.write_info(f"Starting {dataset_name} download for {dt}")
+            io_manager.write_info(f"Attempting {dataset_name} download: s3://{bucket}/{s3_key}")
         
         result = None
         try:
@@ -78,6 +86,9 @@ async def download_synoptic(dt, bucket, file_pattern, dir_pattern, out_dir, data
             result = await download_synoptic_async(current_dt, bucket, file_pattern, dir_pattern, out_dir)
             if result:
                 return result
+        except FileNotFoundError:
+            _log_synoptic_not_found(bucket, s3_key)
+            continue
         except Exception as e:
             # Do not log error on first attempt if we are going to fallback
             if current_dt == dt:
@@ -90,6 +101,9 @@ async def download_synoptic(dt, bucket, file_pattern, dir_pattern, out_dir, data
             result = download_synoptic_sync(current_dt, bucket, file_pattern, dir_pattern, out_dir)
             if result:
                 return result
+        except FileNotFoundError:
+            _log_synoptic_not_found(bucket, s3_key)
+            continue
         except Exception as e:
             if current_dt == dt:
                 io_manager.write_warning(f"Sync {dataset_name} download for {current_dt} failed: {e}")

@@ -440,7 +440,7 @@ def summarize_cross_layer_metrics(
     low_level_summary,
     mid_level_summary,
     simultaneous_persistence,
-    mesocyclone_pair_count=0,
+    pair_count=0,
 ):
     if low_component is None or mid_component is None:
         centroid_distance = None
@@ -471,5 +471,5 @@ def summarize_cross_layer_metrics(
         "ll_ml_dominance_ratio_ratio": None if dominance_ratio_ratio is None else round(dominance_ratio_ratio, 3),
         "ll_ml_peak_ratio": None if peak_ratio is None else round(peak_ratio, 3),
         "simultaneous_persistence": round(max(float(simultaneous_persistence), 0.0), 3),
-        "mesocyclone_pair_count": max(int(mesocyclone_pair_count), 0),
+        "pair_count": max(int(pair_count), 0),
     }

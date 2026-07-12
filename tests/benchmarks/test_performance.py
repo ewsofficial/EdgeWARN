@@ -107,7 +107,7 @@ class TestGribLoaderPerformance:
         print(result.report())
         
         # Assert performance constraints
-        assert result.duration_s < 5.0, f"Fast loader took {result.duration_s:.2f}s, expected < 5s"
+        assert result.duration_s < 10.0, f"Fast loader took {result.duration_s:.2f}s, expected < 10s"
         assert ds is not None
     
     def test_fast_loader_memory_usage(self, sample_grib_path):

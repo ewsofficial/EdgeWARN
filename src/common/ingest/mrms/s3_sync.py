@@ -159,16 +159,12 @@ class FileDownloader:
                 self.io_manager.write_debug(f"File already exists, skipping download: {existing_file}")
                 return unzipped_path if unzipped_path.exists() else zipped_path
 
-            # Log the download attempt
-            self.io_manager.write_info(f"Downloading matching file: {target_file_path}")
-            
             # Use the bucket from constructor and the file path as S3 key
             s3_key = target_file_path
             
             # Download the file from S3
             self.client.download_file(self.bucket, s3_key, str(local_path))
             
-            self.io_manager.write_info(f"Successfully downloaded: {filename}")
             return Path(str(local_path))
             
         except Exception as e:
@@ -227,16 +223,12 @@ class FileDownloader:
                     downloaded_files.append(unzipped_path if unzipped_path.exists() else zipped_path)
                     continue
 
-                # Log the download attempt
-                self.io_manager.write_info(f"Downloading matching file: {target_file_path}")
-                
                 # Use the bucket from constructor and the file path as S3 key
                 s3_key = target_file_path
                 
                 # Download the file from S3
                 self.client.download_file(self.bucket, s3_key, str(local_path))
                 
-                self.io_manager.write_info(f"Successfully downloaded: {filename}")
                 downloaded_files.append(Path(str(local_path)))
             
             return downloaded_files
@@ -269,8 +261,6 @@ class FileDownloader:
             # Decompress into the same parent directory
             with gzip.open(gz_path, "rb") as f_in, open(output_path, "wb") as f_out:
                 shutil.copyfileobj(f_in, f_out, length=DECOMPRESS_CHUNK_SIZE)
-
-            self.io_manager.write_info(f"Decompressed to: {output_path}")
 
             # Remove original gz file
             gz_path.unlink(missing_ok=True)

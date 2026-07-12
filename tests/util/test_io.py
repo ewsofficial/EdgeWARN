@@ -25,6 +25,14 @@ class TestTimestampedOutput:
         # Should have ISO timestamp format
         assert "T" in output  # ISO format contains T
 
+    def test_write_passthroughs_carriage_return_progress(self):
+        stream = StringIO()
+        ts_output = TimestampedOutput(stream)
+
+        ts_output.write("\rProgress 10%")
+
+        assert stream.getvalue() == "\rProgress 10%"
+
     def test_write_skips_empty_lines(self):
         """Test that empty lines don't get timestamped"""
         stream = StringIO()
@@ -53,7 +61,7 @@ class TestQueueWriter:
     """Tests for QueueWriter class"""
 
     def test_write_puts_to_queue(self):
-        """Test that write puts timestamped message to queue"""
+        """Test that write puts raw message text to queue"""
         from queue import Queue
         queue = Queue()
         writer = QueueWriter(queue)
@@ -62,8 +70,7 @@ class TestQueueWriter:
         
         assert not queue.empty()
         message = queue.get()
-        assert "Test message" in message
-        assert "T" in message  # ISO timestamp
+        assert message == "Test message"
 
     def test_write_skips_empty_lines(self):
         """Test that empty lines are not queued"""
@@ -194,6 +201,7 @@ class TestIOManager:
             '--disable-nws',
             '--disable-metar',
             '--disable-goes',
+            '--disable-nexrad',
         ]):
             args = io.get_args()
 
@@ -201,6 +209,7 @@ class TestIOManager:
             assert args.disable_nws is True
             assert args.disable_metar is True
             assert args.disable_goes is True
+            assert args.disable_nexrad is True
 
     def test_get_args_invalid_lat_limits_count(self):
         """Test validation of lat_limits count"""

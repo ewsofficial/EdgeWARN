@@ -149,13 +149,11 @@ class DetectionDataHandler:
         Finds timestamps in a file based on predetermined patterns
         """
         filename = Path(filepath).name
-        _DETECTION_IO.write_info(f"Extracting timestamp from filename: {filename}")
 
-        for pattern_idx, pattern in enumerate(_TIMESTAMP_PATTERNS):
+        for pattern in _TIMESTAMP_PATTERNS:
             match = pattern.search(filename)
             if match:
                 groups = match.groups()
-                _DETECTION_IO.write_debug(f"Pattern {pattern_idx+1} matched: {groups}")
 
                 if len(groups) == 2:
                     date_str, time_str = groups
@@ -163,14 +161,12 @@ class DetectionDataHandler:
                     combined = groups[0]
                     date_str, time_str = combined[:8], combined[9:15]
                 else:
-                    # fallback to next pattern
-                    _DETECTION_IO.write_debug(f"Unexpected group format: {groups}")
                     continue
 
                 try:
                     formatted_time = (f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}T"
                                     f"{time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}")
-                    _DETECTION_IO.write_debug(f"Extracted timestamp: {formatted_time}")
+                    _DETECTION_IO.write_info(f"Extracted timestamp: {formatted_time}")
                     return formatted_time
                 except (IndexError, ValueError) as e:
                     _DETECTION_IO.write_warning(f"Error formatting timestamp: {e}")
