@@ -17,23 +17,15 @@ describe('Health Route', () => {
     });
 
     describe('GET /health', () => {
-        it('should return status OK', async () => {
+        it('should return status OK and include valid timestamp', async () => {
             const response = await request(app)
                 .get('/health')
                 .expect('Content-Type', /json/)
                 .expect(200);
 
             expect(response.body.status).toBe('OK');
-        });
-
-        it('should include timestamp', async () => {
-            const response = await request(app)
-                .get('/health')
-                .expect(200);
-
             expect(response.body).toHaveProperty('timestamp');
             expect(typeof response.body.timestamp).toBe('string');
-            // Verify it's a valid ISO timestamp
             expect(new Date(response.body.timestamp).toISOString()).toBe(response.body.timestamp);
         });
 
@@ -63,15 +55,5 @@ describe('Health Route', () => {
             expect(response2.body).toHaveProperty('timestamp');
         });
 
-        it('should return secure response structure', async () => {
-            const response = await request(app)
-                .get('/health')
-                .expect(200);
-
-            expect(response.body).toMatchObject({
-                status: expect.any(String),
-                timestamp: expect.any(String)
-            });
-        });
     });
 });

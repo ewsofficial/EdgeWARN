@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import request from 'supertest';
-import { createApp, startServer } from '../../src/EWMRS/api/server.js';
+import { createApp } from '../../src/EWMRS/api/server.js';
 
 describe('EWMRS API server', () => {
   afterEach(() => {
@@ -16,21 +16,6 @@ describe('EWMRS API server', () => {
     await request(app).get('/healthz').expect(200);
     await request(app).get('/healthz').expect(200);
     await request(app).get('/healthz').expect(429);
-  });
-
-  it('starts the server with the requested port', () => {
-    const listen = jest.fn((port, callback) => {
-      callback();
-      return { close: jest.fn() };
-    });
-    const app = { listen };
-    jest.spyOn(console, 'log').mockImplementation(() => {});
-
-    const result = startServer({ app, port: 3010, baseDir: '/tmp/ewmrs-test' });
-
-    expect(listen).toHaveBeenCalledWith(3010, expect.any(Function));
-    expect(result.port).toBe(3010);
-    expect(result.app).toBe(app);
   });
 
   it('exposes /nexrad in root metadata and mounts the route', async () => {

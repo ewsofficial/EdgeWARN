@@ -146,7 +146,7 @@ describe('API v2 Data METAR Route', () => {
             expect(response.body.data).toEqual(metarData);
         });
 
-        it('should extract hour from timestamp correctly', async () => {
+        it('should extract hour from timestamp correctly and match file hour', async () => {
             const metarData = { stations: ['KORD'] };
             await fs.promises.writeFile(
                 path.join(tempMetarDir, 'METAR_20231015-09z.json'),
@@ -158,6 +158,13 @@ describe('API v2 Data METAR Route', () => {
                 .expect(200);
 
             expect(response.body.timestamp).toBe('20231015-093000');
+            expect(response.body.data).toEqual(metarData);
+
+            const wrongHour = await request(app)
+                .get('/api/v2/data/metar?timestamp=20231015-083000')
+                .expect(404);
+
+            expect(wrongHour.body.error).toContain('not found');
         });
 
         it('should set appropriate cache headers for METAR data', async () => {

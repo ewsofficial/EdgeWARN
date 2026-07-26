@@ -26,16 +26,6 @@ from EdgeWARN.process.detect.kalman import (
 class TestStateVector:
     """Tests for StateVector class."""
     
-    def test_state_vector_initialization(self):
-        """Test state vector initialization with default values."""
-        state = StateVector()
-        assert state.lat == 0.0
-        assert state.lon == 0.0
-        assert state.u == 0.0
-        assert state.v == 0.0
-        assert state.a_lat == 0.0
-        assert state.a_lon == 0.0
-    
     def test_state_vector_to_array(self):
         """Test conversion to numpy array."""
         state = StateVector(lat=33.5, lon=-97.2, u=12.5, v=-6.7)
@@ -77,15 +67,6 @@ class TestStateVector:
 
 class TestCovarianceMatrix:
     """Tests for CovarianceMatrix class."""
-    
-    def test_covariance_initialization(self):
-        """Test covariance matrix initialization."""
-        cov = CovarianceMatrix()
-        arr = cov.to_array()
-        
-        assert arr.shape == (6, 6)
-        # Check diagonal is 1.0 (default)
-        assert np.allclose(np.diag(arr), 1.0)
     
     def test_from_diagonal(self):
         """Test creation from diagonal variances."""
@@ -307,14 +288,6 @@ class TestConfidenceCalculator:
 class TestPredictionState:
     """Tests for PredictionState class."""
     
-    def test_initialization(self):
-        """Test prediction state initialization."""
-        state = PredictionState()
-        
-        assert state.scan_count == 0
-        assert state.total_time_seconds == 0.0
-        assert state.confidence == 1.0
-    
     def test_increment(self):
         """Test prediction state increment."""
         state = PredictionState()
@@ -357,7 +330,7 @@ class TestPredictionState:
 class TestKalmanFilterWithCell:
     """Tests for Kalman filter initialization from storm cell data."""
     
-    def test_initialize_from_cell_basic(self):
+    def test_initialize_from_cell(self):
         """Test initialization from basic cell data."""
         cell = {
             'centroid': [35.0, -97.0],

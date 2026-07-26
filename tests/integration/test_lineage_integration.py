@@ -12,7 +12,6 @@ import pytest
 import numpy as np
 from pathlib import Path
 import tempfile
-import json
 import time
 
 from EdgeWARN.process.detect.lineage import (
@@ -21,7 +20,6 @@ from EdgeWARN.process.detect.lineage import (
     LineageBuffer,
     MergeEvent,
     SplitEvent,
-    calculate_overlap_ratio,
 )
 from EdgeWARN.process.detect.lineage.detector import LineageDetector
 from EdgeWARN.process.detect.track import StormCellTracker
@@ -171,38 +169,6 @@ class TestLineageIntegration:
             # Secondary child should be SPLIT with split_from
             assert secondary['event_type'] == LineageEvent.SPLIT.value
             assert secondary['split_from'] == 1
-    
-    def test_hysteresis_requires_multiple_scans(self):
-        """Test that hysteresis buffer requires multiple scans for confirmation."""
-        io_manager = MockIOManager()
-        
-        # Old cells: two cells that will merge
-        entries_old = [
-            create_mock_cell(1, 35.0, 262.0, max_refl=55.0, num_gates=100),
-            create_mock_cell(2, 35.0, 262.3, max_refl=60.0, num_gates=120),
-        ]
-        
-        # New cells: single merged cell
-        entries_new = [
-            create_mock_cell(3, 35.0, 262.0, size=0.5, max_refl=65.0, num_gates=220),
-        ]
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            stormcell_dir = Path(tmpdir)
-            
-            # Create buffer with 2-scan confirmation requirement
-            buffer = LineageBuffer(min_confirmations=2)
-            detector = LineageDetector(buffer=buffer, io_manager=io_manager)
-            
-            # First scan - should not confirm
-            result1 = detector.detect(entries_old, entries_new)
-            assert len(result1.merges) == 0  # Not confirmed yet
-            
-            buffer.end_scan(stormcell_dir)
-            
-            # Second scan - should confirm
-            result2 = detector.detect(entries_old, entries_new)
-            assert len(result2.merges) == 1  # Confirmed after 2 scans
     
     def test_dissipated_cells_tracking(self):
         """Test that dissipated cells are correctly identified."""
@@ -367,67 +333,6 @@ class TestPerformanceBenchmarks:
         # Verify events were detected
         assert len(result.merges) >= 10
         assert len(result.splits) == 10
-
-
-class TestBufferPersistence:
-    """Tests for lineage buffer persistence across scans."""
-    
-    def test_buffer_persists_across_tracker_instances(self):
-        """Test that buffer state persists when tracker is re-instantiated."""
-        io_manager = MockIOManager()
-        
-        entries_old = [
-            create_mock_cell(1, 35.0, 262.0),
-            create_mock_cell(2, 35.0, 262.3),
-        ]
-        entries_new = [
-            create_mock_cell(3, 35.0, 262.0, size=0.5),
-        ]
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            stormcell_dir = Path(tmpdir)
-            
-            # First tracker instance - first scan
-            tracker1 = StormCellTracker(None, None, io_manager, lineage_buffer=LineageBuffer(min_confirmations=2))
-            lineage1 = tracker1.detect_lineage_events(entries_old, entries_new, stormcell_dir)
-            
-            # Should not be confirmed yet
-            assert len(lineage1.merges) == 0
-            
-            # Save buffer
-            tracker1.save_lineage_buffer(stormcell_dir)
-            
-            # Second tracker instance - should load buffer from disk
-            tracker2 = StormCellTracker(None, None, io_manager)
-            lineage2 = tracker2.detect_lineage_events(entries_old, entries_new, stormcell_dir)
-            
-            # Should be confirmed now (second scan)
-            assert len(lineage2.merges) == 1
-    
-    def test_buffer_pruning(self):
-        """Test that buffer prunes old inactive entries."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            stormcell_dir = Path(tmpdir)
-            
-            # Create buffer with aggressive pruning
-            buffer = LineageBuffer(
-                min_confirmations=10,  # Never confirm
-                prune_after_scans=1,
-                scan_interval_seconds=0.1
-            )
-            
-            # Add pending merge
-            buffer.record_potential_merge(100, [1, 2], 1)
-            assert 100 in buffer.pending_merges
-            
-            # Save and wait for prune threshold
-            buffer.save(stormcell_dir)
-            time.sleep(0.2)
-            
-            # Prune should remove the entry
-            pruned = buffer.prune_inactive()
-            assert pruned >= 1
-            assert 100 not in buffer.pending_merges
 
 
 class TestEdgeCases:

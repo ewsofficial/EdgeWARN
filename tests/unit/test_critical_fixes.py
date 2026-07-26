@@ -161,21 +161,14 @@ class TestC3ConfigDefaults:
         assert config.max_prediction_time_minutes == 6.0, \
             f"Expected 6.0, got {config.max_prediction_time_minutes}"
 
-    def test_tracking_config_warns_on_missing_yaml(self, caplog):
+    @pytest.mark.parametrize("config_class,config_name", [
+        (TrackingConfig, "TrackingConfig"),
+        (KalmanConfig, "KalmanConfig"),
+        (AssignmentConfig, "AssignmentConfig"),
+    ])
+    def test_config_warns_on_missing_yaml(self, caplog, config_class, config_name):
         """from_yaml should log a warning when the YAML file doesn't exist."""
         with caplog.at_level(logging.WARNING):
-            TrackingConfig.from_yaml(Path("/nonexistent/kalman.yaml"))
+            config_class.from_yaml(Path("/nonexistent/kalman.yaml"))
         assert any("not found" in msg for msg in caplog.messages), \
-            "No warning logged for missing YAML file"
-
-    def test_kalman_config_warns_on_missing_yaml(self, caplog):
-        """KalmanConfig.from_yaml should warn on missing file."""
-        with caplog.at_level(logging.WARNING):
-            KalmanConfig.from_yaml(Path("/nonexistent/kalman.yaml"))
-        assert any("not found" in msg for msg in caplog.messages)
-
-    def test_assignment_config_warns_on_missing_yaml(self, caplog):
-        """AssignmentConfig.from_yaml should warn on missing file."""
-        with caplog.at_level(logging.WARNING):
-            AssignmentConfig.from_yaml(Path("/nonexistent/kalman.yaml"))
-        assert any("not found" in msg for msg in caplog.messages)
+            f"No warning logged for {config_name}"
