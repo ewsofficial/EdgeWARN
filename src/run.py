@@ -10,6 +10,8 @@ from EdgeWARN import initialize_runtime
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
 from util.runtime import (
+    CycleRetryPolicy,
+    CycleStateStore,
     StartedProcessRegistry,
     TandemCycleConfig,
     drain_log_queue,
@@ -103,8 +105,41 @@ def main():
     if MRMS_CORE_ONLY:
         print("[Scheduler] MRMS-core-only mode: running MRMS detection, MRMS integration, and CTAM only")
     checker = MRMSUpdateChecker(verbose=True)
-    last_processed, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
+    stormcell_last_successful, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
+    cycle_state_store = CycleStateStore(fs.DATA_DIR / "runtime" / "cycle_state.json")
+    persisted_cycle_state = cycle_state_store.load()
+    if stormcell_last_successful is not None:
+        persisted_cycle_state = cycle_state_store.seed_last_successful(
+            stormcell_last_successful
+        )
+
+    last_successful = persisted_cycle_state.last_successful
+    last_abandoned = persisted_cycle_state.last_abandoned
+    selection_cursor = persisted_cycle_state.selection_cursor
+    pending_timestamp = persisted_cycle_state.retry_timestamp
+    pending_attempt_count = (
+        persisted_cycle_state.attempt_count if pending_timestamp is not None else 0
+    )
+    retry_not_before = 0.0
+    retry_policy = CycleRetryPolicy(
+        max_attempts=max(1, int(os.environ.get("EDGEWARN_CYCLE_MAX_ATTEMPTS", "3"))),
+        initial_backoff_seconds=max(
+            0.0,
+            float(os.environ.get("EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS", "5")),
+        ),
+        max_backoff_seconds=max(
+            0.0,
+            float(os.environ.get("EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS", "30")),
+        ),
+    )
+    print(
+        "[Scheduler] Cycle progress: "
+        f"last_successful={last_successful}, "
+        f"last_attempted={persisted_cycle_state.last_attempted}, "
+        f"last_abandoned={last_abandoned}, "
+        f"pending_retry={pending_timestamp}"
+    )
 
     print("[Scheduler] Starting background accessory ingests...")
     # Hoisted out of _run_tandem_cycle: a Manager spawns a child server
@@ -156,52 +191,50 @@ def main():
             drain_log_queue(nexrad_log_queue)
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
-            # Pass last_processed to allow StartAfter optimization
-            latest_common = checker.latest_common_minute_1h(check_modifiers, last_processed=last_processed)
+            latest_common = None
+            if pending_timestamp is None:
+                # The selection cursor may include an explicitly abandoned
+                # scan, while last_successful always remains truthful.
+                latest_common = checker.latest_common_minute_1h(
+                    check_modifiers,
+                    last_processed=selection_cursor,
+                )
 
-            # Strict check: Only accept if new AND strictly newer than last_processed
-            is_new_s3 = False
-            if latest_common:
-                if last_processed is None:
-                    is_new_s3 = True
-                elif latest_common > last_processed:
-                    is_new_s3 = True
-            
-            # If S3 didn't give us a NEW timestamp, try HTTPS immediately
-            if not is_new_s3:
-                # print(f"[Scheduler] S3 yielded no new data (Latest: {latest_common}, Last: {last_processed}). Checking HTTPS...")
-                latest_https = checker.check_https_fallback(check_modifiers, now)
-                
-                # Check if HTTPS result is better
-                if latest_https:
-                    is_new_https = False
-                    if last_processed is None:
-                         is_new_https = True
-                    elif latest_https > last_processed:
-                         is_new_https = True
-                    
-                    if is_new_https:
-                        print(f"[Scheduler] HTTPS Fallback found NEWER timestamp: {latest_https}")
-                        latest_common = latest_https # Take the HTTPS one
-                    else:
-                        pass # HTTPS found data but it's also old
-                else:
-                    pass # HTTPS failed or no files
+                is_new_s3 = bool(
+                    latest_common
+                    and (selection_cursor is None or latest_common > selection_cursor)
+                )
+                if not is_new_s3:
+                    latest_https = checker.check_https_fallback(check_modifiers, now)
+                    if latest_https and (
+                        selection_cursor is None or latest_https > selection_cursor
+                    ):
+                        print(
+                            f"[Scheduler] HTTPS Fallback found NEWER timestamp: {latest_https}"
+                        )
+                        latest_common = latest_https
 
-            # Now proceed with latest_common if it is effectively new
-            # Re-evaluate newness (in case we switched to HTTPS one)
-            should_run_pipeline = False
-            if latest_common:
-                 if last_processed is None:
-                     should_run_pipeline = True
-                 elif latest_common > last_processed:
-                     should_run_pipeline = True
+                if latest_common and (
+                    selection_cursor is None or latest_common > selection_cursor
+                ):
+                    pending_timestamp = latest_common
+                    pending_attempt_count = 0
+
+            should_run_pipeline = (
+                pending_timestamp is not None
+                and time.monotonic() >= retry_not_before
+            )
 
             if should_run_pipeline:
-                dt = latest_common
-                last_processed = latest_common
+                dt = pending_timestamp
+                pending_attempt_count += 1
+                cycle_state_store.record_attempt(dt, pending_attempt_count)
+                print(
+                    f"[Scheduler] Starting tandem cycle for {dt} "
+                    f"(attempt {pending_attempt_count}/{retry_policy.max_attempts})"
+                )
 
-                cycle_ok = run_tandem_cycle_once(
+                outcome = run_tandem_cycle_once(
                     dt,
                     goes_render_task_queue,
                     goes_render_log_queue,
@@ -209,16 +242,66 @@ def main():
                     config=cycle_config,
                     goes_cycle_active_event=GOES_CYCLE_ACTIVE,
                 )
-                if cycle_ok:
-                    print(f"Tandem cycle for {dt} finished")
+                if outcome.completed:
+                    cycle_state_store.record_outcome(outcome, pending_attempt_count)
+                    last_successful = dt
+                    selection_cursor = max(
+                        value
+                        for value in (last_successful, last_abandoned)
+                        if value is not None
+                    )
+                    pending_timestamp = None
+                    pending_attempt_count = 0
+                    retry_not_before = 0.0
+                    print(
+                        f"Tandem cycle for {dt} finished with "
+                        f"{len(outcome.produced_artifacts)} validated artifact(s)"
+                    )
                 else:
-                    print(f"Tandem cycle for {dt} did not complete successfully")
+                    abandon = pending_attempt_count >= retry_policy.max_attempts
+                    cycle_state_store.record_outcome(
+                        outcome,
+                        pending_attempt_count,
+                        abandoned=abandon,
+                    )
+                    if abandon:
+                        last_abandoned = dt
+                        selection_cursor = max(
+                            value
+                            for value in (last_successful, last_abandoned)
+                            if value is not None
+                        )
+                        pending_timestamp = None
+                        pending_attempt_count = 0
+                        retry_not_before = 0.0
+                        print(
+                            f"[Scheduler] Tandem cycle for {dt} was explicitly "
+                            f"abandoned after {retry_policy.max_attempts} attempts; "
+                            f"errors={list(outcome.errors)}"
+                        )
+                    else:
+                        delay = retry_policy.delay_after(pending_attempt_count)
+                        retry_not_before = time.monotonic() + delay
+                        print(
+                            f"[Scheduler] Tandem cycle for {dt} failed and remains "
+                            f"pending; retrying in {delay:.1f}s; "
+                            f"errors={list(outcome.errors)}"
+                        )
 
             else:
-                if not latest_common:
+                if pending_timestamp is not None:
+                    remaining = max(0.0, retry_not_before - time.monotonic())
+                    print(
+                        f"[Scheduler] Retry for {pending_timestamp} is pending "
+                        f"for another {remaining:.1f}s"
+                    )
+                elif not latest_common:
                      print("[Scheduler] No new data found (S3 or HTTPS). Waiting...")
                 else:
-                     print(f"[Scheduler] Timestamp {latest_common} already processed. Waiting...")
+                     print(
+                         f"[Scheduler] Timestamp {latest_common} is not newer than "
+                         f"selection cursor {selection_cursor}. Waiting..."
+                     )
 
             # Wait/Check loop (15 seconds)
             for _ in range(30):

@@ -25,10 +25,6 @@ import numpy as np
 import pytest
 
 
-PHASE_1 = pytest.mark.xfail(
-    strict=True,
-    reason="Phase 1: truthful cycle outcomes and retry semantics are not implemented",
-)
 PHASE_2 = pytest.mark.xfail(
     strict=True,
     reason="Phase 2: explicit GOES result semantics are not implemented",
@@ -47,7 +43,6 @@ PHASE_5 = pytest.mark.xfail(
 )
 
 
-@PHASE_1
 def test_scheduler_rejects_common_time_when_one_required_source_is_empty(monkeypatch):
     """Every required source must participate in the timestamp intersection."""
     from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
@@ -77,7 +72,6 @@ def test_scheduler_rejects_common_time_when_one_required_source_is_empty(monkeyp
         ("completed", 0, False),
     ],
 )
-@PHASE_1
 def test_cycle_outcome_contract_covers_failure_and_retry_states(
     stage_status,
     exit_status,
@@ -376,7 +370,6 @@ def _historical_args(tmp_path, start, end):
 
 
 @pytest.mark.parametrize("failure_mode", ["no_artifact", "exception"])
-@PHASE_4
 def test_historical_failed_timestamp_is_retried(monkeypatch, tmp_path, failure_mode):
     import process_historical
 

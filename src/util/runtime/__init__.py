@@ -7,13 +7,28 @@ from .background import (
     nws_loop,
     wpc_loop,
 )
-from .cycle import TandemCycleConfig, run_tandem_cycle_once
+from .cycle import (
+    CycleOutcome,
+    CycleRetryPolicy,
+    CycleStageResult,
+    CycleStateStore,
+    CycleStatus,
+    PersistedCycleState,
+    TandemCycleConfig,
+    run_tandem_cycle_once,
+)
 from .logging import drain_log_queue
 from .processes import StartedProcessRegistry, stop_process
 from .scheduler import load_last_processed_from_stormcells
 
 __all__ = [
     "StartedProcessRegistry",
+    "CycleOutcome",
+    "CycleRetryPolicy",
+    "CycleStageResult",
+    "CycleStateStore",
+    "CycleStatus",
+    "PersistedCycleState",
     "TandemCycleConfig",
     "drain_log_queue",
     "goes_loop",

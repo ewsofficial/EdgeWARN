@@ -1,7 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 import asyncio
+import json
 import multiprocessing
+import os
+from pathlib import Path
 import queue
 import time
 
@@ -18,6 +22,270 @@ from .goes import (
 )
 from .logging import drain_log_queue, queue_log
 from .processes import StartedProcessRegistry
+
+
+class CycleStatus(str, Enum):
+    """Authoritative terminal state for one required pipeline stage."""
+
+    COMPLETED = "completed"
+    DISABLED = "disabled"
+    UNAVAILABLE = "unavailable"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class CycleStageResult:
+    """Terminal state, outputs, and process status for one cycle stage."""
+
+    status: CycleStatus
+    produced_artifacts: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+    worker_exit_status: int | None = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "status", CycleStatus(self.status))
+        object.__setattr__(
+            self,
+            "produced_artifacts",
+            tuple(str(path) for path in self.produced_artifacts),
+        )
+        object.__setattr__(self, "errors", tuple(str(error) for error in self.errors))
+
+    @property
+    def successful(self) -> bool:
+        return (
+            self.status in {CycleStatus.COMPLETED, CycleStatus.DISABLED}
+            and self.worker_exit_status in {None, 0}
+            and not self.errors
+        )
+
+    def as_dict(self) -> dict:
+        return {
+            "status": self.status.value,
+            "produced_artifacts": list(self.produced_artifacts),
+            "errors": list(self.errors),
+            "worker_exit_status": self.worker_exit_status,
+        }
+
+
+@dataclass(frozen=True)
+class CycleOutcome:
+    """Validated terminal outcome for a full tandem cycle."""
+
+    timestamp: datetime
+    stages: dict[str, CycleStageResult]
+    retryable: bool
+
+    @property
+    def completed(self) -> bool:
+        return bool(self.stages) and all(stage.successful for stage in self.stages.values())
+
+    @property
+    def produced_artifacts(self) -> tuple[str, ...]:
+        return tuple(
+            artifact
+            for stage in self.stages.values()
+            for artifact in stage.produced_artifacts
+        )
+
+    @property
+    def errors(self) -> tuple[str, ...]:
+        return tuple(error for stage in self.stages.values() for error in stage.errors)
+
+    @property
+    def worker_exit_status(self) -> dict[str, int | None]:
+        return {
+            stage_name: stage.worker_exit_status
+            for stage_name, stage in self.stages.items()
+        }
+
+    def as_dict(self) -> dict:
+        return {
+            "timestamp": self.timestamp.astimezone(timezone.utc).isoformat(),
+            "completed": self.completed,
+            "retryable": self.retryable,
+            "produced_artifacts": list(self.produced_artifacts),
+            "errors": list(self.errors),
+            "worker_exit_status": self.worker_exit_status,
+            "stages": {
+                stage_name: stage.as_dict()
+                for stage_name, stage in self.stages.items()
+            },
+        }
+
+
+@dataclass(frozen=True)
+class CycleRetryPolicy:
+    """Bounded exponential retry policy for a single scan."""
+
+    max_attempts: int = 3
+    initial_backoff_seconds: float = 5.0
+    max_backoff_seconds: float = 30.0
+
+    def __post_init__(self):
+        if self.max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
+        if self.initial_backoff_seconds < 0 or self.max_backoff_seconds < 0:
+            raise ValueError("retry backoff values must be non-negative")
+
+    def delay_after(self, attempt: int) -> float:
+        exponent = max(0, int(attempt) - 1)
+        return min(
+            self.max_backoff_seconds,
+            self.initial_backoff_seconds * (2 ** exponent),
+        )
+
+
+@dataclass(frozen=True)
+class PersistedCycleState:
+    """Restart-visible distinction between attempted, successful, and abandoned scans."""
+
+    last_attempted: datetime | None = None
+    last_successful: datetime | None = None
+    last_abandoned: datetime | None = None
+    attempt_count: int = 0
+    outcome: dict = field(default_factory=dict)
+
+    @property
+    def selection_cursor(self) -> datetime | None:
+        values = [
+            value
+            for value in (self.last_successful, self.last_abandoned)
+            if value is not None
+        ]
+        return max(values) if values else None
+
+    @property
+    def retry_timestamp(self) -> datetime | None:
+        if self.last_attempted is None:
+            return None
+        if self.last_attempted == self.last_successful:
+            return None
+        if self.last_attempted == self.last_abandoned:
+            return None
+        if not bool(self.outcome.get("retryable")):
+            return None
+        return self.last_attempted
+
+
+class CycleStateStore:
+    """Persist cycle progress without conflating attempts with success."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+
+    @staticmethod
+    def _parse_timestamp(value) -> datetime | None:
+        if not value:
+            return None
+        parsed = datetime.fromisoformat(str(value))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def load(self) -> PersistedCycleState:
+        if not self.path.is_file():
+            return PersistedCycleState()
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+            return PersistedCycleState(
+                last_attempted=self._parse_timestamp(payload.get("last_attempted")),
+                last_successful=self._parse_timestamp(payload.get("last_successful")),
+                last_abandoned=self._parse_timestamp(payload.get("last_abandoned")),
+                attempt_count=max(0, int(payload.get("attempt_count", 0))),
+                outcome=dict(payload.get("outcome") or {}),
+            )
+        except Exception:
+            return PersistedCycleState()
+
+    def _write(self, payload: dict) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp")
+        try:
+            with open(temporary, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def record_attempt(self, timestamp: datetime, attempt_count: int) -> PersistedCycleState:
+        current = self.load()
+        payload = {
+            "last_attempted": timestamp.astimezone(timezone.utc).isoformat(),
+            "last_successful": (
+                current.last_successful.isoformat()
+                if current.last_successful is not None
+                else None
+            ),
+            "last_abandoned": (
+                current.last_abandoned.isoformat()
+                if current.last_abandoned is not None
+                else None
+            ),
+            "attempt_count": int(attempt_count),
+            "outcome": current.outcome,
+        }
+        self._write(payload)
+        return self.load()
+
+    def seed_last_successful(self, timestamp: datetime) -> PersistedCycleState:
+        """Record an existing validated stormcell watermark during migration."""
+        current = self.load()
+        existing = current.last_successful
+        successful = timestamp if existing is None else max(existing, timestamp)
+        payload = {
+            "last_attempted": (
+                current.last_attempted.isoformat()
+                if current.last_attempted is not None
+                else successful.astimezone(timezone.utc).isoformat()
+            ),
+            "last_successful": successful.astimezone(timezone.utc).isoformat(),
+            "last_abandoned": (
+                current.last_abandoned.isoformat()
+                if current.last_abandoned is not None
+                else None
+            ),
+            "attempt_count": current.attempt_count,
+            "outcome": current.outcome,
+        }
+        self._write(payload)
+        return self.load()
+
+    def record_outcome(
+        self,
+        outcome: CycleOutcome,
+        attempt_count: int,
+        *,
+        abandoned: bool = False,
+    ) -> PersistedCycleState:
+        current = self.load()
+        payload = {
+            "last_attempted": outcome.timestamp.astimezone(timezone.utc).isoformat(),
+            "last_successful": (
+                outcome.timestamp.astimezone(timezone.utc).isoformat()
+                if outcome.completed
+                else (
+                    current.last_successful.isoformat()
+                    if current.last_successful is not None
+                    else None
+                )
+            ),
+            "last_abandoned": (
+                outcome.timestamp.astimezone(timezone.utc).isoformat()
+                if abandoned
+                else (
+                    current.last_abandoned.isoformat()
+                    if current.last_abandoned is not None
+                    else None
+                )
+            ),
+            "attempt_count": int(attempt_count),
+            "outcome": outcome.as_dict(),
+        }
+        self._write(payload)
+        return self.load()
 
 
 @dataclass(frozen=True)
@@ -59,6 +327,16 @@ def run_tandem_cycle_once(
         "ewmrs_goes_inputs_ready": False,
         "edgewarn_integration_inputs_ready": False,
         "edgewarn_generated_file": "",
+        "edgewarn_stage": {
+            "status": "pending",
+            "produced_artifacts": [],
+            "errors": [],
+        },
+        "ewmrs_stage": {
+            "status": "pending" if config.ewmrs_enabled else CycleStatus.DISABLED.value,
+            "produced_artifacts": [],
+            "errors": [],
+        },
         "errors": {},
     })
 
@@ -276,5 +554,80 @@ def run_tandem_cycle_once(
         drain_log_queue(log_queue)
         drain_log_queue(goes_render_log_queue)
 
-    ewmrs_proc_exitcode = 0 if ewmrs_proc is None else ewmrs_proc.exitcode
-    return edgewarn_proc.exitcode == 0 and ewmrs_proc_exitcode == 0
+    edgewarn_stage = _stage_result_from_shared(
+        shared_state.get("edgewarn_stage"),
+        worker_exit_status=edgewarn_proc.exitcode,
+        fallback_error="EdgeWARN worker exited without publishing a terminal stage result",
+    )
+    if ewmrs_proc is None:
+        ewmrs_stage = CycleStageResult(status=CycleStatus.DISABLED)
+    else:
+        ewmrs_stage = _stage_result_from_shared(
+            shared_state.get("ewmrs_stage"),
+            worker_exit_status=ewmrs_proc.exitcode,
+            fallback_error="EWMRS worker exited without publishing a terminal stage result",
+        )
+
+    ingest_errors = tuple(
+        f"{name}: {message}"
+        for name, message in dict(shared_state.get("errors", {})).items()
+        if name not in {"ewmrs_goes_ingest", "ewmrs_rap_uint16"}
+    )
+    ingest_ready = bool(
+        cycle_state
+        and cycle_state.detection_inputs_ready
+        and cycle_state.mrms_integration_inputs_ready
+        and (cycle_state.rap_inputs_ready or config.mrms_core_only)
+    )
+    ingest_stage = CycleStageResult(
+        status=CycleStatus.COMPLETED if ingest_ready else CycleStatus.UNAVAILABLE,
+        errors=() if ingest_ready else (ingest_errors or ("Required ingest inputs unavailable",)),
+    )
+
+    stages = {
+        "ingest": ingest_stage,
+        "edgewarn": edgewarn_stage,
+        "ewmrs": ewmrs_stage,
+    }
+    retryable = any(
+        stage.status in {CycleStatus.UNAVAILABLE, CycleStatus.FAILED}
+        for stage in stages.values()
+    )
+    return CycleOutcome(timestamp=dt, stages=stages, retryable=retryable)
+
+
+def _stage_result_from_shared(
+    payload,
+    *,
+    worker_exit_status: int | None,
+    fallback_error: str,
+) -> CycleStageResult:
+    """Convert a worker-published mapping into an authoritative stage result."""
+    stage_payload = dict(payload or {})
+    status_value = stage_payload.get("status")
+    try:
+        status = CycleStatus(status_value)
+    except (TypeError, ValueError):
+        status = CycleStatus.FAILED
+
+    errors = tuple(stage_payload.get("errors") or ())
+    if worker_exit_status not in {None, 0}:
+        status = CycleStatus.FAILED
+        errors = (*errors, f"Worker exited with status {worker_exit_status}")
+    elif status not in {
+        CycleStatus.COMPLETED,
+        CycleStatus.DISABLED,
+        CycleStatus.UNAVAILABLE,
+        CycleStatus.FAILED,
+    }:
+        status = CycleStatus.FAILED
+
+    if status is CycleStatus.FAILED and not errors:
+        errors = (fallback_error,)
+
+    return CycleStageResult(
+        status=status,
+        produced_artifacts=tuple(stage_payload.get("produced_artifacts") or ()),
+        errors=errors,
+        worker_exit_status=worker_exit_status,
+    )

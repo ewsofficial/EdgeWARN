@@ -1,4 +1,14 @@
-from util.runtime import StartedProcessRegistry
+from datetime import datetime, timezone
+
+from util.runtime import (
+    CycleOutcome,
+    CycleRetryPolicy,
+    CycleStageResult,
+    CycleStateStore,
+    CycleStatus,
+    StartedProcessRegistry,
+)
+from util.runtime.cycle import _stage_result_from_shared
 
 
 class FakeProcess:
@@ -70,3 +80,92 @@ def test_started_process_registry_ignores_none_processes():
 
     assert result is None
     assert registry.processes == []
+
+
+def test_cycle_state_store_keeps_attempt_separate_from_success(tmp_path):
+    timestamp = datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc)
+    store = CycleStateStore(tmp_path / "runtime" / "cycle_state.json")
+    failed = CycleOutcome(
+        timestamp=timestamp,
+        stages={
+            "edgewarn": CycleStageResult(
+                CycleStatus.UNAVAILABLE,
+                errors=("inputs unavailable",),
+                worker_exit_status=0,
+            )
+        },
+        retryable=True,
+    )
+
+    store.record_attempt(timestamp, 1)
+    state = store.record_outcome(failed, 1)
+
+    assert state.last_attempted == timestamp
+    assert state.last_successful is None
+    assert state.last_abandoned is None
+    assert state.retry_timestamp == timestamp
+    assert state.selection_cursor is None
+
+
+def test_cycle_state_store_records_success_and_explicit_abandonment(tmp_path):
+    first = datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc)
+    second = datetime(2026, 7, 26, 18, 2, tzinfo=timezone.utc)
+    store = CycleStateStore(tmp_path / "cycle_state.json")
+    completed = CycleOutcome(
+        timestamp=first,
+        stages={
+            "edgewarn": CycleStageResult(
+                CycleStatus.COMPLETED,
+                produced_artifacts=("stormcells.json",),
+                worker_exit_status=0,
+            )
+        },
+        retryable=False,
+    )
+    failed = CycleOutcome(
+        timestamp=second,
+        stages={
+            "edgewarn": CycleStageResult(
+                CycleStatus.FAILED,
+                errors=("worker crashed",),
+                worker_exit_status=9,
+            )
+        },
+        retryable=True,
+    )
+
+    store.record_attempt(first, 1)
+    store.record_outcome(completed, 1)
+    store.record_attempt(second, 3)
+    state = store.record_outcome(failed, 3, abandoned=True)
+
+    assert state.last_successful == first
+    assert state.last_abandoned == second
+    assert state.selection_cursor == second
+    assert state.retry_timestamp is None
+
+
+def test_cycle_retry_policy_is_bounded():
+    policy = CycleRetryPolicy(
+        max_attempts=4,
+        initial_backoff_seconds=2,
+        max_backoff_seconds=5,
+    )
+
+    assert [policy.delay_after(attempt) for attempt in range(1, 5)] == [2, 4, 5, 5]
+
+
+def test_nonzero_worker_exit_overrides_published_completion():
+    stage = _stage_result_from_shared(
+        {
+            "status": "completed",
+            "produced_artifacts": ["stormcells.json"],
+            "errors": [],
+        },
+        worker_exit_status=17,
+        fallback_error="missing terminal state",
+    )
+
+    assert stage.status is CycleStatus.FAILED
+    assert stage.successful is False
+    assert "17" in stage.errors[-1]

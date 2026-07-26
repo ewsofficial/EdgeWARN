@@ -1,6 +1,8 @@
 from unittest.mock import patch
 from types import SimpleNamespace
 
+import pytest
+
 from EdgeWARN import pipeline
 
 
@@ -36,14 +38,16 @@ def test_historical_cleanup_skips_cells_and_stormcells(tmp_path):
     assert all(max_files == 5 for max_files in cleaned_max_files)
 
 
-def test_historical_pipeline_preserves_cell_and_stormcell_dirs():
+def test_historical_pipeline_preserves_cell_and_stormcell_dirs(tmp_path):
+    generated_path = tmp_path / "generated.json"
+    generated_path.write_text("{}")
     with patch.object(pipeline, "_cleanup_historical_data_dirs"), \
          patch.object(
              pipeline,
              "run_tandem_ingest_cycle",
              return_value=SimpleNamespace(detection_inputs_ready=True, errors={}),
          ) as mock_ingest, \
-         patch.object(pipeline, "run_edgewarn_detection_phase", return_value="generated.json") as mock_detect, \
+         patch.object(pipeline, "run_edgewarn_detection_phase", return_value=generated_path) as mock_detect, \
          patch.object(pipeline, "run_edgewarn_integration_phase", return_value=True) as mock_integrate:
         generated_file, _ = pipeline.historical_pipeline(
             dt=pipeline.datetime(2024, 1, 1, 12, 0, tzinfo=pipeline.timezone.utc),
@@ -52,13 +56,15 @@ def test_historical_pipeline_preserves_cell_and_stormcell_dirs():
             json_output="stormcell_test.json",
         )
 
-    assert generated_file == "generated.json"
+    assert generated_file == generated_path
     assert mock_ingest.call_args.kwargs["include_goes"] is False
     assert mock_ingest.call_args.kwargs["include_ewmrs"] is False
     assert mock_integrate.call_args.kwargs["remove_old_cells"] is False
 
 
-def test_historical_pipeline_skips_integration_when_realtime_staged_inputs_are_incomplete():
+def test_historical_pipeline_reports_incomplete_when_staged_inputs_are_missing(tmp_path):
+    generated_path = tmp_path / "generated.json"
+    generated_path.write_text("{}")
     with patch.object(pipeline, "_cleanup_historical_data_dirs"), \
          patch.object(
              pipeline,
@@ -68,7 +74,7 @@ def test_historical_pipeline_skips_integration_when_realtime_staged_inputs_are_i
                  errors={"rap_ingest": "RAP inputs unavailable"},
              ),
          ), \
-         patch.object(pipeline, "run_edgewarn_detection_phase", return_value="generated.json"), \
+         patch.object(pipeline, "run_edgewarn_detection_phase", return_value=generated_path), \
          patch.object(pipeline, "run_edgewarn_integration_phase") as mock_integrate:
         generated_file, _ = pipeline.historical_pipeline(
             dt=pipeline.datetime(2024, 1, 1, 12, 0, tzinfo=pipeline.timezone.utc),
@@ -77,5 +83,93 @@ def test_historical_pipeline_skips_integration_when_realtime_staged_inputs_are_i
             json_output="stormcell_test.json",
         )
 
-    assert generated_file == "generated.json"
+    assert generated_file is None
     mock_integrate.assert_not_called()
+
+
+class _Queue:
+    def __init__(self):
+        self.messages = []
+
+    def put(self, message):
+        self.messages.append(str(message))
+
+
+class _Event:
+    def wait(self):
+        return True
+
+
+def _run_edgewarn_worker(shared_state):
+    pipeline.edgewarn_tandem_worker(
+        _Queue(),
+        shared_state,
+        _Event(),
+        _Event(),
+        pipeline.datetime(2026, 7, 26, 18, 0, tzinfo=pipeline.timezone.utc),
+        (20, 55),
+        (-130, -60),
+    )
+
+
+def test_edgewarn_worker_publishes_unavailable_state(monkeypatch):
+    monkeypatch.setattr(pipeline.sys, "stdout", pipeline.sys.stdout)
+    monkeypatch.setattr(pipeline.sys, "stderr", pipeline.sys.stderr)
+    shared_state = {
+        "detection_inputs_ready": False,
+        "edgewarn_integration_inputs_ready": False,
+    }
+
+    _run_edgewarn_worker(shared_state)
+
+    assert shared_state["edgewarn_stage"]["status"] == "unavailable"
+    assert shared_state["edgewarn_stage"]["produced_artifacts"] == []
+
+
+def test_edgewarn_worker_publishes_completed_artifact(monkeypatch, tmp_path):
+    monkeypatch.setattr(pipeline.sys, "stdout", pipeline.sys.stdout)
+    monkeypatch.setattr(pipeline.sys, "stderr", pipeline.sys.stderr)
+    generated = tmp_path / "stormcells_20260726-180000.json"
+    generated.write_text("{}")
+    shared_state = {
+        "detection_inputs_ready": True,
+        "edgewarn_integration_inputs_ready": True,
+    }
+    monkeypatch.setattr(
+        pipeline,
+        "run_edgewarn_detection_phase",
+        lambda *_args, **_kwargs: generated,
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_edgewarn_integration_phase",
+        lambda *_args, **_kwargs: True,
+    )
+
+    _run_edgewarn_worker(shared_state)
+
+    assert shared_state["edgewarn_stage"] == {
+        "status": "completed",
+        "produced_artifacts": [str(generated)],
+        "errors": [],
+    }
+
+
+def test_edgewarn_worker_exception_publishes_failed_state(monkeypatch):
+    monkeypatch.setattr(pipeline.sys, "stdout", pipeline.sys.stdout)
+    monkeypatch.setattr(pipeline.sys, "stderr", pipeline.sys.stderr)
+    shared_state = {
+        "detection_inputs_ready": True,
+        "edgewarn_integration_inputs_ready": True,
+    }
+    monkeypatch.setattr(
+        pipeline,
+        "run_edgewarn_detection_phase",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        _run_edgewarn_worker(shared_state)
+
+    assert shared_state["edgewarn_stage"]["status"] == "failed"
+    assert shared_state["edgewarn_stage"]["errors"] == ["boom"]
