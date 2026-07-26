@@ -166,16 +166,19 @@ class MRMSUpdateChecker:
             # Pass last_processed to _get_modifier_times
             results = executor.map(lambda m: self._get_modifier_times(m, reference_dt, trace_id, last_processed), modifiers)
             
-            for res in results:
-                if res:
-                    modifier_times.append(res)
+            modifier_times.extend(results)
         
         duration = (time.time() - t0) * 1000
         print(f"[PERF] [{trace_id}] Scheduler Check Total: {duration:.2f}ms")
 
-        if not modifier_times:
+        if not modifier_times or len(modifier_times) != len(modifiers):
             if self.verbose:
                 print("[Scheduler] No files found in any modifier")
+            return self.check_https_fallback(modifiers, reference_dt)
+
+        if any(not timestamps for timestamps in modifier_times):
+            if self.verbose:
+                print("[Scheduler] At least one required modifier has no timestamps")
             return self.check_https_fallback(modifiers, reference_dt)
 
         common_minutes = set.intersection(*modifier_times)
@@ -232,11 +235,13 @@ class MRMSUpdateChecker:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             results = executor.map(check_single_https, modifiers)
             
-            for res in results:
-                if res:
-                    modifier_times.append(res)
+            modifier_times.extend(results)
         
-        if not modifier_times:
+        if (
+            not modifier_times
+            or len(modifier_times) != len(modifiers)
+            or any(not timestamps for timestamps in modifier_times)
+        ):
             return None
 
         common_minutes = set.intersection(*modifier_times)

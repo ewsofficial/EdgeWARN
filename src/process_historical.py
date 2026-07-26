@@ -77,7 +77,7 @@ def main():
         
         # Run the pipeline
         try:
-            historical_pipeline(
+            result = historical_pipeline(
                 latest_common,
                 lat_limits,
                 lon_limits,
@@ -91,19 +91,22 @@ def main():
                 min_seed_percentage=args.min_seed_percentage,
                 drop_offset=args.drop_offset,
             )
-            
+
+            generated_file = result[0] if isinstance(result, tuple) else result
+            generated_path = Path(generated_file) if generated_file else None
+            if generated_path is None or not generated_path.is_file():
+                raise RuntimeError(
+                    "Historical pipeline did not produce a validated output artifact"
+                )
+
             last_processed_timestamp = latest_common
-            
-            # Verify output
-            if json_output.exists():
-                io_manager.write_info(f"✓ Output saved to {json_output}")
-            else:
-                io_manager.write_warning(f"✗ Warning: No output file at {json_output}")
+            io_manager.write_info(f"✓ Output saved to {generated_path}")
                 
         except Exception as e:
             io_manager.write_error(f"Pipeline failed for {latest_common}: {e}")
-            # Continue processing other timestamps even if this one failed
-            last_processed_timestamp = latest_common
+            io_manager.write_warning(
+                f"Timestamp {latest_common} remains unprocessed and may be retried"
+            )
 
         # Increment search time by 1 minute
         current_time += timedelta(minutes=1)

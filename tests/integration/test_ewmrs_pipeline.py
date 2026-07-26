@@ -506,6 +506,11 @@ def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monke
     assert mrms_ready_event.wait_calls == 1
     assert len(mrms_calls) == 1
     assert goes_calls == []
+    assert shared_state["ewmrs_stage"] == {
+        "status": "completed",
+        "produced_artifacts": ["LayerOne.png"],
+        "errors": [],
+    }
     assert any("Starting EWMRS MRMS render phase" in message for message in queue.messages)
     assert any("GOES render is decoupled" in message for message in queue.messages)
 
@@ -531,6 +536,7 @@ def test_ewmrs_tandem_worker_skips_mrms_when_inputs_not_ready(monkeypatch):
 
     assert mrms_ready_event.wait_calls == 1
     assert mrms_calls == []
+    assert shared_state["ewmrs_stage"]["status"] == "unavailable"
     assert any("skipping MRMS render" in message for message in queue.messages)
 
 
@@ -555,6 +561,9 @@ def test_ewmrs_tandem_worker_runs_only_mrms_phase_when_inputs_ready(monkeypatch)
         "mrms_dt": dt,
         "mrms_max_entries": 3,
     }
+    assert shared_state["ewmrs_stage"]["status"] == "failed"
+    assert "LayerTwo" in shared_state["ewmrs_stage"]["errors"][0]
+    assert shared_state["ewmrs_stage"]["produced_artifacts"] == ["LayerOne.png"]
     assert any("Starting EWMRS MRMS render phase" in message for message in queue.messages)
     assert any("1/2 layers succeeded" in message for message in queue.messages)
     assert any("GOES render is decoupled" in message for message in queue.messages)

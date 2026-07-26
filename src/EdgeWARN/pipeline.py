@@ -184,6 +184,13 @@ def edgewarn_tandem_worker(
     def log(message):
         log_queue.put(message)
 
+    def publish_stage(status, *, artifacts=(), errors=()):
+        shared_state["edgewarn_stage"] = {
+            "status": str(status),
+            "produced_artifacts": [str(path) for path in artifacts],
+            "errors": [str(error) for error in errors],
+        }
+
     if profile:
         perf_tracker.set_enabled(True)
     perf_tracker.reset()
@@ -194,7 +201,9 @@ def edgewarn_tandem_worker(
         detection_ready_event.wait()
 
         if not shared_state.get("detection_inputs_ready", False):
-            log("ERROR: Detection inputs were not staged successfully; skipping EdgeWARN pipeline")
+            message = "Detection inputs were not staged successfully"
+            publish_stage("unavailable", errors=(message,))
+            log(f"ERROR: {message}; skipping EdgeWARN pipeline")
             return
 
         perf_tracker.start("Detection")
@@ -210,26 +219,50 @@ def edgewarn_tandem_worker(
         )
         perf_tracker.stop("Detection")
         shared_state["edgewarn_generated_file"] = str(generated_file) if generated_file else ""
+        if not generated_file or not Path(generated_file).is_file():
+            message = "Detection did not produce a valid stormcell artifact"
+            publish_stage("failed", errors=(message,))
+            log(f"ERROR: {message}")
+            return
 
         log("INFO: EdgeWARN detection phase complete; waiting for integration inputs")
         integration_ready_event.wait()
 
         if not shared_state.get("edgewarn_integration_inputs_ready", False):
-            log("ERROR: EdgeWARN integration inputs were not staged successfully; skipping integration")
+            message = "EdgeWARN integration inputs were not staged successfully"
+            publish_stage(
+                "unavailable",
+                artifacts=(generated_file,),
+                errors=(message,),
+            )
+            log(f"ERROR: {message}; skipping integration")
             return
 
         perf_tracker.start("Integration")
-        run_edgewarn_integration_phase(
+        integrated = run_edgewarn_integration_phase(
             log,
             shared_state.get("edgewarn_generated_file") or None,
             disable_ctam=disable_ctam,
             mrms_core_only=mrms_core_only,
         )
         perf_tracker.stop("Integration")
+        if not integrated or not Path(generated_file).is_file():
+            message = "EdgeWARN integration did not validate its required artifact"
+            publish_stage(
+                "failed",
+                artifacts=(generated_file,),
+                errors=(message,),
+            )
+            log(f"ERROR: {message}")
+            return
+
+        publish_stage("completed", artifacts=(generated_file,))
         log("INFO: EdgeWARN worker completed successfully")
     except Exception as exc:
+        publish_stage("failed", errors=(str(exc),))
         log(f"ERROR: EdgeWARN tandem worker failed: {exc}")
         log(traceback.format_exc())
+        raise
     finally:
         try:
             perf_tracker.stop("Total Pipeline")
@@ -328,25 +361,41 @@ def historical_pipeline(
             drop_offset=drop_offset,
         )
         perf_tracker.stop("Detection")
+        if not generated_file or not Path(generated_file).is_file():
+            pipeline_io.write_error(
+                "Historical detection did not produce a valid artifact"
+            )
+            perf_tracker.stop("Total Pipeline")
+            return None, (None, None, None)
 
         can_integrate = (
-            generated_file
-            and "mrms_integration_ingest" not in cycle_state.errors
+            "mrms_integration_ingest" not in cycle_state.errors
             and "rap_ingest" not in cycle_state.errors
         )
 
         if can_integrate:
             pipeline_io.write_info("Starting Integration")
             perf_tracker.start("Integration")
-            run_edgewarn_integration_phase(
+            integrated = run_edgewarn_integration_phase(
                 pipeline_io.write_info,
                 generated_file,
                 remove_old_cells=False,
                 disable_ctam=disable_ctam,
             )
             perf_tracker.stop("Integration")
+            if not integrated or not Path(generated_file).is_file():
+                pipeline_io.write_error(
+                    "Historical integration did not validate its required artifact"
+                )
+                perf_tracker.stop("Total Pipeline")
+                return None, (None, None, None)
         else:
-            pipeline_io.write_warning("Detection failed or staged integration inputs were unavailable; skipping integration")
+            pipeline_io.write_warning(
+                "Staged historical integration inputs were unavailable; "
+                "the timestamp remains incomplete"
+            )
+            perf_tracker.stop("Total Pipeline")
+            return None, (None, None, None)
 
         perf_tracker.stop("Total Pipeline")
         pipeline_io.write_info("Pipeline completed successfully")

@@ -1109,6 +1109,13 @@ def ewmrs_tandem_worker(
     def log(msg: str):
         log_queue.put(str(msg))
 
+    def publish_stage(status, *, artifacts=(), errors=()):
+        shared_state["ewmrs_stage"] = {
+            "status": str(status),
+            "produced_artifacts": [str(path) for path in artifacts],
+            "errors": [str(error) for error in errors],
+        }
+
     try:
         log(f"INFO: EWMRS worker waiting for MRMS render inputs for {dt}")
         ewmrs_mrms_ready_event.wait()
@@ -1118,14 +1125,42 @@ def ewmrs_tandem_worker(
             False,
         )
         if not mrms_inputs_ready:
-            log("ERROR: EWMRS MRMS inputs were not staged successfully; skipping MRMS render")
+            message = "EWMRS MRMS inputs were not staged successfully"
+            publish_stage("unavailable", errors=(message,))
+            log(f"ERROR: {message}; skipping MRMS render")
         else:
             log("INFO: Starting EWMRS MRMS render phase")
             results = run_mrms_render_pipeline(dt, max_entries=max_entries)
+            failed_layers = sorted(
+                str(layer_name)
+                for layer_name, output in results.items()
+                if output is None
+            )
+            artifacts = [
+                str(path)
+                for output in results.values()
+                if output is not None
+                for path in (output if isinstance(output, list) else [output])
+            ]
+            if not results or failed_layers:
+                message = (
+                    "EWMRS MRMS render did not produce the complete required layer set"
+                    if not failed_layers
+                    else f"EWMRS MRMS render missing required layers: {', '.join(failed_layers)}"
+                )
+                publish_stage(
+                    "failed",
+                    artifacts=artifacts,
+                    errors=(message,),
+                )
+            else:
+                publish_stage("completed", artifacts=artifacts)
             log(f"INFO: EWMRS MRMS render completed: {_summarize_results(results)}")
         log("INFO: EWMRS GOES render is decoupled from the tandem worker")
     except Exception as exc:
+        publish_stage("failed", errors=(str(exc),))
         log(f"ERROR: EWMRS tandem worker failed - {exc}")
+        raise
 
 
 def ewmrs_goes_worker(log_queue, dt, max_entries: int = 10):
