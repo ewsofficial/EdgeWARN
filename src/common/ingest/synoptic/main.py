@@ -1,12 +1,99 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
+import re
+
 from common.ingest.synoptic.downloader import download_rap as _download_rap
+from common.ingest.synoptic.config import RAP_MAX_FILES, get_rap_max_age_minutes
 import util.file as fs
 
 
-RAP_MAX_FILES = 3
-RAP_PRE_DOWNLOAD_MAX_FILES = RAP_MAX_FILES - 1
-RAP_MAX_AGE_MINUTES = 90
+RAP_FILENAME_RE = re.compile(
+    r"^RAP\.(?P<date>\d{8})-(?P<hour>\d{2})z\.awp130pgrbf00\.grib2$"
+)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def parse_rap_analysis_time(path: Path) -> datetime | None:
+    match = RAP_FILENAME_RE.match(path.name)
+    if match is None:
+        return None
+    try:
+        return datetime.strptime(
+            f"{match.group('date')}{match.group('hour')}", "%Y%m%d%H"
+        ).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def clean_rap_cache(
+    reference_time: datetime,
+    *,
+    max_age_minutes: int,
+    max_files: int | None,
+) -> int:
+    """Prune RAP files by encoded analysis time, not filesystem mtime."""
+    rap_dir = Path(fs.RAP_DIR)
+    if not fs._is_safe_directory(rap_dir, allow_logical_inside=True):
+        fs.io_manager.write_error(
+            f"SAFETY ERROR: Attempting to clean {rap_dir} which is not inside {fs.BASE_DIR}"
+        )
+        return 0
+
+    reference_time = _as_utc(reference_time)
+    kept = []
+    removed = 0
+    if not rap_dir.exists():
+        return removed
+
+    for path in rap_dir.iterdir():
+        if not path.is_file() or path.suffix.lower() == ".idx":
+            continue
+        analysis_time = parse_rap_analysis_time(path)
+        if analysis_time is None:
+            fs.io_manager.write_warning(
+                f"Ignoring unrecognized RAP cache file during cleanup: {path.name}"
+            )
+            continue
+        age_minutes = (reference_time - analysis_time).total_seconds() / 60
+        if age_minutes < 0 or age_minutes > max_age_minutes:
+            try:
+                path.unlink()
+                removed += 1
+            except OSError as exc:
+                fs.io_manager.write_error(
+                    f"Could not delete RAP cache file {path.name}: {exc}"
+                )
+        else:
+            kept.append((analysis_time, path))
+
+    if max_files is not None and len(kept) > max_files:
+        kept.sort(key=lambda item: item[0], reverse=True)
+        for _, path in kept[max_files:]:
+            try:
+                path.unlink()
+                removed += 1
+            except OSError as exc:
+                fs.io_manager.write_error(
+                    f"Could not delete RAP cache file {path.name}: {exc}"
+                )
+    return removed
+
+
+async def _async_clean_rap_cache(reference_time, *, max_age_minutes, max_files):
+    # RAP retains only a handful of files. Keep this small directory scan on
+    # the cycle thread so asyncio.run() does not retain a default-executor
+    # worker during tandem-cycle teardown.
+    return clean_rap_cache(
+        reference_time,
+        max_age_minutes=max_age_minutes,
+        max_files=max_files,
+    )
 
 
 async def download_rap_async(dt: datetime):
@@ -14,41 +101,44 @@ async def download_rap_async(dt: datetime):
     Async version of download_rap.
     Cleans up RAP files before and after downloading so the RAP directory stays bounded.
     """
-    await fs.async_clean_old_files(
-        fs.RAP_DIR,
-        max_age_minutes=RAP_MAX_AGE_MINUTES,
-        max_files=RAP_PRE_DOWNLOAD_MAX_FILES,
+    max_age_minutes = get_rap_max_age_minutes()
+    await _async_clean_rap_cache(
+        dt,
+        max_age_minutes=max_age_minutes,
+        max_files=None,
     )
     result = await _download_rap(dt)
     if result:
-        await fs.async_clean_old_files(
-            fs.RAP_DIR,
-            max_age_minutes=RAP_MAX_AGE_MINUTES,
+        await _async_clean_rap_cache(
+            dt,
+            max_age_minutes=max_age_minutes,
             max_files=RAP_MAX_FILES,
         )
     return result
+
 
 def download_rap(dt: datetime):
     """
     Public API to download a RAP file for a given datetime.
     Handles the async loop if necessary.
-    Enforces a 3-file limit using clean_old_files.
+    Enforces RAP analysis-age and file-count retention.
     """
     try:
         # Check if there is a running event loop
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        fs.clean_old_files(
-            fs.RAP_DIR,
-            max_age_minutes=RAP_MAX_AGE_MINUTES,
-            max_files=RAP_PRE_DOWNLOAD_MAX_FILES,
-        ) # 90 min to ensure that there is another RAP file
+        max_age_minutes = get_rap_max_age_minutes()
+        clean_rap_cache(
+            dt,
+            max_age_minutes=max_age_minutes,
+            max_files=None,
+        )
         # If no loop, run with asyncio.run
         result = asyncio.run(_download_rap(dt))
         if result:
-            fs.clean_old_files(
-                fs.RAP_DIR,
-                max_age_minutes=RAP_MAX_AGE_MINUTES,
+            clean_rap_cache(
+                dt,
+                max_age_minutes=max_age_minutes,
                 max_files=RAP_MAX_FILES,
             )
         return result
