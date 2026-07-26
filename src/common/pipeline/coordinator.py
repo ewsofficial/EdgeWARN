@@ -14,7 +14,7 @@ from common.ingest.mrms.downloader import (
     download_all_goes_files,
     download_all_goes_files_async,
 )
-from common.ingest.synoptic.main import download_rap, download_rap_async
+from common.ingest.synoptic.main import download_rap_async
 
 
 LogFunc = Callable[[str], None]
@@ -65,6 +65,20 @@ async def _safe_ingest(
         except Exception as fallback_exc:
             log(f"ERROR: Both async and sync ingestion failed for {task_name}: {fallback_exc}")
             return None
+
+
+async def _ingest_rap(dt: datetime, log: LogFunc):
+    """Run the single exhaustive RAP selection owned by the source layer."""
+    try:
+        result = await download_rap_async(dt)
+        if not result:
+            raise RuntimeError("RAP ingestion did not return a staged file path")
+        log("INFO: Async RAP ingestion successful")
+        return result, None
+    except Exception as exc:
+        reason = str(exc)
+        log(f"ERROR: RAP ingestion failed: {reason}")
+        return None, reason
 
 
 async def _run_rap_uint16_conversion(rap_path, dt: datetime, log: LogFunc) -> bool:
@@ -142,14 +156,7 @@ async def run_tandem_ingest_cycle(
         )
     rap_task = (
         asyncio.create_task(
-            _safe_ingest(
-                "RAP",
-                log,
-                download_rap_async,
-                download_rap,
-                dt,
-                require_result=True,
-            )
+            _ingest_rap(dt, log)
         )
         if include_rap
         else None
@@ -180,12 +187,12 @@ async def run_tandem_ingest_cycle(
 
     # RAP is a source input; publish integration's non-GLM prerequisites before
     # the optional Uint16 conversion below.
-    rap_path = await rap_task if rap_task is not None else None
+    rap_path, rap_error = await rap_task if rap_task is not None else (None, None)
     rap_ok = bool(rap_path) if include_rap else True
     state.rap_inputs_ready = rap_ok
 
     if include_rap and not rap_ok:
-        state.errors["rap_ingest"] = "RAP inputs unavailable"
+        state.errors["rap_ingest"] = rap_error or "RAP inputs unavailable"
     state.edgewarn_integration_inputs_ready = detection_ok and mrms_integration_ok and rap_ok
     if on_base_integration_ready is not None:
         on_base_integration_ready(state)

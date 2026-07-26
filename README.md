@@ -87,6 +87,11 @@ Supported overrides:
 - Python CLI: `--base_dir` / `--base-dir`
 - EdgeWARN API: `--base-dir` or `EDGEWARN_BASE_DIR`
 - EWMRS API: `--base_dir` or `BASE_DIR`
+- RAP maximum analysis age: `EDGEWARN_RAP_MAX_AGE_MINUTES` (default `180`)
+
+RAP ingest checks the configured runtime cache first, then searches NOAA S3
+newest-to-oldest within this analysis-age limit. Freshness is based on the RAP
+analysis timestamp, not the local file modification time.
 
 Both Node APIs also honor `PORT`. The EdgeWARN API also supports `--debug_server`, `--edgewarn-rate-limit-1s`, and `--edgewarn-rate-limit-1m`. The EWMRS API supports `--debug-server` / `--debug_server`, `--ewmrs-rate-limit-1s`, and `--ewmrs-rate-limit-1m`.
 

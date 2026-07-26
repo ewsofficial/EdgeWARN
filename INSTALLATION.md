@@ -47,6 +47,12 @@ Overrides:
 - Python CLIs (`run.py`, `process_historical.py`): `--base_dir` or `--base-dir`
 - EdgeWARN API (`src/EdgeWARN/api/server.js`): `--base-dir` or `EDGEWARN_BASE_DIR`
 - EWMRS API (`src/EWMRS/api/server.js`): `--base_dir` or `BASE_DIR`
+- RAP maximum analysis age: `EDGEWARN_RAP_MAX_AGE_MINUTES` (non-negative
+  integer minutes; default `180`)
+
+The RAP setting controls both local-cache eligibility and the bounded backward
+search of NOAA RAP analysis hours. Analysis timestamps, rather than download
+times or filesystem modification times, determine freshness.
 
 ## Running API Services
 

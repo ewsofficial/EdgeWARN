@@ -1,9 +1,11 @@
-import os
 from pathlib import Path
+
 import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
+
 from util.io import IOManager
+
 
 class SynopticFileDownloader:
     """Synchronous S3 downloader for Synoptic files (e.g., RAP)."""
@@ -22,7 +24,11 @@ class SynopticFileDownloader:
             local_path (Path): The local path where the file should be saved.
             
         Returns:
-            Path: The path to the downloaded file, or None if failed.
+            Path: The path to the downloaded file.
+
+        Raises:
+            FileNotFoundError: The S3 object does not exist.
+            Exception: The underlying S3 or local I/O operation failed.
         """
         try:
             # Check if file already exists
@@ -43,4 +49,4 @@ class SynopticFileDownloader:
             if "404" in err_msg or "NoSuchKey" in err_msg:
                 raise FileNotFoundError(f"s3://{self.bucket}/{s3_key}") from e
             self.io_manager.write_error(f"Error downloading synoptic file from {self.bucket}: {e}")
-            return None
+            raise

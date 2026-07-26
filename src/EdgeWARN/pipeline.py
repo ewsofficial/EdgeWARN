@@ -29,6 +29,10 @@ def initialize_runtime(base_dir=None, io_manager=None, initialize_indexes=True):
     if base_dir:
         fs.initialize_filesystem(base_dir)
 
+    runtime_io.write_info(
+        f"Runtime filesystem initialized: base_dir={fs.BASE_DIR} rap_dir={fs.RAP_DIR}"
+    )
+
     if not initialize_indexes:
         return
 

@@ -36,16 +36,23 @@ def test_tandem_cycle_runs_rap_uint16_conversion_when_rap_ingest_succeeds(tmp_pa
 
 def test_tandem_cycle_skips_rap_uint16_conversion_when_rap_ingest_fails():
     logs = []
+    rap_ingest = AsyncMock(
+        side_effect=RuntimeError(
+            "RAP unavailable within 180-minute analysis-age limit; "
+            "checked: rap.20260726/rap.t13z=not_found"
+        )
+    )
 
     with patch.object(coordinator.mrms_ingest, "download_detection_files_async", new=AsyncMock(return_value=None)), \
          patch.object(coordinator.mrms_ingest, "download_integration_files_async", new=AsyncMock(return_value=None)), \
-         patch.object(coordinator, "download_rap_async", new=AsyncMock(return_value=None)), \
-         patch.object(coordinator, "download_rap", return_value=None), \
+         patch.object(coordinator, "download_rap_async", new=rap_ingest), \
          patch("EWMRS.pipeline.run_rap_uint16_pipeline") as mock_convert:
         state = _run_cycle(logs)
 
     mock_convert.assert_not_called()
-    assert state.errors["rap_ingest"] == "RAP inputs unavailable"
+    rap_ingest.assert_awaited_once()
+    assert "180-minute analysis-age limit" in state.errors["rap_ingest"]
+    assert sum("RAP ingestion failed" in message for message in logs) == 1
 
 
 def test_tandem_cycle_keeps_rap_ready_when_rap_uint16_conversion_fails(tmp_path):

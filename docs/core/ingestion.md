@@ -91,6 +91,24 @@ Entry points:
 - `download_rap_async(dt)`
 - `download_rap(dt)`
 
+RAP selection is local-first and searches backward from the requested UTC
+analysis hour. Candidates must be no older than the configured analysis-age
+limit, which defaults to 180 minutes and can be overridden with
+`EDGEWARN_RAP_MAX_AGE_MINUTES`. The limit is measured from the requested scan
+timestamp to the analysis timestamp encoded in the RAP filename; filesystem
+modification time is not used as a freshness signal.
+
+Definitive S3 404 responses advance to the next eligible analysis without
+repeating the same key through the synchronous client. Transport or
+authentication failures may receive one synchronous source fallback. A selected
+file is logged with its analysis timestamp, age, source, and local path. If the
+window is exhausted, the RAP readiness error records the configured limit and
+the result for every checked S3 key.
+
+RAP cache cleanup uses the same encoded analysis timestamps and staleness
+policy. It retains at most the newest three eligible analyses under
+`<BASE_DIR>/data/RAP`.
+
 RAP Uint16Array conversion is configured in `src/EWMRS/rap/config.py` and writes one raw little-endian `data.u16` file per configured data layer:
 
 ```text
