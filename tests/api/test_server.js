@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import request from 'supertest';
-import { createApp, startClusteredServer, startWorkerServer } from '../../src/EdgeWARN/api/server.js';
+import { createApp } from '../../src/EdgeWARN/api/server.js';
 
 describe('API server', () => {
   afterEach(() => {
@@ -204,58 +204,4 @@ describe('API server', () => {
     expect(console.error).toHaveBeenCalledWith('Error: kaboom');
   });
 
-  it('starts a worker server with the requested host and port', () => {
-    const listen = jest.fn((port, host, callback) => {
-      callback();
-      return { close: jest.fn() };
-    });
-    const app = { listen };
-    jest.spyOn(console, 'log').mockImplementation(() => {});
-
-    const result = startWorkerServer({ app, port: 4321, host: '127.0.0.1' });
-
-    expect(listen).toHaveBeenCalledWith(4321, '127.0.0.1', expect.any(Function));
-    expect(result.port).toBe(4321);
-    expect(result.app).toBe(app);
-  });
-
-  it('forks up to four workers in primary cluster mode and restarts on exit', () => {
-    const fork = jest.fn();
-    const on = jest.fn((event, handler) => {
-      if (event === 'exit') {
-        handler({ process: { pid: 222 } });
-      }
-    });
-    jest.spyOn(console, 'log').mockImplementation(() => {});
-
-    const result = startClusteredServer({
-      clusterModule: { isPrimary: true, fork, on },
-      osModule: { cpus: () => new Array(8).fill({}) },
-      env: { NODE_ENV: 'test' },
-      port: 5001
-    });
-
-    expect(result).toMatchObject({ mode: 'primary', numCPUs: 4, port: 5001 });
-    expect(fork).toHaveBeenCalledTimes(5);
-    expect(on).toHaveBeenCalledWith('exit', expect.any(Function));
-  });
-
-  it('starts the worker branch when cluster mode is not primary', () => {
-    const listen = jest.fn((port, host, callback) => {
-      callback();
-      return { close: jest.fn() };
-    });
-    jest.spyOn(console, 'log').mockImplementation(() => {});
-
-    const result = startClusteredServer({
-      clusterModule: { isPrimary: false },
-      osModule: { cpus: () => [{}, {}] },
-      app: { listen },
-      env: { NODE_ENV: 'test' },
-      port: 5002
-    });
-
-    expect(result.mode).toBe('worker');
-    expect(listen).toHaveBeenCalledWith(5002, '0.0.0.0', expect.any(Function));
-  });
 });

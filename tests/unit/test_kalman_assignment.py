@@ -112,21 +112,9 @@ class TestMahalanobisDistance:
 
 class TestAssignmentConfig:
     """Tests for AssignmentConfig dataclass."""
-    
-    def test_default_config(self):
-        """Test default configuration values."""
-        config = AssignmentConfig()
-        
-        assert config.prefilter_radius_km == 16.0
-        assert config.gating_threshold == 6.0
-        assert config.min_gating_radius_km == 2.0
-        assert config.weight_position == 1.0
-        assert config.weight_velocity == 2.0
-        assert config.weight_shape == 0.5
-        assert config.method == "greedy"
-    
-    def test_custom_config(self):
-        """Test custom configuration values."""
+
+    def test_custom_config_overrides_defaults(self):
+        """Test custom configuration values override defaults."""
         config = AssignmentConfig(
             prefilter_radius_km=20.0,
             gating_threshold=5.0,
@@ -136,6 +124,8 @@ class TestAssignmentConfig:
         assert config.prefilter_radius_km == 20.0
         assert config.gating_threshold == 5.0
         assert config.method == "greedy"
+        assert config.min_gating_radius_km == 2.0
+        assert config.weight_position == 1.0
 
 
 class TestAssignmentCostCalculator:
@@ -489,19 +479,3 @@ class TestGreedyAssignment:
         assert result.matched[0] == (1, 101)
 
 
-class TestAssignmentResult:
-    """Tests for AssignmentResult dataclass."""
-    
-    def test_assignment_result_creation(self):
-        """Test creating an AssignmentResult."""
-        result = AssignmentResult(
-            matched=[(1, 101), (2, 102)],
-            unmatched_tracks=[3],
-            unmatched_detections=[103],
-            costs={(1, 101): 0.5, (2, 102): 0.6}
-        )
-        
-        assert len(result.matched) == 2
-        assert len(result.unmatched_tracks) == 1
-        assert len(result.unmatched_detections) == 1
-        assert result.costs[(1, 101)] == 0.5

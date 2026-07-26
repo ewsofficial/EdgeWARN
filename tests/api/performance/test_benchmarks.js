@@ -38,6 +38,7 @@ describe('Performance benchmarks for validation helpers', () => {
     expect(Number.isFinite(afterMs)).toBe(true);
 
     const improvementPct = beforeMs > 0 ? ((beforeMs - afterMs) / beforeMs) * 100 : 0;
+    expect(improvementPct).toBeGreaterThan(-50);
     console.log(`[benchmark] validateTimestamp before=${beforeMs.toFixed(2)}ms after=${afterMs.toFixed(2)}ms improvement=${improvementPct.toFixed(2)}%`);
   });
 
@@ -55,6 +56,7 @@ describe('Performance benchmarks for validation helpers', () => {
     expect(Number.isFinite(afterMs)).toBe(true);
 
     const improvementPct = beforeMs > 0 ? ((beforeMs - afterMs) / beforeMs) * 100 : 0;
+    expect(improvementPct).toBeGreaterThan(-50);
     console.log(`[benchmark] validateAlertId before=${beforeMs.toFixed(2)}ms after=${afterMs.toFixed(2)}ms improvement=${improvementPct.toFixed(2)}%`);
   });
 });

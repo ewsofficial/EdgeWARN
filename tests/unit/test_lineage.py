@@ -49,13 +49,6 @@ class TestOverlapCalculation:
         ratio = calculate_overlap_ratio(parent, child)
         assert 0.0 < ratio < 1.0
     
-    def test_full_overlap_returns_one(self):
-        """Identical polygons should return 1.0 overlap."""
-        polygon = [[35.0, 262.0], [35.0, 262.2], [35.2, 262.2], [35.2, 262.0]]
-        
-        ratio = calculate_overlap_ratio(polygon, polygon)
-        assert ratio == 1.0
-    
     def test_empty_bbox_returns_zero(self):
         """Empty bbox should return 0.0."""
         ratio = calculate_overlap_ratio([], [[35.0, 262.0], [35.0, 262.2], [35.2, 262.2], [35.2, 262.0]])

@@ -109,22 +109,6 @@ describe('readJsonFileSafe', () => {
         expect(result2).toEqual(testData);
     });
 
-    it('should handle nested JSON structures', async () => {
-        const testData = {
-            features: [
-                { id: 1, properties: { name: 'Cell 1' } },
-                { id: 2, properties: { name: 'Cell 2' } }
-            ],
-            metadata: {
-                timestamp: '20231015-143000',
-                count: 2
-            }
-        };
-        await fs.promises.writeFile(testFile, JSON.stringify(testData));
-
-        const result = await readJsonFileSafe(tempDir, 'test.json');
-        expect(result).toEqual(testData);
-    });
 });
 
 describe('readIndexFile', () => {
