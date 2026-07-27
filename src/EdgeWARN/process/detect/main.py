@@ -129,13 +129,15 @@ def main(
         io_manager.write_warning(f"Old PrecipType file not found: {pt_old}")
         pt_old = None
 
-    # === Single-frame fallback ===
+    # A current radar frame is sufficient for degraded single-frame detection.
+    # ProbSevere and precipitation type enrich a detection; their absence must
+    # never cause a newer valid radar frame to be discarded.
     single_frame = radar_new is None or ps_new is None or pt_new is None
     if single_frame:
         io_manager.write_debug("No new scan specified — running single-frame detection mode")
 
     # === Calculate Timestamp Early ===
-    current_radar = radar_old if single_frame else radar_new
+    current_radar = radar_new if radar_new is not None else radar_old
     if current_radar is None:
         io_manager.write_warning("No valid radar input data found. Aborting detection.")
         return None, None # Modified return signature
@@ -193,7 +195,7 @@ def main(
     if data_old and isinstance(data_old, dict):
         old_ts_str = data_old.get("latest_timestamp")
 
-    if not entries_old:
+    if not entries_old and not single_frame:
         io_manager.write_info("No valid previous storm cell data found, detecting from old scan ...")
         perf_tracker.start("Detection - Old Scan Fallback")
         # Use cached objects if available for OLD scan
@@ -219,10 +221,27 @@ def main(
 
     # === If single-frame mode, just update/save ===
     if single_frame:
-        io_manager.write_info("Saving single-frame detection results (no tracking possible).")
-        saver = CellDataSaver(None, radar_old, None, None, ps_old, None)
-        # entries = saver.append_storm_history(entries_old, radar_old) # Removed
-        entries = entries_old
+        io_manager.write_info("Detecting available radar frame in single-frame mode.")
+        current_ps = ps_new if radar_new is not None else ps_old
+        current_pt = pt_new if radar_new is not None else pt_old
+        entries, current_ps_data = _detect_with_optional_probsevere(
+            current_radar,
+            current_ps,
+            current_pt,
+            lat_min,
+            lat_max,
+            lon_min,
+            lon_max,
+            need_probsevere=False,
+            disable_polygon_expansion=disable_polygon_expansion,
+            refl_threshold=refl_threshold,
+            min_seed_percentage=min_seed_percentage,
+            drop_offset=drop_offset,
+            radar_obj=radar_old_obj if radar_new is None else None,
+            ps_obj=ps_old_obj if radar_new is None else None,
+            pt_obj=pt_old_obj if radar_new is None else None,
+        )
+        saver = CellDataSaver(None, current_radar, None, None, current_ps_data, None)
 
         # Apply timestamp (all cells are "current" in single frame)
         for cell in entries:
@@ -237,16 +256,21 @@ def main(
         
         # Save to stormcell directory
         stormcell_dir = fs.STORMCELL_DIR
-        stormcell_dir.mkdir(exist_ok=True)
+        stormcell_dir.mkdir(parents=True, exist_ok=True)
         output_file = stormcell_dir / f"stormcells_{final_ts}.json"
         
         from util.atomic import atomic_write_json
         atomic_write_json(output_file, output_data, indent=2, default=str)
         
         io_manager.write_info(f"Saved single-frame results to {output_file}")
-        
-        # In single frame mode (fallback), we might want to return the loaded dataset too?
-        # But usually this is the startup or error case.
+
+        try:
+            from EdgeWARN.api_integration.index_manager import APIIndexManager
+            APIIndexManager(io_manager).update_stormcell_index(final_ts)
+        except Exception as e:
+            # The artifact is deliberately left unadvertised if index commit
+            # fails; the next index resync can safely discover it.
+            io_manager.write_error(f"Failed to update API index: {e}")
         return output_file, None
 
     # === Dual-frame mode ===
@@ -304,7 +328,7 @@ def main(
     vector_previous_entries = copy.deepcopy(entries_old) if entries_old else None
 
     stormcell_dir = fs.STORMCELL_DIR
-    stormcell_dir.mkdir(exist_ok=True)
+    stormcell_dir.mkdir(parents=True, exist_ok=True)
 
     if disable_tracking:
         io_manager.write_info("Tracking disabled: skipping lineage detection and Kalman tracking")
