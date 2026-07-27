@@ -93,7 +93,6 @@ def test_cycle_outcome_contract_covers_failure_and_retry_states(
     assert outcome.completed is (status is CycleStatus.COMPLETED and exit_status == 0)
 
 
-@PHASE_4
 def test_single_frame_detects_current_radar_and_updates_index(monkeypatch, tmp_path):
     """A previous snapshot is context, never a substitute for current detection."""
     import util.file as fs
@@ -147,6 +146,38 @@ def test_single_frame_detects_current_radar_and_updates_index(monkeypatch, tmp_p
         assert [feature["id"] for feature in output["features"]] == [10]
         index = json.loads((fs.STORMCELL_DIR / "stormcell_index.json").read_text(encoding="utf-8"))
         assert "20260726-180000" in index["timestamps"]
+    finally:
+        fs._define_paths(original_base)
+
+
+def test_single_frame_keeps_newer_radar_when_optional_inputs_are_missing(monkeypatch, tmp_path):
+    """A missing current ProbSevere/precipitation input is degraded, not stale."""
+    import util.file as fs
+    from EdgeWARN.process.detect import main as detect_main
+
+    original_base = fs.BASE_DIR
+    try:
+        fs._define_paths(tmp_path)
+        old_radar = tmp_path / "MRMS_20260726-175800.grib2"
+        new_radar = tmp_path / "MRMS_20260726-180000.grib2"
+        old_radar.write_bytes(b"old")
+        new_radar.write_bytes(b"new")
+        detector = MagicMock(return_value=([], None))
+        monkeypatch.setattr(
+            detect_main.DetectionDataHandler,
+            "find_timestamp",
+            lambda path: "2026-07-26T18:00:00+00:00" if Path(path) == new_radar else "2026-07-26T17:58:00+00:00",
+        )
+        monkeypatch.setattr(detect_main, "_detect_with_optional_probsevere", detector)
+        monkeypatch.setattr(detect_main, "match_alerts_to_cells", lambda entries, *_args, **_kwargs: entries)
+
+        output_path, _ = detect_main.main(
+            old_radar, new_radar, None, None, None, None,
+            (20, 55), (-130, -60), tmp_path / "unused.json", cleanup_stormcells=False,
+        )
+
+        assert detector.call_args.args[0] == new_radar
+        assert output_path.name == "stormcells_20260726-180000.json"
     finally:
         fs._define_paths(original_base)
 
@@ -393,7 +424,19 @@ def test_historical_failed_timestamp_is_retried(monkeypatch, tmp_path, failure_m
     assert len(calls) == 2
 
 
-@PHASE_4
+def test_historical_output_validation_rejects_previous_timestamp(tmp_path):
+    import process_historical
+
+    requested = datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc)
+    stale = tmp_path / "stormcells.json"
+    stale.write_text(
+        json.dumps({"latest_timestamp": "2026-07-26T17:58:00+00:00"}),
+        encoding="utf-8",
+    )
+
+    assert not process_historical._validated_historical_output(stale, requested)
+
+
 def test_historical_alert_target_before_oldest_snapshot_returns_no_alerts(tmp_path):
     from EdgeWARN.process.detect.tools.alert_matcher import load_active_alerts
 
