@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 import aiofiles
 
@@ -41,9 +42,24 @@ class AsyncSynopticFileDownloader:
             resp = await self.s3.get_object(Bucket=self.bucket, Key=s3_key)
             body = resp["Body"]
 
-            async with aiofiles.open(local_path, "wb") as f:
-                async for chunk in body.iter_chunks():
-                    await f.write(chunk)
+            part_path = local_path.with_name(f".{local_path.name}.part")
+            written = 0
+            try:
+                async with aiofiles.open(part_path, "wb") as f:
+                    async for chunk in body.iter_chunks():
+                        if chunk:
+                            written += len(chunk)
+                            await f.write(chunk)
+                    await f.flush()
+                expected = resp.get("ContentLength")
+                if expected is not None and written != expected:
+                    raise IOError(f"incomplete S3 download: expected {expected} bytes, got {written}")
+                if written == 0:
+                    raise IOError("empty S3 download")
+                os.replace(part_path, local_path)
+            except BaseException:
+                part_path.unlink(missing_ok=True)
+                raise
 
             self.io_manager.write_info(f"Successfully downloaded: {local_path.name}")
             return local_path

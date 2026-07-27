@@ -12,6 +12,7 @@ from PIL import Image
 from .tools import TransformUtils
 from .tiler import TileSplitter, save_tile
 import util.file as fs
+from util.atomic import atomic_output_path, atomic_write_json
 from xarray import Dataset
 from util.io import IOManager
 from datetime import datetime
@@ -162,7 +163,8 @@ class GUIRGBAWriter:
 
         png_file = self.outdir / f"{self.file_name}_{timestamp}.png"
         img = Image.fromarray(rgba, mode="RGBA")
-        img.save(png_file, compress_level=1)
+        with atomic_output_path(png_file) as temporary:
+            img.save(temporary, format="PNG", compress_level=1)
         self._update_index(timestamp, tile_grid=None)
         io_manager.write_debug(f"Saved {self.file_name} PNG file to {png_file}")
         return [png_file], timestamp
@@ -280,8 +282,7 @@ class GUIRGBAWriter:
 
         index_file = tile_dir / "index.json"
         try:
-            with open(index_file, "w") as f:
-                json.dump(output_data, f, separators=(",", ":"))
+            atomic_write_json(index_file, output_data)
         except Exception as e:
             io_manager.write_error(f"Failed to update index.json in {tile_dir}: {e}")
 
@@ -315,8 +316,7 @@ class GUIRGBAWriter:
                 else:
                     output_data = timestamps
 
-                with open(index_file, 'w') as f:
-                    json.dump(output_data, f, separators=(",", ":"))
+                atomic_write_json(index_file, output_data)
             except Exception as e:
                 io_manager.write_error(f"Failed to update index.json in {self.outdir}: {e}")
 
