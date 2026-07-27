@@ -459,7 +459,6 @@ def test_historical_alert_target_before_oldest_snapshot_returns_no_alerts(tmp_pa
     assert load_active_alerts(registry, "2026-07-26T17:00:00+00:00") == []
 
 
-@PHASE_5
 def test_wpc_paths_follow_runtime_base_directory(tmp_path):
     import util.file as fs
     from common.ingest.wpc import downloader as wpc_downloader
@@ -472,7 +471,6 @@ def test_wpc_paths_follow_runtime_base_directory(tmp_path):
         fs._define_paths(original_base)
 
 
-@PHASE_5
 def test_wpc_fallback_returns_actual_analysis_timestamp(monkeypatch):
     from common.ingest.wpc import downloader as wpc_downloader
 
@@ -501,7 +499,6 @@ def test_wpc_fallback_returns_actual_analysis_timestamp(monkeypatch):
     assert wpc_downloader.download_coded_surface(requested) == ("fallback surface", fallback)
 
 
-@PHASE_5
 def test_wpc_download_uses_normal_tls_verification(monkeypatch):
     from common.ingest.wpc import downloader as wpc_downloader
 
@@ -530,7 +527,6 @@ def test_wpc_download_uses_normal_tls_verification(monkeypatch):
     assert contexts[0].verify_mode == ssl.CERT_REQUIRED
 
 
-@PHASE_5
 def test_wpc_cleanup_matches_timestamped_names_and_preserves_latest(monkeypatch, tmp_path):
     from common.ingest.wpc import main as wpc_main
 
@@ -541,7 +537,7 @@ def test_wpc_cleanup_matches_timestamped_names_and_preserves_latest(monkeypatch,
     old = time.time() - 3600
     os.utime(timestamped, (old, old))
     os.utime(latest, (old, old))
-    monkeypatch.setattr(wpc_main, "WPC_SFC_DIR", tmp_path)
+    monkeypatch.setattr(wpc_main.fs, "WPC_SFC_DIR", tmp_path)
 
     wpc_main.clean_old_files(max_age_minutes=1)
 
@@ -549,7 +545,6 @@ def test_wpc_cleanup_matches_timestamped_names_and_preserves_latest(monkeypatch,
     assert latest.exists()
 
 
-@PHASE_5
 def test_concurrent_nexrad_pool_creation_builds_one_generation(monkeypatch):
     import common.ingest.nexrad.worker_pool as worker_pool
 
