@@ -6,8 +6,15 @@ import asyncio
 import inspect
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Callable, Optional
 
+from common.ingest.manifest import (
+    CycleInputManifest,
+    StagedInput,
+    parse_file_analysis_time,
+    staged_input_from_path,
+)
 import common.ingest.mrms.main as mrms_ingest
 from common.ingest.mrms.downloader import (
     DownloadBatchResult,
@@ -15,6 +22,7 @@ from common.ingest.mrms.downloader import (
     download_all_goes_files_async,
 )
 from common.ingest.synoptic.main import download_rap_async
+from common.ingest.synoptic.main import parse_rap_analysis_time
 
 
 LogFunc = Callable[[str], None]
@@ -33,6 +41,7 @@ class CycleState:
     rap_inputs_ready: bool = False
     edgewarn_integration_inputs_ready: bool = False
     edgewarn_generated_file: str | None = None
+    input_manifest: CycleInputManifest | None = None
     errors: dict[str, str] = field(default_factory=dict)
 
 
@@ -46,7 +55,7 @@ async def _safe_ingest(
 ):
     try:
         result = await async_func(*args)
-        if require_result and not result:
+        if require_result and not _explicit_ingest_success(result):
             raise RuntimeError(f"{task_name} ingestion did not return a staged file path")
         log(f"INFO: Async {task_name} ingestion successful")
         return result
@@ -58,13 +67,19 @@ async def _safe_ingest(
             result = sync_fallback(*args)
             if inspect.isawaitable(result):
                 result = await result
-            if require_result and not result:
+            if require_result and not _explicit_ingest_success(result):
                 raise RuntimeError(f"{task_name} sync fallback did not return a staged file path")
             log(f"INFO: Sync fallback for {task_name} successful")
             return result
         except Exception as fallback_exc:
             log(f"ERROR: Both async and sync ingestion failed for {task_name}: {fallback_exc}")
             return None
+
+
+def _explicit_ingest_success(result) -> bool:
+    if isinstance(result, DownloadBatchResult):
+        return result.successful
+    return bool(result)
 
 
 async def _ingest_rap(dt: datetime, log: LogFunc):
@@ -90,8 +105,14 @@ async def _run_rap_uint16_conversion(rap_path, dt: datetime, log: LogFunc) -> bo
         # a default-executor thread across a cycle shutdown.
         results = run_rap_uint16_pipeline(rap_path, dt)
         successful_layers = sum(1 for path in results.values() if path is not None)
-        log(f"INFO: EWMRS RAP Uint16Array conversion completed: {successful_layers}/{len(results)} layers succeeded")
-        return True
+        complete = bool(results) and successful_layers == len(results)
+        level = "INFO" if complete else "WARN"
+        log(
+            f"{level}: EWMRS RAP Uint16Array conversion "
+            f"{'completed' if complete else 'incomplete'}: "
+            f"{successful_layers}/{len(results)} layers succeeded"
+        )
+        return complete
     except Exception as exc:
         log(f"WARN: EWMRS RAP Uint16Array conversion failed: {exc}")
         return False
@@ -113,9 +134,9 @@ async def run_tandem_ingest_cycle(
 ) -> CycleState:
     """Run staged shared ingest and emit readiness transitions.
 
-    The ordering intentionally preserves the low-latency EdgeWARN fast path:
-    detection files become available first, then EWMRS-ready MRMS data, then
-    EdgeWARN integration readiness once RAP and GOES finish.
+    All source tasks finish before the immutable manifest is published. The
+    callbacks still expose readiness in dependency order, but every callback
+    observes the same exact, timestamp-validated input selection.
     """
 
     state = CycleState(timestamp=dt)
@@ -129,6 +150,7 @@ async def run_tandem_ingest_cycle(
             mrms_ingest.download_detection_files,
             dt,
             max_entries,
+            require_result=True,
         )
     )
     mrms_integration_task = asyncio.create_task(
@@ -139,6 +161,7 @@ async def run_tandem_ingest_cycle(
             mrms_ingest.download_integration_files,
             dt,
             max_entries,
+            require_result=True,
         )
     )
     goes_task = None
@@ -152,6 +175,7 @@ async def run_tandem_ingest_cycle(
                 dt,
                 max_entries,
                 3,
+                require_result=True,
             )
         )
     rap_task = (
@@ -162,16 +186,73 @@ async def run_tandem_ingest_cycle(
         else None
     )
 
-    detection_result = await detection_task
-    detection_ok = _batch_succeeded(detection_result)
+    detection_result, integration_result = await asyncio.gather(
+        detection_task,
+        mrms_integration_task,
+    )
+    rap_path, rap_error = await rap_task if rap_task is not None else (None, None)
+    goes_result = await goes_task if goes_task is not None else None
+
+    records = [
+        *_batch_records(detection_result),
+        *_batch_records(integration_result),
+    ]
+    records.extend(_previous_detection_records(_batch_records(detection_result)))
+
+    if rap_path:
+        rap_analysis_time = parse_rap_analysis_time(Path(rap_path))
+        if rap_analysis_time is None:
+            state.errors["rap_ingest"] = (
+                f"Could not parse RAP analysis timestamp from {rap_path}"
+            )
+        else:
+            records.append(
+                staged_input_from_path(
+                    "RAP",
+                    rap_path,
+                    source="synoptic",
+                    family="rap",
+                    analysis_time=rap_analysis_time,
+                )
+            )
+
+    if goes_result is not None:
+        records.extend(_batch_records(goes_result))
+
+    state.input_manifest = CycleInputManifest(
+        cycle_time=dt,
+        inputs=tuple(records),
+    )
+    alignment_errors = state.input_manifest.validate_alignment()
+    if alignment_errors:
+        state.errors["input_manifest"] = "; ".join(alignment_errors)
+    else:
+        log(
+            "INFO: Cycle input manifest validated: "
+            + ", ".join(
+                f"{record.product}={record.path}@{record.analysis_time.isoformat()}"
+                for record in state.input_manifest.inputs
+            )
+        )
+
+    detection_ok = _batch_succeeded(detection_result) and not _manifest_family_errors(
+        alignment_errors,
+        "mrms",
+        _batch_records(detection_result),
+    )
     state.detection_inputs_ready = detection_ok
     if not detection_ok:
         state.errors["detection_ingest"] = "Detection inputs unavailable"
     if on_detection_ready is not None:
         on_detection_ready(state)
 
-    integration_result = await mrms_integration_task
-    mrms_integration_ok = _batch_succeeded(integration_result)
+    mrms_integration_ok = _batch_succeeded(
+        integration_result
+    ) and not _manifest_family_errors(
+        alignment_errors,
+        "mrms",
+        _batch_records(integration_result),
+    )
     state.mrms_integration_inputs_ready = mrms_integration_ok
     if not mrms_integration_ok:
         state.errors["mrms_integration_ingest"] = "MRMS integration inputs unavailable"
@@ -187,8 +268,11 @@ async def run_tandem_ingest_cycle(
 
     # RAP is a source input; publish integration's non-GLM prerequisites before
     # the optional Uint16 conversion below.
-    rap_path, rap_error = await rap_task if rap_task is not None else (None, None)
-    rap_ok = bool(rap_path) if include_rap else True
+    rap_ok = (
+        bool(rap_path)
+        and "rap_ingest" not in state.errors
+        and not _manifest_family_errors(alignment_errors, "rap")
+    ) if include_rap else True
     state.rap_inputs_ready = rap_ok
 
     if include_rap and not rap_ok:
@@ -198,14 +282,16 @@ async def run_tandem_ingest_cycle(
         on_base_integration_ready(state)
 
     if goes_task is not None:
-        # GOES wrappers historically return ``None`` on success, whereas a
-        # false value is the explicit failure signal from ``_safe_ingest``.
-        goes_ok = (await goes_task) is not False
+        goes_ok = _batch_succeeded(goes_result) and not _manifest_family_errors(
+            alignment_errors,
+            "goes",
+            _batch_records(goes_result),
+        )
     else:
-        goes_ok = False
+        goes_ok = True
         log("INFO: GOES ingest is decoupled from this cycle; integration readiness does not wait for GOES availability")
 
-    if not goes_ok:
+    if include_goes and not goes_ok:
         state.errors["goes_ingest"] = "GOES inputs unavailable"
 
     # This derived EWMRS artifact intentionally starts only after the raw-RAP
@@ -213,8 +299,13 @@ async def run_tandem_ingest_cycle(
     if rap_ok and include_ewmrs and not await _run_rap_uint16_conversion(rap_path, dt, log):
         state.errors["ewmrs_rap_uint16"] = "EWMRS RAP Uint16Array conversion failed"
 
-    state.ewmrs_goes_inputs_ready = include_ewmrs and state.ewmrs_mrms_inputs_ready and goes_ok
-    if include_ewmrs and not state.ewmrs_goes_inputs_ready:
+    state.ewmrs_goes_inputs_ready = (
+        include_ewmrs
+        and include_goes
+        and state.ewmrs_mrms_inputs_ready
+        and goes_ok
+    )
+    if include_ewmrs and include_goes and not state.ewmrs_goes_inputs_ready:
         state.errors.setdefault(
             "ewmrs_goes_ingest",
             "EWMRS GOES inputs unavailable",
@@ -223,7 +314,8 @@ async def run_tandem_ingest_cycle(
         on_ewmrs_goes_ready(state)
 
     state.edgewarn_integration_inputs_ready = (
-        state.edgewarn_integration_inputs_ready and goes_ok
+        state.edgewarn_integration_inputs_ready
+        and (goes_ok or not include_goes)
     )
     if not state.edgewarn_integration_inputs_ready:
         state.errors.setdefault(
@@ -240,9 +332,68 @@ async def run_tandem_ingest_cycle(
 def _batch_succeeded(result) -> bool:
     """A phase batch is ready only when every requested MRMS product staged.
 
-    ``None`` remains accepted for legacy/custom ingest implementations that
-    predate batch results; production wrappers return ``DownloadBatchResult``.
+    Production ingest must return an explicit structured batch result.
     """
     if isinstance(result, DownloadBatchResult):
-        return bool(result.attempted) and not result.failed and set(result.downloaded) == set(result.attempted)
-    return result is None or bool(result)
+        return result.successful
+    return False
+
+
+def _batch_records(result) -> tuple[StagedInput, ...]:
+    if not isinstance(result, DownloadBatchResult):
+        return ()
+    return tuple(
+        record
+        for record in result.downloaded
+        if isinstance(record, StagedInput)
+    )
+
+
+def _previous_detection_records(
+    current_records: tuple[StagedInput, ...],
+) -> tuple[StagedInput, ...]:
+    """Pin one prior encoded-time file for each detection product."""
+    previous = []
+    for current in current_records:
+        candidates = []
+        try:
+            for path in current.local_path.parent.iterdir():
+                if not path.is_file() or path == current.local_path:
+                    continue
+                analysis_time = parse_file_analysis_time(path)
+                if analysis_time is None or analysis_time >= current.analysis_time:
+                    continue
+                candidates.append((analysis_time, path))
+        except OSError:
+            continue
+
+        if not candidates:
+            continue
+        analysis_time, path = max(candidates, key=lambda item: item[0])
+        previous.append(
+            staged_input_from_path(
+                current.product,
+                path,
+                source="local-history",
+                family=current.family,
+                analysis_time=analysis_time,
+                role="previous",
+            )
+        )
+    return tuple(previous)
+
+
+def _manifest_family_errors(
+    errors: tuple[str, ...],
+    family: str,
+    records: tuple[StagedInput, ...] = (),
+) -> bool:
+    if not errors:
+        return False
+    products = {record.product for record in records}
+    if products:
+        return any(error.split(":", 1)[0] in products for error in errors)
+    family_products = {
+        "rap": {"RAP"},
+    }.get(family, set())
+    return any(error.split(":", 1)[0] in family_products for error in errors)

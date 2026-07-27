@@ -25,10 +25,6 @@ import numpy as np
 import pytest
 
 
-PHASE_2 = pytest.mark.xfail(
-    strict=True,
-    reason="Phase 2: explicit GOES result semantics are not implemented",
-)
 PHASE_3 = pytest.mark.xfail(
     strict=True,
     reason="Phase 3: transactional ingest/publication is not implemented",
@@ -636,11 +632,13 @@ def test_binary_reader_never_observes_partial_nexrad_artifact(monkeypatch, tmp_p
     assert observations == [old_payload] * len(observations)
 
 
-@PHASE_2
 def test_default_goes_coordinator_keeps_readiness_false_when_both_paths_throw(
     monkeypatch,
+    tmp_path,
 ):
     from common.pipeline import coordinator
+    from common.ingest.manifest import staged_input_from_path
+    from common.ingest.mrms.downloader import DownloadBatchResult
 
     async def async_failure(*_args, **_kwargs):
         raise RuntimeError("async GOES failure")
@@ -648,11 +646,24 @@ def test_default_goes_coordinator_keeps_readiness_false_when_both_paths_throw(
     def sync_failure(*_args, **_kwargs):
         raise RuntimeError("sync GOES failure")
 
-    async def legacy_success(*_args, **_kwargs):
-        return None
+    async def structured_success(dt, *_args, **_kwargs):
+        path = tmp_path / f"MRMS_Test_{dt:%Y%m%d-%H%M%S}.grib2"
+        path.write_bytes(b"data")
+        return DownloadBatchResult(
+            attempted=("Test",),
+            downloaded=(
+                staged_input_from_path(
+                    "Test",
+                    path,
+                    source="test",
+                    family="mrms",
+                ),
+            ),
+            failed=(),
+        )
 
-    monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files_async", legacy_success)
-    monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", legacy_success)
+    monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files_async", structured_success)
+    monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", structured_success)
     monkeypatch.setattr(coordinator, "download_all_goes_files_async", async_failure)
     monkeypatch.setattr(coordinator, "download_all_goes_files", sync_failure)
 

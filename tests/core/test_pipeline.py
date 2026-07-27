@@ -4,6 +4,21 @@ from types import SimpleNamespace
 import pytest
 
 from EdgeWARN import pipeline
+from common.ingest.manifest import CycleInputManifest
+
+
+def _manifest(timestamp=None):
+    return CycleInputManifest(
+        cycle_time=timestamp
+        or pipeline.datetime(
+            2026,
+            7,
+            26,
+            18,
+            0,
+            tzinfo=pipeline.timezone.utc,
+        )
+    )
 
 
 def test_historical_cleanup_skips_cells_and_stormcells(tmp_path):
@@ -44,8 +59,21 @@ def test_historical_pipeline_preserves_cell_and_stormcell_dirs(tmp_path):
     with patch.object(pipeline, "_cleanup_historical_data_dirs"), \
          patch.object(
              pipeline,
-             "run_tandem_ingest_cycle",
-             return_value=SimpleNamespace(detection_inputs_ready=True, errors={}),
+            "run_tandem_ingest_cycle",
+            return_value=SimpleNamespace(
+                detection_inputs_ready=True,
+                errors={},
+                input_manifest=_manifest(
+                    pipeline.datetime(
+                        2024,
+                        1,
+                        1,
+                        12,
+                        0,
+                        tzinfo=pipeline.timezone.utc,
+                    )
+                ),
+            ),
          ) as mock_ingest, \
          patch.object(pipeline, "run_edgewarn_detection_phase", return_value=generated_path) as mock_detect, \
          patch.object(pipeline, "run_edgewarn_integration_phase", return_value=True) as mock_integrate:
@@ -70,8 +98,18 @@ def test_historical_pipeline_reports_incomplete_when_staged_inputs_are_missing(t
              pipeline,
              "run_tandem_ingest_cycle",
              return_value=SimpleNamespace(
-                 detection_inputs_ready=True,
-                 errors={"rap_ingest": "RAP inputs unavailable"},
+                detection_inputs_ready=True,
+                errors={"rap_ingest": "RAP inputs unavailable"},
+                input_manifest=_manifest(
+                    pipeline.datetime(
+                        2024,
+                        1,
+                        1,
+                        12,
+                        0,
+                        tzinfo=pipeline.timezone.utc,
+                    )
+                ),
              ),
          ), \
          patch.object(pipeline, "run_edgewarn_detection_phase", return_value=generated_path), \
@@ -134,6 +172,7 @@ def test_edgewarn_worker_publishes_completed_artifact(monkeypatch, tmp_path):
     shared_state = {
         "detection_inputs_ready": True,
         "edgewarn_integration_inputs_ready": True,
+        "input_manifest": _manifest().as_dict(),
     }
     monkeypatch.setattr(
         pipeline,
@@ -161,6 +200,7 @@ def test_edgewarn_worker_exception_publishes_failed_state(monkeypatch):
     shared_state = {
         "detection_inputs_ready": True,
         "edgewarn_integration_inputs_ready": True,
+        "input_manifest": _manifest().as_dict(),
     }
     monkeypatch.setattr(
         pipeline,

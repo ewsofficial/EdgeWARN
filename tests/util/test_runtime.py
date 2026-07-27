@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from common.ingest.manifest import CycleInputManifest
 from util.runtime import (
     CycleOutcome,
     CycleRetryPolicy,
@@ -153,6 +154,20 @@ def test_cycle_retry_policy_is_bounded():
     )
 
     assert [policy.delay_after(attempt) for attempt in range(1, 5)] == [2, 4, 5, 5]
+
+
+def test_cycle_outcome_includes_input_manifest_metadata():
+    timestamp = datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc)
+    outcome = CycleOutcome(
+        timestamp=timestamp,
+        stages={
+            "ingest": CycleStageResult(CycleStatus.COMPLETED),
+        },
+        retryable=False,
+        input_manifest=CycleInputManifest(cycle_time=timestamp),
+    )
+
+    assert outcome.as_dict()["input_manifest"]["cycle_time"] == timestamp.isoformat()
 
 
 def test_nonzero_worker_exit_overrides_published_completion():

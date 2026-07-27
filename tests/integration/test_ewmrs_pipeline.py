@@ -3,6 +3,8 @@ import os
 from datetime import datetime, timezone
 
 import EWMRS.pipeline as ewmrs_pipeline
+from common.ingest.manifest import CycleInputManifest
+from common.ingest.manifest import staged_input_from_path
 from EWMRS.render.config import get_goes_rgb_file_list
 
 
@@ -50,6 +52,10 @@ class _FakeEvent:
         self.wait_calls += 1
 
 
+def _manifest(dt):
+    return CycleInputManifest(cycle_time=dt)
+
+
 def test_run_render_pipeline_collects_layer_results(monkeypatch):
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
     created = {}
@@ -80,6 +86,68 @@ def test_run_render_pipeline_collects_layer_results(monkeypatch):
     assert cleanup_calls == [120]
 
 
+def test_run_render_pipeline_binds_manifest_path_before_worker_submit(
+    monkeypatch,
+    tmp_path,
+):
+    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    pinned = source_dir / "MRMS_Test_20260317-200000.grib2"
+    newer = source_dir / "MRMS_Test_20260317-200200.grib2"
+    pinned.write_bytes(b"pinned")
+    newer.write_bytes(b"newer")
+    manifest = CycleInputManifest(
+        cycle_time=dt,
+        inputs=(
+            staged_input_from_path(
+                "Test",
+                pinned,
+                source="test",
+                family="mrms",
+            ),
+        ),
+    )
+    submitted = []
+
+    monkeypatch.setattr(
+        ewmrs_pipeline,
+        "_render_layer",
+        lambda layer: submitted.append(layer) or (layer["name"], ["tile.png"]),
+    )
+    monkeypatch.setattr(
+        "concurrent.futures.ProcessPoolExecutor",
+        lambda max_workers, initializer=None: _FakeExecutor(
+            max_workers=max_workers,
+            initializer=initializer,
+        ),
+    )
+    monkeypatch.setattr(
+        "concurrent.futures.as_completed",
+        lambda futures: list(futures),
+    )
+    monkeypatch.setattr(
+        ewmrs_pipeline,
+        "cleanup_old_gui_files",
+        lambda **_kwargs: None,
+    )
+
+    ewmrs_pipeline.run_render_pipeline(
+        dt,
+        layers=[
+            {
+                "name": "Test",
+                "filepath": source_dir,
+                "outdir": tmp_path / "gui",
+            }
+        ],
+        input_manifest=manifest,
+    )
+
+    assert submitted[0]["input_path"] == str(pinned)
+    assert submitted[0]["input_manifest_bound"] is True
+
+
 def test_run_goes_render_pipeline_is_explicit_no_op_without_layers(monkeypatch):
     monkeypatch.setattr(ewmrs_pipeline, "get_goes_file_list", lambda: [])
 
@@ -98,7 +166,14 @@ def test_run_goes_render_pipeline_processes_configured_layers(monkeypatch):
         lambda: [{"name": "GOES_ABI_C02_Reflectance", "source_type": "goes_abi"}],
     )
 
-    def fake_run_render_pipeline(dt_arg, max_entries=10, layers=None, phase_name="EWMRS", cleanup_after=True):
+    def fake_run_render_pipeline(
+        dt_arg,
+        max_entries=10,
+        layers=None,
+        phase_name="EWMRS",
+        cleanup_after=True,
+        input_manifest=None,
+    ):
         captured["dt"] = dt_arg
         captured["max_entries"] = max_entries
         captured["layers"] = list(layers or [])
@@ -133,7 +208,7 @@ def test_run_goes_render_pipeline_writes_all_rgb_products(monkeypatch, tmp_path)
     monkeypatch.setattr(ewmrs_pipeline, "cleanup_old_gui_files", lambda max_age_minutes: cleanup_calls.append(max_age_minutes))
     monkeypatch.setattr(
         "EWMRS.render.goes_rgb.prepare_goes_rgb_batch",
-        lambda layers, max_offset_minutes=20.0, requested_timestamp=None: {
+        lambda layers, max_offset_minutes=20.0, requested_timestamp=None, pinned_files_by_channel=None: {
             "timestamp_iso": timestamp_iso,
             "recipes": [
                 {
@@ -478,9 +553,11 @@ def test_render_pending_nexrad_gui_files_renders_all_fresh_source_timestamps(mon
 def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monkeypatch):
     queue = _FakeQueue()
     mrms_ready_event = _FakeEvent()
+    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
     shared_state = {
         "ewmrs_mrms_inputs_ready": True,
         "ewmrs_goes_inputs_ready": False,
+        "input_manifest": _manifest(dt).as_dict(),
     }
     mrms_calls = []
     goes_calls = []
@@ -500,7 +577,7 @@ def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monke
         queue,
         shared_state,
         mrms_ready_event,
-        datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc),
+        dt,
     )
 
     assert mrms_ready_event.wait_calls == 1
@@ -543,17 +620,21 @@ def test_ewmrs_tandem_worker_skips_mrms_when_inputs_not_ready(monkeypatch):
 def test_ewmrs_tandem_worker_runs_only_mrms_phase_when_inputs_ready(monkeypatch):
     queue = _FakeQueue()
     mrms_ready_event = _FakeEvent()
-    shared_state = {"ewmrs_mrms_inputs_ready": True, "ewmrs_goes_inputs_ready": True}
+    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
+    shared_state = {
+        "ewmrs_mrms_inputs_ready": True,
+        "ewmrs_goes_inputs_ready": True,
+        "input_manifest": _manifest(dt).as_dict(),
+    }
     captured = {}
 
-    def fake_run_mrms_render_pipeline(dt, max_entries=10):
+    def fake_run_mrms_render_pipeline(dt, max_entries=10, input_manifest=None):
         captured["mrms_dt"] = dt
         captured["mrms_max_entries"] = max_entries
         return {"LayerOne": ["LayerOne.png"], "LayerTwo": None}
 
     monkeypatch.setattr(ewmrs_pipeline, "run_mrms_render_pipeline", fake_run_mrms_render_pipeline)
 
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
     ewmrs_pipeline.ewmrs_tandem_worker(queue, shared_state, mrms_ready_event, dt, max_entries=3)
 
     assert mrms_ready_event.wait_calls == 1
@@ -573,7 +654,7 @@ def test_ewmrs_goes_worker_runs_goes_phase(monkeypatch):
     queue = _FakeQueue()
     captured = {}
 
-    def fake_run_goes_render_pipeline(dt, max_entries=10):
+    def fake_run_goes_render_pipeline(dt, max_entries=10, input_manifest=None):
         captured["goes_dt"] = dt
         captured["goes_max_entries"] = max_entries
         return {}
@@ -581,7 +662,12 @@ def test_ewmrs_goes_worker_runs_goes_phase(monkeypatch):
     monkeypatch.setattr(ewmrs_pipeline, "run_goes_render_pipeline", fake_run_goes_render_pipeline)
 
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    ewmrs_pipeline.ewmrs_goes_worker(queue, dt, max_entries=3)
+    ewmrs_pipeline.ewmrs_goes_worker(
+        queue,
+        dt,
+        max_entries=3,
+        input_manifest=_manifest(dt),
+    )
 
     assert captured == {
         "goes_dt": dt,
