@@ -9,16 +9,16 @@ from pathlib import Path
 import queue
 import time
 
+from common.ingest.manifest import CycleInputManifest
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.pipeline import edgewarn_tandem_worker
 from EWMRS.pipeline import ewmrs_tandem_worker
 
 from .goes import (
-    check_local_glm_ready,
-    check_local_goes_ready,
+    collect_local_goes_inputs,
     download_glm_for_scan,
     get_ewmrs_goes_render_specs,
-    wait_for_local_goes_ready,
+    wait_for_local_goes_inputs,
 )
 from .logging import drain_log_queue, queue_log
 from .processes import StartedProcessRegistry
@@ -75,6 +75,7 @@ class CycleOutcome:
     timestamp: datetime
     stages: dict[str, CycleStageResult]
     retryable: bool
+    input_manifest: CycleInputManifest | None = None
 
     @property
     def completed(self) -> bool:
@@ -107,6 +108,11 @@ class CycleOutcome:
             "produced_artifacts": list(self.produced_artifacts),
             "errors": list(self.errors),
             "worker_exit_status": self.worker_exit_status,
+            "input_manifest": (
+                self.input_manifest.as_dict()
+                if self.input_manifest is not None
+                else None
+            ),
             "stages": {
                 stage_name: stage.as_dict()
                 for stage_name, stage in self.stages.items()
@@ -327,6 +333,7 @@ def run_tandem_cycle_once(
         "ewmrs_goes_inputs_ready": False,
         "edgewarn_integration_inputs_ready": False,
         "edgewarn_generated_file": "",
+        "input_manifest": {},
         "edgewarn_stage": {
             "status": "pending",
             "produced_artifacts": [],
@@ -380,6 +387,8 @@ def run_tandem_cycle_once(
         """Write the complete snapshot before waking a worker."""
         shared_state["detection_inputs_ready"] = state.detection_inputs_ready
         shared_state["ewmrs_mrms_inputs_ready"] = state.ewmrs_mrms_inputs_ready
+        if state.input_manifest is not None:
+            shared_state["input_manifest"] = state.input_manifest.as_dict()
         if integration:
             shared_state["edgewarn_integration_inputs_ready"] = state.edgewarn_integration_inputs_ready
         shared_state["errors"] = dict(state.errors)
@@ -407,15 +416,25 @@ def run_tandem_cycle_once(
                 glm_task = asyncio.create_task(asyncio.to_thread(download_glm_for_scan, dt))
             base_ready = False
             glm_ready = not config.goes_enabled
+            glm_records = ()
 
             def publish_integration_if_ready():
                 if base_ready and glm_ready:
+                    if glm_records:
+                        base_manifest = CycleInputManifest.from_dict(
+                            shared_state.get("input_manifest")
+                        ) or CycleInputManifest(cycle_time=dt)
+                        shared_state["input_manifest"] = base_manifest.with_inputs(
+                            glm_records
+                        ).as_dict()
                     shared_state["edgewarn_integration_inputs_ready"] = True
                     release(integration_ready_event, "integration_released", "ready")
 
             def base_integration_ready(state):
                 nonlocal base_ready
                 base_ready = state.edgewarn_integration_inputs_ready
+                if state.input_manifest is not None:
+                    shared_state["input_manifest"] = state.input_manifest.as_dict()
                 shared_state["errors"] = dict(state.errors)
                 publish_integration_if_ready()
 
@@ -429,8 +448,15 @@ def run_tandem_cycle_once(
             ))
             if glm_task is not None:
                 try:
-                    glm_results = await glm_task
-                    glm_ready, glm_path = check_local_glm_ready(dt)
+                    glm_results = tuple(await glm_task)
+                    glm_records = glm_results
+                    glm_manifest = CycleInputManifest(
+                        cycle_time=dt,
+                        inputs=glm_results,
+                    )
+                    glm_errors = glm_manifest.validate_alignment()
+                    glm_ready = bool(glm_results) and not glm_errors
+                    glm_path = glm_results[-1].path if glm_ready else None
                     queue_log(log_queue, (
                         f"INFO: Scan-time GLM ingest satisfied by {len(glm_results)} file(s)"
                         if glm_results else f"INFO: Scan-time GLM ingest found no files for {dt.isoformat()}"
@@ -438,7 +464,8 @@ def run_tandem_cycle_once(
                     if glm_ready:
                         queue_log(log_queue, f"INFO: Local GLM readiness satisfied by {glm_path}")
                     else:
-                        queue_log(log_queue, f"INFO: No local GLM files staged at or after {dt.isoformat()}")
+                        detail = "; ".join(glm_errors) if glm_errors else "no staged file"
+                        queue_log(log_queue, f"INFO: No valid pinned GLM input for {dt.isoformat()}: {detail}")
                 except Exception as exc:
                     queue_log(log_queue, f"WARN: Scan-time GLM ingest failed for {dt.isoformat()}: {exc}")
                     glm_ready = False
@@ -474,25 +501,42 @@ def run_tandem_cycle_once(
 
     goes_ready = False
     goes_path = None
+    goes_manifest = None
     try:
         if config.ewmrs_enabled and config.goes_enabled:
-            goes_ready, goes_path = check_local_goes_ready(dt, specs=goes_specs)
-            if goes_ready and goes_cycle_active_event.is_set():
-                goes_ready = False
-                goes_path = None
+            goes_inputs = collect_local_goes_inputs(dt, specs=goes_specs)
+            goes_manifest = CycleInputManifest(
+                cycle_time=dt,
+                inputs=goes_inputs,
+            )
+            goes_ready = (
+                len(goes_inputs) == len(goes_specs)
+                and not goes_manifest.validate_alignment()
+                and not goes_cycle_active_event.is_set()
+            )
+            goes_path = goes_inputs[0].path if goes_ready else None
 
             if not goes_ready:
                 queue_log(
                     log_queue,
                     f"INFO: Waiting for background GOES ABI ingest cycle to fully stage render inputs for {dt.isoformat()}",
                 )
-                goes_ready, goes_path = wait_for_local_goes_ready(
+                goes_inputs = wait_for_local_goes_inputs(
                     dt,
                     specs=goes_specs,
                     timeout_seconds=config.goes_render_wait_seconds,
                     interval_seconds=config.goes_render_wait_interval_seconds,
                     activity_event=goes_cycle_active_event,
                 )
+                goes_manifest = CycleInputManifest(
+                    cycle_time=dt,
+                    inputs=goes_inputs,
+                )
+                goes_ready = (
+                    len(goes_inputs) == len(goes_specs)
+                    and not goes_manifest.validate_alignment()
+                )
+                goes_path = goes_inputs[0].path if goes_ready else None
 
             if not goes_ready:
                 queue_log(
@@ -500,7 +544,17 @@ def run_tandem_cycle_once(
                     f"INFO: Background GOES ABI ingest did not finish staging the full render input set for {dt.isoformat()}; GOES render phase will be skipped",
                 )
             else:
-                queue_log(log_queue, f"INFO: Full GOES ABI render input set is staged; representative file {goes_path}")
+                base_manifest = CycleInputManifest.from_dict(
+                    shared_state.get("input_manifest")
+                ) or CycleInputManifest(cycle_time=dt)
+                shared_state["input_manifest"] = base_manifest.with_inputs(
+                    goes_inputs
+                ).as_dict()
+                queue_log(
+                    log_queue,
+                    "INFO: Full pinned GOES ABI render input set is staged: "
+                    + ", ".join(record.path for record in goes_inputs),
+                )
                 dropped_render_tasks = 0
                 saw_shutdown = False
                 while True:
@@ -514,7 +568,12 @@ def run_tandem_cycle_once(
                         continue
                     dropped_render_tasks += 1
 
-                goes_render_task_queue.put((dt, 10, datetime.now(timezone.utc).isoformat()))
+                goes_render_task_queue.put((
+                    dt,
+                    10,
+                    datetime.now(timezone.utc).isoformat(),
+                    goes_manifest.as_dict(),
+                ))
                 if saw_shutdown:
                     goes_render_task_queue.put(None)
                 if dropped_render_tasks > 0:
@@ -593,7 +652,14 @@ def run_tandem_cycle_once(
         stage.status in {CycleStatus.UNAVAILABLE, CycleStatus.FAILED}
         for stage in stages.values()
     )
-    return CycleOutcome(timestamp=dt, stages=stages, retryable=retryable)
+    return CycleOutcome(
+        timestamp=dt,
+        stages=stages,
+        retryable=retryable,
+        input_manifest=CycleInputManifest.from_dict(
+            shared_state.get("input_manifest")
+        ),
+    )
 
 
 def _stage_result_from_shared(

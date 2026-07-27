@@ -9,6 +9,7 @@ import xarray as xr
 import EdgeWARN.process.detect.main as detect
 import EdgeWARN.process.integrate.main as integration
 import util.file as fs
+from common.ingest.manifest import CycleInputManifest
 from common.ingest.mrms.config import get_goes_modifiers, get_mrms_modifiers
 from common.ingest.mrms.pipeline import get_output_dirs
 from common.pipeline.coordinator import run_tandem_ingest_cycle
@@ -81,7 +82,41 @@ def _cleanup_historical_data_dirs(pipeline_io):
     )
 
 
-def _prepare_realtime_detection_inputs(log):
+def _prepare_realtime_detection_inputs(log, input_manifest=None):
+    if input_manifest is not None:
+        def frame_pair(product):
+            records = input_manifest.records_for_product(product)
+            current = [record for record in records if record.role == "current"]
+            previous = [record for record in records if record.role == "previous"]
+            # The detector's legacy loader accepts string paths.  Keep the
+            # manifest record itself path-safe/immutable, but cross this
+            # boundary explicitly rather than leaking ``Path`` instances
+            # into the loader.
+            current_path = str(current[-1].local_path) if current else None
+            previous_path = str(previous[-1].local_path) if previous else None
+            if previous_path is None:
+                return current_path, None
+            return previous_path, current_path
+
+        radar_old, radar_new = frame_pair(
+            "MergedReflectivityQCComposite_00.50"
+        )
+        ps_old, ps_new = frame_pair("ProbSevere")
+        pt_old, pt_new = frame_pair("PrecipFlag_00.00")
+        selected = (
+            radar_old,
+            radar_new,
+            ps_old,
+            ps_new,
+            pt_old,
+            pt_new,
+        )
+        log(
+            "INFO: Pinned detection inputs: "
+            + ", ".join(str(path) for path in selected if path is not None)
+        )
+        return selected
+
     try:
         filepath_old, filepath_new = fs.latest_files(fs.MRMS_COMPOSITE_DIR, 2)
         ps_old, ps_new = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 2)
@@ -113,10 +148,14 @@ def run_edgewarn_detection_phase(
     refl_threshold=37.5,
     min_seed_percentage=0.001,
     drop_offset=10.0,
+    input_manifest: CycleInputManifest | None = None,
 ):
     """Run only the realtime detection phase using already-ingested local files."""
     try:
-        detection_inputs = _prepare_realtime_detection_inputs(log)
+        detection_inputs = _prepare_realtime_detection_inputs(
+            log,
+            input_manifest,
+        )
     except Exception as exc:
         log(f"ERROR: Failed to prepare detection inputs: {exc}")
         return None
@@ -145,6 +184,7 @@ def run_edgewarn_integration_phase(
     remove_old_cells=True,
     disable_ctam=False,
     mrms_core_only=False,
+    input_manifest: CycleInputManifest | None = None,
 ):
     """Run only the integration phase from an existing detection artifact."""
     if not generated_file:
@@ -156,6 +196,7 @@ def run_edgewarn_integration_phase(
         remove_old_cells=remove_old_cells,
         disable_ctam=disable_ctam,
         mrms_core_only=mrms_core_only,
+        input_manifest=input_manifest,
     )
     return True
 
@@ -206,6 +247,15 @@ def edgewarn_tandem_worker(
             log(f"ERROR: {message}; skipping EdgeWARN pipeline")
             return
 
+        input_manifest = CycleInputManifest.from_dict(
+            shared_state.get("input_manifest")
+        )
+        if input_manifest is None:
+            message = "Cycle input manifest was not published"
+            publish_stage("failed", errors=(message,))
+            log(f"ERROR: {message}")
+            return
+
         perf_tracker.start("Detection")
         generated_file = run_edgewarn_detection_phase(
             log,
@@ -216,6 +266,7 @@ def edgewarn_tandem_worker(
             refl_threshold=refl_threshold,
             min_seed_percentage=min_seed_percentage,
             drop_offset=drop_offset,
+            input_manifest=input_manifest,
         )
         perf_tracker.stop("Detection")
         shared_state["edgewarn_generated_file"] = str(generated_file) if generated_file else ""
@@ -238,12 +289,26 @@ def edgewarn_tandem_worker(
             log(f"ERROR: {message}; skipping integration")
             return
 
+        input_manifest = CycleInputManifest.from_dict(
+            shared_state.get("input_manifest")
+        )
+        if input_manifest is None:
+            message = "Cycle input manifest was unavailable at integration release"
+            publish_stage(
+                "failed",
+                artifacts=(generated_file,),
+                errors=(message,),
+            )
+            log(f"ERROR: {message}")
+            return
+
         perf_tracker.start("Integration")
         integrated = run_edgewarn_integration_phase(
             log,
             shared_state.get("edgewarn_generated_file") or None,
             disable_ctam=disable_ctam,
             mrms_core_only=mrms_core_only,
+            input_manifest=input_manifest,
         )
         perf_tracker.stop("Integration")
         if not integrated or not Path(generated_file).is_file():
@@ -340,6 +405,13 @@ def historical_pipeline(
             perf_tracker.stop("Total Pipeline")
             return None, (None, None, None)
 
+        input_manifest = cycle_state.input_manifest
+        if input_manifest is None:
+            pipeline_io.write_error(
+                "Historical ingest did not publish an input manifest"
+            )
+            return None, (None, None, None)
+
         if "mrms_integration_ingest" in cycle_state.errors or "rap_ingest" in cycle_state.errors:
             pipeline_io.write_warning(
                 "Historical integration inputs are incomplete after staged ingest; "
@@ -359,6 +431,7 @@ def historical_pipeline(
             refl_threshold=refl_threshold,
             min_seed_percentage=min_seed_percentage,
             drop_offset=drop_offset,
+            input_manifest=input_manifest,
         )
         perf_tracker.stop("Detection")
         if not generated_file or not Path(generated_file).is_file():
@@ -381,6 +454,7 @@ def historical_pipeline(
                 generated_file,
                 remove_old_cells=False,
                 disable_ctam=disable_ctam,
+                input_manifest=input_manifest,
             )
             perf_tracker.stop("Integration")
             if not integrated or not Path(generated_file).is_file():

@@ -1,7 +1,9 @@
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from statistics import fmean
 
+from common.ingest.manifest import StagedInput, staged_input_from_path
 from common.ingest.mrms.config import (
     bucket,
     get_goes_modifiers,
@@ -34,8 +36,53 @@ GOES_MAX_ENTRIES = 96
 @dataclass(frozen=True)
 class DownloadBatchResult:
     attempted: tuple[str, ...]
-    downloaded: tuple[str, ...]
+    downloaded: tuple[StagedInput, ...]
     failed: tuple[str, ...]
+
+    def __post_init__(self):
+        invalid = [
+            type(record).__name__
+            for record in self.downloaded
+            if not isinstance(record, StagedInput)
+        ]
+        if invalid:
+            raise TypeError(
+                "DownloadBatchResult.downloaded requires StagedInput records; "
+                f"received {', '.join(invalid)}"
+            )
+
+    @property
+    def downloaded_products(self) -> tuple[str, ...]:
+        return tuple(record.product for record in self.downloaded)
+
+    @property
+    def successful(self) -> bool:
+        return (
+            bool(self.attempted)
+            and not self.failed
+            and set(self.downloaded_products) == set(self.attempted)
+        )
+
+
+def _staged_record(product, path, *, source, family="mrms"):
+    if path is None:
+        return None
+    return staged_input_from_path(
+        product,
+        Path(path),
+        source=source,
+        family=family,
+    )
+
+
+def _goes_staged_records(goes_spec, paths, *, source):
+    spec = normalize_goes_modifier(goes_spec)
+    label = _get_goes_spec_label(spec)
+    return tuple(
+        _staged_record(label, path, source=source, family="goes")
+        for path in (paths or ())
+        if path is not None
+    )
 
 
 def _mrms_modifier_label(modifier):
@@ -185,9 +232,9 @@ async def download_all_files_async_internal(dt, max_entries, target_modifiers=No
             failed = []
             log_per_product = _should_log_per_product_success(len(attempted))
             for task in asyncio.as_completed(tasks):
-                label, ok = await task
-                if ok:
-                    downloaded.append(label)
+                label, record = await task
+                if record is not None:
+                    downloaded.append(record)
                     if log_per_product:
                         io_manager.write_info(f"Downloaded: {label}")
                 else:
@@ -270,6 +317,7 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
             
             # --- HTTPS FALLBACK ---
             downloaded = None
+            staged_path = None
             try:
                 https_finder = HttpsFileFinder(dt, io_manager)
                 https_file_list = await https_finder.find_files(region, modifier)
@@ -277,7 +325,7 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
                 if not https_file_list:
                     io_manager.write_error(f"[{trace_id}] HTTPS Fallback failed: No files found for {modifier} at {dt}")
                     perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
-                    return modifier_name, False
+                    return modifier_name, None
 
                 https_downloader = HttpsFileDownloader(dt, io_manager)
                 download_started_at = asyncio.get_running_loop().time()
@@ -285,9 +333,10 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
                 _record_perf_metric(perf_maps, "download_ms", modifier_name, (asyncio.get_running_loop().time() - download_started_at) * 1000)
                 
                 if downloaded:
-                     if downloaded.suffix == ".gz":
+                    staged_path = downloaded
+                    if downloaded.suffix == ".gz":
                         decompress_started_at = asyncio.get_running_loop().time()
-                        await downloader.async_decompress_file(downloaded)
+                        staged_path = await downloader.async_decompress_file(downloaded)
                         _record_perf_metric(perf_maps, "decompress_ms", modifier_name, (asyncio.get_running_loop().time() - decompress_started_at) * 1000)
                 else:
                     io_manager.write_error(f"[{trace_id}] HTTPS Fallback failed: Could not download matching file for {modifier}")
@@ -296,7 +345,14 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
                 io_manager.write_error(f"[{trace_id}] HTTPS Fallback Exception: {e}")
             
             perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
-            return modifier_name, bool(downloaded)
+            return (
+                modifier_name,
+                _staged_record(
+                    modifier_name,
+                    staged_path,
+                    source="https",
+                ),
+            )
         
         # Download most recent file asynchronously (S3)
         downloaded = None
@@ -306,21 +362,29 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
         perf_tracker.stop(f"Ingest - MRMS - {modifier_name} - Download")
         _record_perf_metric(perf_maps, "download_ms", modifier_name, (asyncio.get_running_loop().time() - download_started_at) * 1000)
             
+        staged_path = downloaded
         if downloaded:
             if downloaded.suffix == ".gz":
                 decompress_started_at = asyncio.get_running_loop().time()
-                await downloader.async_decompress_file(downloaded)
+                staged_path = await downloader.async_decompress_file(downloaded)
                 _record_perf_metric(perf_maps, "decompress_ms", modifier_name, (asyncio.get_running_loop().time() - decompress_started_at) * 1000)
         else:
             io_manager.write_error(f"[{trace_id}] Failed to download {bucket_path} file")
         
         perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
-        return modifier_name, downloaded is not None
+        return (
+            modifier_name,
+            _staged_record(
+                modifier_name,
+                staged_path,
+                source="s3_async",
+            ),
+        )
     
     except Exception as e:
         io_manager.write_error(f"[{trace_id}] Failed to process {bucket_path} - {e}")
         perf_tracker.stop(f"Ingest - MRMS - {modifier_name}")
-        return modifier_name, False
+        return modifier_name, None
 
 def download_files_sync_fallback(dt, max_entries, target_modifiers=None):
     """Sync fallback for a selected MRMS phase (or all products)."""
@@ -339,9 +403,9 @@ def download_files_sync_fallback(dt, max_entries, target_modifiers=None):
         ]
 
         for future in as_completed(futures):
-            label, ok = future.result()
-            if ok:
-                downloaded.append(label)
+            label, record = future.result()
+            if record is not None:
+                downloaded.append(record)
                 if log_per_product:
                     io_manager.write_info(f"Downloaded: {label}")
             else:
@@ -386,20 +450,29 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
 
         if not file_list:
             io_manager.write_warning(f"No files found for {bucket_path} at {dt}")
-            return modifier_name, False
+            return modifier_name, None
         
         # Download most recent file that matches the target minute
         downloaded = downloader.download_matching(file_list, outdir)
-        if downloaded:
-            downloader.decompress_file(downloaded)
+        staged_path = downloaded
+        if downloaded and downloaded.suffix == ".gz":
+            staged_path = downloader.decompress_file(downloaded)
         else:
-            io_manager.write_error(f"Failed to download {bucket_path} file")
-            return modifier_name, False
+            if not downloaded:
+                io_manager.write_error(f"Failed to download {bucket_path} file")
+                return modifier_name, None
     
     except Exception as e:
         io_manager.write_error(f"Failed to process {bucket_path} - {e}")
-        return modifier_name, False
-    return modifier_name, True
+        return modifier_name, None
+    return (
+        modifier_name,
+        _staged_record(
+            modifier_name,
+            staged_path,
+            source="s3_sync",
+        ),
+    )
 
 # ==================== GOES-19 Download Functions ====================
 
@@ -675,7 +748,7 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
     """Download a specific list of GOES-19 products."""
     goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
     if not goes_modifiers_list:
-        return
+        return DownloadBatchResult(attempted=(), downloaded=(), failed=())
 
     io_manager.write_info("Starting GOES-19 downloads...")
     _cleanup_goes_specs_sync(goes_modifiers_list, max_age_minutes=60)
@@ -695,7 +768,7 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
     downloaded = 0
     failed = 0
     with ThreadPoolExecutor(max_workers=len(goes_modifiers_list)) as executor:
-        futures = [
+        futures = {
             executor.submit(
                 download_goes_product,
                 goes_spec,
@@ -705,22 +778,40 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
                 shared_channel_files_by_product.get(goes_spec.product)
                 if goes_spec.channel_id
                 else None,
-            )
+            ): goes_spec
             for goes_spec in goes_modifiers_list
-        ]
+        }
 
+        downloaded_records = []
+        failed_labels = []
         for future in as_completed(futures):
+            goes_spec = futures[future]
+            label = _get_goes_spec_label(goes_spec)
             try:
                 result = future.result()
                 if result:
                     downloaded += 1
+                    downloaded_records.extend(
+                        _goes_staged_records(
+                            goes_spec,
+                            result,
+                            source="s3_sync",
+                        )
+                    )
                 else:
                     failed += 1
+                    failed_labels.append(label)
             except Exception as e:
                 failed += 1
+                failed_labels.append(label)
                 io_manager.write_error(f"GOES download error: {e}")
 
     io_manager.write_info(f"GOES download summary: downloaded={downloaded}, failed={failed}")
+    return DownloadBatchResult(
+        attempted=tuple(_get_goes_spec_label(spec) for spec in goes_modifiers_list),
+        downloaded=tuple(downloaded_records),
+        failed=tuple(failed_labels),
+    )
 
 
 def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
@@ -732,7 +823,12 @@ def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
         max_entries (int): Maximum number of file entries per product (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3)
     """
-    download_goes_specs(get_goes_modifiers(), dt, max_entries=max_entries, hour_lookback=hour_lookback)
+    return download_goes_specs(
+        get_goes_modifiers(),
+        dt,
+        max_entries=max_entries,
+        hour_lookback=hour_lookback,
+    )
 
 
 async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookback=3):
@@ -740,7 +836,7 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
     trace_id = f"GOES_ALL-{uuid.uuid4().hex[:8]}"
     goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
     if not goes_modifiers_list:
-        return
+        return DownloadBatchResult(attempted=(), downloaded=(), failed=())
 
     ensure_aiobotocore_endpoint_compat()
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
@@ -787,19 +883,38 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
 
         downloaded = 0
         failed = 0
-        for result in results:
+        downloaded_records = []
+        failed_labels = []
+        for goes_spec, result in zip(goes_modifiers_list, results):
+            label = _get_goes_spec_label(goes_spec)
             if isinstance(result, Exception):
                 failed += 1
+                failed_labels.append(label)
                 io_manager.write_error(f"[{trace_id}] GOES async download error: {result}")
             elif result:
                 downloaded += 1
+                downloaded_records.extend(
+                    _goes_staged_records(
+                        goes_spec,
+                        result,
+                        source="s3_async",
+                    )
+                )
             else:
                 failed += 1
+                failed_labels.append(label)
 
         io_manager.write_info(
             f"[{trace_id}] GOES download summary: downloaded={downloaded}, failed={failed}"
         )
         _emit_perf_maps(trace_id, perf_maps)
+        return DownloadBatchResult(
+            attempted=tuple(
+                _get_goes_spec_label(spec) for spec in goes_modifiers_list
+            ),
+            downloaded=tuple(downloaded_records),
+            failed=tuple(failed_labels),
+        )
 
 
 async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
@@ -811,4 +926,9 @@ async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
         max_entries (int): Maximum number of file entries per product (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3)
     """
-    await download_goes_specs_async(get_goes_modifiers(), dt, max_entries=max_entries, hour_lookback=hour_lookback)
+    return await download_goes_specs_async(
+        get_goes_modifiers(),
+        dt,
+        max_entries=max_entries,
+        hour_lookback=hour_lookback,
+    )
