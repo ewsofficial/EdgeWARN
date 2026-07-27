@@ -10,6 +10,7 @@ from EdgeWARN import initialize_runtime
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
 from util.runtime import (
+    AccessorySupervisor,
     CycleRetryPolicy,
     CycleStateStore,
     StartedProcessRegistry,
@@ -146,44 +147,61 @@ def main():
     # process and IPC machinery on construction; reusing one across cycles
     # avoids that startup cost every minute.
     manager = multiprocessing.Manager()
-    metar_proc = multiprocessing.Process(target=metar_loop, daemon=True) if METAR_ENABLED else None
-    nws_proc = multiprocessing.Process(target=nws_loop, daemon=True) if NWS_ENABLED else None
-    wpc_proc = multiprocessing.Process(target=wpc_loop, daemon=True) if not MRMS_CORE_ONLY else None
     goes_render_task_queue = multiprocessing.Queue()
     goes_render_log_queue = multiprocessing.Queue()
     nexrad_log_queue = multiprocessing.Queue()
-    goes_render_proc = multiprocessing.Process(
-        target=goes_render_loop,
-        args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
+
+    supervisor = AccessorySupervisor(
+        health_path=str(fs.DATA_DIR / "runtime" / "accessory_health.json"),
+    )
+    supervisor.add(
+        "METAR", metar_loop,
+        enabled=METAR_ENABLED,
         daemon=True,
-    ) if EWMRS_ENABLED and GOES_ENABLED else None
-    nexrad_render_proc = multiprocessing.Process(
-        target=nexrad_render_loop,
-        args=(args.base_dir,),
-        name="NEXRAD-Render",
+    )
+    supervisor.add(
+        "NWS", nws_loop,
+        enabled=NWS_ENABLED,
         daemon=True,
-    ) if EWMRS_ENABLED and NEXRAD_ENABLED else None
-    # NEXRAD ingest uses a ProcessPoolExecutor for parser workers, so this
-    # process must not be daemonic or child worker creation will fail.
-    nexrad_ingest_proc = multiprocessing.Process(
-        target=nexrad_ingest_loop,
-        args=(nexrad_log_queue, args.base_dir),
-        name="NEXRAD-Ingest",
-        daemon=False,
-    ) if EWMRS_ENABLED and NEXRAD_ENABLED else None
-    started_processes = StartedProcessRegistry()
-    started_processes.start(metar_proc, "METAR")
-    started_processes.start(nws_proc, "NWS")
-    started_processes.start(wpc_proc, "WPC")
-    goes_proc = multiprocessing.Process(
-        target=goes_loop,
+    )
+    supervisor.add(
+        "WPC", wpc_loop,
+        enabled=not MRMS_CORE_ONLY,
+        daemon=True,
+    )
+    supervisor.add(
+        "GOES", goes_loop,
+        enabled=GOES_ENABLED,
         args=(GOES_CYCLE_ACTIVE, GOES_RENDER_ACTIVE, GOES_PAUSE_INGEST_DURING_RENDER, GOES_POLL_SECONDS),
         daemon=True,
-    ) if GOES_ENABLED else None
-    started_processes.start(goes_proc, "GOES")
-    started_processes.start(goes_render_proc, "GOES Render")
-    started_processes.start(nexrad_render_proc, "NEXRAD Render")
-    started_processes.start(nexrad_ingest_proc, "NEXRAD Ingest")
+        cleanup_event=GOES_CYCLE_ACTIVE,
+    )
+    supervisor.add(
+        "GOES Render", goes_render_loop,
+        enabled=bool(EWMRS_ENABLED and GOES_ENABLED),
+        args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
+        daemon=True,
+    )
+    supervisor.add(
+        "NEXRAD Render", nexrad_render_loop,
+        enabled=bool(EWMRS_ENABLED and NEXRAD_ENABLED),
+        args=(args.base_dir,),
+        daemon=True,
+    )
+    supervisor.add(
+        "NEXRAD Ingest", nexrad_ingest_loop,
+        enabled=bool(EWMRS_ENABLED and NEXRAD_ENABLED),
+        args=(nexrad_log_queue, args.base_dir),
+        daemon=False,
+    )
+    supervisor.start_all()
+
+    started_processes = StartedProcessRegistry()
+    started_processes.processes = [
+        (info["process"], info["name"])
+        for info in supervisor._process_info
+        if info["process"] is not None
+    ]
 
     try:
         while True:
@@ -303,14 +321,17 @@ def main():
                          f"selection cursor {selection_cursor}. Waiting..."
                      )
 
-            # Wait/Check loop (15 seconds)
+            # Wait/Check loop (15 seconds) — also monitor accessory processes
             for _ in range(30):
                 time.sleep(0.5)
+                supervisor.check()
 
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")
     finally:
+        supervisor.request_stop()
         started_processes.shutdown(queue_sentinels=[(goes_render_task_queue, None)], manager=manager)
+        supervisor.shutdown()
         drain_log_queue(nexrad_log_queue)
 
 if __name__ == "__main__":

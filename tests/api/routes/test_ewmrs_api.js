@@ -415,6 +415,13 @@ describe('GET /renders/tile', () => {
         expect(res.body.error).toContain('integers');
     });
 
+    it('returns 400 for numeric string with trailing junk like "0junk"', async () => {
+        const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000&x=0junk&y=0').expect(400);
+        expect(res.body.error).toContain('integers');
+    });
+
+
+
     it('returns 400 for out-of-bounds x', async () => {
         const res = await request(app).get('/renders/tile?product=CompRefQC&timestamp=20260317-200000&x=100&y=0').expect(400);
         expect(res.body.error).toContain('out of bounds');

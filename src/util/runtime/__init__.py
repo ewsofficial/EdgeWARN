@@ -18,11 +18,11 @@ from .cycle import (
     run_tandem_cycle_once,
 )
 from .logging import drain_log_queue
-from .processes import StartedProcessRegistry, stop_process
+from .processes import AccessorySupervisor, StartedProcessRegistry, stop_process
 from .scheduler import load_last_processed_from_stormcells
 
 __all__ = [
-    "StartedProcessRegistry",
+    "AccessorySupervisor",
     "CycleOutcome",
     "CycleRetryPolicy",
     "CycleStageResult",
@@ -30,6 +30,7 @@ __all__ = [
     "CycleStatus",
     "PersistedCycleState",
     "TandemCycleConfig",
+    "StartedProcessRegistry",
     "drain_log_queue",
     "goes_loop",
     "goes_render_loop",

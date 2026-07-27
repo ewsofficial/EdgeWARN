@@ -57,6 +57,10 @@ function isSingleSegmentString(value) {
     !value.includes('..') && !value.includes('/') && !value.includes('\\');
 }
 
+function isExactIntegerString(value) {
+  return typeof value === 'string' && /^-?[0-9]+$/.test(value);
+}
+
 function readRequiredQueryString(value) {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
@@ -343,12 +347,12 @@ router.get('/tile', async (req, res) => {
       });
     }
 
-    // 4. Validate x, y are integers
-    const xInt = parseInt(x, 10);
-    const yInt = parseInt(y, 10);
-    if (isNaN(xInt) || isNaN(yInt)) {
+    // 4. Validate x, y are exact integer strings (reject "0junk", "-0", etc.)
+    if (!isExactIntegerString(x) || !isExactIntegerString(y)) {
       return res.status(400).json({ error: 'x and y must be integers' });
     }
+    const xInt = parseInt(x, 10);
+    const yInt = parseInt(y, 10);
 
     // 5. Bounds check
     if (xInt < 0 || xInt >= gridInfo.cols || yInt < 0 || yInt >= gridInfo.rows) {

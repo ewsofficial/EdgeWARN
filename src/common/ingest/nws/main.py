@@ -109,28 +109,19 @@ def download_alerts(dt: datetime):
 
     req = urllib.request.Request(url, headers=headers)
 
+    temp_path = None
     try:
         with urllib.request.urlopen(req) as response:
-            # Buffer to temp file for processing
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
                 tmp.write(response.read())
                 temp_path = tmp.name
-        
-        # Process with registry
+
         current_time = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
         new_count, updated_count, seen_ids = _process_nws_file_with_registry(temp_path, registry, current_time)
 
-        # Reconcile registry to exact upstream active ID set from this successful pull
         reconciled_removed_count = registry.reconcile_with_active_ids(seen_ids, current_time)
-        
-        # Cleanup expired alerts
         removed_count = registry.cleanup_expired(current_time)
-        
-        # Save registry
         registry.save()
-        
-        # Cleanup temp file
-        os.remove(temp_path)
 
         total_active = registry.alert_count
         io_manager.write_info(
@@ -143,6 +134,12 @@ def download_alerts(dt: datetime):
     except Exception as e:
         io_manager.write_error(f"Failed to download/process NWS alerts: {e}")
         raise e
+    finally:
+        if temp_path is not None:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 
 async def download_alerts_async(dt: datetime):
@@ -174,8 +171,8 @@ async def download_alerts_async(dt: datetime):
         "Accept": "application/geo+json"
     }
 
+    temp_path = None
     try:
-        # 1. Download to temporary file
         fd, temp_path = tempfile.mkstemp()
         os.close(fd)
 
@@ -185,32 +182,22 @@ async def download_alerts_async(dt: datetime):
                 with open(temp_path, 'wb') as f:
                     async for chunk in response.content.iter_chunked(8192):
                         f.write(chunk)
-        
-        # 2. Process the temp file with registry
+
         current_time = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-        
-        # Run in executor to avoid blocking main loop
+
         loop = asyncio.get_running_loop()
         new_count, updated_count, seen_ids = await loop.run_in_executor(
-            None, 
-            _process_nws_file_with_registry, 
-            temp_path, 
-            registry, 
-            current_time
+            None,
+            _process_nws_file_with_registry,
+            temp_path,
+            registry,
+            current_time,
         )
 
-        # Reconcile registry to exact upstream active ID set from this successful pull
         reconciled_removed_count = registry.reconcile_with_active_ids(seen_ids, current_time)
-        
-        # 3. Cleanup expired alerts
         removed_count = registry.cleanup_expired(current_time)
-        
-        # 4. Save registry
         registry.save()
-        
-        # 5. Cleanup temp file
-        os.remove(temp_path)
-        
+
         total_active = registry.alert_count
         io_manager.write_info(
             "Registry updated (async): "
@@ -222,6 +209,12 @@ async def download_alerts_async(dt: datetime):
     except Exception as e:
         io_manager.write_error(f"Failed to download/process NWS alerts (async): {e}")
         raise e
+    finally:
+        if temp_path is not None:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 
 def _process_nws_file_with_registry(
