@@ -5,6 +5,11 @@ scipy, pandas, dask, netcdf4, botocore) until parse_and_export() actually
 needs them. This reduces the baseline RSS of idle workers from ~180-190 MB
 to ~120-150 MB while still benefiting from CoW for active workers.
 
+Global state (_POOL, _POOL_SIZE, _VOLUME_COUNT) is protected by a lifecycle
+lock.  Pool generations allow a timeout or crash to retire only the affected
+generation without disrupting concurrent submissions that already hold a
+reference to a previous generation.
+
 Usage:
     from common.ingest.nexrad.worker_pool import get_nexrad_pool
 
@@ -20,6 +25,7 @@ import ctypes
 import multiprocessing
 import os
 import signal
+import threading
 from concurrent.futures import ProcessPoolExecutor, Future
 from pathlib import Path
 from typing import Any
@@ -30,6 +36,8 @@ from common.ingest.nexrad.models import ElevationArtifact, WorkerParseResult
 _POOL: ProcessPoolExecutor | None = None
 _POOL_SIZE: int = 0
 _VOLUME_COUNT: int = 0
+_GENERATION: int = 0
+_LOCK = threading.Lock()
 
 
 def _initialize_worker_name() -> None:
@@ -62,11 +70,6 @@ def _worker_parse(
     seen_keys: dict[str, str | None],
     trim_buffer: bool,
 ) -> dict[str, Any]:
-    """Run parse_and_export inside a pool worker.
-
-    Returns a plain dict (serializable) rather than a dataclass so the
-    result can cross the process boundary without pickle issues.
-    """
     from common.ingest.nexrad.worker import parse_and_export
 
     result = parse_and_export(
@@ -186,49 +189,44 @@ class NexradWorkerPool:
 
 
 def get_nexrad_pool(max_workers: int | None = None) -> NexradWorkerPool:
-    """Return a singleton pool, creating one if needed."""
-    global _POOL, _POOL_SIZE, _VOLUME_COUNT
+    global _POOL, _POOL_SIZE, _VOLUME_COUNT, _GENERATION
 
     target = max_workers or int(os.environ.get("NEXRAD_WORKER_POOL_SIZE", "4"))
 
-    if _POOL is None or _POOL_SIZE != target:
-        if _POOL is not None:
-            _POOL.shutdown(wait=True)
-        _POOL = NexradWorkerPool(max_workers=target)
-        _POOL_SIZE = target
-        _VOLUME_COUNT = 0
-
-    return _POOL
+    with _LOCK:
+        if _POOL is None or _POOL_SIZE != target:
+            if _POOL is not None:
+                _POOL.shutdown(wait=True)
+            _POOL = NexradWorkerPool(max_workers=target)
+            _POOL_SIZE = target
+            _VOLUME_COUNT = 0
+            _GENERATION += 1
+        return _POOL
 
 
 def record_volume_and_maybe_recycle(max_workers: int | None = None) -> None:
-    """Recycle long-lived workers after a bounded number of completed volumes.
-
-    This caps allocator fragmentation and import/cache buildup inside pool
-    workers during long realtime runs. The threshold is configurable via
-    ``NEXRAD_WORKER_RECYCLE_INTERVAL`` and defaults to 24 completed volumes.
-    Set the value to ``0`` to disable recycling.
-    """
     global _POOL, _POOL_SIZE, _VOLUME_COUNT
 
     recycle_interval = int(os.environ.get("NEXRAD_WORKER_RECYCLE_INTERVAL", "24"))
     if recycle_interval <= 0:
         return
 
-    _VOLUME_COUNT += 1
-    if _POOL is None or _VOLUME_COUNT < recycle_interval:
-        return
+    with _LOCK:
+        _VOLUME_COUNT += 1
+        if _POOL is None or _VOLUME_COUNT < recycle_interval:
+            return
 
-    _POOL.shutdown(wait=True)
-    _POOL = None
-    _POOL_SIZE = 0
-    _VOLUME_COUNT = 0
+        _POOL.shutdown(wait=True)
+        _POOL = None
+        _POOL_SIZE = 0
+        _VOLUME_COUNT = 0
 
 
 def shutdown_nexrad_pool(wait: bool = True) -> None:
     global _POOL, _POOL_SIZE, _VOLUME_COUNT
-    if _POOL is not None:
-        _POOL.shutdown(wait=wait)
-        _POOL = None
-        _POOL_SIZE = 0
-    _VOLUME_COUNT = 0
+    with _LOCK:
+        if _POOL is not None:
+            _POOL.shutdown(wait=wait)
+            _POOL = None
+            _POOL_SIZE = 0
+        _VOLUME_COUNT = 0

@@ -569,7 +569,21 @@ def _render_pending_nexrad_gui_artifact(metadata: dict) -> bool:
         netcdf_path=str(artifact_path) if artifact_path.suffix == ".nc" else None,
         ar2v_path=str(artifact_path) if artifact_path.suffix == ".ar2v" else None,
     )
-    serialize_nexrad_elevation_artifacts(site, str(metadata["volume_id"]), str(metadata["scan_timestamp"]), [artifact])
+    manifest_path = serialize_nexrad_elevation_artifacts(
+        site, str(metadata["volume_id"]), str(metadata["scan_timestamp"]), [artifact]
+    )
+    if manifest_path is not None and manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            layers = manifest.get("layers") or []
+            if layers:
+                for layer in layers:
+                    bin_path = layer.get("bin_path")
+                    if bin_path is None or not Path(bin_path).exists():
+                        return False
+                return True
+        except Exception:
+            pass
     return _nexrad_gui_timestamp_exists(site, elevation, timestamp)
 
 
