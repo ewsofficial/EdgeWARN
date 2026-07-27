@@ -163,7 +163,15 @@ class FileDownloader:
             s3_key = target_file_path
             
             # Download the file from S3
-            self.client.download_file(self.bucket, s3_key, str(local_path))
+            part_path = local_path.with_name(f".{local_path.name}.part")
+            try:
+                self.client.download_file(self.bucket, s3_key, str(part_path))
+                if not part_path.is_file() or part_path.stat().st_size == 0:
+                    raise IOError("empty S3 download")
+                os.replace(part_path, local_path)
+            except BaseException:
+                part_path.unlink(missing_ok=True)
+                raise
             
             return Path(str(local_path))
             
@@ -227,7 +235,15 @@ class FileDownloader:
                 s3_key = target_file_path
                 
                 # Download the file from S3
-                self.client.download_file(self.bucket, s3_key, str(local_path))
+                part_path = local_path.with_name(f".{local_path.name}.part")
+                try:
+                    self.client.download_file(self.bucket, s3_key, str(part_path))
+                    if not part_path.is_file() or part_path.stat().st_size == 0:
+                        raise IOError("empty S3 download")
+                    os.replace(part_path, local_path)
+                except BaseException:
+                    part_path.unlink(missing_ok=True)
+                    raise
                 
                 downloaded_files.append(Path(str(local_path)))
             
@@ -258,9 +274,19 @@ class FileDownloader:
                 self.io_manager.write_debug(f"Decompressed target already exists, skipping: {output_path}")
                 return output_path
 
-            # Decompress into the same parent directory
-            with gzip.open(gz_path, "rb") as f_in, open(output_path, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out, length=DECOMPRESS_CHUNK_SIZE)
+            part_path = output_path.with_name(f".{output_path.name}.part")
+            try:
+                # Reading through EOF validates the gzip stream before commit.
+                with gzip.open(gz_path, "rb") as f_in, open(part_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out, length=DECOMPRESS_CHUNK_SIZE)
+                    f_out.flush()
+                    os.fsync(f_out.fileno())
+                if part_path.stat().st_size == 0:
+                    raise IOError("decompressed output is empty")
+                os.replace(part_path, output_path)
+            except BaseException:
+                part_path.unlink(missing_ok=True)
+                raise
 
             # Remove original gz file
             gz_path.unlink(missing_ok=True)

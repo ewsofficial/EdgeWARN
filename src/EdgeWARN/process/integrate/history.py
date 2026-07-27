@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from util.io import IOManager
 import util.file as fs
+from util.atomic import atomic_write_json
 
 class CellHistoryManager:
     def __init__(self, io_manager: IOManager):
@@ -49,7 +50,7 @@ class CellHistoryManager:
                 cell["properties"].pop("timestamp")
 
             file_path = fs.CELL_DIR / f"{cell_id}.json"
-            
+            unreadable_history = False
             history = []
             
             # Load existing history
@@ -60,11 +61,16 @@ class CellHistoryManager:
                         if isinstance(data, list):
                             history = data
                         else:
-                            self.io_manager.write_warning(f"History file {file_path} invalid format, resetting.")
+                            self.io_manager.write_warning(f"History file {file_path} invalid format; preserving it.")
+                            unreadable_history = True
                             history = []
                 except Exception as e:
-                     self.io_manager.write_error(f"Failed to read history for {cell_id}: {e}")
-                     history = []
+                    self.io_manager.write_error(f"Failed to read history for {cell_id}: {e}; preserving it")
+                    unreadable_history = True
+                    history = []
+
+            if unreadable_history:
+                continue
 
             # If the latest history entry already has this timestamp, replace it
             # with the current cell snapshot so reprocessing can refresh fields
@@ -87,8 +93,7 @@ class CellHistoryManager:
 
             # Write back
             try:
-                with open(file_path, 'w') as f:
-                    json.dump(history, f, default=str)
+                atomic_write_json(file_path, history, default=str)
                 success_count += 1
             except Exception as e:
                 self.io_manager.write_error(f"Failed to write history for {cell_id}: {e}")

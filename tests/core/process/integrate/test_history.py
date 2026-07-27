@@ -135,13 +135,11 @@ def test_update_cell_histories_handles_corrupt_file(history_manager, mock_fs, mo
     
     history_manager.update_cell_histories(cells)
     
-    # Should have logged error and reset
+    # A malformed history must not be replaced with a one-entry file: that
+    # would silently destroy the accumulated history following a transient
+    # partial-read/corruption event.
     mock_io_manager.write_error.assert_called()
-    
-    # File should now be valid with new entry
-    with open(file_path) as f:
-        data = json.load(f)
-        assert len(data) == 1
+    assert file_path.read_text() == "{invalid json"
 
 def test_update_cell_histories_skips_no_id(history_manager, mock_fs):
     """Test that cells without an id are skipped."""

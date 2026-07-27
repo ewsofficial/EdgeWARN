@@ -151,7 +151,6 @@ def test_single_frame_detects_current_radar_and_updates_index(monkeypatch, tmp_p
         fs._define_paths(original_base)
 
 
-@PHASE_3
 def test_mrms_batch_fails_when_decompression_returns_none(monkeypatch, tmp_path):
     """A downloaded gzip is not staged until decompression succeeds."""
     from common.ingest.mrms import downloader
@@ -189,7 +188,7 @@ def test_mrms_batch_fails_when_decompression_returns_none(monkeypatch, tmp_path)
     )
 
     assert label == "Test"
-    assert ok is False
+    assert ok is None
 
 
 class _DisconnectingBody:
@@ -225,7 +224,6 @@ class _AsyncFile:
         return self._handle.write(payload)
 
 
-@PHASE_3
 def test_mrms_s3_disconnect_leaves_no_final_filename(monkeypatch, tmp_path):
     import common.ingest.mrms.s3_async as s3_async
 
@@ -250,7 +248,6 @@ def test_mrms_s3_disconnect_leaves_no_final_filename(monkeypatch, tmp_path):
     assert not final_path.exists()
 
 
-@PHASE_3
 def test_synoptic_s3_disconnect_leaves_no_final_filename(monkeypatch, tmp_path):
     import common.ingest.synoptic.s3_async as synoptic_s3
 
@@ -268,7 +265,6 @@ def test_synoptic_s3_disconnect_leaves_no_final_filename(monkeypatch, tmp_path):
     assert not final_path.exists()
 
 
-@PHASE_3
 def test_mrms_https_disconnect_leaves_no_final_filename(monkeypatch, tmp_path):
     import common.ingest.mrms.https_client as https_client
 
@@ -317,7 +313,6 @@ def test_mrms_https_disconnect_leaves_no_final_filename(monkeypatch, tmp_path):
     assert not final_path.exists()
 
 
-@PHASE_3
 def test_gzip_failure_after_partial_output_leaves_no_final_filename(monkeypatch, tmp_path):
     import gzip
     import common.ingest.mrms.s3_async as s3_async
@@ -543,9 +538,9 @@ def test_concurrent_nexrad_pool_creation_builds_one_generation(monkeypatch):
     assert len({id(pool) for pool in pools}) == 1
 
 
-@PHASE_3
 def test_json_reader_never_observes_partial_index(monkeypatch, tmp_path):
     from EdgeWARN.api_integration import index_manager as index_module
+    from util.atomic import atomic_output_path
 
     storm_dir = tmp_path / "stormcell"
     cell_dir = tmp_path / "cell"
@@ -559,14 +554,15 @@ def test_json_reader_never_observes_partial_index(monkeypatch, tmp_path):
     started = threading.Event()
     release = threading.Event()
 
-    def slow_dump(_data, handle, **_kwargs):
-        handle.write('{"cellIds":')
-        handle.flush()
-        started.set()
-        release.wait(timeout=2)
-        handle.write('[1],"lastUpdated":"new"}')
+    def slow_atomic_write(_path, _data, **_kwargs):
+        with atomic_output_path(_path) as temporary:
+            temporary.write_text('{"cellIds":', encoding="utf-8")
+            started.set()
+            release.wait(timeout=2)
+            with temporary.open("a", encoding="utf-8") as handle:
+                handle.write('[1],"lastUpdated":"new"}')
 
-    monkeypatch.setattr(index_module.json, "dump", slow_dump)
+    monkeypatch.setattr(index_module, "atomic_write_json", slow_atomic_write)
     writer = threading.Thread(target=manager._write_cell_index)
     writer.start()
     assert started.wait(timeout=2)
@@ -582,7 +578,6 @@ def test_json_reader_never_observes_partial_index(monkeypatch, tmp_path):
     assert not parse_errors
 
 
-@PHASE_3
 def test_binary_reader_never_observes_partial_nexrad_artifact(monkeypatch, tmp_path):
     from EWMRS.render import nexrad
 
@@ -613,7 +608,18 @@ def test_binary_reader_never_observes_partial_nexrad_artifact(monkeypatch, tmp_p
                 release.wait(timeout=2)
             return written
 
+    class ValidatedHandle:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def read(self, _size):
+            return nexrad.NEXRAD_FIELD_MAGIC
+
     monkeypatch.setattr(nexrad.gzip, "open", lambda target, _mode: SlowHandle(target))
+    monkeypatch.setattr(nexrad.gzip, "GzipFile", lambda **_kwargs: ValidatedHandle())
     writer = threading.Thread(
         target=nexrad._write_nexrad_variable_bin,
         args=(

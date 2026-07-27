@@ -240,8 +240,8 @@ def main(
         stormcell_dir.mkdir(exist_ok=True)
         output_file = stormcell_dir / f"stormcells_{final_ts}.json"
         
-        with open(output_file, 'w') as f:
-            js.dump(output_data, f, indent=2, default=str)
+        from util.atomic import atomic_write_json
+        atomic_write_json(output_file, output_data, indent=2, default=str)
         
         io_manager.write_info(f"Saved single-frame results to {output_file}")
         
@@ -371,8 +371,8 @@ def main(
     
     output_file = stormcell_dir / f"stormcells_{final_ts}.json"
 
-    with open(output_file, 'w') as f:
-        js.dump(output_data, f, indent=2, default=str)
+    from util.atomic import atomic_write_json
+    atomic_write_json(output_file, output_data, indent=2, default=str)
     perf_tracker.stop("Detection - Save")
         
     io_manager.write_info(f"Saved detection results to {output_file}")

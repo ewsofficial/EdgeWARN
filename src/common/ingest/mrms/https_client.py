@@ -3,7 +3,7 @@ import aiohttp
 import asyncio
 import requests
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from bs4 import BeautifulSoup
 import logging
@@ -221,9 +221,10 @@ class HttpsFileDownloader:
                  if ts_match:
                      file_ts_str = ts_match.group(1)
                      try:
-                         file_dt = datetime.strptime(file_ts_str, "%Y%m%d-%H%M%S")
+                         file_dt = datetime.strptime(file_ts_str, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
                          # Calculate difference
-                         diff = abs((file_dt - self.dt).total_seconds())
+                         target_dt = self.dt if self.dt.tzinfo else self.dt.replace(tzinfo=timezone.utc)
+                         diff = abs((file_dt - target_dt).total_seconds())
                          if diff < 120: # Within 2 minutes
                             matches.append((diff, url))
                      except:
@@ -239,6 +240,7 @@ class HttpsFileDownloader:
 
         # Download
         filename = match.split('/')[-1]
+        outdir.mkdir(parents=True, exist_ok=True)
         out_path = outdir / filename
         
         if out_path.exists():
@@ -251,12 +253,26 @@ class HttpsFileDownloader:
             try:
                 async with session.get(match) as response:
                     if response.status == 200:
-                        with open(out_path, 'wb') as f:
-                            while True:
-                                chunk = await response.content.read(8192)
-                                if not chunk:
-                                    break
-                                f.write(chunk)
+                        part_path = out_path.with_name(f".{out_path.name}.part")
+                        written = 0
+                        try:
+                            with open(part_path, 'wb') as f:
+                                while True:
+                                    chunk = await response.content.read(8192)
+                                    if not chunk:
+                                        break
+                                    written += len(chunk)
+                                    f.write(chunk)
+                                f.flush()
+                            expected = response.content_length
+                            if expected is not None and written != expected:
+                                raise IOError(f"incomplete HTTPS download: expected {expected} bytes, got {written}")
+                            if written == 0:
+                                raise IOError("empty HTTPS download")
+                            part_path.replace(out_path)
+                        except BaseException:
+                            part_path.unlink(missing_ok=True)
+                            raise
                         return out_path
                     else:
                         self.io_manager.write_error(f"Failed to download {match}: {response.status}")
