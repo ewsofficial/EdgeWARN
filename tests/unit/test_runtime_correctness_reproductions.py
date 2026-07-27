@@ -676,6 +676,136 @@ def test_binary_reader_never_observes_partial_nexrad_artifact(monkeypatch, tmp_p
     assert observations == [old_payload] * len(observations)
 
 
+def test_drain_log_queue_uses_get_nowait_not_empty(monkeypatch):
+    import queue
+    from util.runtime.logging import drain_log_queue
+
+    q = queue.Queue()
+    q.put("a")
+    q.put("b")
+    q.put("c")
+    calls = []
+
+    monkeypatch.setattr("builtins.print", lambda msg: calls.append(msg))
+    drain_log_queue(q)
+
+    assert calls == ["a", "b", "c"]
+    assert q.empty()
+
+
+def test_supervisor_restarts_dead_process(monkeypatch, tmp_path):
+    from util.runtime.processes import AccessorySupervisor
+
+    calls = []
+    def worker():
+        calls.append("run")
+
+    supervisor = AccessorySupervisor(
+        health_path=str(tmp_path / "health.json"),
+        base_backoff_seconds=0.01,
+        max_backoff_seconds=0.1,
+        restart_window_seconds=60,
+    )
+    supervisor.add("test", worker, enabled=True, daemon=True)
+    supervisor.start_all()
+    assert len([p for p in supervisor._process_info if p["process"] is not None and p["process"].is_alive()]) == 1
+
+    # Kill the process
+    proc = supervisor._process_info[0]["process"]
+    proc.kill()
+    proc.join(timeout=2)
+    assert not proc.is_alive()
+
+    # Supervisor check should detect death and restart
+    supervisor.check()
+    time.sleep(0.2)
+    supervisor.check()
+
+    new_proc = supervisor._process_info[0]["process"]
+    assert new_proc is not None
+    assert new_proc.is_alive()
+    assert new_proc.pid != proc.pid
+    new_proc.kill()
+    new_proc.join(timeout=2)
+
+    health = json.loads((tmp_path / "health.json").read_text(encoding="utf-8"))
+    assert "test" in health
+
+
+def test_supervisor_crash_loop_disables_restarts(monkeypatch, tmp_path):
+    from util.runtime.processes import AccessorySupervisor
+
+    calls = []
+    def worker():
+        pass  # exits immediately
+
+    supervisor = AccessorySupervisor(
+        health_path=str(tmp_path / "health.json"),
+        max_restarts=2,
+        restart_window_seconds=60,
+        base_backoff_seconds=0.01,
+        max_backoff_seconds=0.05,
+    )
+    supervisor.add("crashy", worker, enabled=True, daemon=True)
+
+    # Cycle check several times; the process keeps dying immediately
+    for _ in range(10):
+        supervisor.check()
+        time.sleep(0.05)
+
+    crashy_info = supervisor._process_info[0]
+    assert not crashy_info["enabled"], "crash-loop should disable restarts"
+
+    health = json.loads((tmp_path / "health.json").read_text(encoding="utf-8"))
+    assert health["crashy"]["status"] == "crashed"
+
+
+def test_nws_temp_file_removed_on_failure(monkeypatch, tmp_path):
+    """Temp file from NWS download is cleaned up even when processing fails."""
+    io_writes = []
+    monkeypatch.setattr(
+        "common.ingest.nws.main.io_manager",
+        type("FakeIO", (), {"write_info": lambda *a: None, "write_error": lambda *a: None})(),
+    )
+
+    temp_path = tmp_path / "nws_download.json"
+    temp_path.write_text("{}", encoding="utf-8")
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return False
+        def read(self):
+            return b"{}"
+
+    class FakeTF:
+        def __init__(self, **kw):
+            self.name = str(temp_path)
+        def __enter__(self):
+            return self
+        def __exit__(self, *exc):
+            return False
+        def write(self, data):
+            return len(data)
+
+    import common.ingest.nws.main as nws_main
+    monkeypatch.setattr(nws_main.io_manager, "write_info", lambda *a: None)
+    monkeypatch.setattr(nws_main.io_manager, "write_error", lambda *a: None)
+    monkeypatch.setattr(nws_main.urllib.request, "urlopen", lambda *a, **kw: FakeResp())
+    monkeypatch.setattr(nws_main.tempfile, "NamedTemporaryFile", lambda **kw: FakeTF(**kw))
+    monkeypatch.setattr(nws_main, "_process_nws_file_with_registry", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("processing failed")))
+    monkeypatch.setattr(nws_main, "_get_registry", lambda: type("FakeReg", (), {
+        "cleanup_old_timestamps": lambda s, t: None,
+        "alert_count": 0,
+    })())
+
+    with pytest.raises(RuntimeError, match="processing failed"):
+        nws_main.download_alerts(datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc))
+
+    assert not temp_path.exists(), f"temp file {temp_path} was not cleaned up"
+
+
 def test_default_goes_coordinator_keeps_readiness_false_when_both_paths_throw(
     monkeypatch,
     tmp_path,
