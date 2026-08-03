@@ -124,9 +124,11 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
             if isinstance(latest_task, tuple) and len(latest_task) >= 2:
                 dt, max_entries = latest_task[:2]
                 queued_at_iso = latest_task[2] if len(latest_task) > 2 else None
+                input_manifest = latest_task[3] if len(latest_task) > 3 else None
             else:
                 dt, max_entries = latest_task
                 queued_at_iso = None
+                input_manifest = None
 
             if queued_at_iso:
                 try:
@@ -136,7 +138,12 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
                     pass
 
             render_active_event.set()
-            ewmrs_goes_worker(log_queue, dt, max_entries=max_entries)
+            ewmrs_goes_worker(
+                log_queue,
+                dt,
+                max_entries=max_entries,
+                input_manifest=input_manifest,
+            )
 
             render_active_event.clear()
             if saw_shutdown:

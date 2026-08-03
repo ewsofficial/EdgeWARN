@@ -28,25 +28,25 @@ def sample_cells():
     ]
 
 
-def _stats_stub(_integrator, cells):
+def _stats_stub(_integrator, cells, *_args):
     for cell in cells:
         cell.setdefault("properties", {})["Ref0"] = float(cell["id"])
     return cells
 
 
-def _azshear_stub(_integrator, cells):
+def _azshear_stub(_integrator, cells, *_args):
     for cell in cells:
         cell.setdefault("properties", {})["azshear"] = {"buffer_km": 1.5, "cell": cell["id"]}
     return cells
 
 
-def _probsevere_stub(_integrator, cells):
+def _probsevere_stub(_integrator, cells, *_args):
     for cell in cells:
         cell.setdefault("properties", {})["ProbSevere"] = 42.0
     return cells
 
 
-def _glm_stub(cells):
+def _glm_stub(cells, *_args):
     for cell in cells:
         props = cell.setdefault("properties", {})
         props["GLM_FLASH_COUNT"] = 3
@@ -54,7 +54,7 @@ def _glm_stub(cells):
     return cells
 
 
-def _rap_stub(cells):
+def _rap_stub(cells, *_args):
     for cell in cells:
         props = cell.setdefault("properties", {})
         wind = props.setdefault("wind_field", {})

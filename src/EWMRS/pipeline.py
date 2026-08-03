@@ -23,6 +23,7 @@ from EWMRS.render.config import (
 )
 from EWMRS.render.tools import configure_proj_runtime
 import util.file as fs
+from common.ingest.manifest import CycleInputManifest
 from util.io import IOManager, QueueWriter
 
 RenderOutput = Optional[list[Path]]
@@ -167,6 +168,7 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
     source_path = layer.get("filepath")
     output_path = layer.get("outdir")
     source_type = str(layer.get("source_type", "mrms")).lower()
+    pinned_input_path = layer.get("input_path")
 
     if source_path is None or output_path is None:
         io_mgr.write_error(f"Layer {name} is missing filepath/outdir configuration")
@@ -207,7 +209,14 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
             png_path, px_timestamp = renderer.save_rgba(rgba, tile_output=True)
             return name, png_path
 
-        latest_file = _latest_source_file(src_dir)
+        if layer.get("input_manifest_bound"):
+            latest_file = (
+                Path(pinned_input_path)
+                if pinned_input_path is not None
+                else None
+            )
+        else:
+            latest_file = _latest_source_file(src_dir)
         if latest_file is None:
             io_mgr.write_warning(f"No source files found for {name} in {src_dir}")
             return name, None
@@ -222,7 +231,12 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
             io_mgr.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
             return name, cached_render
 
-        io_mgr.write_info(f"Found latest file for {name}: {latest_file}")
+        source_label = (
+            "pinned source file"
+            if layer.get("input_manifest_bound")
+            else "latest source file"
+        )
+        io_mgr.write_info(f"Using {source_label} for {name}: {latest_file}")
 
         if source_type == "goes_abi":
             payload = load_reproject_goes_abi_render_array(
@@ -287,6 +301,24 @@ def _latest_source_file(src_dir: Path) -> Optional[Path]:
     if not latest:
         return None
     return Path(latest[-1])
+
+
+def _pinned_goes_files_by_channel(
+    input_manifest: CycleInputManifest | None,
+) -> dict[str, Path] | None:
+    if input_manifest is None:
+        return None
+
+    from common.ingest.mrms.config import get_abi_radc_channel_specs
+
+    pinned = {}
+    for spec in get_abi_radc_channel_specs():
+        if not spec.channel_id:
+            continue
+        record = input_manifest.latest_for_directory(spec.outdir)
+        if record is not None:
+            pinned[spec.channel_id] = record.local_path
+    return pinned
 
 
 def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
@@ -537,7 +569,21 @@ def _render_pending_nexrad_gui_artifact(metadata: dict) -> bool:
         netcdf_path=str(artifact_path) if artifact_path.suffix == ".nc" else None,
         ar2v_path=str(artifact_path) if artifact_path.suffix == ".ar2v" else None,
     )
-    serialize_nexrad_elevation_artifacts(site, str(metadata["volume_id"]), str(metadata["scan_timestamp"]), [artifact])
+    manifest_path = serialize_nexrad_elevation_artifacts(
+        site, str(metadata["volume_id"]), str(metadata["scan_timestamp"]), [artifact]
+    )
+    if manifest_path is not None and manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            layers = manifest.get("layers") or []
+            if layers:
+                for layer in layers:
+                    bin_path = layer.get("bin_path")
+                    if bin_path is None or not Path(bin_path).exists():
+                        return False
+                return True
+        except Exception:
+            pass
     return _nexrad_gui_timestamp_exists(site, elevation, timestamp)
 
 
@@ -664,7 +710,14 @@ def cleanup_old_gui_files(max_age_minutes: int = 120):
         io_manager.write_info(f"Cleaned up {total_removed} old GUI files/folders (>{max_age_minutes} min)")
 
 
-def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str = "EWMRS", cleanup_after: bool = True) -> Dict[str, RenderOutput]:
+def run_render_pipeline(
+    dt,
+    max_entries: int = 10,
+    layers=None,
+    phase_name: str = "EWMRS",
+    cleanup_after: bool = True,
+    input_manifest: CycleInputManifest | None = None,
+) -> Dict[str, RenderOutput]:
     """Render configured EWMRS layers from already staged local files."""
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -672,6 +725,22 @@ def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str 
     results: Dict[str, RenderOutput] = {}
 
     layers = get_file_list() if layers is None else list(layers)
+    if input_manifest is not None:
+        pinned_layers = []
+        for layer in layers:
+            pinned_layer = dict(layer)
+            source_path = pinned_layer.get("filepath")
+            source_type = str(
+                pinned_layer.get("source_type", "mrms")
+            ).lower()
+            if source_path is not None and source_type != "goes_abi_rgb":
+                record = input_manifest.latest_for_directory(source_path)
+                pinned_layer["input_path"] = (
+                    str(record.local_path) if record is not None else None
+                )
+                pinned_layer["input_manifest_bound"] = True
+            pinned_layers.append(pinned_layer)
+        layers = pinned_layers
     if not layers:
         io_manager.write_info(f"{phase_name} render phase has no configured layers")
         return results
@@ -704,13 +773,18 @@ def run_render_pipeline(dt, max_entries: int = 10, layers=None, phase_name: str 
     return results
 
 
-def run_mrms_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
+def run_mrms_render_pipeline(
+    dt,
+    max_entries: int = 10,
+    input_manifest: CycleInputManifest | None = None,
+) -> Dict[str, RenderOutput]:
     """Run the MRMS-backed EWMRS render phase."""
     return run_render_pipeline(
         dt,
         max_entries=max_entries,
         layers=get_mrms_file_list(),
         phase_name="MRMS",
+        input_manifest=input_manifest,
     )
 
 
@@ -787,6 +861,7 @@ def _maybe_cleanup_goes_gui_files(max_age_minutes: int = 120) -> None:
 def _run_goes_unified_cycle(
     single_channel_layers: list[dict],
     rgb_layers: list[dict],
+    input_manifest: CycleInputManifest | None = None,
 ) -> Dict[str, RenderOutput]:
     from EWMRS.render.goes_rgb import iter_goes_rgb_batch, layer_config_for_channel, prepare_goes_rgb_batch
     from EWMRS.render.goes_transform import extract_goes_timestamp_iso
@@ -797,7 +872,15 @@ def _run_goes_unified_cycle(
     cycle_start_s = time.perf_counter()
 
     prepare_rgb_start_s = time.perf_counter()
-    prepared_batch = prepare_goes_rgb_batch(rgb_layers)
+    pinned_files_by_channel = _pinned_goes_files_by_channel(input_manifest)
+    prepared_batch = (
+        prepare_goes_rgb_batch(
+            rgb_layers,
+            pinned_files_by_channel=pinned_files_by_channel,
+        )
+        if pinned_files_by_channel is not None
+        else prepare_goes_rgb_batch(rgb_layers)
+    )
     prepare_rgb_batch_s = time.perf_counter() - prepare_rgb_start_s
     pending_recipes = []
     pending_selected_files: dict[str, Path] = {}
@@ -842,7 +925,11 @@ def _run_goes_unified_cycle(
             if preferred_path.exists():
                 selected_file = preferred_path
 
-        if selected_file is None:
+        if selected_file is None and input_manifest is not None:
+            record = input_manifest.latest_for_directory(source_path)
+            selected_file = record.local_path if record is not None else None
+
+        if selected_file is None and input_manifest is None:
             selected_file = _latest_source_file(Path(source_path))
 
         if selected_file is None:
@@ -986,7 +1073,11 @@ def _run_goes_unified_cycle(
     return results
 
 
-def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutput]:
+def run_goes_render_pipeline(
+    dt,
+    max_entries: int = 10,
+    input_manifest: CycleInputManifest | None = None,
+) -> Dict[str, RenderOutput]:
     """Run the GOES-backed EWMRS render phase."""
     from EWMRS.render.goes_rgb import iter_goes_rgb_batch, prepare_goes_rgb_batch
     from EWMRS.render.render import GUIRGBAWriter
@@ -1004,25 +1095,46 @@ def run_goes_render_pipeline(dt, max_entries: int = 10) -> Dict[str, RenderOutpu
     results: Dict[str, RenderOutput] = {}
 
     if single_channel_layers and rgb_layers:
-        results.update(_run_goes_unified_cycle(single_channel_layers, rgb_layers))
+        results.update(
+            _run_goes_unified_cycle(
+                single_channel_layers,
+                rgb_layers,
+                input_manifest=input_manifest,
+            )
+        )
         _maybe_cleanup_goes_gui_files(max_age_minutes=120)
         io_manager.write_info(f"GOES render pipeline completed in {time.perf_counter() - pipeline_start_s:.3f}s")
         return results
 
     if single_channel_layers:
+        render_kwargs = {
+            "max_entries": max_entries,
+            "layers": single_channel_layers,
+            "phase_name": "GOES",
+            "cleanup_after": False,
+        }
+        if input_manifest is not None:
+            render_kwargs["input_manifest"] = input_manifest
         results.update(
             run_render_pipeline(
                 dt,
-                max_entries=max_entries,
-                layers=single_channel_layers,
-                phase_name="GOES",
-                cleanup_after=False,
+                **render_kwargs,
             )
         )
 
     if rgb_layers:
         _ensure_runtime_configured()
-        prepared_batch = prepare_goes_rgb_batch(rgb_layers)
+        pinned_files_by_channel = _pinned_goes_files_by_channel(
+            input_manifest
+        )
+        prepared_batch = (
+            prepare_goes_rgb_batch(
+                rgb_layers,
+                pinned_files_by_channel=pinned_files_by_channel,
+            )
+            if pinned_files_by_channel is not None
+            else prepare_goes_rgb_batch(rgb_layers)
+        )
         if prepared_batch is not None:
             pending_recipes = []
             pending_selected_files: dict[str, Path] = {}
@@ -1109,6 +1221,13 @@ def ewmrs_tandem_worker(
     def log(msg: str):
         log_queue.put(str(msg))
 
+    def publish_stage(status, *, artifacts=(), errors=()):
+        shared_state["ewmrs_stage"] = {
+            "status": str(status),
+            "produced_artifacts": [str(path) for path in artifacts],
+            "errors": [str(error) for error in errors],
+        }
+
     try:
         log(f"INFO: EWMRS worker waiting for MRMS render inputs for {dt}")
         ewmrs_mrms_ready_event.wait()
@@ -1118,17 +1237,62 @@ def ewmrs_tandem_worker(
             False,
         )
         if not mrms_inputs_ready:
-            log("ERROR: EWMRS MRMS inputs were not staged successfully; skipping MRMS render")
+            message = "EWMRS MRMS inputs were not staged successfully"
+            publish_stage("unavailable", errors=(message,))
+            log(f"ERROR: {message}; skipping MRMS render")
         else:
+            input_manifest = CycleInputManifest.from_dict(
+                shared_state.get("input_manifest")
+            )
+            if input_manifest is None:
+                message = "Cycle input manifest was not published for EWMRS"
+                publish_stage("failed", errors=(message,))
+                log(f"ERROR: {message}")
+                return
             log("INFO: Starting EWMRS MRMS render phase")
-            results = run_mrms_render_pipeline(dt, max_entries=max_entries)
+            results = run_mrms_render_pipeline(
+                dt,
+                max_entries=max_entries,
+                input_manifest=input_manifest,
+            )
+            failed_layers = sorted(
+                str(layer_name)
+                for layer_name, output in results.items()
+                if output is None
+            )
+            artifacts = [
+                str(path)
+                for output in results.values()
+                if output is not None
+                for path in (output if isinstance(output, list) else [output])
+            ]
+            if not results or failed_layers:
+                message = (
+                    "EWMRS MRMS render did not produce the complete required layer set"
+                    if not failed_layers
+                    else f"EWMRS MRMS render missing required layers: {', '.join(failed_layers)}"
+                )
+                publish_stage(
+                    "failed",
+                    artifacts=artifacts,
+                    errors=(message,),
+                )
+            else:
+                publish_stage("completed", artifacts=artifacts)
             log(f"INFO: EWMRS MRMS render completed: {_summarize_results(results)}")
         log("INFO: EWMRS GOES render is decoupled from the tandem worker")
     except Exception as exc:
+        publish_stage("failed", errors=(str(exc),))
         log(f"ERROR: EWMRS tandem worker failed - {exc}")
+        raise
 
 
-def ewmrs_goes_worker(log_queue, dt, max_entries: int = 10):
+def ewmrs_goes_worker(
+    log_queue,
+    dt,
+    max_entries: int = 10,
+    input_manifest=None,
+):
     """Process target for decoupled GOES rendering outside tandem completion."""
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
@@ -1137,8 +1301,17 @@ def ewmrs_goes_worker(log_queue, dt, max_entries: int = 10):
         log_queue.put(str(msg))
 
     try:
+        if isinstance(input_manifest, dict):
+            input_manifest = CycleInputManifest.from_dict(input_manifest)
+        if input_manifest is None:
+            log("ERROR: EWMRS GOES render skipped because no pinned input manifest was provided")
+            return
         log(f"INFO: Starting EWMRS GOES render phase for {dt}")
-        results = run_goes_render_pipeline(dt, max_entries=max_entries)
+        results = run_goes_render_pipeline(
+            dt,
+            max_entries=max_entries,
+            input_manifest=input_manifest,
+        )
         log(f"INFO: EWMRS GOES render completed: {_summarize_results(results)}")
     except Exception as exc:
         log(f"ERROR: EWMRS GOES worker failed - {exc}")

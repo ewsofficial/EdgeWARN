@@ -1,13 +1,7 @@
 """Configuration for WPC Surface Analysis ingestion."""
 
-from util.file import BASE_DIR, WPC_DIR, WPC_SFC_DIR
-
 # Base URL for WPC coded surface data
 WPC_CODED_SFC_BASE_URL = "https://ftp.wpc.ncep.noaa.gov/coded_sfc"
-
-# Ensure directories exist
-WPC_DIR.mkdir(parents=True, exist_ok=True)
-WPC_SFC_DIR.mkdir(parents=True, exist_ok=True)
 
 # Update interval in hours (WPC updates every 3 hours)
 UPDATE_INTERVAL_HOURS = 3

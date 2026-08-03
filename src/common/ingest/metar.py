@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import util.file as fs
+from util.atomic import atomic_write_json
 from util.io import IOManager
 
 # Initialize IO Manager
@@ -386,8 +387,7 @@ def save_metar_data(data, dt):
     io.write_info(f"Saving {len(data)} METAR records to {filepath}")
 
     try:
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=2)
+        atomic_write_json(filepath, data, indent=2)
     except Exception as e:
         io.write_error(f"Failed to save METAR data to {filepath}: {e}")
     
@@ -441,8 +441,7 @@ async def save_metar_data_async(data, dt):
     await fs.async_clean_old_files(fs.METAR_DIR, max_age_minutes=60)
 
 def _write_json_sync(filepath, data):
-    with open(filepath, 'w') as f:
-        json.dump(data, f, indent=2)
+    atomic_write_json(filepath, data, indent=2)
 
 async def ingest_metars_async():
     """

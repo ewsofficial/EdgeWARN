@@ -398,7 +398,12 @@ def select_recipe_channel_files(
     }
 
 
-def prepare_goes_rgb_render(layer_config: dict[str, Any], *, max_offset_minutes: float = 20.0) -> dict[str, Any] | None:
+def prepare_goes_rgb_render(
+    layer_config: dict[str, Any],
+    *,
+    max_offset_minutes: float = 20.0,
+    pinned_files_by_channel: dict[str, Path] | None = None,
+) -> dict[str, Any] | None:
     recipe_key = str(layer_config.get("recipe_key", "")).strip()
     source_root = Path(layer_config.get("filepath") or fs.GOES_ABI_RADC_DIR)
 
@@ -407,6 +412,14 @@ def prepare_goes_rgb_render(layer_config: dict[str, Any], *, max_offset_minutes:
     files_by_channel: dict[str, list[tuple[datetime, Path]]] = {}
 
     for channel_id in recipe.required_channels:
+        if pinned_files_by_channel is not None:
+            pinned_path = pinned_files_by_channel.get(channel_id)
+            if pinned_path is None:
+                files_by_channel[channel_id] = []
+            else:
+                parsed_time = extract_timestamp(Path(pinned_path).name).astimezone(UTC)
+                files_by_channel[channel_id] = [(parsed_time, Path(pinned_path))]
+            continue
         channel_dir_name = channel_dir_names.get(channel_id)
         if not channel_dir_name:
             files_by_channel[channel_id] = []
@@ -430,6 +443,7 @@ def prepare_goes_rgb_batch(
     *,
     max_offset_minutes: float = 20.0,
     requested_timestamp: datetime | None = None,
+    pinned_files_by_channel: dict[str, Path] | None = None,
 ) -> dict[str, Any] | None:
     if not layers:
         return None
@@ -452,6 +466,14 @@ def prepare_goes_rgb_batch(
 
     files_by_channel: dict[str, list[tuple[datetime, Path]]] = {}
     for channel_id in sorted(required_channels):
+        if pinned_files_by_channel is not None:
+            pinned_path = pinned_files_by_channel.get(channel_id)
+            if pinned_path is None:
+                files_by_channel[channel_id] = []
+            else:
+                parsed_time = extract_timestamp(Path(pinned_path).name).astimezone(UTC)
+                files_by_channel[channel_id] = [(parsed_time, Path(pinned_path))]
+            continue
         channel_dir_name = channel_dir_names.get(channel_id)
         if not channel_dir_name:
             files_by_channel[channel_id] = []

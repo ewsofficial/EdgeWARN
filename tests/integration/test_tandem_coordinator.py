@@ -3,30 +3,55 @@ import asyncio
 
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 import common.pipeline.coordinator as coordinator
+from common.ingest.manifest import staged_input_from_path
+from common.ingest.mrms.downloader import DownloadBatchResult
 import common.ingest.synoptic.downloader as synoptic_downloader
 import common.ingest.synoptic.main as synoptic_main
 
 
-def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch):
+def _batch(tmp_path, timestamp, product):
+    path = tmp_path / product / f"MRMS_{product}_{timestamp:%Y%m%d-%H%M%S}.grib2"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"data")
+    return DownloadBatchResult(
+        attempted=(product,),
+        downloaded=(
+            staged_input_from_path(
+                product,
+                path,
+                source="test",
+                family="mrms",
+            ),
+        ),
+        failed=(),
+    )
+
+
+def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch, tmp_path):
     call_order = []
     callbacks = []
 
     async def fake_detection(dt, max_entries=10, remove_old_files=True):
         await asyncio.sleep(0.01)
         call_order.append("detection")
+        return _batch(tmp_path, dt, "Detection")
 
     async def fake_mrms_integration(dt, max_entries=10, remove_old_files=True):
         await asyncio.sleep(0.03)
         call_order.append("mrms_integration")
+        return _batch(tmp_path, dt, "Integration")
 
     async def fake_goes(dt, max_entries=10, hour_lookback=3):
         await asyncio.sleep(0.04)
         call_order.append("goes")
+        return _batch(tmp_path, dt, "GOES")
 
     async def fake_rap(dt):
         await asyncio.sleep(0.05)
         call_order.append("rap")
-        return "rap.grib2"
+        rap_path = tmp_path / "RAP.20260317-20z.awp130pgrbf00.grib2"
+        rap_path.write_bytes(b"grib")
+        return rap_path
 
     monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files_async", fake_detection)
     monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
@@ -83,16 +108,18 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch):
     assert state.edgewarn_integration_inputs_ready is True
 
 
-def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch):
+def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch, tmp_path):
     call_order = []
 
     async def fake_detection(dt, max_entries=10, remove_old_files=True):
         await asyncio.sleep(0.01)
         call_order.append("detection")
+        return _batch(tmp_path, dt, "Detection")
 
     async def fake_mrms_integration(dt, max_entries=10, remove_old_files=True):
         await asyncio.sleep(0.02)
         call_order.append("mrms_integration")
+        return _batch(tmp_path, dt, "Integration")
 
     async def fake_goes(dt, max_entries=10, hour_lookback=3):
         call_order.append("goes")
@@ -100,7 +127,9 @@ def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch):
     async def fake_rap(dt):
         await asyncio.sleep(0.03)
         call_order.append("rap")
-        return "rap.grib2"
+        rap_path = tmp_path / "RAP.20260317-20z.awp130pgrbf00.grib2"
+        rap_path.write_bytes(b"grib")
+        return rap_path
 
     monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files_async", fake_detection)
     monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
@@ -121,7 +150,7 @@ def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch):
     assert state.detection_inputs_ready is True
     assert state.ewmrs_mrms_inputs_ready is True
     assert state.ewmrs_goes_inputs_ready is False
-    assert state.edgewarn_integration_inputs_ready is False
+    assert state.edgewarn_integration_inputs_ready is True
 
 
 def test_second_prior_rap_analysis_releases_integration(monkeypatch, tmp_path):
@@ -131,13 +160,13 @@ def test_second_prior_rap_analysis_releases_integration(monkeypatch, tmp_path):
     attempted_hours = []
 
     async def fake_detection(*_args, **_kwargs):
-        return None
+        return _batch(tmp_path, dt, "Detection")
 
     async def fake_mrms_integration(*_args, **_kwargs):
-        return None
+        return _batch(tmp_path, dt, "Integration")
 
     async def fake_goes(*_args, **_kwargs):
-        return None
+        return _batch(tmp_path, dt, "GOES")
 
     async def fake_remote(current_dt, *_args):
         attempted_hours.append(current_dt.hour)

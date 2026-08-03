@@ -261,6 +261,11 @@ export function startClusteredServer(options = {}) {
   const clusterModule = options.clusterModule || cluster;
   const osModule = options.osModule || os;
   const port = options.port || getPort(env);
+  // Each worker maintains its own in-memory rate-limit store.  The effective
+  // service-wide limit is `numWorkers * perWorkerLimit`.  With the default
+  // 4 workers, defaults of 40 req/s and 2000 req/min become approximately
+  // 160 req/s and 8000 req/min.  Use a shared external store (e.g. Redis) or
+  // adjust per-worker limits if exact global limits are required.
   const numCPUs = Math.min(osModule.cpus().length, 4);
 
   if (clusterModule.isPrimary) {
