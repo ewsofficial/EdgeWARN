@@ -130,6 +130,17 @@ class AccessorySupervisor:
             exit_code = info["process"].exitcode if info["process"] is not None else "N/A"
             print(f"[Supervisor] {name} process is dead (pid exited {exit_code}); restart attempt {attempt}")
 
+            # Clear any shared flag the process may have left asserted before
+            # deciding on a restart: blocking loops (e.g. GOES ingest pausing
+            # while the renderer is active) must never stay stuck behind a
+            # dead process, whether or not it is going to be restarted.
+            cleanup_event = info.get("cleanup_event")
+            if cleanup_event is not None:
+                try:
+                    cleanup_event.clear()
+                except Exception:
+                    pass
+
             if attempt > self.max_restarts:
                 print(
                     f"[Supervisor] {name} has crashed {attempt} times "
@@ -138,13 +149,6 @@ class AccessorySupervisor:
                 info["enabled"] = False
                 self._record_health(name, "crashed", error=f"crashed {attempt} times")
                 return
-
-            cleanup_event = info.get("cleanup_event")
-            if cleanup_event is not None:
-                try:
-                    cleanup_event.clear()
-                except Exception:
-                    pass
 
             delay = min(
                 self.max_backoff_seconds,
