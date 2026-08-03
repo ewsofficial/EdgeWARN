@@ -220,3 +220,69 @@ def test_seed_last_successful_migrates_when_no_cycle_state_exists(tmp_path):
     assert state.last_successful == timestamp
     assert state.last_attempted == timestamp
     assert state.retry_timestamp is None
+
+
+def test_supervisor_clears_cleanup_event_on_process_death(tmp_path):
+    import multiprocessing
+    import time
+
+    from util.runtime.processes import AccessorySupervisor
+
+    calls = []
+
+    def worker():
+        calls.append("run")
+
+    event = multiprocessing.Event()
+    supervisor = AccessorySupervisor(
+        health_path=str(tmp_path / "health.json"),
+        base_backoff_seconds=0.01,
+        max_backoff_seconds=0.1,
+        restart_window_seconds=60,
+    )
+    supervisor.add("test", worker, enabled=True, daemon=True, cleanup_event=event)
+    supervisor.start_all()
+    proc = supervisor._process_info[0]["process"]
+    event.set()
+
+    proc.kill()
+    proc.join(timeout=2)
+    assert not proc.is_alive()
+
+    supervisor.check()
+    time.sleep(0.2)
+
+    assert not event.is_set(), "cleanup event must be cleared when a registered process dies"
+    event.clear()
+    supervisor.shutdown()
+
+
+def test_supervisor_clears_cleanup_event_when_restarts_disabled(tmp_path):
+    import multiprocessing
+    import time
+
+    from util.runtime.processes import AccessorySupervisor
+
+    def worker():
+        pass  # exits immediately
+
+    event = multiprocessing.Event()
+    supervisor = AccessorySupervisor(
+        health_path=str(tmp_path / "health.json"),
+        max_restarts=2,
+        restart_window_seconds=60,
+        base_backoff_seconds=0.01,
+        max_backoff_seconds=0.05,
+    )
+    supervisor.add("crashy", worker, enabled=True, daemon=True, cleanup_event=event)
+
+    crashy_info = supervisor._process_info[0]
+    for _ in range(10):
+        event.set()
+        supervisor.check()
+        if not crashy_info["enabled"]:
+            break
+        time.sleep(0.05)
+
+    assert not crashy_info["enabled"], "crash-loop should disable restarts"
+    assert not event.is_set(), "cleanup event must be cleared even when restarts are disabled"

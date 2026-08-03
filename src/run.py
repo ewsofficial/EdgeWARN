@@ -181,6 +181,7 @@ def main():
         enabled=bool(EWMRS_ENABLED and GOES_ENABLED),
         args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
         daemon=True,
+        cleanup_event=GOES_RENDER_ACTIVE,
     )
     supervisor.add(
         "NEXRAD Render", nexrad_render_loop,
