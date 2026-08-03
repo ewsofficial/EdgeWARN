@@ -13,7 +13,7 @@ def test_nexrad_ingest_loop_restarts_after_exception(monkeypatch):
     log_queue = FakeQueue()
     calls = []
 
-    def _fake_run_realtime_ingestion_pipeline(base_dir=None):
+    def _fake_run_realtime_ingestion_pipeline(base_dir=None, **_kwargs):
         calls.append(base_dir)
         if len(calls) == 1:
             raise RuntimeError("boom")
@@ -33,7 +33,7 @@ def test_nexrad_ingest_loop_skips_restart_when_shutdown_requested(monkeypatch):
     log_queue = FakeQueue()
     calls = []
 
-    def _fake_run_realtime_ingestion_pipeline(base_dir=None):
+    def _fake_run_realtime_ingestion_pipeline(base_dir=None, **_kwargs):
         calls.append(base_dir)
         background._SHUTDOWN_REQUESTED = True
         return None

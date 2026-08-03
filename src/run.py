@@ -27,6 +27,10 @@ from util.runtime import (
     wpc_loop,
 )
 from util.release import get_release_version
+from common.ingest.nexrad.config import (
+    NEXRAD_HEARTBEAT_STALE_SECONDS,
+    NEXRAD_HEARTBEAT_STARTUP_GRACE_SECONDS,
+)
 
 sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
@@ -192,8 +196,11 @@ def main():
     supervisor.add(
         "NEXRAD Ingest", nexrad_ingest_loop,
         enabled=bool(EWMRS_ENABLED and NEXRAD_ENABLED),
-        args=(nexrad_log_queue, args.base_dir),
+        args=(nexrad_log_queue, args.base_dir, str(fs.DATA_DIR / "runtime" / "nexrad_ingest_heartbeat.json")),
         daemon=False,
+        heartbeat_path=str(fs.DATA_DIR / "runtime" / "nexrad_ingest_heartbeat.json"),
+        heartbeat_stale_seconds=NEXRAD_HEARTBEAT_STALE_SECONDS,
+        heartbeat_startup_grace_seconds=NEXRAD_HEARTBEAT_STARTUP_GRACE_SECONDS,
     )
     supervisor.start_all()
 

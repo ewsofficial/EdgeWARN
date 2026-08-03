@@ -69,17 +69,25 @@ class NexradVolumeDiscovery:
         self.async_chunk_lister = async_chunk_lister or async_list_volume_chunks
         self.max_candidate_volumes_per_site = max_candidate_volumes_per_site
 
-    async def discover_latest(self, site: str, station: RadarStationVcp, *, s3_client=None):
+    async def discover_latest(self, site: str, station: RadarStationVcp, *, s3_client=None, await_operation=None):
         latest_volume_id = None
         latest_chunks = ()
         latest_stamp = None
-        volume_ids = await self.async_volume_lister(
+        volume_list = self.async_volume_lister(
             site,
             limit=self.max_candidate_volumes_per_site,
             s3_client=s3_client,
         )
+        if await_operation is None:
+            volume_ids = await volume_list
+        else:
+            volume_ids = await await_operation(volume_list, stage="volume-discovery")
         for volume_id in volume_ids:
-            chunks = tuple(await self.async_chunk_lister(site, volume_id, s3_client=s3_client))
+            chunk_list = self.async_chunk_lister(site, volume_id, s3_client=s3_client)
+            if await_operation is None:
+                chunks = tuple(await chunk_list)
+            else:
+                chunks = tuple(await await_operation(chunk_list, stage="chunk-list", volume_id=volume_id))
             if not chunks:
                 continue
             stamp = extract_volume_timestamp(volume_id, chunks)

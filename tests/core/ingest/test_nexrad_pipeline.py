@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -318,6 +319,161 @@ async def test_pipeline_returns_no_records_for_failed_ingest(tmp_path):
     downloaded = await pipeline.scan_for_new_volumes_once()
 
     assert downloaded == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hung_stage", ["volume-discovery", "chunk-list", "ingest-download"])
+async def test_pipeline_timeout_does_not_block_healthy_site_or_next_scan(tmp_path, hung_stage, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    cancelled = asyncio.Event()
+    warnings = []
+
+    async def _never_resolves():
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    async def _volume_lister(site, **_kwargs):
+        if site == "KBAD" and hung_stage == "volume-discovery":
+            return await _never_resolves()
+        return ["bad"] if site == "KBAD" else ["good"]
+
+    async def _chunk_lister(site, volume_id, **_kwargs):
+        if site == "KBAD" and hung_stage == "chunk-list":
+            return await _never_resolves()
+        return _chunks(site=site, volume_id=volume_id)
+
+    async def _ingest(site, volume_id, **_kwargs):
+        if site == "KBAD" and hung_stage == "ingest-download":
+            return await _never_resolves()
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=12, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+
+    monkeypatch.setattr(
+        "common.ingest.nexrad.pipeline.io_manager.write_warning",
+        lambda message: warnings.append(message),
+    )
+    pipeline = NexradRealtimeIngestionPipeline(
+        base_dir=tmp_path,
+        station_fetcher=lambda **_kwargs: {"KBAD": _station("KBAD", vcp=12), "KGOOD": _station("KGOOD", vcp=12)},
+        async_volume_lister=_volume_lister,
+        async_chunk_lister=_chunk_lister,
+        async_ingest_trigger=_ingest,
+        max_site_tasks=2,
+        volume_discovery_timeout_seconds=0.01,
+        chunk_list_timeout_seconds=0.01,
+        ingest_timeout_seconds=0.01,
+        scan_timeout_seconds=0.1,
+    )
+
+    first = await pipeline.scan_for_new_volumes_once()
+    second = await pipeline.scan_for_new_volumes_once()
+
+    assert first == [_record("KGOOD", "good", "20260507-150000")]
+    assert second == [_record("KGOOD", "good", "20260507-150000")]
+    assert cancelled.is_set()
+    assert any(f"stage={hung_stage}" in message and "site=KBAD" in message for message in warnings)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hung_stage", ["chunk-list", "ingest-download"])
+async def test_pending_timeout_preserves_work_and_continues_to_other_volume(tmp_path, hung_stage, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    cancelled = asyncio.Event()
+    warnings = []
+
+    async def _never_resolves():
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    async def _chunk_lister(site, volume_id, **_kwargs):
+        if site == "KBAD" and hung_stage == "chunk-list":
+            return await _never_resolves()
+        return _chunks(site=site, volume_id=volume_id)
+
+    async def _ingest(site, volume_id, **_kwargs):
+        if site == "KBAD" and hung_stage == "ingest-download":
+            return await _never_resolves()
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=12, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+
+    monkeypatch.setattr(
+        "common.ingest.nexrad.pipeline.io_manager.write_warning",
+        lambda message: warnings.append(message),
+    )
+    pipeline = NexradRealtimeIngestionPipeline(
+        base_dir=tmp_path,
+        async_chunk_lister=_chunk_lister,
+        async_ingest_trigger=_ingest,
+        chunk_list_timeout_seconds=0.01,
+        ingest_timeout_seconds=0.01,
+    )
+    for site, volume_id in (("KBAD", "bad"), ("KGOOD", "good")):
+        pipeline.pending_tracker.upsert(PendingVolume(site=site, volume_id=volume_id, station=_station(site, vcp=12), latest_scan_time=None, ingest_started=True))
+
+    downloaded = await pipeline.check_pending_once()
+
+    assert downloaded == [_record("KGOOD", "good", "20260507-150000")]
+    assert ("KBAD", "bad") in pipeline.pending_tracker.pending
+    assert cancelled.is_set()
+    assert any(f"stage={hung_stage}" in message and "site=KBAD/bad" in message for message in warnings)
+
+
+@pytest.mark.asyncio
+async def test_pipeline_emits_heartbeat_for_completed_empty_and_output_cycles(tmp_path):
+    fs.initialize_filesystem(tmp_path)
+    heartbeats = []
+    pipeline = NexradRealtimeIngestionPipeline(
+        base_dir=tmp_path,
+        station_fetcher=lambda **_kwargs: {},
+        heartbeat_callback=heartbeats.append,
+    )
+
+    await pipeline.scan_for_new_volumes_once()
+    await pipeline.check_pending_once()
+
+    assert [heartbeat["cycle"] for heartbeat in heartbeats] == ["scan", "pending"]
+    assert all(heartbeat["output_count"] == 0 for heartbeat in heartbeats)
+
+
+@pytest.mark.asyncio
+async def test_pipeline_scan_deadline_cancels_remaining_site_and_keeps_completed_result(tmp_path, monkeypatch):
+    fs.initialize_filesystem(tmp_path)
+    cancelled = asyncio.Event()
+    warnings = []
+
+    async def _volume_lister(site, **_kwargs):
+        if site == "KBAD":
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        return ["good"]
+
+    async def _ingest(site, volume_id, **_kwargs):
+        return NexradIngestResult(site=site, volume_id=volume_id, vcp=12, dynamic_scan_type=None, volume_path=None, scan_timestamp="20260507-150000", low_path=None, high_path=None, manifest_path=None, chunks_downloaded=25, complete=True)
+
+    monkeypatch.setattr(
+        "common.ingest.nexrad.pipeline.io_manager.write_warning",
+        lambda message: warnings.append(message),
+    )
+    pipeline = NexradRealtimeIngestionPipeline(
+        base_dir=tmp_path,
+        station_fetcher=lambda **_kwargs: {"KBAD": _station("KBAD", vcp=12), "KGOOD": _station("KGOOD", vcp=12)},
+        async_volume_lister=_volume_lister,
+        async_chunk_lister=lambda site, volume_id, **_kwargs: _return(_chunks(site=site, volume_id=volume_id)),
+        async_ingest_trigger=_ingest,
+        max_site_tasks=2,
+        volume_discovery_timeout_seconds=1,
+        scan_timeout_seconds=0.2,
+    )
+
+    downloaded = await pipeline.scan_for_new_volumes_once()
+
+    assert downloaded == [_record("KGOOD", "good", "20260507-150000")]
+    assert cancelled.is_set()
+    assert any("site=KBAD stage=scan" in message for message in warnings)
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,8 @@
 import asyncio
 import ctypes
 from datetime import datetime, timezone
+import json
+import os
 import queue
 import signal
 import sys
@@ -153,19 +155,59 @@ def goes_render_loop(task_queue, log_queue, render_active_event):
         return
 
 
-def nexrad_ingest_loop(log_queue, base_dir):
+def _write_nexrad_heartbeat(heartbeat_path, payload, *, latest_output):
+    """Atomically publish completed NEXRAD-cycle progress for the supervisor."""
+    if heartbeat_path is None:
+        return latest_output
+    records = payload.get("completed_records", [])
+    if records:
+        record = records[-1]
+        latest_output = {
+            "site": record.site,
+            "volume_id": record.volume_id,
+            "scan_timestamp": record.scan_timestamp,
+        }
+    heartbeat = {
+        "pid": os.getpid(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "cycle": payload["cycle"],
+        "output_count": payload["output_count"],
+        "timed_out": payload["timed_out"],
+        "latest_output": latest_output,
+    }
+    os.makedirs(os.path.dirname(heartbeat_path), exist_ok=True)
+    temporary = f"{heartbeat_path}.tmp.{os.getpid()}"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(heartbeat, handle, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, heartbeat_path)
+    return latest_output
+
+
+def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
     from common.ingest.nexrad.worker_pool import shutdown_nexrad_pool
 
     _configure_process_runtime("NEXRAD-Ingest")
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
+    latest_output = None
+
+    def _heartbeat(payload):
+        nonlocal latest_output
+        latest_output = _write_nexrad_heartbeat(
+            heartbeat_path,
+            payload,
+            latest_output=latest_output,
+        )
+
     try:
         while not _SHUTDOWN_REQUESTED:
             try:
                 if _SHUTDOWN_REQUESTED:
                     return
                 queue_log(log_queue, "INFO: Starting NEXRAD ingest pipeline")
-                run_realtime_ingestion_pipeline(base_dir=base_dir)
+                run_realtime_ingestion_pipeline(base_dir=base_dir, heartbeat_callback=_heartbeat)
                 if _SHUTDOWN_REQUESTED:
                     return
                 queue_log(log_queue, "WARNING: NEXRAD ingest pipeline exited; restarting in 5s")

@@ -286,3 +286,45 @@ def test_supervisor_clears_cleanup_event_when_restarts_disabled(tmp_path):
 
     assert not crashy_info["enabled"], "crash-loop should disable restarts"
     assert not event.is_set(), "cleanup event must be cleared even when restarts are disabled"
+
+
+def test_supervisor_restarts_alive_process_with_stale_heartbeat(tmp_path):
+    import json
+    import multiprocessing
+    import time
+    from datetime import datetime, timedelta, timezone
+
+    from util.runtime.processes import AccessorySupervisor
+
+    def worker():
+        time.sleep(5)
+
+    heartbeat_path = tmp_path / "nexrad_heartbeat.json"
+    supervisor = AccessorySupervisor(
+        health_path=str(tmp_path / "health.json"),
+        base_backoff_seconds=0.01,
+        max_backoff_seconds=0.05,
+    )
+    supervisor.add(
+        "NEXRAD Ingest",
+        worker,
+        daemon=True,
+        heartbeat_path=str(heartbeat_path),
+        heartbeat_stale_seconds=0.01,
+        heartbeat_startup_grace_seconds=60,
+    )
+    supervisor.start_all()
+    old_proc = supervisor._process_info[0]["process"]
+    heartbeat_path.write_text(json.dumps({
+        "pid": old_proc.pid,
+        "updated_at": (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat(),
+    }), encoding="utf-8")
+
+    supervisor.check()
+
+    new_proc = supervisor._process_info[0]["process"]
+    assert new_proc is not None and new_proc.is_alive()
+    assert new_proc.pid != old_proc.pid
+    health = json.loads((tmp_path / "health.json").read_text(encoding="utf-8"))
+    assert "stale heartbeat" in health["NEXRAD Ingest"]["last_error"]
+    supervisor.shutdown()
