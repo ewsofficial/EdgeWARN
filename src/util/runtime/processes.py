@@ -75,7 +75,20 @@ class AccessorySupervisor:
     max_backoff_seconds: float = 30.0
     health_path: str | None = None
 
-    def add(self, name, target, *, enabled=True, args=None, kwargs=None, daemon=True, cleanup_event=None):
+    def add(
+        self,
+        name,
+        target,
+        *,
+        enabled=True,
+        args=None,
+        kwargs=None,
+        daemon=True,
+        cleanup_event=None,
+        heartbeat_path=None,
+        heartbeat_stale_seconds=None,
+        heartbeat_startup_grace_seconds=0.0,
+    ):
         entry = {
             "name": name,
             "target": target,
@@ -85,6 +98,10 @@ class AccessorySupervisor:
             "enabled": enabled,
             "process": None,
             "cleanup_event": cleanup_event,
+            "heartbeat_path": heartbeat_path,
+            "heartbeat_stale_seconds": heartbeat_stale_seconds,
+            "heartbeat_startup_grace_seconds": max(0.0, float(heartbeat_startup_grace_seconds)),
+            "started_monotonic": None,
         }
         self._process_info.append(entry)
         return entry
@@ -103,6 +120,7 @@ class AccessorySupervisor:
             proc.daemon = info["daemon"]
             proc.start()
             info["process"] = proc
+            info["started_monotonic"] = time.monotonic()
             self._record_health(info["name"], "running")
 
     def request_stop(self):
@@ -117,8 +135,40 @@ class AccessorySupervisor:
             proc = info.get("process")
             if proc is None or not proc.is_alive():
                 self._handle_death(info, now)
+            else:
+                stale_age = self._stale_heartbeat_age(info, proc, now)
+                if stale_age is not None:
+                    reason = f"stale heartbeat ({stale_age:.1f}s old)"
+                    print(f"[Supervisor] {info['name']} process is alive but has {reason}; restarting")
+                    stop_process(proc, info["name"])
+                    self._handle_death(info, now, reason=reason)
 
-    def _handle_death(self, info, now):
+    def _stale_heartbeat_age(self, info, proc, monotonic_now):
+        path = info.get("heartbeat_path")
+        stale_after = info.get("heartbeat_stale_seconds")
+        if not path or stale_after is None:
+            return None
+        started_at = info.get("started_monotonic") or monotonic_now
+        try:
+            stale_after = float(stale_after)
+        except (TypeError, ValueError):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                heartbeat = json.load(handle)
+            if int(heartbeat.get("pid")) != proc.pid:
+                raise ValueError("heartbeat belongs to a different process")
+            updated_at = datetime.fromisoformat(str(heartbeat["updated_at"]))
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - updated_at).total_seconds()
+            return age if age > stale_after else None
+        except Exception:
+            startup_grace = info.get("heartbeat_startup_grace_seconds", 0.0)
+            age = monotonic_now - started_at
+            return age if age > max(stale_after, startup_grace) else None
+
+    def _handle_death(self, info, now, *, reason="dead"):
         import multiprocessing
         name = info["name"]
         with self._lock:
@@ -128,7 +178,7 @@ class AccessorySupervisor:
 
             attempt = len(times)
             exit_code = info["process"].exitcode if info["process"] is not None else "N/A"
-            print(f"[Supervisor] {name} process is dead (pid exited {exit_code}); restart attempt {attempt}")
+            print(f"[Supervisor] {name} process is {reason} (pid exited {exit_code}); restart attempt {attempt}")
 
             # Clear any shared flag the process may have left asserted before
             # deciding on a restart: blocking loops (e.g. GOES ingest pausing
@@ -154,7 +204,7 @@ class AccessorySupervisor:
                 self.max_backoff_seconds,
                 self.base_backoff_seconds * (2 ** (attempt - 1)),
             )
-            self._record_health(name, "restarting", error="dead, restart pending", attempt=attempt)
+            self._record_health(name, "restarting", error=f"{reason}, restart pending", attempt=attempt)
 
         time.sleep(delay)
 
@@ -170,6 +220,7 @@ class AccessorySupervisor:
         proc.daemon = info["daemon"]
         proc.start()
         info["process"] = proc
+        info["started_monotonic"] = time.monotonic()
         self._record_health(name, "running")
 
     def _record_health(self, name, status, *, error=None, attempt=None):

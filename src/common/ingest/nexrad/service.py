@@ -1010,59 +1010,65 @@ class NexradIngestService:
         if self._stream_chunk_downloads:
             response = await s3_client.get_object(Bucket=CHUNKS_BUCKET, Key=chunk.key)
             body = response["Body"]
-            async for data in body.iter_chunks():
-                yield data
-            if hasattr(body, "close"):
-                maybe_close = body.close()
-                if asyncio.iscoroutine(maybe_close):
-                    await maybe_close
+            try:
+                async for data in body.iter_chunks():
+                    yield data
+            finally:
+                await self._close_async_body(body)
         else:
             payload = await self.async_chunk_fetcher(chunk, s3_client=s3_client)
             if not isinstance(payload, (bytes, bytearray)):
                 body = payload["Body"] if isinstance(payload, dict) else payload
                 if hasattr(body, "iter_chunks"):
-                    async for data in body.iter_chunks():
-                        yield data
-                    if hasattr(body, "close"):
-                        maybe_close = body.close()
-                        if asyncio.iscoroutine(maybe_close):
-                            await maybe_close
+                    try:
+                        async for data in body.iter_chunks():
+                            yield data
+                    finally:
+                        await self._close_async_body(body)
                 else:
-                    yield await body.read()
+                    try:
+                        yield await body.read()
+                    finally:
+                        await self._close_async_body(body)
             else:
                 yield payload
+
+    @staticmethod
+    async def _close_async_body(body):
+        if hasattr(body, "close"):
+            maybe_close = body.close()
+            if asyncio.iscoroutine(maybe_close):
+                await maybe_close
 
     async def _fetch_chunk_bytes(self, chunk, s3_client) -> bytes:
         """Fetch chunk bytes, returning joined bytes for boundary tracking."""
         if self._stream_chunk_downloads:
             response = await s3_client.get_object(Bucket=CHUNKS_BUCKET, Key=chunk.key)
             body = response["Body"]
-            parts = []
-            async for data in body.iter_chunks():
-                parts.append(data)
-            payload = b"".join(parts)
-            del parts
-            if hasattr(body, "close"):
-                maybe_close = body.close()
-                if asyncio.iscoroutine(maybe_close):
-                    await maybe_close
-            return payload
+            try:
+                parts = []
+                async for data in body.iter_chunks():
+                    parts.append(data)
+                return b"".join(parts)
+            finally:
+                await self._close_async_body(body)
         else:
             payload = await self.async_chunk_fetcher(chunk, s3_client=s3_client)
             if not isinstance(payload, (bytes, bytearray)):
                 body = payload["Body"] if isinstance(payload, dict) else payload
                 if hasattr(body, "iter_chunks"):
-                    parts = []
-                    async for data in body.iter_chunks():
-                        parts.append(data)
-                    payload = b"".join(parts)
-                    del parts
-                    if hasattr(body, "close"):
-                        maybe_close = body.close()
-                        if asyncio.iscoroutine(maybe_close):
-                            await maybe_close
+                    try:
+                        parts = []
+                        async for data in body.iter_chunks():
+                            parts.append(data)
+                        payload = b"".join(parts)
+                    finally:
+                        await self._close_async_body(body)
                 else:
-                    payload = await body.read()
+                    try:
+                        payload = await body.read()
+                    finally:
+                        await self._close_async_body(body)
             return payload
 
     async def _prefetch_pending_chunks(self, pending_chunks, *, s3_client, chunk_download_semaphore=None):

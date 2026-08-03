@@ -10,6 +10,17 @@ WEATHER_API_USER_AGENT = "(EdgeWARN/2.7.0, ewsbackend@gmail.com)"
 WEATHER_API_TIMEOUT_SECONDS = 15
 WEATHER_API_CACHE_TTL_SECONDS = 30
 
+# Realtime pipeline deadlines.  These are deliberately application-level
+# bounds: SDK/network defaults alone do not protect a scan cycle from a task
+# that never resolves.
+NEXRAD_VOLUME_DISCOVERY_TIMEOUT_SECONDS = 20.0
+NEXRAD_CHUNK_LIST_TIMEOUT_SECONDS = 20.0
+NEXRAD_INGEST_TIMEOUT_SECONDS = 120.0
+NEXRAD_SCAN_TIMEOUT_SECONDS = 180.0
+NEXRAD_CANCELLATION_GRACE_SECONDS = 2.0
+NEXRAD_HEARTBEAT_STALE_SECONDS = 240.0
+NEXRAD_HEARTBEAT_STARTUP_GRACE_SECONDS = 60.0
+
 
 def format_perf_ms(started_at: float) -> float:
     """Return elapsed wall-clock time in milliseconds."""
