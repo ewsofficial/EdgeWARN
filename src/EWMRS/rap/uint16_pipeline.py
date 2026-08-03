@@ -16,6 +16,7 @@ import numpy as np
 from EWMRS.rap.config import UINT16_NODATA, UINT16_VALID_MAX, get_rap_uint16_layers
 from util.io import IOManager
 import util.file as fs
+from util.atomic import atomic_write_bytes, atomic_write_json
 
 io_manager = IOManager("[RAPUint16]")
 
@@ -81,7 +82,11 @@ def run_rap_uint16_pipeline(
                 encoded = scale_to_uint16(values, layer["scale"], missing_value=missing_value)
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                encoded.tofile(output_path)
+                payload = encoded.tobytes(order="C")
+                expected_size = int(encoded.size) * encoded.dtype.itemsize
+                if len(payload) != expected_size:
+                    raise ValueError("unexpected RAP uint16 payload length")
+                atomic_write_bytes(output_path, payload)
 
                 metadata = _build_metadata(
                     layer=layer,
@@ -92,7 +97,7 @@ def run_rap_uint16_pipeline(
                 )
                 elapsed_seconds = time.perf_counter() - layer_start
                 metadata["conversion_time_seconds"] = elapsed_seconds
-                metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+                atomic_write_json(metadata_path, metadata, indent=2)
                 _update_product_index(Path(layer["outdir"]), timestamp, max_timestamps=3)
 
                 results[str(layer["name"])] = output_path
@@ -277,7 +282,7 @@ def _update_product_index(out_dir: Path, timestamp: str, max_timestamps: int = 3
         "byte_order": "little_endian",
         "missing_value": UINT16_NODATA,
     }
-    index_path.write_text(json.dumps(index_data, indent=2), encoding="utf-8")
+    atomic_write_json(index_path, index_data, indent=2)
 
 def cleanup_old_rap_uint16_layers(max_timestamps: int = 3) -> int:
     """Remove old timestamp directories for RAP uint16 layers, keeping only max_timestamps per layer."""

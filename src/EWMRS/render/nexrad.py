@@ -7,6 +7,7 @@ import struct
 from pathlib import Path
 
 import numpy as np
+from util.atomic import atomic_output_path, atomic_write_json
 
 import util.file as fs
 from common.ingest.nexrad.parser import MSG_31_BLOCK_POINTERS, MSG_HEADER_LEN, MSG_31_PREFIX_LEN, iter_sweep_records, parse_grouped_ar2v_file_mmap
@@ -133,12 +134,17 @@ def _write_nexrad_variable_bin(path: Path, dense_data: np.ndarray, azimuths: np.
     range_values = np.asarray(ranges, dtype="<f4")
     counts = np.asarray([azimuth_values.shape[0], range_values.shape[0]], dtype="<u4")
 
-    with gzip.open(path, "wb") as handle:
-        handle.write(NEXRAD_FIELD_MAGIC)
-        handle.write(counts.tobytes(order="C"))
-        handle.write(data.tobytes(order="C"))
-        handle.write(azimuth_values.tobytes(order="C"))
-        handle.write(range_values.tobytes(order="C"))
+    with atomic_output_path(path) as temporary:
+        with gzip.open(temporary, "wb") as handle:
+            handle.write(NEXRAD_FIELD_MAGIC)
+            handle.write(counts.tobytes(order="C"))
+            handle.write(data.tobytes(order="C"))
+            handle.write(azimuth_values.tobytes(order="C"))
+            handle.write(range_values.tobytes(order="C"))
+        # Verify the completed stream can be read before exposing it.
+        with gzip.GzipFile(filename=temporary, mode="rb") as handle:
+            if handle.read(len(NEXRAD_FIELD_MAGIC)) != NEXRAD_FIELD_MAGIC:
+                raise ValueError("invalid NEXRAD binary magic")
 
 
 def _normalize_azimuth_axis(dense_data: np.ndarray, azimuths: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -392,7 +398,7 @@ def serialize_nexrad_render_intermediate(
         "dynamic_scan_type": parsed_volume.dynamic_scan_type,
         "layers": manifest_layers,
     }
-    manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
+    atomic_write_json(manifest_path, manifest_payload, indent=2)
     return manifest_path
 
 
@@ -440,5 +446,5 @@ def serialize_nexrad_elevation_artifacts(
         "source": "elevation_artifacts",
         "layers": manifest_layers,
     }
-    manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
+    atomic_write_json(manifest_path, manifest_payload, indent=2)
     return manifest_path

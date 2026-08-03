@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 import util.file as fs
+from util.atomic import atomic_write_json
 from util.io import IOManager
 
 from .schema import AlertPayload
@@ -53,8 +54,7 @@ class AlertManager:
             safe_id = alert.id.replace(":", "_").replace("/", "_") + ".json"
             alert_file = fs.EDGEWARN_ALERTS_IDS_DIR / safe_id
 
-            with open(alert_file, "w") as f:
-                json.dump(alert.to_dict(), f, indent=4)
+            atomic_write_json(alert_file, alert.to_dict(), indent=4)
 
             return True
 
@@ -236,12 +236,11 @@ class AlertManager:
         snapshot_file = fs.EDGEWARN_ALERTS_TS_DIR / f"{file_ts_str}.json"
         
         try:
-            with open(snapshot_file, "w") as f:
-                json.dump({
-                    "timestamp": scan_dt.isoformat(),
-                    "count": len(active_alerts),
-                    "alerts": active_alerts
-                }, f, indent=4)
+            atomic_write_json(snapshot_file, {
+                "timestamp": scan_dt.isoformat(),
+                "count": len(active_alerts),
+                "alerts": active_alerts
+            }, indent=4)
             return True
         except Exception as e:
             io_manager.write_error(f"Failed to write snapshot {snapshot_file.name}: {e}")

@@ -89,6 +89,10 @@ def _load_active_alerts_with_cache(
             valid_files = [f for f in ts_files if f.stem <= target_str]
             if valid_files:
                 selected_file = valid_files[-1]
+            else:
+                # Historical processing must never borrow the newest/current
+                # alert snapshot for a target preceding retained history.
+                return [], None
                 
         cache_key = _build_alert_snapshot_cache_key(selected_file, ids_dir)
         cached_features = _ALERT_SNAPSHOT_CACHE.get(cache_key)

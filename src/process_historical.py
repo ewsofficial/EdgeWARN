@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+import json
 import time
 
 import common.ingest.mrms.config as mrms_config
@@ -12,6 +13,22 @@ sys.stdout = TimestampedOutput(sys.stdout)
 sys.stderr = TimestampedOutput(sys.stderr)
 
 io_manager = IOManager("[HistoricalProcess]")
+
+
+def _validated_historical_output(path: Path, requested_time: datetime) -> bool:
+    """Confirm this iteration produced an artifact for its own scan minute."""
+    if not path.is_file():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        timestamp = payload.get("latest_timestamp")
+        observed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if observed.tzinfo is None:
+            observed = observed.replace(tzinfo=timezone.utc)
+        expected = requested_time.astimezone(timezone.utc).replace(second=0, microsecond=0)
+        return observed.astimezone(timezone.utc).replace(second=0, microsecond=0) == expected
+    except (OSError, ValueError, TypeError, json.JSONDecodeError, AttributeError):
+        return False
 
 def main():
     """Historical scheduler: iterate through time range and process each available timestamp."""
@@ -77,7 +94,7 @@ def main():
         
         # Run the pipeline
         try:
-            historical_pipeline(
+            result = historical_pipeline(
                 latest_common,
                 lat_limits,
                 lon_limits,
@@ -91,19 +108,24 @@ def main():
                 min_seed_percentage=args.min_seed_percentage,
                 drop_offset=args.drop_offset,
             )
-            
+
+            generated_file = result[0] if isinstance(result, tuple) else result
+            generated_path = Path(generated_file) if generated_file else None
+            if generated_path is None or not _validated_historical_output(
+                generated_path, latest_common
+            ):
+                raise RuntimeError(
+                    "Historical pipeline did not produce a validated artifact for its requested timestamp"
+                )
+
             last_processed_timestamp = latest_common
-            
-            # Verify output
-            if json_output.exists():
-                io_manager.write_info(f"✓ Output saved to {json_output}")
-            else:
-                io_manager.write_warning(f"✗ Warning: No output file at {json_output}")
+            io_manager.write_info(f"✓ Output saved to {generated_path}")
                 
         except Exception as e:
             io_manager.write_error(f"Pipeline failed for {latest_common}: {e}")
-            # Continue processing other timestamps even if this one failed
-            last_processed_timestamp = latest_common
+            io_manager.write_warning(
+                f"Timestamp {latest_common} remains unprocessed and may be retried"
+            )
 
         # Increment search time by 1 minute
         current_time += timedelta(minutes=1)

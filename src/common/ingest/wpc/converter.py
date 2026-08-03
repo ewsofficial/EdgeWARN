@@ -1,6 +1,7 @@
 """Converter to transform parsed WPC data to GeoJSON format."""
 
 import json
+from util.atomic import atomic_write_json
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Optional
 
@@ -146,5 +147,4 @@ def save_geojson(geojson: Dict, filepath: str) -> None:
         geojson: GeoJSON dictionary
         filepath: Output file path
     """
-    with open(filepath, 'w') as f:
-        json.dump(geojson, f, indent=2)
+    atomic_write_json(filepath, geojson, indent=2)

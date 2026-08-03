@@ -7,6 +7,7 @@ with the coordinate origin (0,0) at the bottom-left corner.
 from typing import List, Tuple
 import numpy as np
 from PIL import Image
+from util.atomic import atomic_output_path
 
 
 class TileSplitter:
@@ -22,4 +23,5 @@ def save_tile(tile_data: np.ndarray, output_path: str) -> None:
         output_path: Path to save the PNG file.
     """
     img = Image.fromarray(tile_data, mode="RGBA")
-    img.save(output_path, compress_level=1)  # Fast compression
+    with atomic_output_path(output_path) as temporary:
+        img.save(temporary, format="PNG", compress_level=1)  # Fast compression

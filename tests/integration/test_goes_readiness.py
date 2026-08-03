@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 
 from common.pipeline.goes_readiness import check_local_glm_ready, check_local_goes_ready
 
@@ -82,3 +83,35 @@ def test_check_local_goes_ready_requires_full_abi_set(tmp_path):
 
     assert ready is False
     assert path is None
+
+
+def test_goes_readiness_uses_encoded_time_instead_of_mtime(tmp_path):
+    dt = datetime(2026, 4, 19, 0, 10, tzinfo=timezone.utc)
+    abi_dir = tmp_path / "VisibleRed"
+    abi_dir.mkdir()
+    target = (
+        abi_dir
+        / "OR_ABI-L1b-RadC-M6C02_G19_s20261090010000.nc"
+    )
+    target.write_bytes(b"target")
+    os.utime(target, (1, 1))
+
+    for minute in range(30, 36):
+        distractor = (
+            abi_dir
+            / f"OR_ABI-L1b-RadC-M6C02_G19_s202610901{minute:02d}000.nc"
+        )
+        distractor.write_bytes(b"future")
+
+    ready, path = check_local_goes_ready(
+        dt,
+        specs=[
+            {
+                "name": "GOES_ABI_C02_Reflectance",
+                "filepath": abi_dir,
+            }
+        ],
+    )
+
+    assert ready is True
+    assert path == str(target)

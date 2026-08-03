@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from util.io import IOManager
 import util.file as fs
+from util.atomic import atomic_write_json
 
 
 class APIIndexManager:
@@ -63,8 +64,7 @@ class APIIndexManager:
         }
         
         # Write index
-        with open(self.stormcell_index_path, 'w') as f:
-            json.dump(index_data, f, indent=2)
+        atomic_write_json(self.stormcell_index_path, index_data, indent=2)
             
     def _initial_scan_cell_index(self):
         """Scan CELL_DIR once on startup to populate our internal state."""
@@ -108,8 +108,7 @@ class APIIndexManager:
             "lastUpdated": datetime.now(timezone.utc).isoformat()
         }
         
-        with open(self.cell_index_path, 'w') as f:
-            json.dump(index_data, f, indent=2)
+        atomic_write_json(self.cell_index_path, index_data, indent=2)
             
     def update_stormcell_index(self, timestamp: str):
         """
@@ -138,8 +137,7 @@ class APIIndexManager:
                 "timestamps": sorted(self.stormcell_timestamps),
                 "lastUpdated": datetime.now(timezone.utc).isoformat()
             }
-            with open(self.stormcell_index_path, 'w') as f:
-                json.dump(index_data, f, indent=2)
+            atomic_write_json(self.stormcell_index_path, index_data, indent=2)
             return
 
         self._initialize_stormcell_index()

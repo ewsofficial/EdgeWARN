@@ -6,15 +6,11 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-import util.file as fs
-
-
 _GOES_SCAN_WINDOW_PATTERN = re.compile(
     r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)"
     r"_e(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)"
 )
 _GOES_SCAN_START_PATTERN = re.compile(r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)")
-_READINESS_CANDIDATE_COUNT = 5
 _GOES_RENDER_MAX_OFFSET_MINUTES = 20.0
 
 
@@ -122,8 +118,16 @@ def _window_distance_seconds(target_dt, start_dt, end_dt):
 
 def latest_goes_file_near_target(directory, target_dt, *, max_offset_minutes=_GOES_RENDER_MAX_OFFSET_MINUTES):
     """Return the staged GOES file nearest ``target_dt`` within the allowed offset."""
-    latest = fs.latest_files(directory, _READINESS_CANDIDATE_COUNT)
-    if not latest:
+    directory = Path(directory)
+    try:
+        candidates = [
+            path
+            for path in directory.iterdir()
+            if path.is_file() and path.suffix.lower() != ".idx"
+        ]
+    except OSError:
+        candidates = []
+    if not candidates:
         return None
 
     target_dt = _normalize_target_dt(target_dt)
@@ -131,8 +135,8 @@ def latest_goes_file_near_target(directory, target_dt, *, max_offset_minutes=_GO
     best_path = None
     best_distance = None
 
-    for latest_path in reversed(latest):
-        file_window = parse_staged_file_time_window(latest_path)
+    for candidate_path in candidates:
+        file_window = parse_staged_file_time_window(candidate_path)
         if file_window is None:
             continue
 
@@ -145,17 +149,34 @@ def latest_goes_file_near_target(directory, target_dt, *, max_offset_minutes=_GO
             continue
 
         if best_distance is None or distance_seconds < best_distance:
-            best_path = latest_path
+            best_path = candidate_path
             best_distance = distance_seconds
+        elif distance_seconds == best_distance and best_path is not None:
+            candidate_time = parse_staged_file_timestamp(candidate_path)
+            best_time = parse_staged_file_timestamp(best_path)
+            if (
+                candidate_time is not None
+                and best_time is not None
+                and candidate_time > best_time
+            ):
+                best_path = candidate_path
 
     return best_path
 
 
 def check_local_goes_ready(dt, *, specs=None):
     """Readiness for EWMRS GOES phase: requires the full configured ABI render set."""
+    matched_paths = collect_local_goes_paths(dt, specs=specs)
+    if not matched_paths:
+        return False, None
+    return True, str(matched_paths[0][1])
+
+
+def collect_local_goes_paths(dt, *, specs=None):
+    """Return every exact configured ABI path selected for ``dt``."""
     candidate_specs = get_ewmrs_goes_render_specs() if specs is None else specs
     if not candidate_specs:
-        return False, None
+        return ()
 
     matched_paths = []
 
@@ -166,13 +187,15 @@ def check_local_goes_ready(dt, *, specs=None):
 
         latest_path = latest_goes_file_near_target(source_path, dt)
         if latest_path is None:
-            return False, None
-        matched_paths.append(latest_path)
+            return ()
+        product = (
+            spec.get("name")
+            if isinstance(spec, dict)
+            else getattr(spec, "name", None)
+        )
+        matched_paths.append((str(product or Path(source_path).name), Path(latest_path)))
 
-    if not matched_paths:
-        return False, None
-
-    return True, matched_paths[0]
+    return tuple(matched_paths)
 
 
 def check_local_glm_ready(dt, *, specs):

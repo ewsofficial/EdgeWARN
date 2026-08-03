@@ -4,6 +4,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 import util.file as fs
+from common.ingest.manifest import CycleInputManifest
 from util.io import IOManager
 from util.performance import tracker as perf_tracker
 
@@ -32,7 +33,20 @@ def _run_step(step_name, action):
         raise
 
 
-def _integrate_dataset_groups(integrator, cells):
+def _selected_input_path(filepath, input_manifest):
+    if input_manifest is not None:
+        record = input_manifest.latest_for_directory(filepath)
+        return record.local_path if record is not None else None
+
+    latest_files = fs.latest_files(filepath, 1)
+    return latest_files[-1] if latest_files else None
+
+
+def _selection_label(input_manifest):
+    return "pinned" if input_manifest is not None else "latest"
+
+
+def _integrate_dataset_groups(integrator, cells, input_manifest=None):
     grouped_configs = defaultdict(list)
     for config in get_datasets_config():
         grouped_configs[config["filepath"]].append(config)
@@ -44,18 +58,24 @@ def _integrate_dataset_groups(integrator, cells):
         name_str = ", ".join(name_list)
 
         try:
-            latest_files = fs.latest_files(filepath, 1)
-            if not latest_files:
+            selected_file = _selected_input_path(filepath, input_manifest)
+            if selected_file is None:
                 io_manager.write_warning(f"No files found for {name_str} at {filepath}, skipping")
                 continue
 
-            latest_file = latest_files[-1]
-            io_manager.write_debug(f"Using latest file for {name_str}: {latest_file}")
+            io_manager.write_info(
+                f"Using {_selection_label(input_manifest)} input for "
+                f"{name_str}: {selected_file}"
+            )
 
+            # Manifest records intentionally retain ``Path`` values so their
+            # identity is immutable through the cycle.  The statistics
+            # integrator predates that contract and determines its reader via
+            # ``str.endswith``; convert only at this legacy boundary.
             result_cells = _run_step(
                 f"Integration - {name_str}",
                 lambda: integrator.integrate_multi_stats(
-                    latest_file,
+                    str(selected_file),
                     result_cells,
                     group_list,
                     cell_contexts=cell_contexts,
@@ -69,21 +89,21 @@ def _integrate_dataset_groups(integrator, cells):
     return result_cells
 
 
-def _integrate_azshear(integrator, cells):
+def _integrate_azshear(integrator, cells, input_manifest=None):
     if not _AZSHEAR_SUPPORT_ENABLED:
         io_manager.write_info("AzShear support feature integration disabled")
         return cells
 
     try:
-        latest_low_files = fs.latest_files(fs.MRMS_AZSHEARLOW_DIR, 1)
-        latest_mid_files = fs.latest_files(fs.MRMS_AZSHEARMID_DIR, 1)
-        if latest_low_files and latest_mid_files:
+        low_file = _selected_input_path(fs.MRMS_AZSHEARLOW_DIR, input_manifest)
+        mid_file = _selected_input_path(fs.MRMS_AZSHEARMID_DIR, input_manifest)
+        if low_file and mid_file:
             io_manager.write_info(f"Integrating AzShear support features for {len(cells)} cells")
             return _run_step(
                 "Integration - AzShear Features",
                 lambda: integrator.integrate_azshear_features(
-                    latest_low_files[-1],
-                    latest_mid_files[-1],
+                    str(low_file),
+                    str(mid_file),
                     cells,
                 ),
             )
@@ -95,17 +115,22 @@ def _integrate_azshear(integrator, cells):
     return cells
 
 
-def _integrate_probsevere(integrator, cells):
+def _integrate_probsevere(integrator, cells, input_manifest=None):
     try:
-        latest_files = fs.latest_files(fs.MRMS_PROBSEVERE_DIR, 1)
-        if not latest_files:
+        selected_file = _selected_input_path(
+            fs.MRMS_PROBSEVERE_DIR,
+            input_manifest,
+        )
+        if selected_file is None:
             io_manager.write_warning("No ProbSevere files found, skipping ProbSevere integration")
             return cells
 
-        latest_file = latest_files[-1]
-        with open(latest_file, "r") as f:
+        with open(selected_file, "r") as f:
             probsevere_data = json.load(f)
-        io_manager.write_debug(f"Using latest ProbSevere file: {latest_file}")
+        io_manager.write_info(
+            f"Using {_selection_label(input_manifest)} ProbSevere input: "
+            f"{selected_file}"
+        )
 
         cells = _run_step(
             "Integration - ProbSevere",
@@ -118,14 +143,16 @@ def _integrate_probsevere(integrator, cells):
     return cells
 
 
-def _integrate_glm(cells):
+def _integrate_glm(cells, input_manifest=None):
     try:
         io_manager.write_info(f"Integrating GLM data for {len(cells)} cells")
-        latest_glm_files = fs.latest_files(fs.GOES_GLM_DIR, 1)
-        if latest_glm_files:
-            latest_file = latest_glm_files[-1]
-            io_manager.write_debug(f"Using latest GLM file: {latest_file}")
-            cells = _run_step("Integration - GLM", lambda: integrate_glm(cells, latest_file))
+        selected_file = _selected_input_path(fs.GOES_GLM_DIR, input_manifest)
+        if selected_file:
+            io_manager.write_info(
+                f"Using {_selection_label(input_manifest)} GLM input: "
+                f"{selected_file}"
+            )
+            cells = _run_step("Integration - GLM", lambda: integrate_glm(cells, selected_file))
             io_manager.write_debug("Successfully integrated GLM data")
         else:
             io_manager.write_warning("No GLM files found, skipping GLM integration")
@@ -136,14 +163,16 @@ def _integrate_glm(cells):
     return cells
 
 
-def _integrate_rap(cells):
+def _integrate_rap(cells, input_manifest=None):
     try:
         io_manager.write_info(f"Integrating RAP data for {len(cells)} cells")
-        latest_rap_files = fs.latest_files(fs.RAP_DIR, 1)
-        if latest_rap_files:
-            latest_file = latest_rap_files[-1]
-            io_manager.write_debug(f"Using latest RAP file: {latest_file}")
-            cells = _run_step("Integration - RAP", lambda: integrate_rap(cells, latest_file, io_manager))
+        selected_file = _selected_input_path(fs.RAP_DIR, input_manifest)
+        if selected_file:
+            io_manager.write_info(
+                f"Using {_selection_label(input_manifest)} RAP input: "
+                f"{selected_file}"
+            )
+            cells = _run_step("Integration - RAP", lambda: integrate_rap(cells, selected_file, io_manager))
             io_manager.write_debug("Successfully integrated RAP data")
         else:
             io_manager.write_warning("No RAP files found, skipping RAP integration")
@@ -237,20 +266,38 @@ def _support_owned_keys():
     return set(PROBSEVERE_FIELD_MAP.keys()) | set(_GLM_OUTPUT_KEYS) | set(get_rap_output_roots())
 
 
-def _run_enrichment_serial(integrator, cells, *, include_glm=True, include_rap=True):
+def _run_enrichment_serial(
+    integrator,
+    cells,
+    *,
+    include_glm=True,
+    include_rap=True,
+    input_manifest=None,
+):
     result_cells = cells
-    result_cells = _integrate_dataset_groups(integrator, result_cells)
+    result_cells = _integrate_dataset_groups(
+        integrator,
+        result_cells,
+        input_manifest,
+    )
     if _AZSHEAR_SUPPORT_ENABLED:
-        result_cells = _integrate_azshear(integrator, result_cells)
-    result_cells = _integrate_probsevere(integrator, result_cells)
+        result_cells = _integrate_azshear(integrator, result_cells, input_manifest)
+    result_cells = _integrate_probsevere(integrator, result_cells, input_manifest)
     if include_glm:
-        result_cells = _integrate_glm(result_cells)
+        result_cells = _integrate_glm(result_cells, input_manifest)
     if include_rap:
-        result_cells = _integrate_rap(result_cells)
+        result_cells = _integrate_rap(result_cells, input_manifest)
     return result_cells
 
 
-def _run_parallel_enrichment(integrator, cells, *, include_glm=True, include_rap=True):
+def _run_parallel_enrichment(
+    integrator,
+    cells,
+    *,
+    include_glm=True,
+    include_rap=True,
+    input_manifest=None,
+):
     if not cells:
         return cells
 
@@ -261,7 +308,11 @@ def _run_parallel_enrichment(integrator, cells, *, include_glm=True, include_rap
         worker_cells = _clone_cells_for_worker(cells)
         worker_result = _run_step(
             "Integration - Worker Stats",
-            lambda: _integrate_dataset_groups(integrator, worker_cells),
+            lambda: _integrate_dataset_groups(
+                integrator,
+                worker_cells,
+                input_manifest,
+            ),
         )
         return _extract_patch_for_keys(worker_result, stats_keys)
 
@@ -269,7 +320,11 @@ def _run_parallel_enrichment(integrator, cells, *, include_glm=True, include_rap
         worker_cells = _clone_cells_for_worker(cells, preserve_properties=True)
         worker_result = _run_step(
             "Integration - Worker AzShear",
-            lambda: _integrate_azshear(integrator, worker_cells),
+            lambda: _integrate_azshear(
+                integrator,
+                worker_cells,
+                input_manifest,
+            ),
         )
         return _extract_patch_for_keys(worker_result, {"azshear"})
 
@@ -277,11 +332,15 @@ def _run_parallel_enrichment(integrator, cells, *, include_glm=True, include_rap
         worker_cells = _clone_cells_for_worker(cells)
 
         def _run():
-            staged_cells = _integrate_probsevere(integrator, worker_cells)
+            staged_cells = _integrate_probsevere(
+                integrator,
+                worker_cells,
+                input_manifest,
+            )
             if include_glm:
-                staged_cells = _integrate_glm(staged_cells)
+                staged_cells = _integrate_glm(staged_cells, input_manifest)
             if include_rap:
-                staged_cells = _integrate_rap(staged_cells)
+                staged_cells = _integrate_rap(staged_cells, input_manifest)
             return staged_cells
 
         worker_result = _run_step("Integration - Worker Support", _run)
@@ -366,7 +425,13 @@ def _update_api_indexes(cells, remove_old_cells):
         io_manager.write_error(f"Failed to update API indexes: {e}")
 
 
-def main(json_path=None, remove_old_cells=True, disable_ctam=False, mrms_core_only=False):
+def main(
+    json_path=None,
+    remove_old_cells=True,
+    disable_ctam=False,
+    mrms_core_only=False,
+    input_manifest: CycleInputManifest | None = None,
+):
     handler = StatFileHandler(io_manager)
     integrator = StormCellIntegrator(io_manager)
 
@@ -381,6 +446,7 @@ def main(json_path=None, remove_old_cells=True, disable_ctam=False, mrms_core_on
         result_cells,
         include_glm=not mrms_core_only,
         include_rap=not mrms_core_only,
+        input_manifest=input_manifest,
     )
     result_cells = _run_ctam_if_enabled(result_cells, timestamp, disable_ctam)
 

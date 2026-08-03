@@ -145,9 +145,22 @@ class AsyncFileDownloader:
             resp = await self.s3.get_object(Bucket=self.bucket, Key=target_file_path)
             body = resp["Body"]
 
-            async with aiofiles.open(local_path, "wb") as f:
-                async for chunk in body.iter_chunks():
-                    await f.write(chunk)
+            part_path = local_path.with_name(f".{local_path.name}.part")
+            written = 0
+            try:
+                async with aiofiles.open(part_path, "wb") as f:
+                    async for chunk in body.iter_chunks():
+                        if chunk:
+                            written += len(chunk)
+                            await f.write(chunk)
+                    await f.flush()
+                expected = resp.get("ContentLength")
+                if expected is not None and written != expected:
+                    raise IOError(f"incomplete S3 download: expected {expected} bytes, got {written}")
+                os.replace(part_path, local_path)
+            except BaseException:
+                part_path.unlink(missing_ok=True)
+                raise
 
             return local_path
 
@@ -206,9 +219,22 @@ class AsyncFileDownloader:
                 resp = await self.s3.get_object(Bucket=self.bucket, Key=target_file_path)
                 body = resp["Body"]
 
-                async with aiofiles.open(local_path, "wb") as f:
-                    async for chunk in body.iter_chunks():
-                        await f.write(chunk)
+                part_path = local_path.with_name(f".{local_path.name}.part")
+                written = 0
+                try:
+                    async with aiofiles.open(part_path, "wb") as f:
+                        async for chunk in body.iter_chunks():
+                            if chunk:
+                                written += len(chunk)
+                                await f.write(chunk)
+                        await f.flush()
+                    expected = resp.get("ContentLength")
+                    if expected is not None and written != expected:
+                        raise IOError(f"incomplete S3 download: expected {expected} bytes, got {written}")
+                    os.replace(part_path, local_path)
+                except BaseException:
+                    part_path.unlink(missing_ok=True)
+                    raise
 
                 downloaded_files.append(local_path)
             
@@ -239,8 +265,20 @@ class AsyncFileDownloader:
         try:
             # Offload synchronous gzip to a worker thread (fast, avoids blocking event loop)
             def _sync_decompress():
-                with gzip.open(gz_path, "rb") as f_in, open(output_path, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out, length=DECOMPRESS_CHUNK_SIZE)
+                part_path = output_path.with_name(f".{output_path.name}.part")
+                try:
+                    with gzip.open(gz_path, "rb") as f_in, open(part_path, "wb") as f_out:
+                        # Reading through EOF verifies gzip integrity before the
+                        # final filename can become observable.
+                        shutil.copyfileobj(f_in, f_out, length=DECOMPRESS_CHUNK_SIZE)
+                        f_out.flush()
+                        os.fsync(f_out.fileno())
+                    if part_path.stat().st_size == 0:
+                        raise IOError("decompressed output is empty")
+                    os.replace(part_path, output_path)
+                except BaseException:
+                    part_path.unlink(missing_ok=True)
+                    raise
 
             await asyncio.to_thread(_sync_decompress)
 

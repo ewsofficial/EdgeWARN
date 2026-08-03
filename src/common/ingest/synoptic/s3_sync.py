@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 import boto3
 from botocore import UNSIGNED
@@ -39,7 +40,15 @@ class SynopticFileDownloader:
             # Ensure parent directory exists
             local_path.parent.mkdir(parents=True, exist_ok=True)
 
-            self.client.download_file(self.bucket, s3_key, str(local_path))
+            part_path = local_path.with_name(f".{local_path.name}.part")
+            try:
+                self.client.download_file(self.bucket, s3_key, str(part_path))
+                if not part_path.is_file() or part_path.stat().st_size == 0:
+                    raise IOError("empty S3 download")
+                os.replace(part_path, local_path)
+            except BaseException:
+                part_path.unlink(missing_ok=True)
+                raise
             
             self.io_manager.write_info(f"Successfully downloaded: {local_path.name}")
             return local_path
