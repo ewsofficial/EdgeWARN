@@ -184,3 +184,39 @@ def test_nonzero_worker_exit_overrides_published_completion():
     assert stage.status is CycleStatus.FAILED
     assert stage.successful is False
     assert "17" in stage.errors[-1]
+
+
+def test_seed_last_successful_does_not_promote_detection_only_watermark(tmp_path):
+    timestamp = datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc)
+    store = CycleStateStore(tmp_path / "cycle_state.json")
+    failed = CycleOutcome(
+        timestamp=timestamp,
+        stages={
+            "edgewarn": CycleStageResult(
+                CycleStatus.UNAVAILABLE,
+                errors=("inputs unavailable",),
+                worker_exit_status=0,
+            )
+        },
+        retryable=True,
+    )
+
+    store.record_attempt(timestamp, 1)
+    store.record_outcome(failed, 1)
+
+    state = store.seed_last_successful(timestamp)
+
+    assert state.last_successful is None
+    assert state.last_attempted == timestamp
+    assert state.retry_timestamp == timestamp, "pending retry must survive the stormcell watermark seed"
+
+
+def test_seed_last_successful_migrates_when_no_cycle_state_exists(tmp_path):
+    timestamp = datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc)
+    store = CycleStateStore(tmp_path / "cycle_state.json")
+
+    state = store.seed_last_successful(timestamp)
+
+    assert state.last_successful == timestamp
+    assert state.last_attempted == timestamp
+    assert state.retry_timestamp is None

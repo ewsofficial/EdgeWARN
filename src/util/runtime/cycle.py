@@ -237,10 +237,27 @@ class CycleStateStore:
         return self.load()
 
     def seed_last_successful(self, timestamp: datetime) -> PersistedCycleState:
-        """Record an existing validated stormcell watermark during migration."""
+        """Record an existing validated stormcell watermark during migration.
+
+        The stormcell watermark reflects at most detection-stage progress and is
+        only authoritative when no cycle state has been recorded yet.  When
+        authoritative state exists (an attempted/successful/abandoned scan or a
+        persisted outcome), it must never be overwritten by the watermark:
+        doing so would collapse a pending retry into ``last_successful`` and
+        skip the incomplete scan after a restart.
+        """
         current = self.load()
-        existing = current.last_successful
-        successful = timestamp if existing is None else max(existing, timestamp)
+        has_authoritative_state = any(
+            value is not None
+            for value in (
+                current.last_attempted,
+                current.last_successful,
+                current.last_abandoned,
+            )
+        ) or bool(current.outcome)
+        if has_authoritative_state:
+            return current
+        successful = timestamp
         payload = {
             "last_attempted": (
                 current.last_attempted.isoformat()
