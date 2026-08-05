@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { createConfig } from './config/index.js';
 import { createCors } from './middleware/cors.js';
 import { errorHandler, notFound } from './middleware/errors.js';
@@ -16,8 +17,10 @@ import { createCompatibilityRouter } from './routes/compatibility/index.js';
 
 export async function createApp(options = {}) {
   const config = options.config || createConfig(options);
-  const openApi = await fs.readFile(path.join(path.dirname(new URL(import.meta.url).pathname), 'openapi/v3.yaml'), 'utf8');
-  const repository = new ArtifactRepository({ data: config.dataDir, gui: config.guiDir, wpc: config.wpcDir, static: path.join(process.cwd(), 'src', 'EWMRS') });
+  const apiDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const sourceDirectory = path.resolve(apiDirectory, '..');
+  const openApi = await fs.readFile(path.join(apiDirectory, 'openapi/v3.yaml'), 'utf8');
+  const repository = new ArtifactRepository({ data: config.dataDir, gui: config.guiDir, wpc: config.wpcDir, static: path.join(sourceDirectory, 'EWMRS') });
   const app = express();
   app.set('trust proxy', config.trustProxy);
   app.use(requestId, ...securityMiddleware(), createCors(config.allowedOrigins), ...createRateLimiters(config.rateLimits), requestTimeout(config.requestTimeoutMs));
