@@ -4,7 +4,7 @@ import { timestamp } from './validation.js';
 
 const DEFAULT_GRID = { rows: 10, cols: 20, tileSize: 350 };
 const grid = (value) => value && Number.isInteger(value.rows) && Number.isInteger(value.cols) && Number.isInteger(value.tile_size)
-  ? { rows: value.rows, cols: value.cols, tileSize: value.tile_size } : DEFAULT_GRID;
+  ? { rows: value.rows, cols: value.cols, tileSize: value.tile_size } : null;
 
 export function createRenderService(repository) {
   const product = (id) => {
@@ -23,7 +23,7 @@ export function createRenderService(repository) {
       }
       return result;
     },
-    async getProduct(id) { const item = product(id); const index = await productIndex(item); return { ...item, grid: grid(Array.isArray(index) ? null : index.tile_grid) }; },
+    async getProduct(id) { const item = product(id); const index = await productIndex(item); return { ...item, grid: grid(Array.isArray(index) ? null : index.tile_grid) || DEFAULT_GRID }; },
     async listSnapshots(id) { const index = await productIndex(product(id)); return Array.isArray(index) ? index : (Array.isArray(index.timestamps) ? index.timestamps : []); },
     async image(id, value) {
       if (!timestamp(value)) throw new ArtifactError('INVALID_PATH', 'Invalid timestamp');
@@ -32,7 +32,7 @@ export function createRenderService(repository) {
     },
     async tiles(id, value) {
       if (!timestamp(value)) throw new ArtifactError('INVALID_PATH', 'Invalid timestamp');
-      const item = product(id); const productData = await productIndex(item); const productGrid = grid(Array.isArray(productData) ? null : productData.tile_grid);
+      const item = product(id); const productData = await productIndex(item); const productGrid = grid(Array.isArray(productData) ? null : productData.tile_grid) || DEFAULT_GRID;
       const index = await repository.readJson('gui', [item.storageDirectory, value, 'index.json']);
       const tileGrid = grid(Array.isArray(index) ? null : index.tile_grid) || productGrid;
       const tiles = (Array.isArray(index) ? index : index.tiles || []).filter((tile) => Array.isArray(tile) && tile.length === 2 && tile.every(Number.isInteger) && tile[0] >= 0 && tile[0] < tileGrid.cols && tile[1] >= 0 && tile[1] < tileGrid.rows);
