@@ -58,7 +58,14 @@ export function createAncillaryServices(repository) {
       if (!isLayerId(layer) || !timestamp(value)) throw new ArtifactError('INVALID_PATH', 'Invalid RAP resource');
       const opened = await repository.open('gui', ['RAP', layer, value, 'data.u16']);
       let metadata = null;
-      try { metadata = await repository.readJson('gui', ['RAP', layer, value, 'metadata.json']); } catch (error) { if (error.code !== 'NOT_FOUND') throw error; }
+      try {
+        metadata = await repository.readJson('gui', ['RAP', layer, value, 'metadata.json']);
+      } catch (error) {
+        if (error.code !== 'NOT_FOUND') {
+          await opened.handle.close();
+          throw error;
+        }
+      }
       const number = (candidate) => Number.isFinite(candidate) && Math.abs(candidate) <= 1e12 ? String(candidate) : null;
       const units = typeof metadata?.units === 'string' && /^[\x20-\x7e]{1,80}$/.test(metadata.units) ? metadata.units : null;
       const grid = metadata?.grid || {};
