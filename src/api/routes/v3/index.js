@@ -19,6 +19,17 @@ function validateQuery(req, res, next) {
   next();
 }
 
+function methodNotAllowed(openApi) {
+  const paths = Object.keys(JSON.parse(openApi).paths).map((route) => {
+    const localRoute = route.replace(/^\/api\/v3/, '') || '/';
+    return new RegExp(`^${localRoute.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\{[^}]+\\\}/g, '[^/]+')}$`);
+  });
+  return (req, res, next) => {
+    if (paths.some((pattern) => pattern.test(req.path))) return res.set('Allow', 'GET, HEAD').status(405).type('application/problem+json').json({ type: 'about:blank', title: 'Method Not Allowed', status: 405, detail: 'This resource only supports GET and HEAD.', instance: req.originalUrl, requestId: req.requestId });
+    return next();
+  };
+}
+
 export function createV3Router({ analysis, renders, ancillary, openApi }) {
   const router = express.Router();
   router.use(validateQuery);
@@ -50,5 +61,6 @@ export function createV3Router({ analysis, renders, ancillary, openApi }) {
   router.get('/analyses/wpc/surface', async (req, res, next) => { try { collection(req, res, await ancillary.listWpcSurface()); } catch (error) { next(error); } });
   router.get('/analyses/wpc/surface/:timestamp', async (req, res, next) => { try { resource(req, res, await ancillary.wpcSurface(req.params.timestamp)); } catch (error) { next(error); } });
   router.get('/styles/colormaps', async (req, res, next) => { try { resource(req, res, await ancillary.colormaps()); } catch (error) { next(error); } });
+  router.use(methodNotAllowed(openApi));
   return router;
 }
