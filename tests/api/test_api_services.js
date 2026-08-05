@@ -33,4 +33,14 @@ describe('unified API services', () => {
     await expect(opened.handle.readFile()).resolves.toEqual(Buffer.from('png'));
     await opened.handle.close();
   });
+
+  it('uses a product tile grid when a timestamp index omits grid metadata', async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'api-services-'));
+    const product = path.join(root, 'gui', 'CompRefQC');
+    await fs.mkdir(path.join(product, '20260317-200000'), { recursive: true });
+    await fs.writeFile(path.join(product, 'index.json'), '{"tile_grid":{"rows":2,"cols":3,"tile_size":256}}');
+    await fs.writeFile(path.join(product, '20260317-200000', 'index.json'), '{"tiles":[[2,1]]}');
+    const service = createRenderService(new ArtifactRepository({ gui: path.join(root, 'gui') }));
+    await expect(service.tiles('comp-ref-qc', '20260317-200000')).resolves.toEqual({ grid: { rows: 2, cols: 3, tileSize: 256 }, tiles: [[2, 1]] });
+  });
 });
