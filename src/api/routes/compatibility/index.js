@@ -28,7 +28,8 @@ export function createCompatibilityRouter({ analysis, renders, ancillary }) {
   router.get('/wpc/fetch', async (req, res, next) => { try { deprecate(res); if (req.query.type !== 'sfc') return res.status(400).json({ error: 'Invalid type' }); res.json(await ancillary.listWpcSurface()); } catch (e) { next(e); } });
   router.get('/wpc/download', async (req, res, next) => { try { deprecate(res); if (req.query.type !== 'sfc') return res.status(400).json({ error: 'Invalid type' }); res.json(await ancillary.wpcSurface(value(req.query.timestamp))); } catch (e) { next(e); } });
   router.get('/colormaps', async (req, res, next) => { try { deprecate(res); res.json(await ancillary.colormaps()); } catch (e) { next(e); } });
-  router.get(['/health', '/healthz'], (req, res) => deprecate(res).json({ status: 'OK', timestamp: new Date().toISOString() }));
+  router.get('/health', (req, res) => deprecate(res).json({ status: 'OK', timestamp: new Date().toISOString() }));
+  router.get('/healthz', (req, res) => deprecate(res).json({ ok: true }));
   router.use(['/features', '/data'], (req, res) => res.status(410).json({ error: 'API v1 has been removed. Please use API v2.', documentation: '/api/v2' }));
   return router;
 }
