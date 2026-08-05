@@ -7,7 +7,7 @@ const collection = (req, res, items) => { const result = page(items, listOptions
 const resource = (req, res, data) => res.json({ data, meta: { requestId: req.requestId } });
 const send = (res, opened, type) => { res.type(type); res.set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
 
-export function createV3Router({ analysis, renders, openApi }) {
+export function createV3Router({ analysis, renders, ancillary, openApi }) {
   const router = express.Router();
   router.get('/', (req, res) => resource(req, res, { version: '3.0.0', links: { openapi: '/api/v3/openapi.json', cells: '/api/v3/cells', renderProducts: '/api/v3/render-products' } }));
   router.get('/openapi.json', (req, res) => res.type('application/json').send(openApi));
@@ -26,5 +26,16 @@ export function createV3Router({ analysis, renders, openApi }) {
   router.get('/render-products/:productId/snapshots/:timestamp/image', async (req, res, next) => { try { send(res, await renders.image(req.params.productId, req.params.timestamp), 'image/png'); } catch (error) { next(error); } });
   router.get('/render-products/:productId/snapshots/:timestamp/tiles', async (req, res, next) => { try { resource(req, res, await renders.tiles(req.params.productId, req.params.timestamp)); } catch (error) { next(error); } });
   router.get('/render-products/:productId/snapshots/:timestamp/tiles/:x/:y', async (req, res, next) => { try { send(res, await renders.tile(req.params.productId, req.params.timestamp, Number(req.params.x), Number(req.params.y)), 'image/png'); } catch (error) { next(error); } });
+  router.get('/radar-sites', async (req, res, next) => { try { collection(req, res, await ancillary.listRadarSites()); } catch (error) { next(error); } });
+  router.get('/radar-sites/:siteId/availability', async (req, res, next) => { try { resource(req, res, await ancillary.radarAvailability(req.params.siteId.toUpperCase())); } catch (error) { next(error); } });
+  router.get('/radar-sites/:siteId/scans/:timestamp/elevations/:elevation/products/:productId', async (req, res, next) => { try { send(res, await ancillary.radarField(req.params.siteId, req.params.timestamp, req.params.elevation, req.params.productId), 'application/gzip'); } catch (error) { next(error); } });
+  router.get('/models/rap/layers', async (req, res, next) => { try { collection(req, res, await ancillary.listRapLayers()); } catch (error) { next(error); } });
+  router.get('/models/rap/layers/:layerId/snapshots', async (req, res, next) => { try { collection(req, res, await ancillary.rapSnapshots(req.params.layerId)); } catch (error) { next(error); } });
+  router.get('/models/rap/layers/:layerId/snapshots/:timestamp/metadata', async (req, res, next) => { try { resource(req, res, await ancillary.rapMetadata(req.params.layerId, req.params.timestamp)); } catch (error) { next(error); } });
+  router.get('/models/rap/layers/:layerId/snapshots/:timestamp/data', async (req, res, next) => { try { send(res, await ancillary.rapData(req.params.layerId, req.params.timestamp), 'application/octet-stream'); } catch (error) { next(error); } });
+  router.get('/models/rap/layer-mappings', async (req, res, next) => { try { resource(req, res, await ancillary.rapMappings()); } catch (error) { next(error); } });
+  router.get('/analyses/wpc/surface', async (req, res, next) => { try { collection(req, res, await ancillary.listWpcSurface()); } catch (error) { next(error); } });
+  router.get('/analyses/wpc/surface/:timestamp', async (req, res, next) => { try { resource(req, res, await ancillary.wpcSurface(req.params.timestamp)); } catch (error) { next(error); } });
+  router.get('/styles/colormaps', async (req, res, next) => { try { resource(req, res, await ancillary.colormaps()); } catch (error) { next(error); } });
   return router;
 }
