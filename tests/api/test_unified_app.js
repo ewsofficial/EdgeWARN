@@ -23,6 +23,9 @@ describe('unified API app', () => {
     const cells = await request(app).get('/api/v3/cells').expect(200);
     expect(cells.body.data).toEqual(['4']);
     expect(cells.body.meta.requestId).toBeTruthy();
+    const legacyCells = await request(app).get('/api/v2/features/cells').expect(200);
+    expect(legacyCells.body).toEqual(['4']);
+    expect(legacyCells.headers.deprecation).toBe('true');
     const missing = await request(app).get('/nope').expect(404);
     expect(missing.headers['content-type']).toContain('application/problem+json');
   });
