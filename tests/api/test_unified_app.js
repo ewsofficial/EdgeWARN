@@ -82,6 +82,16 @@ describe('unified API app', () => {
     await request(app).get('/health').set('x-internal-check', 'true').expect(429);
   });
 
+  it('preserves distinct legacy health response shapes', async () => {
+    baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-health-'));
+    await Promise.all(['data', 'gui', 'wpc'].map((directory) => fs.mkdir(path.join(baseDir, directory))));
+    const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
+    const edgewarn = await request(app).get('/health').expect(200);
+    expect(edgewarn.body).toMatchObject({ status: 'OK' });
+    expect(edgewarn.body.timestamp).toEqual(expect.any(String));
+    await request(app).get('/healthz').expect(200).expect({ ok: true });
+  });
+
   it('logs a template route without request query data', async () => {
     baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-log-'));
     await fs.mkdir(path.join(baseDir, 'data', 'cells'), { recursive: true });
