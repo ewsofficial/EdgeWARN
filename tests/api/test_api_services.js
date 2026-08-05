@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { ArtifactRepository } from '../../src/api/repositories/artifactRepository.js';
 import { createAnalysisService } from '../../src/api/services/analysis.js';
 import { createRenderService } from '../../src/api/services/renders.js';
+import { createAncillaryServices } from '../../src/api/services/ancillary.js';
 
 describe('unified API services', () => {
   let root;
@@ -42,5 +43,16 @@ describe('unified API services', () => {
     await fs.writeFile(path.join(product, '20260317-200000', 'index.json'), '{"tiles":[[2,1]]}');
     const service = createRenderService(new ArtifactRepository({ gui: path.join(root, 'gui') }));
     await expect(service.tiles('comp-ref-qc', '20260317-200000')).resolves.toEqual({ grid: { rows: 2, cols: 3, tileSize: 256 }, tiles: [[2, 1]] });
+  });
+
+  it('closes a RAP data handle when its metadata is malformed', async () => {
+    const close = jest.fn().mockResolvedValue();
+    const repository = {
+      open: jest.fn().mockResolvedValue({ handle: { close }, size: 1 }),
+      readJson: jest.fn().mockRejectedValue(Object.assign(new Error('malformed'), { code: 'IN_PROGRESS' }))
+    };
+    const service = createAncillaryServices(repository);
+    await expect(service.rapData('CAPE', '20260317-200000')).rejects.toMatchObject({ code: 'IN_PROGRESS' });
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });
