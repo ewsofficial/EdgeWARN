@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -69,5 +69,29 @@ describe('unified API app', () => {
     await request(app).get('/api/v3/radar-sites/KTLH/scans/20260317-200000/elevations/0.5/products/DBZH').expect(200).expect('Content-Type', /application\/gzip/);
     const rap = await request(app).get('/api/v3/models/rap/layers/CAPE/snapshots/20260317-200000/data').expect(200);
     expect(rap.headers['x-units']).toBe('J/kg');
+  });
+
+  it('uses exact CORS origins without credentials and limits legacy health aliases', async () => {
+    baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-security-'));
+    await Promise.all(['data', 'gui', 'wpc'].map((directory) => fs.mkdir(path.join(baseDir, directory))));
+    const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, ALLOWED_ORIGINS: 'https://console.example', RATE_LIMIT_MAX_SEC: '1', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
+    const cors = await request(app).get('/').set('Origin', 'https://console.example').expect(200);
+    expect(cors.headers['access-control-allow-origin']).toBe('https://console.example');
+    expect(cors.headers['access-control-allow-credentials']).toBeUndefined();
+    await request(app).get('/').set('Origin', 'https://other.example').expect(429);
+    await request(app).get('/health').set('x-internal-check', 'true').expect(429);
+  });
+
+  it('logs a template route without request query data', async () => {
+    baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-log-'));
+    await fs.mkdir(path.join(baseDir, 'data', 'cells'), { recursive: true });
+    await Promise.all(['gui', 'wpc'].map((directory) => fs.mkdir(path.join(baseDir, directory))));
+    await fs.writeFile(path.join(baseDir, 'data', 'cells', 'cell_index.json'), '{"cellIds":["4"]}');
+    const log = jest.spyOn(console, 'info').mockImplementation(() => {});
+    const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
+    await request(app).get('/api/v3/cells?secret=not-logged').expect(400);
+    expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({ event: 'api_access', method: 'GET', route: '/api/v3/cells', status: 400 });
+    expect(log.mock.calls[0][0]).not.toContain('not-logged');
+    log.mockRestore();
   });
 });
