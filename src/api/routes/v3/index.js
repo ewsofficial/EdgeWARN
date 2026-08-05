@@ -5,7 +5,7 @@ import { productCatalog } from '../../config/productCatalog.js';
 const listOptions = (req) => ({ cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined, limit: req.query.limit ? Number(req.query.limit) : undefined });
 const collection = (req, res, items) => { const result = page(items, listOptions(req)); res.json({ data: result.data, meta: { nextCursor: result.nextCursor, requestId: req.requestId } }); };
 const resource = (req, res, data) => res.json({ data, meta: { requestId: req.requestId } });
-const send = (res, opened, type) => { res.type(type); res.set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
+const send = (res, opened, type) => { res.set(opened.headers || {}).type(type); res.set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
 
 export function createV3Router({ analysis, renders, ancillary, openApi }) {
   const router = express.Router();

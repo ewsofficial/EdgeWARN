@@ -2,7 +2,7 @@ import express from 'express';
 import { getProductByLegacyId } from '../../config/productCatalog.js';
 
 const deprecate = (res) => res.set({ Deprecation: 'true', Link: '</api/v3/openapi.json>; rel="deprecation"' });
-const send = (res, opened, type, headers = {}) => { res.set(headers).type(type).set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
+const send = (res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).type(type).set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
 const value = (input) => typeof input === 'string' && input ? input : null;
 
 export function createCompatibilityRouter({ analysis, renders, ancillary }) {

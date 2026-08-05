@@ -22,6 +22,7 @@ export async function createApp(options = {}) {
   app.set('trust proxy', config.trustProxy);
   app.use(requestId, ...securityMiddleware(), createCors(config.allowedOrigins), ...createRateLimiters(config.rateLimits), requestTimeout(config.requestTimeoutMs));
   app.get('/', (req, res) => res.json({ service: 'EdgeWARN Unified API', version: config.packageVersion, links: { api: '/api/v3', openapi: '/api/v3/openapi.json' } }));
+  app.get('/robots.txt', (req, res) => res.type('text/plain').send("# No clankers\nUser-agent: *\nDisallow: /\n"));
   app.get('/health/live', (req, res) => res.json({ status: 'ok', requestId: req.requestId }));
   app.get('/health/ready', async (req, res) => { const checks = await Promise.all([config.dataDir, config.guiDir, config.wpcDir].map(async (dir) => { try { return (await fs.stat(dir)).isDirectory(); } catch { return false; } })); res.status(checks.every(Boolean) ? 200 : 503).json({ status: checks.every(Boolean) ? 'ready' : 'not-ready', requestId: req.requestId }); });
   const analysis = createAnalysisService(repository); const renders = createRenderService(repository); const ancillary = createAncillaryServices(repository);
