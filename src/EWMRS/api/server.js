@@ -221,8 +221,6 @@ export function createApp(options = {}) {
   app.get('/', (req, res) => {
     res.json({
       service: 'EWMRS API',
-      base_dir: baseDir,
-      gui_dir: guiDir,
       endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/nexrad', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
     });
   });
