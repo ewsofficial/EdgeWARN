@@ -54,7 +54,21 @@ export function createAncillaryServices(repository) {
       return Array.isArray(index) ? index : (Array.isArray(index.timestamps) ? index.timestamps : []);
     },
     async rapMetadata(layer, value) { if (!isLayerId(layer) || !timestamp(value)) throw new ArtifactError('INVALID_PATH', 'Invalid RAP resource'); return repository.readJson('gui', ['RAP', layer, value, 'metadata.json']); },
-    async rapData(layer, value) { if (!isLayerId(layer) || !timestamp(value)) throw new ArtifactError('INVALID_PATH', 'Invalid RAP resource'); return repository.open('gui', ['RAP', layer, value, 'data.u16']); },
+    async rapData(layer, value) {
+      if (!isLayerId(layer) || !timestamp(value)) throw new ArtifactError('INVALID_PATH', 'Invalid RAP resource');
+      const opened = await repository.open('gui', ['RAP', layer, value, 'data.u16']);
+      let metadata = null;
+      try { metadata = await repository.readJson('gui', ['RAP', layer, value, 'metadata.json']); } catch (error) { if (error.code !== 'NOT_FOUND') throw error; }
+      const number = (candidate) => Number.isFinite(candidate) && Math.abs(candidate) <= 1e12 ? String(candidate) : null;
+      const units = typeof metadata?.units === 'string' && /^[\x20-\x7e]{1,80}$/.test(metadata.units) ? metadata.units : null;
+      const grid = metadata?.grid || {};
+      opened.headers = Object.fromEntries(Object.entries({
+        'X-Data-Type': 'uint16', 'X-Byte-Order': 'little_endian', 'X-Missing-Value': '65535',
+        'X-Grid-Ni': number(grid.ni ?? metadata?.shape?.[1]), 'X-Grid-Nj': number(grid.nj ?? metadata?.shape?.[0]),
+        'X-Scale-Min': number(metadata?.scale?.min), 'X-Scale-Max': number(metadata?.scale?.max), 'X-Units': units
+      }).filter(([, header]) => header !== null));
+      return opened;
+    },
     async rapMappings() { return repository.readJson('static', ['mappings.json']); },
     async listWpcSurface() {
       const entries = await noRoot(() => repository.list('wpc', ['surface_analysis']));
