@@ -63,10 +63,8 @@ Current components support the following overrides:
 Run these commands from the repository root:
 
 ```bash
-npm run api:edgewarn   # Start the EdgeWARN API (default port 5000)
-npm run debug:edgewarn # Start the EdgeWARN API in debug mode (port 3001)
-npm run api:ewmrs      # Start the EWMRS API (default port 3003)
-npm run debug:ewmrs    # Start the EWMRS API in debug mode (port 3004)
+npm run api       # Start the unified API (default port 5000)
+npm run debug:api # Start the unified API in debug mode (port 3001)
 ```
 
 ### Real-Time Tandem Processing (Python)
@@ -226,9 +224,9 @@ At runtime, the code expects a base directory that typically looks like this:
 - When changing detection or integration behavior, consider downstream impacts on CTAM, alerts, API indexes, and GUI render availability
 
 ### API Development
-- EdgeWARN API currently exposes `/health`, `/api/v2`, `/api/v2/features/*`, and `/api/v2/data/metar`
-- Legacy v1-style `/features` and `/data` routes now return HTTP 410 with guidance to use API v2
-- EWMRS API currently exposes `/renders/*`, `/wpc/*`, `/colormaps`, `/healthz`, `/rap/*`, and `/nexrad/*`
+- The unified API exposes `/api/v3`, `/api/v3/openapi.json`, `/health/live`, and `/health/ready`
+- Legacy `/api/v2`, `/renders/*`, `/wpc/*`, `/colormaps`, `/healthz`, `/rap/*`, and `/nexrad/*` paths remain compatibility adapters during migration
+- Legacy v1-style `/features` and `/data` routes return HTTP 410
 - Document public API changes in `docs/api/api_endpoints.md` and related docs
 
 ### Configuration Management
