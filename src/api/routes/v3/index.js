@@ -6,9 +6,22 @@ const listOptions = (req) => ({ cursor: typeof req.query.cursor === 'string' ? r
 const collection = (req, res, items) => { const result = page(items, listOptions(req)); res.json({ data: result.data, meta: { nextCursor: result.nextCursor, requestId: req.requestId } }); };
 const resource = (req, res, data) => res.json({ data, meta: { requestId: req.requestId } });
 const send = (res, opened, type) => { res.set(opened.headers || {}).type(type); res.set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
+const COLLECTION_PATHS = new Set(['/cells', '/storm-snapshots', '/alert-snapshots', '/observations/metar', '/render-products', '/radar-sites', '/models/rap/layers', '/analyses/wpc/surface']);
+
+function validateQuery(req, res, next) {
+  const isCollection = COLLECTION_PATHS.has(req.path) || /\/render-products\/[^/]+\/snapshots$/.test(req.path) || /\/models\/rap\/layers\/[^/]+\/snapshots$/.test(req.path);
+  const allowed = new Set(isCollection ? ['cursor', 'limit'] : []);
+  if (req.path === '/alert-snapshots' || /^\/alert-snapshots\/[^/]+$/.test(req.path) || /^\/alerts\/[^/]+$/.test(req.path)) allowed.add('source');
+  for (const [key, value] of Object.entries(req.query)) {
+    if (!allowed.has(key) || Array.isArray(value) || typeof value !== 'string' || value.length > 256) return res.status(400).type('application/problem+json').json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: `Invalid query parameter: ${key}`, instance: req.originalUrl, requestId: req.requestId });
+    if (key === 'limit' && !/^(?:[1-9][0-9]{0,2}|1000)$/.test(value)) return res.status(400).type('application/problem+json').json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid query parameter: limit', instance: req.originalUrl, requestId: req.requestId });
+  }
+  next();
+}
 
 export function createV3Router({ analysis, renders, ancillary, openApi }) {
   const router = express.Router();
+  router.use(validateQuery);
   router.get('/', (req, res) => resource(req, res, { version: '3.0.0', links: { openapi: '/api/v3/openapi.json', cells: '/api/v3/cells', renderProducts: '/api/v3/render-products' } }));
   router.get('/openapi.json', (req, res) => res.type('application/json').send(openApi));
   router.get('/cells', async (req, res, next) => { try { collection(req, res, await analysis.listCells()); } catch (error) { next(error); } });
