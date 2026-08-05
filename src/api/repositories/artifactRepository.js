@@ -61,7 +61,7 @@ export class ArtifactRepository {
       const stat = await handle.stat();
       if (!stat.isFile()) throw new ArtifactError('INVALID_PATH', 'Artifact is not a regular file');
       if (stat.size > this.limits[kind]) throw new ArtifactError('INVALID_ARTIFACT', 'Artifact exceeds maximum size');
-      return { handle, size: stat.size, path: filePath };
+      return { handle, size: stat.size, path: filePath, etag: `W/\"${stat.size}-${Math.trunc(stat.mtimeMs)}-${stat.ino}\"` };
     } catch (error) {
       await handle?.close();
       if (error instanceof ArtifactError) throw error;

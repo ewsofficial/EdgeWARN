@@ -62,7 +62,9 @@ describe('unified API app', () => {
       '/api/v3/analyses/wpc/surface/20260317-200000', '/api/v3/styles/colormaps'
     ];
     for (const endpoint of paths) await request(app).get(endpoint).expect(200);
-    await request(app).get('/api/v3/render-products/comp-ref-qc/snapshots/20260317-200000/tiles/0/0').expect(200).expect('Content-Type', /image\/png/);
+    const tile = await request(app).get('/api/v3/render-products/comp-ref-qc/snapshots/20260317-200000/tiles/0/0').expect(200).expect('Content-Type', /image\/png/);
+    expect(tile.headers['cache-control']).toContain('immutable');
+    await request(app).get('/api/v3/render-products/comp-ref-qc/snapshots/20260317-200000/tiles/0/0').set('If-None-Match', tile.headers.etag).expect(304);
     await request(app).get('/api/v3/radar-sites/KTLH/scans/20260317-200000/elevations/0.5/products/DBZH').expect(200).expect('Content-Type', /application\/gzip/);
     const rap = await request(app).get('/api/v3/models/rap/layers/CAPE/snapshots/20260317-200000/data').expect(200);
     expect(rap.headers['x-units']).toBe('J/kg');
