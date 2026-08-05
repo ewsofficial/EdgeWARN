@@ -79,7 +79,14 @@ export class ArtifactRepository {
     const directory = path.join(root, ...segments);
     if (path.relative(root, directory).startsWith('..')) throw new ArtifactError('INVALID_PATH', 'Artifact escapes root');
     try {
-      const stat = await fs.lstat(directory);
+      let current = root;
+      let stat;
+      for (const segment of segments) {
+        current = path.join(current, segment);
+        stat = await fs.lstat(current);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) throw new ArtifactError('INVALID_PATH', 'Invalid artifact directory');
+      }
+      stat = stat || await fs.lstat(directory);
       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new ArtifactError('INVALID_PATH', 'Invalid artifact directory');
       const entries = await fs.readdir(directory, { withFileTypes: true });
       return entries.filter((entry) => !entry.isSymbolicLink()).slice(0, limit);
