@@ -1,0 +1,50 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "EdgeWARN Unified API", "version": "3.0.0", "description": "The versioned, read-only EdgeWARN and EWMRS public API."},
+  "servers": [{"url": "/"}],
+  "paths": {
+    "/api/v3": {"get": {"operationId": "getApiDiscovery", "responses": {"200": {"description": "Capability document"}}}},
+    "/api/v3/openapi.json": {"get": {"operationId": "getOpenApi", "responses": {"200": {"description": "OpenAPI document"}}}},
+    "/health/live": {"get": {"operationId": "getLiveness", "responses": {"200": {"description": "Live"}}}},
+    "/health/ready": {"get": {"operationId": "getReadiness", "responses": {"200": {"description": "Ready"}, "503": {"description": "Producer roots unavailable"}}}},
+    "/api/v3/cells": {"get": {"operationId": "listCells", "responses": {"200": {"description": "Cell collection"}}}},
+    "/api/v3/cells/{cellId}": {"get": {"operationId": "getCell", "parameters": [{"$ref": "#/components/parameters/cellId"}], "responses": {"200": {"description": "Cell"}, "404": {"$ref": "#/components/responses/Problem"}}}},
+    "/api/v3/storm-snapshots": {"get": {"operationId": "listStormSnapshots", "responses": {"200": {"description": "Snapshot collection"}}}},
+    "/api/v3/storm-snapshots/{timestamp}": {"get": {"operationId": "getStormSnapshot", "parameters": [{"$ref": "#/components/parameters/timestamp"}], "responses": {"200": {"description": "Storm snapshot"}}}},
+    "/api/v3/alert-snapshots": {"get": {"operationId": "listAlertSnapshots", "parameters": [{"$ref": "#/components/parameters/source"}], "responses": {"200": {"description": "Alert snapshot collection"}}}},
+    "/api/v3/alert-snapshots/{timestamp}": {"get": {"operationId": "getAlertSnapshot", "parameters": [{"$ref": "#/components/parameters/timestamp"}, {"$ref": "#/components/parameters/source"}], "responses": {"200": {"description": "Alert snapshot"}}}},
+    "/api/v3/alerts/{alertId}": {"get": {"operationId": "getAlert", "parameters": [{"$ref": "#/components/parameters/alertId"}, {"$ref": "#/components/parameters/source"}], "responses": {"200": {"description": "Alert"}}}},
+    "/api/v3/observations/metar": {"get": {"operationId": "listMetarObservationHours", "responses": {"200": {"description": "METAR observation hour collection"}}}},
+    "/api/v3/observations/metar/{timestamp}": {"get": {"operationId": "getMetarObservations", "parameters": [{"$ref": "#/components/parameters/timestamp"}], "responses": {"200": {"description": "METAR observations"}}}},
+    "/api/v3/render-products": {"get": {"operationId": "listRenderProducts", "responses": {"200": {"description": "Render product collection"}}}},
+    "/api/v3/render-products/{productId}": {"get": {"operationId": "getRenderProduct", "parameters": [{"$ref": "#/components/parameters/productId"}], "responses": {"200": {"description": "Render product"}}}},
+    "/api/v3/render-products/{productId}/snapshots": {"get": {"operationId": "listRenderSnapshots", "parameters": [{"$ref": "#/components/parameters/productId"}], "responses": {"200": {"description": "Render snapshot collection"}}}},
+    "/api/v3/render-products/{productId}/snapshots/{timestamp}/image": {"get": {"operationId": "getRenderImage", "parameters": [{"$ref": "#/components/parameters/productId"}, {"$ref": "#/components/parameters/timestamp"}], "responses": {"200": {"description": "PNG image", "content": {"image/png": {}}}}}},
+    "/api/v3/render-products/{productId}/snapshots/{timestamp}/tiles": {"get": {"operationId": "listRenderTiles", "parameters": [{"$ref": "#/components/parameters/productId"}, {"$ref": "#/components/parameters/timestamp"}], "responses": {"200": {"description": "Tile coordinate collection"}}}},
+    "/api/v3/render-products/{productId}/snapshots/{timestamp}/tiles/{x}/{y}": {"get": {"operationId": "getRenderTile", "parameters": [{"$ref": "#/components/parameters/productId"}, {"$ref": "#/components/parameters/timestamp"}, {"$ref": "#/components/parameters/x"}, {"$ref": "#/components/parameters/y"}], "responses": {"200": {"description": "PNG tile", "content": {"image/png": {}}}}}},
+    "/api/v3/radar-sites": {"get": {"operationId": "listRadarSites", "responses": {"200": {"description": "Radar site collection"}}}},
+    "/api/v3/radar-sites/{siteId}/availability": {"get": {"operationId": "getRadarAvailability", "parameters": [{"$ref": "#/components/parameters/siteId"}], "responses": {"200": {"description": "Radar availability"}}}},
+    "/api/v3/radar-sites/{siteId}/scans/{timestamp}/elevations/{elevation}/products/{productId}": {"get": {"operationId": "getRadarField", "responses": {"200": {"description": "Gzip-compressed polar field", "content": {"application/gzip": {}}}}}},
+    "/api/v3/models/rap/layers": {"get": {"operationId": "listRapLayers", "responses": {"200": {"description": "RAP layer collection"}}}},
+    "/api/v3/models/rap/layers/{layerId}/snapshots": {"get": {"operationId": "listRapSnapshots", "responses": {"200": {"description": "RAP snapshot collection"}}}},
+    "/api/v3/models/rap/layers/{layerId}/snapshots/{timestamp}/metadata": {"get": {"operationId": "getRapMetadata", "responses": {"200": {"description": "RAP metadata"}}}},
+    "/api/v3/models/rap/layers/{layerId}/snapshots/{timestamp}/data": {"get": {"operationId": "getRapData", "responses": {"200": {"description": "Uint16 data", "content": {"application/octet-stream": {}}}}}},
+    "/api/v3/models/rap/layer-mappings": {"get": {"operationId": "getRapLayerMappings", "responses": {"200": {"description": "RAP mappings"}}}},
+    "/api/v3/analyses/wpc/surface": {"get": {"operationId": "listWpcSurfaceAnalyses", "responses": {"200": {"description": "WPC surface analysis collection"}}}},
+    "/api/v3/analyses/wpc/surface/{timestamp}": {"get": {"operationId": "getWpcSurfaceAnalysis", "responses": {"200": {"description": "Surface analysis GeoJSON", "content": {"application/geo+json": {}}}}}},
+    "/api/v3/styles/colormaps": {"get": {"operationId": "listColormaps", "responses": {"200": {"description": "Colormap collection"}}}}
+  },
+  "components": {
+    "parameters": {
+      "cellId": {"name": "cellId", "in": "path", "required": true, "schema": {"type": "string"}},
+      "alertId": {"name": "alertId", "in": "path", "required": true, "schema": {"type": "string"}},
+      "productId": {"name": "productId", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}},
+      "siteId": {"name": "siteId", "in": "path", "required": true, "schema": {"type": "string"}},
+      "timestamp": {"name": "timestamp", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^\\d{8}-\\d{6}$"}},
+      "source": {"name": "source", "in": "query", "required": true, "schema": {"type": "string", "enum": ["official", "edgewarn"]}},
+      "x": {"name": "x", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 0}},
+      "y": {"name": "y", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 0}}
+    },
+    "responses": {"Problem": {"description": "RFC 9457 problem detail", "content": {"application/problem+json": {}}}}
+  }
+}
