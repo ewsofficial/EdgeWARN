@@ -17,10 +17,11 @@ import { createV3Router } from './routes/v3/index.js';
 import { createCompatibilityRouter } from './routes/compatibility/index.js';
 
 export async function createApp(options = {}) {
-  const config = options.config || createConfig(options);
   const apiDirectory = path.dirname(fileURLToPath(import.meta.url));
   const sourceDirectory = path.resolve(apiDirectory, '..');
   const openApi = await fs.readFile(path.join(apiDirectory, 'openapi/v3.yaml'), 'utf8');
+  const packageManifest = JSON.parse(await fs.readFile(path.join(sourceDirectory, '..', 'package.json'), 'utf8'));
+  const config = options.config || createConfig({ ...options, packageVersion: packageManifest.version });
   const routeTemplates = Object.keys(JSON.parse(openApi).paths);
   const repository = new ArtifactRepository({ data: config.dataDir, gui: config.guiDir, wpc: config.wpcDir, static: path.join(sourceDirectory, 'EWMRS') });
   const app = express();
@@ -32,7 +33,7 @@ export async function createApp(options = {}) {
   app.get('/health/ready', async (req, res) => { const checks = await Promise.all([config.dataDir, config.guiDir, config.wpcDir].map(async (dir) => { try { return (await fs.stat(dir)).isDirectory(); } catch { return false; } })); res.status(checks.every(Boolean) ? 200 : 503).json({ status: checks.every(Boolean) ? 'ready' : 'not-ready', requestId: req.requestId }); });
   const analysis = createAnalysisService(repository); const renders = createRenderService(repository); const ancillary = createAncillaryServices(repository);
   app.use('/api/v3', createV3Router({ analysis, renders, ancillary, openApi }));
-  app.use(createCompatibilityRouter({ analysis, renders, ancillary }));
+  app.use(createCompatibilityRouter({ analysis, renders, ancillary, packageVersion: config.packageVersion }));
   app.use(notFound); app.use(errorHandler);
   return { app, config };
 }
