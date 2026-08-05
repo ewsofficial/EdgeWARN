@@ -37,16 +37,13 @@ Defaults:
 - Linux/macOS: `~/EdgeWARN_input`
 - Windows: `C:\EdgeWARN_input`
 
-Notes:
-
-- Python CLIs and the EWMRS API use the platform defaults above when no override is supplied.
-- The EdgeWARN API has a broader Linux fallback chain: `~/EdgeWARN_input`, then `/home/EdgeWARN_input`, then `/workspaces/EdgeWARN_input`, then `./EdgeWARN_input`.
+The unified API resolves the same platform default when no override is set.
 
 Overrides:
 
 - Python CLIs (`run.py`, `process_historical.py`): `--base_dir` or `--base-dir`
-- EdgeWARN API (`src/EdgeWARN/api/server.js`): `--base-dir` or `EDGEWARN_BASE_DIR`
-- EWMRS API (`src/EWMRS/api/server.js`): `--base_dir` or `BASE_DIR`
+- Unified API: `--base-dir` or `EDGEWARN_BASE_DIR`
+- `--base_dir` and `BASE_DIR` remain temporary compatibility aliases
 - RAP maximum analysis age: `EDGEWARN_RAP_MAX_AGE_MINUTES` (non-negative
   integer minutes; default `180`)
 
@@ -59,35 +56,27 @@ times or filesystem modification times, determine freshness.
 Run from repository root:
 
 ```bash
-npm run api:edgewarn
-npm run debug:edgewarn
-npm run api:ewmrs
-npm run debug:ewmrs
+npm run api
+npm run debug:api
 ```
 
-- EdgeWARN API default port: `5000`
-- EdgeWARN debug mode port: `3001`
-- EWMRS API default port: `3003`
-- EWMRS debug mode port: `3004`
+- Unified API default port: `5000`
+- Unified API debug mode port: `3001`
 
 Current API surfaces:
 
-- EdgeWARN: `/health`, `/api/v2/features/cells`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`
-- EWMRS: `/renders/*`, `/nexrad/*`, `/rap/*`, `/wpc/*`, `/colormaps`, `/healthz`
+- v3: `/api/v3` and `/api/v3/openapi.json`
+- Health: `/health/live`, `/health/ready`
+- Legacy EdgeWARN and EWMRS paths remain compatibility adapters during migration
 
 CLI and environment overrides:
 
-- EdgeWARN API base directory: `--base-dir <path>` or `EDGEWARN_BASE_DIR`
-- EdgeWARN API port override: `PORT`
-- EdgeWARN API debug mode: `--debug_server`
-- EdgeWARN API rate limits: `--edgewarn-rate-limit-1s <count>`, `--edgewarn-rate-limit-1m <count>`
-- EdgeWARN API rate-limit env vars: `RATE_LIMIT_WINDOW_MS_SEC`, `RATE_LIMIT_MAX_SEC`, `RATE_LIMIT_WINDOW_MS_MIN`, `RATE_LIMIT_MAX_MIN`
-- EWMRS API base directory: `--base_dir <path>` or `BASE_DIR`
-- EWMRS API port override: `PORT`
-- EWMRS API debug mode: `--debug-server` or `--debug_server`
-- EWMRS API rate limits: `--ewmrs-rate-limit-1s <count>`, `--ewmrs-rate-limit-1m <count>`
-- EWMRS API rate-limit env vars: `EWMRS_RATE_LIMIT_MAX_SEC`, `EWMRS_RATE_LIMIT_MAX_MIN`
-- For both APIs, a rate-limit value of `0` disables that limiter window
+- Base directory: `--base-dir <path>` or `EDGEWARN_BASE_DIR`
+- Port override: `PORT`; debug mode: `--debug-server`
+- Rate-limit env vars: `RATE_LIMIT_MAX_SEC`, `RATE_LIMIT_MAX_MIN`
+- Browser and proxy policy: `ALLOWED_ORIGINS`, `TRUST_PROXY_IPS`
+
+See `docs/api/unified_v3.md` for migration details and the complete contract.
 
 ## Running Real-Time Tandem Processing
 
