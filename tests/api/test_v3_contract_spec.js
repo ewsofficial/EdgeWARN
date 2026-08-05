@@ -21,6 +21,14 @@ describe('unified API contract specification', () => {
       '/api/v3/models/rap/layers/{layerId}/snapshots/{timestamp}/data',
       '/api/v3/analyses/wpc/surface/{timestamp}', '/api/v3/styles/colormaps'
     ]));
+    for (const [route, item] of Object.entries(openApi.paths)) {
+      for (const operation of Object.values(item)) {
+        const declared = (operation.parameters || []).map((parameter) => parameter.$ref ? openApi.components.parameters[parameter.$ref.split('/').at(-1)] : parameter);
+        for (const match of route.matchAll(/\{([^}]+)\}/g)) {
+          expect(declared.some((parameter) => parameter?.name === match[1] && parameter.in === 'path' && parameter.required)).toBe(true);
+        }
+      }
+    }
   });
 
   it('has a collision-free canonical product catalog with legacy parity', () => {
