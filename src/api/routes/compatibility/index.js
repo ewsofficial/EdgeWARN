@@ -30,6 +30,6 @@ export function createCompatibilityRouter({ analysis, renders, ancillary, packag
   router.get('/colormaps', async (req, res, next) => { try { deprecate(res); res.json(await ancillary.colormaps()); } catch (e) { next(e); } });
   router.get('/health', (req, res) => deprecate(res).json({ status: 'OK', timestamp: new Date().toISOString() }));
   router.get('/healthz', (req, res) => deprecate(res).json({ ok: true }));
-  router.use(['/features', '/data'], (req, res) => res.status(410).json({ error: 'API v1 has been removed. Please use API v2.', documentation: '/api/v2' }));
+  router.use(['/features', '/data', '/api/v1'], (req, res) => res.status(410).json({ error: 'API v1 has been removed. Please use API v2.', documentation: '/api/v2' }));
   return router;
 }

@@ -24,7 +24,8 @@ describe('unified API app', () => {
     await request(app).get('/health/ready').expect(200);
     const cells = await request(app).get('/api/v3/cells').expect(200);
     expect(cells.body.data).toEqual(['4']);
-    expect(cells.body.meta.requestId).toBeTruthy();
+    expect(cells.body.meta.requestId).toBeUndefined();
+    await request(app).get('/api/v3/cells').set('If-None-Match', cells.headers.etag).expect(304);
     await request(app).get('/api/v3/cells?limit=0').expect(400).expect('Content-Type', /application\/problem\+json/);
     await request(app).get('/api/v3/cells?cursor=4&cursor=5').expect(400);
     await request(app).get('/api/v3/cells?unexpected=yes').expect(400);
@@ -32,6 +33,8 @@ describe('unified API app', () => {
     const legacyCells = await request(app).get('/api/v2/features/cells').expect(200);
     expect(legacyCells.body).toEqual(['4']);
     expect(legacyCells.headers.deprecation).toBe('true');
+    await request(app).get('/api/v1').expect(410);
+    await request(app).get('/api/v1/features').expect(410);
     const missing = await request(app).get('/nope').expect(404);
     expect(missing.headers['content-type']).toContain('application/problem+json');
   });

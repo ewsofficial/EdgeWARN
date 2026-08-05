@@ -59,8 +59,13 @@ describe('API server', () => {
       .get('/data')
       .expect(410);
 
+    const v1Response = await request(app)
+      .get('/api/v1')
+      .expect(410);
+
     expect(featuresResponse.body.error).toContain('API v1 has been removed');
     expect(dataResponse.body.documentation).toBe('/api/v2');
+    expect(v1Response.body.error).toContain('API v1 has been removed');
   });
 
   it('serves robots.txt', async () => {
