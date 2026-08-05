@@ -23,6 +23,8 @@ describe('EWMRS API server', () => {
 
     const rootResponse = await request(app).get('/').expect(200);
     expect(rootResponse.body.endpoints).toContain('/nexrad');
+    expect(rootResponse.body.base_dir).toBeUndefined();
+    expect(rootResponse.body.gui_dir).toBeUndefined();
 
     await request(app).get('/nexrad').expect(200);
   });

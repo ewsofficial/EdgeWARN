@@ -72,6 +72,15 @@ describe('unified API app', () => {
     expect(rap.headers['x-units']).toBe('J/kg');
   });
 
+  it('masks the exact version in production on all version surfaces', async () => {
+    baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-version-'));
+    const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0', NODE_ENV: 'production' }, argv: [] });
+    const root = await request(app).get('/').expect(200);
+    expect(root.body.version).toBe('2.x');
+    const v2 = await request(app).get('/api/v2').expect(200);
+    expect(v2.body.version).toBe('2.x');
+  });
+
   it('uses exact CORS origins without credentials and limits legacy health aliases', async () => {
     baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-security-'));
     await Promise.all(['data', 'gui', 'wpc'].map((directory) => fs.mkdir(path.join(baseDir, directory))));
