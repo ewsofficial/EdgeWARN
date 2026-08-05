@@ -27,6 +27,7 @@ describe('unified API app', () => {
     await request(app).get('/api/v3/cells?limit=0').expect(400).expect('Content-Type', /application\/problem\+json/);
     await request(app).get('/api/v3/cells?cursor=4&cursor=5').expect(400);
     await request(app).get('/api/v3/cells?unexpected=yes').expect(400);
+    await request(app).post('/api/v3/cells').expect(405).expect('Allow', 'GET, HEAD');
     const legacyCells = await request(app).get('/api/v2/features/cells').expect(200);
     expect(legacyCells.body).toEqual(['4']);
     expect(legacyCells.headers.deprecation).toBe('true');
