@@ -42,7 +42,7 @@ src/EdgeWARN/api/
    - `/`
    - `/health`
    - `/api/v2`
-   - legacy guards for `/features/*` and `/data/*` returning `410`
+   - legacy guards for `/features/*`, `/data/*`, and `/api/v1*` returning `410`
 5. Routes read file-backed JSON using guarded readers in `utils/fileReader.js`
 
 ## Configuration (`config.js`)
@@ -188,7 +188,7 @@ Special behavior:
 - `RATE_LIMIT_WINDOW_MS_MIN`
 - `RATE_LIMIT_MAX_MIN`
 - `TRUST_PROXY` — `false` explicitly disables Express trust-proxy. Other values (including `true`) only take effect when `TRUST_PROXY_IPS` is also set; the `TRUST_PROXY=true` value alone is consumed by the rate-limiter `keyGenerator` (so `req.ip` is used for rate-limit keys) but does not call `app.set('trust proxy', true)`.
-- `TRUST_PROXY_IPS` — comma-separated allowlist; when present, sets Express `trust proxy` to that array.
+- `TRUST_PROXY_IPS` — comma-separated allowlist; when present, sets Express `trust proxy` to that array. Only configure trust when a stripping reverse proxy removes client-supplied `X-Forwarded-For`/`X-Forwarded-Proto` headers before forwarding; on a directly exposed host, enabling trust lets clients spoof forwarded headers and bypass per-client rate limits.
 - `EDGEWARN_BASE_DIR`
 
 EWMRS-specific environment variables are documented in `docs/api/ewmrs_api_endpoints.md`.

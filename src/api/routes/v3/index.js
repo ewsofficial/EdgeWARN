@@ -3,8 +3,8 @@ import { page, timestamp } from '../../services/validation.js';
 import { productCatalog } from '../../config/productCatalog.js';
 
 const listOptions = (req) => ({ cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined, limit: req.query.limit ? Number(req.query.limit) : undefined });
-const collection = (req, res, items) => { const result = page(items, listOptions(req)); res.set('Cache-Control', 'public, max-age=5').json({ data: result.data, meta: { nextCursor: result.nextCursor, requestId: req.requestId } }); };
-const resource = (req, res, data) => res.set('Cache-Control', 'public, max-age=60').json({ data, meta: { requestId: req.requestId } });
+const collection = (req, res, items) => { const result = page(items, listOptions(req)); res.set('Cache-Control', 'public, max-age=5').json({ data: result.data, meta: { nextCursor: result.nextCursor } }); };
+const resource = (req, res, data) => res.set('Cache-Control', 'public, max-age=60').json({ data, meta: {} });
 const send = (req, res, opened, type) => { res.set(opened.headers || {}).set({ 'Cache-Control': 'public, max-age=31536000, immutable', ETag: opened.etag }).type(type); if (req.fresh) { opened.handle.close(); return res.status(304).end(); } res.set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
 const COLLECTION_PATHS = new Set(['/cells', '/storm-snapshots', '/alert-snapshots', '/observations/metar', '/render-products', '/radar-sites', '/models/rap/layers', '/analyses/wpc/surface']);
 

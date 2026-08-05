@@ -257,8 +257,9 @@ Serves `src/EdgeWARN/api/robots.txt`.
 
 - `/features/*`
 - `/data/*`
+- `/api/v1*`
 
-Both return `410 Gone` with migration guidance to `/api/v2`.
+All return `410 Gone` with migration guidance to `/api/v2`.
 
 ## Security and Platform Behavior
 
@@ -274,3 +275,9 @@ Both return `410 Gone` with migration guidance to `/api/v2`.
   - `--edgewarn-rate-limit-1s <count>`
   - `--edgewarn-rate-limit-1m <count>`
   - A value of `0` disables that rate-limit window
+- Trusted reverse proxies (`TRUST_PROXY_IPS`, or `TRUST_PROXY` in
+  non-production): only enable these when a stripping reverse proxy removes
+  client-supplied `X-Forwarded-For`/`X-Forwarded-Proto` headers before
+  forwarding. If trust is enabled on a directly exposed host, clients can
+  spoof forwarded headers and bypass per-client rate limiting. The default
+  (off) is correct for directly exposed deployments.

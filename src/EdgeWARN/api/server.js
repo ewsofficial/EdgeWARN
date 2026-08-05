@@ -182,14 +182,7 @@ export function createApp(env = process.env, options = {}) {
   app.use('/api/v2', v2Router);
 
   // Redirect old v1 paths to v2
-  app.use('/features', (req, res) => {
-    res.status(410).json({
-      error: 'API v1 has been removed. Please use API v2.',
-      documentation: '/api/v2'
-    });
-  });
-
-  app.use('/data', (req, res) => {
+  app.use(['/features', '/data', '/api/v1'], (req, res) => {
     res.status(410).json({
       error: 'API v1 has been removed. Please use API v2.',
       documentation: '/api/v2'
