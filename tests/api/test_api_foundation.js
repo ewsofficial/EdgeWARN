@@ -44,4 +44,15 @@ describe('ArtifactRepository', () => {
     await expect(repository.readJson('runtime', ['broken.json'])).rejects.toBeInstanceOf(ArtifactError);
     await expect(repository.readJson('runtime', ['large.json'])).rejects.toMatchObject({ code: 'INVALID_ARTIFACT' });
   });
+
+  it('caches only a matching artifact identity and observes replacement', async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-repository-'));
+    const target = path.join(root, 'index.json');
+    await fs.writeFile(target, '{"generation":1}');
+    const repository = new ArtifactRepository({ runtime: root });
+    await expect(repository.readJson('runtime', ['index.json'])).resolves.toEqual({ generation: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await fs.writeFile(target, '{"generation":2}');
+    await expect(repository.readJson('runtime', ['index.json'])).resolves.toEqual({ generation: 2 });
+  });
 });

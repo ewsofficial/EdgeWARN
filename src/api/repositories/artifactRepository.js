@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import { constants } from 'fs';
 import path from 'path';
+import { LRUCache } from 'lru-cache';
 
 export class ArtifactError extends Error {
   constructor(code, message, { cause } = {}) {
@@ -24,6 +25,7 @@ export class ArtifactRepository {
     this.roots = Object.freeze({ ...roots });
     this.limits = Object.freeze({ ...DEFAULT_LIMITS, ...limits });
     this.realRoots = new Map();
+    this.jsonCache = new LRUCache({ max: 256, maxSize: 32 * 1024 * 1024, sizeCalculation: (entry) => entry.size });
   }
 
   async root(rootName) {
@@ -91,8 +93,13 @@ export class ArtifactRepository {
   async readJson(rootName, segments, options = {}) {
     const opened = await this.open(rootName, segments, { kind: 'json', ...options });
     try {
+      const key = `${rootName}:${opened.path}`;
+      const cached = this.jsonCache.get(key);
+      if (cached?.etag === opened.etag) return cached.value;
       const text = await opened.handle.readFile({ encoding: 'utf8' });
-      return JSON.parse(text);
+      const value = JSON.parse(text);
+      this.jsonCache.set(key, { etag: opened.etag, value, size: Buffer.byteLength(text) });
+      return value;
     } catch (error) {
       if (error instanceof ArtifactError) throw error;
       throw new ArtifactError('IN_PROGRESS', 'Artifact is malformed or still being published', { cause: error });
