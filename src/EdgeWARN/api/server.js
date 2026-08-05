@@ -143,10 +143,6 @@ export function createApp(env = process.env, options = {}) {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later' },
-    skip: (req) => {
-      // Optionally skip rate limiting for health checks from internal monitoring
-      return req.path === '/health' && req.headers['x-internal-check'] === 'true';
-    },
     keyGenerator: (req) => {
       let clientIp;
       if (trustProxy) {
@@ -236,9 +232,7 @@ export function createApp(env = process.env, options = {}) {
       });
     }
 
-    res.status(500).json({
-      error: isDev ? err.message : 'Internal server error'
-    });
+    res.status(500).json({ error: 'Internal server error' });
   });
 
   return app;
