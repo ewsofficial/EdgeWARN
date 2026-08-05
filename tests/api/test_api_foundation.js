@@ -36,6 +36,16 @@ describe('ArtifactRepository', () => {
     await fs.rm(outside, { recursive: true, force: true });
   });
 
+  it('rejects an intermediate directory symlink during artifact discovery', async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-repository-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-outside-'));
+    await fs.writeFile(path.join(outside, 'index.json'), '{"private":true}');
+    await fs.symlink(outside, path.join(root, 'linked-directory'));
+    const repository = new ArtifactRepository({ runtime: root });
+    await expect(repository.list('runtime', ['linked-directory'])).rejects.toMatchObject({ code: 'INVALID_PATH' });
+    await fs.rm(outside, { recursive: true, force: true });
+  });
+
   it('turns malformed and oversized publishing artifacts into bounded errors', async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-repository-'));
     await fs.writeFile(path.join(root, 'broken.json'), '{');
