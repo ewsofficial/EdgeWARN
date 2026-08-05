@@ -71,6 +71,23 @@ export class ArtifactRepository {
     }
   }
 
+  async list(rootName, segments = [], { limit = 1000 } = {}) {
+    if (segments.length) assertSegments(segments);
+    const root = await this.root(rootName);
+    const directory = path.join(root, ...segments);
+    if (path.relative(root, directory).startsWith('..')) throw new ArtifactError('INVALID_PATH', 'Artifact escapes root');
+    try {
+      const stat = await fs.lstat(directory);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new ArtifactError('INVALID_PATH', 'Invalid artifact directory');
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      return entries.filter((entry) => !entry.isSymbolicLink()).slice(0, limit);
+    } catch (error) {
+      if (error instanceof ArtifactError) throw error;
+      if (error.code === 'ENOENT') throw new ArtifactError('NOT_FOUND', 'Artifact directory not found', { cause: error });
+      throw new ArtifactError('INVALID_PATH', 'Artifact directory unavailable', { cause: error });
+    }
+  }
+
   async readJson(rootName, segments, options = {}) {
     const opened = await this.open(rootName, segments, { kind: 'json', ...options });
     try {
