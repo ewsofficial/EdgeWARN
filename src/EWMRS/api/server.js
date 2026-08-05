@@ -251,5 +251,9 @@ export function startServer(options = {}) {
 const entryFileUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
 
 if (entryFileUrl === import.meta.url) {
-  startServer();
+  console.warn('[Deprecation] src/EWMRS/api/server.js now launches the unified API service. Use npm run api.');
+  import('../../api/server.js').then(({ startServer: startUnifiedServer }) => startUnifiedServer()).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 }

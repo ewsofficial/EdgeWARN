@@ -292,5 +292,9 @@ export function startClusteredServer(options = {}) {
 const entryFileUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
 
 if (entryFileUrl === import.meta.url) {
-  startClusteredServer();
+  console.warn('[Deprecation] src/EdgeWARN/api/server.js now launches the unified API service. Use npm run api.');
+  import('../../api/server.js').then(({ startServer }) => startServer()).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 }
