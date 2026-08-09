@@ -14,9 +14,10 @@ export function timestamp(value) {
 export const isCellId = (value) => typeof value === 'string' && CELL_ID.test(value);
 export const isAlertId = (value) => typeof value === 'string' && ALERT_ID.test(value) && !['__proto__', 'constructor', 'prototype'].includes(value);
 export const isLayerId = (value) => typeof value === 'string' && LAYER_ID.test(value) && !value.includes('..');
+function serializedId(item) { const value = item && typeof item === 'object' && 'id' in item ? item.id : item; return String(value); }
 export function page(items, { cursor, limit = 100 } = {}) {
   const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 1000) : 100;
-  const start = cursor ? Math.max(0, items.indexOf(cursor) + 1) : 0;
+  const start = cursor ? Math.max(0, items.findIndex((item) => serializedId(item) === String(cursor)) + 1) : 0;
   const data = items.slice(start, start + safeLimit);
-  return { data, nextCursor: start + safeLimit < items.length ? data.at(-1) : null };
+  return { data, nextCursor: start + safeLimit < items.length ? serializedId(data.at(-1)) : null };
 }
