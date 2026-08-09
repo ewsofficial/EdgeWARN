@@ -75,6 +75,19 @@ describe('unified API app', () => {
     expect(rap.headers['x-units']).toBe('J/kg');
   });
 
+  it('paginates numeric cell IDs with string cursors', async () => {
+    baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-pages-'));
+    await fs.mkdir(path.join(baseDir, 'data', 'cells'), { recursive: true });
+    await fs.writeFile(path.join(baseDir, 'data', 'cells', 'cell_index.json'), JSON.stringify({ cellIds: Array.from({ length: 120 }, (_, i) => i + 1) }));
+    const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
+    const first = await request(app).get('/api/v3/cells?limit=100').expect(200);
+    expect(first.body.data).toHaveLength(100);
+    expect(first.body.meta.nextCursor).toBe('100');
+    const second = await request(app).get(`/api/v3/cells?limit=100&cursor=${first.body.meta.nextCursor}`).expect(200);
+    expect(second.body.data).toEqual(Array.from({ length: 20 }, (_, i) => 101 + i));
+    expect(second.body.meta.nextCursor).toBeNull();
+  });
+
   it('masks the exact version in production on all version surfaces', async () => {
     baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-version-'));
     const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0', NODE_ENV: 'production' }, argv: [] });
