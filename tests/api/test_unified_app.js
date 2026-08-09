@@ -88,6 +88,15 @@ describe('unified API app', () => {
     expect(second.body.meta.nextCursor).toBeNull();
   });
 
+  it('serves WPC surface analyses as native GeoJSON', async () => {
+    baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-wpc-'));
+    await fs.mkdir(path.join(baseDir, 'wpc', 'surface_analysis'), { recursive: true });
+    await fs.writeFile(path.join(baseDir, 'wpc', 'surface_analysis', 'wpc_sfc_20260317-200000.geojson'), '{"type":"FeatureCollection","features":[]}');
+    const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
+    const wpc = await request(app).get('/api/v3/analyses/wpc/surface/20260317-200000').expect(200).expect('Content-Type', /application\/geo\+json/);
+    expect(wpc.body).toEqual({ type: 'FeatureCollection', features: [] });
+  });
+
   it('masks the exact version in production on all version surfaces', async () => {
     baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-version-'));
     const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0', NODE_ENV: 'production' }, argv: [] });

@@ -5,6 +5,7 @@ import { productCatalog } from '../../config/productCatalog.js';
 const listOptions = (req) => ({ cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined, limit: req.query.limit ? Number(req.query.limit) : undefined });
 const collection = (req, res, items) => { const result = page(items, listOptions(req)); res.set('Cache-Control', 'public, max-age=5').json({ data: result.data, meta: { nextCursor: result.nextCursor } }); };
 const resource = (req, res, data) => res.set('Cache-Control', 'public, max-age=60').json({ data, meta: {} });
+const geojson = (req, res, data) => res.set('Cache-Control', 'public, max-age=60').type('application/geo+json').json(data);
 const send = (req, res, opened, type) => { res.set(opened.headers || {}).set({ 'Cache-Control': 'public, max-age=31536000, immutable', ETag: opened.etag }).type(type); if (req.fresh) { opened.handle.close(); return res.status(304).end(); } res.set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
 const COLLECTION_PATHS = new Set(['/cells', '/storm-snapshots', '/alert-snapshots', '/observations/metar', '/render-products', '/radar-sites', '/models/rap/layers', '/analyses/wpc/surface']);
 
@@ -59,7 +60,7 @@ export function createV3Router({ analysis, renders, ancillary, openApi }) {
   router.get('/models/rap/layers/:layerId/snapshots/:timestamp/data', async (req, res, next) => { try { send(req, res, await ancillary.rapData(req.params.layerId, req.params.timestamp), 'application/octet-stream'); } catch (error) { next(error); } });
   router.get('/models/rap/layer-mappings', async (req, res, next) => { try { resource(req, res, await ancillary.rapMappings()); } catch (error) { next(error); } });
   router.get('/analyses/wpc/surface', async (req, res, next) => { try { collection(req, res, await ancillary.listWpcSurface()); } catch (error) { next(error); } });
-  router.get('/analyses/wpc/surface/:timestamp', async (req, res, next) => { try { resource(req, res, await ancillary.wpcSurface(req.params.timestamp)); } catch (error) { next(error); } });
+  router.get('/analyses/wpc/surface/:timestamp', async (req, res, next) => { try { geojson(req, res, await ancillary.wpcSurface(req.params.timestamp)); } catch (error) { next(error); } });
   router.get('/styles/colormaps', async (req, res, next) => { try { resource(req, res, await ancillary.colormaps()); } catch (error) { next(error); } });
   router.use(methodNotAllowed(openApi));
   return router;
