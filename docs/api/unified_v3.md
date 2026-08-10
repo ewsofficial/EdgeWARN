@@ -46,9 +46,10 @@ folders and legacy file prefixes.
 ## EWMRS binary chunks
 
 MRMS and GOES ABI renders publish one-channel float16 value chunks; GOES RGB
-composites publish three-channel float16 RGB value chunks. They are headerless
-`chunk_{x}_{y}.f16` files under
-`<BASE_DIR>/gui/<product>/<timestamp>/chunks/`. `NaN` is the no-data value.
+composites publish three-channel float16 RGB value chunks. They are gzip-
+compressed `chunk_{x}_{y}.f16.gz` files under
+`<BASE_DIR>/gui/<product>/<timestamp>/chunks/`. `NaN` is the no-data value;
+gzip uses deterministic metadata and the API sends `Content-Encoding: gzip`.
 Scalar clients apply the published product colormap; RGB clients render the
 three normalized values directly. Chunks retain top-to-bottom row order and a
 bottom-left chunk-grid origin.

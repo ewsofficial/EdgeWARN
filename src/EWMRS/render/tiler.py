@@ -6,6 +6,7 @@ with the coordinate origin (0,0) at the bottom-left corner.
 
 import numpy as np
 from pathlib import Path
+import gzip
 
 from util.atomic import atomic_write_bytes
 
@@ -22,8 +23,10 @@ def save_float16_chunk(chunk_data: np.ndarray, output_path: str | Path) -> Path:
         raise ValueError("value chunk data must have shape (height, width) or (height, width, 3)")
     if not chunk_data.flags.c_contiguous:
         raise ValueError("value chunk data must be C-contiguous")
-    payload = chunk_data.tobytes(order="C")
+    decoded_payload = chunk_data.tobytes(order="C")
     expected_length = chunk_data.size * 2
-    if len(payload) != expected_length:
+    if len(decoded_payload) != expected_length:
         raise ValueError("value chunk payload length does not match its dimensions")
-    return atomic_write_bytes(output_path, payload)
+    # mtime=0 makes identical chunks reproducible and allows reliable cache
+    # validation without embedding volatile timestamps in gzip headers.
+    return atomic_write_bytes(output_path, gzip.compress(decoded_payload, compresslevel=1, mtime=0))
