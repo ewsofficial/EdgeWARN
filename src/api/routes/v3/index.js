@@ -55,7 +55,8 @@ export function createV3Router({ analysis, renders, ancillary, openApi }) {
   router.get('/render-products/:productId/snapshots/:timestamp/chunks/:x/:y', async (req, res, next) => { try {
     const opened = await renders.chunk(req.params.productId, req.params.timestamp, Number(req.params.x), Number(req.params.y)); const { grid: chunkGrid } = opened.chunk;
     send(req, res, opened, 'application/octet-stream', {
-      'X-EWMRS-Format-Version': '1', 'X-Data-Type': 'uint8', 'X-Pixel-Format': 'rgba8',
+      'X-EWMRS-Format-Version': '2', 'X-Data-Type': 'float16', 'X-Value-Kind': opened.chunk.format.value_kind,
+      'X-Channel-Count': String(opened.chunk.format.channels), 'X-No-Data': 'nan',
       'X-Chunk-Width': String(chunkGrid.tileSize), 'X-Chunk-Height': String(chunkGrid.tileSize),
       'X-Grid-Origin': 'bottom-left', 'X-Pixel-Row-Order': 'top-to-bottom'
     });

@@ -6,9 +6,9 @@ const DEFAULT_GRID = { rows: 10, cols: 20, tileSize: 350 };
 const grid = (value) => value && Number.isInteger(value.rows) && Number.isInteger(value.cols) && Number.isInteger(value.tile_size)
   && value.rows > 0 && value.rows <= 100 && value.cols > 0 && value.cols <= 100 && value.tile_size > 0 && value.tile_size <= 4096
   ? { rows: value.rows, cols: value.cols, tileSize: value.tile_size } : null;
-const chunkFormat = (value) => value && value.version === 1 && value.encoding === 'rgba8' && value.file_suffix === '.rgba'
-  && value.compression === 'none' && value.channels === 4 && value.bytes_per_pixel === 4
-  && value.alpha === 'straight' && value.pixel_row_order === 'top_to_bottom' && value.grid_origin === 'bottom_left'
+const chunkFormat = (value) => value && value.version === 2 && value.encoding === 'float16' && value.file_suffix === '.f16'
+  && value.compression === 'none' && [1, 3].includes(value.channels) && ['scalar', 'rgb'].includes(value.value_kind)
+  && value.bytes_per_component === 2 && value.no_data === 'nan' && value.pixel_row_order === 'top_to_bottom' && value.grid_origin === 'bottom_left'
   ? value : null;
 
 function chunkIndex(value) {
@@ -45,7 +45,7 @@ export function createRenderService(repository) {
     async getProduct(id) {
       const item = product(id); const index = await productIndex(item);
       if (Array.isArray(index) || index.schema_version !== 2 || index.representation !== 'binary_chunks') return { ...item, grid: grid(Array.isArray(index) ? null : index.tile_grid) || DEFAULT_GRID };
-      const format = chunkFormat({ ...index.chunk_format, bytes_per_pixel: 4 });
+      const format = chunkFormat(index.chunk_format);
       if (!format) throw new ArtifactError('INVALID_ARTIFACT', 'Unsupported render chunk format');
       return { ...item, representation: index.representation, chunkFormat: index.chunk_format, grid: grid(index.tile_grid) || DEFAULT_GRID };
     },
@@ -73,15 +73,15 @@ export function createRenderService(repository) {
       const item = product(id); const data = chunkIndex(await repository.readJson('gui', [item.storageDirectory, value, 'index.json']));
       const productData = await productIndex(item);
       if (!productData || productData.schema_version !== 2 || productData.representation !== 'binary_chunks') throw new ArtifactError('INVALID_ARTIFACT', 'Unsupported render product index');
-      const productFormat = chunkFormat({ ...productData.chunk_format, bytes_per_pixel: 4 });
+      const productFormat = chunkFormat(productData.chunk_format);
       if (!productFormat || productData.chunk_format.version !== data.format.version || productData.chunk_format.file_suffix !== data.format.file_suffix) throw new ArtifactError('INVALID_ARTIFACT', 'Conflicting render chunk metadata');
       return data;
     },
     async chunk(id, value, x, y) {
       const data = await this.chunks(id, value);
       if (!Number.isInteger(x) || !Number.isInteger(y) || !data.chunks.some(([chunkX, chunkY]) => chunkX === x && chunkY === y)) throw new ArtifactError('NOT_FOUND', 'Render chunk not found');
-      const opened = await repository.open('gui', [product(id).storageDirectory, value, 'chunks', `chunk_${x}_${y}.rgba`], { kind: 'binary' });
-      const expectedLength = data.grid.tileSize * data.grid.tileSize * data.format.bytes_per_pixel;
+      const opened = await repository.open('gui', [product(id).storageDirectory, value, 'chunks', `chunk_${x}_${y}.f16`], { kind: 'binary' });
+      const expectedLength = data.grid.tileSize * data.grid.tileSize * data.format.channels * data.format.bytes_per_component;
       if (opened.size !== expectedLength) { await opened.handle.close(); throw new ArtifactError('INVALID_ARTIFACT', 'Render chunk has an invalid length'); }
       return { ...opened, chunk: data };
     }

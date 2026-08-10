@@ -5,35 +5,36 @@ TILE_SIZE = 350  # pixels
 TILE_GRID_ROWS = 10  # 3500 / 350
 TILE_GRID_COLS = 20  # 7000 / 350
 
-# EWMRS RGBA chunk wire-format invariants.  Keep these values together: they
+# EWMRS value-chunk wire-format invariants. Keep these values together: they
 # are written to both index levels and consumed by API clients.
 CHUNK_SCHEMA_VERSION = 2
-CHUNK_FORMAT_VERSION = 1
-CHUNK_ENCODING = "rgba8"
+CHUNK_FORMAT_VERSION = 2
+CHUNK_ENCODING = "float16"
 CHUNK_MEDIA_TYPE = "application/octet-stream"
-CHUNK_FILE_SUFFIX = ".rgba"
+CHUNK_FILE_SUFFIX = ".f16"
 CHUNK_COMPRESSION = "none"
-CHUNK_CHANNELS = 4
-CHUNK_BYTES_PER_PIXEL = 4
-CHUNK_ALPHA = "straight"
+CHUNK_BYTES_PER_COMPONENT = 2
 CHUNK_PIXEL_ROW_ORDER = "top_to_bottom"
 CHUNK_GRID_ORIGIN = "bottom_left"
 
 
-def chunk_format_descriptor(*, include_media_type: bool = False, include_bytes_per_pixel: bool = True) -> dict:
-    """Return the versioned, JSON-serializable EWMRS chunk contract."""
+def chunk_format_descriptor(*, channels: int, value_kind: str, include_media_type: bool = False) -> dict:
+    """Return the JSON-serializable float16 value-chunk contract."""
+    if channels not in {1, 3} or value_kind not in {"scalar", "rgb"}:
+        raise ValueError("value chunks must be scalar/1-channel or rgb/3-channel")
     value = {
         "version": CHUNK_FORMAT_VERSION,
         "encoding": CHUNK_ENCODING,
         "file_suffix": CHUNK_FILE_SUFFIX,
         "compression": CHUNK_COMPRESSION,
-        "channels": CHUNK_CHANNELS,
-        "alpha": CHUNK_ALPHA,
+        "data_type": "float16",
+        "channels": channels,
+        "value_kind": value_kind,
+        "no_data": "nan",
+        "bytes_per_component": CHUNK_BYTES_PER_COMPONENT,
         "pixel_row_order": CHUNK_PIXEL_ROW_ORDER,
         "grid_origin": CHUNK_GRID_ORIGIN,
     }
-    if include_bytes_per_pixel:
-        value["bytes_per_pixel"] = CHUNK_BYTES_PER_PIXEL
     if include_media_type:
         value["media_type"] = CHUNK_MEDIA_TYPE
     return value

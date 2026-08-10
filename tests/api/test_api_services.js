@@ -49,14 +49,14 @@ describe('unified API services', () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'api-services-'));
     const product = path.join(root, 'gui', 'CompRefQC'); const timestamp = '20260317-200000';
     await fs.mkdir(path.join(product, timestamp, 'chunks'), { recursive: true });
-    const format = { version: 1, encoding: 'rgba8', file_suffix: '.rgba', compression: 'none', channels: 4, bytes_per_pixel: 4, alpha: 'straight', pixel_row_order: 'top_to_bottom', grid_origin: 'bottom_left' };
+    const format = { version: 2, encoding: 'float16', file_suffix: '.f16', compression: 'none', channels: 1, value_kind: 'scalar', no_data: 'nan', bytes_per_component: 2, pixel_row_order: 'top_to_bottom', grid_origin: 'bottom_left' };
     await fs.writeFile(path.join(product, 'index.json'), JSON.stringify({ schema_version: 2, timestamps: [timestamp], representation: 'binary_chunks', chunk_format: { ...format, media_type: 'application/octet-stream' }, tile_grid: { rows: 1, cols: 1, tile_size: 2 } }));
     await fs.writeFile(path.join(product, timestamp, 'index.json'), JSON.stringify({ schema_version: 2, timestamp, representation: 'binary_chunks', chunk_format: format, tile_grid: { rows: 1, cols: 1, tile_size: 2 }, chunks: [[0, 0]] }));
-    await fs.writeFile(path.join(product, timestamp, 'chunks', 'chunk_0_0.rgba'), Buffer.alloc(16));
+    await fs.writeFile(path.join(product, timestamp, 'chunks', 'chunk_0_0.f16'), Buffer.alloc(8));
     const service = createRenderService(new ArtifactRepository({ gui: path.join(root, 'gui') }));
     await expect(service.chunks('comp-ref-qc', timestamp)).resolves.toMatchObject({ chunks: [[0, 0]], grid: { tileSize: 2 } });
     const opened = await service.chunk('comp-ref-qc', timestamp, 0, 0);
-    expect(opened.size).toBe(16); await opened.handle.close();
+    expect(opened.size).toBe(8); await opened.handle.close();
     await expect(service.chunk('comp-ref-qc', timestamp, 1, 0)).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 

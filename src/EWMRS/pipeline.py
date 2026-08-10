@@ -28,7 +28,7 @@ from util.atomic import atomic_write_json
 from util.io import IOManager, QueueWriter
 
 RenderOutput = Optional[list[Path]]
-_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.rgba$")
+_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16$")
 
 EWMRS_COLORMAP_JSON = Path(__file__).resolve().with_name("colormaps.json")
 fs.GUI_COLORMAP_JSON = EWMRS_COLORMAP_JSON
@@ -69,7 +69,7 @@ _NEXRAD_RENDER_MAX_WORKERS = 8
 def _load_timestamp_chunk_index_cached(
     index_path_str: str,
     mtime_ns: int,
-) -> tuple[list[list[int]], dict | None] | None:
+) -> tuple[list[list[int]], dict, dict] | None:
     """Cached read of a schema-versioned chunk index keyed on (path, mtime).
 
     The mtime is part of the cache key, so any rewrite of index.json
@@ -87,12 +87,12 @@ def _load_timestamp_chunk_index_cached(
     chunk_format = data.get("chunk_format")
     if not isinstance(chunks, list) or not isinstance(tile_grid, dict) or not isinstance(chunk_format, dict):
         return None
-    if chunk_format.get("encoding") != "rgba8" or chunk_format.get("file_suffix") != ".rgba" or chunk_format.get("bytes_per_pixel") != 4:
+    if chunk_format.get("encoding") != "float16" or chunk_format.get("file_suffix") != ".f16" or chunk_format.get("bytes_per_component") != 2 or chunk_format.get("channels") not in {1, 3}:
         return None
-    return chunks, tile_grid
+    return chunks, tile_grid, chunk_format
 
 
-def _load_timestamp_chunk_index(timestamp_dir: Path) -> tuple[list[list[int]], dict] | None:
+def _load_timestamp_chunk_index(timestamp_dir: Path) -> tuple[list[list[int]], dict, dict] | None:
     index_file = timestamp_dir / "index.json"
     try:
         stat_result = index_file.stat()
@@ -153,7 +153,7 @@ def _adaptive_process_worker_count(layer_count: int, phase_name: str) -> int:
 def _render_layer(layer) -> tuple[str, RenderOutput]:
     """Render a single layer. Returns (name, png_path or None)."""
     from EWMRS.render.goes_rgb import compose_goes_rgb, prepare_goes_rgb_render
-    from EWMRS.render.render import GUIArrayRenderer, GUIRGBAWriter, GUILayerRenderer
+    from EWMRS.render.render import GUIArrayRenderer, GUIValueWriter, GUILayerRenderer
     from EWMRS.render.goes_transform import (
         extract_goes_timestamp_iso,
         load_reproject_goes_abi_render_array,
@@ -202,12 +202,12 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
             if composed is None:
                 return name, None
 
-            rgba, metadata = composed
+            values, metadata = composed
             io_mgr.write_info(
                 f"Composited {name} GOES RGB product with channels {', '.join(sorted(metadata['selected_files']))}"
             )
-            renderer = GUIRGBAWriter(out_dir, name, timestamp_iso)
-            png_path, px_timestamp = renderer.save_rgba(rgba, tile_output=True)
+            renderer = GUIValueWriter(out_dir, name, timestamp_iso)
+            png_path, px_timestamp = renderer.save_values(values, tile_output=True, value_kind="rgb")
             return name, png_path
 
         if layer.get("input_manifest_bound"):
@@ -348,7 +348,7 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
         if timestamp_index is None:
             return None
 
-        indexed_tiles, timestamp_tile_grid = timestamp_index
+        indexed_tiles, timestamp_tile_grid, chunk_format = timestamp_index
         if timestamp_tile_grid is not None:
             tile_grid = timestamp_tile_grid
 
@@ -368,8 +368,11 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
                     if tile_x < 0 or tile_x >= cols or tile_y < 0 or tile_y >= rows:
                         return None
 
-            tile_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.rgba"
-            if not tile_path.is_file() or tile_path.stat().st_size != tile_grid["tile_size"] * tile_grid["tile_size"] * 4:
+            channels = chunk_format.get("channels")
+            if not isinstance(channels, int) or channels not in {1, 3}:
+                return None
+            tile_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.f16"
+            if not tile_path.is_file() or tile_path.stat().st_size != tile_grid["tile_size"] * tile_grid["tile_size"] * channels * 2:
                 return None
 
             tile_paths.append((tile_y, tile_x, tile_path))
@@ -870,7 +873,7 @@ def _run_goes_unified_cycle(
 ) -> Dict[str, RenderOutput]:
     from EWMRS.render.goes_rgb import iter_goes_rgb_batch, layer_config_for_channel, prepare_goes_rgb_batch
     from EWMRS.render.goes_transform import extract_goes_timestamp_iso
-    from EWMRS.render.render import GUIArrayRenderer, GUIRGBAWriter
+    from EWMRS.render.render import GUIArrayRenderer, GUIValueWriter
 
     results: Dict[str, RenderOutput] = {}
     _ensure_runtime_configured()
@@ -1040,7 +1043,7 @@ def _run_goes_unified_cycle(
                 "selected_files": pending_selected_files,
             }
             rgb_comp_start_s = time.perf_counter()
-            for layer_name, rgba, metadata in iter_goes_rgb_batch(
+            for layer_name, values, metadata in iter_goes_rgb_batch(
                 pending_batch,
                 web_mercator_shape=GOES_WEB_MERCATOR_SHAPE,
                 web_mercator_transform=GOES_WEB_MERCATOR_TRANSFORM,
@@ -1051,15 +1054,16 @@ def _run_goes_unified_cycle(
                 io_manager.write_info(
                     f"Composited {layer_name} GOES RGB product with channels {', '.join(sorted(metadata['selected_files']))}"
                 )
-                renderer = GUIRGBAWriter(out_dir, layer_name, timestamp_iso)
-                png_path, _px_timestamp = renderer.save_rgba(
-                    rgba,
+                renderer = GUIValueWriter(out_dir, layer_name, timestamp_iso)
+                png_path, _px_timestamp = renderer.save_values(
+                    values,
                     tile_output=True,
+                    value_kind="rgb",
                     timing_context={"render_start_s": time.perf_counter(), "cycle_start_s": cycle_start_s},
                 )
                 results[layer_name] = png_path
                 rendered_rgb_layers.add(layer_name)
-                del rgba
+                del values
             rgb_composition_s = time.perf_counter() - rgb_comp_start_s
             io_manager.write_info(f"GOES unified cycle RGB composition completed in {rgb_composition_s:.3f}s")
 
@@ -1085,7 +1089,7 @@ def run_goes_render_pipeline(
 ) -> Dict[str, RenderOutput]:
     """Run the GOES-backed EWMRS render phase."""
     from EWMRS.render.goes_rgb import iter_goes_rgb_batch, prepare_goes_rgb_batch
-    from EWMRS.render.render import GUIRGBAWriter
+    from EWMRS.render.render import GUIValueWriter
 
     layers = get_goes_file_list()
     if not layers:
@@ -1167,7 +1171,7 @@ def run_goes_render_pipeline(
                     "recipes": pending_recipes,
                     "selected_files": pending_selected_files,
                 }
-                for layer_name, rgba, metadata in iter_goes_rgb_batch(
+                for layer_name, values, metadata in iter_goes_rgb_batch(
                     pending_batch,
                     web_mercator_shape=GOES_WEB_MERCATOR_SHAPE,
                     web_mercator_transform=GOES_WEB_MERCATOR_TRANSFORM,
@@ -1177,11 +1181,11 @@ def run_goes_render_pipeline(
                     io_manager.write_info(
                         f"Composited {layer_name} GOES RGB product with channels {', '.join(sorted(metadata['selected_files']))}"
                     )
-                    renderer = GUIRGBAWriter(out_dir, layer_name, timestamp_iso)
-                    png_path, _px_timestamp = renderer.save_rgba(rgba, tile_output=True)
+                    renderer = GUIValueWriter(out_dir, layer_name, timestamp_iso)
+                    png_path, _px_timestamp = renderer.save_values(values, tile_output=True, value_kind="rgb")
                     results[layer_name] = png_path
                     rendered_rgb_layers.add(layer_name)
-                    del rgba
+                    del values
 
             for layer in rgb_layers:
                 name = str(layer["name"])

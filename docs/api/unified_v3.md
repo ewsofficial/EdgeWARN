@@ -45,27 +45,29 @@ folders and legacy file prefixes.
 
 ## EWMRS binary chunks
 
-MRMS, GOES ABI, and GOES RGB renders publish schema-version-2 indexes and
-headerless `rgba8` files at
-`<BASE_DIR>/gui/<product>/<timestamp>/chunks/chunk_{x}_{y}.rgba`. A chunk is
-an interleaved, straight-alpha `Uint8Array` in top-to-bottom row order. Chunk
-coordinates use a bottom-left grid origin; do not vertically flip individual
-rows while mapping a chunk into that grid.
+MRMS and GOES ABI renders publish one-channel float16 value chunks; GOES RGB
+composites publish three-channel float16 RGB value chunks. They are headerless
+`chunk_{x}_{y}.f16` files under
+`<BASE_DIR>/gui/<product>/<timestamp>/chunks/`. `NaN` is the no-data value.
+Scalar clients apply the published product colormap; RGB clients render the
+three normalized values directly. Chunks retain top-to-bottom row order and a
+bottom-left chunk-grid origin.
 
 Fetch the `/chunks` listing first. It provides the grid, format descriptor,
 and the authoritative sparse coordinate list—missing coordinates are fully
 transparent chunks, not a request to synthesize pixels. The payload endpoint
 sets `X-EWMRS-Format-Version`, `X-Data-Type`, `X-Pixel-Format`, chunk width and
 height, grid origin, and pixel-row-order headers. Verify that the response
-length equals `width * height * 4` before creating a `Uint8Array`; responses
+length equals `width * height * channels * 2` before creating a `Uint16Array`
+or `Float16Array`; responses
 are immutable and support ETag conditional GET and HEAD.
 
 ```js
 const listing = await (await fetch(chunkListUrl)).json();
 const response = await fetch(chunkUrl);
-const bytes = new Uint8Array(await response.arrayBuffer());
-if (bytes.byteLength !== 350 * 350 * 4) throw new Error('invalid RGBA chunk');
-// Upload bytes directly as RGBA8; grid y=0 is the bottom chunk row.
+const bytes = new Uint16Array(await response.arrayBuffer());
+if (bytes.byteLength !== 350 * 350) throw new Error('invalid float16 scalar chunk');
+// Interpret as float16 (or upload as half-float); grid y=0 is the bottom row.
 ```
 
 These RGBA chunks are distinct from RAP `data.u16` scalar arrays and NEXRAD

@@ -46,10 +46,10 @@ describe('unified API app', () => {
     await write('data/stormcells/stormcells_20260317-200000.json', '[]');
     await write('data/Alerts/official/timestamps/20260317-200000.json', '{"alerts":[]}');
     await write('data/METAR/METAR_20260317-20z.json', '[]');
-    const renderFormat = { version: 1, encoding: 'rgba8', file_suffix: '.rgba', compression: 'none', channels: 4, bytes_per_pixel: 4, alpha: 'straight', pixel_row_order: 'top_to_bottom', grid_origin: 'bottom_left' };
+    const renderFormat = { version: 2, encoding: 'float16', file_suffix: '.f16', compression: 'none', channels: 1, value_kind: 'scalar', no_data: 'nan', bytes_per_component: 2, pixel_row_order: 'top_to_bottom', grid_origin: 'bottom_left' };
     await write('gui/CompRefQC/index.json', JSON.stringify({ schema_version: 2, timestamps: ['20260317-200000'], representation: 'binary_chunks', chunk_format: { ...renderFormat, media_type: 'application/octet-stream' }, tile_grid: { rows: 1, cols: 1, tile_size: 2 } }));
     await write('gui/CompRefQC/20260317-200000/index.json', JSON.stringify({ schema_version: 2, timestamp: '20260317-200000', representation: 'binary_chunks', chunk_format: renderFormat, tile_grid: { rows: 1, cols: 1, tile_size: 2 }, chunks: [[0, 0]] }));
-    await write('gui/CompRefQC/20260317-200000/chunks/chunk_0_0.rgba', Buffer.alloc(16));
+    await write('gui/CompRefQC/20260317-200000/chunks/chunk_0_0.f16', Buffer.alloc(8));
     await write('gui/NEXRAD/KTLH/0.5/KTLH_DBZH_0.5_20260317-200000.bin.gz', 'gzip');
     await write('gui/RAP/CAPE/index.json', '["20260317-200000"]');
     await write('gui/RAP/CAPE/20260317-200000/metadata.json', '{"units":"J/kg","grid":{"ni":1,"nj":1}}');
@@ -70,9 +70,9 @@ describe('unified API app', () => {
     for (const endpoint of paths) await request(app).get(endpoint).expect(200);
     const chunk = await request(app).get('/api/v3/render-products/comp-ref-qc/snapshots/20260317-200000/chunks/0/0').expect(200).expect('Content-Type', /application\/octet-stream/);
     expect(chunk.headers['cache-control']).toContain('immutable');
-    expect(chunk.headers['x-pixel-format']).toBe('rgba8');
-    expect(chunk.headers['content-length']).toBe('16');
-    await request(app).head('/api/v3/render-products/comp-ref-qc/snapshots/20260317-200000/chunks/0/0').expect(200).expect('Content-Length', '16');
+    expect(chunk.headers['x-data-type']).toBe('float16');
+    expect(chunk.headers['content-length']).toBe('8');
+    await request(app).head('/api/v3/render-products/comp-ref-qc/snapshots/20260317-200000/chunks/0/0').expect(200).expect('Content-Length', '8');
     await request(app).get('/api/v3/render-products/comp-ref-qc/snapshots/20260317-200000/chunks/0/0').set('If-None-Match', chunk.headers.etag).expect(304);
     await request(app).get('/api/v3/radar-sites/KTLH/scans/20260317-200000/elevations/0.5/products/DBZH').expect(200).expect('Content-Type', /application\/gzip/);
     const rap = await request(app).get('/api/v3/models/rap/layers/CAPE/snapshots/20260317-200000/data').expect(200);

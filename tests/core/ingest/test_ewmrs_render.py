@@ -293,25 +293,25 @@ class TestConvertToPng:
         r = self._make_renderer(data, tmp_path / "out")
         paths, ts = r.convert_to_png(tile_output=True)
         assert len(paths) == 4
-        assert (tmp_path / "out" / ts / "chunks" / "chunk_0_0.rgba").exists()
+        assert (tmp_path / "out" / ts / "chunks" / "chunk_0_0.f16").exists()
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
         tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
         assert idx["timestamps"] == [ts]
         assert tile_idx["chunks"] == [[0, 0], [1, 0], [0, 1], [1, 1]]
-        assert tile_idx["chunk_format"]["encoding"] == "rgba8"
+        assert tile_idx["chunk_format"]["encoding"] == "float16"
         assert tile_idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
 
     def test_tile_output_true_skips_fully_transparent_tiles(self, tmp_path):
         side = TILE_SIZE * 2
-        data = np.full((side, side), -1.0, dtype=np.float32)
+        data = np.full((side, side), np.nan, dtype=np.float32)
         r = self._make_renderer(data, tmp_path / "out")
 
         paths, ts = r.convert_to_png(tile_output=True)
 
         assert paths == []
         assert (tmp_path / "out" / ts).is_dir()
-        assert list((tmp_path / "out" / ts / "chunks").glob("chunk_*.rgba")) == []
+        assert list((tmp_path / "out" / ts / "chunks").glob("chunk_*.f16")) == []
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
         tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
@@ -320,7 +320,7 @@ class TestConvertToPng:
 
     def test_tile_output_true_writes_only_non_transparent_tiles(self, tmp_path):
         side = TILE_SIZE * 2
-        data = np.full((side, side), -1.0, dtype=np.float32)
+        data = np.full((side, side), np.nan, dtype=np.float32)
         data[TILE_SIZE:, :TILE_SIZE] = 50.0
         data[:TILE_SIZE, TILE_SIZE:] = 75.0
         r = self._make_renderer(data, tmp_path / "out")
@@ -328,11 +328,11 @@ class TestConvertToPng:
         paths, ts = r.convert_to_png(tile_output=True)
 
         expected = {
-            tmp_path / "out" / ts / "chunks" / "chunk_0_0.rgba",
-            tmp_path / "out" / ts / "chunks" / "chunk_1_1.rgba",
+            tmp_path / "out" / ts / "chunks" / "chunk_0_0.f16",
+            tmp_path / "out" / ts / "chunks" / "chunk_1_1.f16",
         }
         assert set(paths) == expected
-        assert set((tmp_path / "out" / ts / "chunks").glob("chunk_*.rgba")) == expected
+        assert set((tmp_path / "out" / ts / "chunks").glob("chunk_*.f16")) == expected
         tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert tile_idx["chunks"] == [[0, 0], [1, 1]]
 
@@ -340,7 +340,7 @@ class TestConvertToPng:
         side = TILE_SIZE * 2
         outdir = tmp_path / "out"
         opaque = np.full((side, side), 50.0, dtype=np.float32)
-        transparent = np.full((side, side), -1.0, dtype=np.float32)
+        transparent = np.full((side, side), np.nan, dtype=np.float32)
 
         first_renderer = self._make_renderer(opaque, outdir)
         first_paths, ts = first_renderer.convert_to_png(tile_output=True)
@@ -351,7 +351,7 @@ class TestConvertToPng:
 
         assert second_ts == ts
         assert second_paths == []
-        assert list((outdir / ts / "chunks").glob("chunk_*.rgba")) == []
+        assert list((outdir / ts / "chunks").glob("chunk_*.f16")) == []
         tile_idx = json.loads((outdir / ts / "index.json").read_text())
         assert tile_idx["chunks"] == []
 

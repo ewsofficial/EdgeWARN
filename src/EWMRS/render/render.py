@@ -9,7 +9,7 @@ import re
 import threading
 import numpy as np
 from .tools import TransformUtils
-from .tiler import save_rgba_chunk
+from .tiler import save_float16_chunk
 import util.file as fs
 from util.atomic import atomic_write_json
 from xarray import Dataset
@@ -17,7 +17,7 @@ from util.io import IOManager
 from datetime import datetime
 
 io_manager = IOManager("[Transform]")
-_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.rgba$")
+_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16$")
 
 
 @lru_cache(maxsize=128)
@@ -121,17 +121,18 @@ def _normalize_tile_grid(tile_grid: dict | None) -> dict | None:
     return {"rows": rows, "cols": cols, "tile_size": tile_size}
 
 
-class GUIRGBAWriter:
+class GUIValueWriter:
     def __init__(self, outdir: Path, file_name: str, timestamp):
         self.outdir = outdir
         self.file_name = file_name
         self.timestamp = timestamp
 
-    def save_rgba(
+    def save_values(
         self,
-        rgba: np.ndarray,
+        values: np.ndarray,
         tile_output: bool = True,
         *,
+        value_kind: str = "scalar",
         timing_context: dict | None = None,
     ) -> Tuple[List[Path], str]:
         from .config import TILE_SIZE
@@ -142,31 +143,34 @@ class GUIRGBAWriter:
         self.outdir.mkdir(parents=True, exist_ok=True)
 
         if tile_output:
-            if rgba.ndim != 3 or rgba.shape[2] != 4 or rgba.dtype != np.uint8:
-                raise ValueError("Rendered RGBA data must be a uint8 array with shape (height, width, 4)")
-            if rgba.shape[0] % TILE_SIZE or rgba.shape[1] % TILE_SIZE:
+            values = np.asarray(values, dtype=np.float32)
+            channels = 1 if values.ndim == 2 else values.shape[2] if values.ndim == 3 else 0
+            if channels not in {1, 3} or (value_kind == "scalar" and channels != 1) or (value_kind == "rgb" and channels != 3):
+                raise ValueError("Rendered values must be scalar [height,width] or RGB [height,width,3]")
+            if values.shape[0] % TILE_SIZE or values.shape[1] % TILE_SIZE:
                 raise ValueError(
-                    f"Rendered RGBA dimensions {rgba.shape[:2]} are not divisible by chunk size {TILE_SIZE}"
+                    f"Rendered value dimensions {values.shape[:2]} are not divisible by chunk size {TILE_SIZE}"
                 )
-            rows = rgba.shape[0] // TILE_SIZE
-            cols = rgba.shape[1] // TILE_SIZE
+            rows = values.shape[0] // TILE_SIZE
+            cols = values.shape[1] // TILE_SIZE
             tile_grid = {"rows": rows, "cols": cols, "tile_size": TILE_SIZE}
             artifact_paths = self._save_chunks_from_array(
-                rgba,
+                values,
                 timestamp,
                 tile_grid=tile_grid,
+                value_kind=value_kind,
                 timing_context=timing_context,
             )
-            self._update_index(timestamp, tile_grid=tile_grid)
+            self._update_index(timestamp, tile_grid=tile_grid, channels=channels, value_kind=value_kind)
             total_render_s = time.perf_counter() - render_start_s
             io_manager.write_info(
                 f"Render output for {self.file_name} completed in {total_render_s:.3f}s "
                 f"({len(artifact_paths)} chunks, timestamp={timestamp})"
             )
-            io_manager.write_debug(f"Saved {len(artifact_paths)} RGBA chunks for {self.file_name} at {timestamp}")
+            io_manager.write_debug(f"Saved {len(artifact_paths)} float16 value chunks for {self.file_name} at {timestamp}")
             return artifact_paths, timestamp
 
-        raise ValueError("EWMRS no longer writes flat PNG artifacts; use tiled RGBA chunks")
+        raise ValueError("EWMRS no longer writes flat PNG artifacts; use tiled float16 value chunks")
 
     def _coerce_timestamp(self, timestamp) -> datetime:
         try:
@@ -177,10 +181,11 @@ class GUIRGBAWriter:
 
     def _save_chunks_from_array(
         self,
-        rgba: np.ndarray,
+        values: np.ndarray,
         timestamp: str,
         *,
         tile_grid: dict,
+        value_kind: str,
         timing_context: dict | None = None,
     ) -> List[Path]:
         tile_schedule_start_s = time.perf_counter()
@@ -200,9 +205,9 @@ class GUIRGBAWriter:
                 right = left + tile_size
                 top = (grid_rows - 1 - tile_y) * tile_size
                 bottom = top + tile_size
-                chunk_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.rgba"
-                chunk_data = np.ascontiguousarray(rgba[top:bottom, left:right])
-                if np.any(chunk_data[..., 3] != 0):
+                chunk_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.f16"
+                chunk_data = np.ascontiguousarray(values[top:bottom, left:right], dtype=np.float16)
+                if np.any(np.isfinite(chunk_data)):
                     tile_specs.append((chunk_data, chunk_path))
 
         tile_schedule_s = time.perf_counter() - tile_schedule_start_s
@@ -219,7 +224,7 @@ class GUIRGBAWriter:
         def _write_chunk(spec):
             nonlocal first_tile_logged
             chunk_data, chunk_path = spec
-            save_rgba_chunk(chunk_data, chunk_path)
+            save_float16_chunk(chunk_data, chunk_path)
             completed_s = time.perf_counter()
             with first_tile_lock:
                 if not first_tile_logged:
@@ -257,7 +262,7 @@ class GUIRGBAWriter:
             f"({len(tile_specs)}/{total_grid_tiles} non-transparent chunks written)"
         )
 
-        self._write_timestamp_index(timestamp_dir, tile_specs, tile_grid)
+        self._write_timestamp_index(timestamp_dir, tile_specs, tile_grid, value_kind=value_kind)
         # The index is the publication barrier.  Only remove obsolete chunks
         # after readers can discover the complete replacement set.
         published = {path.name for _, path in tile_specs}
@@ -267,7 +272,7 @@ class GUIRGBAWriter:
 
         return [tile_path for _, tile_path in tile_specs]
 
-    def _write_timestamp_index(self, timestamp_dir: Path, tile_specs: list[tuple[np.ndarray, Path]], tile_grid: dict) -> None:
+    def _write_timestamp_index(self, timestamp_dir: Path, tile_specs: list[tuple[np.ndarray, Path]], tile_grid: dict, *, value_kind: str) -> None:
         from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
         normalized_tile_grid = _normalize_tile_grid(tile_grid)
         chunks: list[list[int]] = []
@@ -282,7 +287,7 @@ class GUIRGBAWriter:
             "schema_version": CHUNK_SCHEMA_VERSION,
             "timestamp": timestamp_dir.name,
             "representation": "binary_chunks",
-            "chunk_format": chunk_format_descriptor(),
+            "chunk_format": chunk_format_descriptor(channels=(1 if value_kind == "scalar" else 3), value_kind=value_kind),
             "tile_grid": normalized_tile_grid,
             "chunks": chunks,
         }
@@ -293,7 +298,7 @@ class GUIRGBAWriter:
         except Exception as e:
             io_manager.write_error(f"Failed to update index.json in {timestamp_dir}: {e}")
 
-    def _update_index(self, new_timestamp, tile_grid=None):
+    def _update_index(self, new_timestamp, tile_grid=None, *, channels: int = 1, value_kind: str = "scalar"):
         from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
         index_file = self.outdir / "index.json"
         timestamps = []
@@ -321,7 +326,7 @@ class GUIRGBAWriter:
                     "schema_version": CHUNK_SCHEMA_VERSION,
                     "timestamps": timestamps,
                     "representation": "binary_chunks",
-                    "chunk_format": chunk_format_descriptor(include_media_type=True, include_bytes_per_pixel=False),
+                    "chunk_format": chunk_format_descriptor(channels=channels, value_kind=value_kind, include_media_type=True),
                     "tile_grid": tile_grid or existing_tile_grid,
                 }
 
@@ -357,7 +362,7 @@ class GUILayerRenderer:
         return _get_cached_cmap(self.colormap_key)
 
     def _update_index(self, new_timestamp, tile_grid=None):
-        writer = GUIRGBAWriter(self.outdir, self.file_name, self.timestamp)
+        writer = GUIValueWriter(self.outdir, self.file_name, self.timestamp)
         writer._update_index(new_timestamp, tile_grid=tile_grid)
 
     def convert_to_png(self, tile_output: bool = True, *, timing_context: dict | None = None) -> Tuple[List[Path], str]:
@@ -378,15 +383,15 @@ class GUILayerRenderer:
         # Step 2: Get colormap
         thresholds, colors, colors_uint8, interpolate = self._get_cmap()
 
-        rgba_start_s = time.perf_counter()
-        rgba = _scalar_data_to_rgba(data, thresholds, colors, colors_uint8, interpolate)
-        scalar_to_rgba_s = time.perf_counter() - rgba_start_s
+        render_start_s = time.perf_counter()
+        values = np.asarray(data, dtype=np.float32)
+        scalar_to_rgba_s = time.perf_counter() - render_start_s
         if timing_context is not None:
             timing_context["scalar_to_rgba_s"] = scalar_to_rgba_s
-        io_manager.write_info(f"Scalar-to-RGBA for {self.file_name} completed in {scalar_to_rgba_s:.3f}s")
+        io_manager.write_info(f"Value preparation for {self.file_name} completed in {scalar_to_rgba_s:.3f}s")
 
-        writer = GUIRGBAWriter(self.outdir, self.file_name, self.timestamp)
-        return writer.save_rgba(rgba, tile_output=tile_output, timing_context=timing_context)
+        writer = GUIValueWriter(self.outdir, self.file_name, self.timestamp)
+        return writer.save_values(values, tile_output=tile_output, value_kind="scalar", timing_context=timing_context)
 
 
 class GUIArrayRenderer:
@@ -398,12 +403,9 @@ class GUIArrayRenderer:
         self.timestamp = timestamp
 
     def convert_to_png(self, tile_output: bool = True, *, timing_context: dict | None = None) -> Tuple[List[Path], str]:
-        thresholds, colors, colors_uint8, interpolate = _get_cached_cmap(self.colormap_key)
-        rgba_start_s = time.perf_counter()
-        rgba = _scalar_data_to_rgba(self.values, thresholds, colors, colors_uint8, interpolate)
-        scalar_to_rgba_s = time.perf_counter() - rgba_start_s
+        scalar_to_rgba_s = 0.0
         if timing_context is not None:
             timing_context["scalar_to_rgba_s"] = scalar_to_rgba_s
-        io_manager.write_info(f"Scalar-to-RGBA for {self.file_name} completed in {scalar_to_rgba_s:.3f}s")
-        writer = GUIRGBAWriter(self.outdir, self.file_name, self.timestamp)
-        return writer.save_rgba(rgba, tile_output=tile_output, timing_context=timing_context)
+        io_manager.write_info(f"Value preparation for {self.file_name} completed in {scalar_to_rgba_s:.3f}s")
+        writer = GUIValueWriter(self.outdir, self.file_name, self.timestamp)
+        return writer.save_values(self.values, tile_output=tile_output, value_kind="scalar", timing_context=timing_context)
