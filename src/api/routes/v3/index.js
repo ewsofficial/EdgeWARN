@@ -6,7 +6,7 @@ const listOptions = (req) => ({ cursor: typeof req.query.cursor === 'string' ? r
 const collection = (req, res, items) => { const result = page(items, listOptions(req)); res.set('Cache-Control', 'public, max-age=5').json({ data: result.data, meta: { nextCursor: result.nextCursor } }); };
 const resource = (req, res, data) => res.set('Cache-Control', 'public, max-age=60').json({ data, meta: {} });
 const geojson = (req, res, data) => res.set('Cache-Control', 'public, max-age=60').type('application/geo+json').json(data);
-const send = (req, res, opened, type) => { res.set(opened.headers || {}).set({ 'Cache-Control': 'public, max-age=31536000, immutable', ETag: opened.etag }).type(type); if (req.fresh) { opened.handle.close(); return res.status(304).end(); } res.set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
+const send = (req, res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).set({ 'Cache-Control': 'public, max-age=31536000, immutable', ETag: opened.etag }).type(type); if (req.fresh) { opened.handle.close(); return res.status(304).end(); } res.set('Content-Length', String(opened.size)); if (req.method === 'HEAD') { opened.handle.close(); return res.end(); } opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
 const COLLECTION_PATHS = new Set(['/cells', '/storm-snapshots', '/alert-snapshots', '/observations/metar', '/render-products', '/radar-sites', '/models/rap/layers', '/analyses/wpc/surface']);
 
 function validateQuery(req, res, next) {
@@ -45,12 +45,21 @@ export function createV3Router({ analysis, renders, ancillary, openApi }) {
   router.get('/alerts/:alertId', async (req, res, next) => { try { resource(req, res, await analysis.getAlert(req.query.source, req.params.alertId)); } catch (error) { next(error); } });
   router.get('/observations/metar', async (req, res, next) => { try { collection(req, res, await analysis.listMetarHours()); } catch (error) { next(error); } });
   router.get('/observations/metar/:timestamp', async (req, res, next) => { try { resource(req, res, await analysis.getMetar(req.params.timestamp)); } catch (error) { next(error); } });
-  router.get('/render-products', async (req, res, next) => { try { const available = new Set((await renders.listProducts()).map((item) => item.id)); collection(req, res, productCatalog.filter((item) => available.has(item.id))); } catch (error) { next(error); } });
+  router.get('/render-products', async (req, res, next) => { try { const available = new Set((await renders.listProducts()).map((item) => item.id)); collection(req, res, await Promise.all(productCatalog.filter((item) => available.has(item.id)).map((item) => renders.getProduct(item.id)))); } catch (error) { next(error); } });
   router.get('/render-products/:productId', async (req, res, next) => { try { resource(req, res, await renders.getProduct(req.params.productId)); } catch (error) { next(error); } });
   router.get('/render-products/:productId/snapshots', async (req, res, next) => { try { collection(req, res, await renders.listSnapshots(req.params.productId)); } catch (error) { next(error); } });
   router.get('/render-products/:productId/snapshots/:timestamp/image', async (req, res, next) => { try { send(req, res, await renders.image(req.params.productId, req.params.timestamp), 'image/png'); } catch (error) { next(error); } });
   router.get('/render-products/:productId/snapshots/:timestamp/tiles', async (req, res, next) => { try { resource(req, res, await renders.tiles(req.params.productId, req.params.timestamp)); } catch (error) { next(error); } });
   router.get('/render-products/:productId/snapshots/:timestamp/tiles/:x/:y', async (req, res, next) => { try { send(req, res, await renders.tile(req.params.productId, req.params.timestamp, Number(req.params.x), Number(req.params.y)), 'image/png'); } catch (error) { next(error); } });
+  router.get('/render-products/:productId/snapshots/:timestamp/chunks', async (req, res, next) => { try { resource(req, res, await renders.chunks(req.params.productId, req.params.timestamp)); } catch (error) { next(error); } });
+  router.get('/render-products/:productId/snapshots/:timestamp/chunks/:x/:y', async (req, res, next) => { try {
+    const opened = await renders.chunk(req.params.productId, req.params.timestamp, Number(req.params.x), Number(req.params.y)); const { grid: chunkGrid } = opened.chunk;
+    send(req, res, opened, 'application/octet-stream', {
+      'X-EWMRS-Format-Version': '1', 'X-Data-Type': 'uint8', 'X-Pixel-Format': 'rgba8',
+      'X-Chunk-Width': String(chunkGrid.tileSize), 'X-Chunk-Height': String(chunkGrid.tileSize),
+      'X-Grid-Origin': 'bottom-left', 'X-Pixel-Row-Order': 'top-to-bottom'
+    });
+  } catch (error) { next(error); } });
   router.get('/radar-sites', async (req, res, next) => { try { collection(req, res, await ancillary.listRadarSites()); } catch (error) { next(error); } });
   router.get('/radar-sites/:siteId/availability', async (req, res, next) => { try { resource(req, res, await ancillary.radarAvailability(req.params.siteId.toUpperCase())); } catch (error) { next(error); } });
   router.get('/radar-sites/:siteId/scans/:timestamp/elevations/:elevation/products/:productId', async (req, res, next) => { try { send(req, res, await ancillary.radarField(req.params.siteId, req.params.timestamp, req.params.elevation, req.params.productId), 'application/gzip'); } catch (error) { next(error); } });
