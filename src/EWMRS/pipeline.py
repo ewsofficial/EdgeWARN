@@ -27,6 +27,7 @@ from common.ingest.manifest import CycleInputManifest
 from util.io import IOManager, QueueWriter
 
 RenderOutput = Optional[list[Path]]
+_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.rgba$")
 
 EWMRS_COLORMAP_JSON = Path(__file__).resolve().with_name("colormaps.json")
 fs.GUI_COLORMAP_JSON = EWMRS_COLORMAP_JSON
@@ -64,11 +65,11 @@ _NEXRAD_RENDER_MAX_WORKERS = 8
 
 
 @lru_cache(maxsize=512)
-def _load_timestamp_tile_index_cached(
+def _load_timestamp_chunk_index_cached(
     index_path_str: str,
     mtime_ns: int,
 ) -> tuple[list[list[int]], dict | None] | None:
-    """Cached read of a tile-dir index.json keyed on (path, mtime).
+    """Cached read of a schema-versioned chunk index keyed on (path, mtime).
 
     The mtime is part of the cache key, so any rewrite of index.json
     invalidates the entry automatically and the next call re-reads from
@@ -78,27 +79,26 @@ def _load_timestamp_tile_index_cached(
     with open(index_path_str, "r") as f:
         data = json.load(f)
 
-    if isinstance(data, list):
-        tiles = data
-        tile_grid = None
-    else:
-        tiles = data.get("tiles", [])
-        tile_grid = data.get("tile_grid")
-
-    if not isinstance(tiles, list):
+    if not isinstance(data, dict) or data.get("schema_version") != 2 or data.get("representation") != "binary_chunks":
         return None
+    chunks = data.get("chunks")
+    tile_grid = data.get("tile_grid")
+    chunk_format = data.get("chunk_format")
+    if not isinstance(chunks, list) or not isinstance(tile_grid, dict) or not isinstance(chunk_format, dict):
+        return None
+    if chunk_format.get("encoding") != "rgba8" or chunk_format.get("file_suffix") != ".rgba" or chunk_format.get("bytes_per_pixel") != 4:
+        return None
+    return chunks, tile_grid
 
-    return tiles, tile_grid if isinstance(tile_grid, dict) else None
 
-
-def _load_timestamp_tile_index(tile_dir: Path) -> tuple[list[list[int]], dict | None] | None:
-    index_file = tile_dir / "index.json"
+def _load_timestamp_chunk_index(timestamp_dir: Path) -> tuple[list[list[int]], dict] | None:
+    index_file = timestamp_dir / "index.json"
     try:
         stat_result = index_file.stat()
     except FileNotFoundError:
         return None
 
-    return _load_timestamp_tile_index_cached(str(index_file), stat_result.st_mtime_ns)
+    return _load_timestamp_chunk_index_cached(str(index_file), stat_result.st_mtime_ns)
 
 
 def _ensure_dt(dt_in) -> datetime:
@@ -324,8 +324,9 @@ def _pinned_goes_files_by_channel(
 def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
     try:
         timestamp = _normalize_render_timestamp(timestamp_iso)
-        tile_dir = out_dir / timestamp
-        if not tile_dir.exists() or not tile_dir.is_dir():
+        timestamp_dir = out_dir / timestamp
+        chunk_dir = timestamp_dir / "chunks"
+        if not chunk_dir.is_dir():
             return None
 
         index_file = out_dir / "index.json"
@@ -334,13 +335,15 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
             with open(index_file, "r") as f:
                 data = json.load(f)
 
-            timestamps = data if isinstance(data, list) else data.get("timestamps", [])
+            if not isinstance(data, dict) or data.get("schema_version") != 2 or data.get("representation") != "binary_chunks":
+                return None
+            timestamps = data.get("timestamps", [])
             if timestamp not in timestamps:
                 return None
             if not isinstance(data, list):
                 tile_grid = data.get("tile_grid")
 
-        timestamp_index = _load_timestamp_tile_index(tile_dir)
+        timestamp_index = _load_timestamp_chunk_index(timestamp_dir)
         if timestamp_index is None:
             return None
 
@@ -364,9 +367,9 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
                     if tile_x < 0 or tile_x >= cols or tile_y < 0 or tile_y >= rows:
                         continue
 
-            tile_path = tile_dir / f"tile_{tile_x}_{tile_y}.png"
-            if not tile_path.is_file():
-                continue
+            tile_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.rgba"
+            if not tile_path.is_file() or tile_path.stat().st_size != tile_grid["tile_size"] * tile_grid["tile_size"] * 4:
+                return None
 
             tile_paths.append((tile_y, tile_x, tile_path))
 

@@ -5,7 +5,6 @@ import threading
 
 import numpy as np
 import pytest
-from PIL import Image
 from unittest.mock import patch, MagicMock
 
 import EWMRS.render.render as render_module
@@ -144,59 +143,45 @@ class TestColormapInterpolation:
     def _render_data(self, data, colormap_key, outdir):
         ds = _FakeDataset(data)
         outdir.mkdir(parents=True, exist_ok=True)
-        renderer = render.GUILayerRenderer(ds, outdir, colormap_key, "TestLayer", "20260317-200000")
-        return renderer.convert_to_png(tile_output=False)
+        thresholds, colors, colors_uint8, interpolate = render._get_cached_cmap(colormap_key)
+        return render._scalar_data_to_rgba(data, thresholds, colors, colors_uint8, interpolate)
 
     def test_interpolated_values_blend_colors(self, tmp_path):
         data = np.array([[0.0], [25.0], [50.0], [75.0], [100.0]])
-        paths, ts = self._render_data(data, "InterpCmap", tmp_path / "out")
-        img = Image.open(paths[0])
-        rgba = np.array(img)
+        rgba = self._render_data(data, "InterpCmap", tmp_path / "out")
         r, g, b = rgba[:, 0, 0], rgba[:, 0, 1], rgba[:, 0, 2]
         assert r[0] == 0 and r[1] == 64  # midpoint interpolates
         assert r[4] == 255  # max value
 
     def test_out_of_range_high_gets_max_color(self, tmp_path):
         data = np.array([[200.0]])
-        paths, ts = self._render_data(data, "InterpCmap", tmp_path / "out")
-        img = Image.open(paths[0])
-        rgba = np.array(img)
+        rgba = self._render_data(data, "InterpCmap", tmp_path / "out")
         assert rgba[0, 0, :3].tolist() == [255, 255, 255]
 
     def test_out_of_range_low_gets_min_color(self, tmp_path):
         data = np.array([[-10.0]])
-        paths, ts = self._render_data(data, "InterpCmap", tmp_path / "out")
-        img = Image.open(paths[0])
-        rgba = np.array(img)
+        rgba = self._render_data(data, "InterpCmap", tmp_path / "out")
         assert rgba[0, 0, :3].tolist() == [0, 0, 0]
 
     def test_nan_values_are_transparent(self, tmp_path):
         data = np.array([[np.nan]])
-        paths, ts = self._render_data(data, "InterpCmap", tmp_path / "out")
-        img = Image.open(paths[0])
-        rgba = np.array(img)
+        rgba = self._render_data(data, "InterpCmap", tmp_path / "out")
         assert rgba[0, 0, 3] == 0  # alpha = 0
 
     def test_below_first_threshold_is_transparent(self, tmp_path):
         data = np.array([[-5.0]])
-        paths, ts = self._render_data(data, "InterpCmap", tmp_path / "out")
-        img = Image.open(paths[0])
-        rgba = np.array(img)
+        rgba = self._render_data(data, "InterpCmap", tmp_path / "out")
         assert rgba[0, 0, 3] == 0
 
     def test_discrete_colormap_uses_nearest_bin(self, tmp_path):
         data = np.array([[5.0], [15.0]])
-        paths, ts = self._render_data(data, "DiscreteCmap", tmp_path / "out")
-        img = Image.open(paths[0])
-        rgba = np.array(img)
+        rgba = self._render_data(data, "DiscreteCmap", tmp_path / "out")
         assert rgba[0, 0, :3].tolist() == [0, 0, 0]  # < 10, clamp to first
         assert rgba[1, 0, :3].tolist() == [255, 0, 0]  # 15 in [10,20) bin -> red
 
     def test_discrete_beyond_max_clamps_to_last(self, tmp_path):
         data = np.array([[100.0]])
-        paths, ts = self._render_data(data, "DiscreteCmap", tmp_path / "out")
-        img = Image.open(paths[0])
-        rgba = np.array(img)
+        rgba = self._render_data(data, "DiscreteCmap", tmp_path / "out")
         assert rgba[0, 0, :3].tolist() == [0, 255, 0]
 
 
@@ -227,13 +212,14 @@ class TestUpdateIndex:
         assert idx["timestamps"] == ["20260317-200000"]
         assert idx["tile_grid"] == {"rows": 14, "cols": 28, "tile_size": 250}
 
-    def test_old_format_without_tile_grid(self, tmp_path):
+    def test_format_includes_schema_without_tile_grid(self, tmp_path):
         (tmp_path / "out").mkdir()
         r = self._renderer(tmp_path / "out")
         r._update_index("20260317-200000", tile_grid=None)
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
-        assert isinstance(idx, list)
-        assert "20260317-200000" in idx
+        assert idx["schema_version"] == 2
+        assert idx["representation"] == "binary_chunks"
+        assert "20260317-200000" in idx["timestamps"]
 
     def test_deduplicates_and_sorts_newest_first(self, tmp_path):
         (tmp_path / "out").mkdir()
@@ -258,7 +244,7 @@ class TestUpdateIndex:
         r = self._renderer(tmp_path / "out")
         r._update_index("20260317-200000", tile_grid=None)
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
-        assert isinstance(idx, list)
+        assert idx["schema_version"] == 2
 
 
 class TestConvertToPng:
@@ -288,18 +274,16 @@ class TestConvertToPng:
         ds = _FakeDataset(data)
         return render.GUILayerRenderer(ds, outdir, "TestCmap", "TestLayer", timestamp)
 
-    def test_tile_output_false_returns_single_png(self, tmp_path):
+    def test_tile_output_false_is_removed(self, tmp_path):
         data = np.array([[50.0, 75.0], [25.0, 100.0]])
         r = self._make_renderer(data, tmp_path / "out")
-        paths, ts = r.convert_to_png(tile_output=False)
-        assert len(paths) == 1
-        assert paths[0].suffix == ".png"
-        assert ts == "20260317-200000"
+        with pytest.raises(ValueError, match="no longer writes flat PNG"):
+            r.convert_to_png(tile_output=False)
 
     def test_timestamp_seconds_forced_to_zero(self, tmp_path):
-        data = np.array([[50.0]])
+        data = np.full((TILE_SIZE, TILE_SIZE), 50.0)
         r = self._make_renderer(data, tmp_path / "out", timestamp="2026-03-17T20:45:33")
-        paths, ts = r.convert_to_png(tile_output=False)
+        paths, ts = r.convert_to_png(tile_output=True)
         assert ts == "20260317-204500"
         assert ts[-2:] == "00"
 
@@ -309,15 +293,14 @@ class TestConvertToPng:
         r = self._make_renderer(data, tmp_path / "out")
         paths, ts = r.convert_to_png(tile_output=True)
         assert len(paths) == 4
-        assert (tmp_path / "out" / ts / "tile_0_0.png").exists()
+        assert (tmp_path / "out" / ts / "chunks" / "chunk_0_0.rgba").exists()
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
         tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
         assert idx["timestamps"] == [ts]
-        assert tile_idx == {
-            "tiles": [[0, 0], [1, 0], [0, 1], [1, 1]],
-            "tile_grid": {"rows": 2, "cols": 2, "tile_size": TILE_SIZE},
-        }
+        assert tile_idx["chunks"] == [[0, 0], [1, 0], [0, 1], [1, 1]]
+        assert tile_idx["chunk_format"]["encoding"] == "rgba8"
+        assert tile_idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
 
     def test_tile_output_true_skips_fully_transparent_tiles(self, tmp_path):
         side = TILE_SIZE * 2
@@ -328,15 +311,12 @@ class TestConvertToPng:
 
         assert paths == []
         assert (tmp_path / "out" / ts).is_dir()
-        assert list((tmp_path / "out" / ts).glob("tile_*.png")) == []
+        assert list((tmp_path / "out" / ts / "chunks").glob("chunk_*.rgba")) == []
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
         tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
         assert idx["timestamps"] == [ts]
-        assert tile_idx == {
-            "tiles": [],
-            "tile_grid": {"rows": 2, "cols": 2, "tile_size": TILE_SIZE},
-        }
+        assert tile_idx["chunks"] == []
 
     def test_tile_output_true_writes_only_non_transparent_tiles(self, tmp_path):
         side = TILE_SIZE * 2
@@ -348,16 +328,13 @@ class TestConvertToPng:
         paths, ts = r.convert_to_png(tile_output=True)
 
         expected = {
-            tmp_path / "out" / ts / "tile_0_0.png",
-            tmp_path / "out" / ts / "tile_1_1.png",
+            tmp_path / "out" / ts / "chunks" / "chunk_0_0.rgba",
+            tmp_path / "out" / ts / "chunks" / "chunk_1_1.rgba",
         }
         assert set(paths) == expected
-        assert set((tmp_path / "out" / ts).glob("tile_*.png")) == expected
+        assert set((tmp_path / "out" / ts / "chunks").glob("chunk_*.rgba")) == expected
         tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
-        assert tile_idx == {
-            "tiles": [[0, 0], [1, 1]],
-            "tile_grid": {"rows": 2, "cols": 2, "tile_size": TILE_SIZE},
-        }
+        assert tile_idx["chunks"] == [[0, 0], [1, 1]]
 
     def test_rerender_clears_stale_tiles_before_writing(self, tmp_path):
         side = TILE_SIZE * 2
@@ -374,12 +351,9 @@ class TestConvertToPng:
 
         assert second_ts == ts
         assert second_paths == []
-        assert list((outdir / ts).glob("tile_*.png")) == []
+        assert list((outdir / ts / "chunks").glob("chunk_*.rgba")) == []
         tile_idx = json.loads((outdir / ts / "index.json").read_text())
-        assert tile_idx == {
-            "tiles": [],
-            "tile_grid": {"rows": 2, "cols": 2, "tile_size": TILE_SIZE},
-        }
+        assert tile_idx["chunks"] == []
 
     def test_unknown_data_key_raises(self, tmp_path, monkeypatch):
         class _BrokenDataset:
