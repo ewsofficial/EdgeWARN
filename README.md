@@ -10,7 +10,7 @@ It ingests operational weather datasets, processes storm-cell products, renders 
 - EdgeWARN storm-cell detection, optional tracking/lineage, integration, CTAM analytics, and alert generation
 - EWMRS raster rendering, tiling, WPC surface-analysis serving, and colormap delivery
 - Historical reprocessing via `src/process_historical.py`
-- File-backed APIs for EdgeWARN (`/health`, `/api/v2/features/cells`, `/api/v2/features/timestamps`, `/api/v2/features/alerts/*`, `/api/v2/data/metar`) and EWMRS (`/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/healthz`)
+- One versioned file-backed API at `/api/v3`, with legacy EdgeWARN and EWMRS paths retained as temporary compatibility adapters
 
 ## Requirements
 
@@ -47,10 +47,8 @@ Detailed setup and runtime notes are in `INSTALLATION.md`.
 From repository root:
 
 ```bash
-npm run api:edgewarn
-npm run debug:edgewarn
-npm run api:ewmrs
-npm run debug:ewmrs
+npm run api
+npm run debug:api
 ```
 
 ## Running Python Pipelines
@@ -77,23 +75,20 @@ Runtime output defaults to:
 - Linux/macOS: `~/EdgeWARN_input`
 - Windows: `C:\EdgeWARN_input`
 
-Notes:
-
-- Python CLIs and the EWMRS API use the platform defaults above when no override is provided.
-- The EdgeWARN API has a broader Linux fallback chain: `~/EdgeWARN_input`, then `/home/EdgeWARN_input`, then `/workspaces/EdgeWARN_input`, then `./EdgeWARN_input`.
+The unified API uses the same platform default when no override is supplied.
 
 Supported overrides:
 
 - Python CLI: `--base_dir` / `--base-dir`
-- EdgeWARN API: `--base-dir` or `EDGEWARN_BASE_DIR`
-- EWMRS API: `--base_dir` or `BASE_DIR`
+- Unified API: `--base-dir` or `EDGEWARN_BASE_DIR`
+- Temporary aliases: `--base_dir` and `BASE_DIR`
 - RAP maximum analysis age: `EDGEWARN_RAP_MAX_AGE_MINUTES` (default `180`)
 
 RAP ingest checks the configured runtime cache first, then searches NOAA S3
 newest-to-oldest within this analysis-age limit. Freshness is based on the RAP
 analysis timestamp, not the local file modification time.
 
-Both Node APIs also honor `PORT`. The EdgeWARN API also supports `--debug_server`, `--edgewarn-rate-limit-1s`, and `--edgewarn-rate-limit-1m`. The EWMRS API supports `--debug-server` / `--debug_server`, `--ewmrs-rate-limit-1s`, and `--ewmrs-rate-limit-1m`.
+The unified API honors `PORT`, `--debug-server`, `RATE_LIMIT_MAX_SEC`, and `RATE_LIMIT_MAX_MIN`. Use `ALLOWED_ORIGINS` and `TRUST_PROXY_IPS` to configure browser and proxy trust.
 
 See `INSTALLATION.md` for the full CLI reference, including API debug and rate-limit flags plus the `zone_sync.py` maintenance utility.
 

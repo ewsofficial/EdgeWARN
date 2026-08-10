@@ -59,8 +59,13 @@ describe('API server', () => {
       .get('/data')
       .expect(410);
 
+    const v1Response = await request(app)
+      .get('/api/v1')
+      .expect(410);
+
     expect(featuresResponse.body.error).toContain('API v1 has been removed');
     expect(dataResponse.body.documentation).toBe('/api/v2');
+    expect(v1Response.body.error).toContain('API v1 has been removed');
   });
 
   it('serves robots.txt', async () => {
@@ -74,7 +79,7 @@ describe('API server', () => {
     expect(response.text).toContain('Disallow: /');
   });
 
-  it('applies rate limiting to normal requests but skips internal health checks', async () => {
+  it('applies rate limiting to normal requests and health checks alike', async () => {
     const app = createApp({
       NODE_ENV: 'test',
       RATE_LIMIT_WINDOW_MS_SEC: '1000',
@@ -89,12 +94,12 @@ describe('API server', () => {
     await request(app)
       .get('/health')
       .set('x-internal-check', 'true')
-      .expect(200);
+      .expect(429);
 
     await request(app)
       .get('/health')
       .set('x-internal-check', 'true')
-      .expect(200);
+      .expect(429);
   });
 
   it('uses EdgeWARN CLI rate limit flags and disables a zero-valued bin', async () => {
@@ -166,22 +171,33 @@ describe('API server', () => {
       .expect(429);
   });
 
-  it('returns development error details from error middleware', async () => {
+  it('never echoes server error details in any environment', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     const app = createApp(
       { NODE_ENV: 'development' },
       {
         beforeErrorHandler(targetApp) {
           targetApp.get('/boom', (req, res, next) => next(new Error('kaboom')));
+          targetApp.get('/bad', (req, res, next) => {
+            const error = new Error('bad input');
+            error.status = 400;
+            next(error);
+          });
         }
       }
     );
 
-    const response = await request(app)
+    const boomResponse = await request(app)
       .get('/boom')
       .expect(500);
 
-    expect(response.body).toEqual({ error: 'kaboom' });
+    expect(boomResponse.body).toEqual({ error: 'Internal server error' });
+
+    const badResponse = await request(app)
+      .get('/bad')
+      .expect(400);
+
+    expect(badResponse.body).toEqual({ error: 'bad input' });
     expect(console.error).toHaveBeenCalled();
   });
 
