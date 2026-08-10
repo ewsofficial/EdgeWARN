@@ -106,7 +106,10 @@ Resolves a rendered PNG in the legacy non-tiled naming format when that file exi
 
 - `<GUI_DIR>/<product>/<file_prefix>_{timestamp}.png`
 
-Current GOES and MRMS renderers write tile-first GUI output, update the product-level `index.json`, and write a timestamp-level `index.json` inside each render folder, so tile-aware clients should prefer `/renders/tile` and `/renders/tile-info`.
+This legacy route remains PNG-only. Current GOES and MRMS renderers publish
+binary RGBA chunks through the unified v3 `/api/v3/render-products/.../chunks`
+resources; a missing compatibility PNG returns `404` rather than binary bytes
+under the PNG contract.
 
 Transparent tiles are skipped at write time. A timestamp may therefore have fewer tile PNGs than the declared `tile_grid`, or even zero tile PNGs for a fully transparent render.
 
@@ -123,7 +126,7 @@ Supports two modes:
 - image mode when both `x` and `y` are supplied
 - listing mode when both `x` and `y` are omitted
 
-Image mode downloads a tile PNG from:
+Image mode downloads a compatibility tile PNG from:
 
 - `<GUI_DIR>/<product>/<timestamp>/tile_{x}_{y}.png`
 

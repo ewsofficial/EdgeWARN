@@ -217,6 +217,17 @@ Behavior notes:
 
 See `docs/api/ewmrs_api_endpoints.md` for the full EWMRS route contracts and `docs/core/goes_pipeline.md` for the ingest-to-render flow.
 
+New clients should use the unified API chunk contract:
+
+- `GET /api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
+- `GET /api/v3/render-products/{productId}/snapshots/{timestamp}/chunks/{x}/{y}`
+
+The second resource is `application/octet-stream`, not PNG. It returns exact
+RGBA8 bytes with top-to-bottom rows and bottom-left chunk-grid coordinates.
+The index's sparse `chunks` list is authoritative; omitted chunks are
+transparent. Legacy `/renders/download` and `/renders/tile` remain PNG-only
+and return missing-artifact responses when no compatibility PNG exists.
+
 ## EWMRS RAP Uint16 Products
 
 The EWMRS service also exposes RAP Uint16 array outputs from `<BASE_DIR>/gui/RAP` through:

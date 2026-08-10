@@ -29,8 +29,10 @@ Errors use `application/problem+json`.
 
 - Analysis: `/api/v3/cells`, `/storm-snapshots`, `/alert-snapshots`,
   `/alerts`, `/observations/metar`
-- Renders: `/api/v3/render-products/{productId}/snapshots/{timestamp}` with
-  `/image` and `/tiles` representations
+- Renders: `/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
+  lists sparse RGBA chunks; `/chunks/{x}/{y}` returns the binary payload.
+  The historical `/image` and `/tiles` resources remain PNG-only compatibility
+  endpoints and never relabel a binary chunk as an image.
 - Radar: `/api/v3/radar-sites`
 - RAP: `/api/v3/models/rap/layers`
 - WPC: `/api/v3/analyses/wpc/surface`
@@ -40,6 +42,34 @@ Errors use `application/problem+json`.
 Canonical render IDs use lower-kebab-case, such as `comp-ref-qc`, `qpe-01h`,
 and `goes-abi-c13`. The product catalog preserves the mapping to runtime
 folders and legacy file prefixes.
+
+## EWMRS binary chunks
+
+MRMS, GOES ABI, and GOES RGB renders publish schema-version-2 indexes and
+headerless `rgba8` files at
+`<BASE_DIR>/gui/<product>/<timestamp>/chunks/chunk_{x}_{y}.rgba`. A chunk is
+an interleaved, straight-alpha `Uint8Array` in top-to-bottom row order. Chunk
+coordinates use a bottom-left grid origin; do not vertically flip individual
+rows while mapping a chunk into that grid.
+
+Fetch the `/chunks` listing first. It provides the grid, format descriptor,
+and the authoritative sparse coordinate list—missing coordinates are fully
+transparent chunks, not a request to synthesize pixels. The payload endpoint
+sets `X-EWMRS-Format-Version`, `X-Data-Type`, `X-Pixel-Format`, chunk width and
+height, grid origin, and pixel-row-order headers. Verify that the response
+length equals `width * height * 4` before creating a `Uint8Array`; responses
+are immutable and support ETag conditional GET and HEAD.
+
+```js
+const listing = await (await fetch(chunkListUrl)).json();
+const response = await fetch(chunkUrl);
+const bytes = new Uint8Array(await response.arrayBuffer());
+if (bytes.byteLength !== 350 * 350 * 4) throw new Error('invalid RGBA chunk');
+// Upload bytes directly as RGBA8; grid y=0 is the bottom chunk row.
+```
+
+These RGBA chunks are distinct from RAP `data.u16` scalar arrays and NEXRAD
+`.bin.gz` products, which have their own metadata and decoders.
 
 ## Migration
 
