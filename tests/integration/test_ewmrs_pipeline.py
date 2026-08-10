@@ -246,50 +246,59 @@ def test_run_goes_render_pipeline_writes_all_rgb_products(monkeypatch, tmp_path)
         tile_index = json.loads((out_dir / "20260317-200000" / "index.json").read_text())
         assert index_data["timestamps"] == ["20260317-200000"]
         assert index_data["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": 350}
-        assert tile_index == {
-            "tiles": [],
-            "tile_grid": {"rows": 2, "cols": 2, "tile_size": 350},
-        }
+        assert tile_index["schema_version"] == 2
+        assert tile_index["representation"] == "binary_chunks"
+        assert tile_index["chunks"] == []
         assert results[layer["name"]] == []
-        assert len(list((out_dir / "20260317-200000").glob("tile_*.png"))) == 0
+        assert len(list((out_dir / "20260317-200000" / "chunks").glob("chunk_*.rgba"))) == 0
 
 
-def test_current_render_paths_returns_sparse_cached_tiles(tmp_path):
+def _chunk_format():
+    return {"version": 1, "encoding": "rgba8", "file_suffix": ".rgba", "compression": "none", "channels": 4, "bytes_per_pixel": 4, "alpha": "straight", "pixel_row_order": "top_to_bottom", "grid_origin": "bottom_left"}
+
+
+def _write_chunk(path, tile_size=350):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(tile_size * tile_size * 4))
+
+
+def test_current_render_paths_returns_sparse_cached_chunks(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
-    tile_dir.mkdir(parents=True)
+    (tile_dir / "chunks").mkdir(parents=True)
 
-    for tile_name in ("tile_1_0.png", "tile_0_0.png", "tile_5_3.png"):
-        (tile_dir / tile_name).write_bytes(b"tile")
+    for chunk_name in ("chunk_1_0.rgba", "chunk_0_0.rgba", "chunk_5_3.rgba"):
+        _write_chunk(tile_dir / "chunks" / chunk_name)
     (tile_dir / "index.json").write_text(json.dumps({
-        "tiles": [[1, 0], [0, 0], [5, 3]],
+        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(),
+        "chunks": [[1, 0], [0, 0], [5, 3]],
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
 
     (out_dir / "index.json").write_text(json.dumps({
-        "timestamps": ["20260317-200000"],
+        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_chunks", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
 
     paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
 
     assert paths == [
-        tile_dir / "tile_0_0.png",
-        tile_dir / "tile_1_0.png",
-        tile_dir / "tile_5_3.png",
+        tile_dir / "chunks" / "chunk_0_0.rgba",
+        tile_dir / "chunks" / "chunk_1_0.rgba",
+        tile_dir / "chunks" / "chunk_5_3.rgba",
     ]
 
 
 def test_current_render_paths_accepts_valid_zero_tile_timestamp(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
-    tile_dir.mkdir(parents=True)
+    (tile_dir / "chunks").mkdir(parents=True)
     (tile_dir / "index.json").write_text(json.dumps({
-        "tiles": [],
+        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(), "chunks": [],
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
     (out_dir / "index.json").write_text(json.dumps({
-        "timestamps": ["20260317-200000"],
+        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_chunks", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
 
@@ -298,23 +307,23 @@ def test_current_render_paths_accepts_valid_zero_tile_timestamp(tmp_path):
     assert paths == []
 
 
-def test_current_render_paths_filters_invalid_and_out_of_bounds_tiles(tmp_path):
+def test_current_render_paths_rejects_invalid_chunk_index(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
-    tile_dir.mkdir(parents=True)
-    (tile_dir / "tile_0_0.png").write_bytes(b"tile")
+    (tile_dir / "chunks").mkdir(parents=True)
+    _write_chunk(tile_dir / "chunks" / "chunk_0_0.rgba")
     (tile_dir / "index.json").write_text(json.dumps({
-        "tiles": [[0, 0], [20, 0], [0, 10], [1], ["bad", 0], [4, 4]],
+        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(), "chunks": [[0, 0], [20, 0]],
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
     (out_dir / "index.json").write_text(json.dumps({
-        "timestamps": ["20260317-200000"],
+        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_chunks", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
 
     paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
 
-    assert paths == [tile_dir / "tile_0_0.png"]
+    assert paths is None
     assert ewmrs_pipeline._summarize_results({"A": [], "B": None}) == "1/2 layers succeeded"
 
 
