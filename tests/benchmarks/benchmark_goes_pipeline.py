@@ -465,9 +465,8 @@ def run_parallel_pipeline_benchmark(
     original_load_reproject = goes_transform.load_reproject_goes_abi_render_array
     original_load_payload = goes_transform._load_goes_abi_render_payload
     original_reproject_payload = goes_transform._reproject_goes_payload_to_web_mercator
-    original_save_tiles_from_array = render_module.GUIRGBAWriter._save_tiles_from_array
-    original_render_save_tile = render_module.save_tile
-    original_tiler_save_tile = tiler_module.save_tile
+    original_save_chunks_from_array = render_module.GUIRGBAWriter._save_chunks_from_array
+    original_save_rgba_chunk = tiler_module.save_rgba_chunk
 
     benchmark_state = {
         "pipeline_start_s": None,
@@ -477,10 +476,10 @@ def run_parallel_pipeline_benchmark(
         "registry_by_channel_s": defaultdict(list),
         "payload_by_channel_s": defaultdict(list),
         "reprojection_by_channel_s": defaultdict(list),
-        "tile_batch_s": [],
-        "tile_save_s": [],
-        "first_tile_latency_s": None,
-        "first_tile_finished_s": None,
+        "chunk_batch_s": [],
+        "chunk_save_s": [],
+        "first_chunk_latency_s": None,
+        "first_chunk_finished_s": None,
     }
     benchmark_channel = threading.local()
 
@@ -540,24 +539,24 @@ def run_parallel_pipeline_benchmark(
         finally:
             benchmark_state["reprojection_by_channel_s"][channel_id].append(time.perf_counter() - start_s)
 
-    @functools.wraps(original_save_tiles_from_array)
-    def wrapped_save_tiles_from_array(self, rgba, timestamp, *args, **kwargs):
+    @functools.wraps(original_save_chunks_from_array)
+    def wrapped_save_chunks_from_array(self, rgba, timestamp, *args, **kwargs):
         start_s = time.perf_counter()
         try:
-            return original_save_tiles_from_array(self, rgba, timestamp, *args, **kwargs)
+            return original_save_chunks_from_array(self, rgba, timestamp, *args, **kwargs)
         finally:
-            benchmark_state["tile_batch_s"].append(time.perf_counter() - start_s)
+            benchmark_state["chunk_batch_s"].append(time.perf_counter() - start_s)
 
-    def wrapped_save_tile(tile_data, output_path):
+    def wrapped_save_rgba_chunk(chunk_data, output_path):
         start_s = time.perf_counter()
         try:
-            return original_tiler_save_tile(tile_data, output_path)
+            return original_save_rgba_chunk(chunk_data, output_path)
         finally:
             finished_s = time.perf_counter()
-            benchmark_state["tile_save_s"].append(finished_s - start_s)
-            if benchmark_state["first_tile_latency_s"] is None and benchmark_state["pipeline_start_s"] is not None:
-                benchmark_state["first_tile_latency_s"] = finished_s - float(benchmark_state["pipeline_start_s"])
-                benchmark_state["first_tile_finished_s"] = finished_s
+            benchmark_state["chunk_save_s"].append(finished_s - start_s)
+            if benchmark_state["first_chunk_latency_s"] is None and benchmark_state["pipeline_start_s"] is not None:
+                benchmark_state["first_chunk_latency_s"] = finished_s - float(benchmark_state["pipeline_start_s"])
+                benchmark_state["first_chunk_finished_s"] = finished_s
 
     ewmrs_pipeline.get_goes_file_list = lambda: layers
     ewmrs_pipeline.cleanup_old_gui_files = lambda max_age_minutes=120: None
@@ -566,9 +565,8 @@ def run_parallel_pipeline_benchmark(
     goes_transform.load_reproject_goes_abi_render_array = wrapped_load_reproject
     goes_transform._load_goes_abi_render_payload = wrapped_load_payload
     goes_transform._reproject_goes_payload_to_web_mercator = wrapped_reproject_payload
-    render_module.GUIRGBAWriter._save_tiles_from_array = wrapped_save_tiles_from_array
-    render_module.save_tile = wrapped_save_tile
-    tiler_module.save_tile = wrapped_save_tile
+    render_module.GUIRGBAWriter._save_chunks_from_array = wrapped_save_chunks_from_array
+    tiler_module.save_rgba_chunk = wrapped_save_rgba_chunk
 
     sampler.start()
     start_s = time.perf_counter()
@@ -586,9 +584,8 @@ def run_parallel_pipeline_benchmark(
         goes_transform.load_reproject_goes_abi_render_array = original_load_reproject
         goes_transform._load_goes_abi_render_payload = original_load_payload
         goes_transform._reproject_goes_payload_to_web_mercator = original_reproject_payload
-        render_module.GUIRGBAWriter._save_tiles_from_array = original_save_tiles_from_array
-        render_module.save_tile = original_render_save_tile
-        tiler_module.save_tile = original_tiler_save_tile
+        render_module.GUIRGBAWriter._save_chunks_from_array = original_save_chunks_from_array
+        tiler_module.save_rgba_chunk = original_save_rgba_chunk
 
     avg_mem = _avg(sampler.pipeline_samples_mb)
     peak_mem = max(sampler.pipeline_samples_mb) if sampler.pipeline_samples_mb else 0.0
@@ -609,7 +606,7 @@ def run_parallel_pipeline_benchmark(
             }
         return summary
 
-    first_tile_finished_s = benchmark_state["first_tile_finished_s"]
+    first_tile_finished_s = benchmark_state["first_chunk_finished_s"]
     if first_tile_finished_s is None:
         registry_before_first_output_s = 0.0
     else:
@@ -626,11 +623,11 @@ def run_parallel_pipeline_benchmark(
         "peak_memory_mb": peak_mem,
         "total_tiles_written": total_tiles_written,
         "throughput_tiles_per_s": throughput_tiles_per_s,
-        "render_start_to_first_tile_s": float(benchmark_state["first_tile_latency_s"] or 0.0),
+        "render_start_to_first_tile_s": float(benchmark_state["first_chunk_latency_s"] or 0.0),
         "registry_build_before_first_output_s": registry_before_first_output_s,
         "unified_cycle_total_s": sum(benchmark_state["unified_cycle_s"]),
-        "tile_write_total_s": sum(benchmark_state["tile_batch_s"]),
-        "avg_tile_save_s": _avg(benchmark_state["tile_save_s"]),
+        "tile_write_total_s": sum(benchmark_state["chunk_batch_s"]),
+        "avg_tile_save_s": _avg(benchmark_state["chunk_save_s"]),
         "reprojection_by_channel": _summarize_channel_timings(benchmark_state["reprojection_by_channel_s"]),
         "payload_load_by_channel": _summarize_channel_timings(benchmark_state["payload_by_channel_s"]),
         "registry_build_by_channel": _summarize_channel_timings(benchmark_state["registry_by_channel_s"]),
