@@ -24,6 +24,7 @@ from EWMRS.render.config import (
 from EWMRS.render.tools import configure_proj_runtime
 import util.file as fs
 from common.ingest.manifest import CycleInputManifest
+from util.atomic import atomic_write_json
 from util.io import IOManager, QueueWriter
 
 RenderOutput = Optional[list[Path]]
@@ -700,10 +701,11 @@ def cleanup_old_gui_files(max_age_minutes: int = 120):
 
                 timestamps = [ts for ts in timestamps if ts in existing_timestamps]
 
-                output_data = {"timestamps": timestamps, "tile_grid": tile_grid} if tile_grid is not None else timestamps
-
-                with open(index_file, "w") as f:
-                    json.dump(output_data, f)
+                if isinstance(data, dict) and data.get("schema_version") == 2 and data.get("representation") == "binary_chunks":
+                    output_data = {**data, "timestamps": timestamps}
+                else:
+                    output_data = {"timestamps": timestamps, "tile_grid": tile_grid} if tile_grid is not None else timestamps
+                atomic_write_json(index_file, output_data)
             except Exception as exc:
                 io_manager.write_warning(f"Failed to update index.json in {out_dir}: {exc}")
 
