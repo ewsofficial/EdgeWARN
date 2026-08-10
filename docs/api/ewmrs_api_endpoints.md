@@ -109,7 +109,8 @@ Resolves a rendered PNG in the legacy non-tiled naming format when that file exi
 This legacy route remains PNG-only. Current GOES and MRMS renderers publish
 binary RGBA chunks through the unified v3 `/api/v3/render-products/.../chunks`
 resources; a missing compatibility PNG returns `404` rather than binary bytes
-under the PNG contract.
+under the PNG contract. PNG compatibility responses include `Deprecation: true`,
+a `Sunset: Thu, 31 Dec 2026 23:59:59 GMT` header, and a successor-version link.
 
 Transparent tiles are skipped at write time. A timestamp may therefore have fewer tile PNGs than the declared `tile_grid`, or even zero tile PNGs for a fully transparent render.
 
