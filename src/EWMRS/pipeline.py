@@ -354,18 +354,18 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
         tile_paths: list[tuple[int, int, Path]] = []
         for tile in indexed_tiles:
             if not isinstance(tile, list) or len(tile) != 2:
-                continue
+                return None
 
             tile_x, tile_y = tile
             if not isinstance(tile_x, int) or not isinstance(tile_y, int):
-                continue
+                return None
 
             if tile_grid is not None:
                 rows = tile_grid.get("rows")
                 cols = tile_grid.get("cols")
                 if isinstance(rows, int) and isinstance(cols, int):
                     if tile_x < 0 or tile_x >= cols or tile_y < 0 or tile_y >= rows:
-                        continue
+                        return None
 
             tile_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.rgba"
             if not tile_path.is_file() or tile_path.stat().st_size != tile_grid["tile_size"] * tile_grid["tile_size"] * 4:
