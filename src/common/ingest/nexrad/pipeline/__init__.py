@@ -257,7 +257,12 @@ class NexradRealtimeIngestionPipeline:
             }
             done, pending = await asyncio.wait(tasks, timeout=self.scan_timeout_seconds)
             results = []
-            for task in done:
+            # ``asyncio.wait`` returns a set, whose iteration order is not a
+            # result contract.  Preserve the already deterministic allowed-site
+            # order so callers receive stable completion records.
+            for task in tasks:
+                if task not in done:
+                    continue
                 if task.cancelled():
                     continue
                 try:
