@@ -8,17 +8,16 @@ import time
 import re
 import threading
 import numpy as np
-from PIL import Image
 from .tools import TransformUtils
-from .tiler import TileSplitter, save_tile
+from .tiler import save_rgba_chunk
 import util.file as fs
-from util.atomic import atomic_output_path, atomic_write_json
+from util.atomic import atomic_write_json
 from xarray import Dataset
 from util.io import IOManager
 from datetime import datetime
 
 io_manager = IOManager("[Transform]")
-_TILE_FILENAME_RE = re.compile(r"^tile_\d+_\d+\.png$")
+_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.rgba$")
 
 
 @lru_cache(maxsize=128)
@@ -143,10 +142,16 @@ class GUIRGBAWriter:
         self.outdir.mkdir(parents=True, exist_ok=True)
 
         if tile_output:
+            if rgba.ndim != 3 or rgba.shape[2] != 4 or rgba.dtype != np.uint8:
+                raise ValueError("Rendered RGBA data must be a uint8 array with shape (height, width, 4)")
+            if rgba.shape[0] % TILE_SIZE or rgba.shape[1] % TILE_SIZE:
+                raise ValueError(
+                    f"Rendered RGBA dimensions {rgba.shape[:2]} are not divisible by chunk size {TILE_SIZE}"
+                )
             rows = rgba.shape[0] // TILE_SIZE
             cols = rgba.shape[1] // TILE_SIZE
             tile_grid = {"rows": rows, "cols": cols, "tile_size": TILE_SIZE}
-            tile_paths = self._save_tiles_from_array(
+            artifact_paths = self._save_chunks_from_array(
                 rgba,
                 timestamp,
                 tile_grid=tile_grid,
@@ -156,18 +161,12 @@ class GUIRGBAWriter:
             total_render_s = time.perf_counter() - render_start_s
             io_manager.write_info(
                 f"Render output for {self.file_name} completed in {total_render_s:.3f}s "
-                f"({len(tile_paths)} tiles, timestamp={timestamp})"
+                f"({len(artifact_paths)} chunks, timestamp={timestamp})"
             )
-            io_manager.write_debug(f"Saved {len(tile_paths)} tiles from RGBA image for {self.file_name} at {timestamp}")
-            return tile_paths, timestamp
+            io_manager.write_debug(f"Saved {len(artifact_paths)} RGBA chunks for {self.file_name} at {timestamp}")
+            return artifact_paths, timestamp
 
-        png_file = self.outdir / f"{self.file_name}_{timestamp}.png"
-        img = Image.fromarray(rgba, mode="RGBA")
-        with atomic_output_path(png_file) as temporary:
-            img.save(temporary, format="PNG", compress_level=1)
-        self._update_index(timestamp, tile_grid=None)
-        io_manager.write_debug(f"Saved {self.file_name} PNG file to {png_file}")
-        return [png_file], timestamp
+        raise ValueError("EWMRS no longer writes flat PNG artifacts; use tiled RGBA chunks")
 
     def _coerce_timestamp(self, timestamp) -> datetime:
         try:
@@ -176,7 +175,7 @@ class GUIRGBAWriter:
             cleaned_ts = TransformUtils.find_timestamp(timestamp)
             return datetime.fromisoformat(cleaned_ts)
 
-    def _save_tiles_from_array(
+    def _save_chunks_from_array(
         self,
         rgba: np.ndarray,
         timestamp: str,
@@ -189,12 +188,9 @@ class GUIRGBAWriter:
         grid_rows = tile_grid["rows"]
         tile_size = tile_grid["tile_size"]
 
-        tile_dir = self.outdir / timestamp
-        tile_dir.mkdir(parents=True, exist_ok=True)
-
-        for existing_tile in tile_dir.iterdir():
-            if existing_tile.is_file() and _TILE_FILENAME_RE.fullmatch(existing_tile.name):
-                existing_tile.unlink()
+        timestamp_dir = self.outdir / timestamp
+        chunk_dir = timestamp_dir / "chunks"
+        chunk_dir.mkdir(parents=True, exist_ok=True)
 
         tile_specs = []
         total_grid_tiles = grid_rows * grid_cols
@@ -204,16 +200,15 @@ class GUIRGBAWriter:
                 right = left + tile_size
                 top = (grid_rows - 1 - tile_y) * tile_size
                 bottom = top + tile_size
-                tile_filename = f"tile_{tile_x}_{tile_y}.png"
-                tile_path = tile_dir / tile_filename
-                tile_data = rgba[top:bottom, left:right]
-                if np.any(tile_data[..., 3] != 0):
-                    tile_specs.append((tile_data, tile_path))
+                chunk_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.rgba"
+                chunk_data = np.ascontiguousarray(rgba[top:bottom, left:right])
+                if np.any(chunk_data[..., 3] != 0):
+                    tile_specs.append((chunk_data, chunk_path))
 
         tile_schedule_s = time.perf_counter() - tile_schedule_start_s
         io_manager.write_info(
-            f"Prepared tile schedule for {self.file_name} in {tile_schedule_s:.3f}s "
-            f"({len(tile_specs)}/{total_grid_tiles} non-transparent tiles)"
+            f"Prepared chunk schedule for {self.file_name} in {tile_schedule_s:.3f}s "
+            f"({len(tile_specs)}/{total_grid_tiles} non-transparent chunks)"
         )
 
         max_workers = _resolve_tile_workers(len(tile_specs))
@@ -221,18 +216,18 @@ class GUIRGBAWriter:
         first_tile_lock = threading.Lock()
         first_tile_logged = False
 
-        def _write_tile(spec):
+        def _write_chunk(spec):
             nonlocal first_tile_logged
-            tile_data, tile_path = spec
-            save_tile(tile_data, tile_path)
+            chunk_data, chunk_path = spec
+            save_rgba_chunk(chunk_data, chunk_path)
             completed_s = time.perf_counter()
             with first_tile_lock:
                 if not first_tile_logged:
                     first_tile_logged = True
                     first_tile_latency_s = completed_s - tile_write_start_s
                     if timing_context is not None:
-                        timing_context["tile_schedule_s"] = tile_schedule_s
-                        timing_context["first_tile_latency_s"] = first_tile_latency_s
+                        timing_context["chunk_schedule_s"] = tile_schedule_s
+                        timing_context["first_chunk_latency_s"] = first_tile_latency_s
                         render_start_s = timing_context.get("render_start_s")
                         if render_start_s is not None:
                             timing_context["render_start_to_first_tile_s"] = completed_s - float(render_start_s)
@@ -240,53 +235,66 @@ class GUIRGBAWriter:
                     if render_start_s is not None:
                         render_to_first_tile_s = completed_s - float(render_start_s)
                         io_manager.write_info(
-                            f"First tile written for {self.file_name}: {tile_path} "
-                            f"({first_tile_latency_s:.3f}s tile-write latency, "
+                            f"First chunk written for {self.file_name}: {chunk_path} "
+                            f"({first_tile_latency_s:.3f}s chunk-write latency, "
                             f"{render_to_first_tile_s:.3f}s from render start)"
                         )
                     else:
                         io_manager.write_info(
-                            f"First tile written for {self.file_name}: {tile_path} "
-                            f"({first_tile_latency_s:.3f}s tile-write latency)"
+                            f"First chunk written for {self.file_name}: {chunk_path} "
+                            f"({first_tile_latency_s:.3f}s chunk-write latency)"
                         )
 
         if tile_specs:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                list(executor.map(_write_tile, tile_specs))
+                list(executor.map(_write_chunk, tile_specs))
 
         tile_write_s = time.perf_counter() - tile_write_start_s
         if timing_context is not None:
-            timing_context["tile_write_s"] = tile_write_s
+            timing_context["chunk_write_s"] = tile_write_s
         io_manager.write_info(
-            f"Tile writes for {self.file_name} completed in {tile_write_s:.3f}s using {max_workers} worker(s) "
-            f"({len(tile_specs)}/{total_grid_tiles} non-transparent tiles written)"
+            f"Chunk writes for {self.file_name} completed in {tile_write_s:.3f}s using {max_workers} worker(s) "
+            f"({len(tile_specs)}/{total_grid_tiles} non-transparent chunks written)"
         )
 
-        self._write_timestamp_index(tile_dir, tile_specs, tile_grid)
+        self._write_timestamp_index(timestamp_dir, tile_specs, tile_grid)
+        # The index is the publication barrier.  Only remove obsolete chunks
+        # after readers can discover the complete replacement set.
+        published = {path.name for _, path in tile_specs}
+        for existing in chunk_dir.iterdir():
+            if existing.is_file() and _CHUNK_FILENAME_RE.fullmatch(existing.name) and existing.name not in published:
+                existing.unlink()
 
         return [tile_path for _, tile_path in tile_specs]
 
-    def _write_timestamp_index(self, tile_dir: Path, tile_specs: list[tuple[np.ndarray, Path]], tile_grid: dict) -> None:
+    def _write_timestamp_index(self, timestamp_dir: Path, tile_specs: list[tuple[np.ndarray, Path]], tile_grid: dict) -> None:
+        from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
         normalized_tile_grid = _normalize_tile_grid(tile_grid)
-        tiles: list[list[int]] = []
+        chunks: list[list[int]] = []
         for _, tile_path in tile_specs:
-            match = re.fullmatch(r"tile_(\d+)_(\d+)\.png", tile_path.name)
+            match = _CHUNK_FILENAME_RE.fullmatch(tile_path.name)
             if match is None:
                 continue
-            tiles.append([int(match.group(1)), int(match.group(2))])
+            chunks.append([int(match.group(1)), int(match.group(2))])
 
-        tiles.sort(key=lambda item: (item[1], item[0]))
-        output_data = {"tiles": tiles}
-        if normalized_tile_grid is not None:
-            output_data["tile_grid"] = normalized_tile_grid
+        chunks.sort(key=lambda item: (item[1], item[0]))
+        output_data = {
+            "schema_version": CHUNK_SCHEMA_VERSION,
+            "timestamp": timestamp_dir.name,
+            "representation": "binary_chunks",
+            "chunk_format": chunk_format_descriptor(),
+            "tile_grid": normalized_tile_grid,
+            "chunks": chunks,
+        }
 
-        index_file = tile_dir / "index.json"
+        index_file = timestamp_dir / "index.json"
         try:
             atomic_write_json(index_file, output_data)
         except Exception as e:
-            io_manager.write_error(f"Failed to update index.json in {tile_dir}: {e}")
+            io_manager.write_error(f"Failed to update index.json in {timestamp_dir}: {e}")
 
     def _update_index(self, new_timestamp, tile_grid=None):
+        from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
         index_file = self.outdir / "index.json"
         timestamps = []
         existing_tile_grid = None
@@ -309,12 +317,13 @@ class GUIRGBAWriter:
             timestamps.sort(reverse=True)
 
             try:
-                if tile_grid is not None:
-                    output_data = {"timestamps": timestamps, "tile_grid": tile_grid}
-                elif existing_tile_grid is not None:
-                    output_data = {"timestamps": timestamps, "tile_grid": existing_tile_grid}
-                else:
-                    output_data = timestamps
+                output_data = {
+                    "schema_version": CHUNK_SCHEMA_VERSION,
+                    "timestamps": timestamps,
+                    "representation": "binary_chunks",
+                    "chunk_format": chunk_format_descriptor(include_media_type=True, include_bytes_per_pixel=False),
+                    "tile_grid": tile_grid or existing_tile_grid,
+                }
 
                 atomic_write_json(index_file, output_data)
             except Exception as e:
