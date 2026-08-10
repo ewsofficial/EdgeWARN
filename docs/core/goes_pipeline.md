@@ -215,9 +215,13 @@ The EWMRS API under `src/EWMRS/api` serves GOES products through:
 Notes:
 
 - `product` values are the GUI folder names shown in the tables above
-- tile clients should prefer `/renders/tile` and `/renders/tile-info`
-- omitting `x` and `y` from `/renders/tile` reads the timestamp-level `index.json` and returns the listed valid tile coordinates
-- `/renders/download` resolves the legacy flat PNG naming contract when such files exist, but the current GOES renderer writes tile-first output
+- binary clients should use `/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
+  and `/chunks/{x}/{y}`; chunks are headerless RGBA8 bytes with metadata in
+  schema-version-2 `index.json`
+- the timestamp index's sparse `chunks` array, sorted by y then x, is the
+  authority for available coordinates; omitted chunks are fully transparent
+- legacy `/renders/download` and `/renders/tile` remain PNG-only compatibility
+  routes and do not serve binary chunks
 
 See `docs/api/ewmrs_api_endpoints.md` for route-level behavior.
 
