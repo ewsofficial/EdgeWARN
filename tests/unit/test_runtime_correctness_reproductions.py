@@ -694,11 +694,14 @@ def test_drain_log_queue_uses_get_nowait_not_empty(monkeypatch):
 
 
 def test_supervisor_restarts_dead_process(monkeypatch, tmp_path):
+    import multiprocessing
+
     from util.runtime.processes import AccessorySupervisor
 
-    calls = []
-    def worker():
-        calls.append("run")
+    stop_worker = multiprocessing.Event()
+
+    def worker(stop_event):
+        stop_event.wait()
 
     supervisor = AccessorySupervisor(
         health_path=str(tmp_path / "health.json"),
@@ -706,7 +709,7 @@ def test_supervisor_restarts_dead_process(monkeypatch, tmp_path):
         max_backoff_seconds=0.1,
         restart_window_seconds=60,
     )
-    supervisor.add("test", worker, enabled=True, daemon=True)
+    supervisor.add("test", worker, args=(stop_worker,), enabled=True, daemon=True)
     supervisor.start_all()
     assert len([p for p in supervisor._process_info if p["process"] is not None and p["process"].is_alive()]) == 1
 
@@ -725,8 +728,9 @@ def test_supervisor_restarts_dead_process(monkeypatch, tmp_path):
     assert new_proc is not None
     assert new_proc.is_alive()
     assert new_proc.pid != proc.pid
-    new_proc.kill()
+    stop_worker.set()
     new_proc.join(timeout=2)
+    assert not new_proc.is_alive()
 
     health = json.loads((tmp_path / "health.json").read_text(encoding="utf-8"))
     assert "test" in health

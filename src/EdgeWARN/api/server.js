@@ -143,10 +143,6 @@ export function createApp(env = process.env, options = {}) {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later' },
-    skip: (req) => {
-      // Optionally skip rate limiting for health checks from internal monitoring
-      return req.path === '/health' && req.headers['x-internal-check'] === 'true';
-    },
     keyGenerator: (req) => {
       let clientIp;
       if (trustProxy) {
@@ -186,14 +182,7 @@ export function createApp(env = process.env, options = {}) {
   app.use('/api/v2', v2Router);
 
   // Redirect old v1 paths to v2
-  app.use('/features', (req, res) => {
-    res.status(410).json({
-      error: 'API v1 has been removed. Please use API v2.',
-      documentation: '/api/v2'
-    });
-  });
-
-  app.use('/data', (req, res) => {
+  app.use(['/features', '/data', '/api/v1'], (req, res) => {
     res.status(410).json({
       error: 'API v1 has been removed. Please use API v2.',
       documentation: '/api/v2'
@@ -236,9 +225,7 @@ export function createApp(env = process.env, options = {}) {
       });
     }
 
-    res.status(500).json({
-      error: isDev ? err.message : 'Internal server error'
-    });
+    res.status(500).json({ error: 'Internal server error' });
   });
 
   return app;
@@ -292,5 +279,9 @@ export function startClusteredServer(options = {}) {
 const entryFileUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
 
 if (entryFileUrl === import.meta.url) {
-  startClusteredServer();
+  console.warn('[Deprecation] src/EdgeWARN/api/server.js now launches the unified API service. Use npm run api.');
+  import('../../api/server.js').then(({ startServer }) => startServer()).catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 }

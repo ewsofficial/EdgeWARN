@@ -42,8 +42,6 @@ describe('EWMRS Root Route', () => {
         app.get('/', (req, res) => {
             res.json({
                 service: 'EWMRS API',
-                base_dir: req.app.locals.BASE_DIR,
-                gui_dir: req.app.locals.GUI_DIR,
                 endpoints: ['/renders/get-items', '/renders/fetch', '/renders/download', '/nexrad', '/rap/layers', '/rap/fetch', '/rap/metadata', '/rap/data', '/healthz', '/colormaps']
             });
         });
