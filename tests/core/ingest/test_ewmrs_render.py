@@ -293,7 +293,7 @@ class TestConvertToPng:
         r = self._make_renderer(data, tmp_path / "out")
         paths, ts = r.convert_to_png(tile_output=True)
         assert len(paths) == 4
-        assert (tmp_path / "out" / ts / "chunks" / "chunk_0_0.f16").exists()
+        assert (tmp_path / "out" / ts / "chunks" / "chunk_0_0.f16.gz").exists()
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
         tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
@@ -311,7 +311,7 @@ class TestConvertToPng:
 
         assert paths == []
         assert (tmp_path / "out" / ts).is_dir()
-        assert list((tmp_path / "out" / ts / "chunks").glob("chunk_*.f16")) == []
+        assert list((tmp_path / "out" / ts / "chunks").glob("chunk_*.f16.gz")) == []
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
         tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert idx["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": TILE_SIZE}
@@ -328,11 +328,11 @@ class TestConvertToPng:
         paths, ts = r.convert_to_png(tile_output=True)
 
         expected = {
-            tmp_path / "out" / ts / "chunks" / "chunk_0_0.f16",
-            tmp_path / "out" / ts / "chunks" / "chunk_1_1.f16",
+            tmp_path / "out" / ts / "chunks" / "chunk_0_0.f16.gz",
+            tmp_path / "out" / ts / "chunks" / "chunk_1_1.f16.gz",
         }
         assert set(paths) == expected
-        assert set((tmp_path / "out" / ts / "chunks").glob("chunk_*.f16")) == expected
+        assert set((tmp_path / "out" / ts / "chunks").glob("chunk_*.f16.gz")) == expected
         tile_idx = json.loads((tmp_path / "out" / ts / "index.json").read_text())
         assert tile_idx["chunks"] == [[0, 0], [1, 1]]
 
@@ -351,7 +351,7 @@ class TestConvertToPng:
 
         assert second_ts == ts
         assert second_paths == []
-        assert list((outdir / ts / "chunks").glob("chunk_*.f16")) == []
+        assert list((outdir / ts / "chunks").glob("chunk_*.f16.gz")) == []
         tile_idx = json.loads((outdir / ts / "index.json").read_text())
         assert tile_idx["chunks"] == []
 

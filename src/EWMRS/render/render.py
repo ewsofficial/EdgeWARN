@@ -17,7 +17,7 @@ from util.io import IOManager
 from datetime import datetime
 
 io_manager = IOManager("[Transform]")
-_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16$")
+_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16\.gz$")
 
 
 @lru_cache(maxsize=128)
@@ -205,7 +205,7 @@ class GUIValueWriter:
                 right = left + tile_size
                 top = (grid_rows - 1 - tile_y) * tile_size
                 bottom = top + tile_size
-                chunk_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.f16"
+                chunk_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.f16.gz"
                 chunk_data = np.ascontiguousarray(values[top:bottom, left:right], dtype=np.float16)
                 if np.any(np.isfinite(chunk_data)):
                     tile_specs.append((chunk_data, chunk_path))

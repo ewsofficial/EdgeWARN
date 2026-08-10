@@ -1,3 +1,4 @@
+import gzip
 import json
 import os
 from datetime import datetime, timezone
@@ -250,16 +251,16 @@ def test_run_goes_render_pipeline_writes_all_rgb_products(monkeypatch, tmp_path)
         assert tile_index["representation"] == "binary_chunks"
         assert tile_index["chunks"] == [[0, 0], [1, 0], [0, 1], [1, 1]]
         assert len(results[layer["name"]]) == 4
-        assert len(list((out_dir / "20260317-200000" / "chunks").glob("chunk_*.f16"))) == 4
+        assert len(list((out_dir / "20260317-200000" / "chunks").glob("chunk_*.f16.gz"))) == 4
 
 
 def _chunk_format():
-    return {"version": 2, "encoding": "float16", "file_suffix": ".f16", "compression": "none", "channels": 1, "value_kind": "scalar", "no_data": "nan", "bytes_per_component": 2, "pixel_row_order": "top_to_bottom", "grid_origin": "bottom_left"}
+    return {"version": 2, "encoding": "float16", "file_suffix": ".f16.gz", "compression": "gzip", "channels": 1, "value_kind": "scalar", "no_data": "nan", "bytes_per_component": 2, "pixel_row_order": "top_to_bottom", "grid_origin": "bottom_left"}
 
 
 def _write_chunk(path, tile_size=350):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(bytes(tile_size * tile_size * 2))
+    path.write_bytes(gzip.compress(bytes(tile_size * tile_size * 2), mtime=0))
 
 
 def test_current_render_paths_returns_sparse_cached_chunks(tmp_path):
@@ -267,7 +268,7 @@ def test_current_render_paths_returns_sparse_cached_chunks(tmp_path):
     tile_dir = out_dir / "20260317-200000"
     (tile_dir / "chunks").mkdir(parents=True)
 
-    for chunk_name in ("chunk_1_0.f16", "chunk_0_0.f16", "chunk_5_3.f16"):
+    for chunk_name in ("chunk_1_0.f16.gz", "chunk_0_0.f16.gz", "chunk_5_3.f16.gz"):
         _write_chunk(tile_dir / "chunks" / chunk_name)
     (tile_dir / "index.json").write_text(json.dumps({
         "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(),
@@ -283,9 +284,9 @@ def test_current_render_paths_returns_sparse_cached_chunks(tmp_path):
     paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
 
     assert paths == [
-        tile_dir / "chunks" / "chunk_0_0.f16",
-        tile_dir / "chunks" / "chunk_1_0.f16",
-        tile_dir / "chunks" / "chunk_5_3.f16",
+        tile_dir / "chunks" / "chunk_0_0.f16.gz",
+        tile_dir / "chunks" / "chunk_1_0.f16.gz",
+        tile_dir / "chunks" / "chunk_5_3.f16.gz",
     ]
 
 
@@ -311,7 +312,7 @@ def test_current_render_paths_rejects_invalid_chunk_index(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
     (tile_dir / "chunks").mkdir(parents=True)
-    _write_chunk(tile_dir / "chunks" / "chunk_0_0.f16")
+    _write_chunk(tile_dir / "chunks" / "chunk_0_0.f16.gz")
     (tile_dir / "index.json").write_text(json.dumps({
         "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(), "chunks": [[0, 0], [20, 0]],
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},

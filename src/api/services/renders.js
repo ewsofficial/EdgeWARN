@@ -6,8 +6,8 @@ const DEFAULT_GRID = { rows: 10, cols: 20, tileSize: 350 };
 const grid = (value) => value && Number.isInteger(value.rows) && Number.isInteger(value.cols) && Number.isInteger(value.tile_size)
   && value.rows > 0 && value.rows <= 100 && value.cols > 0 && value.cols <= 100 && value.tile_size > 0 && value.tile_size <= 4096
   ? { rows: value.rows, cols: value.cols, tileSize: value.tile_size } : null;
-const chunkFormat = (value) => value && value.version === 2 && value.encoding === 'float16' && value.file_suffix === '.f16'
-  && value.compression === 'none' && [1, 3].includes(value.channels) && ['scalar', 'rgb'].includes(value.value_kind)
+const chunkFormat = (value) => value && value.version === 2 && value.encoding === 'float16' && value.file_suffix === '.f16.gz'
+  && value.compression === 'gzip' && [1, 3].includes(value.channels) && ['scalar', 'rgb'].includes(value.value_kind)
   && value.bytes_per_component === 2 && value.no_data === 'nan' && value.pixel_row_order === 'top_to_bottom' && value.grid_origin === 'bottom_left'
   ? value : null;
 
@@ -80,9 +80,9 @@ export function createRenderService(repository) {
     async chunk(id, value, x, y) {
       const data = await this.chunks(id, value);
       if (!Number.isInteger(x) || !Number.isInteger(y) || !data.chunks.some(([chunkX, chunkY]) => chunkX === x && chunkY === y)) throw new ArtifactError('NOT_FOUND', 'Render chunk not found');
-      const opened = await repository.open('gui', [product(id).storageDirectory, value, 'chunks', `chunk_${x}_${y}.f16`], { kind: 'binary' });
+      const opened = await repository.open('gui', [product(id).storageDirectory, value, 'chunks', `chunk_${x}_${y}.f16.gz`], { kind: 'binary' });
       const expectedLength = data.grid.tileSize * data.grid.tileSize * data.format.channels * data.format.bytes_per_component;
-      if (opened.size !== expectedLength) { await opened.handle.close(); throw new ArtifactError('INVALID_ARTIFACT', 'Render chunk has an invalid length'); }
+      if (!opened.size || opened.size > expectedLength + 1024) { await opened.handle.close(); throw new ArtifactError('INVALID_ARTIFACT', 'Render chunk has an invalid length'); }
       return { ...opened, chunk: data };
     }
   };

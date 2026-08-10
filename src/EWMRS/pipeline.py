@@ -28,7 +28,7 @@ from util.atomic import atomic_write_json
 from util.io import IOManager, QueueWriter
 
 RenderOutput = Optional[list[Path]]
-_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16$")
+_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16\.gz$")
 
 EWMRS_COLORMAP_JSON = Path(__file__).resolve().with_name("colormaps.json")
 fs.GUI_COLORMAP_JSON = EWMRS_COLORMAP_JSON
@@ -87,7 +87,7 @@ def _load_timestamp_chunk_index_cached(
     chunk_format = data.get("chunk_format")
     if not isinstance(chunks, list) or not isinstance(tile_grid, dict) or not isinstance(chunk_format, dict):
         return None
-    if chunk_format.get("encoding") != "float16" or chunk_format.get("file_suffix") != ".f16" or chunk_format.get("bytes_per_component") != 2 or chunk_format.get("channels") not in {1, 3}:
+    if chunk_format.get("encoding") != "float16" or chunk_format.get("file_suffix") != ".f16.gz" or chunk_format.get("compression") != "gzip" or chunk_format.get("bytes_per_component") != 2 or chunk_format.get("channels") not in {1, 3}:
         return None
     return chunks, tile_grid, chunk_format
 
@@ -371,8 +371,8 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
             channels = chunk_format.get("channels")
             if not isinstance(channels, int) or channels not in {1, 3}:
                 return None
-            tile_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.f16"
-            if not tile_path.is_file() or tile_path.stat().st_size != tile_grid["tile_size"] * tile_grid["tile_size"] * channels * 2:
+            tile_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.f16.gz"
+            if not tile_path.is_file() or tile_path.stat().st_size <= 0:
                 return None
 
             tile_paths.append((tile_y, tile_x, tile_path))
