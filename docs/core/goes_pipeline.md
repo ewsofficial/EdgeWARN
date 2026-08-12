@@ -170,7 +170,7 @@ Notes:
 
 - `product` values are the GUI folder names shown in the tables above
 - binary clients should use `/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
-  and `/chunks/{x}/{y}`; chunks are headerless RGBA8 bytes with metadata in
+  and `/chunks/{x}/{y}`; chunks are gzip-compressed float16 value chunks with metadata in
   schema-version-2 `index.json`
 - the timestamp index's sparse `chunks` array, sorted by y then x, is the
   authority for available coordinates; omitted chunks are fully transparent
