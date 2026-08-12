@@ -132,7 +132,6 @@ class GUIValueWriter:
         values: np.ndarray,
         tile_output: bool = True,
         *,
-        value_kind: str = "scalar",
         timing_context: dict | None = None,
     ) -> Tuple[List[Path], str]:
         from .config import TILE_SIZE
@@ -144,9 +143,8 @@ class GUIValueWriter:
 
         if tile_output:
             values = np.asarray(values, dtype=np.float32)
-            channels = 1 if values.ndim == 2 else values.shape[2] if values.ndim == 3 else 0
-            if channels not in {1, 3} or (value_kind == "scalar" and channels != 1) or (value_kind == "rgb" and channels != 3):
-                raise ValueError("Rendered values must be scalar [height,width] or RGB [height,width,3]")
+            if values.ndim != 2:
+                raise ValueError("Rendered values must be scalar [height,width]")
             if values.shape[0] % TILE_SIZE or values.shape[1] % TILE_SIZE:
                 raise ValueError(
                     f"Rendered value dimensions {values.shape[:2]} are not divisible by chunk size {TILE_SIZE}"
@@ -158,10 +156,9 @@ class GUIValueWriter:
                 values,
                 timestamp,
                 tile_grid=tile_grid,
-                value_kind=value_kind,
                 timing_context=timing_context,
             )
-            self._update_index(timestamp, tile_grid=tile_grid, channels=channels, value_kind=value_kind)
+            self._update_index(timestamp, tile_grid=tile_grid)
             total_render_s = time.perf_counter() - render_start_s
             io_manager.write_info(
                 f"Render output for {self.file_name} completed in {total_render_s:.3f}s "
@@ -185,7 +182,6 @@ class GUIValueWriter:
         timestamp: str,
         *,
         tile_grid: dict,
-        value_kind: str,
         timing_context: dict | None = None,
     ) -> List[Path]:
         tile_schedule_start_s = time.perf_counter()
@@ -262,7 +258,7 @@ class GUIValueWriter:
             f"({len(tile_specs)}/{total_grid_tiles} non-transparent chunks written)"
         )
 
-        self._write_timestamp_index(timestamp_dir, tile_specs, tile_grid, value_kind=value_kind)
+        self._write_timestamp_index(timestamp_dir, tile_specs, tile_grid)
         # The index is the publication barrier.  Only remove obsolete chunks
         # after readers can discover the complete replacement set.
         published = {path.name for _, path in tile_specs}
@@ -272,7 +268,7 @@ class GUIValueWriter:
 
         return [tile_path for _, tile_path in tile_specs]
 
-    def _write_timestamp_index(self, timestamp_dir: Path, tile_specs: list[tuple[np.ndarray, Path]], tile_grid: dict, *, value_kind: str) -> None:
+    def _write_timestamp_index(self, timestamp_dir: Path, tile_specs: list[tuple[np.ndarray, Path]], tile_grid: dict) -> None:
         from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
         normalized_tile_grid = _normalize_tile_grid(tile_grid)
         chunks: list[list[int]] = []
@@ -287,7 +283,7 @@ class GUIValueWriter:
             "schema_version": CHUNK_SCHEMA_VERSION,
             "timestamp": timestamp_dir.name,
             "representation": "binary_chunks",
-            "chunk_format": chunk_format_descriptor(channels=(1 if value_kind == "scalar" else 3), value_kind=value_kind),
+            "chunk_format": chunk_format_descriptor(),
             "tile_grid": normalized_tile_grid,
             "chunks": chunks,
         }
@@ -298,7 +294,7 @@ class GUIValueWriter:
         except Exception as e:
             io_manager.write_error(f"Failed to update index.json in {timestamp_dir}: {e}")
 
-    def _update_index(self, new_timestamp, tile_grid=None, *, channels: int = 1, value_kind: str = "scalar"):
+    def _update_index(self, new_timestamp, tile_grid=None):
         from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
         index_file = self.outdir / "index.json"
         timestamps = []
@@ -326,7 +322,7 @@ class GUIValueWriter:
                     "schema_version": CHUNK_SCHEMA_VERSION,
                     "timestamps": timestamps,
                     "representation": "binary_chunks",
-                    "chunk_format": chunk_format_descriptor(channels=channels, value_kind=value_kind, include_media_type=True),
+                    "chunk_format": chunk_format_descriptor(include_media_type=True),
                     "tile_grid": tile_grid or existing_tile_grid,
                 }
 
@@ -391,7 +387,7 @@ class GUILayerRenderer:
         io_manager.write_info(f"Value preparation for {self.file_name} completed in {scalar_to_rgba_s:.3f}s")
 
         writer = GUIValueWriter(self.outdir, self.file_name, self.timestamp)
-        return writer.save_values(values, tile_output=tile_output, value_kind="scalar", timing_context=timing_context)
+        return writer.save_values(values, tile_output=tile_output, timing_context=timing_context)
 
 
 class GUIArrayRenderer:
@@ -408,4 +404,4 @@ class GUIArrayRenderer:
             timing_context["scalar_to_rgba_s"] = scalar_to_rgba_s
         io_manager.write_info(f"Value preparation for {self.file_name} completed in {scalar_to_rgba_s:.3f}s")
         writer = GUIValueWriter(self.outdir, self.file_name, self.timestamp)
-        return writer.save_values(self.values, tile_output=tile_output, value_kind="scalar", timing_context=timing_context)
+        return writer.save_values(self.values, tile_output=tile_output, timing_context=timing_context)

@@ -152,7 +152,6 @@ def _adaptive_process_worker_count(layer_count: int, phase_name: str) -> int:
 
 def _render_layer(layer) -> tuple[str, RenderOutput]:
     """Render a single layer. Returns (name, png_path or None)."""
-    from EWMRS.render.goes_rgb import compose_goes_rgb, prepare_goes_rgb_render
     from EWMRS.render.render import GUIArrayRenderer, GUIValueWriter, GUILayerRenderer
     from EWMRS.render.goes_transform import (
         extract_goes_timestamp_iso,
@@ -182,33 +181,6 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
         if not src_dir.exists():
             io_mgr.write_warning(f"Source directory missing for {name}: {src_dir}")
             return name, None
-
-        if source_type == "goes_abi_rgb":
-            prepared = prepare_goes_rgb_render(layer)
-            if prepared is None:
-                return name, None
-
-            timestamp_iso = prepared["timestamp_iso"]
-            cached_render = _current_render_paths(out_dir, timestamp_iso)
-            if cached_render is not None:
-                io_mgr.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
-                return name, cached_render
-
-            composed = compose_goes_rgb(
-                prepared,
-                web_mercator_shape=GOES_WEB_MERCATOR_SHAPE,
-                web_mercator_transform=GOES_WEB_MERCATOR_TRANSFORM,
-            )
-            if composed is None:
-                return name, None
-
-            values, metadata = composed
-            io_mgr.write_info(
-                f"Composited {name} GOES RGB product with channels {', '.join(sorted(metadata['selected_files']))}"
-            )
-            renderer = GUIValueWriter(out_dir, name, timestamp_iso)
-            png_path, px_timestamp = renderer.save_values(values, tile_output=True, value_kind="rgb")
-            return name, png_path
 
         if layer.get("input_manifest_bound"):
             latest_file = (
@@ -302,24 +274,6 @@ def _latest_source_file(src_dir: Path) -> Optional[Path]:
     if not latest:
         return None
     return Path(latest[-1])
-
-
-def _pinned_goes_files_by_channel(
-    input_manifest: CycleInputManifest | None,
-) -> dict[str, Path] | None:
-    if input_manifest is None:
-        return None
-
-    from common.ingest.mrms.config import get_abi_radc_channel_specs
-
-    pinned = {}
-    for spec in get_abi_radc_channel_specs():
-        if not spec.channel_id:
-            continue
-        record = input_manifest.latest_for_directory(spec.outdir)
-        if record is not None:
-            pinned[spec.channel_id] = record.local_path
-    return pinned
 
 
 def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
@@ -738,10 +692,7 @@ def run_render_pipeline(
         for layer in layers:
             pinned_layer = dict(layer)
             source_path = pinned_layer.get("filepath")
-            source_type = str(
-                pinned_layer.get("source_type", "mrms")
-            ).lower()
-            if source_path is not None and source_type != "goes_abi_rgb":
+            if source_path is not None:
                 record = input_manifest.latest_for_directory(source_path)
                 pinned_layer["input_path"] = (
                     str(record.local_path) if record is not None else None
@@ -796,56 +747,6 @@ def run_mrms_render_pipeline(
     )
 
 
-def _goes_cycle_registry_key(file_path: Path, channel_id: str) -> tuple[str, str, tuple[int, int], tuple[float, ...]]:
-    return (
-        str(file_path),
-        str(channel_id),
-        GOES_WEB_MERCATOR_SHAPE,
-        tuple(float(value) for value in tuple(GOES_WEB_MERCATOR_TRANSFORM)),
-    )
-
-
-def _load_goes_registry_entry(
-    cycle_registry: dict[tuple[str, str, tuple[int, int], tuple[float, ...]], dict[str, object]],
-    *,
-    file_path: Path,
-    channel_id: str,
-    layer_config: dict,
-) -> dict[str, object] | None:
-    from EWMRS.render.goes_transform import extract_goes_timestamp_iso, load_reproject_goes_abi_render_array
-
-    load_start_s = time.perf_counter()
-    registry_key = _goes_cycle_registry_key(file_path, channel_id)
-    cached = cycle_registry.get(registry_key)
-    if cached is not None:
-        io_manager.write_info(f"Reusing shared GOES registry entry for {channel_id} from {file_path}")
-        return cached
-
-    payload = load_reproject_goes_abi_render_array(
-        file_path,
-        layer_config,
-        shape=GOES_WEB_MERCATOR_SHAPE,
-        transform=GOES_WEB_MERCATOR_TRANSFORM,
-        resampling=Resampling.bilinear,
-    )
-    if payload is None:
-        return None
-
-    entry: dict[str, object] = {
-        "channel_id": str(channel_id),
-        "file_path": file_path,
-        "timestamp_iso": extract_goes_timestamp_iso(file_path),
-        "data": payload["data"],
-        "x": payload["x"],
-        "y": payload["y"],
-    }
-    cycle_registry[registry_key] = entry
-    io_manager.write_info(
-        f"Built shared GOES registry entry for {channel_id} in {time.perf_counter() - load_start_s:.3f}s"
-    )
-    return entry
-
-
 def _maybe_cleanup_goes_gui_files(max_age_minutes: int = 120) -> None:
     global _LAST_GOES_GUI_CLEANUP_S, _LAST_GOES_GUI_CLEANUP_FUNC_ID
 
@@ -866,338 +767,30 @@ def _maybe_cleanup_goes_gui_files(max_age_minutes: int = 120) -> None:
     _LAST_GOES_GUI_CLEANUP_FUNC_ID = current_cleanup_func_id
 
 
-def _run_goes_unified_cycle(
-    single_channel_layers: list[dict],
-    rgb_layers: list[dict],
-    input_manifest: CycleInputManifest | None = None,
-) -> Dict[str, RenderOutput]:
-    from EWMRS.render.goes_rgb import iter_goes_rgb_batch, layer_config_for_channel, prepare_goes_rgb_batch
-    from EWMRS.render.goes_transform import extract_goes_timestamp_iso
-    from EWMRS.render.render import GUIArrayRenderer, GUIValueWriter
-
-    results: Dict[str, RenderOutput] = {}
-    _ensure_runtime_configured()
-    cycle_start_s = time.perf_counter()
-
-    prepare_rgb_start_s = time.perf_counter()
-    pinned_files_by_channel = _pinned_goes_files_by_channel(input_manifest)
-    prepared_batch = (
-        prepare_goes_rgb_batch(
-            rgb_layers,
-            pinned_files_by_channel=pinned_files_by_channel,
-        )
-        if pinned_files_by_channel is not None
-        else prepare_goes_rgb_batch(rgb_layers)
-    )
-    prepare_rgb_batch_s = time.perf_counter() - prepare_rgb_start_s
-    pending_recipes = []
-    pending_selected_files: dict[str, Path] = {}
-    rgb_layer_outdirs = {str(layer["name"]): Path(layer["outdir"]) for layer in rgb_layers}
-
-    if prepared_batch is not None:
-        for prepared in prepared_batch["recipes"]:
-            layer = prepared["layer"]
-            name = str(layer["name"])
-            out_dir = Path(layer["outdir"])
-            timestamp_iso = prepared["timestamp_iso"]
-            cached_render = _current_render_paths(out_dir, timestamp_iso)
-            if cached_render is not None:
-                io_manager.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
-                results[name] = cached_render
-                continue
-
-            pending_recipes.append(prepared)
-            for channel_id, file_path in prepared["selected_files"].items():
-                pending_selected_files.setdefault(str(channel_id), Path(file_path))
-    else:
-        for layer in rgb_layers:
-            results.setdefault(str(layer["name"]), None)
-
-    preferred_single_files = prepared_batch["selected_files"] if prepared_batch is not None else {}
-    pending_single: list[dict[str, object]] = []
-    for layer in single_channel_layers:
-        name = str(layer.get("name"))
-        source_path = layer.get("filepath")
-        output_path = layer.get("outdir")
-        channel_id = str(layer.get("channel_id", "")).strip()
-
-        if source_path is None or output_path is None:
-            io_manager.write_error(f"Layer {name} is missing filepath/outdir configuration")
-            results[name] = None
-            continue
-
-        selected_file = None
-        preferred_file = preferred_single_files.get(channel_id)
-        if preferred_file is not None:
-            preferred_path = Path(preferred_file)
-            if preferred_path.exists():
-                selected_file = preferred_path
-
-        if selected_file is None and input_manifest is not None:
-            record = input_manifest.latest_for_directory(source_path)
-            selected_file = record.local_path if record is not None else None
-
-        if selected_file is None and input_manifest is None:
-            selected_file = _latest_source_file(Path(source_path))
-
-        if selected_file is None:
-            io_manager.write_warning(f"No source files found for {name} in {source_path}")
-            results[name] = None
-            continue
-
-        timestamp_iso = extract_goes_timestamp_iso(selected_file)
-        cached_render = _current_render_paths(Path(output_path), timestamp_iso)
-        if cached_render is not None:
-            io_manager.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
-            results[name] = cached_render
-            continue
-
-        pending_single.append(
-            {
-                "name": name,
-                "layer": layer,
-                "file_path": Path(selected_file),
-                "channel_id": channel_id,
-                "timestamp_iso": timestamp_iso,
-            }
-        )
-
-    cycle_registry: dict[tuple[str, str, tuple[int, int], tuple[float, ...]], dict[str, object]] = {}
-    single_registry_preload_s = 0.0
-    rgb_registry_preload_s = 0.0
-    rgb_composition_s = 0.0
-
-    io_manager.write_info(
-        f"Starting unified GOES render cycle: {len(pending_single)} pending single-channel layer(s), "
-        f"{len(pending_recipes)} pending RGB recipe(s), rgb_batch_prepare={prepare_rgb_batch_s:.3f}s"
-    )
-
-    for pending in pending_single:
-        name = str(pending["name"])
-        load_start_s = time.perf_counter()
-        entry = _load_goes_registry_entry(
-            cycle_registry,
-            file_path=Path(pending["file_path"]),
-            channel_id=str(pending["channel_id"]),
-            layer_config=dict(pending["layer"]),
-        )
-        single_registry_preload_s += time.perf_counter() - load_start_s
-        if entry is None:
-            results[name] = None
-            continue
-
-        layer = dict(pending["layer"])
-        out_dir = Path(layer["outdir"])
-        render_timing_context = {"render_start_s": time.perf_counter(), "cycle_start_s": cycle_start_s}
-        renderer = GUIArrayRenderer(
-            np.asarray(entry["data"], dtype=np.float32),
-            out_dir,
-            layer.get("colormap_key"),
-            name,
-            str(pending["timestamp_iso"]),
-        )
-        png_path, _px_timestamp = renderer.convert_to_png(tile_output=True, timing_context=render_timing_context)
-        results[name] = png_path
-
-    io_manager.write_info(
-        f"GOES unified cycle single-channel precompute completed in {single_registry_preload_s:.3f}s"
-    )
-
-    for channel_id, file_path in pending_selected_files.items():
-        load_start_s = time.perf_counter()
-        entry = _load_goes_registry_entry(
-            cycle_registry,
-            file_path=file_path,
-            channel_id=str(channel_id),
-            layer_config=layer_config_for_channel(str(channel_id)),
-        )
-        rgb_registry_preload_s += time.perf_counter() - load_start_s
-        if entry is None:
-            io_manager.write_warning(f"Skipping GOES RGB channel {channel_id}: failed to build shared registry entry")
-
-    if pending_selected_files:
-        io_manager.write_info(
-            f"GOES unified cycle RGB shared-channel preload completed in {rgb_registry_preload_s:.3f}s"
-        )
-
-    rendered_rgb_layers: set[str] = set()
-    if pending_recipes and prepared_batch is not None:
-        rgb_registry: dict[str, dict[str, object]] = {}
-        missing_channels: list[str] = []
-        for channel_id, file_path in pending_selected_files.items():
-            registry_key = _goes_cycle_registry_key(file_path, channel_id)
-            entry = cycle_registry.get(registry_key)
-            if entry is None:
-                missing_channels.append(channel_id)
-                continue
-            rgb_registry[channel_id] = entry
-
-        if missing_channels:
-            io_manager.write_warning(
-                f"Skipping GOES RGB batch: missing shared channel entries for {', '.join(sorted(missing_channels))}"
-            )
-        else:
-            pending_batch = {
-                **prepared_batch,
-                "recipes": pending_recipes,
-                "selected_files": pending_selected_files,
-            }
-            rgb_comp_start_s = time.perf_counter()
-            for layer_name, values, metadata in iter_goes_rgb_batch(
-                pending_batch,
-                web_mercator_shape=GOES_WEB_MERCATOR_SHAPE,
-                web_mercator_transform=GOES_WEB_MERCATOR_TRANSFORM,
-                registry=rgb_registry,
-            ) or ():
-                out_dir = rgb_layer_outdirs[layer_name]
-                timestamp_iso = metadata["timestamp_iso"]
-                io_manager.write_info(
-                    f"Composited {layer_name} GOES RGB product with channels {', '.join(sorted(metadata['selected_files']))}"
-                )
-                renderer = GUIValueWriter(out_dir, layer_name, timestamp_iso)
-                png_path, _px_timestamp = renderer.save_values(
-                    values,
-                    tile_output=True,
-                    value_kind="rgb",
-                    timing_context={"render_start_s": time.perf_counter(), "cycle_start_s": cycle_start_s},
-                )
-                results[layer_name] = png_path
-                rendered_rgb_layers.add(layer_name)
-                del values
-            rgb_composition_s = time.perf_counter() - rgb_comp_start_s
-            io_manager.write_info(f"GOES unified cycle RGB composition completed in {rgb_composition_s:.3f}s")
-
-    for layer in rgb_layers:
-        name = str(layer["name"])
-        if name in results:
-            continue
-        if name not in rendered_rgb_layers:
-            results.setdefault(name, None)
-
-    io_manager.write_info(
-        f"Unified GOES render cycle completed in {time.perf_counter() - cycle_start_s:.3f}s "
-        f"(single_precompute={single_registry_preload_s:.3f}s, rgb_preload={rgb_registry_preload_s:.3f}s, "
-        f"rgb_comp={rgb_composition_s:.3f}s)"
-    )
-    return results
-
-
 def run_goes_render_pipeline(
     dt,
     max_entries: int = 10,
     input_manifest: CycleInputManifest | None = None,
 ) -> Dict[str, RenderOutput]:
-    """Run the GOES-backed EWMRS render phase."""
-    from EWMRS.render.goes_rgb import iter_goes_rgb_batch, prepare_goes_rgb_batch
-    from EWMRS.render.render import GUIValueWriter
+    """Run the GOES-backed EWMRS render phase for raw ABI channels.
 
+    EWMRS serves the raw ABI channel values; GoES RGB composites are a
+    client-side derivation and are not rendered server-side.
+    """
     layers = get_goes_file_list()
     if not layers:
         io_manager.write_info("GOES render phase is a no-op: no GOES layers configured")
         return {}
 
     pipeline_start_s = time.perf_counter()
-
-    single_channel_layers = [layer for layer in layers if str(layer.get("source_type", "")).lower() != "goes_abi_rgb"]
-    rgb_layers = [layer for layer in layers if str(layer.get("source_type", "")).lower() == "goes_abi_rgb"]
-
-    results: Dict[str, RenderOutput] = {}
-
-    if single_channel_layers and rgb_layers:
-        results.update(
-            _run_goes_unified_cycle(
-                single_channel_layers,
-                rgb_layers,
-                input_manifest=input_manifest,
-            )
-        )
-        _maybe_cleanup_goes_gui_files(max_age_minutes=120)
-        io_manager.write_info(f"GOES render pipeline completed in {time.perf_counter() - pipeline_start_s:.3f}s")
-        return results
-
-    if single_channel_layers:
-        render_kwargs = {
-            "max_entries": max_entries,
-            "layers": single_channel_layers,
-            "phase_name": "GOES",
-            "cleanup_after": False,
-        }
-        if input_manifest is not None:
-            render_kwargs["input_manifest"] = input_manifest
-        results.update(
-            run_render_pipeline(
-                dt,
-                **render_kwargs,
-            )
-        )
-
-    if rgb_layers:
-        _ensure_runtime_configured()
-        pinned_files_by_channel = _pinned_goes_files_by_channel(
-            input_manifest
-        )
-        prepared_batch = (
-            prepare_goes_rgb_batch(
-                rgb_layers,
-                pinned_files_by_channel=pinned_files_by_channel,
-            )
-            if pinned_files_by_channel is not None
-            else prepare_goes_rgb_batch(rgb_layers)
-        )
-        if prepared_batch is not None:
-            pending_recipes = []
-            pending_selected_files: dict[str, Path] = {}
-            rgb_layer_outdirs = {str(layer["name"]): Path(layer["outdir"]) for layer in rgb_layers}
-
-            for prepared in prepared_batch["recipes"]:
-                layer = prepared["layer"]
-                name = str(layer["name"])
-                out_dir = Path(layer["outdir"])
-                timestamp_iso = prepared["timestamp_iso"]
-                cached_render = _current_render_paths(out_dir, timestamp_iso)
-                if cached_render is not None:
-                    io_manager.write_info(f"Reusing existing render for {name}: {timestamp_iso}")
-                    results[name] = cached_render
-                    continue
-
-                pending_recipes.append(prepared)
-                for channel_id, file_path in prepared["selected_files"].items():
-                    pending_selected_files.setdefault(channel_id, file_path)
-
-            rendered_rgb_layers: set[str] = set()
-            if pending_recipes:
-                pending_batch = {
-                    **prepared_batch,
-                    "recipes": pending_recipes,
-                    "selected_files": pending_selected_files,
-                }
-                for layer_name, values, metadata in iter_goes_rgb_batch(
-                    pending_batch,
-                    web_mercator_shape=GOES_WEB_MERCATOR_SHAPE,
-                    web_mercator_transform=GOES_WEB_MERCATOR_TRANSFORM,
-                ) or ():
-                    out_dir = rgb_layer_outdirs[layer_name]
-                    timestamp_iso = metadata["timestamp_iso"]
-                    io_manager.write_info(
-                        f"Composited {layer_name} GOES RGB product with channels {', '.join(sorted(metadata['selected_files']))}"
-                    )
-                    renderer = GUIValueWriter(out_dir, layer_name, timestamp_iso)
-                    png_path, _px_timestamp = renderer.save_values(values, tile_output=True, value_kind="rgb")
-                    results[layer_name] = png_path
-                    rendered_rgb_layers.add(layer_name)
-                    del values
-
-            for layer in rgb_layers:
-                name = str(layer["name"])
-                if name in results:
-                    continue
-                if name not in rendered_rgb_layers:
-                    results.setdefault(name, None)
-                    continue
-        else:
-            for layer in rgb_layers:
-                results.setdefault(str(layer["name"]), None)
-
+    results = run_render_pipeline(
+        dt,
+        max_entries=max_entries,
+        layers=layers,
+        phase_name="GOES",
+        cleanup_after=False,
+        input_manifest=input_manifest,
+    )
     _maybe_cleanup_goes_gui_files(max_age_minutes=120)
 
     io_manager.write_info(f"GOES render pipeline completed in {time.perf_counter() - pipeline_start_s:.3f}s")

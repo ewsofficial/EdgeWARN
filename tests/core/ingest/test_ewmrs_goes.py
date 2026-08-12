@@ -175,7 +175,7 @@ def test_reproject_goes_abi_to_web_mercator_returns_target_shape(tmp_path):
 
 
 def test_goes_config_wires_to_expected_paths_and_metadata():
-    from EWMRS.render.config import get_goes_file_list, get_goes_rgb_file_list
+    from EWMRS.render.config import get_goes_file_list
     import util.file as fs
 
     layers = get_goes_file_list()
@@ -207,12 +207,6 @@ def test_goes_config_wires_to_expected_paths_and_metadata():
         assert layer["filepath"] == filepath
         assert layer["outdir"] == outdir
         assert layer["value_transform"] == value_transform
-
-    rgb_layers = {layer["name"]: layer for layer in get_goes_rgb_file_list()}
-    assert set(rgb_layers).issubset(by_name)
-    for name, layer in rgb_layers.items():
-        assert by_name[name]["source_type"] == "goes_abi_rgb"
-        assert by_name[name]["recipe_key"] == layer["recipe_key"]
 
     assert by_name["GOES_ABI_C01_Reflectance"]["colormap_key"] == "GOES_RGB_Raw"
     assert by_name["GOES_ABI_C02_Reflectance"]["colormap_key"] == "GOES_RGB_Raw"

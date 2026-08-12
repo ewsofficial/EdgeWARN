@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 import EWMRS.pipeline as ewmrs_pipeline
 from common.ingest.manifest import CycleInputManifest
 from common.ingest.manifest import staged_input_from_path
-from EWMRS.render.config import get_goes_rgb_file_list
 
 
 class _FakeFuture:
@@ -192,66 +191,6 @@ def test_run_goes_render_pipeline_processes_configured_layers(monkeypatch):
     assert captured["phase_name"] == "GOES"
     assert captured["cleanup_after"] is False
     assert captured["layers"] == [{"name": "GOES_ABI_C02_Reflectance", "source_type": "goes_abi"}]
-
-
-def test_run_goes_render_pipeline_writes_all_rgb_products(monkeypatch, tmp_path):
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    created = {}
-    cleanup_calls = []
-    timestamp_iso = "2026-03-17T20:00:00"
-    (tmp_path / "ABI_RadC").mkdir()
-
-    rgb_layers = []
-    for layer in get_goes_rgb_file_list():
-        rgb_layers.append({**layer, "filepath": tmp_path / "ABI_RadC", "outdir": tmp_path / layer["name"]})
-
-    monkeypatch.setattr(ewmrs_pipeline, "get_goes_file_list", lambda: rgb_layers)
-    monkeypatch.setattr(ewmrs_pipeline, "cleanup_old_gui_files", lambda max_age_minutes: cleanup_calls.append(max_age_minutes))
-    monkeypatch.setattr(
-        "EWMRS.render.goes_rgb.prepare_goes_rgb_batch",
-        lambda layers, max_offset_minutes=20.0, requested_timestamp=None, pinned_files_by_channel=None: {
-            "timestamp_iso": timestamp_iso,
-            "recipes": [
-                {
-                    "layer": layer,
-                    "recipe_key": layer["recipe_key"],
-                    "recipe": type("Recipe", (), {"display_name": layer["recipe_key"], "required_channels": ("C02",)})(),
-                    "timestamp_iso": timestamp_iso,
-                    "timestamp": dt,
-                    "selected_files": {"C02": tmp_path / "c02.nc"},
-                }
-                for layer in layers
-            ],
-            "selected_files": {"C02": tmp_path / "c02.nc"},
-        },
-    )
-    monkeypatch.setattr(
-        "EWMRS.render.goes_rgb.iter_goes_rgb_batch",
-        lambda prepared_batch, web_mercator_shape, web_mercator_transform, true_color_gamma=2.2: [
-            (
-                prepared["layer"]["name"],
-                __import__("numpy").zeros((700, 700, 3), dtype=__import__("numpy").float32),
-                {"selected_files": {"C02": str(tmp_path / "c02.nc")}, "timestamp_iso": timestamp_iso},
-            )
-            for prepared in prepared_batch["recipes"]
-        ],
-    )
-
-    results = ewmrs_pipeline.run_goes_render_pipeline(dt)
-
-    assert len(results) == 6
-    assert cleanup_calls == [120]
-    for layer in rgb_layers:
-        out_dir = layer["outdir"]
-        index_data = json.loads((out_dir / "index.json").read_text())
-        tile_index = json.loads((out_dir / "20260317-200000" / "index.json").read_text())
-        assert index_data["timestamps"] == ["20260317-200000"]
-        assert index_data["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": 350}
-        assert tile_index["schema_version"] == 2
-        assert tile_index["representation"] == "binary_chunks"
-        assert tile_index["chunks"] == [[0, 0], [1, 0], [0, 1], [1, 1]]
-        assert len(results[layer["name"]]) == 4
-        assert len(list((out_dir / "20260317-200000" / "chunks").glob("chunk_*.f16.gz"))) == 4
 
 
 def _chunk_format():
