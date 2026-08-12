@@ -29,11 +29,5 @@
   {"id":"goes-abi-c13","legacyId":"GOES_ABI_C13","storageDirectory":"GOES_ABI_C13","legacyFilePrefix":"GOES_ABI_C13_BrightnessTemp","representation":"png-tiles","colormapId":"goes-ir"},
   {"id":"goes-abi-c14","legacyId":"GOES_ABI_C14","storageDirectory":"GOES_ABI_C14","legacyFilePrefix":"GOES_ABI_C14_BrightnessTemp","representation":"png-tiles","colormapId":"goes-ir"},
   {"id":"goes-abi-c15","legacyId":"GOES_ABI_C15","storageDirectory":"GOES_ABI_C15","legacyFilePrefix":"GOES_ABI_C15_BrightnessTemp","representation":"png-tiles","colormapId":"goes-ir"},
-  {"id":"goes-abi-c16","legacyId":"GOES_ABI_C16","storageDirectory":"GOES_ABI_C16","legacyFilePrefix":"GOES_ABI_C16_BrightnessTemp","representation":"png-tiles"},
-  {"id":"goes-rgb-true-color","legacyId":"GOES_RGB_TrueColor","storageDirectory":"GOES_RGB_TrueColor","legacyFilePrefix":"GOES_RGB_TrueColor","representation":"png-tiles"},
-  {"id":"goes-rgb-airmass","legacyId":"GOES_RGB_Airmass","storageDirectory":"GOES_RGB_Airmass","legacyFilePrefix":"GOES_RGB_Airmass","representation":"png-tiles"},
-  {"id":"goes-rgb-nighttime-microphysics","legacyId":"GOES_RGB_NighttimeMicrophysics","storageDirectory":"GOES_RGB_NighttimeMicrophysics","legacyFilePrefix":"GOES_RGB_NighttimeMicrophysics","representation":"png-tiles"},
-  {"id":"goes-rgb-day-cloud-phase","legacyId":"GOES_RGB_DayCloudPhase","storageDirectory":"GOES_RGB_DayCloudPhase","legacyFilePrefix":"GOES_RGB_DayCloudPhase","representation":"png-tiles"},
-  {"id":"goes-rgb-simple-water-vapor","legacyId":"GOES_RGB_SimpleWaterVapor","storageDirectory":"GOES_RGB_SimpleWaterVapor","legacyFilePrefix":"GOES_RGB_SimpleWaterVapor","representation":"png-tiles"},
-  {"id":"goes-rgb-sandwich","legacyId":"GOES_RGB_Sandwich","storageDirectory":"GOES_RGB_Sandwich","legacyFilePrefix":"GOES_RGB_Sandwich","representation":"png-tiles"}
+  {"id":"goes-abi-c16","legacyId":"GOES_ABI_C16","storageDirectory":"GOES_ABI_C16","legacyFilePrefix":"GOES_ABI_C16_BrightnessTemp","representation":"png-tiles"}
 ]

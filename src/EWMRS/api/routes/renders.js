@@ -5,6 +5,15 @@ import fs from 'fs/promises';
 import { productCatalog, productByLegacyId } from '../../../api/config/productCatalog.js';
 
 const DEFAULT_TILE_GRID = { rows: 10, cols: 20, tile_size: 350 };
+const LEGACY_RENDER_SUNSET = 'Thu, 31 Dec 2026 23:59:59 GMT';
+
+function markLegacyPngResponse(res) {
+  return res.set({
+    Deprecation: 'true',
+    Sunset: LEGACY_RENDER_SUNSET,
+    Link: '</api/v3/render-products>; rel="successor-version"',
+  });
+}
 
 const PRODUCT_MAPPING = Object.freeze(Object.fromEntries(
   productCatalog.map((product) => [product.legacyId, product.legacyFilePrefix])
@@ -204,6 +213,7 @@ router.get('/fetch', async (req, res) => {
 // GET /download?product=[product]&timestamp=[timestamp]
 // Downloads a specific timestamp of a specific product
 router.get('/download', async (req, res) => {
+  markLegacyPngResponse(res);
   const product = readRequiredQueryString(req.query.product);
   const timestamp = readRequiredQueryString(req.query.timestamp);
   const GUI_DIR = getGuiDir(req);
@@ -243,6 +253,7 @@ router.get('/download', async (req, res) => {
 // Returns a specific tile for a product at a given timestamp
 // File path: {GUI_DIR}/{product}/{timestamp}/tile_{x}_{y}.png
 router.get('/tile', async (req, res) => {
+  markLegacyPngResponse(res);
   const product = readRequiredQueryString(req.query.product);
   const timestamp = readRequiredQueryString(req.query.timestamp);
   const x = req.query.x;

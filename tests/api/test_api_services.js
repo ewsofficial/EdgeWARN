@@ -45,6 +45,21 @@ describe('unified API services', () => {
     await expect(service.tiles('comp-ref-qc', '20260317-200000')).resolves.toEqual({ grid: { rows: 2, cols: 3, tileSize: 256 }, tiles: [[2, 1]] });
   });
 
+  it('opens only indexed RGBA chunks with their exact expected length', async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'api-services-'));
+    const product = path.join(root, 'gui', 'CompRefQC'); const timestamp = '20260317-200000';
+    await fs.mkdir(path.join(product, timestamp, 'chunks'), { recursive: true });
+    const format = { version: 2, encoding: 'float16', file_suffix: '.f16.gz', compression: 'gzip', channels: 1, value_kind: 'scalar', no_data: 'nan', bytes_per_component: 2, pixel_row_order: 'top_to_bottom', grid_origin: 'bottom_left' };
+    await fs.writeFile(path.join(product, 'index.json'), JSON.stringify({ schema_version: 2, timestamps: [timestamp], representation: 'binary_chunks', chunk_format: { ...format, media_type: 'application/octet-stream' }, tile_grid: { rows: 1, cols: 1, tile_size: 2 } }));
+    await fs.writeFile(path.join(product, timestamp, 'index.json'), JSON.stringify({ schema_version: 2, timestamp, representation: 'binary_chunks', chunk_format: format, tile_grid: { rows: 1, cols: 1, tile_size: 2 }, chunks: [[0, 0]] }));
+    await fs.writeFile(path.join(product, timestamp, 'chunks', 'chunk_0_0.f16.gz'), Buffer.from('H4sIAAAAAAAC/2NggAAAad8iZQgAAAA=', 'base64'));
+    const service = createRenderService(new ArtifactRepository({ gui: path.join(root, 'gui') }));
+    await expect(service.chunks('comp-ref-qc', timestamp)).resolves.toMatchObject({ chunks: [[0, 0]], grid: { tileSize: 2 } });
+    const opened = await service.chunk('comp-ref-qc', timestamp, 0, 0);
+    expect(opened.size).toBe(23); await opened.handle.close();
+    await expect(service.chunk('comp-ref-qc', timestamp, 1, 0)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
   it('closes a RAP data handle when its metadata is malformed', async () => {
     const close = jest.fn().mockResolvedValue();
     const repository = {

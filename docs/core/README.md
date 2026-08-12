@@ -86,16 +86,9 @@ The active runtime layout is:
 - EdgeWARN integration inputs ready (adds scan-time GLM when enabled)
 
 The GOES EWMRS stage renders the full configured GOES-East ABI set after local ABI readiness is met.
-Current outputs include the single-channel GUI products `GOES_ABI_C01` through `GOES_ABI_C16` plus six derived RGB composites built from staged `ABI-L1b-RadC` channels:
+Current outputs include the single-channel GUI products `GOES_ABI_C01` through `GOES_ABI_C16` built from staged `ABI-L1b-RadC` channels. RGB composites are a client-side derivation and are not rendered server-side.
 
-- `GOES_RGB_TrueColor`
-- `GOES_RGB_Airmass`
-- `GOES_RGB_NighttimeMicrophysics`
-- `GOES_RGB_DayCloudPhase`
-- `GOES_RGB_SimpleWaterVapor`
-- `GOES_RGB_Sandwich`
-
-The GOES render path uses a unified cycle that reuses shared channel reprojection work across scalar layers and RGB recipes, then writes the same tiled GUI layout and product-level plus timestamp-level `index.json` contract used by the rest of EWMRS. If a required channel is missing or exceeds the allowed timestamp offset, only the affected layer or recipe is skipped.
+The GOES render path renders each single-channel layer through the shared EWMRS pipeline, then writes the same tiled GUI layout and product-level plus timestamp-level `index.json` contract used by the rest of EWMRS. If a required channel is missing or exceeds the allowed timestamp offset, only the affected layer is skipped.
 
 ## Scheduling Modes
 

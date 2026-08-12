@@ -5,6 +5,42 @@ TILE_SIZE = 350  # pixels
 TILE_GRID_ROWS = 10  # 3500 / 350
 TILE_GRID_COLS = 20  # 7000 / 350
 
+# EWMRS value-chunk wire-format invariants. Keep these values together: they
+# are written to both index levels and consumed by API clients.
+CHUNK_SCHEMA_VERSION = 2
+CHUNK_FORMAT_VERSION = 2
+CHUNK_ENCODING = "float16"
+CHUNK_MEDIA_TYPE = "application/octet-stream"
+CHUNK_FILE_SUFFIX = ".f16.gz"
+CHUNK_COMPRESSION = "gzip"
+CHUNK_BYTES_PER_COMPONENT = 2
+CHUNK_PIXEL_ROW_ORDER = "top_to_bottom"
+CHUNK_GRID_ORIGIN = "bottom_left"
+
+
+def chunk_format_descriptor(*, include_media_type: bool = False) -> dict:
+    """Return the JSON-serializable float16 value-chunk contract.
+
+    EWMRS serves raw single-channel science values; derived color products
+    (for example GOES RGB composites) are a client-side concern.
+    """
+    value = {
+        "version": CHUNK_FORMAT_VERSION,
+        "encoding": CHUNK_ENCODING,
+        "file_suffix": CHUNK_FILE_SUFFIX,
+        "compression": CHUNK_COMPRESSION,
+        "data_type": "float16",
+        "channels": 1,
+        "value_kind": "scalar",
+        "no_data": "nan",
+        "bytes_per_component": CHUNK_BYTES_PER_COMPONENT,
+        "pixel_row_order": CHUNK_PIXEL_ROW_ORDER,
+        "grid_origin": CHUNK_GRID_ORIGIN,
+    }
+    if include_media_type:
+        value["media_type"] = CHUNK_MEDIA_TYPE
+    return value
+
 def get_mrms_file_list():
     """Return the MRMS-backed render configuration list."""
     return [
@@ -174,55 +210,7 @@ def get_goes_file_list():
             }
         )
 
-    return layers + get_goes_rgb_file_list()
-
-
-def get_goes_rgb_file_list():
-    """Return the GOES RGB render configuration list."""
-    return [
-        {
-            "name": "GOES_RGB_TrueColor",
-            "filepath": fs.GOES_ABI_RADC_DIR,
-            "outdir": fs.GUI_GOES_RGB_TRUE_COLOR_DIR,
-            "source_type": "goes_abi_rgb",
-            "recipe_key": "true_color",
-        },
-        {
-            "name": "GOES_RGB_Airmass",
-            "filepath": fs.GOES_ABI_RADC_DIR,
-            "outdir": fs.GUI_GOES_RGB_AIRMASS_DIR,
-            "source_type": "goes_abi_rgb",
-            "recipe_key": "airmass",
-        },
-        {
-            "name": "GOES_RGB_NighttimeMicrophysics",
-            "filepath": fs.GOES_ABI_RADC_DIR,
-            "outdir": fs.GUI_GOES_RGB_NIGHTTIME_MICROPHYSICS_DIR,
-            "source_type": "goes_abi_rgb",
-            "recipe_key": "nighttime_microphysics",
-        },
-        {
-            "name": "GOES_RGB_DayCloudPhase",
-            "filepath": fs.GOES_ABI_RADC_DIR,
-            "outdir": fs.GUI_GOES_RGB_DAY_CLOUD_PHASE_DIR,
-            "source_type": "goes_abi_rgb",
-            "recipe_key": "day_cloud_phase",
-        },
-        {
-            "name": "GOES_RGB_SimpleWaterVapor",
-            "filepath": fs.GOES_ABI_RADC_DIR,
-            "outdir": fs.GUI_GOES_RGB_SIMPLE_WATER_VAPOR_DIR,
-            "source_type": "goes_abi_rgb",
-            "recipe_key": "simple_water_vapor",
-        },
-        {
-            "name": "GOES_RGB_Sandwich",
-            "filepath": fs.GOES_ABI_RADC_DIR,
-            "outdir": fs.GUI_GOES_RGB_SANDWICH_DIR,
-            "source_type": "goes_abi_rgb",
-            "recipe_key": "sandwich",
-        },
-    ]
+    return layers
 
 
 def get_file_list():
