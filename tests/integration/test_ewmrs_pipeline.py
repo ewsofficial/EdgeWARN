@@ -1,3 +1,4 @@
+import gzip
 import json
 import os
 from datetime import datetime, timezone
@@ -5,7 +6,6 @@ from datetime import datetime, timezone
 import EWMRS.pipeline as ewmrs_pipeline
 from common.ingest.manifest import CycleInputManifest
 from common.ingest.manifest import staged_input_from_path
-from EWMRS.render.config import get_goes_rgb_file_list
 
 
 class _FakeFuture:
@@ -193,103 +193,52 @@ def test_run_goes_render_pipeline_processes_configured_layers(monkeypatch):
     assert captured["layers"] == [{"name": "GOES_ABI_C02_Reflectance", "source_type": "goes_abi"}]
 
 
-def test_run_goes_render_pipeline_writes_all_rgb_products(monkeypatch, tmp_path):
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    created = {}
-    cleanup_calls = []
-    timestamp_iso = "2026-03-17T20:00:00"
-    (tmp_path / "ABI_RadC").mkdir()
-
-    rgb_layers = []
-    for layer in get_goes_rgb_file_list():
-        rgb_layers.append({**layer, "filepath": tmp_path / "ABI_RadC", "outdir": tmp_path / layer["name"]})
-
-    monkeypatch.setattr(ewmrs_pipeline, "get_goes_file_list", lambda: rgb_layers)
-    monkeypatch.setattr(ewmrs_pipeline, "cleanup_old_gui_files", lambda max_age_minutes: cleanup_calls.append(max_age_minutes))
-    monkeypatch.setattr(
-        "EWMRS.render.goes_rgb.prepare_goes_rgb_batch",
-        lambda layers, max_offset_minutes=20.0, requested_timestamp=None, pinned_files_by_channel=None: {
-            "timestamp_iso": timestamp_iso,
-            "recipes": [
-                {
-                    "layer": layer,
-                    "recipe_key": layer["recipe_key"],
-                    "recipe": type("Recipe", (), {"display_name": layer["recipe_key"], "required_channels": ("C02",)})(),
-                    "timestamp_iso": timestamp_iso,
-                    "timestamp": dt,
-                    "selected_files": {"C02": tmp_path / "c02.nc"},
-                }
-                for layer in layers
-            ],
-            "selected_files": {"C02": tmp_path / "c02.nc"},
-        },
-    )
-    monkeypatch.setattr(
-        "EWMRS.render.goes_rgb.iter_goes_rgb_batch",
-        lambda prepared_batch, web_mercator_shape, web_mercator_transform, true_color_gamma=2.2: [
-            (
-                prepared["layer"]["name"],
-                __import__("numpy").zeros((700, 700, 4), dtype=__import__("numpy").uint8),
-                {"selected_files": {"C02": str(tmp_path / "c02.nc")}, "timestamp_iso": timestamp_iso},
-            )
-            for prepared in prepared_batch["recipes"]
-        ],
-    )
-
-    results = ewmrs_pipeline.run_goes_render_pipeline(dt)
-
-    assert len(results) == 6
-    assert cleanup_calls == [120]
-    for layer in rgb_layers:
-        out_dir = layer["outdir"]
-        index_data = json.loads((out_dir / "index.json").read_text())
-        tile_index = json.loads((out_dir / "20260317-200000" / "index.json").read_text())
-        assert index_data["timestamps"] == ["20260317-200000"]
-        assert index_data["tile_grid"] == {"rows": 2, "cols": 2, "tile_size": 350}
-        assert tile_index == {
-            "tiles": [],
-            "tile_grid": {"rows": 2, "cols": 2, "tile_size": 350},
-        }
-        assert results[layer["name"]] == []
-        assert len(list((out_dir / "20260317-200000").glob("tile_*.png"))) == 0
+def _chunk_format():
+    return {"version": 2, "encoding": "float16", "file_suffix": ".f16.gz", "compression": "gzip", "channels": 1, "value_kind": "scalar", "no_data": "nan", "bytes_per_component": 2, "pixel_row_order": "top_to_bottom", "grid_origin": "bottom_left"}
 
 
-def test_current_render_paths_returns_sparse_cached_tiles(tmp_path):
+def _write_chunk(path, tile_size=350):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(gzip.compress(bytes(tile_size * tile_size * 2), mtime=0))
+
+
+def test_current_render_paths_returns_sparse_cached_chunks(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
-    tile_dir.mkdir(parents=True)
+    (tile_dir / "chunks").mkdir(parents=True)
 
-    for tile_name in ("tile_1_0.png", "tile_0_0.png", "tile_5_3.png"):
-        (tile_dir / tile_name).write_bytes(b"tile")
+    for chunk_name in ("chunk_1_0.f16.gz", "chunk_0_0.f16.gz", "chunk_5_3.f16.gz"):
+        _write_chunk(tile_dir / "chunks" / chunk_name)
     (tile_dir / "index.json").write_text(json.dumps({
-        "tiles": [[1, 0], [0, 0], [5, 3]],
+        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(),
+        "chunks": [[1, 0], [0, 0], [5, 3]],
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
 
     (out_dir / "index.json").write_text(json.dumps({
-        "timestamps": ["20260317-200000"],
+        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_chunks", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
 
     paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
 
     assert paths == [
-        tile_dir / "tile_0_0.png",
-        tile_dir / "tile_1_0.png",
-        tile_dir / "tile_5_3.png",
+        tile_dir / "chunks" / "chunk_0_0.f16.gz",
+        tile_dir / "chunks" / "chunk_1_0.f16.gz",
+        tile_dir / "chunks" / "chunk_5_3.f16.gz",
     ]
 
 
 def test_current_render_paths_accepts_valid_zero_tile_timestamp(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
-    tile_dir.mkdir(parents=True)
+    (tile_dir / "chunks").mkdir(parents=True)
     (tile_dir / "index.json").write_text(json.dumps({
-        "tiles": [],
+        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(), "chunks": [],
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
     (out_dir / "index.json").write_text(json.dumps({
-        "timestamps": ["20260317-200000"],
+        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_chunks", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
 
@@ -298,23 +247,23 @@ def test_current_render_paths_accepts_valid_zero_tile_timestamp(tmp_path):
     assert paths == []
 
 
-def test_current_render_paths_filters_invalid_and_out_of_bounds_tiles(tmp_path):
+def test_current_render_paths_rejects_invalid_chunk_index(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
-    tile_dir.mkdir(parents=True)
-    (tile_dir / "tile_0_0.png").write_bytes(b"tile")
+    (tile_dir / "chunks").mkdir(parents=True)
+    _write_chunk(tile_dir / "chunks" / "chunk_0_0.f16.gz")
     (tile_dir / "index.json").write_text(json.dumps({
-        "tiles": [[0, 0], [20, 0], [0, 10], [1], ["bad", 0], [4, 4]],
+        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(), "chunks": [[0, 0], [20, 0]],
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
     (out_dir / "index.json").write_text(json.dumps({
-        "timestamps": ["20260317-200000"],
+        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_chunks", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
         "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
     }))
 
     paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
 
-    assert paths == [tile_dir / "tile_0_0.png"]
+    assert paths is None
     assert ewmrs_pipeline._summarize_results({"A": [], "B": None}) == "1/2 layers succeeded"
 
 

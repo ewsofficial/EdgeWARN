@@ -206,16 +206,26 @@ For `/renders/tile`, supplying both `x` and `y` returns a PNG tile; omitting bot
 GOES products exposed through those routes include:
 
 - scalar ABI folders `GOES_ABI_C01` through `GOES_ABI_C16`
-- RGB folders `GOES_RGB_TrueColor`, `GOES_RGB_Airmass`, `GOES_RGB_NighttimeMicrophysics`, `GOES_RGB_DayCloudPhase`, `GOES_RGB_SimpleWaterVapor`, and `GOES_RGB_Sandwich`
 
 Behavior notes:
 
-- ABI single-channel products and RGB composites are generated from staged `ABI-L1b-RadC` channels on the GOES CONUS `EPSG:3857` tile grid.
-- Missing or time-misaligned channels skip only the affected layer or RGB product; other GOES products continue rendering.
+- ABI single-channel products are generated from staged `ABI-L1b-RadC` channels on the GOES CONUS `EPSG:3857` tile grid.
+- Missing or time-misaligned channels skip only the affected layer; other GOES products continue rendering.
 - Current GOES renders are tile-first; `/renders/download` only resolves the legacy flat PNG naming contract when such files exist.
 - Each tile-first timestamp folder includes `index.json` with sparse valid tile coordinates, allowing listing-mode `/renders/tile` requests to avoid scanning tile files.
 
 See `docs/api/ewmrs_api_endpoints.md` for the full EWMRS route contracts and `docs/core/goes_pipeline.md` for the ingest-to-render flow.
+
+New clients should use the unified API chunk contract:
+
+- `GET /api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
+- `GET /api/v3/render-products/{productId}/snapshots/{timestamp}/chunks/{x}/{y}`
+
+The second resource is `application/octet-stream`, not PNG. It returns exact
+RGBA8 bytes with top-to-bottom rows and bottom-left chunk-grid coordinates.
+The index's sparse `chunks` list is authoritative; omitted chunks are
+transparent. Legacy `/renders/download` and `/renders/tile` remain PNG-only
+and return missing-artifact responses when no compatibility PNG exists.
 
 ## EWMRS RAP Uint16 Products
 

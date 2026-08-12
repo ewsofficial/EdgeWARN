@@ -79,8 +79,6 @@ Currently mapped products include MRMS layers and GOES products.
 - `GOES_ABI_C01`, `GOES_ABI_C02`, `GOES_ABI_C03`, `GOES_ABI_C04`, `GOES_ABI_C05`, `GOES_ABI_C06`
 - `GOES_ABI_C07`, `GOES_ABI_C08`, `GOES_ABI_C09`, `GOES_ABI_C10`, `GOES_ABI_C11`, `GOES_ABI_C12`
 - `GOES_ABI_C13`, `GOES_ABI_C14`, `GOES_ABI_C15`, `GOES_ABI_C16`
-- `GOES_RGB_TrueColor`, `GOES_RGB_Airmass`, `GOES_RGB_NighttimeMicrophysics`
-- `GOES_RGB_DayCloudPhase`, `GOES_RGB_SimpleWaterVapor`, `GOES_RGB_Sandwich`
 
 ### GET /renders/fetch?product={product}
 
@@ -106,7 +104,11 @@ Resolves a rendered PNG in the legacy non-tiled naming format when that file exi
 
 - `<GUI_DIR>/<product>/<file_prefix>_{timestamp}.png`
 
-Current GOES and MRMS renderers write tile-first GUI output, update the product-level `index.json`, and write a timestamp-level `index.json` inside each render folder, so tile-aware clients should prefer `/renders/tile` and `/renders/tile-info`.
+This legacy route remains PNG-only. Current GOES and MRMS renderers publish
+binary RGBA chunks through the unified v3 `/api/v3/render-products/.../chunks`
+resources; a missing compatibility PNG returns `404` rather than binary bytes
+under the PNG contract. PNG compatibility responses include `Deprecation: true`,
+a `Sunset: Thu, 31 Dec 2026 23:59:59 GMT` header, and a successor-version link.
 
 Transparent tiles are skipped at write time. A timestamp may therefore have fewer tile PNGs than the declared `tile_grid`, or even zero tile PNGs for a fully transparent render.
 
@@ -123,7 +125,7 @@ Supports two modes:
 - image mode when both `x` and `y` are supplied
 - listing mode when both `x` and `y` are omitted
 
-Image mode downloads a tile PNG from:
+Image mode downloads a compatibility tile PNG from:
 
 - `<GUI_DIR>/<product>/<timestamp>/tile_{x}_{y}.png`
 
@@ -526,19 +528,8 @@ GOES products available through the render routes are the GUI folder names below
 | `GOES_ABI_C15` | `GOES_ABI_C15_BrightnessTemp` |
 | `GOES_ABI_C16` | `GOES_ABI_C16_BrightnessTemp` |
 
-### GOES RGB Products
-
-| Product | Recipe channels |
-| --- | --- |
-| `GOES_RGB_TrueColor` | `C01`, `C02`, `C03`, `C07` |
-| `GOES_RGB_Airmass` | `C08`, `C10`, `C12`, `C13` |
-| `GOES_RGB_NighttimeMicrophysics` | `C07`, `C13`, `C15` |
-| `GOES_RGB_DayCloudPhase` | `C02`, `C05`, `C13` |
-| `GOES_RGB_SimpleWaterVapor` | `C08`, `C10`, `C13` |
-| `GOES_RGB_Sandwich` | `C02`, `C13` |
-
 Behavior notes:
 
 - GOES products are rendered from locally staged `ABI-L1b-RadC` inputs on a CONUS `EPSG:3857` target grid.
-- RGB recipes are skipped individually when a required channel is missing or too far from the selected batch timestamp.
+- RGB composites are a client-side derivation and are not rendered server-side.
 - See `docs/core/goes_pipeline.md` for the full ingest, readiness, and render pipeline.

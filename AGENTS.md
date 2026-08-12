@@ -198,7 +198,7 @@ At runtime, the code expects a base directory that typically looks like this:
 ```text
 <BASE_DIR>/
 ├── data/      # Ingested MRMS/GOES/RAP/METAR/NWS data, stormcells, cells, alerts
-├── gui/       # EWMRS-rendered PNGs, tiles, index.json files, and colormap assets
+├── gui/       # EWMRS RGBA binary chunks, schema-versioned indexes, and colormap assets
 └── wpc/       # WPC-derived surface analysis GeoJSON artifacts
 ```
 
