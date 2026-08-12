@@ -32,11 +32,12 @@ describe('unified API contract specification', () => {
   });
 
   it('has a collision-free canonical product catalog with legacy parity', () => {
-    expect(productCatalog).toHaveLength(37);
+    expect(productCatalog).toHaveLength(31);
     expect(productById.size).toBe(productCatalog.length);
     expect(productByLegacyId.size).toBe(productCatalog.length);
     expect(productById.get('comp-ref-qc').legacyId).toBe('CompRefQC');
     expect(productById.get('goes-abi-c13').legacyFilePrefix).toBe('GOES_ABI_C13_BrightnessTemp');
     expect(productByLegacyId.get('QPE_01H').id).toBe('qpe-01h');
+    expect(productById.get('goes-rgb-true-color')).toBeUndefined();
   });
 });

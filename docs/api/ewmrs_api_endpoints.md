@@ -79,8 +79,6 @@ Currently mapped products include MRMS layers and GOES products.
 - `GOES_ABI_C01`, `GOES_ABI_C02`, `GOES_ABI_C03`, `GOES_ABI_C04`, `GOES_ABI_C05`, `GOES_ABI_C06`
 - `GOES_ABI_C07`, `GOES_ABI_C08`, `GOES_ABI_C09`, `GOES_ABI_C10`, `GOES_ABI_C11`, `GOES_ABI_C12`
 - `GOES_ABI_C13`, `GOES_ABI_C14`, `GOES_ABI_C15`, `GOES_ABI_C16`
-- `GOES_RGB_TrueColor`, `GOES_RGB_Airmass`, `GOES_RGB_NighttimeMicrophysics`
-- `GOES_RGB_DayCloudPhase`, `GOES_RGB_SimpleWaterVapor`, `GOES_RGB_Sandwich`
 
 ### GET /renders/fetch?product={product}
 
@@ -530,19 +528,8 @@ GOES products available through the render routes are the GUI folder names below
 | `GOES_ABI_C15` | `GOES_ABI_C15_BrightnessTemp` |
 | `GOES_ABI_C16` | `GOES_ABI_C16_BrightnessTemp` |
 
-### GOES RGB Products
-
-| Product | Recipe channels |
-| --- | --- |
-| `GOES_RGB_TrueColor` | `C01`, `C02`, `C03`, `C07` |
-| `GOES_RGB_Airmass` | `C08`, `C10`, `C12`, `C13` |
-| `GOES_RGB_NighttimeMicrophysics` | `C07`, `C13`, `C15` |
-| `GOES_RGB_DayCloudPhase` | `C02`, `C05`, `C13` |
-| `GOES_RGB_SimpleWaterVapor` | `C08`, `C10`, `C13` |
-| `GOES_RGB_Sandwich` | `C02`, `C13` |
-
 Behavior notes:
 
 - GOES products are rendered from locally staged `ABI-L1b-RadC` inputs on a CONUS `EPSG:3857` target grid.
-- RGB recipes are skipped individually when a required channel is missing or too far from the selected batch timestamp.
+- RGB composites are a client-side derivation and are not rendered server-side.
 - See `docs/core/goes_pipeline.md` for the full ingest, readiness, and render pipeline.

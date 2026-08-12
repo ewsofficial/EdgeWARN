@@ -9,7 +9,6 @@ The GOES pipeline in this repository currently supports:
 - decoupled realtime ingest of GOES-East ABI CONUS radiance data
 - local readiness checks for EWMRS rendering
 - single-channel ABI rendering for channels `C01` through `C16`
-- six derived RGB composites built from staged ABI channels
 - tile-first GUI output for the EWMRS API
 
 EdgeWARN integration still treats GOES differently from EWMRS rendering: EWMRS GOES readiness is based on locally staged ABI render inputs, while EdgeWARN integration separately checks GLM availability.
@@ -49,19 +48,6 @@ These products are written to GUI folders exposed through the EWMRS API as `prod
 | `GOES_ABI_C14` | `GOES_ABI_C14_BrightnessTemp` | Brightness temperature |
 | `GOES_ABI_C15` | `GOES_ABI_C15_BrightnessTemp` | Brightness temperature |
 | `GOES_ABI_C16` | `GOES_ABI_C16_BrightnessTemp` | Brightness temperature |
-
-### RGB Composites
-
-These products are also exposed through the EWMRS API as `product` values.
-
-| API product | Recipe | Required channels |
-| --- | --- | --- |
-| `GOES_RGB_TrueColor` | True Color RGB | `C01`, `C02`, `C03`, `C07` |
-| `GOES_RGB_Airmass` | Airmass RGB | `C08`, `C10`, `C12`, `C13` |
-| `GOES_RGB_NighttimeMicrophysics` | Nighttime Microphysics RGB | `C07`, `C13`, `C15` |
-| `GOES_RGB_DayCloudPhase` | Day Cloud Phase | `C02`, `C05`, `C13` |
-| `GOES_RGB_SimpleWaterVapor` | Simple Water Vapor RGB | `C08`, `C10`, `C13` |
-| `GOES_RGB_Sandwich` | Sandwich RGB | `C02`, `C13` |
 
 ## Realtime Flow
 
@@ -103,9 +89,7 @@ This keeps the render queue from falling behind during busy periods.
 
 ## Render Pipeline
 
-`src/EWMRS/pipeline.py` drives GOES rendering through `run_goes_render_pipeline()`.
-
-The current implementation uses a unified cycle when both scalar GOES layers and RGB layers are enabled.
+`src/EWMRS/pipeline.py` drives GOES rendering through `run_goes_render_pipeline()`, which delegates each configured single-channel layer to the shared `run_render_pipeline()` and runs a constrained GUI cleanup afterwards.
 
 ### Projection and grid
 
@@ -128,29 +112,7 @@ For `source_type="goes_abi"` layers, the pipeline:
 4. converts radiance to reflectance for `C01` through `C06`, or to brightness temperature for `C07` through `C16`
 5. reprojects the normalized array into the GOES Web Mercator target grid
 6. applies the configured colormap
-7. writes tiled GUI PNGs, updates product-level `index.json`, and writes timestamp-level `index.json`
-
-### RGB render path
-
-For `source_type="goes_abi_rgb"` layers, the pipeline:
-
-1. discovers the latest staged files for the required channels
-2. computes a batch timestamp from the newest common candidate set
-3. rejects a recipe when any required channel is missing or more than `20` minutes away from that batch timestamp
-4. reuses shared per-channel reprojection results through a cycle registry
-5. composes recipe-specific RGB arrays
-6. writes tiled RGBA output, updates product-level `index.json`, and writes timestamp-level `index.json`
-
-Only the affected recipe is skipped when one RGB dependency is missing or too far from the target timestamp.
-
-### Shared registry and cache reuse
-
-The unified GOES render cycle avoids redundant work in two ways:
-
-- completed tile directories are reused when the timestamp directory exists, the product-level `index.json` contains the timestamp, and the timestamp-level `index.json` lists valid tiles, even if only a sparse subset of non-transparent tiles was written
-- reprojected channel arrays are cached in a cycle registry so scalar layers and RGB recipes can share the same prepared channel payloads
-
-This is especially important for channels such as `C02` and `C13`, which are used both as standalone products and as RGB inputs.
+7. writes tiled float16 value chunks, updates product-level `index.json`, and writes timestamp-level `index.json`
 
 ## Output Layout
 
@@ -160,14 +122,6 @@ Examples:
 
 ```text
 <BASE_DIR>/gui/GOES_ABI_C13/
-├── 20260423-124000/
-│   ├── tile_0_0.png
-│   ├── ...
-│   ├── tile_19_9.png
-│   └── index.json
-└── index.json
-
-<BASE_DIR>/gui/GOES_RGB_TrueColor/
 ├── 20260423-124000/
 │   ├── tile_0_0.png
 │   ├── ...
@@ -230,7 +184,6 @@ See `docs/api/ewmrs_api_endpoints.md` for route-level behavior.
 The GOES pipeline is designed to degrade per layer instead of failing the entire cycle.
 
 - a missing scalar channel causes that layer to return `None`
-- a missing RGB dependency skips only the affected recipe
 - stale queued render tasks are dropped in favor of the latest cycle
 - cleanup runs after GOES rendering and remains constrained to the configured GUI base directory
 
