@@ -48,7 +48,7 @@ Notes:
 - Detection and integration modifiers are staged separately
 - GOES ingestion can run as part of the full ingest cycle or as a decoupled background loop in realtime mode
 - GOES ABI staging uses `ABI-L1b-RadC` channel files from `noaa-goes19`; GLM staging remains a separate modifier path
-- RGB render products are derived later from the staged ABI channel set and do not have separate remote ingest definitions
+- GOES RGB composites are not staged or rendered server-side; they are derived client-side from the staged ABI channel set
 - Cleanup is constrained to configured runtime directories
 
 See `docs/core/goes_pipeline.md` for the end-to-end GOES readiness and render flow.

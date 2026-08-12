@@ -30,7 +30,7 @@ Errors use `application/problem+json`.
 - Analysis: `/api/v3/cells`, `/storm-snapshots`, `/alert-snapshots`,
   `/alerts`, `/observations/metar`
 - Renders: `/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
-  lists sparse RGBA chunks; `/chunks/{x}/{y}` returns the binary payload.
+  lists sparse float16 value chunks; `/chunks/{x}/{y}` returns the binary payload.
   The historical `/image` and `/tiles` resources remain PNG-only compatibility
   endpoints and never relabel a binary chunk as an image.
 - Radar: `/api/v3/radar-sites`
@@ -45,14 +45,13 @@ folders and legacy file prefixes.
 
 ## EWMRS binary chunks
 
-MRMS and GOES ABI renders publish one-channel float16 value chunks; GOES RGB
-composites publish three-channel float16 RGB value chunks. They are gzip-
-compressed `chunk_{x}_{y}.f16.gz` files under
+MRMS and GOES ABI renders publish one-channel float16 value chunks. They are
+gzip-compressed `chunk_{x}_{y}.f16.gz` files under
 `<BASE_DIR>/gui/<product>/<timestamp>/chunks/`. `NaN` is the no-data value;
 gzip uses deterministic metadata and the API sends `Content-Encoding: gzip`.
-Scalar clients apply the published product colormap; RGB clients render the
-three normalized values directly. Chunks retain top-to-bottom row order and a
-bottom-left chunk-grid origin.
+Clients apply the published product colormap to the scalar values; GOES RGB
+composites are derived client-side from the raw ABI channel chunks. Chunks
+retain top-to-bottom row order and a bottom-left chunk-grid origin.
 
 Fetch the `/chunks` listing first. It provides the grid, format descriptor,
 and the authoritative sparse coordinate list—missing coordinates are fully
@@ -71,7 +70,7 @@ if (bytes.byteLength !== 350 * 350) throw new Error('invalid float16 scalar chun
 // Interpret as float16 (or upload as half-float); grid y=0 is the bottom row.
 ```
 
-These RGBA chunks are distinct from RAP `data.u16` scalar arrays and NEXRAD
+These float16 value chunks are distinct from RAP `data.u16` scalar arrays and NEXRAD
 `.bin.gz` products, which have their own metadata and decoders.
 
 ## Migration
