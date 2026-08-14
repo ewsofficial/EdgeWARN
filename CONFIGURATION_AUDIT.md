@@ -98,8 +98,8 @@ Legend for "Override" column:
 | `RATE_LIMIT_MAX_MIN` | `2000` | unified + EdgeWARN API | Per-minute rate limit |
 | `RATE_LIMIT_WINDOW_MS_SEC` | `1000` | `src/EdgeWARN/api/server.js:55` | Per-sec window width |
 | `RATE_LIMIT_WINDOW_MS_MIN` | `60000` | EdgeWARN API :57 | Per-min window width |
-| `EWMRS_RATE_LIMIT_MAX_SEC` | `50`* | `EWMRS/api/server.js:77` | EWMRS per-sec limit (CLI `--ewmrs-rate-limit-1s` overrides) |
-| `EWMRS_RATE_LIMIT_MAX_MIN` | `1800` | `EWMRS/api/server.js:79` | EWMRS per-min limit (CLI `--ewmrs-rate-limit-1m` overrides) |
+| `EWMRS_RATE_LIMIT_MAX_SEC` | `30` | `EWMRS/api/server.js:77` | EWMRS per-sec limit |
+| `EWMRS_RATE_LIMIT_MAX_MIN` | `1800` | `EWMRS/api/server.js:79` | EWMRS per-min limit |
 | `ALLOWED_ORIGINS` | `[]` (deny all in prod) | unified + EdgeWARN API | Comma-separated CORS allowlist |
 | `TRUST_PROXY` / `TRUST_PROXY_IPS` | `false` | unified + EdgeWARN API | Trust proxy configuration |
 | `PROJ_DATA` / `PROJ_LIB` / `GDAL_DATA` | auto-detected | `EWMRS/render/tools.py:38-41` | Set by code for child processes |
@@ -159,7 +159,6 @@ Legend for "Override" column:
 | Mahalanobis singular-S retry regularization | `1e-4` | filter.py:479 |
 | Gate threshold / min radius | `6.0` / `2.0` km | filter.py:490-492 |
 | Init velocity/accel variance | `100.0` (m/s)² / `1.0` | state.py:134-144 |
-| Reference lat for conversions | `35.0`° | state.py:51 |
 | confidence decay | `base * conf_decay**scans` | confidence.py:46 |
 | time penalty weight | `1 - (t/max_t) * 0.3` | confidence.py:50 |
 | motion factor denominator | `2500.0` var_sum | confidence.py:61 |
@@ -227,70 +226,11 @@ Legend for "Override" column:
 
 ---
 
-## 6. CTAM (`src/EdgeWARN/ctam/`)
-
-### Framework (`engine.py`, `interface.py`, `registry.py`, `run.py`)
-- No numeric tunables (registry/module architecture only).
-
-### MorphoWind (`modules/MorphoWind/config.py`)
-| Constant | Value | Line |
-|---|---|---|
-| QLCS mean/sigma (solidity, aspect, shear, defect depth) | `0.75/0.1`, `3.0/1.0`, `4.0/2.0`, `5.0/2.0` | 11-28 |
-| MB VIL density mean/sigma | `3.5` / `1.5` | 36-37 |
-| MB echo top mean/sigma | `6.0` / `2.0` | 41-42 |
-| `COLLAPSE_VIL_RATE_THRESHOLD` | `-1.0` | 51 |
-| `COLLAPSE_ET_RATE_THRESHOLD` | `-1.5` | 55 |
-| FL mean/sigma/max correction | `4.0` / `1.5` / `1.0` | 63-65 |
-| DD mean/sigma/max correction | `12.0` / `5.0` / `1.0` | 69-71 |
-| bookend vortex shear threshold | `5.0` | 75 |
-| bookend linearity threshold | `0.8` | 79 |
-| `BOOKEND_MAX_BRANCHING` | `2` | 83 |
-
-### StormCast (`modules/StormCast/core/config.py`)
-| Constant | Value | Line |
-|---|---|---|
-| pressure levels | `range(1000, 75, -25)` mb | 13 |
-| height sigma (Gaussian weights) | `2.0` km | 37 |
-| `DEFAULT_BLENDING_WEIGHTS` | obs 0.6 / mean 0.2 / bunkers 0.2 | 51-54 |
-| `MOTION_SMOOTHING_WINDOW` | `10` | 58 |
-| `SHALLOW_STORM_WEIGHTS` | `0.3/0.3/0.4` | 62 |
-| `MATURE_STORM_WEIGHTS` | `0.6/0.15/0.25` | 63 |
-| bunkers deviation (shallow/deep) | `3.0` / `7.5` | 68-71 |
-| bunkers height breakpoints | `6.0` / `10.0` km | 70-71 |
-| Kalman: alpha/dt/sigma_pos/sigma_vel/q_pos/q_vel | `0.97`, `300` s, `800` m, `12` m/s, `500` m², `7.2` m²/s² | 101-108 |
-| uncertainty: sigma_min / range / alpha_decay / sigma_amp.env / sigma_env / jitter_mult | `1.2`, `2.5`, `0.5`, `4.0`, `2.0`, `0.1` | 123-130 |
-| `DEFAULT_LEAD_TIMES` | `(900, 1800, 2700, 3600)` s | 135 |
-| `MAX_RELIABLE_LEAD_TIME` | `3600.0` s | 138 |
-| min/max velocity thresholds | `2.0` / `50.0` m/s | 141-142 |
-
-### StormCast core (blending/uncertainty/kalman/core/diagnostics)
-| Param | Value | File |
-|---|---|---|
-| exponential smoothing alpha | `0.3` | blending.py:16 |
-| savitzky-golay window/polyorder | `7` / `2` | blending.py:64-65 |
-| maturity adjustments | τ<1: +0.15, >10: −0.05… | blending.py:238-272 |
-| weight floor / normalize | `0.1` / `0.05` / `0.05` | blending.py:275-285 |
-| σ formula | `σ_min + σ_range/N^alpha` + jitter·mult | uncertainty.py:45-49 |
-| ellipse chi² map | `{0.68:2.30, 0.90:4.605, 0.95:5.991, 0.99:9.21}` | uncertainty.py:44 |
-| ellipse n_points | `36` | uncertainty.py:53 |
-| `h_core` / `echo_top_30` defaults | `6.0` km / `10.0` | core/core.py:57-59 |
-| cone chi² values | `{0.68:2.30, 0.90:2.12, 0.95:5.991}` | core.py:227 |
-| hull corridor lead-time limit | `≤1800` s | core.py:270 |
-| fallback trapezoid speed | `< 0.1` m/s | core.py:287 |
-| prediction velocity smoothing alpha | `0.97` | kalman.py:107-108 |
-| observation noise scaling | `sigma_pos·(1+5/n_samples)` | kalman.py:165-168 |
-| shear base/top defaults | `850` / `500` mb | diagnostics.py:110,125 |
-| effective-shear top by core height | ≥10→250, ≥5.5→500, ≥3→700, else 850 mb | diagnostics.py:155-163 |
-
----
-
-## 7. Alerts, Scheduling, API Index (`src/EdgeWARN/`)
+## 6. Alerts, Scheduling, API Index (`src/EdgeWARN/`)
 
 | Param | Value | File:Line |
 |---|---|---|
 | alert `severity` default | `"warning"` | alerts/schema.py |
-| alert id format | `id:{alert_type}:{source}:{cell_id}:{YYYY.MM.DD.HH.MM.SS}` | alerts/schema.py |
-| alert file name safe-char replace | `:`/`/` → `_` | alerts/manager.py |
 | `MRMSUpdateChecker(max_entries)` | `10` | schedule/scheduler.py |
 | `APIIndexManager(remove_old_cells)` | `True` | api_integration/index_manager.py |
 | index resync frequency | every `500` updates | index_manager.py |
@@ -298,7 +238,7 @@ Legend for "Override" column:
 
 ---
 
-## 8. Common Ingestion (`src/common/ingest/`)
+## 7. Common Ingestion (`src/common/ingest/`)
 
 ### Scheduler / coordinator (`run.py`, `cycle.py`, `goes_readiness.py`)
 | Constant | Value | File |
@@ -364,11 +304,6 @@ Legend for "Override" column:
 | scan dirs to keep | `3` | writer.py |
 | elevation dirs to keep | `2` | writer.py |
 | stale manifest max age | `12` h | writer.py |
-| volume magics | `b"AR2V"` / `b"ARCHIVE2"` | stream.py:9 |
-| msg types supported | `{2,3,5,13,15,18}` | parser.py |
-| record size | `2432` bytes | parser.py |
-| `MIN_SWEEP_ANGLE_DEG` | `0.4` | parser.py |
-| DUALPOL/DOPPLER block sets | `{DZDR,DPHI,DRHO,DCFP}` / `{DVEL,DSW}` | parser.py |
 
 ### RAP / Synoptic
 | Constant | Value | File:Line |
@@ -406,7 +341,7 @@ Legend for "Override" column:
 
 ---
 
-## 9. EWMRS
+## 8. EWMRS
 
 ### render/config.py
 | Constant | Value | Line |
@@ -428,20 +363,13 @@ Legend for "Override" column:
 | PNG compress level | `1` | render.py:167, tiler.py:27 |
 | tile naming | `tile_{x}_{y}.png` | render.py:207 |
 | `index.json` structure | tiles + tile_grid | render.py:283 |
-| overlay manifest bounds | north 7361866.1 / south 2273030.9 / west -14471533.8 / east -6679169.5 (EPSG:3857) | tools.py:187-192 |
 | `_TRANSFORMER_4326_TO_3857` | legacy | tools.py:71 |
 | find_timestamp fallback | `datetime.utcnow().isoformat()` | tools.py:137 |
 
 ### nexrad.py (GUI serialization)
 | Constant | Value | Location |
 |---|---|---|
-| sweep label lookups (VCP-212/215/12) | canonical elevations | :16-50 |
-| `NEXRAD_FIELD_MAGIC` | `b"EWFFv1S0"` | :52 |
 | variable→colormap keys | DBZH→NWS_Reflectivity, VRADH, WRADH, PHIDP, RHOHV, ZDR | :53-60 |
-| raw block names | DREF→DBZH, DVEL→VRADH, DSW→WRADH, DZDR→ZDR, DPHI→PHIDP, DRHO→RHOHV, DCFP→CCORH | :61-69 |
-| mask values | DZDR `0x07FF`, DPHI `0x03FF` | :70-73 |
-| msg-31 struct | `">I H h h h h B B f f"` | :74 |
-| stream continuity var drop | DBZH for contiguous doppler | :124-128 |
 | manifest name pattern | `<SITE>_<scan_timestamp>_<volume_id>.json` | :391/:441 |
 
 ### goes_rgb.py / goes_transform.py
@@ -463,8 +391,6 @@ Legend for "Override" column:
 
 | Constant | Value | File:Line |
 |---|---|---|
-| `UINT16_NODATA` | `65535` | config.py:7 |
-| `UINT16_VALID_MAX` | `65534` | config.py:8 |
 | pressure levels wind/thermo | `(925, 850, 700, 500, 250)` mb | config.py:9-10 |
 | layer catalog | 29 layers (temp K 180–330, RH % 0–100, ThetaE 250–390, MSLP 95000–105000 Pa, CAPE 0–6000, SRH ±1000, vorticity ±0.0002, wind ±80 m/s…) | config.py:73-330 |
 | `max_timestamps` retained | `3` | uint16_pipeline.py:101,264,287 |
@@ -474,8 +400,6 @@ Legend for "Override" column:
 ### EWMRS pipeline.py
 | Constant | Value | Location |
 |---|---|---|
-| `WEB_MERCATOR_BOUNDS` | `(-14471533.8, 2273030.9, -6679169.5, 7361866.1)` | :36 |
-| `WEB_MERCATOR_SHAPE` | `(3500, 7000)` | :37 |
 | GOES sub-extent | `(-13914936.3, 2814454.7, -7402746.1, 6360130.7)` | :44-48 |
 | `run_render_pipeline` max_entries | `10`, cleanup_after=True, phase "EWMRS" | :713 |
 | `run_goes_render_pipeline` cleanup age | `max_age_minutes=120` | :1076-1140 |
@@ -488,13 +412,13 @@ Legend for "Override" column:
 
 ---
 
-## 10. Node.js / Express APIs
+## 9. Node.js / Express APIs
 
 ### Unified API (`src/api/`)
 
-**server.js**: port `5000` (debug `3001`; `PORT` env), host `0.0.0.0`.
+**server.js**: port `5000` (`PORT` env), debug `3001` (`--debug-server`), host `0.0.0.0`. `--compat=edgewarn|ewmrs` and the legacy entry points now launch the same unified service (deprecation notice).
 
-**app.js**: `trust proxy` = config; version `'2.x'` prod else `2.7.0`; middleware order requestId → access log → security (helmet+compression) → cors → rate limiter → requestTimeout; static root `src/EWMRS`.
+**app.js**: version = `package.json` version, exposed as `'2.x'` in production; OpenAPI read from `openapi/v3.yaml`; middleware order requestId → access log → security (helmet+compression) → cors → rate limiters → requestTimeout; static root `src/EWMRS`; root endpoints `/`, `/robots.txt`, `/health/live`, `/health/ready`; legacy paths served by compatibility router.
 
 **config/index.js**
 | Key | Default | Override |
@@ -502,49 +426,32 @@ Legend for "Override" column:
 | `DEFAULT_BASE_DIR` | `C:\EdgeWARN_input` (win32) else `~/EdgeWARN_input` | `--base-dir`/`--base_dir`, `EDGEWARN_BASE_DIR`, `BASE_DIR`; conflicting values rejected |
 | port | `5000` | `PORT` env |
 | `requestTimeoutMs` | `30000` | `REQUEST_TIMEOUT_MS` |
-| `rateLimitMaxSec` | `40` | `RATE_LIMIT_MAX_SEC` |
-| `rateLimitMaxMin` | `2000` | `RATE_LIMIT_MAX_MIN` |
+| `rateLimits.perSecond` / `.perMinute` | `40` / `2000` | `RATE_LIMIT_MAX_SEC` / `RATE_LIMIT_MAX_MIN` |
 | data/gui/wpc dirs | baseDir + suffixes | derived |
 | `isProduction` | `NODE_ENV==='production'` | env |
 | `allowedOrigins` | `[]` (deny-all) | `ALLOWED_ORIGINS` CSV |
-| `trustProxy` | false | `TRUST_PROXY_IPS`, `TRUST_PROXY` |
+| `trustProxy` | false | `TRUST_PROXY_IPS` (list) / `TRUST_PROXY` (`true` rejected in production) |
 
-**middleware**: cors `methods GET/HEAD/OPTIONS`, `allowedHeaders Content-Type, X-Request-Id`, `maxAge 600`, `credentials false`; rateLimit `standardHeaders:true`, disabled when max=0; security `defaultSrc "self"` CSP; compression skips image/*.
+**middleware**: cors `methods GET/HEAD/OPTIONS`, `allowedHeaders Content-Type, X-Request-Id`, `maxAge 600`, `credentials false`; rateLimit `standardHeaders:true`, `legacyHeaders:false`, disabled when max=0; security `defaultSrc "self"` CSP; compression skips image/*; `requestTimeout` responds `503` on timeout.
 
-**repositories/artifactRepository.js**: `DEFAULT_LIMITS={json:8MiB, binary:128MiB, image:32MiB}`; LRU `max:256, maxSize:32MiB`; `list({limit=1000})`; ETag `W/"<size>-<mtimeMs>"`.
+**repositories/artifactRepository.js**: `DEFAULT_LIMITS={json:8MiB, binary:128MiB, image:32MiB}`; LRU `max:256, maxSize:32MiB`; `open()` with `O_NOFOLLOW`/symlink guards; `list({limit=1000})`; `readJson` cache keyed by ETag; ETag `W/"<size>-<mtimeMs>-<ino>"`; `ArtifactError` status map (NOT_FOUND 404, INVALID_ARTIFACT/IN_PROGRESS 503, else 400).
 
-**services**: `ALERT_SOURCES={'official','edgewarn'}`; `RADAR_SITE /^[A-Z0-9]{4}$/`; `RADAR_PRODUCTS` set of 7; `ELEVATION` regex; `DEFAULT_GRID` `{rows:10, cols:20, tileSize:350}`; `page()` default `limit=100`, cap `1000`.
+**services**: validation `timestamp` (`YYYYMMDD-HHMMSS`), `isCellId`, `isAlertId`, `isLayerId`; `ALERT_SOURCES={'official','edgewarn'}`; `RADAR_SITE /^[A-Z0-9]{4}$/`; `RADAR_PRODUCTS` set of 7; `ELEVATION` regex; `DEFAULT_GRID` `{rows:10, cols:20, tileSize:350}`; `page()` default `limit=100`, cap `1000`; render chunk schema v2 `float16` `.f16.gz` scalar/rgb (grid ≤100×100, tile ≤4096 px).
 
-**routes/v3**: collection `Cache-Control max-age=5`, resource `max-age=60`, assets `max-age=31536000, immutable`; query param max length `256`; `limit` regex `^(?:[1-9][0-9]{0,2}|1000)$`.
+**routes/v3**: collection `Cache-Control max-age=5`, resource `max-age=60`, assets `max-age=31536000, immutable`; query params only `cursor`/`limit` (plus `source` for alert endpoints), max length `256`; `limit` regex `^(?:[1-9][0-9]{0,2}|1000)$`; unsupported methods → `405`; errors as `application/problem+json`.
 
-**product-catalog.json**: 38 entries `{id, legacyId, storageDirectory, legacyFilePrefix, representation:'png-tiles', colormapId?}`; `SLUG` regex; uniqueness incl. colormap refs.
+**compatibility router** (`src/api/routes/compatibility/`): serves legacy `/api/v2`, `/renders/*`, `/nexrad/*`, `/rap/*`, `/wpc/*`, `/colormaps`, `/health`, `/healthz` with `Deprecation`/`Link` headers; `/features`, `/data`, `/api/v1` → `410`.
 
-### Legacy EdgeWARN API (`src/EdgeWARN/api/`)
-| Setting | Default | Notes |
-|---|---|---|
-| `BASE_DIR` | auto-detect cascade | `--base-dir` > `EDGEWARN_BASE_DIR` > defaults (`~/.EdgeWARN_data` etc.) |
-| `DEBUG_PORT`/`DEFAULT_PORT` | `3001` / `5000` | `--debug_server` flag |
-| `STORMCELL_JSON` | `src/stormcell_test.json` | hardcoded reference |
-| rate limits | `40`/s, `2000`/min (windows 1000/60000 ms) | env family + CLI `--edgewarn-rate-limit-1s/1m` |
-| cluster `numCPUs` | `min(cpus,4)` | per-worker limits × workers |
-| json body limit | `16kb` | strict |
-| helmet HSTS | `maxAge 31536000, includeSubDomains` | |
-| CORS | dev allow-all / prod deny unless `ALLOWED_ORIGINS` | `credentials:true`, methods GET/HEAD/OPTIONS, headers Content-Type/Authorization |
-| fileReader LRU | `max:500`, `ttl:60s`, `maxSize:40MiB` | index files TTL 5s |
-| cache-controls | cells 60s, timestamps 5s, snapshots 3600s, alerts 60s, metar 60s | |
+**product-catalog.json**: 31 entries `{id, legacyId, storageDirectory, legacyFilePrefix, representation:'png-tiles', colormapId}`; `SLUG` regex; unique id/legacyId/storageDirectory.
+
+### Legacy EdgeWARN API (`src/EdgeWARN/api/server.js`)
+- **Deprecated**: entry point now warns and launches the unified service. Retained legacy `createApp`: helmet HSTS `maxAge 31536000, includeSubDomains`; CSP `default-src 'self'`; compression skips image/*; CORS dev allow-all / prod deny unless `ALLOWED_ORIGINS` (`credentials:true`, methods GET/HEAD/OPTIONS, headers Content-Type/Authorization); trust proxy via `TRUST_PROXY`/`TRUST_PROXY_IPS`; rate limits `40`/s, `2000`/min (windows `RATE_LIMIT_WINDOW_MS_*` `1000`/`60000` ms); cluster `numCPUs = min(cpus,4)`; json body `16kb`; `/health`, `/api/v2`, `/features`+`/data`+`/api/v1` → `410`, `robots.txt`. BASE_DIR cascade `--base-dir` > `EDGEWARN_BASE_DIR` > defaults.
 
 ### Legacy EWMRS API (`src/EWMRS/api/server.js`)
-| Setting | Default | Notes |
-|---|---|---|
-| `DEFAULT_PORT`/`DEBUG_PORT` | `3003` / `3004` | |
-| rate limits | `EWMRS_RATE_LIMIT_MAX_SEC` = `50`, `MAX_MIN` = `1800`; windows fixed 1000/60000 ms | CLI flags too |
-| base dir | `--base_dir` > `BASE_DIR` env > platform default | |
-| CORS | allow-all (`cors()`) | |
-| `listFilesInDir` limit | `50` | excludes `.idx` |
-| `DEFAULT_TILE_GRID` | `{rows:10, cols:20, tile_size:350}` | renders.js:7 |
+- **Deprecated**: entry point now warns and launches the unified service. Retained legacy `createApp`: `cors()` allow-all; `morgan('tiny')`; `helmet()`; compression skips image/*; rate limits `EWMRS_RATE_LIMIT_MAX_SEC` = `30`, `MAX_MIN` = `1800` (windows fixed `1000`/`60000` ms); base dir `--base_dir` > `BASE_DIR` env > platform default; `DEFAULT_PORT`/`DEBUG_PORT` `3003`/`3004`; `listFilesInDir` limit `50` (excludes `.idx`); routes `/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/healthz`.
 
 ### Root configs
-- **package.json**: version 2.7.0; scripts `api`, `debug:api`, `api:edgewarn`, `api:ewmrs`; test via jest + supertest.
+- **package.json**: version 2.7.0; scripts `api`, `debug:api`, `api:edgewarn`, `debug:edgewarn`, `api:ewmrs`, `debug:ewmrs`, `audit:prod`, `sbom:prod`; test via jest + supertest.
 - **pytest.ini**: `pythonpath=src`, `asyncio_mode=auto`, `testpaths=tests`, markers `unit,integration,e2e,slow,api,ingest,process,ctam`; filters DeprecationWarning.
 - **environment.yml**: conda `EdgeWARN-dev`, python 3.13, per Section runtime deps.
 - **jest.config.js**: `testEnvironment:node`, coverage 70% thresholds, `testTimeout:10000`.
@@ -553,8 +460,14 @@ Legend for "Override" column:
 
 ## Omissions / notes
 - `EARTH_RADIUS_KM`, `KM_TO_M`, `WEB_MERCATOR_RADIUS_METERS`, 111320 m/deg and other unit conversions are **scientific/geodetic constants and intentionally excluded** per task instruction.
+- Ejected as non-configurable mathematical/geodetic/projection constants (tuning them breaks the pipeline):
+  - Reference lat `35.0°` for deg↔km conversion (`detect/kalman/state.py:51`)
+  - `WEB_MERCATOR_BOUNDS` `(-14471533.8, 2273030.9, -6679169.5, 7361866.1)` and `WEB_MERCATOR_SHAPE` `(3500, 7000)` (`EWMRS/pipeline.py:36-37`)
+  - Overlay manifest bounds in EPSG:3857 (`EWMRS/render/tools.py:187-192`)
+  - StormCast ellipse/cone chi² quantile maps (`uncertainty.py:44`, `core.py:227`)
 - GOES colormap `GOES_IR` threshold values in `colormaps.json` are data, not code.
 - `MRMSUpdateChecker(max_entries=10)`, `GOES_MAX_ENTRIES=96`, `max_entries=10` in multiple tasks are documented above.
+- NEXRAD wire-format/parsing constants are **not tunable config** and are excluded from the tables: record size `2432`, volume magics `b"AR2V"`/`b"ARCHIVE2"`, msg types `{2,3,5,13,15,18}`, `NEXRAD_FIELD_MAGIC`, msg-31 struct, raw block names, mask values, sweep label lookups, `MIN_SWEEP_ANGLE_DEG`, DUALPOL/DOPPLER block sets, and `UINT16_NODATA=65535`/`UINT16_VALID_MAX=65534` in the RAP uint16 encoding. Retained as config/calibration: `ALLOWED_VCPS`, `min sweep angle`, and `canonical elevation bins`.
 - All numeric values verified against current source at audit time.
 
 ---
