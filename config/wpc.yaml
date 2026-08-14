@@ -1,0 +1,20 @@
+# wpc.yaml — Audit §7 WPC
+#
+# Source: src/common/ingest/wpc/config.py; downloader.py; converter.py
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+wpc:
+  coded_sfc_base_url: https://ftp.wpc.ncep.noaa.gov/coded_sfc
+  update_interval_hours: 3
+  valid_hours: [0, 3, 6, 9, 12, 15, 18, 21]
+  http_timeout_seconds: 30
+  fallback_geojson_color: '#000000'
+  feature_types:                        # FEATURE_TYPES, absent from the audit
+    COLD:  {name: Cold Front,        color: '#0000FF'}
+    WARM:  {name: Warm Front,        color: '#FF0000'}
+    STNRY: {name: Stationary Front,  color: '#800080'}
+    OCFNT: {name: Occluded Front,    color: '#800080'}
+    TROF:  {name: Trough,            color: '#8B4513'}
+    HIGH:  {name: High Pressure,     color: '#0000FF'}
+    LOW:   {name: Low Pressure,      color: '#FF0000'}

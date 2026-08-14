@@ -1,0 +1,94 @@
+# api.yaml — Audit §9 Node APIs
+#
+# Source: src/api/config/index.js; middleware/; repositories/artifactRepository.js:14-76; services/validation.js:18-19; services/renders.js:5; routes/v3/; src/EdgeWARN/api/server.js; src/EWMRS/api/server.js:17-18,77-79,145
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+server:
+  host: 0.0.0.0
+  port: 5000
+  debug_port: 3001                      # --debug-server
+  request_timeout_ms: 30000             # responds 503 on timeout
+  json_body_limit: 16kb
+  cluster_max_workers: 4                # min(cpu_count, 4)
+  static_root: src/EWMRS
+  openapi_spec: openapi/v3.yaml
+  production_version_label: '2.x'
+
+base_dir:
+  windows: 'C:\EdgeWARN_input'
+  posix: ~/EdgeWARN_input
+  # conflicting --base-dir / --base_dir / EDGEWARN_BASE_DIR / BASE_DIR values are rejected
+  derived: {data: <base_dir>/data, gui: <base_dir>/gui, wpc: <base_dir>/wpc}
+
+security:
+  allowed_origins: []                   # deny-all in production
+  trust_proxy: false                    # TRUST_PROXY=true rejected in production
+  cors:
+    methods: [GET, HEAD, OPTIONS]
+    allowed_headers: [Content-Type, X-Request-Id]
+    max_age: 600
+    credentials: false
+  csp_default_src: "'self'"
+  hsts_max_age_seconds: 31536000        # includeSubDomains
+  compression_skip_media: image/*
+
+rate_limits:
+  per_second: {max: 40, window_ms: 1000}
+  per_minute: {max: 2000, window_ms: 60000}
+  standard_headers: true
+  legacy_headers: false
+  # max = 0 disables the limiter
+
+artifacts:
+  size_limits_bytes: {json: 8388608, binary: 134217728, image: 33554432}
+  json_cache: {max_entries: 256, max_size_bytes: 33554432}
+  list_limit: 1000
+
+pagination:
+  default_limit: 100
+  max_limit: 1000
+
+cache_control_max_age:
+  collection: 5
+  resource: 60
+  asset: 31536000                       # immutable
+
+query:
+  allowed_params: [cursor, limit]       # plus `source` on alert endpoints
+  max_value_length: 256
+  limit_pattern: '^(?:[1-9][0-9]{0,2}|1000)$'
+
+render_defaults:
+  grid: {rows: 10, cols: 20, tile_size: 350}
+
+validation:
+  timestamp_format: 'YYYYMMDD-HHMMSS'
+  alert_sources: [official, edgewarn]
+  radar_site_pattern: '^[A-Z0-9]{4}$'
+  radar_products_count: 7
+
+product_catalog:
+  file: src/api/config/product-catalog.json
+  entries: 31                           # {id, legacyId, storageDirectory, legacyFilePrefix, representation, colormapId}
+
+legacy_ewmrs:
+  port: 3003
+  debug_port: 3004
+  rate_limits: {per_second: 30, per_minute: 1800, window_ms: [1000, 60000]}
+  list_files_limit: 50                  # excludes .idx
+
+env_overrides:
+  server.port: PORT
+  server.request_timeout_ms: REQUEST_TIMEOUT_MS
+  rate_limits.per_second.max: RATE_LIMIT_MAX_SEC
+  rate_limits.per_minute.max: RATE_LIMIT_MAX_MIN
+  rate_limits.per_second.window_ms: RATE_LIMIT_WINDOW_MS_SEC
+  rate_limits.per_minute.window_ms: RATE_LIMIT_WINDOW_MS_MIN
+  legacy_ewmrs.rate_limits.per_second: EWMRS_RATE_LIMIT_MAX_SEC
+  legacy_ewmrs.rate_limits.per_minute: EWMRS_RATE_LIMIT_MAX_MIN
+  security.allowed_origins: ALLOWED_ORIGINS
+  security.trust_proxy: TRUST_PROXY_IPS, TRUST_PROXY
+  base_dir: EDGEWARN_BASE_DIR, BASE_DIR
+  # NODE_ENV drives isProduction; PROJ_DATA/PROJ_LIB/GDAL_DATA are set by
+  # EWMRS/render/tools.py for child processes and are not config keys.

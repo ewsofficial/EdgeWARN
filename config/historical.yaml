@@ -1,0 +1,12 @@
+# historical.yaml — Audit §1
+#
+# Source: src/process_historical.py:125-129
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+historical:
+  start: null                           # required, CLI --start
+  end: null                             # required, CLI --end
+  lat: [20, 55]
+  lon: [-130, -60]
+  output: stormcell_test.json

@@ -1,0 +1,58 @@
+# nexrad.yaml — Audit §1 NEXRAD CLIs, §7 NEXRAD
+#
+# Source: src/common/ingest/nexrad/config.py; s3_chunks.py:21; coordinator.py:25; service.py:164,237-238; worker_pool.py:194,210; writer.py:15-18; pipeline/__init__.py:387-391; main.py:174-178
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+buckets:
+  chunks: unidata-nexrad-level2-chunks
+  archive: unidata-nexrad-level2
+
+stations:
+  catalog_url: https://api.weather.gov/radar/stations
+  user_agent: '(EdgeWARN/2.7.0, ewsbackend@gmail.com)'
+  api_timeout_seconds: 15
+  api_cache_ttl_seconds: 30
+
+selection:
+  allowed_vcps: [12, 212, 215]
+  angle_dedup_tolerance_deg: 0.1
+  high_max_angle_deg: 4.0
+  min_sweep_angle_deg: 0.4
+  canonical_elevation_bins: [0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0]
+  min_required_volume_chunks: 25
+
+timeouts:
+  volume_discovery_seconds: 20.0
+  chunk_list_seconds: 20.0
+  ingest_seconds: 120.0
+  scan_seconds: 180.0
+  cancellation_grace_seconds: 2.0
+  heartbeat_stale_seconds: 240.0
+  heartbeat_startup_grace_seconds: 60.0
+
+concurrency:
+  max_site_tasks: 24
+  max_chunk_downloads: 64
+  worker_pool_size: 4
+  worker_recycle_interval: 24           # <= 0 disables recycling
+  worker_timeout_seconds: 40
+
+cli:
+  sites: []                             # --site, repeatable; empty = all
+  base_dir: null
+  scan_interval_seconds: 20
+  completion_interval_seconds: 10
+  max_candidate_volumes_per_site: 3
+  max_volumes_per_site: 1               # one-shot ingest only
+  volume_id: null                       # one-shot ingest only
+
+retention:
+  scan_dirs_to_keep: 3
+  elevation_dirs_to_keep: 2
+  stale_manifest_max_age_hours: 12
+
+env_overrides:
+  concurrency.worker_pool_size: NEXRAD_WORKER_POOL_SIZE
+  concurrency.worker_recycle_interval: NEXRAD_WORKER_RECYCLE_INTERVAL
+  concurrency.worker_timeout_seconds: NEXRAD_WORKER_TIMEOUT_SECONDS

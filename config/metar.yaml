@@ -1,0 +1,15 @@
+# metar.yaml — Audit §7 METAR
+#
+# Source: src/common/ingest/metar.py:19,306
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+metar:
+  station_db_url: https://aviationweather.gov/data/cache/stations.cache.json
+  station_cache_file: stations_cache.json
+  request_timeout_seconds: 60
+  conus_bounds:
+    lat_min: 24.0
+    lat_max: 50.0
+    lon_min: -125.0
+    lon_max: -66.0
