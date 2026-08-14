@@ -4,6 +4,8 @@
 # Values verified against the working tree at commit e12d407.
 # Not yet consumed by code; see plans/yaml-configurations.md.
 
+schema_version: 1
+
 buckets:
   chunks: unidata-nexrad-level2-chunks
   archive: unidata-nexrad-level2

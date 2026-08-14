@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "alerts.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "alerts", "schedule", "api_index", "runtime"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "alerts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_severity"],
+      "properties": {
+        "default_severity": { "type": "string" }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mrms_update_checker_max_entries"],
+      "properties": {
+        "mrms_update_checker_max_entries": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "api_index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["remove_old_cells", "resync_every_updates"],
+      "properties": {
+        "remove_old_cells": { "type": "boolean" },
+        "resync_every_updates": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initialize_indexes"],
+      "properties": {
+        "initialize_indexes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["realtime", "historical"],
+          "properties": {
+            "realtime": { "type": "boolean" },
+            "historical": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

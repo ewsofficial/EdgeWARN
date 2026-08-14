@@ -96,7 +96,7 @@ def test_kalman_yaml_sections_consumed_versus_inert():
     sections = set(_kalman_yaml())
     consumed = {"kalman_filter", "tracking", "assignment"}
     assert consumed <= sections
-    assert sections - consumed == {"confidence", "assignment_costs", "filter_internals"}
+    assert sections - consumed == {"confidence", "assignment_costs", "filter_internals", "schema_version"}
 
 
 # --- Lineage overlap: 0.15 is shadowed, not a parallel policy --------------
@@ -136,7 +136,7 @@ DETECTION_DEFAULT_FILES = {
     "EdgeWARN/process/detect/detect.py": 1,
     "EdgeWARN/process/detect/main.py": 2,
     "EdgeWARN/process/detect/tools/gatemapper.py": 1,
-    "util/io.py": 1,  # the argparse flag
+    "util/io.py": 0,  # Phase 1: the argparse flag now defaults to None and is filled from detection.yaml
 }
 
 
@@ -183,16 +183,18 @@ def _declaration_sites(param: str, expected: float) -> dict[str, int]:
     ("param", "expected"),
     [("refl_threshold", 37.5), ("min_seed_percentage", 0.001), ("drop_offset", 10.0)],
 )
-def test_detection_thresholds_are_declared_eight_times_each(param, expected):
+def test_detection_thresholds_are_declared_seven_times_each(param, expected):
     """DECISION OWED: reduce to exactly one base default, in YAML.
 
-    Seven keyword-argument declarations plus the argparse flag in `util/io.py`.
-    Because every caller re-declares the literal, a `detection.yaml` key could
-    never win: Phase 4 must drive this count to one.
+    Seven keyword-argument declarations remain. Phase 1 removed the eighth
+    (the argparse flag in `util/io.py`, which now defaults to `None` and is
+    filled from `detection.yaml` via the CLI/env/YAML overlay). Because every
+    remaining caller still re-declares the literal, a `detection.yaml` key
+    could never win for those: Phase 4 must drive this count to one.
     """
     sites = _declaration_sites(param, expected)
     assert sites == DETECTION_DEFAULT_FILES
-    assert sum(sites.values()) == 8
+    assert sum(sites.values()) == 7
 
 
 def test_gatemapper_hard_floor_makes_a_raised_threshold_ineffective():
@@ -235,11 +237,11 @@ def test_two_user_agent_strings_disagree_on_version_and_contact():
 # --- zone_sync pause_seconds: flag default fights constructor default ------
 
 def test_zone_sync_pause_seconds_flag_overrides_the_constructor_default():
-    """DECISION OWED: 0.0 or 0.05?
+    """RESOLVED (Phase 1): the flag now defaults to `None` and is filled from YAML.
 
-    `config/nws.yaml` recorded 0.0, which is one side of a live disagreement.
-    The CLI always passes its value through, so the constructor's 0.05 only
-    applies to direct programmatic callers.
+    `config/nws.yaml` records 0.0 as the effective default, resolved via the
+    CLI/env/YAML overlay in `_resolve_zone_sync_args`. The constructor's 0.05
+    only applies to direct programmatic callers that skip that resolution.
     """
     from tests.core.config.source_inspect import argparse_defaults
 
@@ -249,7 +251,7 @@ def test_zone_sync_pause_seconds_flag_overrides_the_constructor_default():
     flag = argparse_defaults("common/ingest/nws/zone_sync.py")["--pause-seconds"]["default"]
 
     assert constructor == 0.05
-    assert flag == 0.0
+    assert flag is None
 
     source = (REPO_ROOT / "src/common/ingest/nws/zone_sync.py").read_text(encoding="utf-8")
     assert "pause_seconds=args.pause_seconds" in source

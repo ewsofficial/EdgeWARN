@@ -4,6 +4,8 @@
 # Values verified against the working tree at commit e12d407.
 # Not yet consumed by code; see plans/yaml-configurations.md.
 
+schema_version: 1
+
 rap:
   bucket: noaa-rap-pds
   file_pattern: 'rap.t{hour:02d}z.awp130pgrbf00.grib2'

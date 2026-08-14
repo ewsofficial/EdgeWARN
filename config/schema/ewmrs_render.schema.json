@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ewmrs_render.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tiles", "chunk_format", "workers", "colormap_cache_entries", "timestamp_format", "mrms_layers", "goes_layers", "goes_transform", "nexrad_gui"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "tiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tile_size", "grid_rows", "grid_cols"],
+      "properties": {
+        "tile_size": { "type": "integer", "exclusiveMinimum": 0 },
+        "grid_rows": { "type": "integer", "exclusiveMinimum": 0 },
+        "grid_cols": { "type": "integer", "exclusiveMinimum": 0 }
+      }
+    },
+    "chunk_format": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wire_version", "format_version", "encoding", "data_type", "channels", "value_kind", "no_data", "file_suffix", "compression", "media_type", "bytes_per_component", "pixel_row_order", "grid_origin", "filename_pattern"],
+      "properties": {
+        "wire_version": { "type": "integer" },
+        "format_version": { "type": "integer" },
+        "encoding": { "type": "string" },
+        "data_type": { "type": "string" },
+        "channels": { "type": "integer", "minimum": 1 },
+        "value_kind": { "type": "string" },
+        "no_data": { "type": "string" },
+        "file_suffix": { "type": "string" },
+        "compression": { "type": "string" },
+        "media_type": { "type": "string" },
+        "bytes_per_component": { "type": "integer", "minimum": 1 },
+        "pixel_row_order": { "type": "string" },
+        "grid_origin": { "type": "string" },
+        "filename_pattern": { "type": "string" }
+      }
+    },
+    "workers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_tile_threads"],
+      "properties": {
+        "max_tile_threads": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "colormap_cache_entries": { "type": "integer", "minimum": 0 },
+    "timestamp_format": { "type": "string" },
+    "mrms_layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "colormap_key"],
+        "properties": {
+          "name": { "type": "string" },
+          "colormap_key": { "type": "string" }
+        }
+      }
+    },
+    "goes_layers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["common", "reflectance", "brightness_temp"],
+      "properties": {
+        "common": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_type", "variable_name", "fallback_variable_names"],
+          "properties": {
+            "source_type": { "type": "string" },
+            "variable_name": { "type": "string" },
+            "fallback_variable_names": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "reflectance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["colormap_key", "mask_min", "mask_max", "channels"],
+          "properties": {
+            "colormap_key": { "type": "string" },
+            "mask_min": { "type": "number" },
+            "mask_max": { "type": "number" },
+            "channels": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "brightness_temp": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["channel", "colormap_key", "mask_min", "mask_max"],
+            "properties": {
+              "channel": { "type": "string" },
+              "colormap_key": { "type": "string" },
+              "mask_min": { "type": "number" },
+              "mask_max": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "goes_transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resampling", "crs_strategy", "radian_detection"],
+      "properties": {
+        "resampling": { "type": "string" },
+        "crs_strategy": { "type": "string" },
+        "radian_detection": { "type": "string" }
+      }
+    },
+    "nexrad_gui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variable_colormaps", "manifest_name_pattern"],
+      "properties": {
+        "variable_colormaps": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "manifest_name_pattern": { "type": "string" }
+      }
+    },
+    "env_overrides": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

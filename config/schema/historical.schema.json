@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "historical.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "historical"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "historical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "lat", "lon", "output"],
+      "properties": {
+        "start": { "type": ["string", "null"] },
+        "end": { "type": ["string", "null"] },
+        "lat": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "lon": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "output": { "type": "string" }
+      }
+    }
+  }
+}

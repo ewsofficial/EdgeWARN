@@ -59,12 +59,16 @@ export function createConfig({ env = process.env, argv = process.argv.slice(2), 
   const explicit = [canonicalCli, canonicalEnv, deprecatedCli, deprecatedEnv].filter(Boolean);
   if (new Set(explicit.map((value) => path.resolve(value))).size > 1) throw new Error('Conflicting base directory settings');
   const baseDir = path.resolve(explicit[0] || DEFAULT_BASE_DIR);
+  const configDirCli = oneValue(readFlag(argv, ['--config-dir']), '--config-dir');
+  const configDirEnv = env.EDGEWARN_CONFIG_DIR;
+  const configDir = configDirCli || configDirEnv ? path.resolve(configDirCli || configDirEnv) : undefined;
   const port = parseInteger(env.PORT, 5000, 'PORT', { minimum: 1 });
   const requestTimeoutMs = parseInteger(env.REQUEST_TIMEOUT_MS, 30_000, 'REQUEST_TIMEOUT_MS', { minimum: 1 });
   const rateLimitMaxSec = parseInteger(env.RATE_LIMIT_MAX_SEC, 40, 'RATE_LIMIT_MAX_SEC');
   const rateLimitMaxMin = parseInteger(env.RATE_LIMIT_MAX_MIN, 2000, 'RATE_LIMIT_MAX_MIN');
   return Object.freeze({
     baseDir, dataDir: path.join(baseDir, 'data'), guiDir: path.join(baseDir, 'gui'), wpcDir: path.join(baseDir, 'wpc'),
+    configDir,
     port, packageVersion, isProduction: env.NODE_ENV === 'production', requestTimeoutMs,
     allowedOrigins: parseOrigins(env.ALLOWED_ORIGINS), trustProxy: parseTrustProxy(env.TRUST_PROXY_IPS || env.TRUST_PROXY, env),
     rateLimits: Object.freeze({ perSecond: rateLimitMaxSec, perMinute: rateLimitMaxMin })

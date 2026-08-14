@@ -4,13 +4,15 @@
 # Values verified against the working tree at commit e12d407.
 # Not yet consumed by code; see plans/yaml-configurations.md.
 
+schema_version: 1
+
 tiles:
   tile_size: 350                        # px; grid derived as shape // tile_size
   grid_rows: 10
   grid_cols: 20
 
 chunk_format:                           # wire-format invariant, NOT operator-tunable
-  schema_version: 2
+  wire_version: 2
   format_version: 2
   encoding: float16
   data_type: float16

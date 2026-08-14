@@ -1,10 +1,10 @@
 {
-  "shadows_yaml": [
-    "--max-candidate-volumes-per-site",
-    "--max-volumes-per-site"
-  ],
+  "shadows_yaml": [],
   "can_be_unset": [
     "--base-dir",
+    "--config-dir",
+    "--max-candidate-volumes-per-site",
+    "--max-volumes-per-site",
     "--site",
     "--volume-id"
   ]

@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "api.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "server", "base_dir", "security", "rate_limits", "artifacts", "pagination", "cache_control_max_age", "query", "render_defaults", "validation", "product_catalog", "legacy_ewmrs"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "port", "debug_port", "request_timeout_ms", "json_body_limit", "cluster_max_workers", "static_root", "openapi_spec", "production_version_label"],
+      "properties": {
+        "host": { "type": "string" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "debug_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "request_timeout_ms": { "type": "integer", "exclusiveMinimum": 0 },
+        "json_body_limit": { "type": "string" },
+        "cluster_max_workers": { "type": "integer", "minimum": 1 },
+        "static_root": { "type": "string" },
+        "openapi_spec": { "type": "string" },
+        "production_version_label": { "type": "string" }
+      }
+    },
+    "base_dir": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windows", "posix", "derived"],
+      "properties": {
+        "windows": { "type": "string" },
+        "posix": { "type": "string" },
+        "derived": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["data", "gui", "wpc"],
+          "properties": {
+            "data": { "type": "string" },
+            "gui": { "type": "string" },
+            "wpc": { "type": "string" }
+          }
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_origins", "trust_proxy", "cors", "csp_default_src", "hsts_max_age_seconds", "compression_skip_media"],
+      "properties": {
+        "allowed_origins": { "type": "array", "items": { "type": "string" } },
+        "trust_proxy": { "type": "boolean" },
+        "cors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["methods", "allowed_headers", "max_age", "credentials"],
+          "properties": {
+            "methods": { "type": "array", "items": { "type": "string" } },
+            "allowed_headers": { "type": "array", "items": { "type": "string" } },
+            "max_age": { "type": "integer", "minimum": 0 },
+            "credentials": { "type": "boolean" }
+          }
+        },
+        "csp_default_src": { "type": "string" },
+        "hsts_max_age_seconds": { "type": "integer", "minimum": 0 },
+        "compression_skip_media": { "type": "string" }
+      }
+    },
+    "rate_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["per_second", "per_minute", "standard_headers", "legacy_headers"],
+      "properties": {
+        "per_second": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max", "window_ms"],
+          "properties": {
+            "max": { "type": "integer", "minimum": 0 },
+            "window_ms": { "type": "integer", "exclusiveMinimum": 0 }
+          }
+        },
+        "per_minute": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max", "window_ms"],
+          "properties": {
+            "max": { "type": "integer", "minimum": 0 },
+            "window_ms": { "type": "integer", "exclusiveMinimum": 0 }
+          }
+        },
+        "standard_headers": { "type": "boolean" },
+        "legacy_headers": { "type": "boolean" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size_limits_bytes", "json_cache", "list_limit"],
+      "properties": {
+        "size_limits_bytes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["json", "binary", "image"],
+          "properties": {
+            "json": { "type": "integer", "exclusiveMinimum": 0 },
+            "binary": { "type": "integer", "exclusiveMinimum": 0 },
+            "image": { "type": "integer", "exclusiveMinimum": 0 }
+          }
+        },
+        "json_cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_entries", "max_size_bytes"],
+          "properties": {
+            "max_entries": { "type": "integer", "minimum": 0 },
+            "max_size_bytes": { "type": "integer", "exclusiveMinimum": 0 }
+          }
+        },
+        "list_limit": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "pagination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_limit", "max_limit"],
+      "properties": {
+        "default_limit": { "type": "integer", "minimum": 1 },
+        "max_limit": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "cache_control_max_age": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collection", "resource", "asset"],
+      "properties": {
+        "collection": { "type": "integer", "minimum": 0 },
+        "resource": { "type": "integer", "minimum": 0 },
+        "asset": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_params", "max_value_length", "limit_pattern"],
+      "properties": {
+        "allowed_params": { "type": "array", "items": { "type": "string" } },
+        "max_value_length": { "type": "integer", "minimum": 1 },
+        "limit_pattern": { "type": "string" }
+      }
+    },
+    "render_defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grid"],
+      "properties": {
+        "grid": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rows", "cols", "tile_size"],
+          "properties": {
+            "rows": { "type": "integer", "exclusiveMinimum": 0 },
+            "cols": { "type": "integer", "exclusiveMinimum": 0 },
+            "tile_size": { "type": "integer", "exclusiveMinimum": 0 }
+          }
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timestamp_format", "alert_sources", "radar_site_pattern", "radar_products_count"],
+      "properties": {
+        "timestamp_format": { "type": "string" },
+        "alert_sources": { "type": "array", "items": { "type": "string" } },
+        "radar_site_pattern": { "type": "string" },
+        "radar_products_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "product_catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "entries"],
+      "properties": {
+        "file": { "type": "string" },
+        "entries": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "legacy_ewmrs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port", "debug_port", "rate_limits", "list_files_limit"],
+      "properties": {
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "debug_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "rate_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["per_second", "per_minute", "window_ms"],
+          "properties": {
+            "per_second": { "type": "integer", "minimum": 0 },
+            "per_minute": { "type": "integer", "minimum": 0 },
+            "window_ms": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 }
+          }
+        },
+        "list_files_limit": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "env_overrides": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

@@ -4,6 +4,8 @@
 # Values verified against the working tree at commit e12d407.
 # Not yet consumed by code; see plans/yaml-configurations.md.
 
+schema_version: 1
+
 wpc:
   coded_sfc_base_url: https://ftp.wpc.ncep.noaa.gov/coded_sfc
   update_interval_hours: 3

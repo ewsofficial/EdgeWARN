@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "nws.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "nws", "zone_sync"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "nws": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry_ttl_hours", "dropped_events"],
+      "properties": {
+        "registry_ttl_hours": { "type": "number", "exclusiveMinimum": 0 },
+        "dropped_events": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "zone_sync": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assets_dir", "zone_types", "timeout_seconds", "max_retries", "max_workers", "pause_seconds", "progress", "apply", "report_path"],
+      "properties": {
+        "assets_dir": { "type": "string" },
+        "zone_types": { "type": "array", "items": { "type": "string" } },
+        "timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "max_retries": { "type": "integer", "minimum": 0 },
+        "max_workers": { "type": "integer", "minimum": 1 },
+        "pause_seconds": { "type": "number", "minimum": 0 },
+        "progress": { "type": "boolean" },
+        "apply": { "type": "boolean" },
+        "report_path": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

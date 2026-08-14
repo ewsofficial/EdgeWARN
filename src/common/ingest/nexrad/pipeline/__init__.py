@@ -20,6 +20,8 @@ from common.ingest.nexrad.pipeline.models import PendingVolume
 from common.ingest.nexrad.pipeline.pending import NexradPendingVolumeTracker
 from common.ingest.nexrad.pipeline.station_filter import NexradStationFilter
 from common.ingest.nexrad.pipeline.volume_discovery import NexradVolumeDiscovery
+from common.config import loader as config_loader
+from common.config import overlay
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD-PIPE]")
@@ -391,14 +393,23 @@ def _build_parser():
     parser = argparse.ArgumentParser(description="Run the NEXRAD real-time ingestion pipeline")
     parser.add_argument("--site", action="append")
     parser.add_argument("--base-dir")
-    parser.add_argument("--scan-interval-seconds", type=float, default=20)
-    parser.add_argument("--completion-interval-seconds", type=float, default=10)
-    parser.add_argument("--max-candidate-volumes-per-site", type=int, default=3)
+    parser.add_argument("--scan-interval-seconds", type=float, default=None, help="default: from nexrad.yaml")
+    parser.add_argument("--completion-interval-seconds", type=float, default=None, help="default: from nexrad.yaml")
+    parser.add_argument("--max-candidate-volumes-per-site", type=int, default=None, help="default: from nexrad.yaml")
+    parser.add_argument("--config-dir", type=str, default=None, help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)")
     return parser
 
 
+def _resolve_cli_args(args):
+    cli_cfg = config_loader.load_config("nexrad", config_dir=args.config_dir)["cli"]
+    args.scan_interval_seconds = overlay.resolve(args.scan_interval_seconds, yaml_value=cli_cfg["scan_interval_seconds"])
+    args.completion_interval_seconds = overlay.resolve(args.completion_interval_seconds, yaml_value=cli_cfg["completion_interval_seconds"])
+    args.max_candidate_volumes_per_site = overlay.resolve(args.max_candidate_volumes_per_site, yaml_value=cli_cfg["max_candidate_volumes_per_site"])
+    return args
+
+
 def main():
-    args = _build_parser().parse_args()
+    args = _resolve_cli_args(_build_parser().parse_args())
     run_realtime_ingestion_pipeline(
         sites=args.site,
         base_dir=args.base_dir,

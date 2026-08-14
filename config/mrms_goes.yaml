@@ -4,6 +4,8 @@
 # Values verified against the working tree at commit e12d407.
 # Not yet consumed by code; see plans/yaml-configurations.md.
 
+schema_version: 1
+
 mrms:
   bucket: noaa-mrms-pds
   ncep_https_fallback_url: https://mrms.ncep.noaa.gov/data/2D

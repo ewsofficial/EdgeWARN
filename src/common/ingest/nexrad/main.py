@@ -24,6 +24,8 @@ from common.ingest.nexrad.s3_chunks import (
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from common.ingest.nexrad.writer import chunk_output_dir, local_volume_file_complete, prune_station_scan_dirs
+from common.config import loader as config_loader
+from common.config import overlay
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]")
@@ -174,14 +176,22 @@ def _build_parser():
     parser.add_argument("--site")
     parser.add_argument("--volume-id")
     parser.add_argument("--base-dir")
-    parser.add_argument("--max-volumes-per-site", type=int, default=1)
-    parser.add_argument("--max-candidate-volumes-per-site", type=int, default=3)
+    parser.add_argument("--max-volumes-per-site", type=int, default=None, help="default: from nexrad.yaml")
+    parser.add_argument("--max-candidate-volumes-per-site", type=int, default=None, help="default: from nexrad.yaml")
+    parser.add_argument("--config-dir", type=str, default=None, help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)")
     return parser
+
+
+def _resolve_cli_args(args):
+    cli_cfg = config_loader.load_config("nexrad", config_dir=args.config_dir)["cli"]
+    args.max_volumes_per_site = overlay.resolve(args.max_volumes_per_site, yaml_value=cli_cfg["max_volumes_per_site"])
+    args.max_candidate_volumes_per_site = overlay.resolve(args.max_candidate_volumes_per_site, yaml_value=cli_cfg["max_candidate_volumes_per_site"])
+    return args
 
 
 def main():
     service = _new_service()
-    args = _build_parser().parse_args()
+    args = _resolve_cli_args(_build_parser().parse_args())
     if args.volume_id and not args.site:
         raise SystemExit("--site is required when --volume-id is provided")
 

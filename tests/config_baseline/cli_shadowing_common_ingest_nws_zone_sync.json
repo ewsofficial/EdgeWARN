@@ -1,15 +1,15 @@
 {
-  "shadows_yaml": [
+  "shadows_yaml": [],
+  "can_be_unset": [
+    "--apply",
     "--assets-dir",
+    "--config-dir",
     "--max-retries",
     "--max-workers",
     "--pause-seconds",
+    "--progress",
+    "--report-path",
     "--timeout-seconds",
     "--zone-types"
-  ],
-  "can_be_unset": [
-    "--apply",
-    "--no-progress",
-    "--report-path"
   ]
 }

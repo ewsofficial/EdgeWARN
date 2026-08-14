@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "metar.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "metar"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "metar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["station_db_url", "station_cache_file", "request_timeout_seconds", "conus_bounds"],
+      "properties": {
+        "station_db_url": { "type": "string" },
+        "station_cache_file": { "type": "string" },
+        "request_timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "conus_bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["lat_min", "lat_max", "lon_min", "lon_max"],
+          "properties": {
+            "lat_min": { "type": "number" },
+            "lat_max": { "type": "number" },
+            "lon_min": { "type": "number" },
+            "lon_max": { "type": "number" }
+          }
+        }
+      }
+    }
+  }
+}

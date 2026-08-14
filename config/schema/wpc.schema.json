@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "wpc.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "wpc"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "wpc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coded_sfc_base_url", "update_interval_hours", "valid_hours", "http_timeout_seconds", "fallback_geojson_color", "feature_types"],
+      "properties": {
+        "coded_sfc_base_url": { "type": "string" },
+        "update_interval_hours": { "type": "number", "exclusiveMinimum": 0 },
+        "valid_hours": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 23 } },
+        "http_timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "fallback_geojson_color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "feature_types": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "color"],
+            "properties": {
+              "name": { "type": "string" },
+              "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
