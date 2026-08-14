@@ -1,0 +1,27 @@
+{
+  "shadows_yaml": [
+    "--drop-offset",
+    "--lat",
+    "--lat_limits",
+    "--lon",
+    "--lon_limits",
+    "--min-seed-percentage",
+    "--output",
+    "--refl-threshold"
+  ],
+  "can_be_unset": [
+    "--base_dir",
+    "--disable-ctam",
+    "--disable-ewmrs",
+    "--disable-goes",
+    "--disable-metar",
+    "--disable-nexrad",
+    "--disable-nws",
+    "--disable-polygon-expansion",
+    "--disable-tracking",
+    "--end",
+    "--mrms-core-only",
+    "--profile",
+    "--start"
+  ]
+}

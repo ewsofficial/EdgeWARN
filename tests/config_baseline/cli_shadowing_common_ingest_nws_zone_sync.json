@@ -1,0 +1,15 @@
+{
+  "shadows_yaml": [
+    "--assets-dir",
+    "--max-retries",
+    "--max-workers",
+    "--pause-seconds",
+    "--timeout-seconds",
+    "--zone-types"
+  ],
+  "can_be_unset": [
+    "--apply",
+    "--no-progress",
+    "--report-path"
+  ]
+}

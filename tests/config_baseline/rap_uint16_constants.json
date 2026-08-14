@@ -1,0 +1,22 @@
+{
+  "uint16_nodata": 65535,
+  "uint16_valid_max": 65534,
+  "wind_pressure_levels_mb": {
+    "@tuple": [
+      925,
+      850,
+      700,
+      500,
+      250
+    ]
+  },
+  "thermo_pressure_levels_mb": {
+    "@tuple": [
+      925,
+      850,
+      700,
+      500,
+      250
+    ]
+  }
+}
