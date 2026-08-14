@@ -38,8 +38,10 @@ env/CLI, validation) is out of scope here.
   `file:line` for each block.
 - Each file carries an informational `env_overrides` mapping of key path to
   environment variable name.
-- Precedence at execution time: **env > CLI > YAML > code fallback**, matching
-  the existing `kalman/config.py` pattern.
+- Precedence at execution time: **CLI > env > YAML**, with no code fallback.
+  YAML is the base layer, and a missing key is a startup error. See
+  `plans/source-configuration-extraction-plan.md` for the rationale and for the
+  argparse `None`-sentinel work this requires.
 - `null` means "no default; resolved at runtime" (required arg or derived path).
 - Paths are repo-relative unless prefixed `<base_dir>`.
 - Catalog entries keep the field names already used in code so the loader can
@@ -240,7 +242,7 @@ format stay in code — they are protocol behavior, not tunables.
 3. **Ingestion CLIs bundled with their constants.** NEXRAD and NWS argparse
    defaults live in the same file as their module constants.
 4. **Env vars remain overrides.** Every file carries an `env_overrides` block.
-   Precedence: env > CLI > YAML > code fallback.
+   Precedence: CLI > env > YAML, no code fallback.
 5. **`config/kalman.yaml` is extended, not replaced.** All three `from_yaml`
    loaders read named sections with `.get()`, so the new `filter_internals`,
    `confidence` and `assignment_costs` sections are inert until a loader consumes
@@ -289,8 +291,9 @@ Stale file paths in the audit: `cycle.py` → `src/util/runtime/cycle.py`;
 1. ~~Create the 18 files above~~ — done; see `config/`. `config/kalman.yaml` was
    extended in place rather than rewritten.
 2. Add `src/common/config/loader.py` (dataclass-backed, `pythonpath = src`
-   compatible) with a `from_yaml` pattern like `kalman/config.py`, key-level
-   defaults, and env/CLI precedence. Add a matching Node loader for `api.yaml`.
+   compatible) with a `from_yaml` pattern like `kalman/config.py` — but with no
+   inline literal fallbacks, since YAML is the base layer — and CLI > env > YAML
+   precedence. Add a matching Node loader for `api.yaml`.
 3. Wire the highest-impact consumers first: `run.py` / `process_historical.py`,
    detection, ingest coordinators, EWMRS pipeline.
 4. Add pytest coverage asserting each YAML value matches the constant it
