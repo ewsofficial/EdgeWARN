@@ -4,6 +4,10 @@
       "default": null,
       "action": null
     },
+    "--config-dir": {
+      "default": null,
+      "action": null
+    },
     "--profile": {
       "default": false,
       "action": "store_true"
@@ -21,29 +25,23 @@
       "action": "store_true"
     },
     "--refl-threshold": {
-      "default": 37.5,
+      "default": null,
       "action": null
     },
     "--min-seed-percentage": {
-      "default": 0.001,
+      "default": null,
       "action": null
     },
     "--drop-offset": {
-      "default": 10.0,
+      "default": null,
       "action": null
     },
     "--lat_limits": {
-      "default": [
-        20,
-        55
-      ],
+      "default": null,
       "action": null
     },
     "--lon_limits": {
-      "default": [
-        230,
-        300
-      ],
+      "default": null,
       "action": null
     },
     "--disable-ewmrs": {
@@ -79,21 +77,15 @@
       "action": null
     },
     "--lat": {
-      "default": [
-        20,
-        55
-      ],
+      "default": null,
       "action": null
     },
     "--lon": {
-      "default": [
-        -130,
-        -60
-      ],
+      "default": null,
       "action": null
     },
     "--output": {
-      "default": "stormcell_test.json",
+      "default": null,
       "action": null
     }
   },
@@ -111,11 +103,15 @@
       "action": null
     },
     "--max-volumes-per-site": {
-      "default": 1,
+      "default": null,
       "action": null
     },
     "--max-candidate-volumes-per-site": {
-      "default": 3,
+      "default": null,
+      "action": null
+    },
+    "--config-dir": {
+      "default": null,
       "action": null
     }
   },
@@ -129,56 +125,62 @@
       "action": null
     },
     "--scan-interval-seconds": {
-      "default": 20,
+      "default": null,
       "action": null
     },
     "--completion-interval-seconds": {
-      "default": 10,
+      "default": null,
       "action": null
     },
     "--max-candidate-volumes-per-site": {
-      "default": 3,
+      "default": null,
+      "action": null
+    },
+    "--config-dir": {
+      "default": null,
       "action": null
     }
   },
   "common/ingest/nws/zone_sync.py": {
     "--assets-dir": {
-      "default": {
-        "@repr": "<not a literal>"
-      },
+      "default": null,
       "action": null
     },
     "--zone-types": {
-      "default": {
-        "@repr": "<not a literal>"
-      },
+      "default": null,
       "action": null
     },
     "--timeout-seconds": {
-      "default": 30,
+      "default": null,
       "action": null
     },
     "--max-retries": {
-      "default": 3,
+      "default": null,
       "action": null
     },
     "--max-workers": {
-      "default": 16,
+      "default": null,
       "action": null
     },
     "--pause-seconds": {
-      "default": 0.0,
+      "default": null,
       "action": null
     },
-    "--no-progress": {
-      "default": false,
-      "action": "store_true"
+    "--progress": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--apply": {
       "default": false,
       "action": "store_true"
     },
     "--report-path": {
+      "default": null,
+      "action": null
+    },
+    "--config-dir": {
       "default": null,
       "action": null
     }

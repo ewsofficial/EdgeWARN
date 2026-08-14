@@ -4,6 +4,8 @@
 # Values verified against the working tree at commit e12d407.
 # Not yet consumed by code; see plans/yaml-configurations.md.
 
+schema_version: 1
+
 nws:
   registry_ttl_hours: 2
   dropped_events:                       # 19 unique entries

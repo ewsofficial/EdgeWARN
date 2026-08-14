@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "detection.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "detection", "gatemapper", "morphology", "hail"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["refl_threshold", "min_seed_percentage", "drop_offset", "stormcell_cleanup_max_age_minutes", "fallback_dt_seconds", "single_frame_defaults"],
+      "properties": {
+        "refl_threshold": { "type": "number" },
+        "min_seed_percentage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "drop_offset": { "type": "number", "minimum": 0 },
+        "stormcell_cleanup_max_age_minutes": { "type": "integer", "minimum": 0 },
+        "fallback_dt_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "single_frame_defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tracking_mode", "prediction_count", "event_type"],
+          "properties": {
+            "tracking_mode": { "type": "string" },
+            "prediction_count": { "type": "integer", "minimum": 0 },
+            "event_type": { "type": "string" }
+          }
+        }
+      }
+    },
+    "gatemapper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_refl_floor", "crop_pad_bottom_px", "crop_pad_right_px", "dynamic_min_threshold", "max_refl_clamp", "reject_clusters_at_or_below_gates", "contour_downsample", "contour_downsample_adaptive", "coordinate_decimals"],
+      "properties": {
+        "baseline_refl_floor": { "type": "number" },
+        "crop_pad_bottom_px": { "type": "integer", "minimum": 0 },
+        "crop_pad_right_px": { "type": "integer", "minimum": 0 },
+        "dynamic_min_threshold": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["switch_max_refl", "low", "high"],
+          "properties": {
+            "switch_max_refl": { "type": "number" },
+            "low": { "type": "number" },
+            "high": { "type": "number" }
+          }
+        },
+        "max_refl_clamp": { "type": "number" },
+        "reject_clusters_at_or_below_gates": { "type": "integer", "minimum": 0 },
+        "contour_downsample": { "type": "integer", "minimum": 1 },
+        "contour_downsample_adaptive": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+        "coordinate_decimals": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "morphology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_pixels_full_analysis", "contour_level"],
+      "properties": {
+        "min_pixels_full_analysis": { "type": "integer", "minimum": 0 },
+        "contour_level": { "type": "number" }
+      }
+    },
+    "hail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contour_sampling_step", "preciptype_class"],
+      "properties": {
+        "contour_sampling_step": { "type": "integer", "minimum": 1 },
+        "preciptype_class": { "type": "integer" }
+      }
+    },
+    "env_overrides": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

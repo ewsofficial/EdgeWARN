@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mrms_goes.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mrms", "goes"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "mrms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket", "ncep_https_fallback_url", "decompress_chunk_size_bytes", "download_max_entries", "remove_old_files", "staged_filename_pattern", "path_patterns", "products", "check_products"],
+      "properties": {
+        "bucket": { "type": "string" },
+        "ncep_https_fallback_url": { "type": "string" },
+        "decompress_chunk_size_bytes": { "type": "integer", "exclusiveMinimum": 0 },
+        "download_max_entries": { "type": "integer", "minimum": 0 },
+        "remove_old_files": { "type": "boolean" },
+        "staged_filename_pattern": { "type": "string" },
+        "path_patterns": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["raw", "decoded"],
+          "properties": {
+            "raw": { "type": "string" },
+            "decoded": { "type": "string" }
+          }
+        },
+        "products": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["region", "product", "outdir"],
+            "properties": {
+              "region": { "type": "string" },
+              "product": { "type": ["string", "null"] },
+              "outdir": { "type": "string" }
+            }
+          }
+        },
+        "check_products": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "goes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket", "abi_product", "glm_product", "max_files_per_spec", "max_entries", "filename_matcher_template", "abi_channels"],
+      "properties": {
+        "bucket": { "type": "string" },
+        "abi_product": { "type": "string" },
+        "glm_product": { "type": "string" },
+        "max_files_per_spec": { "type": "integer", "minimum": 0 },
+        "max_entries": { "type": "integer", "minimum": 0 },
+        "filename_matcher_template": { "type": "string" },
+        "abi_channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

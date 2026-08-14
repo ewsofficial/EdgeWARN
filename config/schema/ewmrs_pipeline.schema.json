@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ewmrs_pipeline.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "extents", "render", "nexrad_gui", "workers"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "extents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goes_web_mercator_bounds"],
+      "properties": {
+        "goes_web_mercator_bounds": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }
+      }
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_entries", "cleanup_after", "phase_name", "goes_cleanup_max_age_minutes", "goes_cleanup_min_interval_seconds", "gui_cleanup_max_age_minutes"],
+      "properties": {
+        "max_entries": { "type": "integer", "minimum": 0 },
+        "cleanup_after": { "type": "boolean" },
+        "phase_name": { "type": "string" },
+        "goes_cleanup_max_age_minutes": { "type": "integer", "minimum": 0 },
+        "goes_cleanup_min_interval_seconds": { "type": "number", "minimum": 0 },
+        "gui_cleanup_max_age_minutes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "nexrad_gui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retention_minutes", "poll_interval_seconds", "max_workers"],
+      "properties": {
+        "retention_minutes": { "type": "integer", "minimum": 0 },
+        "poll_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "max_workers": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "workers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["budget_mb", "reserve_mb", "numeric_thread_caps"],
+      "properties": {
+        "budget_mb": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["goes", "default"],
+          "properties": {
+            "goes": { "type": "number", "exclusiveMinimum": 0 },
+            "default": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "reserve_mb": { "type": "number", "minimum": 0 },
+        "numeric_thread_caps": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        }
+      }
+    },
+    "env_overrides": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

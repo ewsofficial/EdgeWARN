@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "filesystem.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "base_dir", "cleanup_defaults", "scan", "colormaps"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "base_dir": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windows", "posix", "container_fallback"],
+      "properties": {
+        "windows": { "type": "string" },
+        "posix": { "type": "string" },
+        "container_fallback": { "type": "string" }
+      }
+    },
+    "cleanup_defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_age_minutes", "max_files"],
+      "properties": {
+        "max_age_minutes": { "type": "integer", "minimum": 0 },
+        "max_files": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skip_extensions"],
+      "properties": {
+        "skip_extensions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "colormaps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["search_path", "fallback"],
+      "properties": {
+        "search_path": { "type": "array", "items": { "type": "string" } },
+        "fallback": { "type": "string" }
+      }
+    },
+    "env_overrides": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

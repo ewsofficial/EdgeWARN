@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run", "goes_coordination", "supervisor", "cycle", "profiling"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_dir", "profile", "lat_limits", "lon_limits", "mrms_core_only", "disable"],
+      "properties": {
+        "base_dir": { "type": ["string", "null"] },
+        "profile": { "type": "boolean" },
+        "lat_limits": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "lon_limits": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "mrms_core_only": { "type": "boolean" },
+        "disable": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ctam", "tracking", "polygon_expansion", "ewmrs", "nws", "metar", "goes", "nexrad"],
+          "properties": {
+            "ctam": { "type": "boolean" },
+            "tracking": { "type": "boolean" },
+            "polygon_expansion": { "type": "boolean" },
+            "ewmrs": { "type": "boolean" },
+            "nws": { "type": "boolean" },
+            "metar": { "type": "boolean" },
+            "goes": { "type": "boolean" },
+            "nexrad": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "goes_coordination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["poll_seconds", "render_wait_seconds", "render_wait_interval_seconds", "render_max_offset_minutes", "pause_ingest_during_render"],
+      "properties": {
+        "poll_seconds": { "type": "number", "minimum": 0 },
+        "render_wait_seconds": { "type": "number", "minimum": 0 },
+        "render_wait_interval_seconds": { "type": "number", "minimum": 0 },
+        "render_max_offset_minutes": { "type": "number", "minimum": 0 },
+        "pause_ingest_during_render": { "type": "boolean" }
+      }
+    },
+    "supervisor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_ticks", "tick_seconds"],
+      "properties": {
+        "check_ticks": { "type": "integer", "minimum": 1 },
+        "tick_seconds": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "cycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state_file", "retry"],
+      "properties": {
+        "state_file": { "type": "string" },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_attempts", "initial_backoff_seconds", "max_backoff_seconds"],
+          "properties": {
+            "max_attempts": { "type": "integer", "minimum": 1 },
+            "initial_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 },
+            "max_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      }
+    },
+    "profiling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["perf_tracker"],
+      "properties": {
+        "perf_tracker": { "type": "boolean" }
+      }
+    },
+    "env_overrides": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

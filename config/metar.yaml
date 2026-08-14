@@ -4,6 +4,8 @@
 # Values verified against the working tree at commit e12d407.
 # Not yet consumed by code; see plans/yaml-configurations.md.
 
+schema_version: 1
+
 metar:
   station_db_url: https://aviationweather.gov/data/cache/stations.cache.json
   station_cache_file: stations_cache.json

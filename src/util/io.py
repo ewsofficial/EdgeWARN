@@ -3,6 +3,9 @@ import argparse
 import sys
 import time
 
+from common.config import loader as config_loader
+from common.config import overlay
+
 
 class TimestampedOutput:
     def __init__(self, stream):
@@ -81,18 +84,26 @@ class IOManager:
     @staticmethod
     def _add_common_processing_args(parser):
         parser.add_argument("--base_dir", "--base-dir", dest="base_dir", type=str, default=None, help="Custom base directory for input/output data")
+        parser.add_argument("--config-dir", type=str, default=None, help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)")
         parser.add_argument("--profile", action="store_true", help="Enable performance profiling")
         parser.add_argument("--disable-ctam", action="store_true", help="Skip CTAM module execution during integration")
         parser.add_argument("--disable-tracking", action="store_true", help="Skip lineage detection and Kalman tracking in storm cell detection")
         parser.add_argument("--disable-polygon-expansion", action="store_true", help="Use original ProbSevere polygons directly and skip radar gate mapping plus watershed expansion")
-        parser.add_argument("--refl-threshold", type=float, default=37.5, help="Override the baseline reflectivity threshold used by storm cell detection (default: 37.5)")
-        parser.add_argument("--min-seed-percentage", type=float, default=0.001, help="Override the minimum polygon seed coverage ratio used during gate expansion (default: 0.001)")
-        parser.add_argument("--drop-offset", type=float, default=10.0, help="Override the dynamic reflectivity drop offset used during gate expansion (default: 10.0)")
+        parser.add_argument("--refl-threshold", type=float, default=None, help="Override the baseline reflectivity threshold used by storm cell detection (default: from detection.yaml)")
+        parser.add_argument("--min-seed-percentage", type=float, default=None, help="Override the minimum polygon seed coverage ratio used during gate expansion (default: from detection.yaml)")
+        parser.add_argument("--drop-offset", type=float, default=None, help="Override the dynamic reflectivity drop offset used during gate expansion (default: from detection.yaml)")
+
+    @staticmethod
+    def _resolve_common_processing_args(args):
+        detection_cfg = config_loader.load_config("detection", config_dir=args.config_dir)["detection"]
+        args.refl_threshold = overlay.resolve(args.refl_threshold, yaml_value=detection_cfg["refl_threshold"])
+        args.min_seed_percentage = overlay.resolve(args.min_seed_percentage, yaml_value=detection_cfg["min_seed_percentage"])
+        args.drop_offset = overlay.resolve(args.drop_offset, yaml_value=detection_cfg["drop_offset"])
 
     def get_args(self):
         parser = argparse.ArgumentParser(description="EdgeWARN modifier specification")
-        parser.add_argument("--lat_limits", type=float, nargs=2, metavar=("LAT_MIN", "LAT_MAX"), default=[20, 55], help="Latitude limits for processing (default: 20 55)")
-        parser.add_argument("--lon_limits", type=float, nargs=2, metavar=("LON_MIN", "LON_MAX"), default=[230, 300], help="Longitude limits for processing (default: 230 300)")
+        parser.add_argument("--lat_limits", type=float, nargs=2, metavar=("LAT_MIN", "LAT_MAX"), default=None, help="Latitude limits for processing (default: from runtime.yaml)")
+        parser.add_argument("--lon_limits", type=float, nargs=2, metavar=("LON_MIN", "LON_MAX"), default=None, help="Longitude limits for processing (default: from runtime.yaml)")
         self._add_common_processing_args(parser)
         parser.add_argument("--disable-ewmrs", action="store_true", help="Disable EWMRS workers and rendering pipeline")
         parser.add_argument("--disable-nws", action="store_true", help="Disable background NWS alert ingestion")
@@ -109,6 +120,11 @@ class IOManager:
         )
         args = parser.parse_args()
 
+        runtime_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
+        args.lat_limits = overlay.resolve(args.lat_limits, yaml_value=list(runtime_cfg["lat_limits"]))
+        args.lon_limits = overlay.resolve(args.lon_limits, yaml_value=list(runtime_cfg["lon_limits"]))
+        self._resolve_common_processing_args(args)
+
         if len(args.lat_limits) != 2 or len(args.lon_limits) != 2:
             print("ERROR: Latitude and longitude limits must each have exactly 2 numeric values.")
             sys.exit(1)
@@ -124,11 +140,17 @@ class IOManager:
         parser = argparse.ArgumentParser(description="Process EdgeWARN data historically.")
         parser.add_argument("--start", type=str, required=True, help="Start timestamp (ISO, e.g. 2023-01-01T12:00:00)")
         parser.add_argument("--end", type=str, required=True, help="End timestamp (ISO)")
-        parser.add_argument("--lat", nargs=2, type=float, default=[20, 55], help="Latitude limits (min max)")
-        parser.add_argument("--lon", nargs=2, type=float, default=[-130, -60], help="Longitude limits (min max)")
-        parser.add_argument("--output", type=str, default="stormcell_test.json", help="Output JSON file")
+        parser.add_argument("--lat", nargs=2, type=float, default=None, help="Latitude limits (min max) (default: from historical.yaml)")
+        parser.add_argument("--lon", nargs=2, type=float, default=None, help="Longitude limits (min max) (default: from historical.yaml)")
+        parser.add_argument("--output", type=str, default=None, help="Output JSON file (default: from historical.yaml)")
         self._add_common_processing_args(parser)
         args = parser.parse_args()
+
+        historical_cfg = config_loader.load_config("historical", config_dir=args.config_dir)["historical"]
+        args.lat = overlay.resolve(args.lat, yaml_value=list(historical_cfg["lat"]))
+        args.lon = overlay.resolve(args.lon, yaml_value=list(historical_cfg["lon"]))
+        args.output = overlay.resolve(args.output, yaml_value=historical_cfg["output"])
+        self._resolve_common_processing_args(args)
         self._validate_common_args(args)
         return args
 

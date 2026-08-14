@@ -14,17 +14,11 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 import requests
 from shapely.geometry import Polygon, MultiPolygon, shape
 
+from common.config import loader as config_loader
+from common.config import overlay
+
 
 ZONE_TYPES: Tuple[str, ...] = ("forecast", "fire", "public", "county", "marine")
-
-
-def _resolve_assets_dir() -> Path:
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        candidate = parent / "assets" / "nws_zones"
-        if candidate.exists():
-            return candidate
-    return current_file.parents[4] / "assets" / "nws_zones"
 
 
 def _normalize_ring(coords: Sequence[Any], precision: int) -> List[List[float]]:
@@ -369,43 +363,44 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--assets-dir",
         type=Path,
-        default=_resolve_assets_dir(),
-        help="Path to assets/nws_zones directory",
+        default=None,
+        help="Path to assets/nws_zones directory (default: from nws.yaml)",
     )
     parser.add_argument(
         "--zone-types",
         nargs="+",
-        default=list(ZONE_TYPES),
-        help="Zone types to query (forecast fire public county marine)",
+        default=None,
+        help="Zone types to query (default: from nws.yaml)",
     )
     parser.add_argument(
         "--timeout-seconds",
         type=int,
-        default=30,
-        help="HTTP timeout in seconds",
+        default=None,
+        help="HTTP timeout in seconds (default: from nws.yaml)",
     )
     parser.add_argument(
         "--max-retries",
         type=int,
-        default=3,
-        help="HTTP retry attempts",
+        default=None,
+        help="HTTP retry attempts (default: from nws.yaml)",
     )
     parser.add_argument(
         "--max-workers",
         type=int,
-        default=16,
-        help="Concurrent workers for zone detail fetches",
+        default=None,
+        help="Concurrent workers for zone detail fetches (default: from nws.yaml)",
     )
     parser.add_argument(
         "--pause-seconds",
         type=float,
-        default=0.0,
-        help="Pause between zone-detail requests",
+        default=None,
+        help="Pause between zone-detail requests (default: from nws.yaml)",
     )
     parser.add_argument(
-        "--no-progress",
-        action="store_true",
-        help="Disable progress updates",
+        "--progress",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Show progress updates (default: from nws.yaml; --no-progress disables)",
     )
     parser.add_argument(
         "--apply",
@@ -417,11 +412,31 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         help="Optional path to write sync report JSON",
     )
+    parser.add_argument(
+        "--config-dir",
+        type=str,
+        default=None,
+        help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)",
+    )
     return parser.parse_args()
 
 
+def _resolve_zone_sync_args(args: argparse.Namespace) -> argparse.Namespace:
+    zone_sync_cfg = config_loader.load_config("nws", config_dir=args.config_dir)["zone_sync"]
+
+    assets_dir_yaml = config_loader.repo_root(args.config_dir) / zone_sync_cfg["assets_dir"]
+    args.assets_dir = overlay.resolve(args.assets_dir, yaml_value=assets_dir_yaml)
+    args.zone_types = overlay.resolve(args.zone_types, yaml_value=list(zone_sync_cfg["zone_types"]))
+    args.timeout_seconds = overlay.resolve(args.timeout_seconds, yaml_value=zone_sync_cfg["timeout_seconds"])
+    args.max_retries = overlay.resolve(args.max_retries, yaml_value=zone_sync_cfg["max_retries"])
+    args.max_workers = overlay.resolve(args.max_workers, yaml_value=zone_sync_cfg["max_workers"])
+    args.pause_seconds = overlay.resolve(args.pause_seconds, yaml_value=zone_sync_cfg["pause_seconds"])
+    args.progress = overlay.resolve(args.progress, yaml_value=zone_sync_cfg["progress"])
+    return args
+
+
 def main() -> int:
-    args = _parse_args()
+    args = _resolve_zone_sync_args(_parse_args())
     syncer = NWSZoneSync(
         assets_dir=args.assets_dir,
         zone_types=args.zone_types,
@@ -429,7 +444,7 @@ def main() -> int:
         max_retries=args.max_retries,
         max_workers=args.max_workers,
         pause_seconds=args.pause_seconds,
-        show_progress=not args.no_progress,
+        show_progress=args.progress,
     )
     report = syncer.sync(dry_run=not args.apply)
     report_json = json.dumps(report.to_dict(), indent=2)

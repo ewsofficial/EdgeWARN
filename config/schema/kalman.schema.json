@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "kalman.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kalman_filter", "tracking", "assignment", "filter_internals", "confidence", "assignment_costs"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kalman_filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process_noise", "measurement_noise"],
+      "properties": {
+        "process_noise": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position", "velocity", "acceleration"],
+          "properties": {
+            "position": { "type": "number", "minimum": 0 },
+            "velocity": { "type": "number", "minimum": 0 },
+            "acceleration": { "type": "number", "minimum": 0 }
+          }
+        },
+        "measurement_noise": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position"],
+          "properties": {
+            "position": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "tracking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_prediction_time_minutes", "reacquisition_radius_km", "confidence_threshold", "confidence_decay_factor"],
+      "properties": {
+        "max_prediction_time_minutes": { "type": "number", "minimum": 0 },
+        "reacquisition_radius_km": { "type": "number", "minimum": 0 },
+        "confidence_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "confidence_decay_factor": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prefilter_radius_km", "gating_threshold", "min_gating_radius_km", "weights", "method", "covariance_regularization"],
+      "properties": {
+        "prefilter_radius_km": { "type": "number", "minimum": 0 },
+        "gating_threshold": { "type": "number", "minimum": 0 },
+        "min_gating_radius_km": { "type": "number", "minimum": 0 },
+        "weights": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position", "velocity_direction", "size_similarity"],
+          "properties": {
+            "position": { "type": "number", "minimum": 0 },
+            "velocity_direction": { "type": "number", "minimum": 0 },
+            "size_similarity": { "type": "number", "minimum": 0 }
+          }
+        },
+        "method": { "type": "string", "enum": ["hybrid", "hungarian", "greedy"] },
+        "covariance_regularization": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "filter_internals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initial_position_uncertainty_km", "innovation_covariance_regularization", "singular_retry_regularization", "initial_velocity_variance", "initial_acceleration_variance"],
+      "properties": {
+        "initial_position_uncertainty_km": { "type": "number", "minimum": 0 },
+        "innovation_covariance_regularization": { "type": "number", "exclusiveMinimum": 0 },
+        "singular_retry_regularization": { "type": "number", "exclusiveMinimum": 0 },
+        "initial_velocity_variance": { "type": "number", "minimum": 0 },
+        "initial_acceleration_variance": { "type": "number", "minimum": 0 }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time_penalty_weight", "motion_factor_variance_denominator", "factor_floor", "position_decay_onset_std", "position_decay_scale", "high_boundary", "medium_boundary"],
+      "properties": {
+        "time_penalty_weight": { "type": "number", "minimum": 0 },
+        "motion_factor_variance_denominator": { "type": "number", "exclusiveMinimum": 0 },
+        "factor_floor": { "type": "number", "minimum": 0 },
+        "position_decay_onset_std": { "type": "number", "minimum": 0 },
+        "position_decay_scale": { "type": "number", "exclusiveMinimum": 0 },
+        "high_boundary": { "type": "number", "minimum": 0, "maximum": 1 },
+        "medium_boundary": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "assignment_costs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_dt_seconds", "predicted_speed_deadband_ms", "implied_speed_deadband_ms", "reflectivity_diff_cap", "size_ratio_log2_divisor", "size_cost_cap"],
+      "properties": {
+        "default_dt_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "predicted_speed_deadband_ms": { "type": "number", "minimum": 0 },
+        "implied_speed_deadband_ms": { "type": "number", "minimum": 0 },
+        "reflectivity_diff_cap": { "type": "number", "minimum": 0 },
+        "size_ratio_log2_divisor": { "type": "number", "exclusiveMinimum": 0 },
+        "size_cost_cap": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

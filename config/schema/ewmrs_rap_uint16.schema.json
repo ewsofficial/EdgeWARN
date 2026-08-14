@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ewmrs_rap_uint16.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "pressure_levels_mb", "max_timestamps", "timestamp_format", "scale_rule", "layers"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "pressure_levels_mb": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wind", "thermo"],
+      "properties": {
+        "wind": { "type": "array", "items": { "type": "integer" } },
+        "thermo": { "type": "array", "items": { "type": "integer" } }
+      }
+    },
+    "max_timestamps": { "type": "integer", "minimum": 0 },
+    "timestamp_format": { "type": "string" },
+    "scale_rule": { "type": "string" },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "short_names", "filter", "units", "scale", "colormap_key"],
+        "properties": {
+          "name": { "type": "string" },
+          "short_names": { "type": "array", "items": { "type": "string" } },
+          "filter": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "typeOfLevel": { "type": "string" },
+              "level": { "type": "integer" }
+            }
+          },
+          "units": { "type": "string" },
+          "scale": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["min", "max"],
+            "properties": {
+              "min": { "type": "number" },
+              "max": { "type": "number" }
+            }
+          },
+          "colormap_key": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

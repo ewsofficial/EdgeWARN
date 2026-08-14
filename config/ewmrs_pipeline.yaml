@@ -4,6 +4,8 @@
 # Values verified against the working tree at commit e12d407.
 # Not yet consumed by code; see plans/yaml-configurations.md.
 
+schema_version: 1
+
 extents:
   goes_web_mercator_bounds: [-13914936.349159198, 2814454.7323097703,
                              -7402746.137752692, 6360130.74092142]

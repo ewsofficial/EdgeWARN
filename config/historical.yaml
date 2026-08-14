@@ -4,6 +4,8 @@
 # Values verified against the working tree at commit e12d407.
 # Not yet consumed by code; see plans/yaml-configurations.md.
 
+schema_version: 1
+
 historical:
   start: null                           # required, CLI --start
   end: null                             # required, CLI --end

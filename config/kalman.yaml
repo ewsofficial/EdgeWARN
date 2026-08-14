@@ -3,6 +3,8 @@
 # This configuration file controls the behavior of the Kalman filter
 # used for storm cell tracking continuity and measurement assignment.
 
+schema_version: 1
+
 kalman_filter:
   # Process noise parameters
   # Controls how much the state is expected to change between predictions
@@ -79,7 +81,7 @@ assignment:
   
   # Numerical stability
   # Small value added to innovation covariance diagonal
-  covariance_regularization: 1e-6
+  covariance_regularization: 1.0e-6
 
 # --- Sections below are not yet read by any loader (audit §4). ---
 # KalmanConfig/TrackingConfig/AssignmentConfig.from_yaml each read one named
