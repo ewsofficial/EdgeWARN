@@ -1,0 +1,50 @@
+# runtime.yaml — Audit §1 (src/util/io.py shared parser), §2 env vars, §7 scheduler
+#
+# Source: src/run.py:46-56,125-145; src/util/runtime/cycle.py:124-130; src/common/pipeline/goes_readiness.py:14
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+run:
+  base_dir: null                        # null -> filesystem.yaml base_dir default
+  profile: false
+  lat_limits: [20, 55]
+  lon_limits: [230, 300]                # normalized % 360 after load
+  mrms_core_only: false                 # true also forces ewmrs/nws/metar off
+  disable:
+    ctam: false
+    tracking: false
+    polygon_expansion: false
+    ewmrs: false
+    nws: false
+    metar: false
+    goes: false
+    nexrad: false
+
+goes_coordination:
+  poll_seconds: 60
+  render_wait_seconds: 30
+  render_wait_interval_seconds: 1.0
+  render_max_offset_minutes: 20.0
+  pause_ingest_during_render: false     # truthy set {1,true,yes,on}
+
+supervisor:
+  check_ticks: 30
+  tick_seconds: 0.5                     # 15 s total
+
+cycle:
+  state_file: <base_dir>/data/runtime/cycle_state.json
+  retry:
+    max_attempts: 3
+    initial_backoff_seconds: 5.0
+    max_backoff_seconds: 30.0
+
+profiling:
+  perf_tracker: false                   # TimingTracker
+
+env_overrides:
+  run.base_dir: EDGEWARN_BASE_DIR, BASE_DIR
+  goes_coordination.pause_ingest_during_render: EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER
+  cycle.retry.max_attempts: EDGEWARN_CYCLE_MAX_ATTEMPTS
+  cycle.retry.initial_backoff_seconds: EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS
+  cycle.retry.max_backoff_seconds: EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS
+  profiling.perf_tracker: EDGEWARN_PERF_TRACKER

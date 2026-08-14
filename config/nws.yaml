@@ -1,0 +1,39 @@
+# nws.yaml — Audit §1 zone_sync CLI, §7 NWS
+#
+# Source: src/common/ingest/nws/main.py:47; registry.py; zone_sync.py:18,369-418
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+nws:
+  registry_ttl_hours: 2
+  dropped_events:                       # 19 unique entries
+    - Administrative Message
+    - Freezing Spray Advisory
+    - Low Water Advisory
+    - High Surf Advisory
+    - Small Craft Advisory
+    - Brisk Wind Advisory
+    - Practice/Demo Warning
+    - Required Weekly Test
+    - Required Monthly Test
+    - Test Message
+    - Hurricane Local Statement
+    - Flood Statement
+    - Flash Flood Statement
+    - Rip Current Statement
+    - Lakeshore Flood Statement
+    - Hydrologic Outlook
+    - Air Quality Alert
+    - Air Stagnation Advisory
+    - Beach Hazards Statement
+
+zone_sync:
+  assets_dir: assets/nws_zones
+  zone_types: [forecast, fire, public, county, marine]
+  timeout_seconds: 30
+  max_retries: 3
+  max_workers: 16
+  pause_seconds: 0.0
+  progress: true                        # --no-progress disables
+  apply: false                          # default is dry-run
+  report_path: null

@@ -1,0 +1,16 @@
+# synoptic_rap.yaml — Audit §7 RAP/Synoptic
+#
+# Source: src/common/ingest/synoptic/config.py:4-9; synoptic/main.py:11
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+rap:
+  bucket: noaa-rap-pds
+  file_pattern: 'rap.t{hour:02d}z.awp130pgrbf00.grib2'
+  dir_pattern: 'rap.{date}'
+  filename_regex: null                  # RAP_FILENAME_RE, derived from file_pattern
+  max_age_minutes: 180                  # validated int >= 0
+  max_files: 3
+
+env_overrides:
+  rap.max_age_minutes: EDGEWARN_RAP_MAX_AGE_MINUTES

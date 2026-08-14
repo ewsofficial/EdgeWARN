@@ -1,0 +1,67 @@
+# integration.yaml — Audit §5
+#
+# Source: src/EdgeWARN/process/integrate/core/stats.py:4; azshear/constants.py:1-5; azshear/integration.py:73; integrate_glm.py:7; integration.py:68; config.py
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+output:
+  decimals: 2
+
+azshear:
+  buffer_km: 1.5
+  low_threshold: 8.0
+  mid_threshold: 6.0
+  min_gate_count: 5
+  max_pair_separation_km: 12.0
+  history_window: 5                     # features retained
+
+glm:
+  bin_size_degrees: 1.0
+
+cell_history:
+  max_payloads: 10                      # cell_{id}.json
+
+stats_datasets:                         # 25 entries; method defaults to max
+  # {name, source, key, method, percentile}
+  - {name: Ref0,            source: MRMS_REF_0C,    key: Ref0,               method: max}
+  - {name: Ref5,            source: MRMS_REFM5C,    key: Ref5,               method: max}
+  - {name: Ref15,           source: MRMS_REFM15C,   key: Ref15,              method: max}
+  - {name: NLDN,            source: MRMS_NLDN,      key: maxCGFlashDensity,  method: max}
+  - {name: EchoTop18,       source: MRMS_ECHOTOP18, key: maxEchoTop18,       method: max}
+  - {name: EchoTop18 (95th),source: MRMS_ECHOTOP18, key: p95EchoTop18,       method: percentile, percentile: 95}
+  - {name: EchoTop18 (90th),source: MRMS_ECHOTOP18, key: p90EchoTop18,       method: percentile, percentile: 90}
+  - {name: EchoTop30,       source: MRMS_ECHOTOP30, key: maxEchoTop30,       method: max}
+  - {name: EchoTop30 (90th),source: MRMS_ECHOTOP30, key: p90EchoTop30,       method: percentile, percentile: 90}
+  - {name: EchoTop50 (90th),source: MRMS_ECHOTOP50, key: p90EchoTop50,       method: percentile, percentile: 90}
+  - {name: VIL,             source: MRMS_VIL,       key: maxVIL,             method: max}
+  - {name: VIL (95th),      source: MRMS_VIL,       key: p95VIL,             method: percentile, percentile: 95}
+  - {name: VIL (90th),      source: MRMS_VIL,       key: p90VIL,             method: percentile, percentile: 90}
+  - {name: VIL (50th),      source: MRMS_VIL,       key: p50VIL,             method: percentile, percentile: 50}
+  - {name: VIL Density,     source: MRMS_DVIL,      key: maxVILDensity,      method: max}
+  - {name: VIL Density (95th), source: MRMS_DVIL,   key: p95VILDensity,      method: percentile, percentile: 95}
+  - {name: VIL Density (90th), source: MRMS_DVIL,   key: p90VILDensity,      method: percentile, percentile: 90}
+  - {name: VIL Density (50th), source: MRMS_DVIL,   key: p50VILDensity,      method: percentile, percentile: 50}
+  - {name: AzShear Low,     source: MRMS_AZSHEARLOW, key: maxAzShearLow,     method: max}
+  - {name: AzShear Low (95th), source: MRMS_AZSHEARLOW, key: p95AzShearLow,  method: percentile, percentile: 95}
+  - {name: AzShear Mid,     source: MRMS_AZSHEARMID, key: maxAzShearMid,     method: max}
+  - {name: AzShear Mid (95th), source: MRMS_AZSHEARMID, key: p95AzShearMid,  method: percentile, percentile: 95}
+  - {name: PrecipRate,      source: MRMS_PRECIPRATE, key: maxPrecipRate,     method: max}
+  - {name: Reflectivity at Lowest Altitude, source: MRMS_RALA, key: maxRALA, method: max}
+  - {name: VII,             source: MRMS_VII,       key: maxVII,             method: max}
+
+rap_products:                           # get_rap_products(); absent from the audit
+  isobaric_levels_mb: [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750,
+                       725, 700, 675, 650, 625, 600, 575, 550, 525, 500, 475,
+                       450, 425, 400, 375, 350, 325, 300, 275, 250, 225, 200,
+                       175, 150, 125, 100]
+  products:
+    - {var: u,   aliases: [u, UGRD, u-component_of_wind_isobaric, wind_u], filter: {typeOfLevel: isobaricInhPa}, key_template: 'wind_field.u{level}'}
+    - {var: v,   aliases: [v, VGRD, v-component_of_wind_isobaric, wind_v], filter: {typeOfLevel: isobaricInhPa}, key_template: 'wind_field.v{level}'}
+    - {var: u10, aliases: [u10, 10u, u],   filter: {typeOfLevel: heightAboveGround, level: 10}, key: u10m}
+    - {var: v10, aliases: [v10, 10v, v],   filter: {typeOfLevel: heightAboveGround, level: 10}, key: v10m}
+    - {var: t2m, aliases: [t2m, 2t, t],    filter: {typeOfLevel: heightAboveGround, level: 2}, key: temp_2m,     transform: kelvin_to_celsius}
+    - {var: d2m, aliases: [d2m, 2d, dpt],  filter: {typeOfLevel: heightAboveGround, level: 2}, key: dewpoint_2m, transform: kelvin_to_celsius}
+    - {var: gh,  filter: {typeOfLevel: isothermZero}, key: freezing_level_m}
+  derived:
+    - {key: dewpoint_depression,   formula: 'temp_2m - dewpoint_2m'}
+    - {key: freezing_level_height, formula: 'freezing_level_m / 1000'}

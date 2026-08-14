@@ -1,0 +1,89 @@
+# ewmrs_render.yaml — Audit §8 render
+#
+# Source: src/EWMRS/render/config.py; render.py:23,95-108,141,204; tiler.py; tools.py; goes_transform.py:99,242-244; nexrad.py:53-60
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+tiles:
+  tile_size: 350                        # px; grid derived as shape // tile_size
+  grid_rows: 10
+  grid_cols: 20
+
+chunk_format:                           # wire-format invariant, NOT operator-tunable
+  schema_version: 2
+  format_version: 2
+  encoding: float16
+  data_type: float16
+  channels: 1
+  value_kind: scalar
+  no_data: nan
+  file_suffix: .f16.gz
+  compression: gzip
+  media_type: application/octet-stream
+  bytes_per_component: 2
+  pixel_row_order: top_to_bottom
+  grid_origin: bottom_left
+  filename_pattern: 'chunk_{x}_{y}.f16.gz'
+
+workers:
+  max_tile_threads: 8                   # effective: min(tile_count, 8, cpu_count)
+
+colormap_cache_entries: 128
+timestamp_format: '%Y%m%d-%H%M00'
+
+mrms_layers:                            # 15 entries {name, colormap_key, filepath, outdir}
+  - {name: MRMS_MergedReflectivityQC,            colormap_key: NWS_Reflectivity}
+  - {name: MRMS_EchoTop18,                       colormap_key: EnhancedEchoTop}
+  - {name: MRMS_EchoTop30,                       colormap_key: EnhancedEchoTop}
+  - {name: MRMS_ReflectivityAtLowestAltitude,    colormap_key: NWS_Reflectivity}
+  - {name: MRMS_ReflectivityAt0C,                colormap_key: NWS_Reflectivity}
+  - {name: MRMS_ReflectivityAtM5C,               colormap_key: NWS_Reflectivity}
+  - {name: MRMS_ReflectivityAtM15C,              colormap_key: NWS_Reflectivity}
+  - {name: MRMS_PrecipRate,                      colormap_key: PrecipRate}
+  - {name: MRMS_VILDensity,                      colormap_key: VILDensity}
+  - {name: MRMS_QPE,                             colormap_key: QPE_01H}
+  - {name: MRMS_VIL,                             colormap_key: VIL}
+  - {name: MRMS_VII,                             colormap_key: VIL}
+  - {name: MRMS_MergedAzShear_0-2kmAGL,          colormap_key: AzShear}
+  - {name: MRMS_MergedAzShear_3-6kmAGL,          colormap_key: AzShear}
+  - {name: MRMS_MESH,                            colormap_key: MESH}
+
+goes_layers:
+  common:
+    source_type: goes_abi
+    variable_name: CMI
+    fallback_variable_names: [Rad]
+  reflectance:                          # 6 layers, value_transform reflectance_from_rad
+    colormap_key: GOES_RGB_Raw
+    mask_min: 0.0
+    mask_max: 1.2
+    channels: [C01, C02, C03, C04, C05, C06]
+  brightness_temp:                      # 10 layers, value_transform brightness_temp_from_rad
+    - {channel: C07, colormap_key: GOES_ABI_C07_BrightnessTemp, mask_min: 180.0, mask_max: 330.0}
+    - {channel: C08, colormap_key: GOES_ABI_C08_BrightnessTemp, mask_min: 180.0, mask_max: 300.0}
+    - {channel: C09, colormap_key: GOES_ABI_C09_BrightnessTemp, mask_min: 180.0, mask_max: 310.0}
+    - {channel: C10, colormap_key: GOES_ABI_C10_BrightnessTemp, mask_min: 185.0, mask_max: 320.0}
+    - {channel: C11, colormap_key: GOES_ABI_C11_BrightnessTemp, mask_min: 180.0, mask_max: 330.0}
+    - {channel: C12, colormap_key: GOES_ABI_C12_BrightnessTemp, mask_min: 180.0, mask_max: 330.0}
+    - {channel: C13, colormap_key: GOES_IR,                     mask_min: 180.0, mask_max: 330.0}
+    - {channel: C14, colormap_key: GOES_IR,                     mask_min: 180.0, mask_max: 330.0}
+    - {channel: C15, colormap_key: GOES_IR,                     mask_min: 180.0, mask_max: 330.0}
+    - {channel: C16, colormap_key: GOES_ABI_C16_BrightnessTemp, mask_min: 180.0, mask_max: 330.0}
+
+goes_transform:                         # render/goes_transform.py
+  resampling: bilinear
+  crs_strategy: from_cf_then_proj4_geos
+  radian_detection: 'units == "rad" or max(abs(coord)) <= 2.0'
+
+nexrad_gui:
+  variable_colormaps:
+    DBZH: NWS_Reflectivity
+    VRADH: VRADH
+    WRADH: WRADH
+    PHIDP: PHIDP
+    RHOHV: RHOHV
+    ZDR: ZDR
+  manifest_name_pattern: '<SITE>_<scan_timestamp>_<volume_id>.json'
+
+env_overrides:
+  workers.max_tile_threads: EWMRS_TILE_THREADS

@@ -1,0 +1,27 @@
+# filesystem.yaml — Audit §7 Filesystem
+#
+# Source: src/util/file.py:183-186,195-200,282-342
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+base_dir:
+  windows: 'C:\EdgeWARN_input'
+  posix: ~/EdgeWARN_input
+  container_fallback: /workspaces/EdgeWARN_input
+
+cleanup_defaults:                       # clean_old_files / clean_files_by_age
+  max_age_minutes: 60
+  max_files: 10
+
+scan:
+  skip_extensions: ['.idx', '.gz']      # skipped when a base file is present
+
+colormaps:
+  search_path:
+    - ./colormaps.json                  # cwd
+    - src/EWMRS/colormaps.json
+    - <gui_dir>/colormaps.json
+  fallback: colormaps.json
+
+env_overrides:
+  base_dir: EDGEWARN_BASE_DIR, BASE_DIR

@@ -1,0 +1,40 @@
+# detection.yaml — Audit §4
+#
+# Source: src/EdgeWARN/process/detect/main.py:29-31,100-105,338-368; tools/gatemapper.py:101-176,244,287,368-374; tools/morphology.py:14; tools/save.py:148-182
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+detection:
+  refl_threshold: 37.5
+  min_seed_percentage: 0.001
+  drop_offset: 10.0
+  stormcell_cleanup_max_age_minutes: 120
+  fallback_dt_seconds: 120.0
+  single_frame_defaults:
+    tracking_mode: active
+    prediction_count: 0
+    event_type: active
+
+gatemapper:
+  baseline_refl_floor: 37.5             # applied as min(this, refl_threshold)
+  crop_pad_bottom_px: 2
+  crop_pad_right_px: 3
+  dynamic_min_threshold:
+    switch_max_refl: 45.0               # max_refl < 45 -> low, else high
+    low: 37.5
+    high: 40.0
+  max_refl_clamp: 52.0                  # per-cell thresh = max(min_thresh, capped_max - drop_offset)
+  reject_clusters_at_or_below_gates: 5
+  contour_downsample: 8
+  contour_downsample_adaptive: [1, 4, 8]  # n_pts <8 / <24 / else
+  coordinate_decimals: 3
+
+morphology:
+  min_pixels_full_analysis: 25
+  contour_level: 0.5
+
+hail:
+  contour_sampling_step: 5
+  preciptype_class: 6
+
+env_overrides: {}                       # CLI only: --refl-threshold, --min-seed-percentage, --drop-offset

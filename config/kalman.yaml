@@ -80,3 +80,34 @@ assignment:
   # Numerical stability
   # Small value added to innovation covariance diagonal
   covariance_regularization: 1e-6
+
+# --- Sections below are not yet read by any loader (audit §4). ---
+# KalmanConfig/TrackingConfig/AssignmentConfig.from_yaml each read one named
+# section via .get(), so these are inert until a consumer is wired up.
+
+# src/EdgeWARN/process/detect/kalman/filter.py, state.py
+filter_internals:
+  initial_position_uncertainty_km: 1.0
+  innovation_covariance_regularization: 1.0e-6
+  singular_retry_regularization: 1.0e-4
+  initial_velocity_variance: 100.0      # (m/s)²
+  initial_acceleration_variance: 1.0
+
+# src/EdgeWARN/process/detect/kalman/confidence.py
+confidence:
+  time_penalty_weight: 0.3              # 1 - (t/max_t) * weight
+  motion_factor_variance_denominator: 2500.0
+  factor_floor: 0.8                     # motion and position factors
+  position_decay_onset_std: 5.0         # avg_std > onset -> 1/(1+(avg-onset)/scale)
+  position_decay_scale: 30.0
+  high_boundary: 0.7
+  medium_boundary: 0.4
+
+# src/EdgeWARN/process/detect/kalman/assignment.py
+assignment_costs:
+  default_dt_seconds: 120.0
+  predicted_speed_deadband_ms: 1.0
+  implied_speed_deadband_ms: 0.5
+  reflectivity_diff_cap: 1.0
+  size_ratio_log2_divisor: 2.0
+  size_cost_cap: 1.0

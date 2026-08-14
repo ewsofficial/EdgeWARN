@@ -1,0 +1,19 @@
+# lineage.yaml — Audit §4
+#
+# Source: src/EdgeWARN/process/detect/lineage/detector.py:29, spatial.py:76,118, buffer.py:138-159
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+lineage:
+  overlap_threshold: 0.15
+  min_area_deg2: 1.0e-10
+  antimeridian_normalization:           # all three must hold to trigger
+    max_lon_above: 350
+    min_lon_below: 10
+    span_above: 180
+  buffer:
+    file_name: lineage_buffer.json
+    min_confirmations: 2
+    max_pending: 100
+    prune_after_scans: 5
+    scan_interval_seconds: 120.0

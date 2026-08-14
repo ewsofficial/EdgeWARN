@@ -1,0 +1,38 @@
+# ewmrs_pipeline.yaml — Audit §8 EWMRS pipeline
+#
+# Source: src/EWMRS/pipeline.py:44-65,120-140,551-585,707-794
+# Values verified against the working tree at commit e12d407.
+# Not yet consumed by code; see plans/yaml-configurations.md.
+
+extents:
+  goes_web_mercator_bounds: [-13914936.349159198, 2814454.7323097703,
+                             -7402746.137752692, 6360130.74092142]
+
+render:
+  max_entries: 10
+  cleanup_after: true
+  phase_name: EWMRS
+  goes_cleanup_max_age_minutes: 120
+  goes_cleanup_min_interval_seconds: 300
+  gui_cleanup_max_age_minutes: 120
+
+nexrad_gui:
+  retention_minutes: 120
+  poll_interval_seconds: 30.0
+  max_workers: 8
+
+workers:
+  budget_mb:
+    goes: 1200.0                        # phase name starting with "GOES"
+    default: 768.0                      # MRMS and everything else
+  reserve_mb: 1024.0
+  numeric_thread_caps:                  # os.environ.setdefault
+    OMP_NUM_THREADS: 1
+    MKL_NUM_THREADS: 1
+    OPENBLAS_NUM_THREADS: 1
+    NUMEXPR_NUM_THREADS: 1
+
+env_overrides:
+  render.goes_cleanup_min_interval_seconds: EWMRS_GOES_CLEANUP_MIN_INTERVAL_SECONDS
+  workers.budget_mb: EWMRS_WORKER_BUDGET_MB
+  workers.reserve_mb: EWMRS_WORKER_RESERVE_MB
