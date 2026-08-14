@@ -50,6 +50,7 @@ from common.ingest.nexrad.writer import (
     prune_stale_site_manifests,
     runtime_scan_path,
     local_scan_elevations_complete,
+    utc_timestamp_ms,
     write_site_manifest,
 )
 from util.atomic import atomic_write_text
@@ -625,11 +626,13 @@ class NexradIngestService:
         complete = _required_elevation_paths_complete(site_upper, elevation_timestamps_by_id)
 
         if complete:
+            volume_parse_finished_at = utc_timestamp_ms()
             write_site_manifest(
                 site_upper,
                 current_volume_id=volume_id,
                 current_volume_timestamp=scan_timestamp,
                 current_download_started_at=download_started_at,
+                current_volume_parse_finished_at=volume_parse_finished_at,
             )
             if runtime_path.exists():
                 runtime_path.unlink(missing_ok=True)
@@ -986,11 +989,13 @@ class NexradIngestService:
         complete = _required_elevation_paths_complete(site_upper, elevation_timestamps_by_id)
 
         if complete:
+            volume_parse_finished_at = utc_timestamp_ms()
             write_site_manifest(
                 site_upper,
                 current_volume_id=volume_id,
                 current_volume_timestamp=scan_timestamp,
                 current_download_started_at=download_started_at,
+                current_volume_parse_finished_at=volume_parse_finished_at,
             )
             if runtime_path.exists():
                 runtime_path.unlink(missing_ok=True)

@@ -97,6 +97,7 @@ class ElevationArtifact:
     ar2v_path: str | None = None
     download_started_at: str | None = None
     file_written_at: str | None = None
+    parse_finished_at: str | None = None
 
 
 @dataclass

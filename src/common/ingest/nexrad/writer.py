@@ -42,6 +42,11 @@ def _filename_timestamp(timestamp: str | None) -> str:
     return str(timestamp).replace(":", "-")
 
 
+def utc_timestamp_ms() -> str:
+    """Current UTC time as ISO-8601 with milliseconds, e.g. ``2026-08-13T17:42:31.482Z``."""
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
 def _utc_now_timestamp() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -340,6 +345,7 @@ def _normalize_sidecar_payload(
         "waveforms_present": list(payload.get("waveforms_present") or []),
         "supplemental": bool(payload.get("supplemental", False)),
         "file_written_at": payload.get("file_written_at"),
+        "parse_finished_at": payload.get("parse_finished_at"),
         "netcdf_path": payload.get("netcdf_path"),
         "ar2v_path": payload.get("ar2v_path"),
     }
@@ -372,16 +378,37 @@ def _raw_sweep_elevation(member_sweep: dict, grouped_elevation: str | None):
     return grouped_elevation
 
 
+def _load_site_manifest_payload(site: str) -> dict | None:
+    path = site_manifest_path(site)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
 def build_site_manifest(
     site: str,
     *,
     current_volume_id: str | None = None,
     current_volume_timestamp: str | None = None,
     current_download_started_at: str | None = None,
+    current_volume_parse_finished_at: str | None = None,
 ) -> dict:
     site_upper = str(site).upper()
     site_dir = fs.NEXRAD_LEVEL2_DIR / site_upper
     volumes: dict[str, dict] = {}
+
+    previous_payload = _load_site_manifest_payload(site_upper)
+    previous_volumes = {
+        str(volume.get("volume_id")): volume
+        for volume in (previous_payload or {}).get("volumes", [])
+        if isinstance(volume, dict) and volume.get("volume_id")
+    }
 
     if site_dir.exists():
         for elev_dir in _site_manifest_candidate_dirs(site_dir):
@@ -448,11 +475,20 @@ def build_site_manifest(
     for volume in ordered_volumes:
         volume["sweeps"].sort(key=_raw_sweep_sort_key)
         volume.pop("_seen_sweeps", None)
+        volume_id = volume.get("volume_id")
+        prior = previous_volumes.get(str(volume_id))
+        if prior is not None and prior.get("volume_parse_finished_at"):
+            volume.setdefault("volume_parse_finished_at", prior["volume_parse_finished_at"])
+        if str(volume_id) == str(current_volume_id) and current_volume_parse_finished_at:
+            volume["volume_parse_finished_at"] = current_volume_parse_finished_at
 
-    return {
+    payload = {
         "site": site_upper,
         "volumes": ordered_volumes,
     }
+    if current_volume_parse_finished_at:
+        payload["current_volume_parse_finished_at"] = current_volume_parse_finished_at
+    return payload
 
 
 def write_site_manifest(
@@ -461,6 +497,7 @@ def write_site_manifest(
     current_volume_id: str | None = None,
     current_volume_timestamp: str | None = None,
     current_download_started_at: str | None = None,
+    current_volume_parse_finished_at: str | None = None,
 ) -> Path:
     path = site_manifest_path(site)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -469,6 +506,7 @@ def write_site_manifest(
         current_volume_id=current_volume_id,
         current_volume_timestamp=current_volume_timestamp,
         current_download_started_at=current_download_started_at,
+        current_volume_parse_finished_at=current_volume_parse_finished_at,
     )
     return _write_text_if_changed(path, json.dumps(payload, separators=(",", ":")))
 
@@ -687,6 +725,7 @@ def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
         "waveforms_present": list(artifact.waveforms_present),
         "supplemental": artifact.supplemental,
         "file_written_at": artifact.file_written_at,
+        "parse_finished_at": artifact.parse_finished_at,
         "netcdf_path": artifact.netcdf_path,
         "ar2v_path": artifact.ar2v_path,
     }
@@ -768,6 +807,7 @@ def write_elevation_artifacts(
     else:
         nc_path = store.elevation_netcdf_path(site, elevation_label, ts_for_filename)
         _write_elevation_netcdf(nc_path, root_attrs, source, group_names)
+    parse_finished_at = utc_timestamp_ms()
     file_written_at = _utc_now_timestamp()
 
     artifact = ElevationArtifact(
@@ -787,6 +827,7 @@ def write_elevation_artifacts(
         supplemental=group.supplemental,
         download_started_at=download_started_at,
         file_written_at=file_written_at,
+        parse_finished_at=parse_finished_at,
         netcdf_path=str(nc_path) if nc_path is not None else None,
         ar2v_path=str(ar2v_path) if ar2v_path is not None else None,
     )
