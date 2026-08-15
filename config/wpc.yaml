@@ -1,8 +1,9 @@
 # wpc.yaml — Audit §7 WPC
 #
-# Source: src/common/ingest/wpc/config.py; downloader.py; converter.py
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/common/ingest/wpc/config.py:4-21; downloader.py:28-31,40-44,
+#         73-77,93,100; converter.py:35,61; main.py:73,86,98
+# Values verified against the working tree at commit e426fb2.
+# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
 
 schema_version: 1
 
@@ -10,7 +11,28 @@ wpc:
   coded_sfc_base_url: https://ftp.wpc.ncep.noaa.gov/coded_sfc
   update_interval_hours: 3
   valid_hours: [0, 3, 6, 9, 12, 15, 18, 21]
-  http_timeout_seconds: 30
+  http_timeout_seconds: 30              # downloader.py:44,77
+
+  # SECURITY: true is the behavior in the working tree. downloader.py:40-42 and
+  # :73-75 both set check_hostname = True and verify_mode = CERT_REQUIRED.
+  # Writing false here would be a security regression, not a transcription of
+  # code -- unlike metar.yaml, WPC has never skipped verification.
+  verify_tls: true
+
+  # URL and output naming. `codsus` is the WPC product code; the date directory
+  # and the local GeoJSON name use the same %Y%m%d stamp but different shapes.
+  date_format: '%Y%m%d'                             # downloader.py:28,93
+  remote_filename_pattern: 'codsus{hour:02d}_hr'    # downloader.py:30
+  output_filename_pattern: 'wpc_sfc_{date}-{hour:02d}0000.geojson'  # downloader.py:93
+  latest_filename: latest.geojson                   # downloader.py:100
+  # main.py:98 sweeps this glob. It matches `output_filename_pattern` but not
+  # `latest_filename`, so latest.geojson is never cleaned.
+  cleanup_glob: 'wpc_sfc_*.geojson'
+  cleanup_max_age_minutes: 360                      # main.py:86
+  previous_analysis_lookback_hours: 3               # main.py:73
+
+  # converter.py:35,61. Used when a parsed feature code is absent from
+  # `feature_types`; the label falls back to the raw code itself.
   fallback_geojson_color: '#000000'
   feature_types:                        # FEATURE_TYPES, absent from the audit
     COLD:  {name: Cold Front,        color: '#0000FF'}

@@ -29,6 +29,25 @@ _UNARY_OPERATORS = {
 }
 
 
+def _transform_for(product):
+    """Resolve a product's value transform, rejecting names not in TRANSFORMS.
+
+    An unknown name used to fall back to the identity function, so a typo
+    published raw values under a converted key -- Kelvin labelled as Celsius.
+    """
+    name = product.get("transform")
+    if name is None:
+        return lambda x: x
+    try:
+        return TRANSFORMS[name]
+    except KeyError:
+        key = product.get("key") or product.get("key_template")
+        raise ValueError(
+            f"unknown RAP transform {name!r} for product {key!r}; "
+            f"known transforms: {sorted(TRANSFORMS)}"
+        ) from None
+
+
 def get_rap_output_roots(config=None):
     """Return the top-level property keys populated by RAP integration."""
     if config is None:
@@ -66,6 +85,10 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
     products = config.get("products", [])
     derived = config.get("derived", [])
 
+    # Resolved before extraction so an unknown transform name aborts the run
+    # rather than surfacing as untransformed values.
+    transforms = [_transform_for(product) for product in products]
+
     # Prepare cell coordinates
     cell_coords = {}
     for cell in storm_cells:
@@ -83,9 +106,8 @@ def integrate_rap(storm_cells, rap_file_path, io_manager):
         return storm_cells
 
     # Apply extracted data to cells
-    for product in products:
-        transform_fn = TRANSFORMS.get(product.get("transform"), lambda x: x)
-        
+    for product, transform_fn in zip(products, transforms):
+
         if "levels" in product:
             levels = product["levels"]
             key_template = product["key_template"]

@@ -19,18 +19,20 @@
     "cleanup_defaults": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["max_age_minutes", "max_files"],
+      "required": ["max_age_minutes", "max_files", "skip_extensions"],
       "properties": {
         "max_age_minutes": { "type": "integer", "minimum": 0 },
-        "max_files": { "type": "integer", "minimum": 0 }
+        "max_files": { "type": ["integer", "null"], "minimum": 0 },
+        "skip_extensions": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
       }
     },
     "scan": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["skip_extensions"],
+      "required": ["skip_extensions_always", "skip_extensions_when_base_present"],
       "properties": {
-        "skip_extensions": { "type": "array", "items": { "type": "string" } }
+        "skip_extensions_always": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+        "skip_extensions_when_base_present": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
       }
     },
     "colormaps": {
@@ -38,13 +40,13 @@
       "additionalProperties": false,
       "required": ["search_path", "fallback"],
       "properties": {
-        "search_path": { "type": "array", "items": { "type": "string" } },
+        "search_path": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
         "fallback": { "type": "string" }
       }
     },
     "env_overrides": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": { "type": ["string", "array"], "items": { "type": "string" } }
     }
   }
 }

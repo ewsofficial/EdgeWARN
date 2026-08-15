@@ -1,50 +1,130 @@
 # runtime.yaml — Audit §1 (src/util/io.py shared parser), §2 env vars, §7 scheduler
 #
-# Source: src/run.py:46-56,125-145; src/util/runtime/cycle.py:124-130; src/common/pipeline/goes_readiness.py:14
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/run.py:46-62,115,130-140,159,173,199-203,333-334; src/util/io.py:86-87,
+#         105-106,124-136; src/util/runtime/processes.py:10,19,24,72-75,90;
+#         src/util/runtime/background.py:74,79,94,223,239,257,265;
+#         src/util/runtime/cycle.py:124-129,460,590,624;
+#         src/util/performance.py:15-30,68-78; src/EdgeWARN/pipeline.py:236,386;
+#         src/common/pipeline/goes_readiness.py:14
+# Values verified against the working tree at commit e426fb2.
+#
+# `run.lat_limits` and `run.lon_limits` ARE consumed: io.py:124-125 overlays the
+# CLI on top of them. Nothing else in this file is wired yet; see
+# plans/source-configuration-extraction-plan.md.
+#
+# Ten keys are deliberately absent from `run`: `profile`, `mrms_core_only`, and
+# the eight `disable.*` toggles. Every one is an argparse `action="store_true"`
+# flag (io.py:88-91, 108-120), so argparse fixes the value to False before any
+# YAML could be consulted -- writing `true` here could never take effect. The
+# flags themselves are real; only a YAML default for them is unreachable.
+#
+# --mrms-core-only fans out further than the old comment here claimed: it forces
+# EWMRS, NWS, METAR, GOES and NEXRAD off (run.py:58-62), WPC off (:173), and RAP
+# ingest off (cycle.py:460) -- seven subsystems, not three.
+#
+# `env_overrides.run.base_dir` is also gone. Python reads no environment variable
+# for the base directory at all -- util/file.py chooses by platform.system() at
+# import time and accepts an override only through initialize_filesystem(). The
+# EDGEWARN_BASE_DIR/BASE_DIR pair is Node-only; see filesystem.yaml.
 
 schema_version: 1
 
 run:
-  base_dir: null                        # null -> filesystem.yaml base_dir default
-  profile: false
+  # io.py:105-106,124-125. The CLI flags default to None so these values win
+  # unless --lat_limits/--lon_limits is passed.
   lat_limits: [20, 55]
-  lon_limits: [230, 300]                # normalized % 360 after load
-  mrms_core_only: false                 # true also forces ewmrs/nws/metar off
-  disable:
-    ctam: false
-    tracking: false
-    polygon_expansion: false
-    ewmrs: false
-    nws: false
-    metar: false
-    goes: false
-    nexrad: false
+  # io.py:136 rewrites this to `lon % 360` after the overlay, so a negative
+  # western longitude here becomes its 0-360 equivalent. Recorded pre-normalized.
+  lon_limits: [230, 300]
 
 goes_coordination:
-  poll_seconds: 60
-  render_wait_seconds: 30
-  render_wait_interval_seconds: 1.0
-  render_max_offset_minutes: 20.0
-  pause_ingest_during_render: false     # truthy set {1,true,yes,on}
+  poll_seconds: 60                      # run.py:46; also background.py:74
+  render_wait_seconds: 30               # run.py:47
+  render_wait_interval_seconds: 1.0     # run.py:48
+  render_max_offset_minutes: 20.0       # common/pipeline/goes_readiness.py:14
+  # run.py:51-56. The truthy set is {1, true, yes, on} tested AFTER
+  # strip().lower(), so "True " and " YES" read true; anything else outside the
+  # set ("2", "enabled") reads false.
+  pause_ingest_during_render: false
 
+  # background.py:79. While a render holds the pause, the ingest loop wakes every
+  # 0.2 s inside a 1 s window rather than sleeping the full poll interval.
+  render_pause_poll_seconds: 1.0
+  render_pause_poll_interval_seconds: 0.2
+  # background.py:94, the interval the 60 s poll is subdivided into so shutdown
+  # is observed promptly.
+  poll_interval_seconds: 1.0
+
+  # cycle.py:590, the second element of the render task tuple; background.py:127
+  # unpacks it as `dt, max_entries = latest_task[:2]`.
+  render_task_max_entries: 10
+
+# processes.py AccessorySupervisor. A dead child is restarted with exponential
+# backoff; more than max_restarts deaths inside restart_window_seconds disables
+# restarts for that child rather than looping forever.
 supervisor:
+  # run.py:333-334 `for _ in range(30): time.sleep(0.5)` -- the shutdown-watch
+  # loop, 15 s per pass. These two live in run.py, not processes.py.
   check_ticks: 30
-  tick_seconds: 0.5                     # 15 s total
+  tick_seconds: 0.5
+  max_restarts: 5                       # processes.py:72
+  restart_window_seconds: 60.0          # :73
+  base_backoff_seconds: 1.0             # :74
+  max_backoff_seconds: 30.0             # :75
+
+  # processes.py:90. Per-child, and NEXRAD Ingest overrides it (run.py:203) with
+  # the value in nexrad.yaml; 0.0 is what every other child gets.
+  heartbeat_startup_grace_seconds: 0.0
+
+  # processes.py:10,24 stop_process. terminate() is given join_timeout seconds;
+  # a child still alive after that is kill()ed and joined for one more second.
+  stop_join_timeout_seconds: 5
+  stop_kill_join_timeout_seconds: 1
+
+  # DATA_DIR-relative artifacts the supervisor writes. Named by filesystem
+  # attribute, resolved with getattr(fs, dir) at call time.
+  health_file: {dir: DATA_DIR, name: runtime/accessory_health.json}      # run.py:159
+  nexrad_heartbeat_file: {dir: DATA_DIR, name: runtime/nexrad_ingest_heartbeat.json}  # run.py:199,201
+
+# background.py accessory loop cadences. `sleep_until_boundary(n)` waits for the
+# next n-minute wall-clock boundary; `sleep_for(n, ...)` waits n seconds.
+background_intervals:
+  metar_boundary_minutes: 5             # background.py:239
+  nws_seconds: 120                      # :257
+  nws_interval_seconds: 1.0             # :257, the subdivision of that 120 s
+  wpc_boundary_minutes: 15              # :265
+  nexrad_seconds: 5                     # :223
+  nexrad_interval_seconds: 0.2          # :223, the subdivision of that 5 s
 
 cycle:
-  state_file: <base_dir>/data/runtime/cycle_state.json
-  retry:
+  # run.py:115. Named by filesystem attribute so it follows a relocated base dir.
+  state_file: {dir: DATA_DIR, name: runtime/cycle_state.json}
+
+  retry:                                # cycle.py:124-129 CycleRetryPolicy
     max_attempts: 3
+    # run.py:132-139 clamps both with max(0.0, ...), so 0 is legal and means
+    # "retry immediately" -- these are not exclusive-positive bounds.
     initial_backoff_seconds: 5.0
     max_backoff_seconds: 30.0
 
+  # cycle.py:624. How often the tandem cycle drains its log queues while waiting
+  # on the worker processes.
+  log_drain_poll_seconds: 1
+
 profiling:
-  perf_tracker: false                   # TimingTracker
+  # TRI-STATE, not a boolean. performance.py:23 declares `_ENABLED: bool | None`
+  # and null is the meaningful default: `_is_enabled` re-reads
+  # EDGEWARN_PERF_TRACKER on every check (:26-30) for as long as the flag stays
+  # None. Writing `false` here would pin profiling off and make the env var
+  # inert. The deferral also ends once TimingTracker.set_enabled (:68-78) pins
+  # the global, which `--profile` does at EdgeWARN/pipeline.py:236,386.
+  perf_tracker: null
 
 env_overrides:
-  run.base_dir: EDGEWARN_BASE_DIR, BASE_DIR
+  # io.py:87, --config-dir. The only row here with no counterpart key in this
+  # document, and necessarily so: it selects the directory these YAML files are
+  # read FROM, so it can never be set from inside one.
+  config_dir: ['EDGEWARN_CONFIG_DIR']
   goes_coordination.pause_ingest_during_render: EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER
   cycle.retry.max_attempts: EDGEWARN_CYCLE_MAX_ATTEMPTS
   cycle.retry.initial_backoff_seconds: EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS

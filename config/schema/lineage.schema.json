@@ -9,29 +9,19 @@
     "lineage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["overlap_threshold", "min_area_deg2", "antimeridian_normalization", "buffer"],
+      "required": ["event_overlap_ratio", "spatial_query_overlap_ratio", "bounds_prefilter_buffer_deg", "buffer"],
       "properties": {
-        "overlap_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
-        "min_area_deg2": { "type": "number", "exclusiveMinimum": 0 },
-        "antimeridian_normalization": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["max_lon_above", "min_lon_below", "span_above"],
-          "properties": {
-            "max_lon_above": { "type": "number" },
-            "min_lon_below": { "type": "number" },
-            "span_above": { "type": "number" }
-          }
-        },
+        "event_overlap_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "spatial_query_overlap_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "bounds_prefilter_buffer_deg": { "type": "number", "minimum": 0 },
         "buffer": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["file_name", "min_confirmations", "max_pending", "prune_after_scans", "scan_interval_seconds"],
+          "required": ["min_confirmations", "max_pending", "prune_after_scans", "scan_interval_seconds"],
           "properties": {
-            "file_name": { "type": "string" },
-            "min_confirmations": { "type": "integer", "minimum": 0 },
-            "max_pending": { "type": "integer", "minimum": 0 },
-            "prune_after_scans": { "type": "integer", "minimum": 0 },
+            "min_confirmations": { "type": "integer", "minimum": 1 },
+            "max_pending": { "type": "integer", "minimum": 1 },
+            "prune_after_scans": { "type": "integer", "minimum": 1 },
             "scan_interval_seconds": { "type": "number", "exclusiveMinimum": 0 }
           }
         }

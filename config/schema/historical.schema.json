@@ -9,13 +9,14 @@
     "historical": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["start", "end", "lat", "lon", "output"],
+      "required": ["lat", "lon", "output", "step_minutes", "throttle_seconds", "cleanup_max_files"],
       "properties": {
-        "start": { "type": ["string", "null"] },
-        "end": { "type": ["string", "null"] },
-        "lat": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
-        "lon": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
-        "output": { "type": "string" }
+        "lat": { "type": "array", "items": { "type": "number", "minimum": -90, "maximum": 90 }, "minItems": 2, "maxItems": 2 },
+        "lon": { "type": "array", "items": { "type": "number", "minimum": -180, "maximum": 180 }, "minItems": 2, "maxItems": 2 },
+        "output": { "type": "string" },
+        "step_minutes": { "type": "integer", "minimum": 1 },
+        "throttle_seconds": { "type": "number", "minimum": 0 },
+        "cleanup_max_files": { "type": ["integer", "null"], "minimum": 0 }
       }
     }
   }

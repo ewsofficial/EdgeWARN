@@ -1,21 +1,68 @@
 # mrms_goes.yaml — Audit §7 MRMS & GOES
 #
-# Source: src/common/ingest/mrms/config.py; s3_common.py:6; https_client.py:24; downloader.py:33; parse.py
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/common/ingest/mrms/{config,parse,downloader,https_client,main}.py
+# Values verified against the working tree at commit e426fb2.
+# `products` / `check_products` are consumed by config.py; the remaining keys are
+# not yet wired -- see plans/source-configuration-extraction-plan.md.
 
 schema_version: 1
 
 mrms:
-  bucket: noaa-mrms-pds
-  ncep_https_fallback_url: https://mrms.ncep.noaa.gov/data/2D
-  decompress_chunk_size_bytes: 1048576  # 1 MiB
-  download_max_entries: 10
-  remove_old_files: true
+  bucket: noaa-mrms-pds                   # config.py:6
+  decompress_chunk_size_bytes: 1048576    # 1 MiB
+  download_max_entries: 10                # main.py:44 max_entries default
+  remove_old_files: true                  # main.py:44
+  cleanup_max_age_minutes: 60             # main.py:57,78,103,125
+  cadence_minutes: 2                      # timestamp_utils.py:30 (current_minute % 2)
+  rounding_half_up_seconds: 30            # timestamp_utils.py:32,39 (ts.second >= 30)
+
+  # Staged-file timestamp grammar shared by GOES coordination and EWMRS render.
+  # Source: common/pipeline/goes_readiness.py:82, EWMRS/render/tools.py:62.
   staged_filename_pattern: 'MRMS_MergedReflectivityQC_(\d{8})-(\d{6})'
+
+  # S3 key prefixes. Transcribed from parse.py:21,25 -- the modifier segment is
+  # omitted entirely when a product has no modifier (ProbSevere).
   path_patterns:
-    raw: 'regional/.../{YYYYMMDD}'      # transcribe verbatim from parse.py
-    decoded: 'regional/.../{YYYYMMDD}'
+    s3_prefix: '{region}/{modifier}/{YYYYMMDD}/'          # parse.py:25
+    s3_prefix_no_modifier: '{region}/{YYYYMMDD}/'         # parse.py:21
+    filename_prefix: 'MRMS_{modifier}_{YYYYMMDD}-{HH}'    # downloader.py:274,442
+    # ProbSevere uses an underscore before the hour, not a hyphen, and is used as
+    # an S3 StartAfter marker one hour behind the target time.
+    probsevere_start_after: 'MRMS_PROBSEVERE_{YYYYMMDD}_{HH}'  # downloader.py:306,447
+    probsevere_start_after_lookback_hours: 1                    # downloader.py:305,446
+
+  # HTTPS fallback against the NCEP 2D index, used when S3 lookup yields nothing.
+  ncep_https:
+    base_url: https://mrms.ncep.noaa.gov/data/2D    # https_client.py:24
+    probsevere_url: https://mrms.ncep.noaa.gov/data/ProbSevere  # https_client.py:107
+    sync_timeout_seconds: 10                        # https_client.py:168
+    match_window_seconds: 120                       # https_client.py:228
+    download_chunk_size_bytes: 8192                 # https_client.py:261
+    # Fallback when a product is absent from directory_map: split on this token
+    # and keep the leading segment. https_client.py:96-98
+    directory_split_token: '_00.'
+    # S3 modifier -> NCEP directory name. Transcribed verbatim from
+    # https_client.py:73-90. NOTE: the FLASH_QPE_FFG01H_00.00 key does not match
+    # any entry in `products` (the real product is FLASH_QPE_FFGMAX_00.00), so
+    # that mapping is dead today; preserved to keep this a faithful transcription.
+    directory_map:
+      EchoTop_18_00.50: EchoTop_18
+      EchoTop_30_00.50: EchoTop_30
+      FLASH_QPE_FFG01H_00.00: FLASH
+      MESH_00.50: MESH
+      NLDN_CG_005min_AvgDensity_00.00: NLDN_CG_005min_AvgDensity
+      PrecipRate_00.00: PrecipRate
+      RadarOnly_QPE_01H_00.00: RadarOnly_QPE_01H
+      MergedAzShear_0-2kmAGL_00.50: MergedAzShear_0-2kmAGL
+      MergedAzShear_3-6kmAGL_00.50: MergedAzShear_3-6kmAGL
+      VIL_Density_00.50: VIL_Density
+      VIL_00.50: VIL
+      MergedRhoHV_00.50: MergedRhoHV
+      PrecipFlag_00.00: PrecipFlag
+      MergedReflectivityAtLowestAltitude_00.50: MergedReflectivityAtLowestAltitude
+      MergedReflectivityQCComposite_00.50: MergedReflectivityQCComposite
+      VII_00.50: VII
+
   products:                             # get_mrms_modifiers(), 28 entries {region, product, outdir}
     - {region: CONUS, product: EchoTop_18_00.50,                     outdir: MRMS_ECHOTOP18_DIR}
     - {region: CONUS, product: EchoTop_30_00.50,                     outdir: MRMS_ECHOTOP30_DIR}
@@ -45,34 +92,54 @@ mrms:
     - {region: CONUS, product: Reflectivity_0C_00.50,                outdir: MRMS_REF_0C_DIR}
     - {region: CONUS, product: Reflectivity_-5C_00.50,               outdir: MRMS_REFM5C_DIR}
     - {region: CONUS, product: Reflectivity_-15C_00.50,              outdir: MRMS_REFM15C_DIR}
-  check_products:                       # get_check_modifiers(), 12-entry subset
-    [EchoTop_18_00.50, EchoTop_30_00.50, EchoTop_50_00.50, PrecipRate_00.00,
-     MergedAzShear_0-2kmAGL_00.50, MergedAzShear_3-6kmAGL_00.50,
-     VIL_Density_00.50, ProbSevere, PrecipFlag_00.00,
-     MergedReflectivityAtLowestAltitude_00.50,
-     MergedReflectivityQCComposite_00.50, VII_00.50]
+
+  # get_check_modifiers(), a 12-entry subset of `products`. Same triple shape --
+  # the readiness checker needs the outdir, not just the product name.
+  check_products:
+    - {region: CONUS, product: EchoTop_18_00.50,                     outdir: MRMS_ECHOTOP18_DIR}
+    - {region: CONUS, product: EchoTop_30_00.50,                     outdir: MRMS_ECHOTOP30_DIR}
+    - {region: CONUS, product: EchoTop_50_00.50,                     outdir: MRMS_ECHOTOP50_DIR}
+    - {region: CONUS, product: PrecipRate_00.00,                     outdir: MRMS_PRECIPRATE_DIR}
+    - {region: CONUS, product: MergedAzShear_0-2kmAGL_00.50,         outdir: MRMS_AZSHEARLOW_DIR}
+    - {region: CONUS, product: MergedAzShear_3-6kmAGL_00.50,         outdir: MRMS_AZSHEARMID_DIR}
+    - {region: CONUS, product: VIL_Density_00.50,                    outdir: MRMS_DVIL_DIR}
+    - {region: ProbSevere, product: null,                            outdir: MRMS_PROBSEVERE_DIR}
+    - {region: CONUS, product: PrecipFlag_00.00,                     outdir: MRMS_PRECIPTYP_DIR}
+    - {region: CONUS, product: MergedReflectivityAtLowestAltitude_00.50, outdir: MRMS_RALA_DIR}
+    - {region: CONUS, product: MergedReflectivityQCComposite_00.50,  outdir: MRMS_COMPOSITE_DIR}
+    - {region: CONUS, product: VII_00.50,                            outdir: MRMS_VII_DIR}
+
+  # Only the detection list is a literal (main.py:21). The integration, ewmrs, and
+  # ewmrs_support lists are derived from it plus `products` and the render layer
+  # set (main.py:24-42) and must stay derived so they cannot drift.
+  membership_lists:
+    detection: [MergedReflectivityQCComposite_00.50, PrecipFlag_00.00, null]
 
 goes:
-  bucket: noaa-goes19
-  abi_product: ABI-L1b-RadC
-  glm_product: GLM-L2-LCFA
-  max_files_per_spec: 2                  # GoesIngestSpec.max_files
-  max_entries: 96
-  filename_matcher_template: '(?:_|-)M\d{channel_id}_'
-  abi_channels:                          # 16, all enabled by default
-    - {id: C01, name: visible_blue}
-    - {id: C02, name: visible_red}
-    - {id: C03, name: veggie}
-    - {id: C04, name: cirrus}
-    - {id: C05, name: snow_ice}
-    - {id: C06, name: particle_size}
-    - {id: C07, name: shortwave_ir}
-    - {id: C08, name: upper_level_wv}
-    - {id: C09, name: mid_level_wv}
-    - {id: C10, name: lower_level_wv}
-    - {id: C11, name: cld_top_phase}
-    - {id: C12, name: ozone}
-    - {id: C13, name: clean_lwir}
-    - {id: C14, name: longwave_ir}
-    - {id: C15, name: dirty_lwir}
-    - {id: C16, name: co2_lwir}
+  bucket: noaa-goes19                    # config.py:7
+  abi_product: ABI-L1b-RadC              # config.py:28
+  glm_product: GLM-L2-LCFA               # config.py:102
+  glm_outdir: GOES_GLM_DIR               # config.py:102
+  max_files_per_spec: 2                  # config.py:17 GoesIngestSpec.max_files
+  max_entries: 96                        # downloader.py:33 GOES_MAX_ENTRIES
+  hour_lookback: 3                       # downloader.py:479
+  cleanup_max_age_minutes: 60            # main.py:57
+  bucket_path_pattern: '{product}/{YYYY}/{DDD}/{HH}/'  # parse.py:53
+  filename_matcher_template: '(?:_|-)M\d{channel_id}_' # config.py:123
+  abi_channels:                          # config.py:30-47, 16 channels, all enabled by default
+    - {id: C01, name: visible_blue,     outdir: GOES_ABI_VISIBLE_BLUE_DIR}
+    - {id: C02, name: visible_red,      outdir: GOES_ABI_VISIBLE_RED_DIR}
+    - {id: C03, name: veggie,           outdir: GOES_ABI_VEGGIE_DIR}
+    - {id: C04, name: cirrus,           outdir: GOES_ABI_CIRRUS_DIR}
+    - {id: C05, name: snow_ice,         outdir: GOES_ABI_SNOW_ICE_DIR}
+    - {id: C06, name: particle_size,    outdir: GOES_ABI_PARTICLE_SIZE_DIR}
+    - {id: C07, name: shortwave_ir,     outdir: GOES_ABI_SHORTWAVE_IR_DIR}
+    - {id: C08, name: upper_level_wv,   outdir: GOES_ABI_UPPER_LEVEL_WV_DIR}
+    - {id: C09, name: mid_level_wv,     outdir: GOES_ABI_MID_LEVEL_WV_DIR}
+    - {id: C10, name: lower_level_wv,   outdir: GOES_ABI_LOWER_LEVEL_WV_DIR}
+    - {id: C11, name: cld_top_phase,    outdir: GOES_ABI_CLD_TOP_PHASE_DIR}
+    - {id: C12, name: ozone,            outdir: GOES_ABI_OZONE_DIR}
+    - {id: C13, name: clean_lwir,       outdir: GOES_ABI_CLEAN_LWIR_DIR}
+    - {id: C14, name: longwave_ir,      outdir: GOES_ABI_LONGWAVE_IR_DIR}
+    - {id: C15, name: dirty_lwir,       outdir: GOES_ABI_DIRTY_LWIR_DIR}
+    - {id: C16, name: co2_lwir,         outdir: GOES_ABI_CO2_LWIR_DIR}

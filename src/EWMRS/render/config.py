@@ -1,21 +1,46 @@
 import util.file as fs
+from common.config.loader import ConfigError, load_config
 
-# Tile configuration constants
-TILE_SIZE = 350  # pixels
-TILE_GRID_ROWS = 10  # 3500 / 350
-TILE_GRID_COLS = 20  # 7000 / 350
+_CONFIG_NAME = "ewmrs_render"
+
+
+def _render_config():
+    return load_config(_CONFIG_NAME)
+
+
+def _resolve_dir(attribute_name):
+    """Map a catalog directory attribute name onto the live ``util.file`` path.
+
+    Resolved per call so ``initialize_filesystem`` rebinds are picked up, and
+    raised as ``ConfigError`` so a typo in the catalog names the offending key.
+    """
+    try:
+        return getattr(fs, attribute_name)
+    except AttributeError:
+        raise ConfigError(
+            f"{_CONFIG_NAME}.yaml",
+            f"outdir/filepath: {attribute_name}",
+            "not an attribute of util.file",
+        ) from None
+
+
+_TILES = _render_config()["tiles"]
+TILE_SIZE = _TILES["tile_size"]
+TILE_GRID_ROWS = _TILES["grid_rows"]
+TILE_GRID_COLS = _TILES["grid_cols"]
 
 # EWMRS value-chunk wire-format invariants. Keep these values together: they
 # are written to both index levels and consumed by API clients.
-CHUNK_SCHEMA_VERSION = 2
-CHUNK_FORMAT_VERSION = 2
-CHUNK_ENCODING = "float16"
-CHUNK_MEDIA_TYPE = "application/octet-stream"
-CHUNK_FILE_SUFFIX = ".f16.gz"
-CHUNK_COMPRESSION = "gzip"
-CHUNK_BYTES_PER_COMPONENT = 2
-CHUNK_PIXEL_ROW_ORDER = "top_to_bottom"
-CHUNK_GRID_ORIGIN = "bottom_left"
+_CHUNK = _render_config()["chunk_format"]
+CHUNK_SCHEMA_VERSION = _CHUNK["wire_version"]
+CHUNK_FORMAT_VERSION = _CHUNK["format_version"]
+CHUNK_ENCODING = _CHUNK["encoding"]
+CHUNK_MEDIA_TYPE = _CHUNK["media_type"]
+CHUNK_FILE_SUFFIX = _CHUNK["file_suffix"]
+CHUNK_COMPRESSION = _CHUNK["compression"]
+CHUNK_BYTES_PER_COMPONENT = _CHUNK["bytes_per_component"]
+CHUNK_PIXEL_ROW_ORDER = _CHUNK["pixel_row_order"]
+CHUNK_GRID_ORIGIN = _CHUNK["grid_origin"]
 
 
 def chunk_format_descriptor(*, include_media_type: bool = False) -> dict:
@@ -29,10 +54,10 @@ def chunk_format_descriptor(*, include_media_type: bool = False) -> dict:
         "encoding": CHUNK_ENCODING,
         "file_suffix": CHUNK_FILE_SUFFIX,
         "compression": CHUNK_COMPRESSION,
-        "data_type": "float16",
-        "channels": 1,
-        "value_kind": "scalar",
-        "no_data": "nan",
+        "data_type": _CHUNK["data_type"],
+        "channels": _CHUNK["channels"],
+        "value_kind": _CHUNK["value_kind"],
+        "no_data": _CHUNK["no_data"],
         "bytes_per_component": CHUNK_BYTES_PER_COMPONENT,
         "pixel_row_order": CHUNK_PIXEL_ROW_ORDER,
         "grid_origin": CHUNK_GRID_ORIGIN,
@@ -45,172 +70,36 @@ def get_mrms_file_list():
     """Return the MRMS-backed render configuration list."""
     return [
         {
-            "name": "MRMS_MergedReflectivityQC",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_COMPOSITE_DIR,
-            "outdir": fs.GUI_COMPOSITE_DIR
-        },
-        {
-            "name": "MRMS_EchoTop18",
-            "colormap_key": "EnhancedEchoTop",
-            "filepath": fs.MRMS_ECHOTOP18_DIR,
-            "outdir": fs.GUI_ECHOTOP18_DIR
-        },
-        {
-            "name": "MRMS_EchoTop30",
-            "colormap_key": "EnhancedEchoTop",
-            "filepath": fs.MRMS_ECHOTOP30_DIR,
-            "outdir": fs.GUI_ECHOTOP30_DIR
-        },
-        {
-            "name": "MRMS_ReflectivityAtLowestAltitude",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_RALA_DIR,
-            "outdir": fs.GUI_RALA_DIR
-        },
-        {
-            "name": "MRMS_ReflectivityAt0C",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_REF_0C_DIR,
-            "outdir": fs.GUI_REF_0C_DIR
-        },
-        {
-            "name": "MRMS_ReflectivityAtM5C",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_REFM5C_DIR,
-            "outdir": fs.GUI_REFM5C_DIR
-        },
-        {
-            "name": "MRMS_ReflectivityAtM15C",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_REFM15C_DIR,
-            "outdir": fs.GUI_REFM15C_DIR
-        },
-        {
-            "name": "MRMS_PrecipRate",
-            "colormap_key": "PrecipRate",
-            "filepath": fs.MRMS_PRECIPRATE_DIR,
-            "outdir": fs.GUI_PRECIPRATE_DIR
-        },
-        {
-            "name": "MRMS_VILDensity",
-            "colormap_key": "VILDensity",
-            "filepath": fs.MRMS_DVIL_DIR,
-            "outdir": fs.GUI_VILD_DIR
-        },
-        {
-            "name": "MRMS_QPE",
-            "colormap_key": "QPE_01H",
-            "filepath": fs.MRMS_QPE_DIR,
-            "outdir": fs.GUI_QPE_DIR
-        },
-        {
-            "name": "MRMS_VIL",
-            "colormap_key": "VIL",
-            "filepath": fs.MRMS_VIL_DIR,
-            "outdir": fs.GUI_VIL_DIR
-        },
-        {
-            "name": "MRMS_VII",
-            "colormap_key": "VIL",
-            "filepath": fs.MRMS_VII_DIR,
-            "outdir": fs.GUI_VII_DIR
-        },
-        {
-            "name": "MRMS_MergedAzShear_0-2kmAGL",
-            "colormap_key": "AzShear",
-            "filepath": fs.MRMS_AZSHEARLOW_DIR,
-            "outdir": fs.GUI_AZSHEARLOW_DIR
-        },
-        {
-            "name": "MRMS_MergedAzShear_3-6kmAGL",
-            "colormap_key": "AzShear",
-            "filepath": fs.MRMS_AZSHEARMID_DIR,
-            "outdir": fs.GUI_AZSHEARMID_DIR
-        },
-        {
-            "name": "MRMS_MESH",
-            "colormap_key": "MESH",
-            "filepath": fs.MRMS_MESH_DIR,
-            "outdir": fs.GUI_MESH_DIR
+            "name": layer["name"],
+            "colormap_key": layer["colormap_key"],
+            "filepath": _resolve_dir(layer["filepath"]),
+            "outdir": _resolve_dir(layer["outdir"]),
         }
+        for layer in _render_config()["mrms_layers"]
     ]
 
 
 def get_goes_file_list():
     """Return the GOES-backed render configuration list."""
-    reflectance_specs = [
-        ("C01", fs.GOES_ABI_VISIBLE_BLUE_DIR, fs.GUI_GOES_C01_DIR),
-        ("C02", fs.GOES_ABI_VISIBLE_RED_DIR, fs.GUI_GOES_C02_DIR),
-        ("C03", fs.GOES_ABI_VEGGIE_DIR, fs.GUI_GOES_C03_DIR),
-        ("C04", fs.GOES_ABI_CIRRUS_DIR, fs.GUI_GOES_C04_DIR),
-        ("C05", fs.GOES_ABI_SNOW_ICE_DIR, fs.GUI_GOES_C05_DIR),
-        ("C06", fs.GOES_ABI_PARTICLE_SIZE_DIR, fs.GUI_GOES_C06_DIR),
+    goes = _render_config()["goes_layers"]
+    common = goes["common"]
+    return [
+        {
+            "name": layer["name"],
+            "colormap_key": layer["colormap_key"],
+            "filepath": _resolve_dir(layer["filepath"]),
+            "outdir": _resolve_dir(layer["outdir"]),
+            "source_type": common["source_type"],
+            "variable_name": common["variable_name"],
+            "fallback_variable_names": list(common["fallback_variable_names"]),
+            "channel_id": layer["channel_id"],
+            "display_name": layer["display_name"],
+            "value_transform": layer["value_transform"],
+            "mask_min": dict(layer["mask_min"]),
+            "mask_max": dict(layer["mask_max"]),
+        }
+        for layer in goes["layers"]
     ]
-    brightness_temp_specs = [
-        ("C07", fs.GOES_ABI_SHORTWAVE_IR_DIR, fs.GUI_GOES_C07_DIR, "GOES_ABI_C07_BrightnessTemp", 180.0, 330.0),
-        ("C08", fs.GOES_ABI_UPPER_LEVEL_WV_DIR, fs.GUI_GOES_C08_DIR, "GOES_ABI_C08_BrightnessTemp", 180.0, 300.0),
-        ("C09", fs.GOES_ABI_MID_LEVEL_WV_DIR, fs.GUI_GOES_C09_DIR, "GOES_ABI_C09_BrightnessTemp", 180.0, 310.0),
-        ("C10", fs.GOES_ABI_LOWER_LEVEL_WV_DIR, fs.GUI_GOES_C10_DIR, "GOES_ABI_C10_BrightnessTemp", 185.0, 320.0),
-        ("C11", fs.GOES_ABI_CLD_TOP_PHASE_DIR, fs.GUI_GOES_C11_DIR, "GOES_ABI_C11_BrightnessTemp", 180.0, 330.0),
-        ("C12", fs.GOES_ABI_OZONE_DIR, fs.GUI_GOES_C12_DIR, "GOES_ABI_C12_BrightnessTemp", 180.0, 330.0),
-        ("C13", fs.GOES_ABI_CLEAN_LWIR_DIR, fs.GUI_GOES_C13_DIR, "GOES_IR", 180.0, 330.0),
-        ("C14", fs.GOES_ABI_LONGWAVE_IR_DIR, fs.GUI_GOES_C14_DIR, "GOES_IR", 180.0, 330.0),
-        ("C15", fs.GOES_ABI_DIRTY_LWIR_DIR, fs.GUI_GOES_C15_DIR, "GOES_IR", 180.0, 330.0),
-        ("C16", fs.GOES_ABI_CO2_LWIR_DIR, fs.GUI_GOES_C16_DIR, "GOES_ABI_C16_BrightnessTemp", 180.0, 330.0),
-    ]
-
-    layers = []
-    for channel_id, filepath, outdir in reflectance_specs:
-        colormap_key = "GOES_RGB_Raw" if channel_id in {"C01", "C02", "C03", "C04", "C05", "C06"} else f"GOES_ABI_{channel_id}_Reflectance"
-        layers.append(
-            {
-                "name": f"GOES_ABI_{channel_id}_Reflectance",
-                "colormap_key": colormap_key,
-                "filepath": filepath,
-                "outdir": outdir,
-                "source_type": "goes_abi",
-                "variable_name": "CMI",
-                "fallback_variable_names": ["Rad"],
-                "channel_id": channel_id,
-                "display_name": f"GOES ABI {channel_id} Reflectance",
-                "value_transform": "reflectance_from_rad",
-                "mask_min": {
-                    channel_id: 0.0,
-                    "default": 0.0,
-                },
-                "mask_max": {
-                    channel_id: 1.2,
-                    "default": 1.2,
-                },
-            }
-        )
-
-    for channel_id, filepath, outdir, colormap_key, min_temp, max_temp in brightness_temp_specs:
-        layers.append(
-            {
-                "name": f"GOES_ABI_{channel_id}_BrightnessTemp",
-                "colormap_key": colormap_key,
-                "filepath": filepath,
-                "outdir": outdir,
-                "source_type": "goes_abi",
-                "variable_name": "CMI",
-                "fallback_variable_names": ["Rad"],
-                "channel_id": channel_id,
-                "display_name": f"GOES ABI {channel_id} Brightness Temperature",
-                "value_transform": "brightness_temp_from_rad",
-                "mask_min": {
-                    channel_id: min_temp,
-                    "default": min_temp,
-                },
-                "mask_max": {
-                    channel_id: max_temp,
-                    "default": max_temp,
-                },
-            }
-        )
-
-    return layers
 
 
 def get_file_list():

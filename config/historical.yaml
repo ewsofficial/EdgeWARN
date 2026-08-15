@@ -1,14 +1,33 @@
 # historical.yaml — Audit §1
 #
-# Source: src/process_historical.py:125-129
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/util/io.py:139-155; src/process_historical.py:84,90,131,134;
+#         src/EdgeWARN/pipeline.py:62-77
+# Values verified against the working tree at commit e426fb2.
+# `lat`, `lon` and `output` are consumed today via `get_historical_args`.
+# See plans/source-configuration-extraction-plan.md.
+#
+# `start` and `end` are deliberately absent: io.py:141-142 declares both flags
+# `required=True` with no default, so a YAML value could never be reached. They
+# were recorded as `null` placeholders, which is exactly the inert-key hazard
+# this migration is meant to remove.
 
 schema_version: 1
 
 historical:
-  start: null                           # required, CLI --start
-  end: null                             # required, CLI --end
   lat: [20, 55]
   lon: [-130, -60]
   output: stormcell_test.json
+  # process_historical.py advances the cursor one minute at a time on every
+  # branch (:84, :90, :131).
+  step_minutes: 1
+  # :134. Only iterations that reach the pipeline call sleep; the two early
+  # `continue` branches (:84, :90) skip it, so a long run of already-processed
+  # timestamps is not throttled at all.
+  throttle_seconds: 1
+
+  # EdgeWARN/pipeline.py:62 _cleanup_historical_data_dirs; the clean_old_files
+  # call is at :77 and passes max_files only, so filesystem.yaml's 60-minute
+  # max_age_minutes still applies on top of it -- a directory is trimmed to 5
+  # files AND anything older than an hour is dropped. Applied to ingest data
+  # directories only; protected_dirs (:63) are skipped at :73-74.
+  cleanup_max_files: 5

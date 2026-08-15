@@ -1,22 +1,89 @@
 # alerts.yaml — Audit §6
 #
-# Source: src/EdgeWARN/alerts/schema.py; schedule/scheduler.py; api_integration/index_manager.py; EdgeWARN/pipeline.py
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/EdgeWARN/alerts/schema.py:35,51;
+#         alerts/manager.py:98,230,250,266-267,289,295,306;
+#         schedule/scheduler.py:19,35,78,105,113,139; ctam/run.py:50;
+#         api_integration/index_manager.py:12,20,172;
+#         EdgeWARN/pipeline.py:27,184,306,455; process/integrate/pipeline.py:415,430;
+#         src/run.py:44; src/process_historical.py:38,52;
+#         nws/geomapper.py:74,79,104,177
+# Values verified against the working tree at commit e426fb2.
+# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
+#
+# The section formerly named `schedule` is now `scheduler`, matching the module
+# it describes (src/EdgeWARN/schedule/scheduler.py). The old name read as a
+# schedule of times, which is not what this block holds.
 
 schema_version: 1
 
 alerts:
-  default_severity: warning
+  default_severity: warning             # schema.py:35, EdgeWARNAlert.severity
 
-schedule:
+  # schema.py:51 to_dict. Applied on serialization to shrink the file, so it is
+  # lossy: the stored polygon is coarser than the one held in memory.
+  #
+  # DISTINCT from the `precision=4` at nws/geomapper.py:74,79,104,177, which
+  # rounds during geometry construction. Two different roundings, two owners;
+  # the geomapper value is recorded separately as nws.yaml's
+  # `geomapper.geometry_precision`.
+  #
+  # ALSO distinct from the two `data.get("severity", "warning")` fallbacks at
+  # manager.py:98,230, which are read paths for alerts already on disk rather
+  # than the value stamped on a new one. Same string today, different owners.
+  geometry_round_decimals: 4
+
+  # manager.py:250 cleanup_expired. NULL IS MEANINGFUL, not "unset": with None
+  # the mtime cutoff is never computed (:266-267) and all three mtime branches
+  # (:289 fallback, :295 unreadable/malformed, :306 snapshot sweep) are skipped,
+  # so cleanup falls back to semantic expiry alone and a file with no parseable
+  # expiry -- or an unreadable one -- is kept forever. The sole production
+  # caller, ctam/run.py:50, passes nothing, so 120 is what actually runs; only
+  # tests supply the value explicitly.
+  cleanup_max_age_minutes: 120
+
+scheduler:
+  # DEAD PATH. scheduler.py:19 constructor default, read only at :35 inside
+  # has_update. Its only in-repo caller is all_sources_available (:139-143),
+  # which itself has no callers anywhere -- production or tests. has_update is
+  # reached only when a test calls it directly
+  # (tests/core/schedule/test_scheduler.py:25,36,56,72), so this value is
+  # exercised by tests alone. Both production construction sites (run.py:112,
+  # process_historical.py:52) pass MRMSUpdateChecker(verbose=True) and use other
+  # methods. Kept, not deleted, for the same reason as integration.yaml's
+  # azshear block: the value is real and the code path exists, it simply is not
+  # reached today.
   mrms_update_checker_max_entries: 10
 
+  # scheduler.py:78. The live lookup width, hardcoded in _get_modifier_times
+  # rather than taken from max_entries above -- which is why editing that key
+  # does not widen the real scheduler check.
+  modifier_lookup_max_entries: 20
+
+  # scheduler.py:105. Only the fallback when last_processed is unknown; with a
+  # known cursor the StartAfter key is built from it instead and this is unused.
+  s3_lookback_hours: 2
+
+  slow_check_log_threshold_ms: 2000     # scheduler.py:113, [PERF] log gate
+
 api_index:
-  remove_old_cells: true
-  resync_every_updates: 500
+  # SPLIT because the two pipelines disagree. The signature default is True
+  # (index_manager.py:12, pipeline.py:184) and the realtime tandem worker takes
+  # it (pipeline.py:306 passes nothing); historical_pipeline passes False
+  # explicitly (pipeline.py:455). One key could not record both.
+  remove_old_cells:
+    realtime: true
+    historical: false
+
+  resync_every_updates: 500             # index_manager.py:20 stormcell_resync_interval
+
+  # index_manager.py:172, written inline as `120 * 60`. A SEPARATE literal from
+  # alerts.cleanup_max_age_minutes above -- same number today, different owner,
+  # so changing one must not silently change the other.
+  inactive_cell_max_age_minutes: 120
 
 runtime:
+  # pipeline.py:27 initialize_runtime(initialize_indexes=True); the historical
+  # entry point overrides it to False (process_historical.py:38).
   initialize_indexes:
     realtime: true
     historical: false

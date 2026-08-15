@@ -3,7 +3,7 @@
   "title": "integration.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "output", "azshear", "glm", "cell_history", "stats_datasets", "rap_products"],
+  "required": ["schema_version", "output", "azshear", "glm", "stats_datasets", "probsevere_field_map", "rap_products"],
   "properties": {
     "schema_version": { "const": 1 },
     "output": {
@@ -17,14 +17,15 @@
     "azshear": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["buffer_km", "low_threshold", "mid_threshold", "min_gate_count", "max_pair_separation_km", "history_window"],
+      "required": ["enabled", "buffer_km", "low_threshold", "mid_threshold", "min_gate_count", "max_pair_separation_km", "history_window"],
       "properties": {
+        "enabled": { "type": "boolean" },
         "buffer_km": { "type": "number" },
         "low_threshold": { "type": "number" },
         "mid_threshold": { "type": "number" },
         "min_gate_count": { "type": "integer", "minimum": 0 },
         "max_pair_separation_km": { "type": "number" },
-        "history_window": { "type": "integer", "minimum": 0 }
+        "history_window": { "type": "integer", "minimum": 1 }
       }
     },
     "glm": {
@@ -35,47 +36,47 @@
         "bin_size_degrees": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
-    "cell_history": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["max_payloads"],
-      "properties": {
-        "max_payloads": { "type": "integer", "minimum": 0 }
-      }
-    },
     "stats_datasets": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "source", "key", "method"],
+        "required": ["name", "filepath", "key", "method"],
         "properties": {
           "name": { "type": "string" },
-          "source": { "type": "string" },
+          "filepath": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
           "key": { "type": "string" },
           "method": { "type": "string", "enum": ["max", "percentile"] },
           "percentile": { "type": "number", "minimum": 0, "maximum": 100 }
         }
       }
     },
+    "probsevere_field_map": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
     "rap_products": {
       "type": "object",
       "additionalProperties": false,
       "required": ["isobaric_levels_mb", "products", "derived"],
       "properties": {
-        "isobaric_levels_mb": { "type": "array", "items": { "type": "integer" } },
+        "isobaric_levels_mb": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "exclusiveMinimum": 0 } },
         "products": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["var"],
+            "required": ["var", "filter"],
             "properties": {
               "var": { "type": "string" },
-              "aliases": { "type": "array", "items": { "type": "string" } },
+              "var_aliases": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "levels": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "exclusiveMinimum": 0 } },
               "filter": {
                 "type": "object",
                 "additionalProperties": false,
+                "required": ["typeOfLevel"],
                 "properties": {
                   "typeOfLevel": { "type": "string" },
                   "level": { "type": "integer" }
