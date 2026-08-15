@@ -264,15 +264,20 @@ def test_zone_sync_pause_seconds_flag_overrides_the_constructor_default():
 
 # --- NEXRAD sites sentinel ------------------------------------------------
 
-def test_nexrad_empty_site_list_is_not_the_same_as_all_sites():
-    """`config/nexrad.yaml` records `cli.sites: []`, which means "no sites"."""
+def test_nexrad_all_sites_sentinel_is_null_not_an_empty_list():
+    """RESOLVED (Phase 3): the sentinel is `null`, matching the code's `None`.
+
+    `pipeline/__init__.py:76` keeps `None` as-is and `station_filter.py:16` then
+    applies no site filter, so `null` means "every allowed station". The file
+    used to record `[]`, which would have filtered every site away.
+    """
     source = (REPO_ROOT / "src/common/ingest/nexrad/pipeline/__init__.py").read_text(encoding="utf-8")
     assert "None if sites is None else" in source
 
     import yaml
 
     recorded = yaml.safe_load((REPO_ROOT / "config/nexrad.yaml").read_text(encoding="utf-8"))
-    assert recorded["cli"]["sites"] == [], "expected the mis-transcribed sentinel to still be present"
+    assert recorded["cli"]["sites"] is None
 
 
 # --- RAP colormap authority drift ----------------------------------------
@@ -315,21 +320,23 @@ def test_every_configured_colormap_key_exists_in_colormaps_json():
     assert used - available == set()
 
 
-def test_reflectance_colormap_ternary_has_an_unreachable_branch():
-    """DECISION OWED: drop the ternary, or widen the spec list.
+def test_reflectance_colormap_ternary_is_resolved():
+    """RESOLVED: the ternary was dropped when the layers moved to the catalog.
 
-    The `else` arm would produce `GOES_ABI_C07_Reflectance` and similar, but
-    `reflectance_specs` holds only C01-C06, so every layer takes the `if` arm.
-    Transcribing the ternary into YAML would preserve a branch that cannot run.
+    `get_goes_file_list()` used to compute `colormap_key` with a ternary whose
+    `else` arm (`GOES_ABI_C07_Reflectance` and similar) was unreachable, because
+    `reflectance_specs` held only C01-C06. Each layer now names its colormap
+    outright in ewmrs_render.yaml, so there is no dead branch to transcribe.
     """
     from EWMRS.render.config import get_goes_file_list
 
     source = (REPO_ROOT / "src/EWMRS/render/config.py").read_text(encoding="utf-8")
-    specs = source.split("reflectance_specs = [")[1].split("\n    ]")[0]
-    assert sorted(re.findall(r'\("(C\d\d)"', specs)) == ["C01", "C02", "C03", "C04", "C05", "C06"]
+    assert "reflectance_specs" not in source
+    assert "GOES_ABI_{channel_id}_Reflectance" not in source
 
     reflectance = [l for l in get_goes_file_list() if l["name"].endswith("_Reflectance")]
     assert len(reflectance) == 6
+    assert [l["channel_id"] for l in reflectance] == ["C01", "C02", "C03", "C04", "C05", "C06"]
     assert {l["colormap_key"] for l in reflectance} == {"GOES_RGB_Raw"}
 
 
@@ -369,10 +376,25 @@ def test_run_module_scope_is_outside_a_main_guard():
 
 # --- Silent fallbacks ----------------------------------------------------
 
-def test_unknown_rap_transform_name_falls_back_to_identity_silently():
-    """DECISION OWED: the loader must reject unknown names instead."""
+def test_unknown_rap_transform_name_is_rejected():
+    """RESOLVED (Phase 3): an unknown transform name now aborts the run.
+
+    The silent `TRANSFORMS.get(name, lambda x: x)` fallback meant a typo
+    published raw Kelvin under a Celsius key. Names are resolved once, before
+    extraction, so the failure is early and names the offending product.
+    """
+    from EdgeWARN.process.integrate.integrate_rap import TRANSFORMS, _transform_for
+
     source = (REPO_ROOT / "src/EdgeWARN/process/integrate/integrate_rap.py").read_text(encoding="utf-8")
-    assert 'TRANSFORMS.get(product.get("transform"), lambda x: x)' in source
+    assert 'TRANSFORMS.get(' not in source
+
+    assert _transform_for({"key": "x"})(5.0) == 5.0
+    assert _transform_for({"key": "x", "transform": "kelvin_to_celsius"})(273.15) == 0.0
+
+    with pytest.raises(ValueError, match="unknown RAP transform 'kelvin_to_farenheit'"):
+        _transform_for({"key": "temp_2m", "transform": "kelvin_to_farenheit"})
+
+    assert set(TRANSFORMS) == {"kelvin_to_celsius"}
 
 
 def test_unparseable_derived_formula_nulls_the_field_silently():

@@ -1,8 +1,12 @@
 # nexrad.yaml — Audit §1 NEXRAD CLIs, §7 NEXRAD
 #
-# Source: src/common/ingest/nexrad/config.py; s3_chunks.py:21; coordinator.py:25; service.py:164,237-238; worker_pool.py:194,210; writer.py:15-18; pipeline/__init__.py:387-391; main.py:174-178
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/common/ingest/nexrad/config.py; s3_chunks.py:21; coordinator.py:25;
+#         service.py:164,237-240; grouping.py:9-12; worker_pool.py:194,210;
+#         writer.py:15-18; pipeline/__init__.py:392-400; main.py:174-182;
+#         src/EWMRS/render/nexrad.py:16-50; src/api/services/ancillary.js:6
+# Values verified against the working tree at commit e426fb2.
+# The `cli` intervals are consumed today via `_resolve_cli_args`; the rest is
+# not yet read by code. See plans/source-configuration-extraction-plan.md.
 
 schema_version: 1
 
@@ -21,8 +25,18 @@ selection:
   angle_dedup_tolerance_deg: 0.1
   high_max_angle_deg: 4.0
   min_sweep_angle_deg: 0.4
+  # Readiness bin identities. These do NOT agree with the VCP sweep labels
+  # below: the third bin is 1.3 here, but VCP-12 and VCP-215 label that sweep
+  # 1.2 (only VCP-212 labels it 1.3). The disagreement is in the working tree,
+  # not a transcription error, and is left for a reviewed decision.
   canonical_elevation_bins: [0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0]
   min_required_volume_chunks: 25
+  # grouping.py:9-12. A surveillance sweep is only complete once the matching
+  # doppler sweep arrives; the single-elevation waveforms stand alone.
+  waveforms:
+    surveillance: contiguous_surveillance
+    doppler: contiguous_doppler
+    single_elevation: [staggered_pulse_pair, batch]
 
 timeouts:
   volume_discovery_seconds: 20.0
@@ -39,9 +53,14 @@ concurrency:
   worker_pool_size: 4
   worker_recycle_interval: 24           # <= 0 disables recycling
   worker_timeout_seconds: 40
+  parse_checkpoint_chunk_interval: 8    # service.py:239; re-parse every N chunks
+  in_volume_prefetch: 4                 # service.py:240; effective min(value, pending)
 
 cli:
-  sites: []                             # --site, repeatable; empty = all
+  # --site, repeatable. `null` means "every allowed station": pipeline/__init__.py:76
+  # keeps None as-is and station_filter.py:16 then applies no site filter. An
+  # empty list is NOT the same thing -- it would filter every site away.
+  sites: null
   base_dir: null
   scan_interval_seconds: 20
   completion_interval_seconds: 10
@@ -53,6 +72,20 @@ retention:
   scan_dirs_to_keep: 3
   elevation_dirs_to_keep: 2
   stale_manifest_max_age_hours: 12
+
+# render/nexrad.py:16-50. Keys are sweep indices within the volume, values are
+# the elevation labels published to the GUI. VCP-215 deliberately skips indices
+# 6 and 7 (its supplemental SAILS sweeps are not rendered).
+vcp_sweep_elevation_labels:
+  VCP-12:  {0: '0.5', 1: '0.5', 2: '0.9', 3: '0.9', 4: '1.2', 5: '1.2', 6: '1.8', 7: '2.4', 8: '3.1'}
+  VCP-212: {0: '0.5', 1: '0.5', 2: '0.9', 3: '0.9', 4: '1.3', 5: '1.3', 6: '1.8', 7: '2.4', 8: '3.1'}
+  VCP-215: {0: '0.5', 1: '0.5', 2: '0.9', 3: '0.9', 4: '1.2', 5: '1.2', 8: '1.8', 9: '2.4', 10: '3.1'}
+
+# ancillary.js:6 RADAR_PRODUCTS, the API's moment allowlist. CCORH is present
+# here but absent from ewmrs_render.yaml `nexrad_gui.variable_colormaps`, which
+# renders only the other six -- so the API accepts one product the renderer
+# never colors.
+radar_products: [DBZH, VRADH, WRADH, PHIDP, CCORH, RHOHV, ZDR]
 
 env_overrides:
   concurrency.worker_pool_size: NEXRAD_WORKER_POOL_SIZE

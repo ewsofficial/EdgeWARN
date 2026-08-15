@@ -1,24 +1,30 @@
 # ewmrs_render.yaml — Audit §8 render
 #
-# Source: src/EWMRS/render/config.py; render.py:23,95-108,141,204; tiler.py; tools.py; goes_transform.py:99,242-244; nexrad.py:53-60
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/EWMRS/render/{config,render,tiler,tools,goes_transform,nexrad}.py
+# Values verified against the working tree at commit e426fb2.
+# `mrms_layers` / `goes_layers` are consumed by render/config.py; the remaining
+# keys are not yet wired -- see plans/source-configuration-extraction-plan.md.
+#
+# Worker/thread and cache sizing live in ewmrs_pipeline.yaml, which owns all
+# EWMRS concurrency knobs.
 
 schema_version: 1
 
 tiles:
-  tile_size: 350                        # px; grid derived as shape // tile_size
+  tile_size: 350                        # config.py:4 px
+  # config.py:5-6. Invariants tied to the 3500x7000 MRMS CONUS grid
+  # (3500/350, 7000/350); changing tile_size without these is incoherent.
   grid_rows: 10
   grid_cols: 20
 
-chunk_format:                           # wire-format invariant, NOT operator-tunable
-  wire_version: 2
-  format_version: 2
+chunk_format:                           # config.py:10-18,27-41 wire-format invariant, NOT operator-tunable
+  wire_version: 2                       # CHUNK_SCHEMA_VERSION
+  format_version: 2                     # CHUNK_FORMAT_VERSION
   encoding: float16
   data_type: float16
   channels: 1
   value_kind: scalar
-  no_data: nan
+  no_data: nan                          # the literal string "nan", not a float
   file_suffix: .f16.gz
   compression: gzip
   media_type: application/octet-stream
@@ -26,66 +32,201 @@ chunk_format:                           # wire-format invariant, NOT operator-tu
   pixel_row_order: top_to_bottom
   grid_origin: bottom_left
   filename_pattern: 'chunk_{x}_{y}.f16.gz'
+  gzip_compress_level: 1                # tiler.py:32
+  gzip_mtime: 0                         # tiler.py:32; fixed mtime keeps chunks byte-reproducible
 
-workers:
-  max_tile_threads: 8                   # effective: min(tile_count, 8, cpu_count)
-
-colormap_cache_entries: 128
 timestamp_format: '%Y%m%d-%H%M00'
 
-mrms_layers:                            # 15 entries {name, colormap_key, filepath, outdir}
-  - {name: MRMS_MergedReflectivityQC,            colormap_key: NWS_Reflectivity}
-  - {name: MRMS_EchoTop18,                       colormap_key: EnhancedEchoTop}
-  - {name: MRMS_EchoTop30,                       colormap_key: EnhancedEchoTop}
-  - {name: MRMS_ReflectivityAtLowestAltitude,    colormap_key: NWS_Reflectivity}
-  - {name: MRMS_ReflectivityAt0C,                colormap_key: NWS_Reflectivity}
-  - {name: MRMS_ReflectivityAtM5C,               colormap_key: NWS_Reflectivity}
-  - {name: MRMS_ReflectivityAtM15C,              colormap_key: NWS_Reflectivity}
-  - {name: MRMS_PrecipRate,                      colormap_key: PrecipRate}
-  - {name: MRMS_VILDensity,                      colormap_key: VILDensity}
-  - {name: MRMS_QPE,                             colormap_key: QPE_01H}
-  - {name: MRMS_VIL,                             colormap_key: VIL}
-  - {name: MRMS_VII,                             colormap_key: VIL}
-  - {name: MRMS_MergedAzShear_0-2kmAGL,          colormap_key: AzShear}
-  - {name: MRMS_MergedAzShear_3-6kmAGL,          colormap_key: AzShear}
-  - {name: MRMS_MESH,                            colormap_key: MESH}
+# 15 entries. `filepath` (ingest source) and `outdir` (render target) are
+# util.file attribute names resolved by getattr at call time; an unknown name is
+# a startup error. Note MRMS_VILDensity maps MRMS_DVIL_DIR -> GUI_VILD_DIR --
+# the names are deliberately asymmetric.
+mrms_layers:
+  - {name: MRMS_MergedReflectivityQC,         colormap_key: NWS_Reflectivity, filepath: MRMS_COMPOSITE_DIR,   outdir: GUI_COMPOSITE_DIR}
+  - {name: MRMS_EchoTop18,                    colormap_key: EnhancedEchoTop,  filepath: MRMS_ECHOTOP18_DIR,   outdir: GUI_ECHOTOP18_DIR}
+  - {name: MRMS_EchoTop30,                    colormap_key: EnhancedEchoTop,  filepath: MRMS_ECHOTOP30_DIR,   outdir: GUI_ECHOTOP30_DIR}
+  - {name: MRMS_ReflectivityAtLowestAltitude, colormap_key: NWS_Reflectivity, filepath: MRMS_RALA_DIR,        outdir: GUI_RALA_DIR}
+  - {name: MRMS_ReflectivityAt0C,             colormap_key: NWS_Reflectivity, filepath: MRMS_REF_0C_DIR,      outdir: GUI_REF_0C_DIR}
+  - {name: MRMS_ReflectivityAtM5C,            colormap_key: NWS_Reflectivity, filepath: MRMS_REFM5C_DIR,      outdir: GUI_REFM5C_DIR}
+  - {name: MRMS_ReflectivityAtM15C,           colormap_key: NWS_Reflectivity, filepath: MRMS_REFM15C_DIR,     outdir: GUI_REFM15C_DIR}
+  - {name: MRMS_PrecipRate,                   colormap_key: PrecipRate,       filepath: MRMS_PRECIPRATE_DIR,  outdir: GUI_PRECIPRATE_DIR}
+  - {name: MRMS_VILDensity,                   colormap_key: VILDensity,       filepath: MRMS_DVIL_DIR,        outdir: GUI_VILD_DIR}
+  - {name: MRMS_QPE,                          colormap_key: QPE_01H,          filepath: MRMS_QPE_DIR,         outdir: GUI_QPE_DIR}
+  - {name: MRMS_VIL,                          colormap_key: VIL,              filepath: MRMS_VIL_DIR,         outdir: GUI_VIL_DIR}
+  - {name: MRMS_VII,                          colormap_key: VIL,              filepath: MRMS_VII_DIR,         outdir: GUI_VII_DIR}
+  - {name: MRMS_MergedAzShear_0-2kmAGL,       colormap_key: AzShear,          filepath: MRMS_AZSHEARLOW_DIR,  outdir: GUI_AZSHEARLOW_DIR}
+  - {name: MRMS_MergedAzShear_3-6kmAGL,       colormap_key: AzShear,          filepath: MRMS_AZSHEARMID_DIR,  outdir: GUI_AZSHEARMID_DIR}
+  - {name: MRMS_MESH,                         colormap_key: MESH,             filepath: MRMS_MESH_DIR,        outdir: GUI_MESH_DIR}
 
+# 16 entries, one per ABI channel. `mask_min`/`mask_max` are per-channel maps
+# with a `default` fallback because goes_transform.py looks the bound up by
+# channel id and falls back to `default` when the channel is absent.
 goes_layers:
-  common:
+  common:                               # config.py:172-174,196-198 -- identical on every layer
     source_type: goes_abi
     variable_name: CMI
     fallback_variable_names: [Rad]
-  reflectance:                          # 6 layers, value_transform reflectance_from_rad
-    colormap_key: GOES_RGB_Raw
-    mask_min: 0.0
-    mask_max: 1.2
-    channels: [C01, C02, C03, C04, C05, C06]
-  brightness_temp:                      # 10 layers, value_transform brightness_temp_from_rad
-    - {channel: C07, colormap_key: GOES_ABI_C07_BrightnessTemp, mask_min: 180.0, mask_max: 330.0}
-    - {channel: C08, colormap_key: GOES_ABI_C08_BrightnessTemp, mask_min: 180.0, mask_max: 300.0}
-    - {channel: C09, colormap_key: GOES_ABI_C09_BrightnessTemp, mask_min: 180.0, mask_max: 310.0}
-    - {channel: C10, colormap_key: GOES_ABI_C10_BrightnessTemp, mask_min: 185.0, mask_max: 320.0}
-    - {channel: C11, colormap_key: GOES_ABI_C11_BrightnessTemp, mask_min: 180.0, mask_max: 330.0}
-    - {channel: C12, colormap_key: GOES_ABI_C12_BrightnessTemp, mask_min: 180.0, mask_max: 330.0}
-    - {channel: C13, colormap_key: GOES_IR,                     mask_min: 180.0, mask_max: 330.0}
-    - {channel: C14, colormap_key: GOES_IR,                     mask_min: 180.0, mask_max: 330.0}
-    - {channel: C15, colormap_key: GOES_IR,                     mask_min: 180.0, mask_max: 330.0}
-    - {channel: C16, colormap_key: GOES_ABI_C16_BrightnessTemp, mask_min: 180.0, mask_max: 330.0}
+  layers:
+    - name: GOES_ABI_C01_Reflectance
+      channel_id: C01
+      display_name: GOES ABI C01 Reflectance
+      colormap_key: GOES_RGB_Raw
+      value_transform: reflectance_from_rad
+      filepath: GOES_ABI_VISIBLE_BLUE_DIR
+      outdir: GUI_GOES_C01_DIR
+      mask_min: {C01: 0.0, default: 0.0}
+      mask_max: {C01: 1.2, default: 1.2}
+    - name: GOES_ABI_C02_Reflectance
+      channel_id: C02
+      display_name: GOES ABI C02 Reflectance
+      colormap_key: GOES_RGB_Raw
+      value_transform: reflectance_from_rad
+      filepath: GOES_ABI_VISIBLE_RED_DIR
+      outdir: GUI_GOES_C02_DIR
+      mask_min: {C02: 0.0, default: 0.0}
+      mask_max: {C02: 1.2, default: 1.2}
+    - name: GOES_ABI_C03_Reflectance
+      channel_id: C03
+      display_name: GOES ABI C03 Reflectance
+      colormap_key: GOES_RGB_Raw
+      value_transform: reflectance_from_rad
+      filepath: GOES_ABI_VEGGIE_DIR
+      outdir: GUI_GOES_C03_DIR
+      mask_min: {C03: 0.0, default: 0.0}
+      mask_max: {C03: 1.2, default: 1.2}
+    - name: GOES_ABI_C04_Reflectance
+      channel_id: C04
+      display_name: GOES ABI C04 Reflectance
+      colormap_key: GOES_RGB_Raw
+      value_transform: reflectance_from_rad
+      filepath: GOES_ABI_CIRRUS_DIR
+      outdir: GUI_GOES_C04_DIR
+      mask_min: {C04: 0.0, default: 0.0}
+      mask_max: {C04: 1.2, default: 1.2}
+    - name: GOES_ABI_C05_Reflectance
+      channel_id: C05
+      display_name: GOES ABI C05 Reflectance
+      colormap_key: GOES_RGB_Raw
+      value_transform: reflectance_from_rad
+      filepath: GOES_ABI_SNOW_ICE_DIR
+      outdir: GUI_GOES_C05_DIR
+      mask_min: {C05: 0.0, default: 0.0}
+      mask_max: {C05: 1.2, default: 1.2}
+    - name: GOES_ABI_C06_Reflectance
+      channel_id: C06
+      display_name: GOES ABI C06 Reflectance
+      colormap_key: GOES_RGB_Raw
+      value_transform: reflectance_from_rad
+      filepath: GOES_ABI_PARTICLE_SIZE_DIR
+      outdir: GUI_GOES_C06_DIR
+      mask_min: {C06: 0.0, default: 0.0}
+      mask_max: {C06: 1.2, default: 1.2}
+    - name: GOES_ABI_C07_BrightnessTemp
+      channel_id: C07
+      display_name: GOES ABI C07 Brightness Temperature
+      colormap_key: GOES_ABI_C07_BrightnessTemp
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_SHORTWAVE_IR_DIR
+      outdir: GUI_GOES_C07_DIR
+      mask_min: {C07: 180.0, default: 180.0}
+      mask_max: {C07: 330.0, default: 330.0}
+    - name: GOES_ABI_C08_BrightnessTemp
+      channel_id: C08
+      display_name: GOES ABI C08 Brightness Temperature
+      colormap_key: GOES_ABI_C08_BrightnessTemp
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_UPPER_LEVEL_WV_DIR
+      outdir: GUI_GOES_C08_DIR
+      mask_min: {C08: 180.0, default: 180.0}
+      mask_max: {C08: 300.0, default: 300.0}
+    - name: GOES_ABI_C09_BrightnessTemp
+      channel_id: C09
+      display_name: GOES ABI C09 Brightness Temperature
+      colormap_key: GOES_ABI_C09_BrightnessTemp
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_MID_LEVEL_WV_DIR
+      outdir: GUI_GOES_C09_DIR
+      mask_min: {C09: 180.0, default: 180.0}
+      mask_max: {C09: 310.0, default: 310.0}
+    - name: GOES_ABI_C10_BrightnessTemp
+      channel_id: C10
+      display_name: GOES ABI C10 Brightness Temperature
+      colormap_key: GOES_ABI_C10_BrightnessTemp
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_LOWER_LEVEL_WV_DIR
+      outdir: GUI_GOES_C10_DIR
+      mask_min: {C10: 185.0, default: 185.0}
+      mask_max: {C10: 320.0, default: 320.0}
+    - name: GOES_ABI_C11_BrightnessTemp
+      channel_id: C11
+      display_name: GOES ABI C11 Brightness Temperature
+      colormap_key: GOES_ABI_C11_BrightnessTemp
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_CLD_TOP_PHASE_DIR
+      outdir: GUI_GOES_C11_DIR
+      mask_min: {C11: 180.0, default: 180.0}
+      mask_max: {C11: 330.0, default: 330.0}
+    - name: GOES_ABI_C12_BrightnessTemp
+      channel_id: C12
+      display_name: GOES ABI C12 Brightness Temperature
+      colormap_key: GOES_ABI_C12_BrightnessTemp
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_OZONE_DIR
+      outdir: GUI_GOES_C12_DIR
+      mask_min: {C12: 180.0, default: 180.0}
+      mask_max: {C12: 330.0, default: 330.0}
+    - name: GOES_ABI_C13_BrightnessTemp
+      channel_id: C13
+      display_name: GOES ABI C13 Brightness Temperature
+      colormap_key: GOES_IR
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_CLEAN_LWIR_DIR
+      outdir: GUI_GOES_C13_DIR
+      mask_min: {C13: 180.0, default: 180.0}
+      mask_max: {C13: 330.0, default: 330.0}
+    - name: GOES_ABI_C14_BrightnessTemp
+      channel_id: C14
+      display_name: GOES ABI C14 Brightness Temperature
+      colormap_key: GOES_IR
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_LONGWAVE_IR_DIR
+      outdir: GUI_GOES_C14_DIR
+      mask_min: {C14: 180.0, default: 180.0}
+      mask_max: {C14: 330.0, default: 330.0}
+    - name: GOES_ABI_C15_BrightnessTemp
+      channel_id: C15
+      display_name: GOES ABI C15 Brightness Temperature
+      colormap_key: GOES_IR
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_DIRTY_LWIR_DIR
+      outdir: GUI_GOES_C15_DIR
+      mask_min: {C15: 180.0, default: 180.0}
+      mask_max: {C15: 330.0, default: 330.0}
+    - name: GOES_ABI_C16_BrightnessTemp
+      channel_id: C16
+      display_name: GOES ABI C16 Brightness Temperature
+      colormap_key: GOES_ABI_C16_BrightnessTemp
+      value_transform: brightness_temp_from_rad
+      filepath: GOES_ABI_CO2_LWIR_DIR
+      outdir: GUI_GOES_C16_DIR
+      mask_min: {C16: 180.0, default: 180.0}
+      mask_max: {C16: 330.0, default: 330.0}
 
 goes_transform:                         # render/goes_transform.py
-  resampling: bilinear
-  crs_strategy: from_cf_then_proj4_geos
-  radian_detection: 'units == "rad" or max(abs(coord)) <= 2.0'
+  resampling: bilinear                  # goes_transform.py:370
+  # CRS extraction (from_cf, then a +proj=geos from_proj4 reconstruction) and
+  # radian-vs-metre axis detection are algorithms, not settings; they stay in
+  # goes_transform.py:65-95 and :243-244.
 
 nexrad_gui:
-  variable_colormaps:
+  variable_colormaps:                   # nexrad.py:53-60
     DBZH: NWS_Reflectivity
     VRADH: VRADH
     WRADH: WRADH
     PHIDP: PHIDP
     RHOHV: RHOHV
     ZDR: ZDR
-  manifest_name_pattern: '<SITE>_<scan_timestamp>_<volume_id>.json'
-
-env_overrides:
-  workers.max_tile_threads: EWMRS_TILE_THREADS
+  field_magic: EWFFv1S0                 # nexrad.py:52; wire-format invariant
+  bin_name_pattern: '{site_upper}_{variable_name}_{elevation_label}_{scan_timestamp}.bin.gz'  # nexrad.py:112
+  manifest_name_pattern: '{site_upper}_{scan_timestamp}_{volume_id}.json'  # nexrad.py:391,441
+  manifest_timestamp_fallback: unknown  # nexrad.py:441 (manifest_timestamp or 'unknown')

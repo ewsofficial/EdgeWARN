@@ -3,73 +3,106 @@
   "title": "runtime.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run", "goes_coordination", "supervisor", "cycle", "profiling"],
+  "required": ["schema_version", "run", "goes_coordination", "supervisor", "background_intervals", "cycle", "profiling"],
   "properties": {
     "schema_version": { "const": 1 },
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["base_dir", "profile", "lat_limits", "lon_limits", "mrms_core_only", "disable"],
+      "required": ["lat_limits", "lon_limits"],
       "properties": {
-        "base_dir": { "type": ["string", "null"] },
-        "profile": { "type": "boolean" },
         "lat_limits": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
-        "lon_limits": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
-        "mrms_core_only": { "type": "boolean" },
-        "disable": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["ctam", "tracking", "polygon_expansion", "ewmrs", "nws", "metar", "goes", "nexrad"],
-          "properties": {
-            "ctam": { "type": "boolean" },
-            "tracking": { "type": "boolean" },
-            "polygon_expansion": { "type": "boolean" },
-            "ewmrs": { "type": "boolean" },
-            "nws": { "type": "boolean" },
-            "metar": { "type": "boolean" },
-            "goes": { "type": "boolean" },
-            "nexrad": { "type": "boolean" }
-          }
-        }
+        "lon_limits": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }
       }
     },
     "goes_coordination": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["poll_seconds", "render_wait_seconds", "render_wait_interval_seconds", "render_max_offset_minutes", "pause_ingest_during_render"],
+      "required": ["poll_seconds", "render_wait_seconds", "render_wait_interval_seconds", "render_max_offset_minutes", "pause_ingest_during_render", "render_pause_poll_seconds", "render_pause_poll_interval_seconds", "poll_interval_seconds", "render_task_max_entries"],
       "properties": {
         "poll_seconds": { "type": "number", "minimum": 0 },
         "render_wait_seconds": { "type": "number", "minimum": 0 },
-        "render_wait_interval_seconds": { "type": "number", "minimum": 0 },
+        "render_wait_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "render_max_offset_minutes": { "type": "number", "minimum": 0 },
-        "pause_ingest_during_render": { "type": "boolean" }
+        "pause_ingest_during_render": { "type": "boolean" },
+        "render_pause_poll_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "render_pause_poll_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "poll_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "render_task_max_entries": { "type": "integer", "minimum": 1 }
       }
     },
     "supervisor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["check_ticks", "tick_seconds"],
+      "required": ["check_ticks", "tick_seconds", "max_restarts", "restart_window_seconds", "base_backoff_seconds", "max_backoff_seconds", "heartbeat_startup_grace_seconds", "stop_join_timeout_seconds", "stop_kill_join_timeout_seconds", "health_file", "nexrad_heartbeat_file"],
       "properties": {
         "check_ticks": { "type": "integer", "minimum": 1 },
-        "tick_seconds": { "type": "number", "exclusiveMinimum": 0 }
+        "tick_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "max_restarts": { "type": "integer", "minimum": 0 },
+        "restart_window_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "base_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "max_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "heartbeat_startup_grace_seconds": { "type": "number", "minimum": 0 },
+        "stop_join_timeout_seconds": { "type": "number", "minimum": 0 },
+        "stop_kill_join_timeout_seconds": { "type": "number", "minimum": 0 },
+        "health_file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dir", "name"],
+          "properties": {
+            "dir": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "name": { "type": "string" }
+          }
+        },
+        "nexrad_heartbeat_file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dir", "name"],
+          "properties": {
+            "dir": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "name": { "type": "string" }
+          }
+        }
+      }
+    },
+    "background_intervals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metar_boundary_minutes", "nws_seconds", "nws_interval_seconds", "wpc_boundary_minutes", "nexrad_seconds", "nexrad_interval_seconds"],
+      "properties": {
+        "metar_boundary_minutes": { "type": "integer", "exclusiveMinimum": 0 },
+        "nws_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "nws_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "wpc_boundary_minutes": { "type": "integer", "exclusiveMinimum": 0 },
+        "nexrad_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "nexrad_interval_seconds": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
     "cycle": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["state_file", "retry"],
+      "required": ["state_file", "retry", "log_drain_poll_seconds"],
       "properties": {
-        "state_file": { "type": "string" },
+        "state_file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dir", "name"],
+          "properties": {
+            "dir": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "name": { "type": "string" }
+          }
+        },
         "retry": {
           "type": "object",
           "additionalProperties": false,
           "required": ["max_attempts", "initial_backoff_seconds", "max_backoff_seconds"],
           "properties": {
             "max_attempts": { "type": "integer", "minimum": 1 },
-            "initial_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 },
-            "max_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 }
+            "initial_backoff_seconds": { "type": "number", "minimum": 0 },
+            "max_backoff_seconds": { "type": "number", "minimum": 0 }
           }
-        }
+        },
+        "log_drain_poll_seconds": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
     "profiling": {
@@ -77,12 +110,12 @@
       "additionalProperties": false,
       "required": ["perf_tracker"],
       "properties": {
-        "perf_tracker": { "type": "boolean" }
+        "perf_tracker": { "type": ["boolean", "null"] }
       }
     },
     "env_overrides": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": { "type": ["string", "array"], "items": { "type": "string" } }
     }
   }
 }

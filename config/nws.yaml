@@ -1,14 +1,34 @@
 # nws.yaml — Audit §1 zone_sync CLI, §7 NWS
 #
-# Source: src/common/ingest/nws/main.py:47; registry.py; zone_sync.py:18,369-418
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/common/ingest/nws/main.py:47-74,79,90,106-107,154,170-171;
+#         registry.py:76,233-249,565;
+#         zone_sync.py:21,57,88,150-155,166,188,230,239,363-420;
+#         geomapper.py:22,74,79,104,177,312,362
+# Values verified against the working tree at commit e426fb2.
+#
+# The `zone_sync` block IS consumed: _resolve_zone_sync_args (zone_sync.py:424-435)
+# loads it and overlays the CLI on top of it. The `nws` block is not wired yet;
+# see plans/source-configuration-extraction-plan.md.
+#
+# `zone_sync.apply` and `zone_sync.report_path` are deliberately absent.
+# _resolve_zone_sync_args reads exactly seven keys and neither is among them;
+# `--apply` is `action="store_true"` (zone_sync.py:405-409) so its False is fixed
+# by argparse, and `--report-path` (:410-414) has no default at all. A YAML value
+# for either could never be reached.
 
 schema_version: 1
 
 nws:
-  registry_ttl_hours: 2
-  dropped_events:                       # 19 unique entries
+  # main.py:79 passes ttl_hours=2.0 explicitly; 2.0 is also the default at
+  # registry.py:76 and :565. All three agree. Written as 2.0 to match the float
+  # the code declares.
+  registry_ttl_hours: 2.0
+
+  # main.py:47-74 DROPPED_EVENTS, applied at main.py:251. An event named here is
+  # discarded on ingest, so nothing downstream can recover it. 19 unique entries;
+  # the source set literally repeats five of them (main.py:55-59), which a Python
+  # set silently collapses.
+  dropped_events:
     - Administrative Message
     - Freezing Spray Advisory
     - Low Water Advisory
@@ -29,13 +49,85 @@ nws:
     - Air Stagnation Advisory
     - Beach Hazards Statement
 
+  active_alerts_url: https://api.weather.gov/alerts/active   # main.py:90,154
+
+  # registry.py:233-249 _derive_snapshot_alert_name. Only "Tornado Warning" is
+  # rescored, by scanning the alert description; the first match wins, so
+  # "Tornado Emergency" outranks the PDS phrase. Every other event keeps its
+  # own name.
+  tornado_upgrade:
+    event: Tornado Warning
+    rules:
+      - {description_contains: TORNADO EMERGENCY,               name: Tornado Emergency}
+      - {description_contains: PARTICULARLY DANGEROUS SITUATION, name: PDS Tornado Warning}
+
+geomapper:
+  # geomapper.py:74,79,104,177. One value, declared four times as a keyword
+  # default; no caller overrides any of them, so editing this needs all four
+  # signatures updated. Applied while polygons are BUILT, which makes it
+  # DISTINCT from alerts.yaml's `geometry_round_decimals` (same number today, but
+  # that one rounds again on serialization) and from `zone_sync.geometry_precision`
+  # below, which starts one digit finer.
+  geometry_precision: 4
+
+  # geomapper.py:22, stripped at :312 and :362. Removed from every alert's
+  # properties before it reaches disk, so anything listed here is unrecoverable
+  # downstream -- the same one-way filter as `nws.dropped_events`, at field
+  # granularity instead of event granularity.
+  junk_keys:
+    - references
+    - sender
+    - parameters
+    - instruction
+    - response
+    - scope
+    - code
+    - language
+    - web
+    - eventCode
+
 zone_sync:
-  assets_dir: assets/nws_zones
-  zone_types: [forecast, fire, public, county, marine]
-  timeout_seconds: 30
-  max_retries: 3
-  max_workers: 16
+  assets_dir: assets/nws_zones          # resolved against the repo root
+  zone_types: [forecast, fire, public, county, marine]  # zone_sync.py:21
+  timeout_seconds: 30                   # zone_sync.py:150, --timeout-seconds type=int
+  max_retries: 3                        # zone_sync.py:151
+  max_workers: 16                       # zone_sync.py:152
+
+  # zone_sync.py:188 `time.sleep(0.25 * attempt)`. Linear, not exponential, and
+  # multiplied by the 1-based attempt number, so three retries wait 0.25 s then
+  # 0.5 s. Unlike runtime.yaml's supervisor backoff there is no ceiling.
+  retry_backoff_seconds: 0.25
+
+  # zone_sync.py:57 geometry_to_rings. A FLOOR, not a fixed precision:
+  # zone_sync.py:88 is `range(precision, 8)`, so a ring that degenerates at 5
+  # decimals is retried at 6 and 7 before being given up on. Raising the floor
+  # narrows that escalation window; the ceiling is exclusive.
+  geometry_precision: 5
+  geometry_precision_max: 8
+
+  # 0.0 is the effective value: --pause-seconds defaults to None (zone_sync.py:396)
+  # so this file wins. It DISABLES throttling against api.weather.gov, because
+  # zone_sync.py:324 guards `if self.pause_seconds > 0`.
+  #
+  # The constructor declares 0.05 (zone_sync.py:153). The two disagree, and 0.05
+  # now reaches only direct programmatic callers that skip the overlay. Recorded
+  # as 0.0 to state what runs, not to endorse it.
   pause_seconds: 0.0
+
   progress: true                        # --no-progress disables
-  apply: false                          # default is dry-run
-  report_path: null
+
+  # zone_sync.py:154,166 -- also declared verbatim at main.py:106-107 and :170-171.
+  #
+  # These identify us to api.weather.gov, which asks for a contact address. This
+  # string DISAGREES with the NEXRAD ingest's "(EdgeWARN/2.7.0, ewsbackend@gmail.com)":
+  # different version, different mailbox. Recorded per-subsystem because that is
+  # the truth today; unifying them is a reviewed decision, not a transcription.
+  #
+  # Both are constructor defaults that main() does not pass, so a YAML edit needs
+  # the call sites updated before it takes effect.
+  user_agent: '(EdgeWARN/1.0, contact@edgewarn.com)'
+  accept: application/geo+json
+
+  # zone_sync.py:230 and :239. The catalog listing and the per-zone detail fetch.
+  zone_catalog_url_pattern: 'https://api.weather.gov/zones/{zone_type}'
+  zone_detail_url_pattern: 'https://api.weather.gov/zones/{zone_type}/{code}'

@@ -3,36 +3,30 @@
   "title": "ewmrs_rap_uint16.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "pressure_levels_mb", "max_timestamps", "timestamp_format", "scale_rule", "layers"],
+  "required": ["schema_version", "max_timestamps", "timestamp_format", "force", "output_root", "layers"],
   "properties": {
     "schema_version": { "const": 1 },
-    "pressure_levels_mb": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["wind", "thermo"],
-      "properties": {
-        "wind": { "type": "array", "items": { "type": "integer" } },
-        "thermo": { "type": "array", "items": { "type": "integer" } }
-      }
-    },
-    "max_timestamps": { "type": "integer", "minimum": 0 },
+    "max_timestamps": { "type": "integer", "minimum": 1 },
     "timestamp_format": { "type": "string" },
-    "scale_rule": { "type": "string" },
+    "force": { "type": "boolean" },
+    "output_root": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
     "layers": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "short_names", "filter", "units", "scale", "colormap_key"],
+        "required": ["name", "short_names", "filter", "units", "scale", "colormap_key", "outdir", "description"],
         "properties": {
           "name": { "type": "string" },
-          "short_names": { "type": "array", "items": { "type": "string" } },
+          "short_names": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
           "filter": {
             "type": "object",
             "additionalProperties": false,
+            "required": ["typeOfLevel", "level"],
             "properties": {
               "typeOfLevel": { "type": "string" },
-              "level": { "type": "integer" }
+              "level": { "type": "integer", "minimum": 0 }
             }
           },
           "units": { "type": "string" },
@@ -45,7 +39,9 @@
               "max": { "type": "number" }
             }
           },
-          "colormap_key": { "type": ["string", "null"] }
+          "colormap_key": { "type": ["string", "null"] },
+          "outdir": { "type": "string" },
+          "description": { "type": "string" }
         }
       }
     }

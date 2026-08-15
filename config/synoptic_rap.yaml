@@ -1,17 +1,33 @@
 # synoptic_rap.yaml — Audit §7 RAP/Synoptic
 #
-# Source: src/common/ingest/synoptic/config.py:4-9; synoptic/main.py:11
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/common/ingest/synoptic/config.py:4-9; main.py:11-12,28;
+#         downloader.py:67,110,117,152
+# Values verified against the working tree at commit e426fb2.
+# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
 
 schema_version: 1
 
 rap:
   bucket: noaa-rap-pds
+  # Remote S3 object name and its parent directory (config.py:5-6).
   file_pattern: 'rap.t{hour:02d}z.awp130pgrbf00.grib2'
   dir_pattern: 'rap.{date}'
-  filename_regex: null                  # RAP_FILENAME_RE, derived from file_pattern
+  # Local name written by downloader.py:117 -- NOT the remote name. It is
+  # uppercased and carries the date, so the two cannot be derived from each other.
+  local_file_pattern: 'RAP.{date}-{hour:02d}z.awp130pgrbf00.grib2'
+  date_format: '%Y%m%d'                 # downloader.py:110
+  # main.py:11-12 RAP_FILENAME_RE, which parses `local_file_pattern` back into a
+  # timestamp (via "%Y%m%d%H" on the two capture groups at main.py:28). It is
+  # anchored at both ends and is not derived from `file_pattern`.
+  filename_regex: '^RAP\.(?P<date>\d{8})-(?P<hour>\d{2})z\.awp130pgrbf00\.grib2$'
+  # Age budget for accepting an older analysis hour. downloader.py:62-67 walks
+  # backwards one hour at a time until the budget is exhausted. Note that the
+  # generic helper at downloader.py:152 declares its own 60-minute default,
+  # which the RAP caller at :248 always overrides with this value.
   max_age_minutes: 180                  # validated int >= 0
+  lookback_step_hours: 1                # downloader.py:67
+  # main.py:115,142. Retained RAP analyses; the pre-download sweep passes None
+  # (no cap) and only the post-download sweep applies it.
   max_files: 3
 
 env_overrides:

@@ -10,6 +10,7 @@ from common.ingest.mrms.pipeline import (
     run_ingestion_pipeline,
     run_with_async_fallback,
 )
+from common.config.loader import load_config
 from util.io import IOManager
 import util.file as fs
 import asyncio
@@ -18,7 +19,7 @@ io_manager = IOManager("[Ingest]")
 
 
 def get_detection_modifiers():
-    return ["MergedReflectivityQCComposite_00.50", "PrecipFlag_00.00", None]
+    return list(load_config("mrms_goes")["mrms"]["membership_lists"]["detection"])
 
 
 def get_integration_modifiers():

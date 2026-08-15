@@ -2,9 +2,34 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import util.file as fs
+from common.config.loader import ConfigError, load_config
 
-bucket = "noaa-mrms-pds"
-goes_bucket = "noaa-goes19"
+_CONFIG_NAME = "mrms_goes"
+
+
+def _catalog():
+    return load_config(_CONFIG_NAME)
+
+
+def _resolve_outdir(attribute_name):
+    """Map a catalog ``outdir`` attribute name onto the live ``util.file`` path.
+
+    Resolved per call rather than at import so ``initialize_filesystem`` rebinds
+    are picked up, and raised as ``ConfigError`` so a typo in the catalog fails
+    with the offending file and key instead of a bare ``AttributeError``.
+    """
+    try:
+        return getattr(fs, attribute_name)
+    except AttributeError:
+        raise ConfigError(
+            f"{_CONFIG_NAME}.yaml",
+            f"outdir: {attribute_name}",
+            "not an attribute of util.file",
+        ) from None
+
+
+bucket = _catalog()["mrms"]["bucket"]
+goes_bucket = _catalog()["goes"]["bucket"]
 
 
 @dataclass(frozen=True)
@@ -14,7 +39,7 @@ class GoesIngestSpec:
     channel_id: str | None = None
     channel_name: str | None = None
     filename_matcher: str | None = None
-    max_files: int = 2
+    max_files: int = _catalog()["goes"]["max_files_per_spec"]
 
     @property
     def label(self) -> str:
@@ -25,81 +50,38 @@ class GoesIngestSpec:
         return self.channel_id is None and "GLM" in self.product
 
 
-ABI_RADC_PRODUCT = "ABI-L1b-RadC"
+ABI_RADC_PRODUCT = _catalog()["goes"]["abi_product"]
 
-_ABI_CHANNEL_DEFINITIONS = [
-    ("C01", "visible_blue", "GOES_ABI_VISIBLE_BLUE_DIR"),
-    ("C02", "visible_red", "GOES_ABI_VISIBLE_RED_DIR"),
-    ("C03", "veggie", "GOES_ABI_VEGGIE_DIR"),
-    ("C04", "cirrus", "GOES_ABI_CIRRUS_DIR"),
-    ("C05", "snow_ice", "GOES_ABI_SNOW_ICE_DIR"),
-    ("C06", "particle_size", "GOES_ABI_PARTICLE_SIZE_DIR"),
-    ("C07", "shortwave_ir", "GOES_ABI_SHORTWAVE_IR_DIR"),
-    ("C08", "upper_level_wv", "GOES_ABI_UPPER_LEVEL_WV_DIR"),
-    ("C09", "mid_level_wv", "GOES_ABI_MID_LEVEL_WV_DIR"),
-    ("C10", "lower_level_wv", "GOES_ABI_LOWER_LEVEL_WV_DIR"),
-    ("C11", "cld_top_phase", "GOES_ABI_CLD_TOP_PHASE_DIR"),
-    ("C12", "ozone", "GOES_ABI_OZONE_DIR"),
-    ("C13", "clean_lwir", "GOES_ABI_CLEAN_LWIR_DIR"),
-    ("C14", "longwave_ir", "GOES_ABI_LONGWAVE_IR_DIR"),
-    ("C15", "dirty_lwir", "GOES_ABI_DIRTY_LWIR_DIR"),
-    ("C16", "co2_lwir", "GOES_ABI_CO2_LWIR_DIR"),
-]
+_ABI_CHANNEL_DEFINITIONS = tuple(
+    (channel["id"], channel["name"], channel["outdir"])
+    for channel in _catalog()["goes"]["abi_channels"]
+)
 
 DEFAULT_ABI_RADC_CHANNEL_IDS = tuple(channel_id for channel_id, _, _ in _ABI_CHANNEL_DEFINITIONS)
 
-def get_mrms_modifiers():
+_FILENAME_MATCHER_TEMPLATE = _catalog()["goes"]["filename_matcher_template"]
+
+def _catalog_triples(key):
     return [
-        ("CONUS", "EchoTop_18_00.50", fs.MRMS_ECHOTOP18_DIR), # Region / Product / Outdir
-        ("CONUS", "EchoTop_30_00.50", fs.MRMS_ECHOTOP30_DIR),
-        ("CONUS", "EchoTop_50_00.50", fs.MRMS_ECHOTOP50_DIR),
-        ("CONUS", "FLASH_CREST_MAXUNITSTREAMFLOW_00.00", fs.MRMS_FLASH_CREST_MAXUNIT_DIR),
-        ("CONUS", "FLASH_QPE_ARIMAX_00.00", fs.MRMS_FLASH_ARIMAX_DIR),
-        ("CONUS", "FLASH_QPE_ARI30M_00.00", fs.MRMS_FLASH_ARI30M_DIR),
-        ("CONUS", "FLASH_QPE_ARI01H_00.00", fs.MRMS_FLASH_ARI01H_DIR),
-        ("CONUS", "FLASH_HP_MAXUNITSTREAMFLOW_00.00", fs.MRMS_FLASH_HP_MAXUNIT_DIR),
-        ("CONUS", "FLASH_SAC_MAXSOILSAT_00.00", fs.MRMS_FLASH_SAC_MAXSOIL_DIR),
-        ("CONUS", "FLASH_QPE_FFGMAX_00.00", fs.MRMS_FLASH_FFGMAX_DIR),
-        ("CONUS", "RadarQualityIndex_00.00", fs.MRMS_RQI_DIR),
-        ("CONUS", "MESH_00.50", fs.MRMS_MESH_DIR),
-        ("CONUS", "NLDN_CG_005min_AvgDensity_00.00", fs.MRMS_NLDN_DIR),
-        ("CONUS", "PrecipRate_00.00", fs.MRMS_PRECIPRATE_DIR),
-        ("CONUS", "RadarOnly_QPE_01H_00.00", fs.MRMS_QPE_DIR),
-        ("CONUS", "MergedAzShear_0-2kmAGL_00.50", fs.MRMS_AZSHEARLOW_DIR),
-        ("CONUS", "MergedAzShear_3-6kmAGL_00.50", fs.MRMS_AZSHEARMID_DIR),
-        ("CONUS", "VIL_Density_00.50", fs.MRMS_DVIL_DIR),
-        ("ProbSevere", None, fs.MRMS_PROBSEVERE_DIR),
-        ("CONUS", "MergedRhoHV_00.50", fs.MRMS_RHOHV_DIR),
-        ("CONUS", "PrecipFlag_00.00", fs.MRMS_PRECIPTYP_DIR),
-        ("CONUS", "MergedReflectivityAtLowestAltitude_00.50", fs.MRMS_RALA_DIR),
-        ("CONUS", "MergedReflectivityQCComposite_00.50", fs.MRMS_COMPOSITE_DIR),
-        ("CONUS", "VII_00.50", fs.MRMS_VII_DIR),
-        ("CONUS", "VIL_00.50", fs.MRMS_VIL_DIR),
-        ("CONUS", "Reflectivity_0C_00.50", fs.MRMS_REF_0C_DIR),
-        ("CONUS", "Reflectivity_-5C_00.50", fs.MRMS_REFM5C_DIR),
-        ("CONUS", "Reflectivity_-15C_00.50", fs.MRMS_REFM15C_DIR)
+        (entry["region"], entry["product"], _resolve_outdir(entry["outdir"]))
+        for entry in _catalog()["mrms"][key]
     ]
 
+
+def get_mrms_modifiers():
+    """The full MRMS ingest catalog as (region, product, outdir) triples."""
+    return _catalog_triples("products")
+
+
 def get_check_modifiers():
-    return [
-        ("CONUS", "EchoTop_18_00.50", fs.MRMS_ECHOTOP18_DIR), # Region / Product / Outdir
-        ("CONUS", "EchoTop_30_00.50", fs.MRMS_ECHOTOP30_DIR),
-        ("CONUS", "EchoTop_50_00.50", fs.MRMS_ECHOTOP50_DIR),
-        ("CONUS", "PrecipRate_00.00", fs.MRMS_PRECIPRATE_DIR),
-        ("CONUS", "MergedAzShear_0-2kmAGL_00.50", fs.MRMS_AZSHEARLOW_DIR),
-        ("CONUS", "MergedAzShear_3-6kmAGL_00.50", fs.MRMS_AZSHEARMID_DIR),
-        ("CONUS", "VIL_Density_00.50", fs.MRMS_DVIL_DIR),
-        ("ProbSevere", None, fs.MRMS_PROBSEVERE_DIR),
-        ("CONUS", "PrecipFlag_00.00", fs.MRMS_PRECIPTYP_DIR),
-        ("CONUS", "MergedReflectivityAtLowestAltitude_00.50", fs.MRMS_RALA_DIR),
-        ("CONUS", "MergedReflectivityQCComposite_00.50", fs.MRMS_COMPOSITE_DIR),
-        ("CONUS", "VII_00.50", fs.MRMS_VII_DIR)
-    ]
+    """The readiness-check subset of :func:`get_mrms_modifiers`."""
+    return _catalog_triples("check_products")
 
 
 def get_goes_modifiers():
+    goes = _catalog()["goes"]
     return [
-        GoesIngestSpec("GLM-L2-LCFA", fs.GOES_GLM_DIR),
+        GoesIngestSpec(goes["glm_product"], _resolve_outdir(goes["glm_outdir"])),
         *get_abi_radc_channel_specs(),
     ]
 
@@ -112,15 +94,13 @@ def get_abi_radc_channel_specs(channel_ids=DEFAULT_ABI_RADC_CHANNEL_IDS):
         if selected_channel_ids is not None and channel_id not in selected_channel_ids:
             continue
 
-        outdir = getattr(fs, outdir_attr)
-
         specs.append(
             GoesIngestSpec(
                 product=ABI_RADC_PRODUCT,
-                outdir=outdir,
+                outdir=_resolve_outdir(outdir_attr),
                 channel_id=channel_id,
                 channel_name=channel_name,
-                filename_matcher=rf"(?:_|-)M\d{channel_id}_",
+                filename_matcher=_FILENAME_MATCHER_TEMPLATE.format(channel_id=channel_id),
             )
         )
 

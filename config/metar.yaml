@@ -1,15 +1,44 @@
 # metar.yaml — Audit §7 METAR
 #
-# Source: src/common/ingest/metar.py:19,306
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/common/ingest/metar.py:19,29,37-41,89-100,194,248,257,276-291,
+#         305-311,395,408,441,459,476
+# Values verified against the working tree at commit e426fb2.
+# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
 
 schema_version: 1
 
 metar:
   station_db_url: https://aviationweather.gov/data/cache/stations.cache.json
-  station_cache_file: stations_cache.json
-  request_timeout_seconds: 60
+  station_cache_file: stations_cache.json   # metar.py:29,75; relative to DATA_DIR
+  # metar.py:248,276. The server publishes one file per UTC hour named HHZ.TXT.
+  observation_url_pattern: 'https://tgftp.nws.noaa.gov/data/observations/metar/cycles/{hour}Z.TXT'
+
+  # Two distinct timeouts, not one: the station database download allows 60s
+  # (metar.py:41,100) and each hourly observation fetch allows 30s
+  # (metar.py:257,281,291).
+  station_timeout_seconds: 60
+  observation_timeout_seconds: 30
+
+  # metar.py:98. A third user-agent string, disagreeing with both
+  # nws.yaml zone_sync (EdgeWARN/1.0 with a contact) and nexrad.yaml
+  # (EdgeWARN/2.7.0 with a contact). This one carries no contact address at all.
+  user_agent: EdgeWARN/1.0
+  # metar.py:39,98. 'br' is dropped deliberately: brotli responses failed to
+  # decode, so the header is narrowed rather than left at the client default.
+  accept_encoding: 'gzip, deflate'
+
+  # SECURITY: false reproduces today's behavior. TLS verification is disabled in
+  # five places -- aiohttp `ssl=False` at metar.py:37,289,460 and
+  # `ssl.CERT_NONE` at metar.py:94,254. Nothing about these hosts requires it,
+  # so this should become true once a run confirms the certificates validate.
+  # A loader that reads this key must warn loudly while it is false.
+  verify_tls: false
+
+  lookback_hours: 3                         # metar.py:408,459,476
+  cleanup_max_age_minutes: 60               # metar.py:395,441
+  coordinate_decimals: 4                    # metar.py:53,115
+  pressure_decimals: 2                      # metar.py:194
+
   conus_bounds:
     lat_min: 24.0
     lat_max: 50.0

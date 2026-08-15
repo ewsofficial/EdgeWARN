@@ -21,7 +21,13 @@ kalman_filter:
 tracking:
   # Maximum time a storm can be tracked in prediction mode (minutes)
   # After this time, the storm will be terminated if not re-acquired
-  max_prediction_time_minutes: 6
+  #
+  # LOAD-BEARING: this key must stay present. TrackingConfig.from_yaml reads it
+  # as `.get('max_prediction_time_minutes', 10.0)` (kalman/config.py:92) while
+  # the dataclass default is 6.0 (:63). Deleting the key does not fall back to
+  # the dataclass -- it silently lengthens prediction mode to 10 minutes.
+  # Written as 6.0 to match the float the code declares.
+  max_prediction_time_minutes: 6.0
   
   # Maximum distance for re-acquisition (km)
   # A new ProbSevere detection within this radius of a predicted cell
