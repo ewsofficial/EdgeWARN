@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -519,6 +520,162 @@ def test_generic_synoptic_download_keeps_its_own_age_default():
     assert "max_age_minutes=get_rap_max_age_minutes()" in downloader_source
 
 
+# --- WPC: four keys describing one naming scheme --------------------------
+
+def _wpc_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load((REPO_ROOT / "config" / "wpc.yaml").read_text(encoding="utf-8"))
+
+
+def test_wpc_cleanup_glob_matches_the_timestamped_name_but_not_latest():
+    """RESOLVED: the retention sweep and the writer must agree, and no schema can check it.
+
+    `output_filename_pattern` names the files the sweep is meant to delete and
+    `latest_filename` names the one it must never touch. Broadening the glob would
+    delete `latest.geojson` -- the file the API serves -- and narrowing it would
+    leak every timestamped copy instead. One is a `str.format` template, one a
+    glob, one a literal name, so only a round-trip test couples them.
+
+    This also carries forward the refutation of the plan's claimed
+    `surface_analysis_*.geojson` mismatch: `surface_analysis` is only a directory
+    name, and the sweep and the writer have always agreed on the `wpc_sfc_` prefix.
+    """
+    import fnmatch
+
+    from common.ingest.wpc.config import cleanup_glob, latest_filename
+    from common.ingest.wpc.downloader import get_latest_output_filepath, get_output_filepath
+
+    recorded = _wpc_yaml()["wpc"]
+    glob = cleanup_glob()
+    assert glob == recorded["cleanup_glob"] == "wpc_sfc_*.geojson"
+
+    timestamped = recorded["output_filename_pattern"].format(date="20260815", hour=18)
+    assert fnmatch.fnmatch(timestamped, glob)
+    assert not fnmatch.fnmatch(latest_filename(), glob)
+
+    written = get_output_filepath(
+        datetime(2026, 8, 15, 18, 30, tzinfo=timezone.utc)
+    ).name
+    assert fnmatch.fnmatch(written, glob)
+    assert get_latest_output_filepath().name == recorded["latest_filename"]
+
+
+def test_wpc_valid_hours_stay_consistent_with_the_publish_interval():
+    """DECISION OWED: `update_interval_hours` reaches no code except this check.
+
+    `valid_hours` is the interval enumerated by hand, so the two can disagree. The
+    downloader reads only the list -- it steps backwards through it to pick a
+    fallback analysis -- which means a changed interval with a stale list would
+    request hours WPC never publishes and fall back on every run. Deriving the
+    list from the interval would be the real fix; until then this is the coupling.
+    """
+    from common.ingest.wpc.config import update_interval_hours, valid_hours
+
+    recorded = _wpc_yaml()["wpc"]
+    interval = recorded["update_interval_hours"]
+    assert update_interval_hours() == interval == 3
+    assert tuple(valid_hours()) == tuple(recorded["valid_hours"]) == tuple(range(0, 24, interval))
+
+    downloader_source = (
+        REPO_ROOT / "src/common/ingest/wpc/downloader.py"
+    ).read_text(encoding="utf-8")
+    assert "default=hours[-1]" in downloader_source, "the wrap hour must track the list"
+    assert "default=21" not in downloader_source
+
+
+def test_wpc_request_url_round_trips_the_three_keys_that_build_it():
+    """`coded_sfc_base_url`, `date_format` and `remote_filename_pattern` form one URL.
+
+    None of them is meaningful alone, and a wrong one produces a 404 that the
+    fallback path then masks as a stale-but-successful analysis, so the assertion
+    is on the assembled string rather than on the parts.
+    """
+    from common.ingest.wpc import downloader as wpc_downloader
+
+    recorded = _wpc_yaml()["wpc"]
+    reference = datetime(2026, 8, 15, 18, 30, tzinfo=timezone.utc)
+    built = wpc_downloader.build_url(reference, 18)
+
+    assert built == "{}/{}/{}".format(
+        recorded["coded_sfc_base_url"],
+        reference.strftime(recorded["date_format"]),
+        recorded["remote_filename_pattern"].format(hour=18),
+    )
+    assert built == "https://ftp.wpc.ncep.noaa.gov/coded_sfc/20260815/codsus18_hr"
+
+
+def test_wpc_request_timeout_and_backfill_reach_the_catalog():
+    from common.ingest.wpc.config import (
+        http_timeout_seconds,
+        previous_analysis_lookback_hours,
+    )
+
+    recorded = _wpc_yaml()["wpc"]
+    assert http_timeout_seconds() == recorded["http_timeout_seconds"] == 30
+    assert previous_analysis_lookback_hours() == recorded["previous_analysis_lookback_hours"] == 3
+
+    downloader_source = (
+        REPO_ROOT / "src/common/ingest/wpc/downloader.py"
+    ).read_text(encoding="utf-8")
+    assert downloader_source.count("timeout=http_timeout_seconds()") == 2
+    assert "timeout=30" not in downloader_source
+
+    main_source = (REPO_ROOT / "src/common/ingest/wpc/main.py").read_text(encoding="utf-8")
+    assert "timedelta(hours=previous_analysis_lookback_hours())" in main_source
+
+
+def test_wpc_unknown_feature_code_falls_back_to_the_catalog_color():
+    """The fallback was written twice, once per feature kind, before extraction."""
+    from common.ingest.wpc.converter import create_front_feature
+
+    recorded = _wpc_yaml()["wpc"]
+    feature = create_front_feature([(35.0, -97.0), (36.0, -96.0)], "NOTATYPE")
+
+    assert feature["properties"]["color"] == recorded["fallback_geojson_color"] == "#000000"
+    assert feature["properties"]["name"] == "NOTATYPE"
+
+    known = create_front_feature([(35.0, -97.0), (36.0, -96.0)], "COLD")
+    assert known["properties"]["color"] == recorded["feature_types"]["COLD"]["color"]
+
+    source = (REPO_ROOT / "src/common/ingest/wpc/converter.py").read_text(encoding="utf-8")
+    assert '"#000000"' not in source
+    assert source.count("_style_for(") == 3, "one helper, two call sites"
+
+
+def test_wpc_owns_its_retention_window_and_verifies_tls():
+    """WPC's 360 minutes is its own; inheriting filesystem.yaml's 60 would keep nothing.
+
+    A 3-hourly product needs a window wider than an hour, so this is a genuinely
+    separate owner rather than a duplicate of the generic cleanup default.
+
+    `verify_tls` is pinned `true` by the schema. The downloader reads it anyway and
+    raises on false, so loosening the schema fails loudly rather than quietly
+    downgrading the transport.
+    """
+    from common.ingest.wpc.config import cleanup_max_age_minutes, verify_tls
+    from util.file_config import cleanup_max_age_minutes as generic_cleanup_age
+
+    recorded = _wpc_yaml()["wpc"]
+    assert cleanup_max_age_minutes() == recorded["cleanup_max_age_minutes"] == 360
+    assert generic_cleanup_age() == 60
+
+    assert verify_tls() is True
+    schema = json.loads(
+        (REPO_ROOT / "config/schema/wpc.schema.json").read_text(encoding="utf-8")
+    )
+    assert schema["properties"]["wpc"]["properties"]["verify_tls"]["const"] is True
+
+    source = (REPO_ROOT / "src/common/ingest/wpc/downloader.py").read_text(encoding="utf-8")
+    assert "ssl.CERT_NONE" not in source
+    assert "if not verify_tls():" in source
+    assert source.count("ssl.CERT_REQUIRED") == 1, "the two contexts were deliberately merged"
+
+    main_source = (REPO_ROOT / "src/common/ingest/wpc/main.py").read_text(encoding="utf-8")
+    assert "timedelta(hours=3)" not in main_source
+    assert "wpc_sfc_*.geojson" not in main_source
+
+
 # --- Detection thresholds duplicated across eight declaration sites --------
 
 DETECTION_DEFAULT_FILES = {
@@ -906,17 +1063,3 @@ def test_max_chunk_downloads_is_declared_in_two_places_and_not_in_s3_chunks():
     assert "max_chunk_downloads" not in chunks
 
 
-# --- Plan claim that turned out to be wrong ------------------------------
-
-def test_wpc_cleanup_glob_matches_the_generated_filenames():
-    """Refutes the plan's claimed `surface_analysis_*.geojson` mismatch.
-
-    `surface_analysis` is only a directory name. Cleanup and the writer agree
-    on the `wpc_sfc_` prefix, so there is nothing to reconcile here.
-    """
-    cleanup = (REPO_ROOT / "src/common/ingest/wpc/main.py").read_text(encoding="utf-8")
-    writer = (REPO_ROOT / "src/common/ingest/wpc/downloader.py").read_text(encoding="utf-8")
-
-    assert 'glob("wpc_sfc_*.geojson")' in cleanup
-    assert 'f"wpc_sfc_{' in writer
-    assert "surface_analysis_" not in cleanup

@@ -5,7 +5,14 @@ from util.atomic import atomic_write_json
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Optional
 
-from common.ingest.wpc.config import FEATURE_TYPES
+from common.ingest.wpc.config import fallback_geojson_color, feature_types
+
+
+def _style_for(code: str) -> Dict:
+    """Styling for a parsed feature code, falling back to the code as its own label."""
+    return feature_types().get(
+        code, {"name": code, "color": fallback_geojson_color()}
+    )
 
 
 def coords_to_geojson_linestring(coords: List[Tuple[float, float]]) -> List[List[float]]:
@@ -32,8 +39,8 @@ def create_front_feature(coords: List[Tuple[float, float]], feature_type: str) -
     Returns:
         GeoJSON Feature dictionary
     """
-    type_info = FEATURE_TYPES.get(feature_type, {"name": feature_type, "color": "#000000"})
-    
+    type_info = _style_for(feature_type)
+
     return {
         "type": "Feature",
         "geometry": {
@@ -58,8 +65,8 @@ def create_pressure_center_feature(center: Dict) -> Dict:
         GeoJSON Feature dictionary
     """
     center_type = center["type"]
-    type_info = FEATURE_TYPES.get(center_type, {"name": center_type, "color": "#000000"})
-    
+    type_info = _style_for(center_type)
+
     return {
         "type": "Feature",
         "geometry": {
