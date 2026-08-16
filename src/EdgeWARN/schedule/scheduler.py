@@ -7,6 +7,12 @@ from EdgeWARN.ingest.mrms.utils import extract_timestamp
 from EdgeWARN.ingest.mrms.parse import parse_mrms_bucket_path
 from EdgeWARN.ingest.mrms.config import bucket
 from EdgeWARN.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
+from EdgeWARN.schedule.config import (
+    modifier_lookup_max_entries,
+    mrms_update_checker_max_entries,
+    s3_lookback_hours,
+    slow_check_log_threshold_ms,
+)
 from util.io import IOManager, PerformanceTimer
 import uuid
 
@@ -16,8 +22,10 @@ io_manager = IOManager("[DataIngestion]")
 class MRMSUpdateChecker:
     """Checks MRMS sources for new files and finds the latest common timestamps."""
 
-    def __init__(self, max_entries=10, verbose=False):
-        self.max_entries = max_entries
+    def __init__(self, max_entries=None, verbose=False):
+        self.max_entries = (
+            mrms_update_checker_max_entries() if max_entries is None else max_entries
+        )
         self.verbose = verbose
         # Shared S3 client for all checks
         import boto3
@@ -75,7 +83,13 @@ class MRMSUpdateChecker:
         """Helper to fetch timestamps for a single modifier."""
         region, modifier, _ = modifier_tuple
         # Pass shared client
-        finder = FileFinder(reference_dt, bucket, 20, io_manager, client=self.s3_client)
+        finder = FileFinder(
+            reference_dt,
+            bucket,
+            modifier_lookup_max_entries(),
+            io_manager,
+            client=self.s3_client,
+        )
         bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
         try:
             # We can't use PerformanceTimer here easily because it's synchronous + threaded map
@@ -100,9 +114,9 @@ class MRMSUpdateChecker:
                     # ProbSevere: MRMS_PROBSEVERE_{YYYYMMDD}_{HH}
                     start_after = f"{bucket_path}MRMS_PROBSEVERE_{last_processed.strftime('%Y%m%d_%H%M')}"
             else:
-                 # Standardfallback: Skip to 2 hours ago
+                 # Standardfallback: skip to the configured lookback
                  from datetime import timedelta
-                 sa_dt = reference_dt - timedelta(hours=2)
+                 sa_dt = reference_dt - timedelta(hours=s3_lookback_hours())
                  if modifier:
                     start_after = f"{bucket_path}MRMS_{modifier}_{sa_dt.strftime('%Y%m%d-%H')}"
                  else:
@@ -110,7 +124,7 @@ class MRMSUpdateChecker:
 
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False, start_after=start_after)
             dt = (time.time() - t0) * 1000
-            if dt > 2000: # Threshold logging
+            if dt > slow_check_log_threshold_ms():
                 print(f"[PERF] [{trace_id}] Scheduler check for {modifier}: {dt:.2f}ms")
                 
         except Exception as e:
