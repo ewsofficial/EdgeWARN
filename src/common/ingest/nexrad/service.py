@@ -4,14 +4,14 @@ from concurrent.futures.process import BrokenProcessPool
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import json
-import os
 import subprocess
 import time
 from pathlib import Path
 import shutil
 
 import util.file as fs
-from common.ingest.nexrad.config import ALLOWED_VCPS, CHUNKS_BUCKET, format_perf_ms
+from common.ingest.nexrad import config as nexrad_config
+from common.ingest.nexrad.config import allowed_vcps, chunks_bucket, format_perf_ms
 from common.ingest.nexrad.models import (
     ElevationArtifact,
     NexradIngestResult,
@@ -161,7 +161,9 @@ def _utc_now_timestamp() -> str:
 
 
 def _nexrad_worker_timeout_seconds() -> float:
-    return max(1.0, float(os.environ.get("NEXRAD_WORKER_TIMEOUT_SECONDS", "40")))
+    # The clamp guards a hand-set environment variable; the schema pins the
+    # configured value at 1 or more, so the catalog cannot be silently rewritten.
+    return max(1.0, float(nexrad_config.worker_timeout_seconds()))
 
 def _artifact_group_key(artifact: ElevationArtifact) -> str:
     return f"{artifact.elevation}:{','.join(artifact.member_group_names)}"
@@ -234,11 +236,19 @@ class NexradIngestService:
         async_chunk_lister=None,
         async_chunk_fetcher=None,
         async_volume_lister=None,
-        max_site_tasks=24,
-        max_chunk_downloads=64,
-        parse_checkpoint_chunk_interval=8,
-        in_volume_prefetch=4,
+        max_site_tasks=None,
+        max_chunk_downloads=None,
+        parse_checkpoint_chunk_interval=None,
+        in_volume_prefetch=None,
     ):
+        if max_site_tasks is None:
+            max_site_tasks = nexrad_config.max_site_tasks()
+        if max_chunk_downloads is None:
+            max_chunk_downloads = nexrad_config.max_chunk_downloads()
+        if parse_checkpoint_chunk_interval is None:
+            parse_checkpoint_chunk_interval = nexrad_config.parse_checkpoint_chunk_interval()
+        if in_volume_prefetch is None:
+            in_volume_prefetch = nexrad_config.in_volume_prefetch()
         self.chunk_lister = chunk_lister or list_volume_chunks
         self.chunk_fetcher = chunk_fetcher or get_chunk_bytes
         self.volume_lister = volume_lister or list_recent_volume_ids
@@ -381,7 +391,7 @@ class NexradIngestService:
             for chunk in chunks:
                 async with semaphore:
                     if self._stream_chunk_downloads:
-                        response = await s3_client.get_object(Bucket=CHUNKS_BUCKET, Key=chunk.key)
+                        response = await s3_client.get_object(Bucket=chunks_bucket(), Key=chunk.key)
                         body = response["Body"]
                         async for data in body.iter_chunks():
                             await file_obj.write(data)
@@ -1008,7 +1018,7 @@ class NexradIngestService:
     async def _fetch_chunk_stream(self, chunk, s3_client):
         """Fetch chunk dynamically yielding parts to avoid double-buffering."""
         if self._stream_chunk_downloads:
-            response = await s3_client.get_object(Bucket=CHUNKS_BUCKET, Key=chunk.key)
+            response = await s3_client.get_object(Bucket=chunks_bucket(), Key=chunk.key)
             body = response["Body"]
             try:
                 async for data in body.iter_chunks():
@@ -1043,7 +1053,7 @@ class NexradIngestService:
     async def _fetch_chunk_bytes(self, chunk, s3_client) -> bytes:
         """Fetch chunk bytes, returning joined bytes for boundary tracking."""
         if self._stream_chunk_downloads:
-            response = await s3_client.get_object(Bucket=CHUNKS_BUCKET, Key=chunk.key)
+            response = await s3_client.get_object(Bucket=chunks_bucket(), Key=chunk.key)
             body = response["Body"]
             try:
                 parts = []
@@ -1124,7 +1134,7 @@ class NexradIngestService:
             probe_site = probe.site
             probe_volume_id = probe.volume_id
         else:
-            if station_vcp.vcp not in ALLOWED_VCPS:
+            if station_vcp.vcp not in allowed_vcps():
                 return None
             probe_vcp = station_vcp.vcp
             probe_site = str(site).upper()
@@ -1200,7 +1210,7 @@ class NexradIngestService:
                 probe_site = probe.site
                 probe_volume_id = probe.volume_id
             else:
-                if station_vcp.vcp not in ALLOWED_VCPS:
+                if station_vcp.vcp not in allowed_vcps():
                     return None
                 probe_vcp = station_vcp.vcp
                 probe_site = str(site).upper()
@@ -1325,7 +1335,7 @@ class NexradIngestService:
         filtered_sites = [
             site
             for site in sites
-            if site.startswith("K") and station_vcps.get(site) is not None and station_vcps[site].vcp in ALLOWED_VCPS
+            if site.startswith("K") and station_vcps.get(site) is not None and station_vcps[site].vcp in allowed_vcps()
         ]
         io_manager.write_perf(
             f"[RUN] site_filter: {format_perf_ms(filter_started_at):.2f}ms "
@@ -1430,5 +1440,5 @@ class NexradIngestService:
         return sorted(
             site
             for site, station in stations.items()
-            if station.vcp in ALLOWED_VCPS and str(site).upper().startswith("K")
+            if station.vcp in allowed_vcps() and str(site).upper().startswith("K")
         )

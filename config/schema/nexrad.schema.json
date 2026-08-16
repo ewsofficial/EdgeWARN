@@ -3,7 +3,7 @@
   "title": "nexrad.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "buckets", "stations", "selection", "timeouts", "concurrency", "cli", "retention", "vcp_sweep_elevation_labels", "radar_products"],
+  "required": ["schema_version", "buckets", "stations", "selection", "timeouts", "concurrency", "realtime", "cli", "retention", "vcp_sweep_elevation_labels", "radar_products"],
   "properties": {
     "schema_version": { "const": 1 },
     "buckets": {
@@ -53,10 +53,10 @@
       "additionalProperties": false,
       "required": ["volume_discovery_seconds", "chunk_list_seconds", "ingest_seconds", "scan_seconds", "cancellation_grace_seconds", "heartbeat_stale_seconds", "heartbeat_startup_grace_seconds"],
       "properties": {
-        "volume_discovery_seconds": { "type": "number", "exclusiveMinimum": 0 },
-        "chunk_list_seconds": { "type": "number", "exclusiveMinimum": 0 },
-        "ingest_seconds": { "type": "number", "exclusiveMinimum": 0 },
-        "scan_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "volume_discovery_seconds": { "type": "number", "minimum": 0.01 },
+        "chunk_list_seconds": { "type": "number", "minimum": 0.01 },
+        "ingest_seconds": { "type": "number", "minimum": 0.01 },
+        "scan_seconds": { "type": "number", "minimum": 0.01 },
         "cancellation_grace_seconds": { "type": "number", "minimum": 0 },
         "heartbeat_stale_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "heartbeat_startup_grace_seconds": { "type": "number", "minimum": 0 }
@@ -71,21 +71,28 @@
         "max_chunk_downloads": { "type": "integer", "minimum": 1 },
         "worker_pool_size": { "type": "integer", "minimum": 1 },
         "worker_recycle_interval": { "type": "integer" },
-        "worker_timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "worker_timeout_seconds": { "type": "number", "minimum": 1 },
         "parse_checkpoint_chunk_interval": { "type": "integer", "minimum": 1 },
         "in_volume_prefetch": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "realtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scan_interval_seconds", "completion_interval_seconds", "max_candidate_volumes_per_site"],
+      "properties": {
+        "scan_interval_seconds": { "type": "number", "minimum": 1 },
+        "completion_interval_seconds": { "type": "number", "minimum": 1 },
+        "max_candidate_volumes_per_site": { "type": "integer", "minimum": 1 }
       }
     },
     "cli": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sites", "base_dir", "scan_interval_seconds", "completion_interval_seconds", "max_candidate_volumes_per_site", "max_volumes_per_site", "volume_id"],
+      "required": ["sites", "base_dir", "max_volumes_per_site", "volume_id"],
       "properties": {
         "sites": { "type": ["array", "null"], "items": { "type": "string" } },
         "base_dir": { "type": ["string", "null"] },
-        "scan_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
-        "completion_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
-        "max_candidate_volumes_per_site": { "type": "integer", "minimum": 1 },
         "max_volumes_per_site": { "type": "integer", "minimum": 1 },
         "volume_id": { "type": ["string", "null"] }
       }

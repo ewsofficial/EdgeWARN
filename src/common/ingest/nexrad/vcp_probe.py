@@ -1,4 +1,4 @@
-from common.ingest.nexrad.config import ALLOWED_VCPS
+from common.ingest.nexrad.config import allowed_vcps
 from common.ingest.nexrad.models import VolumeProbe
 from common.ingest.nexrad.s3_chunks import list_volume_chunks
 from common.ingest.nexrad.weather_api import get_station_vcp
@@ -11,7 +11,7 @@ class VolumeVcpProber:
 
     def probe_volume_vcp(self, site, volume_id, s3_client=None, weather_session=None) -> VolumeProbe:
         station = self.station_lookup(site, session=weather_session)
-        if station is None or station.vcp not in ALLOWED_VCPS:
+        if station is None or station.vcp not in allowed_vcps():
             return VolumeProbe(
                 site=str(site).upper(),
                 volume_id=str(volume_id),

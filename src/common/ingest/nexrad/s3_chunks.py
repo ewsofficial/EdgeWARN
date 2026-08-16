@@ -6,7 +6,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from common.ingest.nexrad.config import CHUNKS_BUCKET
+from common.ingest.nexrad.config import chunks_bucket
 from common.ingest.nexrad.models import ChunkKey
 from util.handler import extract_timestamp
 
@@ -133,9 +133,12 @@ def required_volume_chunks(chunks):
 
 
 class NexradChunkStore:
-    def __init__(self, *, s3_client=None, bucket=CHUNKS_BUCKET):
+    def __init__(self, *, s3_client=None, bucket=None):
         self.s3_client = s3_client
-        self.bucket = bucket
+        # The one resolution site for this module: the free functions below pass
+        # their own bucket straight through. `None` cannot be a signature default
+        # calling the accessor, because that would read the catalog at import.
+        self.bucket = chunks_bucket() if bucket is None else bucket
 
     def _client(self, override=None):
         return override or self.s3_client or get_unsigned_s3_client()
@@ -172,16 +175,16 @@ class NexradChunkStore:
         return response["Body"].read()
 
 
-def list_recent_volume_ids(site: str, limit=1, *, s3_client=None, bucket=CHUNKS_BUCKET):
+def list_recent_volume_ids(site: str, limit=1, *, s3_client=None, bucket=None):
     store = NexradChunkStore(s3_client=s3_client, bucket=bucket)
     return store.list_recent_volume_ids(site, limit=limit)
 
 
-def list_volume_chunks(site: str, volume_id: str, *, s3_client=None, bucket=CHUNKS_BUCKET):
+def list_volume_chunks(site: str, volume_id: str, *, s3_client=None, bucket=None):
     store = NexradChunkStore(s3_client=s3_client, bucket=bucket)
     return store.list_volume_chunks(site, volume_id)
 
 
-def get_chunk_bytes(chunk_key: ChunkKey, *, s3_client=None, bucket=CHUNKS_BUCKET):
+def get_chunk_bytes(chunk_key: ChunkKey, *, s3_client=None, bucket=None):
     store = NexradChunkStore(s3_client=s3_client, bucket=bucket)
     return store.get_chunk_bytes(chunk_key)

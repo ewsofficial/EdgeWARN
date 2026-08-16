@@ -23,13 +23,13 @@ from __future__ import annotations
 
 import ctypes
 import multiprocessing
-import os
 import signal
 import threading
 from concurrent.futures import ProcessPoolExecutor, Future
 from pathlib import Path
 from typing import Any
 
+from common.ingest.nexrad import config as nexrad_config
 from common.ingest.nexrad.models import ElevationArtifact, WorkerParseResult
 
 
@@ -139,7 +139,9 @@ def _dict_to_result(payload: dict[str, Any]) -> WorkerParseResult:
 class NexradWorkerPool:
     """Thin wrapper around ProcessPoolExecutor for NEXRAD parse work."""
 
-    def __init__(self, max_workers: int = 4):
+    def __init__(self, max_workers: int | None = None):
+        if max_workers is None:
+            max_workers = nexrad_config.worker_pool_size()
         self._executor = ProcessPoolExecutor(
             max_workers=max_workers,
             initializer=_initialize_worker_name,
@@ -191,7 +193,9 @@ class NexradWorkerPool:
 def get_nexrad_pool(max_workers: int | None = None) -> NexradWorkerPool:
     global _POOL, _POOL_SIZE, _VOLUME_COUNT, _GENERATION
 
-    target = max_workers or int(os.environ.get("NEXRAD_WORKER_POOL_SIZE", "4"))
+    # `or`, not `is None`: a caller passing 0 means "unset", and the schema pins
+    # the configured value at 1 or more so 0 cannot arrive from the catalog.
+    target = max_workers or nexrad_config.worker_pool_size()
 
     with _LOCK:
         if _POOL is None or _POOL_SIZE != target:
@@ -207,7 +211,7 @@ def get_nexrad_pool(max_workers: int | None = None) -> NexradWorkerPool:
 def record_volume_and_maybe_recycle(max_workers: int | None = None) -> None:
     global _POOL, _POOL_SIZE, _VOLUME_COUNT
 
-    recycle_interval = int(os.environ.get("NEXRAD_WORKER_RECYCLE_INTERVAL", "24"))
+    recycle_interval = nexrad_config.worker_recycle_interval()
     if recycle_interval <= 0:
         return
 

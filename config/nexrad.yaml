@@ -1,17 +1,31 @@
 # nexrad.yaml — Audit §1 NEXRAD CLIs, §7 NEXRAD
 #
-# Source: src/common/ingest/nexrad/config.py; s3_chunks.py:21; coordinator.py:25;
-#         service.py:164,237-240; grouping.py:9-12; worker_pool.py:194,210;
-#         writer.py:15-18; pipeline/__init__.py:392-400; main.py:174-182;
-#         src/EWMRS/render/nexrad.py:16-50; src/api/services/ancillary.js:6
-# Values verified against the working tree at commit e426fb2.
-# The `cli` intervals are consumed today via `_resolve_cli_args`; the rest is
-# not yet read by code. See plans/source-configuration-extraction-plan.md.
+# Read through the accessors in src/common/ingest/nexrad/config.py. That module
+# holds no constants: run.py imports it before get_args() exports
+# EDGEWARN_CONFIG_DIR, so a module-level read there would freeze the repo default
+# even in the parent process and --config-dir could never reach NEXRAD.
+#
+# Not yet collapsed onto this file -- each still owns its value in code:
+#   selection.min_sweep_angle_deg          parser.py:33
+#   selection.canonical_elevation_bins     grouping.py:6
+#   selection.min_required_volume_chunks   s3_chunks.py:21
+#   selection.waveforms.*                  grouping.py:9-12
+#   selection.high_max_angle_deg           grouping.py:5 (as MAX_ELEVATION_DEG)
+#   retention.*                            writer.py:15-18
+#   vcp_sweep_elevation_labels             src/EWMRS/render/nexrad.py:16-50
+#   radar_products                         src/api/services/ancillary.js:6
+#
+# Two keys are read by nothing at all, here or in code -- they are not shadowed,
+# they are unused, and they are marked below rather than deleted so the decision
+# to drop them is made deliberately.
 
 schema_version: 1
 
 buckets:
   chunks: unidata-nexrad-level2-chunks
+  # UNUSED: nothing reads this. The pipeline is chunk-stream only; the archive
+  # bucket had a constant in config.py with no consumer either, so this records
+  # a bucket the code has never opened.
   archive: unidata-nexrad-level2
 
 stations:
@@ -25,6 +39,8 @@ stations:
 
 selection:
   allowed_vcps: [12, 212, 215]
+  # UNUSED: nothing reads this. grouping.py:166 builds an elevation dedup key by
+  # exact match, not within a tolerance, so there is no site for this to reach.
   angle_dedup_tolerance_deg: 0.1
   high_max_angle_deg: 4.0
   min_sweep_angle_deg: 0.4
@@ -55,19 +71,33 @@ concurrency:
   max_chunk_downloads: 64
   worker_pool_size: 4
   worker_recycle_interval: 24           # <= 0 disables recycling
-  worker_timeout_seconds: 40
-  parse_checkpoint_chunk_interval: 8    # service.py:239; re-parse every N chunks
-  in_volume_prefetch: 4                 # service.py:240; effective min(value, pending)
+  # Float, matching the float() the env read used to apply. The old code clamped
+  # with max(1.0, ...); the schema's minimum: 1 now rejects a smaller value at
+  # startup instead of silently correcting it.
+  worker_timeout_seconds: 40.0
+  parse_checkpoint_chunk_interval: 8    # re-parse the accumulated volume every N chunks
+  in_volume_prefetch: 4                 # effective value is min(this, pending chunks)
 
+# Settings the realtime pipeline needs whether or not anyone typed a command.
+# These three used to live under `cli` below, which is precisely how they came to
+# be ignored: production reaches the pipeline through background.py, never
+# through argparse, so the `cli` values were resolved only on a path production
+# does not execute and the constructor's keyword defaults won every real run.
+# They are pipeline settings that a CLI may override, not CLI settings.
+realtime:
+  scan_interval_seconds: 20
+  completion_interval_seconds: 10
+  # Shared with the one-shot coordinator, which is the other reason this is not
+  # a `cli` key: two entry points need it.
+  max_candidate_volumes_per_site: 3
+
+# Genuinely CLI-only: nothing outside an argv-bearing entry point reads these.
 cli:
-  # --site, repeatable. `null` means "every allowed station": pipeline/__init__.py:76
+  # --site, repeatable. `null` means "every allowed station": pipeline/__init__.py
   # keeps None as-is and station_filter.py:16 then applies no site filter. An
   # empty list is NOT the same thing -- it would filter every site away.
   sites: null
   base_dir: null
-  scan_interval_seconds: 20
-  completion_interval_seconds: 10
-  max_candidate_volumes_per_site: 3
   max_volumes_per_site: 1               # one-shot ingest only
   volume_id: null                       # one-shot ingest only
 
