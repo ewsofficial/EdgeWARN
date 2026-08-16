@@ -2,7 +2,9 @@
 import pytest
 import numpy as np
 import xarray as xr
+from dataclasses import replace
 from unittest.mock import MagicMock
+from EdgeWARN.process.detect.config import DetectionConfig
 from EdgeWARN.process.detect.tools.gatemapper import GateMapper
 
 class MockIOManager:
@@ -50,7 +52,7 @@ def test_connectivity_constraint():
     )
     
     # 4. Initialize GateMapper
-    mapper = GateMapper(radar_ds, ps_ds=None, io_manager=MockIOManager(), refl_threshold=40.0)
+    mapper = GateMapper(radar_ds, None, MockIOManager(), DetectionConfig.from_yaml(refl_threshold=40.0))
     
     # 5. Run Expand Gates
     expanded_ds = mapper.expand_gates(mapped_ds)
@@ -97,7 +99,7 @@ def test_merger_split():
          'longitude': lons}
     )
     
-    mapper = GateMapper(radar_ds, ps_ds=None, io_manager=MockIOManager(), refl_threshold=40.0)
+    mapper = GateMapper(radar_ds, None, MockIOManager(), DetectionConfig.from_yaml(refl_threshold=40.0))
     expanded_ds = mapper.expand_gates(mapped_ds)
     final_grid = expanded_ds['PolygonID'].values
     
@@ -138,7 +140,7 @@ def test_disconnected_seeded_components_expand_independently():
          'longitude': lons}
     )
 
-    mapper = GateMapper(radar_ds, ps_ds=None, io_manager=MockIOManager(), refl_threshold=40.0)
+    mapper = GateMapper(radar_ds, None, MockIOManager(), DetectionConfig.from_yaml(refl_threshold=40.0))
     expanded_ds = mapper.expand_gates(mapped_ds)
     final_grid = expanded_ds['PolygonID'].values
 
@@ -184,7 +186,7 @@ def test_dynamic_thresholding():
          'longitude': lons}
     )
     
-    mapper = GateMapper(radar_ds, ps_ds=None, io_manager=MockIOManager(), refl_threshold=37.5, drop_offset=10.0)
+    mapper = GateMapper(radar_ds, None, MockIOManager(), DetectionConfig.from_yaml())
     expanded_ds = mapper.expand_gates(mapped_ds)
     final_grid = expanded_ds['PolygonID'].values
     
@@ -197,6 +199,54 @@ def test_dynamic_thresholding():
     assert final_grid[15, 15] == 2, "Core should be included"
     assert final_grid[13, 13] == 2, "Area >= 37.5 should be included"
     assert final_grid[15, 18] == 0, "Area < 37.5 should NOT be included for weak cell"
+
+
+def test_dynamic_min_threshold_low_is_live_not_inert():
+    """Raising the weak-cell floor must shrink the weak cell and leave the strong one.
+
+    The test above pins the curve at its shipped values, which a re-hardcoded
+    37.5 would also satisfy. The plan calls this out as the dangerous case: YAML
+    that looks authoritative while the code ignores it.
+    """
+    lats = np.arange(20)
+    lons = np.arange(20)
+    refl_data = np.zeros((20, 20))
+    refl_data[2:8, 2:8] = 42
+    refl_data[4:6, 4:6] = 50
+    # The weak core is 4x4 so it stays above `reject_clusters_at_or_below_gates`
+    # once the skirt drops out; otherwise the cell vanishes for a second reason.
+    refl_data[11:19, 11:19] = 38
+    refl_data[13:17, 13:17] = 44
+
+    radar_ds = xr.Dataset(
+        {'unknown': (('latitude', 'longitude'), refl_data),
+         'latitude': lats,
+         'longitude': lons}
+    )
+
+    polygon_grid = np.zeros((20, 20), dtype=np.int32)
+    polygon_grid[5, 5] = 1
+    polygon_grid[15, 15] = 2
+
+    mapped_ds = xr.Dataset(
+        {'PolygonID': (('latitude', 'longitude'), polygon_grid),
+         'latitude': lats,
+         'longitude': lons}
+    )
+
+    config = DetectionConfig.from_yaml()
+    raised = replace(config, gatemapper=replace(config.gatemapper, dynamic_min_threshold_low=40.0))
+
+    mapper = GateMapper(radar_ds, None, MockIOManager(), raised)
+    final_grid = mapper.expand_gates(mapped_ds)['PolygonID'].values
+
+    # 38 dBZ now sits below the weak cell's floor, so only its 44 dBZ core survives.
+    assert final_grid[11, 11] == 0
+    assert final_grid[15, 15] == 2
+
+    # The strong cell's branch is a different key and must be untouched.
+    assert final_grid[2, 2] == 1
+    assert final_grid[4, 4] == 1
 
 
 def test_sparse_label_ids_and_nan_reflectivity_preserve_expansion_logic():
@@ -232,7 +282,7 @@ def test_sparse_label_ids_and_nan_reflectivity_preserve_expansion_logic():
          'longitude': lons}
     )
 
-    mapper = GateMapper(radar_ds, ps_ds=None, io_manager=MockIOManager(), refl_threshold=37.5, drop_offset=10.0)
+    mapper = GateMapper(radar_ds, None, MockIOManager(), DetectionConfig.from_yaml())
     expanded_ds = mapper.expand_gates(mapped_ds)
     final_grid = expanded_ds['PolygonID'].values
 

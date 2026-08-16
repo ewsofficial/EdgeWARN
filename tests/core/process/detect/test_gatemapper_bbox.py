@@ -1,6 +1,9 @@
+from dataclasses import replace
+
 import pytest
 import numpy as np
 import xarray as xr
+from EdgeWARN.process.detect.config import DetectionConfig
 from EdgeWARN.process.detect.tools.gatemapper import GateMapper
 
 class MockIOManager:
@@ -16,7 +19,19 @@ def mock_mapper():
          'latitude': np.arange(10, dtype=float),
          'longitude': np.arange(10, dtype=float)}
     )
-    return GateMapper(radar_ds, None, MockIOManager())
+    # Every contour step pinned to 1: these tests assert on the exact traced
+    # points, so any downsampling would drop points they check for.
+    config = DetectionConfig.from_yaml()
+    config = replace(
+        config,
+        gatemapper=replace(
+            config.gatemapper,
+            contour_downsample=1,
+            contour_keep_all_step=1,
+            contour_coarse_step=1,
+        ),
+    )
+    return GateMapper(radar_ds, None, MockIOManager(), config)
 
 def test_draw_bbox_basic_square(mock_mapper):
     """Test a simple square polygon."""
@@ -31,7 +46,7 @@ def test_draw_bbox_basic_square(mock_mapper):
          'longitude': lons}
     )
 
-    bboxes = mock_mapper.draw_bbox(dataset, step=1) # Step=1 for full detail
+    bboxes = mock_mapper.draw_bbox(dataset)
 
     assert 1 in bboxes
     coords = bboxes[1]
@@ -56,7 +71,7 @@ def test_draw_bbox_single_pixel(mock_mapper):
          'longitude': lons}
     )
 
-    bboxes = mock_mapper.draw_bbox(dataset, step=1)
+    bboxes = mock_mapper.draw_bbox(dataset)
 
     assert 1 in bboxes
     coords = bboxes[1]
@@ -88,7 +103,7 @@ def test_draw_bbox_touching_edges(mock_mapper):
          'longitude': lons}
     )
 
-    bboxes = mock_mapper.draw_bbox(dataset, step=1)
+    bboxes = mock_mapper.draw_bbox(dataset)
     assert 1 in bboxes
     coords = bboxes[1]
 
@@ -119,7 +134,7 @@ def test_draw_bbox_disjoint_blobs(mock_mapper):
          'longitude': lons}
     )
 
-    bboxes = mock_mapper.draw_bbox(dataset, step=1)
+    bboxes = mock_mapper.draw_bbox(dataset)
     assert 1 in bboxes
     coords = bboxes[1]
 
@@ -148,7 +163,7 @@ def test_draw_bbox_hole(mock_mapper):
          'longitude': lons}
     )
 
-    bboxes = mock_mapper.draw_bbox(dataset, step=1)
+    bboxes = mock_mapper.draw_bbox(dataset)
     coords = bboxes[1]
 
     # The outer boundary should cover 2-7.
@@ -194,7 +209,7 @@ def test_draw_bbox_coordinate_mapping(mock_mapper):
          'longitude': lons}
     )
 
-    bboxes = mock_mapper.draw_bbox(dataset, step=1)
+    bboxes = mock_mapper.draw_bbox(dataset)
     coords = bboxes[1]
 
     # Centroid of bbox should be roughly 30.5, -99.5

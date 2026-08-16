@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from EdgeWARN.process.detect.config import DetectionConfig
+
 
 class TestDetectToIntegrateWorkflow:
     """Tests for the detection to integration workflow"""
@@ -76,7 +78,8 @@ class TestDetectToIntegrateWorkflow:
             # Run detection
             result = detect_cells(
                 "radar.grib2", "ps.json", "pt.grib2", mock_io,
-                30, 40, -100, -90
+                30, 40, -100, -90,
+                detection_config=DetectionConfig.from_yaml(),
             )
             
             # Verify structure

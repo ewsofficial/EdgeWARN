@@ -3,7 +3,7 @@
   "title": "detection.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "detection", "tracker", "gatemapper", "morphology", "alert_matching", "hail"],
+  "required": ["schema_version", "detection", "tracker", "gatemapper", "morphology", "alert_matching", "save", "hail"],
   "properties": {
     "schema_version": { "const": 1 },
     "detection": {
@@ -31,16 +31,31 @@
     "tracker": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["lineage_overlap_ratio"],
+      "required": ["lineage_overlap_ratio", "decay_max_refl_dbz", "decay_confidence_factor", "decay_confidence_floor"],
       "properties": {
-        "lineage_overlap_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+        "lineage_overlap_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "decay_max_refl_dbz": { "type": "number" },
+        "decay_confidence_factor": { "type": "number", "minimum": 0, "maximum": 1 },
+        "decay_confidence_floor": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
     "gatemapper": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["crop_pad_px", "reject_clusters_at_or_below_gates", "contour_downsample", "contour_downsample_adaptive", "contour_level", "coordinate_decimals"],
+      "required": ["baseline_refl_floor", "dynamic_min_threshold", "max_refl_clamp", "crop_pad_px", "reject_clusters_at_or_below_gates", "contour_downsample", "contour_downsample_adaptive", "contour_level", "coordinate_decimals"],
       "properties": {
+        "baseline_refl_floor": { "type": "number" },
+        "dynamic_min_threshold": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["switch_max_refl", "low", "high"],
+          "properties": {
+            "switch_max_refl": { "type": "number" },
+            "low": { "type": "number" },
+            "high": { "type": "number" }
+          }
+        },
+        "max_refl_clamp": { "type": "number" },
         "crop_pad_px": { "type": "integer", "minimum": 0 },
         "reject_clusters_at_or_below_gates": { "type": "integer", "minimum": 0 },
         "contour_downsample": { "type": "integer", "minimum": 1 },
@@ -76,6 +91,15 @@
         "events": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
         "polygon_match_buffer_deg": { "type": "number", "minimum": 0 },
         "point_match_buffer_deg": { "type": "number", "minimum": 0 }
+      }
+    },
+    "save": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["polygon_decimals", "centroid_decimals"],
+      "properties": {
+        "polygon_decimals": { "type": "integer", "minimum": 0 },
+        "centroid_decimals": { "type": "integer", "minimum": 0 }
       }
     },
     "hail": {

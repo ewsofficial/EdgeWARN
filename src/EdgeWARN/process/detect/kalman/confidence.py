@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 import numpy as np
 
-from .config import TrackingConfig, DEFAULT_TRACKING_CONFIG
+from .config import TrackingConfig, default_tracking_config
 
 
 @dataclass
@@ -20,7 +20,7 @@ class ConfidenceCalculator:
     by motion consistency and position uncertainty.
     """
     
-    config: TrackingConfig = field(default_factory=TrackingConfig)
+    config: TrackingConfig = field(default_factory=default_tracking_config)
     
     # Base confidence when entering prediction mode
     base_confidence: float = 1.0
@@ -42,13 +42,18 @@ class ConfidenceCalculator:
         Returns:
             Confidence score between 0.0 and 1.0
         """
+        shape = self.config.confidence
+
         # Base decay from number of scans
         scan_confidence = self.base_confidence * (self.config.confidence_decay_factor ** scans_predicted)
-        
+
         # Time-based decay (additional penalty for long predictions)
         max_time_seconds = self.config.max_prediction_time_minutes * 60
-        time_factor = max(0.0, 1.0 - (time_predicted_seconds / max_time_seconds) * 0.3)
-        
+        time_factor = max(
+            0.0,
+            1.0 - (time_predicted_seconds / max_time_seconds) * shape.time_penalty_weight,
+        )
+
         # Motion consistency factor (lower variance = higher confidence).
         # Keep this penalty gentle so a newly predicted track with a valid
         # Kalman state is not dropped immediately on the first missed scan.
@@ -58,9 +63,9 @@ class ConfidenceCalculator:
             # High velocity variance indicates uncertain motion.
             total_var = var_u + var_v
             if total_var > 0:
-                motion_factor = 1.0 / (1.0 + total_var / 2500.0)
-                motion_factor = max(0.8, motion_factor)
-        
+                motion_factor = 1.0 / (1.0 + total_var / shape.motion_factor_variance_denominator)
+                motion_factor = max(shape.factor_floor, motion_factor)
+
         # Position uncertainty factor. Use a soft decay to preserve continuity
         # across temporary detection dropouts while still reducing confidence
         # as uncertainty grows.
@@ -68,10 +73,12 @@ class ConfidenceCalculator:
         if position_uncertainty_km is not None:
             std_lat, std_lon = position_uncertainty_km
             avg_std = (std_lat + std_lon) / 2
-            if avg_std > 5.0:  # km
-                position_factor = 1.0 / (1.0 + (avg_std - 5.0) / 30.0)
-                position_factor = max(0.8, position_factor)
-        
+            if avg_std > shape.position_decay_onset_std:  # km
+                position_factor = 1.0 / (
+                    1.0 + (avg_std - shape.position_decay_onset_std) / shape.position_decay_scale
+                )
+                position_factor = max(shape.factor_floor, position_factor)
+
         # Combine factors
         confidence = scan_confidence * time_factor * motion_factor * position_factor
         
@@ -114,9 +121,9 @@ class ConfidenceCalculator:
         Returns:
             "high", "medium", or "low"
         """
-        if confidence > 0.7:
+        if confidence > self.config.confidence.high_boundary:
             return "high"
-        elif confidence > 0.4:
+        elif confidence > self.config.confidence.medium_boundary:
             return "medium"
         else:
             return "low"

@@ -1,30 +1,23 @@
 # detection.yaml — Audit §4
 #
-# Source: src/EdgeWARN/process/detect/main.py:29-31,100-105,253,333-340,358-368,390;
-#         track.py:65,186; tools/gatemapper.py:119-122,244,287,332,341-346,368-374;
-#         tools/morphology.py:14,66,97; tools/save.py:148,169,174,230,252,256,423;
-#         tools/alert_matcher.py:31-41,438,441,468,469
-# Values verified against the working tree at commit e426fb2.
-# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
+# Consumed by src/EdgeWARN/process/detect/config.py. `detection` and `gatemapper`
+# are threaded as a typed DetectionConfig from src/run.py and
+# src/process_historical.py; `tracker`, `morphology`, `save`, `alert_matching`
+# and `hail` are read by their owning modules through config.section().
 #
-# Five keys are deliberately absent from `gatemapper`, all of them pieces of one
-# hardcoded expression rather than settings:
+# The three `detection` thresholds are the only CLI-overridable keys here
+# (--refl-threshold, --min-seed-percentage, --drop-offset); precedence is
+# CLI > env > this file.
 #
-#   baseline_refl_floor      gatemapper.py:101 is `min(37.5, self.refl_threshold)`.
-#                            37.5 is a ceiling on `refl_threshold`, not an
-#                            independent value -- raising refl_threshold cannot
-#                            raise the baseline, and editing 37.5 alone does
-#                            nothing whenever refl_threshold is lower.
-#   dynamic_min_threshold    switch_max_refl / low / high were the three literals
-#                            of `np.where(valid_max_refl < 45.0, 37.5, 40.0)`
-#                            at gatemapper.py:174.
-#   max_refl_clamp           the 52.0 of `np.minimum(valid_max_refl, 52.0)` at
-#                            gatemapper.py:175.
-#
-# Together :174-176 form the per-cell threshold curve
-#   max(where(m < 45, 37.5, 40), min(m, 52) - drop_offset)
-# -- an algorithm, in the same class as the `scale_rule` and `crs_strategy`
-# pseudo-expressions removed elsewhere. Only `drop_offset` is a setting.
+# Phase 3 deliberately omitted the five `gatemapper` keys below, because at that
+# point they were terms of expressions hardcoded in gatemapper.py, and recording
+# them would have implied an editability the code did not have. Phase 4 reads
+# every term, so they are settings now -- but they remain *coupled* terms of one
+# per-cell threshold curve,
+#   max(where(m < switch_max_refl, low, high), min(m, max_refl_clamp) - drop_offset)
+# so changing any one of them shifts the whole curve. `baseline_refl_floor` is
+# likewise a floor applied as `min(baseline_refl_floor, refl_threshold)`: raising
+# refl_threshold above it still cannot raise the baseline mask.
 
 schema_version: 1
 
@@ -52,7 +45,30 @@ tracker:
   # pipeline actually applies, because the tracker always passes its own.
   lineage_overlap_ratio: 0.10
 
+  # track.py:641-644. A cell whose observed max reflectivity falls below
+  # `decay_max_refl_dbz` is marked decaying and has its confidence multiplied by
+  # `decay_confidence_factor` each scan, but never driven below
+  # `decay_confidence_floor`. Recovering above the threshold resets confidence
+  # to 1.0 outright, so the floor bounds how far a persistently weak cell decays
+  # rather than where it is dropped -- that cutoff is
+  # kalman.yaml tracking.confidence_threshold.
+  decay_max_refl_dbz: 30.0
+  decay_confidence_factor: 0.85
+  decay_confidence_floor: 0.3
+
 gatemapper:
+  # gatemapper.py:101, applied as `min(baseline_refl_floor, refl_threshold)`.
+  baseline_refl_floor: 37.5
+
+  # gatemapper.py:174, `np.where(valid_max_refl < switch_max_refl, low, high)`.
+  dynamic_min_threshold:
+    switch_max_refl: 45.0
+    low: 37.5
+    high: 40.0
+
+  # gatemapper.py:175, `np.minimum(valid_max_refl, max_refl_clamp)`.
+  max_refl_clamp: 52.0
+
   # gatemapper.py:119-122. Symmetric 2-pixel pad around the reflectivity
   # bounding box; the `+ 3` on the high edges is this 2 plus one for the
   # exclusive slice end, not a different pad.
@@ -104,6 +120,14 @@ alert_matching:
   polygon_match_buffer_deg: 0.005
   point_match_buffer_deg: 0.01
 
+# tools/save.py geometry serialization. Both default to 3 today but are written
+# to separate keys because they round different things: `polygon_decimals`
+# applies to bbox and hail-core rings (save.py:36), `centroid_decimals` to the
+# reflectivity-weighted centroid (save.py:309,383,509).
+save:
+  polygon_decimals: 3
+  centroid_decimals: 3
+
 hail:
   contour_sampling_step: 5              # save.py:148,230
   # save.py:169,252,423 all compare preciptype to 6. The docstring at save.py:151
@@ -115,4 +139,7 @@ hail:
   # changing one must not silently change the other.
   contour_level: 0.5
 
-env_overrides: {}                       # CLI only: --refl-threshold, --min-seed-percentage, --drop-offset
+# UNUSED. No loader reads `env_overrides` in any catalog; the three overridable
+# thresholds are resolved from argparse only (--refl-threshold,
+# --min-seed-percentage, --drop-offset). Kept so removing it stays deliberate.
+env_overrides: {}

@@ -8,10 +8,12 @@ schema_version: 1
 kalman_filter:
   # Process noise parameters
   # Controls how much the state is expected to change between predictions
+  # These enter np.diag directly, so each is a VARIANCE, not a standard
+  # deviation: degrees^2, (m/s)^2, (m/s^2)^2.
   process_noise:
-    position: 0.1      # Position process noise (degrees)
-    velocity: 0.5      # Velocity process noise (m/s)
-    acceleration: 0.1  # Acceleration process noise (m/s²)
+    position: 0.1      # Position process noise variance
+    velocity: 0.5      # Velocity process noise variance
+    acceleration: 0.1  # Acceleration process noise variance
   
   # Measurement noise parameters
   # Controls the uncertainty in observations from ProbSevere
@@ -22,17 +24,18 @@ tracking:
   # Maximum time a storm can be tracked in prediction mode (minutes)
   # After this time, the storm will be terminated if not re-acquired
   #
-  # LOAD-BEARING: this key must stay present. TrackingConfig.from_yaml reads it
-  # as `.get('max_prediction_time_minutes', 10.0)` (kalman/config.py:92) while
-  # the dataclass default is 6.0 (:63). Deleting the key does not fall back to
-  # the dataclass -- it silently lengthens prediction mode to 10 minutes.
-  # Written as 6.0 to match the float the code declares.
+  # This is the only copy of the value. The loader previously disagreed with
+  # itself here -- a `.get(..., 10.0)` fallback against a 6.0 dataclass default --
+  # and 6.0 was kept as the resolution because it was the value that shipped
+  # whenever the key was present, which was always.
   max_prediction_time_minutes: 6.0
   
   # Maximum distance for re-acquisition (km)
   # A new ProbSevere detection within this radius of a predicted cell
   # will be considered a re-acquisition
-  # Note: This is used as fallback; primary gating uses Mahalanobis distance
+  # UNUSED. Loaded into TrackingConfig but no code consumes it: its former
+  # consumer `_check_reacquisition` was deleted, and gating now runs entirely on
+  # Mahalanobis distance. Kept so removing it stays a deliberate decision.
   reacquisition_radius_km: 5.0
   
   # Minimum confidence before termination
@@ -84,14 +87,12 @@ assignment:
   # - hungarian: Full Hungarian without pre-filtering
   # - greedy: Nearest-neighbor fallback
   method: greedy
-  
-  # Numerical stability
-  # Small value added to innovation covariance diagonal
-  covariance_regularization: 1.0e-6
 
-# --- Sections below are not yet read by any loader (audit §4). ---
-# KalmanConfig/TrackingConfig/AssignmentConfig.from_yaml each read one named
-# section via .get(), so these are inert until a consumer is wired up.
+# --- Sections below are top-level here but nested in the typed config. ---
+# Each is loaded as a member of the config object whose consumer reads it:
+# filter_internals -> KalmanConfig.internals, confidence -> TrackingConfig.confidence,
+# assignment_costs -> AssignmentConfig.costs. They stay siblings in the file so the
+# schema keeps one flat section per subsystem.
 
 # src/EdgeWARN/process/detect/kalman/filter.py, state.py
 filter_internals:
@@ -113,6 +114,12 @@ confidence:
 
 # src/EdgeWARN/process/detect/kalman/assignment.py
 assignment_costs:
+  # Cost-function fallback only, and unreachable in production: every live
+  # compute_cost() call site forwards a concrete dt. Deliberately kept separate
+  # from `detection.yaml detection.fallback_dt_seconds` -- that one is the
+  # tracker's fallback when elapsed time cannot be computed from timestamps, and
+  # lives in the subsystem that owns the timestamps. The two must agree, which
+  # tests/core/config/test_known_drift.py pins.
   default_dt_seconds: 120.0
   predicted_speed_deadband_ms: 1.0
   implied_speed_deadband_ms: 0.5

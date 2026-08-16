@@ -17,7 +17,7 @@ from unittest.mock import patch
 from shapely.prepared import prep
 from EdgeWARN.process.detect.tools import alert_matcher
 from EdgeWARN.process.detect.tools.alert_matcher import (
-    CONVECTIVE_FLOOD_EVENTS,
+    convective_flood_events,
     load_active_alerts,
     filter_convective_flood_alerts,
     _extract_alert_id,
@@ -151,26 +151,26 @@ def sample_cell_outside_storm():
 # =============================================================================
 
 class TestEventTypeFiltering:
-    """Tests for CONVECTIVE_FLOOD_EVENTS whitelist."""
+    """Tests for the detection.yaml alert_matching.events allowlist."""
     
     def test_convective_events_included(self):
         """Verify convective events are in the whitelist."""
-        assert "Tornado Warning" in CONVECTIVE_FLOOD_EVENTS
-        assert "Severe Thunderstorm Warning" in CONVECTIVE_FLOOD_EVENTS
-        assert "Tornado Watch" in CONVECTIVE_FLOOD_EVENTS
-        assert "Severe Thunderstorm Watch" in CONVECTIVE_FLOOD_EVENTS
-        assert "Special Weather Statement" in CONVECTIVE_FLOOD_EVENTS
-        assert "Severe Weather Statement" in CONVECTIVE_FLOOD_EVENTS
+        assert "Tornado Warning" in convective_flood_events()
+        assert "Severe Thunderstorm Warning" in convective_flood_events()
+        assert "Tornado Watch" in convective_flood_events()
+        assert "Severe Thunderstorm Watch" in convective_flood_events()
+        assert "Special Weather Statement" in convective_flood_events()
+        assert "Severe Weather Statement" in convective_flood_events()
         
     def test_flood_events_included(self):
         """Verify flood events are in the whitelist."""
-        assert "Flash Flood Warning" in CONVECTIVE_FLOOD_EVENTS
+        assert "Flash Flood Warning" in convective_flood_events()
         
     def test_non_convective_events_excluded(self):
         """Verify non-convective events are NOT in the whitelist."""
-        assert "Gale Watch" not in CONVECTIVE_FLOOD_EVENTS
-        assert "Small Craft Advisory" not in CONVECTIVE_FLOOD_EVENTS
-        assert "Air Quality Alert" not in CONVECTIVE_FLOOD_EVENTS
+        assert "Gale Watch" not in convective_flood_events()
+        assert "Small Craft Advisory" not in convective_flood_events()
+        assert "Air Quality Alert" not in convective_flood_events()
 
 
 class TestFilterConvectiveFloodAlerts:
