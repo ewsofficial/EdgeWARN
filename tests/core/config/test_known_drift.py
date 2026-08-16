@@ -209,6 +209,63 @@ def _detection_yaml() -> dict:
     return yaml.safe_load((REPO_ROOT / "config" / "detection.yaml").read_text(encoding="utf-8"))
 
 
+# --- RAP filename: two keys describing one naming scheme ------------------
+
+def _synoptic_rap_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load(
+        (REPO_ROOT / "config" / "synoptic_rap.yaml").read_text(encoding="utf-8")
+    )
+
+
+def test_rap_filename_regex_round_trips_the_local_file_pattern():
+    """RESOLVED: no literal competes with the catalog for the RAP naming scheme.
+
+    `local_file_pattern` writes the cache file and `filename_regex` reads it back,
+    so the two must describe the same name. Nothing in the schema can enforce
+    that -- one is a `str.format` template and the other a regex -- so editing
+    either alone would make `clean_rap_cache` stop recognizing its own downloads
+    and warn-and-skip every file instead of pruning it.
+    """
+    from common.ingest.synoptic import config as rap_config
+    from common.ingest.synoptic.main import parse_rap_analysis_time
+
+    recorded = _synoptic_rap_yaml()["rap"]
+    written = Path(
+        recorded["local_file_pattern"].format(date="20260815", hour=7)
+    )
+    assert re.match(recorded["filename_regex"], written.name)
+    assert parse_rap_analysis_time(written).strftime("%Y%m%d%H") == "2026081507"
+
+    # The accessors are the only owners: the pre-extraction module constants are gone.
+    main_source = (
+        REPO_ROOT / "src/common/ingest/synoptic/main.py"
+    ).read_text(encoding="utf-8")
+    assert "RAP_FILENAME_RE = " not in main_source
+    assert "RAP_MAX_FILES" not in main_source
+    assert rap_config.rap_max_files() == recorded["max_files"] == 3
+
+
+def test_generic_synoptic_download_keeps_its_own_age_default():
+    """DECISION OWED: the 60-minute default in `download_synoptic` is a second copy.
+
+    It is harmless only because `download_rap` -- the sole caller -- always passes
+    `get_rap_max_age_minutes()`. A second dataset added without that argument would
+    silently run a 60-minute budget instead of the catalog's 180. Left as-is because
+    narrowing it to the RAP value would be retuning a shared helper for one caller.
+    """
+    assert param_default(
+        "common/ingest/synoptic/downloader.py", "download_synoptic", "max_age_minutes"
+    ) == 60
+    assert _synoptic_rap_yaml()["rap"]["max_age_minutes"] == 180
+
+    downloader_source = (
+        REPO_ROOT / "src/common/ingest/synoptic/downloader.py"
+    ).read_text(encoding="utf-8")
+    assert "max_age_minutes=get_rap_max_age_minutes()" in downloader_source
+
+
 # --- Detection thresholds duplicated across eight declaration sites --------
 
 DETECTION_DEFAULT_FILES = {
