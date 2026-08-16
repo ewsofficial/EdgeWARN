@@ -1,24 +1,42 @@
 # ewmrs_rap_uint16.yaml — Audit §8 RAP uint16
 #
-# Source: src/EWMRS/rap/config.py; uint16_pipeline.py:30,101,122,264,287,348
-# Values verified against the working tree at commit e426fb2.
-# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
+# Source: src/EWMRS/rap/config.py; uint16_pipeline.py
+#
+# The three scalars below are consumed through rap/config.py accessors, read per
+# call. `layers` and `output_root` are NOT: get_rap_uint16_layers() still builds
+# the list in Python, and this block mirrors it. The mirror is pinned by
+# test_the_layer_catalog_mirrors_the_python_authority, so it cannot drift
+# silently -- which is the whole difference between a documented mirror and an
+# inert tunable. Editing `layers` here still changes nothing at runtime.
 #
 # All 43 layers are listed explicitly. `pressure_levels_mb` is deliberately
-# absent: rap/config.py:9-10 held the wind and thermo level tuples only to
-# generate the 20 isobaric entries below, so a YAML copy would be a second
-# editable authority that could silently disagree with the layer list.
+# absent: rap/config.py holds the wind and thermo level tuples only to generate
+# the 20 isobaric entries below, so a YAML copy would be a second editable
+# authority that could silently disagree with the layer list.
 #
-# `scale_rule` is deliberately absent: the uint16 quantization at
-# uint16_pipeline.py:135-151 is a hardcoded `np.rint` algorithm, and
-# UINT16_VALID_MAX / UINT16_NODATA (rap/config.py:7-8) are wire-format
-# constants. Only the per-layer `scale.min`/`scale.max` are settings.
+# `scale_rule` is deliberately absent: the uint16 quantization in
+# `scale_to_uint16` is a hardcoded `np.rint` algorithm, and UINT16_VALID_MAX /
+# UINT16_NODATA are wire-format constants. Only the per-layer
+# `scale.min`/`scale.max` are settings.
 
 schema_version: 1
 
-max_timestamps: 3                       # uint16_pipeline.py:101,122,264,287
-timestamp_format: '%Y%m%d-%H%M00'       # uint16_pipeline.py:348
-force: false                            # uint16_pipeline.py:30; re-encode existing outputs
+# One owner for two consumers: `_update_product_index` truncates the published
+# timestamp list and `cleanup_old_rap_uint16_layers` deletes the directories
+# behind it. They used to hold separate `= 3` defaults, so raising one alone
+# would have published a timestamp whose data the other had just removed.
+max_timestamps: 3
+
+# strftime pattern for the per-timestamp output directory name. Not the RAP
+# *input* filename grammar -- that is a regex in _parse_rap_filename_timestamp
+# and is not configurable, because it describes an upstream product.
+timestamp_format: '%Y%m%d-%H%M00'
+
+# Whether a run re-encodes layers whose output already exists. Reached through a
+# `force=None` parameter default, not `force=False`: False is a real caller
+# choice (tests/benchmarks/benchmark_rap_uint16.py passes True), so None is what
+# means "no preference, use this value".
+force: false
 
 # util.file attribute holding the RAP render root. Each layer's `outdir` is a
 # child directory name under it (rap/config.py:13-14).

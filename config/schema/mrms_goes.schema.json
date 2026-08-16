@@ -28,14 +28,17 @@
           "additionalProperties": false,
           "required": [
             "s3_prefix", "s3_prefix_no_modifier", "filename_prefix",
-            "probsevere_start_after", "probsevere_start_after_lookback_hours"
+            "probsevere_start_after", "probsevere_start_after_lookback_hours",
+            "filename_start_after_minute", "probsevere_start_after_minute"
           ],
           "properties": {
             "s3_prefix": { "type": "string" },
             "s3_prefix_no_modifier": { "type": "string" },
             "filename_prefix": { "type": "string" },
             "probsevere_start_after": { "type": "string" },
-            "probsevere_start_after_lookback_hours": { "type": "integer", "minimum": 0 }
+            "probsevere_start_after_lookback_hours": { "type": "integer", "minimum": 0 },
+            "filename_start_after_minute": { "type": "string" },
+            "probsevere_start_after_minute": { "type": "string" }
           }
         },
         "ncep_https": {

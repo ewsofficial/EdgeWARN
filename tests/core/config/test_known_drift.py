@@ -3197,3 +3197,328 @@ def _chunk_size_reaching_iter_chunked() -> int:
 
     assert len(recorded) == 1, f"expected one streaming copy, saw {recorded}"
     return recorded[0]
+
+
+# --- EWMRS RAP uint16: three scalars the catalog used to only describe -----
+
+def _config_dir_with_overrides(tmp_path, catalog_name, indent="", **overrides):
+    """Copy `config/` and rewrite whole `key: value` lines in one catalog.
+
+    Line-anchored rather than a bare substring replace: every one of these keys
+    is also named in its own explanatory comment, and a substring rewrite would
+    edit the comment instead of the key. `indent` selects the nesting level, so a
+    top-level `resampling` could never be mistaken for a nested one.
+    """
+    import shutil
+
+    config_dir = tmp_path / "config"
+    shutil.copytree(REPO_ROOT / "config", config_dir)
+    catalog = config_dir / f"{catalog_name}.yaml"
+
+    lines = catalog.read_text(encoding="utf-8").splitlines()
+    for key, value in overrides.items():
+        prefix = f"{indent}{key}:"
+        replaced = 0
+        for index, line in enumerate(lines):
+            if line.startswith(prefix):
+                lines[index] = f"{prefix} {value}"
+                replaced += 1
+        assert replaced == 1, f"expected one {prefix!r} line, rewrote {replaced}"
+    catalog.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return config_dir
+
+
+def _rap_uint16_config_dir(tmp_path, **overrides):
+    return _config_dir_with_overrides(tmp_path, "ewmrs_rap_uint16", **overrides)
+
+
+def _with_config_root(config_dir):
+    """Export `config_dir` as the config root, restoring the previous value."""
+    import contextlib
+
+    from common.config import loader
+
+    @contextlib.contextmanager
+    def _scope():
+        previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+        try:
+            loader.export_config_root(config_dir)
+            yield
+        finally:
+            if previous is None:
+                os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+            else:
+                os.environ["EDGEWARN_CONFIG_DIR"] = previous
+
+    return _scope()
+
+
+def test_rap_uint16_retention_is_observed_at_both_of_its_call_sites(tmp_path):
+    """RESOLVED (Phase 5): `max_timestamps` was inert, and doubly so.
+
+    Two functions held their own `= 3` default and the one live caller passed a
+    third literal `max_timestamps=3`. They are not independent knobs:
+    `_update_product_index` publishes the timestamp list a client reads and
+    `cleanup_old_rap_uint16_layers` deletes the directories behind it, so a
+    disagreement advertises data that is already gone. Both are asserted here
+    because wiring only the accessor, or only one caller, would still leave the
+    catalog value half-honoured.
+    """
+    pytest.importorskip("eccodes")
+
+    import util.file as fs
+    from EWMRS.rap import uint16_pipeline
+
+    config_dir = _rap_uint16_config_dir(tmp_path, max_timestamps=1)
+    stamps = ["20260816-120000", "20260816-121500", "20260816-123000"]
+
+    index_dir = tmp_path / "index_layer"
+    index_dir.mkdir()
+    (index_dir / "index.json").write_text(json.dumps(stamps), encoding="utf-8")
+
+    gui_root = tmp_path / "gui_rap"
+    layer_dir = gui_root / "Temperature_2m"
+    for stamp in stamps:
+        (layer_dir / stamp).mkdir(parents=True)
+
+    # The published index is captured rather than read back off disk: this
+    # platform's `os.fsync` raises inside `util.atomic`, which would fail the
+    # test for a reason that has nothing to do with the value under test.
+    published: dict = {}
+
+    with _with_config_root(config_dir):
+        with mock.patch.object(
+            uint16_pipeline,
+            "atomic_write_json",
+            lambda path, data, **kwargs: published.update(data),
+        ):
+            uint16_pipeline._update_product_index(index_dir, "20260816-124500")
+
+        with mock.patch.object(fs, "GUI_RAP_DIR", gui_root):
+            removed = uint16_pipeline.cleanup_old_rap_uint16_layers()
+
+    assert published["timestamps"] == ["20260816-124500"]
+    assert removed == 2
+    assert sorted(path.name for path in layer_dir.iterdir()) == ["20260816-123000"]
+
+    # The repo default keeps three, so the assertions above are reading the
+    # override rather than a coincidence.
+    assert uint16_pipeline.rap_uint16_max_timestamps() == 3
+
+
+def test_rap_uint16_timestamp_format_names_the_output_directory(tmp_path):
+    """RESOLVED (Phase 5): the pattern was a raw string literal in `_timestamp_label`.
+
+    Observed through `_timestamp_label` rather than the accessor: the accessor
+    returning the catalog value proves nothing while its caller keeps a literal.
+    """
+    pytest.importorskip("eccodes")
+
+    from EWMRS.rap import uint16_pipeline
+
+    config_dir = _rap_uint16_config_dir(tmp_path, timestamp_format="'%Y%m%dT%H%M'")
+    rap_path = tmp_path / "RAP.20260816-18z.grib2"
+    rap_path.write_bytes(b"")
+
+    with _with_config_root(config_dir):
+        labelled = uint16_pipeline._timestamp_label(None, rap_path)
+
+    assert labelled == "20260816T1800"
+    assert uint16_pipeline._timestamp_label(None, rap_path) == "20260816-180000"
+
+
+def test_rap_uint16_force_defaults_to_none_so_false_stays_a_caller_choice(tmp_path):
+    """RESOLVED (Phase 5): `force: bool = False` shadowed the catalog value.
+
+    The default had to become `None`, not stay `False`: with `False` there is no
+    way to tell "the caller wants no re-encode" from "the caller said nothing",
+    so a catalog `force: true` could never win. `layers=[]` returns before any
+    GRIB is opened, which is far enough to see the resolution.
+    """
+    pytest.importorskip("eccodes")
+
+    from EWMRS.rap import uint16_pipeline
+
+    config_dir = _rap_uint16_config_dir(tmp_path, force="true")
+    # A real file, because `_timestamp_label` runs before the early return and
+    # falls back to `stat()` for a name it cannot parse.
+    rap_path = tmp_path / "RAP.20260816-18z.grib2"
+    rap_path.write_bytes(b"")
+
+    observed: list[bool] = []
+    real_force = uint16_pipeline.rap_uint16_force
+
+    def _record():
+        observed.append(real_force())
+        return observed[-1]
+
+    with _with_config_root(config_dir):
+        with mock.patch.object(uint16_pipeline, "rap_uint16_force", _record):
+            uint16_pipeline.run_rap_uint16_pipeline(rap_path, layers=[])
+            assert observed == [True]
+
+            # An explicit False must not consult the catalog at all.
+            uint16_pipeline.run_rap_uint16_pipeline(rap_path, layers=[], force=False)
+            assert observed == [True]
+
+
+def test_the_rap_layer_catalog_mirrors_the_python_authority():
+    """`ewmrs_rap_uint16.yaml`'s `layers` block is documentation, and pinned.
+
+    DECISION MADE (Phase 5): `get_rap_uint16_layers()` stays the authority
+    because it encodes *rules* the flattened YAML cannot -- the colormap band per
+    pressure level, and `outdir` as a prefix strip with three exceptions. A
+    future layer needs those rules. So the block is a mirror, and this test is
+    what keeps "mirror" from decaying into "second, disagreeing authority".
+    """
+    import util.file as fs
+    from common.config import loader
+    from EWMRS.rap.config import get_rap_uint16_layers
+
+    catalog = loader.load_config("ewmrs_rap_uint16")
+    output_root = getattr(fs, catalog["output_root"])
+
+    def _as_python_layer(entry):
+        layer = {
+            "name": entry["name"],
+            "short_names": list(entry["short_names"]),
+            "filter": dict(entry["filter"]),
+            "units": entry["units"],
+            "scale": {
+                "min": float(entry["scale"]["min"]),
+                "max": float(entry["scale"]["max"]),
+            },
+            "outdir": output_root / entry["outdir"],
+            "description": entry["description"],
+        }
+        # `_with_colormap_key` drops the key rather than emitting None, so the
+        # YAML `null` must disappear here too or MSLP would not compare equal.
+        if entry["colormap_key"] is not None:
+            layer["colormap_key"] = entry["colormap_key"]
+        return layer
+
+    assert [_as_python_layer(e) for e in catalog["layers"]] == get_rap_uint16_layers()
+
+
+# --- EWMRS GOES reprojection: a key outvoted by three literals -------------
+
+def _resampling_reaching_the_goes_reprojection(config_dir):
+    """Return the resampling method that reaches the GOES reprojection helper.
+
+    Recorded rather than raised: `reproject_goes_abi_to_web_mercator` wraps the
+    whole payload branch in `except Exception: pass`, so anything thrown from a
+    stub is swallowed and the function simply falls through to its second
+    attempt. The stub returns None on purpose to let that fall-through happen --
+    the argument has already been observed by then.
+    """
+    import numpy as np
+    import xarray as xr
+    from affine import Affine
+
+    from EWMRS.render import goes_transform
+
+    dataset = xr.Dataset(
+        data_vars={"unknown": (("y", "x"), np.zeros((4, 4), dtype=np.float32))},
+        coords={"y": [3.0, 2.0, 1.0, 0.0], "x": [0.0, 1.0, 2.0, 3.0]},
+    )
+    dataset = dataset.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=False)
+    dataset = dataset.rio.write_crs("EPSG:4326", inplace=False)
+    dataset = dataset.rio.write_transform(Affine.identity(), inplace=False)
+
+    observed = []
+
+    def _record(payload, *, shape, transform, resampling):
+        observed.append(resampling)
+        return None
+
+    with _with_config_root(config_dir):
+        with mock.patch.object(
+            goes_transform, "_reproject_goes_payload_to_web_mercator", _record
+        ):
+            goes_transform.reproject_goes_abi_to_web_mercator(
+                dataset, shape=(4, 4), transform=Affine.identity()
+            )
+
+    assert len(observed) == 1, f"expected one reprojection, saw {observed}"
+    return observed[0]
+
+
+def test_goes_resampling_is_read_from_the_catalog_not_a_signature_default(tmp_path):
+    """RESOLVED (Phase 5): `goes_transform.resampling` had three copies over it.
+
+    Two signature defaults (`reproject_goes_abi_to_web_mercator` and
+    `load_reproject_goes_abi_render_array`) plus an explicit
+    `resampling=Resampling.bilinear` at the one live call site in
+    `EWMRS/pipeline.py`. Every one of them said `bilinear`, so the key looked
+    honoured; editing it changed nothing.
+    """
+    pytest.importorskip("rioxarray")
+
+    from rasterio.enums import Resampling
+
+    config_dir = _config_dir_with_overrides(
+        tmp_path, "ewmrs_render", indent="  ", resampling="lanczos"
+    )
+    assert _resampling_reaching_the_goes_reprojection(config_dir) is Resampling.lanczos
+
+    # And the repo default still arrives, so the override above is the reason the
+    # assertion passed rather than a coincidence of enum ordering.
+    assert (
+        _resampling_reaching_the_goes_reprojection(REPO_ROOT / "config")
+        is Resampling.bilinear
+    )
+
+
+def test_the_non_goes_reprojection_keeps_nearest_and_is_not_this_key(tmp_path):
+    """`EWMRS/pipeline.py` reprojects radar layers with `nearest` deliberately.
+
+    Asserted because it is the one literal that must NOT be folded into
+    `goes_transform.resampling`: it is a different layer family with a different
+    requirement (crisp edges), and a reader auditing for stragglers would
+    otherwise be right to "finish the job" and silently blur radar output.
+    """
+    source = (REPO_ROOT / "src/EWMRS/pipeline.py").read_text(encoding="utf-8")
+
+    assert "resampling=Resampling.nearest," in source
+    # The GOES branch now passes nothing, so the only Resampling literal left in
+    # this file is the radar one.
+    assert source.count("resampling=Resampling.") == 1
+
+
+def test_an_unsupported_resampling_name_fails_at_the_catalog_not_in_rasterio(tmp_path):
+    """A typo must name the file and key, not surface as a rasterio TypeError.
+
+    `gauss` is the interesting case rather than a nonsense string: rasterio
+    really does define it, so the schema enum is what rejects it, and the
+    accessor's `SUPPORTED_RESAMPLING` check is the backstop for the day those two
+    lists disagree.
+    """
+    from common.config import loader
+
+    for name in ("gauss", "not_a_method"):
+        config_dir = _config_dir_with_overrides(
+            tmp_path / name, "ewmrs_render", indent="  ", resampling=name
+        )
+        with _with_config_root(config_dir):
+            with pytest.raises(loader.ConfigError) as excinfo:
+                loader.load_config("ewmrs_render")
+        assert "resampling" in str(excinfo.value)
+
+    # Now widen the *copied* schema so `gauss` validates, and check the accessor
+    # still refuses it. Without this step the enum would be the only guard and the
+    # backstop the accessor carries would be untested code.
+    from EWMRS.render.config import goes_transform_resampling
+
+    config_dir = _config_dir_with_overrides(
+        tmp_path / "widened", "ewmrs_render", indent="  ", resampling="gauss"
+    )
+    schema_path = config_dir / "schema" / "ewmrs_render.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema["properties"]["goes_transform"]["properties"]["resampling"] = {"type": "string"}
+    schema_path.write_text(json.dumps(schema), encoding="utf-8")
+
+    with _with_config_root(config_dir):
+        loader.load_config("ewmrs_render")  # the schema no longer objects
+        with pytest.raises(loader.ConfigError) as excinfo:
+            goes_transform_resampling()
+    assert "not supported for reprojection" in str(excinfo.value)

@@ -105,7 +105,10 @@
       "additionalProperties": false,
       "required": ["resampling"],
       "properties": {
-        "resampling": { "type": "string" }
+        "resampling": {
+          "type": "string",
+          "enum": ["nearest", "bilinear", "cubic", "cubic_spline", "lanczos", "average", "mode", "max", "min", "med", "q1", "q3", "sum", "rms"]
+        }
       }
     },
     "nexrad_gui": {

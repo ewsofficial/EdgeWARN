@@ -12,6 +12,8 @@ from common.ingest.mrms.config import (
     goes_cleanup_max_age_minutes,
     goes_hour_lookback,
     mrms_bucket,
+    mrms_filename_prefix,
+    mrms_probsevere_start_after,
     normalize_goes_modifier,
 )
 from common.ingest.mrms.s3_sync import FileFinder, FileDownloader
@@ -32,6 +34,27 @@ from util.performance import tracker as perf_tracker
 import uuid
 
 io_manager = IOManager("[Ingest]")
+
+
+def _narrow_mrms_lookup(dt, region, modifier):
+    """Return the ``(prefix, start_after)`` pair that narrows one MRMS listing.
+
+    Two mutually exclusive ways to avoid listing a whole day:
+
+    * A modifier means the filename carries the hour, so appending
+      :func:`mrms_filename_prefix` to the day prefix makes S3 itself exclude every
+      other hour, and no ``StartAfter`` marker is needed.
+    * ProbSevere has no modifier and separates its date and hour with an
+      underscore, so the prefix cannot be extended that way; it gets an explicit
+      marker one lookback behind the target instead.
+
+    The sync and async download paths shared neither the code nor a comment
+    explaining the asymmetry, and each carried its own copy of both grammars.
+    """
+    prefix = parse_mrms_bucket_path(dt, region, modifier)
+    if modifier is not None:
+        return f"{prefix}{mrms_filename_prefix(dt, modifier)}", None
+    return prefix, f"{prefix}{mrms_probsevere_start_after(dt)}"
 
 
 @dataclass(frozen=True)
@@ -288,49 +311,8 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
 
     perf_tracker.start(f"Ingest - MRMS - {modifier_name}")
     try:
-        bucket_path = parse_mrms_bucket_path(dt, region, modifier)
-        
-        # Optimization: Append filename prefix to search only this hour
-        # Also limit search with S3 StartAfter to skip previous hours
-        start_after = None
-        from datetime import timedelta
-        
-        if modifier is not None:
-            # Standard MRMS: MRMS_{modifier}_{YYYYMMDD}-{HHMMSS}
-            filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
-            bucket_path = f"{bucket_path}{filename_prefix}"
-            
-            # StartAfter: Previous hour to rely on safe margin (though filename_prefix in bucket_path already filters stricter?)
-            # Wait, if we append filename_prefix to bucket_path passed to lookup_files,
-            # lookup_files uses that as Prefix.
-            # If Prefix is .../MRMS_Modifier_20260208-14, then we ONLY get files from hour 14.
-            # S3 Prefix filtering is very efficient.
-            # So StartAfter is NOT NEEDED if we include hour in Prefix!
-            # The current code ALREADY ADDS filename_prefix (including hour) to bucket_path!
-            # Check lines 59-61:
-            # filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
-            # bucket_path = f"{bucket_path}{filename_prefix}"
-            
-            # So for non-ProbSevere, we effectively filter by hour already!!!
-            pass
+        bucket_path, start_after = _narrow_mrms_lookup(dt, region, modifier)
 
-        else:
-            # ProbSevere (modifier is None)
-            # Prefix is ProbSevere/YYYYMMDD/
-            # We assume we can't easily append prefix because filename format "MRMS_PROBSEVERE_..." 
-            # might not match "ProbSevere" folder name exactly (Case sensitivity).
-            # Folder: ProbSevere/
-            # File: MRMS_PROBSEVERE_...
-            # If we try to add prefix "MRMS_PROBSEVERE_..." to "ProbSevere/YYYYMMDD/"
-            # "ProbSevere/YYYYMMDD/MRMS_PROBSEVERE_..." matches!
-            # But the existing code `filename_prefix` logic was inside `if modifier is not None`.
-            # So ProbSevere was NOT getting the hour prefix optimization.
-            
-            # Let's add StartAfter optimization for ProbSevere!
-            # Filename: MRMS_PROBSEVERE_YYYYMMDD_HHMMSS
-            start_after_dt = dt - timedelta(hours=1)
-            start_after = f"{bucket_path}MRMS_PROBSEVERE_{start_after_dt.strftime('%Y%m%d_%H')}"
-        
         # Async file lookup (S3)
         lookup_started_at = asyncio.get_running_loop().time()
         perf_tracker.start(f"Ingest - MRMS - {modifier_name} - Lookup")
@@ -459,19 +441,7 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
     modifier_name = _mrms_modifier_label(modifier)
 
     try:
-        bucket_path = parse_mrms_bucket_path(dt, region, modifier)
-        
-        # Optimization: Append filename prefix to search only this hour
-        start_after = None
-        from datetime import timedelta
-
-        if modifier is not None:
-            filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
-            bucket_path = f"{bucket_path}{filename_prefix}"
-        else:
-            # ProbSevere optimization
-            start_after_dt = dt - timedelta(hours=1)
-            start_after = f"{bucket_path}MRMS_PROBSEVERE_{start_after_dt.strftime('%Y%m%d_%H')}"
+        bucket_path, start_after = _narrow_mrms_lookup(dt, region, modifier)
 
         file_list = finder.lookup_files(bucket_path, start_after=start_after)
 

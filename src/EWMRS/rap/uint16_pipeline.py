@@ -13,7 +13,14 @@ from typing import Any
 import eccodes
 import numpy as np
 
-from EWMRS.rap.config import UINT16_NODATA, UINT16_VALID_MAX, get_rap_uint16_layers
+from EWMRS.rap.config import (
+    UINT16_NODATA,
+    UINT16_VALID_MAX,
+    get_rap_uint16_layers,
+    rap_uint16_force,
+    rap_uint16_max_timestamps,
+    rap_uint16_timestamp_format,
+)
 from util.io import IOManager
 import util.file as fs
 from util.atomic import atomic_write_bytes, atomic_write_json
@@ -27,10 +34,17 @@ def run_rap_uint16_pipeline(
     layers=None,
     *,
     timings: dict[str, dict[str, Any]] | None = None,
-    force: bool = False,
+    force: bool | None = None,
 ) -> dict[str, Path | None]:
-    """Convert configured RAP messages into one raw uint16 file per layer."""
+    """Convert configured RAP messages into one raw uint16 file per layer.
+
+    ``force=None`` means "no preference", deferring to the catalog; ``True`` and
+    ``False`` are both explicit caller choices, which is why the default is not
+    ``False``.
+    """
     rap_path = Path(rap_file)
+    if force is None:
+        force = rap_uint16_force()
     selected_layers = get_rap_uint16_layers() if layers is None else list(layers)
     timestamp = _timestamp_label(dt, rap_path)
     results: dict[str, Path | None] = {str(layer.get("name")): None for layer in selected_layers}
@@ -98,7 +112,7 @@ def run_rap_uint16_pipeline(
                 elapsed_seconds = time.perf_counter() - layer_start
                 metadata["conversion_time_seconds"] = elapsed_seconds
                 atomic_write_json(metadata_path, metadata, indent=2)
-                _update_product_index(Path(layer["outdir"]), timestamp, max_timestamps=3)
+                _update_product_index(Path(layer["outdir"]), timestamp)
 
                 results[str(layer["name"])] = output_path
                 converted_layers.append(str(layer["name"]))
@@ -119,7 +133,7 @@ def run_rap_uint16_pipeline(
         missing_layers.append(str(missing_name))
         _record_timing(timings, missing_name, status="missing", seconds=None, output_path=None)
 
-    removed_count = cleanup_old_rap_uint16_layers(max_timestamps=3)
+    removed_count = cleanup_old_rap_uint16_layers()
     if removed_count:
         io_manager.write_info(
             f"RAP Uint16 cleanup summary: removed={removed_count} old layer directories"
@@ -261,7 +275,9 @@ def _build_metadata(
     return metadata
 
 
-def _update_product_index(out_dir: Path, timestamp: str, max_timestamps: int = 3) -> None:
+def _update_product_index(out_dir: Path, timestamp: str, max_timestamps: int | None = None) -> None:
+    if max_timestamps is None:
+        max_timestamps = rap_uint16_max_timestamps()
     out_dir.mkdir(parents=True, exist_ok=True)
     index_path = out_dir / "index.json"
     timestamps: list[str] = []
@@ -284,8 +300,10 @@ def _update_product_index(out_dir: Path, timestamp: str, max_timestamps: int = 3
     }
     atomic_write_json(index_path, index_data, indent=2)
 
-def cleanup_old_rap_uint16_layers(max_timestamps: int = 3) -> int:
+def cleanup_old_rap_uint16_layers(max_timestamps: int | None = None) -> int:
     """Remove old timestamp directories for RAP uint16 layers, keeping only max_timestamps per layer."""
+    if max_timestamps is None:
+        max_timestamps = rap_uint16_max_timestamps()
     if not fs.GUI_RAP_DIR.exists():
         return 0
     removed_count = 0
@@ -345,7 +363,7 @@ def _timestamp_label(dt, rap_path: Path) -> str:
         dt = dt.replace(tzinfo=timezone.utc)
     else:
         dt = dt.astimezone(timezone.utc)
-    return dt.strftime(r"%Y%m%d-%H%M00")
+    return dt.strftime(rap_uint16_timestamp_format())
 
 
 def _parse_rap_filename_timestamp(filename: str) -> datetime | None:

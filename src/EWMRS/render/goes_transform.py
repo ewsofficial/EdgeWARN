@@ -14,6 +14,7 @@ from rasterio.enums import Resampling
 from rasterio.warp import reproject
 
 from common.ingest.mrms.utils import extract_timestamp
+from EWMRS.render.config import goes_transform_resampling
 from util.io import IOManager
 
 io_manager = IOManager("[GOES]")
@@ -367,9 +368,16 @@ def reproject_goes_abi_to_web_mercator(
     *,
     shape: tuple[int, int],
     transform,
-    resampling: Resampling = Resampling.bilinear,
+    resampling: Resampling | None = None,
 ) -> xr.Dataset | None:
-    """Reproject normalized GOES dataset to the EWMRS EPSG:3857 target grid."""
+    """Reproject normalized GOES dataset to the EWMRS EPSG:3857 target grid.
+
+    ``resampling=None`` defers to ``goes_transform.resampling``. A signature
+    default of ``Resampling.bilinear`` bound the value at import time, so the
+    catalog key it was transcribed from could never take effect.
+    """
+    if resampling is None:
+        resampling = goes_transform_resampling()
     source_variable = "unknown"
     try:
         source_crs = ds.rio.crs
@@ -424,9 +432,14 @@ def load_reproject_goes_abi_render_array(
     *,
     shape: tuple[int, int],
     transform,
-    resampling: Resampling = Resampling.bilinear,
+    resampling: Resampling | None = None,
 ) -> dict[str, np.ndarray] | None:
-    """Load and reproject a GOES ABI channel to a shared array/x/y payload."""
+    """Load and reproject a GOES ABI channel to a shared array/x/y payload.
+
+    ``None`` is passed straight through to
+    :func:`reproject_goes_abi_to_web_mercator`, which owns the resolution, so the
+    catalog is read once per call rather than twice.
+    """
     channel_id = str(layer_config.get("channel_id", "unknown"))
     total_start_s = time.perf_counter()
     payload = _load_goes_abi_render_payload(path, layer_config)
