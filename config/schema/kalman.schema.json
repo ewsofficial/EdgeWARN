@@ -45,7 +45,7 @@
     "assignment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["prefilter_radius_km", "gating_threshold", "min_gating_radius_km", "weights", "method", "covariance_regularization"],
+      "required": ["prefilter_radius_km", "gating_threshold", "min_gating_radius_km", "weights", "method"],
       "properties": {
         "prefilter_radius_km": { "type": "number", "minimum": 0 },
         "gating_threshold": { "type": "number", "minimum": 0 },
@@ -60,8 +60,7 @@
             "size_similarity": { "type": "number", "minimum": 0 }
           }
         },
-        "method": { "type": "string", "enum": ["hybrid", "hungarian", "greedy"] },
-        "covariance_regularization": { "type": "number", "exclusiveMinimum": 0 }
+        "method": { "type": "string", "enum": ["hybrid", "hungarian", "greedy"] }
       }
     },
     "filter_internals": {

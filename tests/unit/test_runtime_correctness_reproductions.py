@@ -388,6 +388,7 @@ def _historical_args(tmp_path, start, end):
         refl_threshold=37.5,
         min_seed_percentage=0.001,
         drop_offset=10.0,
+        config_dir=None,
     )
 
 

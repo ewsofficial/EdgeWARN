@@ -6,7 +6,6 @@ C2: Dead _check_reacquisition removal
 C3: Config default alignment and fallback warnings
 """
 
-import logging
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -20,6 +19,7 @@ from EdgeWARN.process.detect.kalman.config import (
     KalmanConfig,
     AssignmentConfig,
 )
+from common.config.loader import ConfigError
 from EdgeWARN.process.detect.lineage.events import (
     LineageResult,
     MergeEvent,
@@ -149,26 +149,38 @@ class TestC2DeadCodeRemoval:
 
 
 # ============================================================================
-# C3: Config default matches YAML, warns on fallback
+# C3: kalman.yaml is the single source for every Kalman value
 # ============================================================================
 
 class TestC3ConfigDefaults:
-    """Verify config defaults match YAML and fallbacks log warnings."""
+    """The YAML is authoritative: no second copy, and no silent fallback.
 
-    def test_tracking_config_default_matches_yaml(self):
-        """Python default for max_prediction_time_minutes should be 6.0."""
-        config = TrackingConfig()
-        assert config.max_prediction_time_minutes == 6.0, \
-            f"Expected 6.0, got {config.max_prediction_time_minutes}"
+    C3 originally aligned a Python default with the YAML and made the
+    file-missing path log a warning. Phase 4 removed the Python defaults
+    entirely, so there is nothing left to align and nothing to fall back to --
+    a missing or incomplete config is now a startup failure.
+    """
 
-    @pytest.mark.parametrize("config_class,config_name", [
-        (TrackingConfig, "TrackingConfig"),
-        (KalmanConfig, "KalmanConfig"),
-        (AssignmentConfig, "AssignmentConfig"),
+    def test_tracking_config_reads_max_prediction_time_from_yaml(self):
+        config = TrackingConfig.from_yaml()
+        assert config.max_prediction_time_minutes == 6.0
+
+    @pytest.mark.parametrize("config_class", [
+        TrackingConfig,
+        KalmanConfig,
+        AssignmentConfig,
     ])
-    def test_config_warns_on_missing_yaml(self, caplog, config_class, config_name):
-        """from_yaml should log a warning when the YAML file doesn't exist."""
-        with caplog.at_level(logging.WARNING):
-            config_class.from_yaml(Path("/nonexistent/kalman.yaml"))
-        assert any("not found" in msg for msg in caplog.messages), \
-            f"No warning logged for {config_name}"
+    def test_config_cannot_be_built_without_yaml(self, config_class):
+        """No field defaults, so the dataclass is unconstructable bare."""
+        with pytest.raises(TypeError):
+            config_class()
+
+    @pytest.mark.parametrize("config_class", [
+        TrackingConfig,
+        KalmanConfig,
+        AssignmentConfig,
+    ])
+    def test_config_raises_on_missing_yaml(self, config_class):
+        """from_yaml fails loudly rather than substituting a second default."""
+        with pytest.raises(ConfigError):
+            config_class.from_yaml(config_dir=str(Path("/nonexistent")))

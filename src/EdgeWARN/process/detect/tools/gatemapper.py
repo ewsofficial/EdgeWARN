@@ -9,13 +9,15 @@ import scipy.ndimage
 import time
 
 class GateMapper:
-    def __init__(self, radar_ds, ps_ds, io_manager, refl_threshold=37.5, min_seed_percentage=0.001, drop_offset=10.0):
+    def __init__(self, radar_ds, ps_ds, io_manager, detection_config):
         self.radar_ds = radar_ds
         self.ps_ds = ps_ds
-        self.refl_threshold = refl_threshold
-        self.min_seed_percentage = min_seed_percentage
-        self.drop_offset = drop_offset
         self.io_manager = io_manager
+        self.config = detection_config
+        self.gm = detection_config.gatemapper
+        self.refl_threshold = detection_config.refl_threshold
+        self.min_seed_percentage = detection_config.min_seed_percentage
+        self.drop_offset = detection_config.drop_offset
 
     def map_gates_to_polygons(self):
         """
@@ -98,8 +100,8 @@ class GateMapper:
         # 1. Create Baseline High Reflectivity Mask
         polygon_grid = mapped_ds['PolygonID'].values
         refl_grid = self.radar_ds['unknown'].values
-        baseline_mask = refl_grid >= min(37.5, self.refl_threshold)
-        
+        baseline_mask = refl_grid >= min(self.gm.baseline_refl_floor, self.refl_threshold)
+
 
         # Optimization: Crop to active area
         # Find bounding box of high reflectivity
@@ -115,11 +117,13 @@ class GateMapper:
         rmin, rmax = np.where(rows_with_data)[0][[0, -1]]
         cmin, cmax = np.where(cols_with_data)[0][[0, -1]]
         
-        # Add a small buffer (e.g., 2 pixels) to ensure boundaries are handled cleanly
-        rmin = max(0, rmin - 2)
-        rmax = min(baseline_mask.shape[0], rmax + 3)
-        cmin = max(0, cmin - 2)
-        cmax = min(baseline_mask.shape[1], cmax + 3)
+        # Symmetric pad so boundaries are handled cleanly. The high edges add one
+        # more for the exclusive slice end, not a wider pad.
+        pad = self.gm.crop_pad_px
+        rmin = max(0, rmin - pad)
+        rmax = min(baseline_mask.shape[0], rmax + pad + 1)
+        cmin = max(0, cmin - pad)
+        cmax = min(baseline_mask.shape[1], cmax + pad + 1)
         
         # Slice views
         sub_mask = baseline_mask[rmin:rmax, cmin:cmax]
@@ -142,8 +146,8 @@ class GateMapper:
         unique_ids = np.flatnonzero(pixel_counts)
         unique_ids = unique_ids[unique_ids > 0]
         
-        # Initial Filtering: Trigger expansion for ANY polygon with >= min_seed_percentage coverage
-        # With min_seed_percentage=0.001, this effectively triggers for "any pixel".
+        # Initial Filtering: Trigger expansion for ANY polygon with >= min_seed_percentage
+        # coverage. At the configured default this effectively triggers for "any pixel".
         valid_ids = np.flatnonzero((pixel_counts > 0) & (refl_counts >= (pixel_counts * self.min_seed_percentage)))
         valid_ids = valid_ids[valid_ids > 0]
         
@@ -171,8 +175,12 @@ class GateMapper:
             )
 
         valid_max_refl = max_refl_by_id[valid_ids]
-        min_thresh = np.where(valid_max_refl < 45.0, 37.5, 40.0).astype(np.float32, copy=False)
-        capped_max_refl = np.minimum(valid_max_refl, 52.0)
+        min_thresh = np.where(
+            valid_max_refl < self.gm.dynamic_switch_max_refl,
+            self.gm.dynamic_min_threshold_low,
+            self.gm.dynamic_min_threshold_high,
+        ).astype(np.float32, copy=False)
+        capped_max_refl = np.minimum(valid_max_refl, self.gm.max_refl_clamp)
         dyn_thresh[valid_ids] = np.maximum(min_thresh, capped_max_refl - self.drop_offset)
 
         # Preserve existing global-union behavior while avoiding a Python loop.
@@ -235,13 +243,16 @@ class GateMapper:
         invalid_mask = (sub_final > 0) & (~np.isfinite(sub_refl) | (sub_refl < final_thresholds))
         sub_final[invalid_mask] = 0
         
-        # 5. Final Size Filter: > 5 gates total in expanded cell
+        # 5. Final Size Filter: reject expanded cells at or below the gate floor
         final_ids = np.unique(sub_final)
         final_ids = final_ids[final_ids > 0]
-        
+
         if len(final_ids) > 0:
              final_counts = np.bincount(sub_final.ravel(), minlength=int(final_ids.max()) + 1)
-             rejected_ids = np.flatnonzero((final_counts > 0) & (final_counts <= 5))
+             rejected_ids = np.flatnonzero(
+                 (final_counts > 0)
+                 & (final_counts <= self.gm.reject_clusters_at_or_below_gates)
+             )
              rejected_ids = rejected_ids[rejected_ids > 0]
              if rejected_ids.size > 0:
                   self.io_manager.write_debug(f"Rejecting small expanded clusters: {rejected_ids.tolist()}")
@@ -273,25 +284,14 @@ class GateMapper:
                 'longitude': mapped_ds['longitude'].values
             }
         )
-        
-        # Watershed returns 0 where mask is False.
-        
-        return xr.Dataset(
-            {'PolygonID': (('latitude', 'longitude'), final_grid.astype(np.int32))},
-            coords={
-                'latitude': mapped_ds['latitude'].values,
-                'longitude': mapped_ds['longitude'].values
-            }
-        )
 
-    def draw_bbox(self, expanded_ds, step=8):
+    def draw_bbox(self, expanded_ds):
         """
         Return a dictionary of polygons for each polygon ID by tracing the exterior points.
         Optimized to use find_objects for slice-based processing.
 
         Parameters:
             expanded_ds (xarray.Dataset): Dataset from expand_gates()
-            step (int): take every N-th point along the contour
 
         Returns:
             dict: {polygon_id: list of (lon, lat) tuples forming the polygon}
@@ -329,7 +329,7 @@ class GateMapper:
             padded_mask = np.pad(poly_mask, 1, mode='constant', constant_values=0)
             
             # Find contours
-            contours = measure.find_contours(padded_mask.astype(float), 0.5)
+            contours = measure.find_contours(padded_mask.astype(float), self.gm.contour_level)
             if not contours:
                 continue
                 
@@ -338,13 +338,14 @@ class GateMapper:
             
             # Adaptive Downsample
             n_points = len(contour)
-            if n_points < 8:
-                final_step = 1
-            elif n_points < 24:
-                final_step = 4
+            if n_points < self.gm.contour_keep_all_below_points:
+                final_step = self.gm.contour_keep_all_step
+            elif n_points < self.gm.contour_coarse_below_points:
+                final_step = self.gm.contour_coarse_step
             else:
-                final_step = step
-                
+                final_step = self.gm.contour_downsample
+
+
             contour = contour[::final_step]
             
             # Convert to global coordinates
@@ -362,16 +363,17 @@ class GateMapper:
                 c_global = (contour[:, 1] + c_offset).astype(int)
                 
                 # Safety clamp
+                decimals = self.gm.coordinate_decimals
                 if coords_are_1d:
                     np.clip(r_global, 0, lats.shape[0] - 1, out=r_global)
                     np.clip(c_global, 0, lons.shape[0] - 1, out=c_global)
-                    lat_vals = np.round(lats[r_global], 3)
-                    lon_vals = np.round(lons[c_global], 3)
+                    lat_vals = np.round(lats[r_global], decimals)
+                    lon_vals = np.round(lons[c_global], decimals)
                 else:
                     np.clip(r_global, 0, lats.shape[0] - 1, out=r_global)
                     np.clip(c_global, 0, lats.shape[1] - 1, out=c_global)
-                    lat_vals = np.round(lats[r_global, c_global], 3)
-                    lon_vals = np.round(lons[r_global, c_global], 3)
+                    lat_vals = np.round(lats[r_global, c_global], decimals)
+                    lon_vals = np.round(lons[r_global, c_global], decimals)
                 
                 # Create list of tuples
                 bboxes[poly_id] = list(zip(lat_vals.tolist(), lon_vals.tolist()))

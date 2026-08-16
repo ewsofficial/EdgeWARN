@@ -118,29 +118,38 @@ class CovarianceMatrix:
         return cls(_matrix=np.diag(variances).astype(np.float64))
     
     @classmethod
-    def from_position_uncertainty(cls, position_std_km: float, ref_lat: float = 35.0) -> "CovarianceMatrix":
+    def from_position_uncertainty(
+        cls,
+        position_std_km: float,
+        *,
+        velocity_variance: float,
+        acceleration_variance: float,
+        ref_lat: float = 35.0,
+    ) -> "CovarianceMatrix":
         """
         Create covariance matrix with position uncertainty only.
-        
+
         Args:
             position_std_km: Standard deviation of position uncertainty in km
+            velocity_variance: Initial variance for both velocity components, (m/s)²
+            acceleration_variance: Initial variance for both acceleration components, (m/s²)²
             ref_lat: Reference latitude in degrees for longitude scaling.
                      Callers should pass the actual cell latitude.
-        
+
         Returns:
-            CovarianceMatrix with position variance and default velocity/acceleration
+            CovarianceMatrix with the requested position/velocity/acceleration variances
         """
         # Convert km to degrees (approximate)
         lat_std = position_std_km / 111.0  # 1 degree lat ~ 111 km
         lon_std = position_std_km / (111.0 * cos(radians(ref_lat)))  # Adjust for latitude
-        
+
         variances = [
-            lat_std**2,      # var_lat
-            lon_std**2,      # var_lon
-            100.0,           # var_u (m/s)² - high initial velocity uncertainty
-            100.0,           # var_v (m/s)²
-            1.0,             # var_a_lat (m/s²)²
-            1.0              # var_a_lon (m/s²)²
+            lat_std**2,             # var_lat
+            lon_std**2,             # var_lon
+            velocity_variance,      # var_u (m/s)²
+            velocity_variance,      # var_v (m/s)²
+            acceleration_variance,  # var_a_lat (m/s²)²
+            acceleration_variance   # var_a_lon (m/s²)²
         ]
         return cls.from_diagonal(variances)
     

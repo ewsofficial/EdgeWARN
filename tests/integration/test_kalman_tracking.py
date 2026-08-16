@@ -5,13 +5,16 @@ Tests the integration of Kalman filter with StormCellTracker
 for storm continuity tracking.
 """
 
+import dataclasses
+
 import pytest
 from datetime import datetime
 from unittest.mock import Mock, MagicMock
 
 from EdgeWARN.process.detect.track import StormCellTracker
 from EdgeWARN.process.detect.kalman import (
-    TrackingConfig,
+    default_tracking_config,
+    default_kalman_config,
     haversine_distance,
 )
 
@@ -42,16 +45,20 @@ class TestStormCellTrackerKalman:
     def tracker(self):
         """Create a tracker instance for testing."""
         io_manager = MockIOManager()
-        config = TrackingConfig()
-        config.confidence_decay_factor = 0.8
-        config.confidence_threshold = 0.1  # Lower the threshold so cell doesn't terminate after 2 scans
-        
-        from EdgeWARN.process.detect.kalman import KalmanConfig
-        kalman_config = KalmanConfig()
-        kalman_config.process_noise_acceleration = 1e-12
-        kalman_config.process_noise_velocity = 0.0001
-        kalman_config.process_noise_position = 0.00001
-        
+        config = dataclasses.replace(
+            default_tracking_config(),
+            confidence_decay_factor=0.8,
+            # Lower the threshold so the cell doesn't terminate after 2 scans.
+            confidence_threshold=0.1,
+        )
+
+        kalman_config = dataclasses.replace(
+            default_kalman_config(),
+            process_noise_acceleration=1e-12,
+            process_noise_velocity=0.0001,
+            process_noise_position=0.00001,
+        )
+
         return StormCellTracker(
             ps_old=None,
             ps_new=None,
