@@ -1,55 +1,54 @@
 # lineage.yaml — Audit §4
 #
-# Source: src/EdgeWARN/process/detect/lineage/detector.py:29,52,362,377;
-#         spatial.py:199,246; buffer.py:142-145
-# Values verified against the working tree at commit e426fb2.
-# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
+# Consumed through src/EdgeWARN/process/detect/lineage/config.py. Every key below
+# is the single owner of its default: the corresponding parameter defaults to
+# None, so a caller-supplied value still wins but no literal competes with this
+# file. Values are unchanged from the pre-extraction literals.
 #
 # `min_area_deg2` is deliberately absent: 1e-10 is a local variable inside
-# calculate_overlap_ratio (spatial.py:76) guarding a division, not a knob.
+# calculate_overlap_ratio guarding a division, not a knob.
 #
-# `antimeridian_normalization` is deliberately absent: the 350/10/180 test at
-# spatial.py:118 is an algorithm branch, and bounds_overlap (spatial.py:227,230)
-# uses a *different* two-condition form of the same test with no span check.
-# One YAML block cannot describe both, so recording it would create a key that
-# appears to control wrap handling while half the code ignores it.
+# `antimeridian_normalization` is deliberately absent: the 350/10/180 test in
+# _normalize_antimeridian is an algorithm branch, and bounds_overlap uses a
+# *different* two-condition form of the same test with no span check. One YAML
+# block cannot describe both, so recording it would create a key that appears to
+# control wrap handling while half the code ignores it.
 #
-# `buffer.file_name` is deliberately absent: LineageBuffer.BUFFER_FILE
-# (buffer.py:138) is a class constant read directly at :188 and :234, never
-# injected. It names an internal state artifact, not an operator setting.
+# `buffer.file_name` is deliberately absent: LineageBuffer.BUFFER_FILE is a class
+# constant read directly by load() and save(), never injected. It names an
+# internal state artifact, not an operator setting.
 
 schema_version: 1
 
 lineage:
-  # detector.py:29 DEFAULT_OVERLAP_THRESHOLD, applied to merge/split candidates.
+  # LineageDetector.overlap_threshold, applied to merge/split candidates.
   #
-  # SHADOWED: StormCellTracker.__init__ defaults overlap_threshold to 0.10 and
-  # forwards it into LineageDetector, so 0.15 only takes effect when a detector
-  # is built directly or through the module-level detect_lineage_events wrapper
-  # (detector.py:377), which declares the same default. The tracked path is
-  # governed by the tracker's own value (detection.yaml). Editing this key alone
-  # will not change pipeline behavior.
+  # SHADOWED: StormCellTracker resolves its own overlap_threshold (0.10, from
+  # detection.yaml `tracker.lineage_overlap_ratio`) and forwards it into
+  # LineageDetector, so this value only takes effect when a detector is built
+  # directly or through the module-level detect_lineage_events wrapper. Editing
+  # this key alone will not change pipeline behavior.
   event_overlap_ratio: 0.15
 
-  # spatial.py:246 find_overlapping_cells default. A separate, weaker gate: the
-  # detector always passes its own threshold, so 0.0 applies only to direct
+  # find_overlapping_cells overlap_threshold. A separate, weaker gate: the
+  # detector always passes its own threshold, so this applies only to direct
   # spatial queries. Named apart from `event_overlap_ratio` because the two are
   # different knobs that happened to share the name `overlap_threshold`.
   spatial_query_overlap_ratio: 0.0
 
-  # spatial.py:199 bounds_overlap. Slack on the cheap bounding-box pre-filter
-  # that runs before any area overlap is computed. Unlike the two ratios above
-  # this one IS applied on the tracked path: detector.py:362 calls
-  # bounds_overlap with no buffer, so this default is what runs. Widening it
-  # only admits more candidates to the exact test; it cannot create an event.
+  # bounds_overlap buffer. Slack on the cheap bounding-box pre-filter that runs
+  # before any area overlap is computed. Unlike the two ratios above this one IS
+  # applied on the tracked path: _find_split_overlaps calls bounds_overlap with
+  # no buffer for every candidate, so this is what runs. Widening it only admits
+  # more candidates to the exact test; it cannot create an event.
   bounds_prefilter_buffer_deg: 0.0
 
-  # buffer.py:142-145. Hysteresis: an event must be seen on this many
-  # *consecutive* scans (buffer.py:284-290) before it is emitted.
+  # LineageBuffer constructor. Hysteresis: an event must be seen on this many
+  # *consecutive* scans before it is emitted.
   buffer:
     min_confirmations: 2
     max_pending: 100
     prune_after_scans: 5
-    # Expected scan spacing, used only to age out pending entries
-    # (buffer.py:401-403); it does not schedule anything.
+    # Expected scan spacing, used only to age out pending entries in
+    # prune_inactive(); it does not schedule anything.
     scan_interval_seconds: 120.0

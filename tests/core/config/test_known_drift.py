@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.core.config.source_inspect import module_constant, param_default
+from tests.core.config.source_inspect import param_default
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -131,39 +131,76 @@ def test_every_kalman_yaml_section_is_consumed():
     assert sections <= subscripted
 
 
-# --- Lineage overlap: 0.15 is shadowed, not a parallel policy --------------
+# --- Lineage overlap: three concepts, three owners, still shadowed ---------
 
-def test_lineage_overlap_default_is_shadowed_by_the_tracker():
-    """RESOLVED in Phase 4: the tracker's value now comes from detection.yaml.
+def test_each_lineage_overlap_concept_has_exactly_one_owner():
+    """RESOLVED: no literal competes with the YAML for any of the three ratios.
 
-    The shadowing itself is deliberate and still in force -- the tracker always
-    forwards its own value into `LineageDetector`, so
-    `DEFAULT_OVERLAP_THRESHOLD = 0.15` still applies only to a detector built
-    directly. What changed is that the tracker's value is no longer a literal:
-    `detection.yaml` `tracker.lineage_overlap_ratio` is the single owner, and the
-    parameter defaults to `None` so a caller can still override it.
+    `overlap_threshold` named three different things. Now each has one owner and
+    every declaration site defaults to `None`, so a caller can still override
+    without a literal shadowing the catalog:
+
+    - the tracked merge/split gate -> `detection.yaml tracker.lineage_overlap_ratio`
+    - a directly built detector     -> `lineage.yaml event_overlap_ratio`
+    - a bare spatial query          -> `lineage.yaml spatial_query_overlap_ratio`
+
+    The shadowing itself is deliberate and still in force: the tracker always
+    forwards its own value into `LineageDetector`, so `event_overlap_ratio`
+    applies only to a detector built directly. That is why the two must stay
+    separate keys -- collapsing them would silently retune the tracked path.
     """
-    detector_default = module_constant(
-        "EdgeWARN/process/detect/lineage/detector.py", "DEFAULT_OVERLAP_THRESHOLD"
-    )
-    tracker_default = param_default(
-        "EdgeWARN/process/detect/track.py", "StormCellTracker.__init__", "overlap_threshold"
-    )
-    spatial_default = param_default(
-        "EdgeWARN/process/detect/lineage/spatial.py", "find_overlapping_cells", "overlap_threshold"
-    )
+    declaration_sites = {
+        ("EdgeWARN/process/detect/track.py", "StormCellTracker.__init__"),
+        ("EdgeWARN/process/detect/lineage/detector.py", "LineageDetector.__init__"),
+        ("EdgeWARN/process/detect/lineage/detector.py", "detect_lineage_events"),
+        ("EdgeWARN/process/detect/lineage/spatial.py", "find_overlapping_cells"),
+    }
+    for relative_path, qualified_name in declaration_sites:
+        assert param_default(relative_path, qualified_name, "overlap_threshold") is None, (
+            f"{relative_path}::{qualified_name} still declares a literal default"
+        )
 
-    assert detector_default == 0.15
-    assert tracker_default is None
-    assert spatial_default == 0.0
+    detector_source = (
+        REPO_ROOT / "src/EdgeWARN/process/detect/lineage/detector.py"
+    ).read_text(encoding="utf-8")
+    assert "DEFAULT_OVERLAP_THRESHOLD" not in detector_source
 
-    yaml_value = _detection_yaml()["tracker"]["lineage_overlap_ratio"]
-    assert yaml_value == 0.10
-    assert yaml_value != detector_default
+    assert _lineage_yaml()["lineage"]["event_overlap_ratio"] == 0.15
+    assert _lineage_yaml()["lineage"]["spatial_query_overlap_ratio"] == 0.0
+    assert _detection_yaml()["tracker"]["lineage_overlap_ratio"] == 0.10
 
-    # The tracker forwards its own value, so the detector default never applies.
+    # The tracker forwards its own value, so the lineage.yaml ratio never applies
+    # on the tracked path. Keep the two keys distinct.
     track_source = (REPO_ROOT / "src/EdgeWARN/process/detect/track.py").read_text(encoding="utf-8")
     assert "overlap_threshold=self.overlap_threshold" in track_source
+
+
+def test_lineage_buffer_thresholds_have_no_literal_defaults():
+    """`LineageBuffer()` is constructed with no kwargs in production.
+
+    `track.py` calls `LineageBuffer.load(stormcell_dir)`, so whatever the
+    constructor defaults to is what runs. Literals there would outrank
+    lineage.yaml for the entire tracked path.
+    """
+    buffer_keys = ("min_confirmations", "max_pending", "prune_after_scans", "scan_interval_seconds")
+    for key in buffer_keys:
+        assert param_default(
+            "EdgeWARN/process/detect/lineage/buffer.py", "LineageBuffer.__init__", key
+        ) is None, f"LineageBuffer.__init__ still declares a literal {key}"
+
+    yaml_buffer = _lineage_yaml()["lineage"]["buffer"]
+    assert yaml_buffer == {
+        "min_confirmations": 2,
+        "max_pending": 100,
+        "prune_after_scans": 5,
+        "scan_interval_seconds": 120.0,
+    }
+
+
+def _lineage_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load((REPO_ROOT / "config" / "lineage.yaml").read_text(encoding="utf-8"))
 
 
 def _detection_yaml() -> dict:

@@ -23,10 +23,7 @@ from .spatial import (
     calculate_overlap_ratio,
 )
 from .buffer import LineageBuffer
-
-
-# Default configuration constants
-DEFAULT_OVERLAP_THRESHOLD = 0.15  # 15% overlap required for merge/split detection
+from .config import event_overlap_ratio
 
 
 class LineageDetector:
@@ -49,19 +46,24 @@ class LineageDetector:
     def __init__(
         self,
         buffer: Optional[LineageBuffer] = None,
-        overlap_threshold: float = DEFAULT_OVERLAP_THRESHOLD,
+        overlap_threshold: Optional[float] = None,
         io_manager: Optional[Any] = None,
     ):
         """
         Initialize the lineage detector.
-        
+
         Args:
             buffer: LineageBuffer for hysteresis (created if None)
-            overlap_threshold: Minimum overlap ratio for merge/split detection
+            overlap_threshold: Minimum overlap ratio for merge/split detection.
+                None reads ``lineage.event_overlap_ratio``. StormCellTracker
+                always forwards its own value, so the YAML default applies only
+                to a detector built directly.
             io_manager: IO manager for logging (optional)
         """
         self.buffer = buffer or LineageBuffer()
-        self.overlap_threshold = overlap_threshold
+        self.overlap_threshold = (
+            event_overlap_ratio() if overlap_threshold is None else overlap_threshold
+        )
         self.io_manager = io_manager
     
     def detect(
@@ -374,17 +376,18 @@ def detect_lineage_events(
     old_cells: List[Dict[str, Any]],
     new_cells: List[Dict[str, Any]],
     buffer: Optional[LineageBuffer] = None,
-    overlap_threshold: float = DEFAULT_OVERLAP_THRESHOLD,
+    overlap_threshold: Optional[float] = None,
     io_manager: Optional[Any] = None,
 ) -> LineageResult:
     """
     Convenience function to detect lineage events without instantiating detector.
-    
+
     Args:
         old_cells: List of cell dicts from previous scan
         new_cells: List of cell dicts from current scan
         buffer: LineageBuffer for hysteresis (created if None)
-        overlap_threshold: Minimum overlap ratio for detection
+        overlap_threshold: Minimum overlap ratio for detection. Forwarded as-is,
+            so None is resolved once by LineageDetector rather than here.
         io_manager: IO manager for logging
         
     Returns:

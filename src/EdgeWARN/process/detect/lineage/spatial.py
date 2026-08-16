@@ -11,6 +11,8 @@ from shapely.strtree import STRtree
 from shapely.validation import make_valid
 import numpy as np
 
+from .config import bounds_prefilter_buffer_deg, spatial_query_overlap_ratio
+
 
 def calculate_overlap_ratio(parent_bbox: List[List[float]], 
                            child_bbox: List[List[float]]) -> float:
@@ -194,23 +196,27 @@ def build_spatial_index(cells: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def bounds_overlap(bounds1: Dict[str, float], 
+def bounds_overlap(bounds1: Dict[str, float],
                    bounds2: Dict[str, float],
-                   buffer: float = 0.0) -> bool:
+                   buffer: Optional[float] = None) -> bool:
     """
     Check if two bounding boxes overlap (fast pre-filter).
-    
+
     This is a quick axis-aligned bounding box check to avoid expensive
     polygon intersection calculations for clearly disjoint cells.
-    
+
     Args:
         bounds1: Dict with 'min_lat', 'max_lat', 'min_lon', 'max_lon'
         bounds2: Dict with 'min_lat', 'max_lat', 'min_lon', 'max_lon'
-        buffer: Optional buffer distance to expand bounds (degrees)
-    
+        buffer: Buffer distance to expand bounds (degrees). None reads
+                ``lineage.bounds_prefilter_buffer_deg``.
+
     Returns:
         True if the bounding boxes overlap, False otherwise.
     """
+    if buffer is None:
+        buffer = bounds_prefilter_buffer_deg()
+
     # Check latitude overlap
     if bounds1['max_lat'] + buffer < bounds2['min_lat']:
         return False
@@ -243,23 +249,28 @@ def bounds_overlap(bounds1: Dict[str, float],
 def find_overlapping_cells(
     target_cell: Dict[str, Any],
     cell_index: Dict[str, Any],
-    overlap_threshold: float = 0.0
+    overlap_threshold: Optional[float] = None
 ) -> List[Tuple[int, float]]:
     """
     Find all cells that overlap with a target cell above a threshold.
-    
+
     This function performs a two-stage overlap detection:
     1. Fast R-Tree lookup via Shapely STRtree
     2. Precise polygon intersection calculation
-    
+
     Args:
         target_cell: Cell dictionary with 'id' and 'bbox'
         cell_index: Spatial index from build_spatial_index()
-        overlap_threshold: Minimum overlap ratio to include (default 0.0)
-    
+        overlap_threshold: Minimum overlap ratio to include. None reads
+                           ``lineage.spatial_query_overlap_ratio``; the detector
+                           always passes its own value instead.
+
     Returns:
         List of (cell_id, overlap_ratio) tuples, sorted by overlap ratio descending.
     """
+    if overlap_threshold is None:
+        overlap_threshold = spatial_query_overlap_ratio()
+
     target_id = int(target_cell.get('id', 0))
     target_bbox = target_cell.get('bbox', [])
     tree = cell_index.get('tree')
