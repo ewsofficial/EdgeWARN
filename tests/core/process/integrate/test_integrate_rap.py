@@ -146,6 +146,28 @@ def test_integrate_rap_derived_fields(mock_io_manager, storm_cells):
     assert props.get('freezing_level_height') == pytest.approx(3.5, abs=0.1)
 
 
+def test_output_decimals_is_live_for_extracted_and_derived_fields(
+    mock_io_manager, storm_cells, override_integration_config
+):
+    """Raising `output.decimals` must change both the applied and derived values.
+
+    RAP rounds at two separate sites, and both used to hardcode 2, so an
+    assertion at the shipped precision could not tell them apart from a wired key.
+    """
+    override_integration_config("output", "decimals", 4)
+
+    with patch("EdgeWARN.process.integrate.integrate_rap.RAPPointExtractor") as MockExtractor:
+        MockExtractor.return_value.extract_batch.return_value = {
+            "temp_2m": {1: 300.123456},
+            "freezing_level_m": {1: 3512.3456},
+        }
+        results = integrate_rap(storm_cells, "dummy_path.grib2", mock_io_manager)
+
+    props = results[0]["properties"]
+    assert props["temp_2m"] == 26.9735
+    assert props["freezing_level_height"] == 3.5123
+
+
 def test_integrate_rap_no_file(mock_io_manager, storm_cells):
     """Test no file path returns unchanged cells."""
     results = integrate_rap(storm_cells, None, mock_io_manager)
@@ -176,7 +198,13 @@ def test_integrate_rap_empty_datasets(mock_io_manager, storm_cells):
 
 
 def test_safe_eval_rejects_unsafe_formula(mock_io_manager, storm_cells):
-    """Ensure unsupported expressions are rejected and set to None."""
+    """A formula the restricted grammar rejects aborts the run.
+
+    It used to be caught per-field and written to every cell as None, so a bad
+    formula in the catalog was indistinguishable from a cell that simply had no
+    input data. Formulas now come from `integration.yaml`, so this is a config
+    error and belongs at startup.
+    """
     with patch("EdgeWARN.process.integrate.integrate_rap.get_rap_products") as mock_products, \
          patch("EdgeWARN.process.integrate.integrate_rap.RAPPointExtractor") as MockExtractor:
         mock_products.return_value = {
@@ -185,9 +213,10 @@ def test_safe_eval_rejects_unsafe_formula(mock_io_manager, storm_cells):
         }
         MockExtractor.return_value.extract_batch.return_value = {}
 
-        results = integrate_rap(storm_cells, "dummy_path.grib2", mock_io_manager)
+        with pytest.raises(ValueError, match="unsafe"):
+            integrate_rap(storm_cells, "dummy_path.grib2", mock_io_manager)
 
-    assert results[0]["properties"]["unsafe"] is None
+    assert "unsafe" not in storm_cells[0].get("properties", {})
 
 
 def test_safe_eval_handles_missing_input_value(mock_io_manager, storm_cells):

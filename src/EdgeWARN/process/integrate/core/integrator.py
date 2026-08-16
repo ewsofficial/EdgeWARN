@@ -2,58 +2,15 @@ import numpy as np
 import xarray as xr
 
 from util.grib_loader import load_grib_fast
+from ..config import output_decimals, probsevere_field_map, section
 from ..integrate_azshear import integrate_azshear_features as _integrate_azshear_features
 from ..utils import StormIntegrationUtils
 from .polygon import polygon_for_dataset, polygon_for_longitude_mode, uses_360_longitude
-from .stats import OUTPUT_DECIMALS, prepare_stats_specs, reduce_stats, sanitize_masked_values
+from .stats import prepare_stats_specs, reduce_stats, sanitize_masked_values
 from .subset import axis_slice_indices, build_spatial_lookup, extract_spatial_subset
 
 # Suppress cfgrib/xarray compatibility warnings
 xr.set_options(use_new_combine_kwarg_defaults=True)
-
-
-PROBSEVERE_FIELD_MAP = {
-    "ProbSevere": "ProbSevere",
-    "ProbWind": "ProbWind",
-    "ProbHail": "ProbHail",
-    "ProbTor": "ProbTor",
-    "MLCAPE": "MLCAPE",
-    "MUCAPE": "MUCAPE",
-    "MLCIN": "MLCIN",
-    "DCAPE": "DCAPE",
-    "CAPE_M10M30": "CAPE_M10M30",
-    "LCL": "LCL",
-    "Wetbulb_0C_Hgt": "WETBULB_0C_HGT",
-    "LLLR": "LLLR",
-    "MLLR": "MLLR",
-    "EBShear": "EBSHEAR",
-    "SRH01km": "SRH01KM",
-    "SRH02km": "SRW02KM",
-    "SRW46km": "SRW46KM",
-    "MeanWind_1-3kmAGL": "MEANWIND_1-3kmAGL",
-    "LJA": "LJA",
-    "CompRef": "COMPREF",
-    "Ref10": "REF10",
-    "Ref20": "REF20",
-    "MESH": "MESH",
-    "H50_Above_0C": "H50_Above_0C",
-    "EchoTop50": "EchoTop_50",
-    "VIL": "VIL",
-    "MaxFED": "MaxFED",
-    "MaxFCD": "MaxFCD",
-    "AccumFCD": "AccumFCD",
-    "MinFlashArea": "MinFlashArea",
-    "TE@MaxFCD": "TE@MaxFCD",
-    "FlashRate": "FLASH_RATE",
-    "FlashDensity": "FLASH_DENSITY",
-    "MaxLLAz": "MAXLLAZ",
-    "p98LLAz": "P98LLAZ",
-    "p98MLAz": "P98MLAZ",
-    "MaxRC_Emiss": "MAXRC_EMISS",
-    "ICP": "ICP",
-    "PWAT": "PWAT",
-    "avg_beam_hgt": "AVG_BEAM_HGT",
-}
 
 
 class StormCellIntegrator:
@@ -227,6 +184,8 @@ class StormCellIntegrator:
         if cell_contexts is None:
             cell_contexts = self.build_cell_contexts(storm_cells)
 
+        decimals = output_decimals()
+
         for cell, context in zip(active_cells, cell_contexts):
             if "properties" not in cell:
                 cell["properties"] = {}
@@ -260,7 +219,7 @@ class StormCellIntegrator:
                 if masked_vals.size == 0:
                     target[output_key] = 0
                 else:
-                    target[output_key] = round(float(np.nanmax(masked_vals)), OUTPUT_DECIMALS)
+                    target[output_key] = round(float(np.nanmax(masked_vals)), decimals)
 
             except Exception as e:
                 self.io_manager.write_error(f"Process cell {cell.get('id')}: {e}")
@@ -384,6 +343,7 @@ class StormCellIntegrator:
             for f in features
         }
 
+        field_map = probsevere_field_map()
         for cell in storm_cells:
             cell_id = str(cell.get("id"))
 
@@ -394,7 +354,7 @@ class StormCellIntegrator:
             if not match:
                 continue
 
-            for target_key, source_key in PROBSEVERE_FIELD_MAP.items():
+            for target_key, source_key in field_map.items():
                 try:
                     cell["properties"][target_key] = float(match.get(source_key, 0))
                 except (TypeError, ValueError):

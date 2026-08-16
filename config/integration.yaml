@@ -5,8 +5,8 @@
 #         azshear/integration.py:73; integrate_glm.py:7; integrate_rap.py:32-48,111,119;
 #         pipeline.py:21,52,93,283,350,359; core/history.py:52,92;
 #         src/util/grib_loader.py:54,58
-# Values verified against the working tree at commit e426fb2.
-# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
+# Read through src/EdgeWARN/process/integrate/config.py. Every section here is
+# the single source of truth -- no value below is also declared in Python.
 #
 # `cell_history.max_payloads` is deliberately absent: it was fabricated. Cell
 # history is appended without a cap (history.py:92) and the files are named
@@ -16,31 +16,40 @@
 schema_version: 1
 
 output:
-  decimals: 2                           # stats.py:4 OUTPUT_DECIMALS
+  # Applies to every integrated property value: MRMS statistics, single-variable
+  # maxima, and RAP point/derived fields. The AzShear feature block rounds to 3
+  # and 4 places instead; those are separate, in-code decisions.
+  decimals: 2
 
 azshear:
-  # pipeline.py:21 _AZSHEAR_SUPPORT_ENABLED. The entire AzShear feature block
-  # below is dead code today -- pipeline.py:93,283,350,359 all gate on this.
-  # Recorded as false so the file states current behavior rather than implying
-  # these thresholds are live.
+  # RETIRED PATH, recorded not wired. pipeline.py:21 hardcodes
+  # `_AZSHEAR_SUPPORT_ENABLED = False` and :93,283,350,359 all gate on it, so
+  # every tunable below reaches code that never runs. `enabled` is deliberately
+  # *not* read by pipeline.py: turning this key into a live switch would offer
+  # operators a feature that has never executed in production. Flip the Python
+  # constant as a reviewed change instead.
+  # UNUSED.
   enabled: false
 
-  buffer_km: 1.5                        # azshear/constants.py:1
-  low_threshold: 8.0                    # :2
-  mid_threshold: 6.0                    # :3
-  min_gate_count: 5                     # :4
-  max_pair_separation_km: 12.0          # :5
-  # azshear/integration.py:73 `payload[-5:]`: how many trailing history entries
-  # persistence features look back over.
+  buffer_km: 1.5                        # azshear/constants.py accessors
+  low_threshold: 8.0
+  mid_threshold: 6.0
+  min_gate_count: 5
+  max_pair_separation_km: 12.0
+  # How many trailing cell-history entries persistence features look back over
+  # (azshear/integration.py _read_recent_history).
   history_window: 5
 
 glm:
-  bin_size_degrees: 1.0                 # integrate_glm.py:7 _GLM_BIN_SIZE_DEGREES
+  # Coarse lat/lon bin edge used to index flash candidates before the exact
+  # point-in-polygon test. Affects performance only, never the flash counts.
+  bin_size_degrees: 1.0
 
-# config.py:4-175, 25 entries. `filepath` is a util.file attribute name, matching
-# the resolution used by ewmrs_render.yaml. `method` is written on every entry
-# although config.py:18-22 omits it for Ref15 and relies on the "max" default at
-# stats.py:9; explicit beats an invisible default in an operator-facing file.
+# 25 entries. `filepath` is a util.file attribute name, resolved with getattr so
+# that initialize_filesystem rebinds are picked up -- same convention as
+# ewmrs_render.yaml. `method` is required on every entry: Ref15 previously omitted
+# it and inherited an invisible "max" default inside prepare_stats_specs, which
+# meant the reduction a dataset used was not visible where it was declared.
 stats_datasets:
   # {name, filepath, key, method, percentile}
   - {name: Ref0,            filepath: MRMS_REF_0C_DIR,    key: Ref0,               method: max}

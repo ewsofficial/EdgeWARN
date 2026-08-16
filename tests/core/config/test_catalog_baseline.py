@@ -145,13 +145,24 @@ def test_integration_datasets_length_and_unique_keys():
     assert len(keys) == len(set(keys))
 
 
-def test_integration_dataset_without_explicit_method_is_still_present():
-    """Ref15 omits "method" entirely; the plan must not silently invent one."""
+def test_every_integration_dataset_declares_its_method():
+    """RESOLVED (Phase 4): Ref15 no longer inherits an invisible "max".
+
+    It used to omit ``method`` and pick the reduction up from a
+    ``conf.get("method", "max")`` default inside ``prepare_stats_specs``, so the
+    reduction a dataset used was not visible where the dataset was declared.
+    ``integration.yaml`` now requires the key on all 25 entries -- the resolved
+    value for Ref15 is unchanged.
+    """
     requires("xarray")
     from EdgeWARN.process.integrate.config import get_datasets_config
 
-    without_method = [e["name"] for e in get_datasets_config() if "method" not in e]
-    assert without_method == ["Ref15"]
+    datasets = get_datasets_config()
+    assert [e["name"] for e in datasets if "method" not in e] == []
+    assert next(e for e in datasets if e["name"] == "Ref15")["method"] == "max"
+
+    source = (REPO_ROOT / "src/EdgeWARN/process/integrate/core/stats.py").read_text(encoding="utf-8")
+    assert '.get("method"' not in source
 
 
 # --- RAP integration ------------------------------------------------------
@@ -195,18 +206,18 @@ def test_rap_transform_registry_baseline():
 
 
 def test_rap_derived_formulas_parse_under_the_safe_grammar():
-    """Formulas are moving into YAML verbatim, so pin that they parse today."""
+    """Every catalog formula passes the same check production runs before extraction."""
     requires("xarray")
-    import ast
-
     from EdgeWARN.process.integrate.config import get_rap_products
-    from EdgeWARN.process.integrate.integrate_rap import _safe_eval_formula
+    from EdgeWARN.process.integrate.integrate_rap import _compile_derived, _safe_eval_formula
 
     variables = {"temp_2m": 20.0, "dewpoint_2m": 10.0, "freezing_level_m": 3000.0}
-    results = {}
-    for entry in get_rap_products()["derived"]:
-        expression = ast.parse(entry["formula"], mode="eval").body
-        results[entry["key"]] = _safe_eval_formula(expression, variables)
+    results = {
+        key: _safe_eval_formula(expression, variables)
+        for key, expression in (
+            _compile_derived(entry) for entry in get_rap_products()["derived"]
+        )
+    }
 
     assert results == {"dewpoint_depression": 10.0, "freezing_level_height": 3.0}
 
@@ -367,6 +378,18 @@ def test_catalog_modules_import_standalone(module_name, needs):
 
 # --- AzShear scientific tunables -------------------------------------------
 
+# The accessor for each tunable, keyed by the module constant it replaced. The
+# baseline keys are deliberately unchanged so the recorded snapshot still proves
+# the values survived the move from module scope into the catalog.
+_AZSHEAR_ACCESSORS = {
+    "AZSHEAR_BUFFER_KM": "azshear_buffer_km",
+    "AZSHEAR_LOW_THRESHOLD": "azshear_low_threshold",
+    "AZSHEAR_MAX_PAIR_SEPARATION_KM": "azshear_max_pair_separation_km",
+    "AZSHEAR_MID_THRESHOLD": "azshear_mid_threshold",
+    "AZSHEAR_MIN_GATE_COUNT": "azshear_min_gate_count",
+}
+
+
 def test_azshear_constants_baseline():
     """The five tunables driving AzShear feature integration.
 
@@ -378,18 +401,27 @@ def test_azshear_constants_baseline():
     assert_baseline(
         "azshear_constants",
         {
-            name: getattr(azshear_constants, name)
-            for name in sorted(vars(azshear_constants))
-            if name.isupper()
+            name: getattr(azshear_constants, accessor)()
+            for name, accessor in sorted(_AZSHEAR_ACCESSORS.items())
         },
     )
 
 
-def test_azshear_constants_count():
+def test_azshear_tunables_are_read_per_call_not_at_import():
+    """No module-scope read may survive here.
+
+    ``EdgeWARN/pipeline.py`` pulls this module in transitively from
+    ``src/run.py:14``, which runs before ``get_args()`` exports
+    ``EDGEWARN_CONFIG_DIR``. A module-scope read freezes the repo-default config
+    directory, and because ``section()`` is memoized the poisoned entry also
+    defeats the correctly-written per-call reads elsewhere in the package.
+    """
     from EdgeWARN.process.integrate.azshear import constants as azshear_constants
 
-    names = [name for name in vars(azshear_constants) if name.isupper()]
-    assert len(names) == 5
+    assert [name for name in vars(azshear_constants) if name.isupper()] == []
+    for name, accessor in _AZSHEAR_ACCESSORS.items():
+        assert not hasattr(azshear_constants, name), f"{name} is bound at import time"
+        assert callable(getattr(azshear_constants, accessor))
 
 
 # --- WPC surface-analysis styling ------------------------------------------

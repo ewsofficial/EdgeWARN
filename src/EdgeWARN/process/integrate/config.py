@@ -1,253 +1,93 @@
+"""Integration catalogs and policy read from ``config/integration.yaml``.
+
+``section()`` is memoized because ``load_config`` re-resolves the config root on
+every call and ``output.decimals`` is read from inside per-cell loops. Directory
+names are deliberately *not* memoized: they are resolved through ``getattr`` per
+call so ``initialize_filesystem`` rebinds are picked up.
+"""
+from collections.abc import Mapping
+from functools import lru_cache
+
 import util.file as fs
+from common.config.loader import ConfigError, load_config
+
+_CONFIG_NAME = "integration"
+
+
+@lru_cache(maxsize=None)
+def section(name, config_dir=None):
+    """Frozen view of one top-level section of ``integration.yaml``."""
+    return load_config(_CONFIG_NAME, config_dir=config_dir)[name]
+
+
+def reset_cache():
+    """Clear memoized sections. Intended for tests, alongside loader.reset_cache."""
+    section.cache_clear()
+
+
+def output_decimals(config_dir=None):
+    """Decimal places every integrated property value is rounded to."""
+    return section("output", config_dir)["decimals"]
+
+
+def probsevere_field_map(config_dir=None):
+    """output_property -> ProbSevere source field.
+
+    Neither the casing nor the abbreviation is mechanical, so the mapping cannot
+    be generated from either side. Read per call rather than bound at module
+    scope: ``EdgeWARN/pipeline.py`` imports the integrator transitively from
+    ``src/run.py:14``, before ``get_args()`` exports ``EDGEWARN_CONFIG_DIR``.
+    """
+    return section("probsevere_field_map", config_dir)
+
+
+def _resolve_dir(attribute_name):
+    try:
+        return getattr(fs, attribute_name)
+    except AttributeError:
+        raise ConfigError(
+            f"{_CONFIG_NAME}.yaml",
+            f"stats_datasets.filepath: {attribute_name}",
+            "not an attribute of util.file",
+        ) from None
+
 
 def get_datasets_config():
-    return [
-        # === Reflectivity Layers ===
-        {
-            "name": "Ref0",
-            "filepath": fs.MRMS_REF_0C_DIR,
-            "key": "Ref0",
-            "method": "max"
-        },
-        {
-            "name": "Ref5",
-            "filepath": fs.MRMS_REFM5C_DIR,
-            "key": "Ref5",
-            "method": "max"
-        },
-        {
-            "name": "Ref15",
-            "filepath": fs.MRMS_REFM15C_DIR,
-            "key": "Ref15",
-        },
-        # === Lightning ===
-        {
-            "name": "NLDN",
-            "filepath": fs.MRMS_NLDN_DIR,
-            "key": "maxCGFlashDensity",
-            "method": "max"
-        },
-        # === Echo Tops ===
-        # ET 18
-        {
-            "name": "EchoTop18",
-            "filepath": fs.MRMS_ECHOTOP18_DIR,
-            "key": "maxEchoTop18",
-            "method": "max" 
-        },
-        {
-            "name": "EchoTop18 (95th)",
-            "filepath": fs.MRMS_ECHOTOP18_DIR,
-            "key": "p95EchoTop18",
-            "method": "percentile",
-            "percentile": 95
-        },
-        {
-            "name": "EchoTop18 (90th)",
-            "filepath": fs.MRMS_ECHOTOP18_DIR,
-            "key": "p90EchoTop18",
-            "method": "percentile",
-            "percentile": 90
-        },
-        # ET 30
-        {
-            "name": "EchoTop30",
-            "filepath": fs.MRMS_ECHOTOP30_DIR,
-            "key": "maxEchoTop30",
-            "method": "max"
-        },
-        {
-            "name": "EchoTop30 (90th)",
-            "filepath": fs.MRMS_ECHOTOP30_DIR,
-            "key": "p90EchoTop30",
-            "method": "percentile",
-            "percentile": 90
-        },
-        # ET 50
-        {
-            "name": "EchoTop50 (90th)",
-            "filepath": fs.MRMS_ECHOTOP50_DIR,
-            "key": "p90EchoTop50",
-            "method": "percentile",
-            "percentile": 90
-        },
-        # === VIL and VIL Density ===
-        {
-            "name": "VIL",
-            "filepath": fs.MRMS_VIL_DIR,
-            "key": "maxVIL",
-            "method": "max"
-        },
-        {
-            "name": "VIL (95th)",
-            "filepath": fs.MRMS_VIL_DIR,
-            "key": "p95VIL",
-            "method": "percentile",
-            "percentile": 95
-        },
-        {
-            "name": "VIL (90th)",
-            "filepath": fs.MRMS_VIL_DIR,
-            "key": "p90VIL",
-            "method": "percentile",
-            "percentile": 90
-        },
-        {
-            "name": "VIL (50th)",
-            "filepath": fs.MRMS_VIL_DIR,
-            "key": "p50VIL",
-            "method": "percentile",
-            "percentile": 50
-        },
-        {
-            "name": "VIL Density",
-            "filepath": fs.MRMS_DVIL_DIR,
-            "key": "maxVILDensity",
-            "method": "max"
-        },
-        {
-            "name": "VIL Density (95th)",
-            "filepath": fs.MRMS_DVIL_DIR,
-            "key": "p95VILDensity",
-            "method": "percentile",
-            "percentile": 95
-        },
-        {
-            "name": "VIL Density (90th)",
-            "filepath": fs.MRMS_DVIL_DIR,
-            "key": "p90VILDensity",
-            "method": "percentile",
-            "percentile": 90
-        },
-        {
-            "name": "VIL Density (50th)",
-            "filepath": fs.MRMS_DVIL_DIR,
-            "key": "p50VILDensity",
-            "method": "percentile",
-            "percentile": 50
-        },
-        # === AzShear ===
-        {
-            "name": "AzShear Low",
-            "filepath": fs.MRMS_AZSHEARLOW_DIR,
-            "key": "maxAzShearLow",
-            "method": "max"
-        },
-        {
-            "name": "AzShear Low (95th)",
-            "filepath": fs.MRMS_AZSHEARLOW_DIR,
-            "key": "p95AzShearLow",
-            "method": "percentile",
-            "percentile": 95
-        },
-        {
-            "name": "AzShear Mid",
-            "filepath": fs.MRMS_AZSHEARMID_DIR,
-            "key": "maxAzShearMid",
-            "method": "max"
-        },
-        {
-            "name": "AzShear Mid (95th)",
-            "filepath": fs.MRMS_AZSHEARMID_DIR,
-            "key": "p95AzShearMid",
-            "method": "percentile",
-            "percentile": 95
-        },
-        # === Others ===
-        {
-            "name": "PrecipRate",
-            "filepath": fs.MRMS_PRECIPRATE_DIR,
-            "key": "maxPrecipRate",
-            "method": "max"
-        },
-        {
-            "name": "Reflectivity at Lowest Altitude",
-            "filepath": fs.MRMS_RALA_DIR,
-            "key": "maxRALA",
-            "method": "max"
-        },
-        {
-            "name": "VII",
-            "filepath": fs.MRMS_VII_DIR,
-            "key": "maxVII",
-            "method": "max"
-        },
-    ]
+    datasets = []
+    for entry in section("stats_datasets"):
+        dataset = {
+            "name": entry["name"],
+            "filepath": _resolve_dir(entry["filepath"]),
+            "key": entry["key"],
+            "method": entry["method"],
+        }
+        if "percentile" in entry:
+            dataset["percentile"] = entry["percentile"]
+        datasets.append(dataset)
+    return datasets
+
+
+def _thaw(value):
+    """Deep-copy a frozen config value back into plain dicts and lists.
+
+    ``RAPPointExtractor`` and the apply loop treat these entries as ordinary
+    data, and ``copy.deepcopy`` cannot copy a ``MappingProxyType``.
+    """
+    if isinstance(value, Mapping):
+        return {key: _thaw(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw(item) for item in value]
+    return value
 
 
 def get_rap_products():
+    """Configuration for RAP GRIB2 extraction.
+
+    ``isobaric_levels_mb`` is an anchor the u/v products expand at parse time,
+    so it is not part of the returned catalog.
     """
-    Configuration for RAP GRIB2 extraction.
-    Each entry specifies filter keys, variable name, and output property key.
-    """
+    rap = section("rap_products")
     return {
-        "products": [
-            # === Isobaric Winds ===
-            {
-                "filter": {"typeOfLevel": "isobaricInhPa"},
-                "var": "u",
-                "var_aliases": ["u", "UGRD", "u-component_of_wind_isobaric", "wind_u"],
-                "levels": [
-                    1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 
-                    675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 
-                    350, 325, 300, 275, 250, 225, 200, 175, 150, 125, 100
-                ],
-                "key_template": "wind_field.u{level}"
-            },
-            {
-                "filter": {"typeOfLevel": "isobaricInhPa"},
-                "var": "v",
-                "var_aliases": ["v", "VGRD", "v-component_of_wind_isobaric", "wind_v"],
-                "levels": [
-                    1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 725, 700, 
-                    675, 650, 625, 600, 575, 550, 525, 500, 475, 450, 425, 400, 375, 
-                    350, 325, 300, 275, 250, 225, 200, 175, 150, 125, 100
-                ],
-                "key_template": "wind_field.v{level}"
-            },
-            # === Surface 10m Winds ===
-            {
-                "filter": {"typeOfLevel": "heightAboveGround", "level": 10},
-                "var": "u10",
-                "var_aliases": ["u10", "10u", "u"],
-                "key": "u10m"
-            },
-            {
-                "filter": {"typeOfLevel": "heightAboveGround", "level": 10},
-                "var": "v10",
-                "var_aliases": ["v10", "10v", "v"],
-                "key": "v10m"
-            },
-            # === Surface 2m ===
-            {
-                "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
-                "var": "t2m",
-                "var_aliases": ["t2m", "2t", "t"],
-                "key": "temp_2m",
-                "transform": "kelvin_to_celsius"
-            },
-            {
-                "filter": {"typeOfLevel": "heightAboveGround", "level": 2},
-                "var": "d2m",
-                "var_aliases": ["d2m", "2d", "dpt"],
-                "key": "dewpoint_2m",
-                "transform": "kelvin_to_celsius"
-            },
-            # === Freezing Level ===
-            {
-                "filter": {"typeOfLevel": "isothermZero"},
-                "var": "gh",
-                "key": "freezing_level_m"
-            },
-        ],
-        "derived": [
-            {
-                "formula": "temp_2m - dewpoint_2m",
-                "key": "dewpoint_depression"
-            },
-            {
-                "formula": "freezing_level_m / 1000",
-                "key": "freezing_level_height"
-            }
-        ]
+        "products": _thaw(rap["products"]),
+        "derived": _thaw(rap["derived"]),
     }
