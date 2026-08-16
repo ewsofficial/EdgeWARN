@@ -52,11 +52,12 @@ class TestStormCellTrackerKalman:
             confidence_threshold=0.1,
         )
 
+        # Acceleration is the only process-noise knob: the jerk model derives
+        # every block of Q from it. The position and velocity overrides that used
+        # to sit here fed a matrix nothing read.
         kalman_config = dataclasses.replace(
             default_kalman_config(),
             process_noise_acceleration=1e-12,
-            process_noise_velocity=0.0001,
-            process_noise_position=0.00001,
         )
 
         return StormCellTracker(

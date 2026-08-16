@@ -102,10 +102,6 @@
       "default": null,
       "action": null
     },
-    "--max-volumes-per-site": {
-      "default": null,
-      "action": null
-    },
     "--max-candidate-volumes-per-site": {
       "default": null,
       "action": null

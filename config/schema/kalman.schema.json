@@ -14,10 +14,8 @@
         "process_noise": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["position", "velocity", "acceleration"],
+          "required": ["acceleration"],
           "properties": {
-            "position": { "type": "number", "minimum": 0 },
-            "velocity": { "type": "number", "minimum": 0 },
             "acceleration": { "type": "number", "minimum": 0 }
           }
         },

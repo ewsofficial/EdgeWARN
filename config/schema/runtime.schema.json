@@ -21,8 +21,8 @@
       "additionalProperties": false,
       "required": ["lat_limits", "lon_limits"],
       "properties": {
-        "lat_limits": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
-        "lon_limits": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 }
+        "lat_limits": { "type": "array", "items": { "type": "number", "minimum": -90, "maximum": 90 }, "minItems": 2, "maxItems": 2 },
+        "lon_limits": { "type": "array", "items": { "type": "number", "minimum": -180, "maximum": 360 }, "minItems": 2, "maxItems": 2 }
       }
     },
     "goes_coordination": {

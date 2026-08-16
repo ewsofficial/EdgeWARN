@@ -4,7 +4,6 @@
     "--base-dir",
     "--config-dir",
     "--max-candidate-volumes-per-site",
-    "--max-volumes-per-site",
     "--site",
     "--volume-id"
   ]

@@ -108,8 +108,8 @@ class AssignmentCostsConfig:
 class KalmanConfig:
     """Process and measurement noise for the storm-cell Kalman filter."""
 
-    process_noise_position: float
-    process_noise_velocity: float
+    # One process-noise scalar, not three: the jerk model in
+    # _build_process_noise_matrix derives every block of Q from this alone.
     process_noise_acceleration: float
     measurement_noise_position: float
     internals: FilterInternalsConfig
@@ -121,8 +121,6 @@ class KalmanConfig:
         process_noise = kalman_filter["process_noise"]
         measurement_noise = kalman_filter["measurement_noise"]
         return cls(
-            process_noise_position=process_noise["position"],
-            process_noise_velocity=process_noise["velocity"],
             process_noise_acceleration=process_noise["acceleration"],
             measurement_noise_position=measurement_noise["position"],
             internals=FilterInternalsConfig.from_section(document["filter_internals"]),
