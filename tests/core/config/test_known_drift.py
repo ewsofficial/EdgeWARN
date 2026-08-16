@@ -11,6 +11,7 @@ Every test below names the decision the migration still owes.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -2131,3 +2132,58 @@ def test_no_javascript_file_restates_the_package_version():
             offenders.append(str(path.relative_to(REPO_ROOT)))
 
     assert offenders == [], f"version literal restated in {offenders}"
+
+
+# --- zone_sync: one CLI, two config roots -----------------------------------
+
+
+def test_zone_sync_resolves_its_identity_from_the_same_root_as_its_settings():
+    """RESOLVED: `--config-dir X` gave X's zone settings and the default's UA.
+
+    `_resolve_zone_sync_args` threads `args.config_dir` into every value it
+    reads, which looks complete -- but the User-Agent is not one of those values.
+    It is built in `NWSZoneSync.__init__` by `format_user_agent()`, which loads
+    `runtime.yaml` on its own with `config_dir=None`. Nothing bridged the gap:
+    zone_sync never published the root it had resolved, so one run identified
+    itself to api.weather.gov out of a config root it was not otherwise using.
+
+    Asserting on `contact` rather than the whole header keeps the test honest
+    about which root won -- the version half comes from package.json either way.
+    """
+    import shutil
+    import tempfile
+
+    from common.config import loader
+    from common.ingest.nws.zone_sync import _resolve_zone_sync_args
+
+    config_dir = Path(tempfile.mkdtemp(prefix="cfgdir-zonesync-"))
+    shutil.copytree(REPO_ROOT / "config", config_dir, dirs_exist_ok=True)
+    catalog = config_dir / "runtime.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8")
+            .replace("contact: ewsbackend@gmail.com", "contact: relocated@example.com"),
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        config_dir=str(config_dir), assets_dir=None, zone_types=None,
+        timeout_seconds=None, max_retries=None, max_workers=None,
+        pause_seconds=None, progress=None,
+    )
+
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    try:
+        loader.reset_cache()
+        resolved = _resolve_zone_sync_args(args)
+        # The settings followed --config-dir before this fix, and still must.
+        assert resolved.assets_dir == config_dir.parent / "assets/nws_zones"
+        from common.ingest.nws.zone_sync import NWSZoneSync
+
+        header = NWSZoneSync(resolved.assets_dir).headers["User-Agent"]
+        assert "relocated@example.com" in header
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+        loader.reset_cache()
