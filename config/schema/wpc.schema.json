@@ -9,11 +9,10 @@
     "wpc": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["coded_sfc_base_url", "update_interval_hours", "valid_hours", "http_timeout_seconds", "verify_tls", "date_format", "remote_filename_pattern", "output_filename_pattern", "latest_filename", "cleanup_glob", "cleanup_max_age_minutes", "previous_analysis_lookback_hours", "fallback_geojson_color", "feature_types"],
+      "required": ["coded_sfc_base_url", "update_interval_hours", "http_timeout_seconds", "verify_tls", "date_format", "remote_filename_pattern", "output_filename_pattern", "latest_filename", "cleanup_glob", "cleanup_max_age_minutes", "previous_analysis_lookback_hours", "fallback_geojson_color", "feature_types"],
       "properties": {
         "coded_sfc_base_url": { "type": "string", "pattern": "^https://" },
-        "update_interval_hours": { "type": "number", "exclusiveMinimum": 0 },
-        "valid_hours": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 0, "maximum": 23 } },
+        "update_interval_hours": { "type": "integer", "enum": [1, 2, 3, 4, 6, 8, 12] },
         "http_timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "verify_tls": { "type": "boolean", "const": true },
         "date_format": { "type": "string" },

@@ -21,8 +21,8 @@ def coded_sfc_base_url() -> str:
     return _wpc()["coded_sfc_base_url"]
 
 
-def update_interval_hours() -> float:
-    """How often WPC publishes, which is what makes ``valid_hours`` 3-hourly.
+def update_interval_hours() -> int:
+    """How often WPC publishes. The sole owner of the publish schedule.
 
     Distinct from :func:`previous_analysis_lookback_hours` despite the equal
     value: this describes the upstream product, that one is our own choice of how
@@ -34,10 +34,17 @@ def update_interval_hours() -> float:
 def valid_hours() -> tuple[int, ...]:
     """The UTC hours WPC publishes at, in ascending order.
 
+    Derived from :func:`update_interval_hours` rather than enumerated in the
+    catalog. The two used to be separate keys that nothing coupled, so changing
+    the interval left a stale list behind and the downloader would request hours
+    WPC never publishes -- failing into its fallback on every single run.
+
     Order is load-bearing: the downloader steps backwards through this to pick a
-    fallback analysis, and wraps to the previous day off the last element.
+    fallback analysis, and wraps to the previous day off the last element. That
+    wrap is also why the schema restricts the interval to a divisor of 24: a
+    non-dividing interval would leave a short final gap across midnight.
     """
-    return _wpc()["valid_hours"]
+    return tuple(range(0, 24, update_interval_hours()))
 
 
 def http_timeout_seconds() -> float:

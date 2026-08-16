@@ -105,10 +105,17 @@ supervisor:
   stop_kill_join_timeout_seconds: 1
 
   # There is deliberately no `heartbeat_startup_grace_seconds` here. The grace
-  # is only consulted for a child that also has a heartbeat_path
-  # (processes.py:99, _stale_heartbeat_age returns early without one), and the
-  # sole such child -- NEXRAD Ingest -- supplies its own from nexrad.yaml at
-  # run.py:225. A value here could never reach a consumer.
+  # reaches a child only if that child was registered with BOTH a heartbeat_path
+  # and a heartbeat_stale_seconds -- _stale_heartbeat_age returns None without
+  # the pair (processes.py:155) -- and the sole such child, NEXRAD Ingest,
+  # supplies its own from nexrad.yaml at run.py:229. A value here could never
+  # reach a consumer.
+  #
+  # It is also narrower than "startup grace" suggests: it is read only in the
+  # failure branch (processes.py:173), where the heartbeat file is absent,
+  # unparseable, or owned by another pid. Once a heartbeat lands, staleness is
+  # judged against heartbeat_stale_seconds alone, so raising the grace cannot
+  # slow the detection of a child that started reporting and then stopped.
 
   # DATA_DIR-relative artifacts the supervisor writes. Named by filesystem
   # attribute, resolved with getattr(util.file, dir) at call time so a base
