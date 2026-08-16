@@ -10,6 +10,7 @@ from pathlib import Path
 import util.file as fs
 from util.atomic import atomic_write_json
 from util.io import IOManager
+from util.release import format_user_agent
 
 # Initialize IO Manager
 io = IOManager("[METAR Ingest]")
@@ -36,7 +37,10 @@ async def ensure_station_database():
     try:
          connector = aiohttp.TCPConnector(ssl=False)
          # Force drop 'br' from default Accept-Encoding to prevent decoding failures
-         headers = {"Accept-Encoding": "gzip, deflate"}
+         headers = {
+             "User-Agent": format_user_agent(),
+             "Accept-Encoding": "gzip, deflate",
+         }
          async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
             async with session.get(STATION_DB_URL, timeout=60) as response:
                 response.raise_for_status()
@@ -95,7 +99,7 @@ def _load_station_database():
         
         req = urllib.request.Request(
             STATION_DB_URL,
-            headers={"User-Agent": "EdgeWARN/1.0", "Accept-Encoding": "gzip, deflate"}
+            headers={"User-Agent": format_user_agent(), "Accept-Encoding": "gzip, deflate"}
         )
         with urllib.request.urlopen(req, context=ctx, timeout=60) as response:
             import gzip
@@ -458,7 +462,8 @@ async def ingest_metars_async():
     
     # Create tasks for current hour and previous 2 hours
     connector = aiohttp.TCPConnector(ssl=False)
-    async with aiohttp.ClientSession(connector=connector) as session:
+    headers = {"User-Agent": format_user_agent()}
+    async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
         async def _process_single_hour(i):
             target_time = now - timedelta(hours=i)
             io.write_info(f"Processing METARs (async) for {target_time.strftime('%Y-%m-%d %H:00')} UTC")

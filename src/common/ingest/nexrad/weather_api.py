@@ -6,10 +6,10 @@ import requests
 from common.ingest.nexrad.config import (
     WEATHER_API_CACHE_TTL_SECONDS,
     WEATHER_API_TIMEOUT_SECONDS,
-    WEATHER_API_USER_AGENT,
     WEATHER_RADAR_STATIONS_URL,
 )
 from common.ingest.nexrad.models import RadarStationVcp
+from util.release import format_user_agent
 
 
 def normalize_weather_vcp(value) -> int | None:
@@ -56,7 +56,7 @@ class RadarStationCatalog:
         self,
         *,
         url=WEATHER_RADAR_STATIONS_URL,
-        user_agent=WEATHER_API_USER_AGENT,
+        user_agent=None,
         timeout_seconds=WEATHER_API_TIMEOUT_SECONDS,
         cache_ttl_seconds=WEATHER_API_CACHE_TTL_SECONDS,
     ):
@@ -69,8 +69,10 @@ class RadarStationCatalog:
         self._station_cache_expires_at = 0.0
 
     def _headers(self) -> dict[str, str]:
+        # Resolved per request, not in __init__: _DEFAULT_CATALOG below is built
+        # at import time, before the config root is necessarily known.
         return {
-            "User-Agent": self.user_agent,
+            "User-Agent": self.user_agent or format_user_agent(),
             "Accept": "application/geo+json",
         }
 

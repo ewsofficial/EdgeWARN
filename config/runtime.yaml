@@ -29,6 +29,24 @@
 
 schema_version: 1
 
+# Outbound HTTP identity, shared by every subsystem that calls a public API:
+# NWS zone sync (zone_sync.py:165), the NWS alert feed sync and async
+# (nws/main.py:106,170), the NEXRAD radar-station catalog (nexrad/weather_api.py:73)
+# and the METAR fetch (metar.py:98). Those five sites used to carry three
+# different hardcoded strings.
+#
+# `{version}` is filled from package.json at call time by
+# util/release.py format_user_agent(), so the advertised version cannot drift
+# from the release the way a copied literal did.
+#
+# api.weather.gov asks callers to identify themselves with a reachable contact
+# address, and the parenthesized `(app, contact)` shape is the form its
+# documentation shows. Both placeholders are pinned by the schema pattern, which
+# also forbids CR/LF, so this string cannot be used to inject a second header.
+identity:
+  user_agent_template: '(EdgeWARN/{version}, {contact})'
+  contact: ewsbackend@gmail.com
+
 run:
   # io.py:105-106,124-125. The CLI flags default to None so these values win
   # unless --lat_limits/--lon_limits is passed.

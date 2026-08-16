@@ -19,6 +19,5 @@
   "NEXRAD_VOLUME_DISCOVERY_TIMEOUT_SECONDS": 20.0,
   "WEATHER_API_CACHE_TTL_SECONDS": 30,
   "WEATHER_API_TIMEOUT_SECONDS": 15,
-  "WEATHER_API_USER_AGENT": "(EdgeWARN/2.7.0, ewsbackend@gmail.com)",
   "WEATHER_RADAR_STATIONS_URL": "https://api.weather.gov/radar/stations"
 }

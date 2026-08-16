@@ -22,30 +22,13 @@ from tests.core.config.source_inspect import module_constant, param_default
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-# --- Kalman: dataclass default disagrees with its own YAML fallback --------
+# --- Kalman: the YAML is now the single copy of every value ---------------
 
-def test_tracking_max_prediction_time_dataclass_and_yaml_fallback_disagree():
-    """DECISION OWED: is the real value 6.0 or 10.0?
-
-    The dataclass field and `config/kalman.yaml` both say 6.0, but the
-    `.get()` fallback inside `from_yaml` says 10.0. The fallback only applies
-    when the key is missing, so today the effective value is 6.0 -- and would
-    silently become 10.0 if the key were ever dropped from the YAML.
-    """
-    path = "EdgeWARN/process/detect/kalman/config.py"
-    assert param_default(path, "TrackingConfig.from_yaml", "path") is None
-    assert module_constant_in_class(path, "TrackingConfig", "max_prediction_time_minutes") == 6.0
-
-    yaml_value = _kalman_yaml()["tracking"]["max_prediction_time_minutes"]
-    assert yaml_value == 6
-
-    # The inline fallback in from_yaml, which disagrees with both of the above.
-    source = (REPO_ROOT / "src" / path).read_text(encoding="utf-8")
-    assert "tracking_data.get('max_prediction_time_minutes', 10.0)" in source
+KALMAN_CONFIG_PATH = "EdgeWARN/process/detect/kalman/config.py"
 
 
-def module_constant_in_class(relative_path: str, class_name: str, field: str):
-    """Read a dataclass field default."""
+def _dataclass_field_defaults(relative_path: str, class_name: str) -> dict:
+    """Map field name -> literal default, for fields that declare one."""
     import ast
 
     from tests.core.config.source_inspect import SRC, _literal
@@ -53,15 +36,14 @@ def module_constant_in_class(relative_path: str, class_name: str, field: str):
     tree = ast.parse((SRC / relative_path).read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == class_name:
-            for statement in node.body:
-                if (
-                    isinstance(statement, ast.AnnAssign)
-                    and isinstance(statement.target, ast.Name)
-                    and statement.target.id == field
-                    and statement.value is not None
-                ):
-                    return _literal(statement.value)
-    raise AssertionError(f"{class_name}.{field} not found in {relative_path}")
+            return {
+                statement.target.id: _literal(statement.value)
+                for statement in node.body
+                if isinstance(statement, ast.AnnAssign)
+                and isinstance(statement.target, ast.Name)
+                and statement.value is not None
+            }
+    raise AssertionError(f"{class_name} not found in {relative_path}")
 
 
 def _kalman_yaml() -> dict:
@@ -70,44 +52,96 @@ def _kalman_yaml() -> dict:
     return yaml.safe_load((REPO_ROOT / "config" / "kalman.yaml").read_text(encoding="utf-8"))
 
 
-def test_every_kalman_from_yaml_get_call_still_passes_an_inline_fallback():
-    """Phase 4 must delete these; this counts them so the removal is provable."""
+def test_tracking_max_prediction_time_resolves_to_the_yaml_value_only():
+    """RESOLVED in Phase 4: the value is 6.0, and there is only one of it.
+
+    The disagreement was between a 6.0 dataclass field default and a
+    `.get('max_prediction_time_minutes', 10.0)` fallback that would have taken
+    over if the key were ever dropped. Both copies are gone: the dataclass
+    declares no default and the loader is given no fallback, so a missing key
+    is a startup error rather than a silent switch to 10 minutes.
+    """
+    from EdgeWARN.process.detect.kalman.config import TrackingConfig
+
+    assert _dataclass_field_defaults(KALMAN_CONFIG_PATH, "TrackingConfig") == {}
+
+    yaml_value = _kalman_yaml()["tracking"]["max_prediction_time_minutes"]
+    assert yaml_value == 6.0
+    assert TrackingConfig.from_yaml().max_prediction_time_minutes == yaml_value
+
+    source = (REPO_ROOT / "src" / KALMAN_CONFIG_PATH).read_text(encoding="utf-8")
+    assert "10.0" not in source
+
+
+def test_no_kalman_config_field_declares_a_default():
+    """Every base default lives in the YAML, so no dataclass may restate one."""
+    for class_name in (
+        "KalmanConfig",
+        "TrackingConfig",
+        "AssignmentConfig",
+        "FilterInternalsConfig",
+        "ConfidenceConfig",
+        "AssignmentCostsConfig",
+    ):
+        assert _dataclass_field_defaults(KALMAN_CONFIG_PATH, class_name) == {}, class_name
+
+
+def test_kalman_config_reads_the_yaml_without_inline_fallbacks():
+    """The 19 `.get(key, fallback)` calls are gone; keys are required outright."""
     import ast
 
     from tests.core.config.source_inspect import SRC
 
-    tree = ast.parse((SRC / "EdgeWARN/process/detect/kalman/config.py").read_text(encoding="utf-8"))
-    with_fallback = 0
-    without_fallback = 0
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
-            if len(node.args) >= 2:
-                with_fallback += 1
-            else:
-                without_fallback += 1
-
-    assert with_fallback == 19
-    # Not one call trusts the YAML to supply the key.
-    assert without_fallback == 0
+    tree = ast.parse((SRC / KALMAN_CONFIG_PATH).read_text(encoding="utf-8"))
+    fallback_gets = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and len(node.args) >= 2
+    ]
+    assert fallback_gets == []
 
 
-def test_kalman_yaml_sections_consumed_versus_inert():
-    """Only three of the file's sections are read by code today."""
-    sections = set(_kalman_yaml())
-    consumed = {"kalman_filter", "tracking", "assignment"}
-    assert consumed <= sections
-    assert sections - consumed == {"confidence", "assignment_costs", "filter_internals", "schema_version"}
+def test_every_kalman_yaml_section_is_consumed():
+    """No section is inert: each one is subscripted by name in the loader."""
+    import ast
+
+    from tests.core.config.source_inspect import SRC
+
+    tree = ast.parse((SRC / KALMAN_CONFIG_PATH).read_text(encoding="utf-8"))
+    subscripted = {
+        node.slice.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Subscript)
+        and isinstance(node.slice, ast.Constant)
+        and isinstance(node.slice.value, str)
+    }
+
+    sections = set(_kalman_yaml()) - {"schema_version"}
+    assert sections == {
+        "kalman_filter",
+        "tracking",
+        "assignment",
+        "filter_internals",
+        "confidence",
+        "assignment_costs",
+    }
+    assert sections <= subscripted
 
 
 # --- Lineage overlap: 0.15 is shadowed, not a parallel policy --------------
 
 def test_lineage_overlap_default_is_shadowed_by_the_tracker():
-    """DECISION OWED: 0.15 is currently unreachable from the tracked path.
+    """RESOLVED in Phase 4: the tracker's value now comes from detection.yaml.
 
-    The plan suggests giving the two values distinct config names. That would
-    preserve an inert key: `StormCellTracker.__init__` defaults to 0.10 and passes
-    it explicitly into `LineageDetector`, so `DEFAULT_OVERLAP_THRESHOLD = 0.15`
-    only applies when a detector is constructed directly.
+    The shadowing itself is deliberate and still in force -- the tracker always
+    forwards its own value into `LineageDetector`, so
+    `DEFAULT_OVERLAP_THRESHOLD = 0.15` still applies only to a detector built
+    directly. What changed is that the tracker's value is no longer a literal:
+    `detection.yaml` `tracker.lineage_overlap_ratio` is the single owner, and the
+    parameter defaults to `None` so a caller can still override it.
     """
     detector_default = module_constant(
         "EdgeWARN/process/detect/lineage/detector.py", "DEFAULT_OVERLAP_THRESHOLD"
@@ -120,22 +154,31 @@ def test_lineage_overlap_default_is_shadowed_by_the_tracker():
     )
 
     assert detector_default == 0.15
-    assert tracker_default == 0.10
+    assert tracker_default is None
     assert spatial_default == 0.0
-    assert detector_default != tracker_default
+
+    yaml_value = _detection_yaml()["tracker"]["lineage_overlap_ratio"]
+    assert yaml_value == 0.10
+    assert yaml_value != detector_default
 
     # The tracker forwards its own value, so the detector default never applies.
     track_source = (REPO_ROOT / "src/EdgeWARN/process/detect/track.py").read_text(encoding="utf-8")
     assert "overlap_threshold=self.overlap_threshold" in track_source
 
 
+def _detection_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load((REPO_ROOT / "config" / "detection.yaml").read_text(encoding="utf-8"))
+
+
 # --- Detection thresholds duplicated across eight declaration sites --------
 
 DETECTION_DEFAULT_FILES = {
-    "EdgeWARN/pipeline.py": 3,
-    "EdgeWARN/process/detect/detect.py": 1,
-    "EdgeWARN/process/detect/main.py": 2,
-    "EdgeWARN/process/detect/tools/gatemapper.py": 1,
+    "EdgeWARN/pipeline.py": 0,
+    "EdgeWARN/process/detect/detect.py": 0,
+    "EdgeWARN/process/detect/main.py": 0,
+    "EdgeWARN/process/detect/tools/gatemapper.py": 0,
     "util/io.py": 0,  # Phase 1: the argparse flag now defaults to None and is filled from detection.yaml
 }
 
@@ -183,65 +226,109 @@ def _declaration_sites(param: str, expected: float) -> dict[str, int]:
     ("param", "expected"),
     [("refl_threshold", 37.5), ("min_seed_percentage", 0.001), ("drop_offset", 10.0)],
 )
-def test_detection_thresholds_are_declared_seven_times_each(param, expected):
-    """DECISION OWED: reduce to exactly one base default, in YAML.
+def test_detection_thresholds_are_declared_only_in_yaml(param, expected):
+    """RESOLVED in Phase 4: `detection.yaml` is the only declaration site.
 
-    Seven keyword-argument declarations remain. Phase 1 removed the eighth
-    (the argparse flag in `util/io.py`, which now defaults to `None` and is
-    filled from `detection.yaml` via the CLI/env/YAML overlay). Because every
-    remaining caller still re-declares the literal, a `detection.yaml` key
-    could never win for those: Phase 4 must drive this count to one.
+    Phase 1 removed the argparse default in `util/io.py`; Phase 4 removed the
+    remaining seven keyword-argument declarations by threading one typed
+    `DetectionConfig` from the entrypoint. Every intermediate function now takes
+    the resolved object, so there is nowhere left for a stale copy of the literal
+    to shadow the YAML.
     """
     sites = _declaration_sites(param, expected)
     assert sites == DETECTION_DEFAULT_FILES
-    assert sum(sites.values()) == 7
+    assert sum(sites.values()) == 0
+    assert _detection_yaml()["detection"][param] == expected
 
 
 def test_gatemapper_hard_floor_makes_a_raised_threshold_ineffective():
-    """DECISION OWED: parameterize or document as a deliberate cap.
+    """RESOLVED in Phase 4: every term of the curve is read from YAML.
 
-    `min(37.5, self.refl_threshold)` means raising `--refl-threshold` above
-    37.5 cannot change the baseline mask, so a `detection.yaml` key that
-    appears to control it would be inert for half its range.
+    The cap itself is unchanged and still a cap -- `baseline_refl_floor` is
+    applied as `min(floor, refl_threshold)`, so raising `--refl-threshold` above
+    the floor still cannot raise the baseline mask. What changed is that the
+    floor is now editable, and the five terms of the per-cell threshold curve
+    are named keys rather than literals buried in two expressions. They remain
+    *coupled*: moving one shifts the whole curve.
     """
     source = (REPO_ROOT / "src/EdgeWARN/process/detect/tools/gatemapper.py").read_text(encoding="utf-8")
-    assert "min(37.5, self.refl_threshold)" in source
-    # The adaptive rule is fully inline; none of these are parameters.
-    assert "np.where(valid_max_refl < 45.0, 37.5, 40.0)" in source
-    assert "np.minimum(valid_max_refl, 52.0)" in source
+    assert "min(self.gm.baseline_refl_floor, self.refl_threshold)" in source
 
-    for literal in ("40.0", "45.0", "52.0"):
-        assert f"={literal}" not in source.split("def __init__")[1].split(")")[0]
+    # No term of the curve survives as a literal in the module.
+    for literal in ("37.5", "40.0", "45.0", "52.0"):
+        assert literal not in source
+
+    gatemapper = _detection_yaml()["gatemapper"]
+    assert gatemapper["baseline_refl_floor"] == 37.5
+    assert gatemapper["dynamic_min_threshold"] == {
+        "switch_max_refl": 45.0,
+        "low": 37.5,
+        "high": 40.0,
+    }
+    assert gatemapper["max_refl_clamp"] == 52.0
 
 
-# --- Two divergent user agents --------------------------------------------
+# --- Divergent user agents ------------------------------------------------
 
-def test_two_user_agent_strings_disagree_on_version_and_contact():
-    """DECISION OWED: unify into one template interpolating package.json."""
-    zone_sync = param_default(
-        "common/ingest/nws/zone_sync.py", "NWSZoneSync.__init__", "user_agent"
-    )
-    nexrad = module_constant("common/ingest/nexrad/config.py", "WEATHER_API_USER_AGENT")
+def test_one_user_agent_template_interpolates_the_package_version():
+    """RESOLVED (Phase 5): three strings across five sites became one template.
 
-    assert zone_sync == "(EdgeWARN/1.0, contact@edgewarn.com)"
-    assert nexrad == "(EdgeWARN/2.7.0, ewsbackend@gmail.com)"
-    assert zone_sync != nexrad
+    `runtime.yaml identity` is the sole authority. `util/release.py
+    format_user_agent()` fills `{version}` from package.json, so the advertised
+    version tracks the release instead of being copied into source.
+    """
+    from util.release import format_user_agent
 
     package_version = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))["version"]
-    assert package_version == "2.7.0"
-    # Only one of the two tracks the package version, and it does so by copy.
-    assert package_version in nexrad
-    assert package_version not in zone_sync
+
+    resolved = format_user_agent()
+    assert resolved == f"(EdgeWARN/{package_version}, ewsbackend@gmail.com)"
+
+    # No subsystem keeps a copy: not in YAML...
+    for name in ("nws", "nexrad", "metar"):
+        recorded = (REPO_ROOT / f"config/{name}.yaml").read_text(encoding="utf-8")
+        assert "user_agent:" not in recorded
+
+    # ...and not as a literal in the five sites that send it.
+    for relative in (
+        "src/common/ingest/nws/zone_sync.py",
+        "src/common/ingest/nws/main.py",
+        "src/common/ingest/nexrad/config.py",
+        "src/common/ingest/nexrad/weather_api.py",
+        "src/common/ingest/metar.py",
+    ):
+        source = (REPO_ROOT / relative).read_text(encoding="utf-8")
+        assert "EdgeWARN/1.0" not in source
+        assert package_version not in source
+
+
+def test_every_outbound_user_agent_resolves_through_release():
+    """The header is built at request time, so no site can pin a stale string."""
+    from pathlib import Path
+
+    from common.ingest.nexrad.weather_api import RadarStationCatalog
+    from common.ingest.nws.zone_sync import NWSZoneSync
+    from util.release import format_user_agent
+
+    expected = format_user_agent()
+    assert NWSZoneSync(Path(".")).headers["User-Agent"] == expected
+    assert RadarStationCatalog()._headers()["User-Agent"] == expected
+
+    # The NEXRAD module constant is gone, not merely unused.
+    from common.ingest.nexrad import config as nexrad_config
+
+    assert not hasattr(nexrad_config, "WEATHER_API_USER_AGENT")
 
 
 # --- zone_sync pause_seconds: flag default fights constructor default ------
 
-def test_zone_sync_pause_seconds_flag_overrides_the_constructor_default():
-    """RESOLVED (Phase 1): the flag now defaults to `None` and is filled from YAML.
+def test_zone_sync_pause_seconds_agrees_with_the_constructor_and_throttles():
+    """RESOLVED (Phase 5): YAML now records 0.05, matching the constructor.
 
-    `config/nws.yaml` records 0.0 as the effective default, resolved via the
-    CLI/env/YAML overlay in `_resolve_zone_sync_args`. The constructor's 0.05
-    only applies to direct programmatic callers that skip that resolution.
+    Phase 1 wired the overlay but recorded the effective 0.0, which disabled
+    throttling against api.weather.gov. The pause was also in the `as_completed`
+    collection loop, downstream of every submitted future, so even a non-zero
+    value could not slow the API down. It now runs in the worker.
     """
     from tests.core.config.source_inspect import argparse_defaults
 
@@ -256,10 +343,15 @@ def test_zone_sync_pause_seconds_flag_overrides_the_constructor_default():
     source = (REPO_ROOT / "src/common/ingest/nws/zone_sync.py").read_text(encoding="utf-8")
     assert "pause_seconds=args.pause_seconds" in source
 
+    # The sleep gates the request, not the result bookkeeping.
+    worker = source.index("def _fetch_missing_zone")
+    collect = source.index("for future in as_completed(futures):")
+    assert worker < source.index("time.sleep(self.pause_seconds") < collect
+
     import yaml
 
     recorded = yaml.safe_load((REPO_ROOT / "config/nws.yaml").read_text(encoding="utf-8"))
-    assert recorded["zone_sync"]["pause_seconds"] == 0.0
+    assert recorded["zone_sync"]["pause_seconds"] == constructor
 
 
 # --- NEXRAD sites sentinel ------------------------------------------------
@@ -397,20 +489,53 @@ def test_unknown_rap_transform_name_is_rejected():
     assert set(TRANSFORMS) == {"kelvin_to_celsius"}
 
 
-def test_unparseable_derived_formula_nulls_the_field_silently():
-    """A typo in a YAML formula would produce None per cell, not a startup error."""
-    source = (REPO_ROOT / "src/EdgeWARN/process/integrate/integrate_rap.py").read_text(encoding="utf-8")
-    derived = source.split("def _calculate_derived")[1].split("def ")[0]
-    assert 'ast.parse(formula, mode="eval")' in derived
-    assert "except Exception:" in derived
-    assert "props[key] = None" in derived
+def test_unparseable_derived_formula_aborts_before_extraction():
+    """RESOLVED (Phase 4): a bad formula is a config error, not per-cell data.
+
+    Formulas now come from `integration.yaml`, and an unparseable one used to be
+    caught inside the per-field loop and written to every cell as None -- which
+    an operator could not tell apart from a cell that had no input value. Each
+    formula is parsed and grammar-checked once, before extraction.
+
+    Missing *inputs* still null the field per cell: that is a data condition, and
+    the check substitutes a stand-in number for every name so it stays out of it.
+    """
+    from EdgeWARN.process.integrate.integrate_rap import _calculate_derived, _compile_derived
+
+    key, expression = _compile_derived({"key": "depression", "formula": "temp_2m - dewpoint_2m"})
+    assert key == "depression"
+
+    with pytest.raises(ValueError, match="does not parse"):
+        _compile_derived({"key": "typo", "formula": "temp_2m -"})
+
+    with pytest.raises(ValueError, match="is not evaluable"):
+        _compile_derived({"key": "unsafe", "formula": "__import__('os').getcwd()"})
+
+    cells = [{"properties": {"temp_2m": 20.0}}]
+    _calculate_derived(cells, expression, key, 2)
+    assert cells[0]["properties"]["depression"] is None
 
 
-def test_integration_output_rounding_is_hardcoded_not_configured():
-    """`integration.yaml` records `output.decimals: 2`; nothing reads it."""
-    source = (REPO_ROOT / "src/EdgeWARN/process/integrate/integrate_rap.py").read_text(encoding="utf-8")
-    assert source.count("round(") >= 2
-    assert ", 2)" in source
+def test_integration_output_rounding_reads_output_decimals():
+    """RESOLVED (Phase 4): `integration.yaml output.decimals` is now live.
+
+    The same 2 was hardcoded at three separate rounding sites, so an operator
+    changing precision had to find all three. They now share one YAML value.
+    The AzShear `round(x, 3)` / `np.round(x, 4)` sites are deliberately excluded:
+    those are fixed feature-vector precisions, not an output-formatting choice.
+    """
+    from EdgeWARN.process.integrate.config import output_decimals
+
+    assert output_decimals() == 2
+
+    for relative_path in (
+        "src/EdgeWARN/process/integrate/integrate_rap.py",
+        "src/EdgeWARN/process/integrate/core/stats.py",
+        "src/EdgeWARN/process/integrate/core/integrator.py",
+    ):
+        source = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "decimals" in source, relative_path
+        assert ", 2)" not in source, relative_path
 
 
 # --- NEXRAD concurrency: one value, two declarations ----------------------

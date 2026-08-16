@@ -16,7 +16,10 @@ buckets:
 
 stations:
   catalog_url: https://api.weather.gov/radar/stations
-  user_agent: '(EdgeWARN/2.7.0, ewsbackend@gmail.com)'
+  # The User-Agent is NOT here. It is one string for the whole application,
+  # `runtime.yaml identity`, applied at nexrad/weather_api.py:75. This subsystem
+  # used to hardcode the release number into its copy, so the advertised version
+  # could not track package.json.
   api_timeout_seconds: 15
   api_cache_ttl_seconds: 30
 

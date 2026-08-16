@@ -19,11 +19,13 @@ metar:
   station_timeout_seconds: 60
   observation_timeout_seconds: 30
 
-  # metar.py:98. A third user-agent string, disagreeing with both
-  # nws.yaml zone_sync (EdgeWARN/1.0 with a contact) and nexrad.yaml
-  # (EdgeWARN/2.7.0 with a contact). This one carries no contact address at all.
-  user_agent: EdgeWARN/1.0
-  # metar.py:39,98. 'br' is dropped deliberately: brotli responses failed to
+  # The User-Agent is NOT here. It is one string for the whole application,
+  # `runtime.yaml identity`, applied at metar.py:41, :102 and :465. This subsystem
+  # used to carry a third distinct string with no contact address at all -- and
+  # only on the sync station-database fallback, so in production METAR actually
+  # sent aiohttp's default agent. All three sessions now identify themselves.
+  #
+  # metar.py:42,102. 'br' is dropped deliberately: brotli responses failed to
   # decode, so the header is narrowed rather than left at the client default.
   accept_encoding: 'gzip, deflate'
 

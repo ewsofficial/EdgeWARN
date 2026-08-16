@@ -22,6 +22,7 @@ from pathlib import Path
 from decimal import Decimal
 import util.file as fs
 from util.io import IOManager
+from util.release import format_user_agent
 import aiohttp
 import asyncio
 import tempfile
@@ -103,7 +104,7 @@ def download_alerts(dt: datetime):
     registry.cleanup_old_timestamps(current_time)
 
     headers = {
-        "User-Agent": "(EdgeWARN/1.0, contact@edgewarn.com)",
+        "User-Agent": format_user_agent(),
         "Accept": "application/geo+json"
     }
 
@@ -167,7 +168,7 @@ async def download_alerts_async(dt: datetime):
     registry.cleanup_old_timestamps(current_time)
 
     headers = {
-        "User-Agent": "(EdgeWARN/1.0, contact@edgewarn.com)",
+        "User-Agent": format_user_agent(),
         "Accept": "application/geo+json"
     }
 
