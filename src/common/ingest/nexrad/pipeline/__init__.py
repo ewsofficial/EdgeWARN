@@ -5,13 +5,7 @@ from pathlib import Path
 
 import util.file as fs
 from common.ingest.nexrad.models import NexradCompletionRecord, NexradIngestResult
-from common.ingest.nexrad.config import (
-    NEXRAD_CANCELLATION_GRACE_SECONDS,
-    NEXRAD_CHUNK_LIST_TIMEOUT_SECONDS,
-    NEXRAD_INGEST_TIMEOUT_SECONDS,
-    NEXRAD_SCAN_TIMEOUT_SECONDS,
-    NEXRAD_VOLUME_DISCOVERY_TIMEOUT_SECONDS,
-)
+from common.ingest.nexrad import config as nexrad_config
 from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks
 from common.ingest.nexrad.s3_chunks import required_volume_chunks
@@ -59,22 +53,51 @@ class NexradRealtimeIngestionPipeline:
         async_ingest_trigger=None,
         base_dir=None,
         sites=None,
-        max_site_tasks=24,
-        max_candidate_volumes_per_site=3,
-        scan_interval_seconds=20,
-        completion_interval_seconds=10,
-        volume_discovery_timeout_seconds=NEXRAD_VOLUME_DISCOVERY_TIMEOUT_SECONDS,
-        chunk_list_timeout_seconds=NEXRAD_CHUNK_LIST_TIMEOUT_SECONDS,
-        ingest_timeout_seconds=NEXRAD_INGEST_TIMEOUT_SECONDS,
-        scan_timeout_seconds=NEXRAD_SCAN_TIMEOUT_SECONDS,
-        cancellation_grace_seconds=NEXRAD_CANCELLATION_GRACE_SECONDS,
+        max_site_tasks=None,
+        max_candidate_volumes_per_site=None,
+        scan_interval_seconds=None,
+        completion_interval_seconds=None,
+        volume_discovery_timeout_seconds=None,
+        chunk_list_timeout_seconds=None,
+        ingest_timeout_seconds=None,
+        scan_timeout_seconds=None,
+        cancellation_grace_seconds=None,
         heartbeat_callback=None,
         sleeper=asyncio.sleep,
         monotonic=time.monotonic,
     ):
+        # Every tunable defaults to None and is resolved here rather than in the
+        # signature above. Production reaches this constructor from
+        # util/runtime/background.py with only base_dir and heartbeat_callback,
+        # so a signature default is what the whole run would use -- and a
+        # signature default calling an accessor would evaluate at import, before
+        # EDGEWARN_CONFIG_DIR exists. None means "take the catalog value"; an
+        # explicit argument still wins, which is how the tests pin cadences.
+        if max_site_tasks is None:
+            max_site_tasks = nexrad_config.max_site_tasks()
+        if max_candidate_volumes_per_site is None:
+            max_candidate_volumes_per_site = nexrad_config.max_candidate_volumes_per_site()
+        if scan_interval_seconds is None:
+            scan_interval_seconds = nexrad_config.scan_interval_seconds()
+        if completion_interval_seconds is None:
+            completion_interval_seconds = nexrad_config.completion_interval_seconds()
+        if volume_discovery_timeout_seconds is None:
+            volume_discovery_timeout_seconds = nexrad_config.volume_discovery_timeout_seconds()
+        if chunk_list_timeout_seconds is None:
+            chunk_list_timeout_seconds = nexrad_config.chunk_list_timeout_seconds()
+        if ingest_timeout_seconds is None:
+            ingest_timeout_seconds = nexrad_config.ingest_timeout_seconds()
+        if scan_timeout_seconds is None:
+            scan_timeout_seconds = nexrad_config.scan_timeout_seconds()
+        if cancellation_grace_seconds is None:
+            cancellation_grace_seconds = nexrad_config.cancellation_grace_seconds()
+
         self.base_dir = base_dir
         self.sites = None if sites is None else [str(site).upper() for site in sites]
         self.max_site_tasks = max_site_tasks
+        # The clamps guard explicit arguments, not the catalog: the schema now
+        # pins each of these at or above the floor the clamp applies, so a
+        # configured value can no longer be silently rewritten.
         self.scan_interval_seconds = max(1.0, float(scan_interval_seconds))
         self.completion_interval_seconds = max(1.0, float(completion_interval_seconds))
         self.sleeper = sleeper
@@ -401,10 +424,13 @@ def _build_parser():
 
 
 def _resolve_cli_args(args):
-    cli_cfg = config_loader.load_config("nexrad", config_dir=args.config_dir)["cli"]
-    args.scan_interval_seconds = overlay.resolve(args.scan_interval_seconds, yaml_value=cli_cfg["scan_interval_seconds"])
-    args.completion_interval_seconds = overlay.resolve(args.completion_interval_seconds, yaml_value=cli_cfg["completion_interval_seconds"])
-    args.max_candidate_volumes_per_site = overlay.resolve(args.max_candidate_volumes_per_site, yaml_value=cli_cfg["max_candidate_volumes_per_site"])
+    # The `realtime` section, not `cli`: these are pipeline settings that this
+    # entry point may override, and the constructor resolves the same three from
+    # the same place when no argv supplies them.
+    realtime_cfg = config_loader.load_config("nexrad", config_dir=args.config_dir)["realtime"]
+    args.scan_interval_seconds = overlay.resolve(args.scan_interval_seconds, yaml_value=realtime_cfg["scan_interval_seconds"])
+    args.completion_interval_seconds = overlay.resolve(args.completion_interval_seconds, yaml_value=realtime_cfg["completion_interval_seconds"])
+    args.max_candidate_volumes_per_site = overlay.resolve(args.max_candidate_volumes_per_site, yaml_value=realtime_cfg["max_candidate_volumes_per_site"])
     return args
 
 

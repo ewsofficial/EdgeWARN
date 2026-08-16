@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from common.ingest.nexrad import config as nexrad_config
 from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
 from common.ingest.nexrad.models import RadarStationVcp
 from common.ingest.nexrad.pipeline.models import VolumeDiscoveryResult
@@ -63,8 +64,10 @@ class NexradVolumeDiscovery:
         *,
         async_volume_lister=None,
         async_chunk_lister=None,
-        max_candidate_volumes_per_site=3,
+        max_candidate_volumes_per_site=None,
     ):
+        if max_candidate_volumes_per_site is None:
+            max_candidate_volumes_per_site = nexrad_config.max_candidate_volumes_per_site()
         self.async_volume_lister = async_volume_lister or async_list_recent_volume_ids
         self.async_chunk_lister = async_chunk_lister or async_list_volume_chunks
         self.max_candidate_volumes_per_site = max_candidate_volumes_per_site

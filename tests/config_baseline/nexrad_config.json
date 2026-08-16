@@ -1,23 +1,30 @@
 {
-  "ALLOWED_VCPS": {
+  "allowed_vcps": {
     "@set": [
       12,
       212,
       215
     ]
   },
-  "ANGLE_DEDUP_TOLERANCE_DEG": 0.1,
-  "ARCHIVE_BUCKET": "unidata-nexrad-level2",
-  "CHUNKS_BUCKET": "unidata-nexrad-level2-chunks",
-  "HIGH_MAX_ANGLE_DEG": 4.0,
-  "NEXRAD_CANCELLATION_GRACE_SECONDS": 2.0,
-  "NEXRAD_CHUNK_LIST_TIMEOUT_SECONDS": 20.0,
-  "NEXRAD_HEARTBEAT_STALE_SECONDS": 240.0,
-  "NEXRAD_HEARTBEAT_STARTUP_GRACE_SECONDS": 60.0,
-  "NEXRAD_INGEST_TIMEOUT_SECONDS": 120.0,
-  "NEXRAD_SCAN_TIMEOUT_SECONDS": 180.0,
-  "NEXRAD_VOLUME_DISCOVERY_TIMEOUT_SECONDS": 20.0,
-  "WEATHER_API_CACHE_TTL_SECONDS": 30,
-  "WEATHER_API_TIMEOUT_SECONDS": 15,
-  "WEATHER_RADAR_STATIONS_URL": "https://api.weather.gov/radar/stations"
+  "cancellation_grace_seconds": 2.0,
+  "chunk_list_timeout_seconds": 20.0,
+  "chunks_bucket": "unidata-nexrad-level2-chunks",
+  "completion_interval_seconds": 10,
+  "heartbeat_stale_seconds": 240.0,
+  "heartbeat_startup_grace_seconds": 60.0,
+  "in_volume_prefetch": 4,
+  "ingest_timeout_seconds": 120.0,
+  "max_candidate_volumes_per_site": 3,
+  "max_chunk_downloads": 64,
+  "max_site_tasks": 24,
+  "parse_checkpoint_chunk_interval": 8,
+  "scan_interval_seconds": 20,
+  "scan_timeout_seconds": 180.0,
+  "station_api_cache_ttl_seconds": 30,
+  "station_api_timeout_seconds": 15,
+  "station_catalog_url": "https://api.weather.gov/radar/stations",
+  "volume_discovery_timeout_seconds": 20.0,
+  "worker_pool_size": 4,
+  "worker_recycle_interval": 24,
+  "worker_timeout_seconds": 40.0
 }

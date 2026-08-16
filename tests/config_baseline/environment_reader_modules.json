@@ -5,14 +5,13 @@
     "EWMRS/render/tools.py",
     "common/config/loader.py",
     "common/config/overlay.py",
-    "common/ingest/nexrad/service.py",
-    "common/ingest/nexrad/worker_pool.py",
     "common/ingest/synoptic/config.py",
     "util/io.py",
     "util/performance.py"
   ],
   "shared_parser": [
     "EWMRS/pipeline_config.py",
+    "common/ingest/nexrad/config.py",
     "run.py"
   ]
 }

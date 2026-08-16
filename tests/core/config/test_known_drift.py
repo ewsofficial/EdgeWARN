@@ -1324,23 +1324,35 @@ def test_integration_output_rounding_reads_output_decimals():
 
 # --- NEXRAD concurrency: one value, two declarations ----------------------
 
-def test_max_chunk_downloads_is_declared_in_two_places_and_not_in_s3_chunks():
-    """Corrects the plan, which attributes this default to `s3_chunks.py`.
+def test_max_chunk_downloads_has_a_single_owner_in_nexrad_yaml():
+    """RESOLVED (Phase 5): 64 was declared by the service *and* the CLI.
 
-    The value 64 is right, but it lives in the service constructor and is
-    re-declared by the CLI entry point, so a `runtime.yaml` key would have to
-    displace both.
+    The plan attributed the default to `s3_chunks.py`, which never held it; it
+    lived in `NexradIngestService.__init__` and was restated by `main.py`, so a
+    catalog key had to displace both. Both now pass None and the service
+    resolves from `nexrad.yaml`.
+
+    The defaults must stay None rather than calling the accessor inline:
+    `run.py` imports this package before `get_args()` exports
+    EDGEWARN_CONFIG_DIR, and a signature default binds at import time.
     """
-    service = param_default(
-        "common/ingest/nexrad/service.py", "NexradIngestService.__init__", "max_chunk_downloads"
-    )
-    assert service == 64
+    from common.ingest.nexrad import config as nexrad_config
 
-    main_source = (REPO_ROOT / "src/common/ingest/nexrad/main.py").read_text(encoding="utf-8")
-    assert "max_chunk_downloads=64," in main_source
+    assert nexrad_config.max_chunk_downloads() == 64
 
-    chunks = (REPO_ROOT / "src/common/ingest/nexrad/s3_chunks.py").read_text(encoding="utf-8")
-    assert "max_chunk_downloads" not in chunks
+    for module, qualname in (
+        ("common/ingest/nexrad/service.py", "NexradIngestService.__init__"),
+        ("common/ingest/nexrad/main.py", "NexradIngestService.__init__"),
+    ):
+        assert param_default(module, qualname, "max_chunk_downloads") is None, module
+
+    for relative_path in (
+        "src/common/ingest/nexrad/service.py",
+        "src/common/ingest/nexrad/main.py",
+        "src/common/ingest/nexrad/s3_chunks.py",
+    ):
+        source = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "max_chunk_downloads=64" not in source, relative_path
 
 
 # --- EWMRS pipeline: three owners of 120, and one parameter nobody reads ---

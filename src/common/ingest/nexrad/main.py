@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import time
 
-from common.ingest.nexrad.config import ALLOWED_VCPS, format_perf_ms
+from common.ingest.nexrad.config import format_perf_ms
 from common.ingest.nexrad.coordinator import NexradScanCoordinator
 from common.ingest.nexrad.service import NexradIngestService as _BaseNexradIngestService
 from common.ingest.nexrad.s3_async import (
@@ -56,9 +56,11 @@ class NexradIngestService(_BaseNexradIngestService):
         async_chunk_lister=None,
         async_chunk_fetcher=None,
         async_volume_lister=None,
-        max_site_tasks=24,
-        max_chunk_downloads=64,
+        max_site_tasks=None,
+        max_chunk_downloads=None,
     ):
+        # Passed through as None so the base service resolves them from the
+        # catalog once, rather than this subclass restating the same two numbers.
         defaults = _service_defaults()
         super().__init__(
             chunk_lister=chunk_lister or defaults["chunk_lister"],
@@ -183,9 +185,15 @@ def _build_parser():
 
 
 def _resolve_cli_args(args):
-    cli_cfg = config_loader.load_config("nexrad", config_dir=args.config_dir)["cli"]
-    args.max_volumes_per_site = overlay.resolve(args.max_volumes_per_site, yaml_value=cli_cfg["max_volumes_per_site"])
-    args.max_candidate_volumes_per_site = overlay.resolve(args.max_candidate_volumes_per_site, yaml_value=cli_cfg["max_candidate_volumes_per_site"])
+    document = config_loader.load_config("nexrad", config_dir=args.config_dir)
+    # Two sections, deliberately: max_volumes_per_site exists only for this
+    # one-shot entry point, while max_candidate_volumes_per_site is shared with
+    # the realtime pipeline and so lives under `realtime`.
+    args.max_volumes_per_site = overlay.resolve(args.max_volumes_per_site, yaml_value=document["cli"]["max_volumes_per_site"])
+    args.max_candidate_volumes_per_site = overlay.resolve(
+        args.max_candidate_volumes_per_site,
+        yaml_value=document["realtime"]["max_candidate_volumes_per_site"],
+    )
     return args
 
 

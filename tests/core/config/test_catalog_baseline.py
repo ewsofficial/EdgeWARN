@@ -311,16 +311,39 @@ def test_only_mslp_layer_omits_a_colormap_key():
 # --- NEXRAD ---------------------------------------------------------------
 
 def test_nexrad_config_baseline():
+    """Snapshots accessor return values, not module constants.
+
+    Phase 5 replaced the uppercase constants with accessors so `--config-dir`
+    could reach the NEXRAD child, which reads its catalog before
+    `EDGEWARN_CONFIG_DIR` is exported. Discovery is by zero-argument signature
+    rather than an explicit list, so a new accessor joins the snapshot without
+    anyone remembering to add it; `format_perf_ms` takes a required argument
+    and so drops out on its own.
+    """
+    import inspect
+
     from common.ingest.nexrad import config as nexrad_config
 
-    assert_baseline(
-        "nexrad_config",
-        {
-            name: getattr(nexrad_config, name)
-            for name in sorted(vars(nexrad_config))
-            if name.isupper()
-        },
-    )
+    accessors = {}
+    for name in sorted(vars(nexrad_config)):
+        if name.startswith("_"):
+            continue
+        value = getattr(nexrad_config, name)
+        if not inspect.isfunction(value) or value.__module__ != nexrad_config.__name__:
+            continue
+        required = [
+            parameter
+            for parameter in inspect.signature(value).parameters.values()
+            if parameter.default is inspect.Parameter.empty
+            and parameter.kind
+            in (parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY)
+        ]
+        if required:
+            continue
+        accessors[name] = value()
+
+    assert accessors, "accessor discovery found nothing -- the module shape changed"
+    assert_baseline("nexrad_config", accessors)
 
 
 @pytest.mark.parametrize(

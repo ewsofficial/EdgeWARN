@@ -7,7 +7,7 @@ from botocore import UNSIGNED
 from botocore.client import Config
 
 from common.ingest.aws_async_compat import ensure_aiobotocore_endpoint_compat
-from common.ingest.nexrad.config import CHUNKS_BUCKET
+from common.ingest.nexrad.config import chunks_bucket
 from common.ingest.nexrad.s3_chunks import order_recent_volume_ids, parse_chunk_key
 
 
@@ -19,9 +19,12 @@ async def get_unsigned_s3_client_async():
 
 
 class AsyncNexradChunkStore:
-    def __init__(self, *, s3_client=None, bucket=CHUNKS_BUCKET):
+    def __init__(self, *, s3_client=None, bucket=None):
         self.s3_client = s3_client
-        self.bucket = bucket
+        # The one resolution site for this module: the free functions below pass
+        # their own bucket straight through. `None` cannot be a signature default
+        # calling the accessor, because that would read the catalog at import.
+        self.bucket = chunks_bucket() if bucket is None else bucket
 
     def _client(self, override=None):
         client = override or self.s3_client
@@ -61,16 +64,16 @@ class AsyncNexradChunkStore:
         return await response["Body"].read()
 
 
-async def async_list_recent_volume_ids(site: str, limit=1, *, s3_client=None, bucket=CHUNKS_BUCKET):
+async def async_list_recent_volume_ids(site: str, limit=1, *, s3_client=None, bucket=None):
     store = AsyncNexradChunkStore(s3_client=s3_client, bucket=bucket)
     return await store.async_list_recent_volume_ids(site, limit=limit, s3_client=s3_client)
 
 
-async def async_list_volume_chunks(site: str, volume_id: str, *, s3_client=None, bucket=CHUNKS_BUCKET):
+async def async_list_volume_chunks(site: str, volume_id: str, *, s3_client=None, bucket=None):
     store = AsyncNexradChunkStore(s3_client=s3_client, bucket=bucket)
     return await store.async_list_volume_chunks(site, volume_id, s3_client=s3_client)
 
 
-async def async_get_chunk_bytes(chunk_key, *, s3_client=None, bucket=CHUNKS_BUCKET):
+async def async_get_chunk_bytes(chunk_key, *, s3_client=None, bucket=None):
     store = AsyncNexradChunkStore(s3_client=s3_client, bucket=bucket)
     return await store.async_get_chunk_bytes(chunk_key, s3_client=s3_client)

@@ -30,8 +30,8 @@ from util.runtime import (
 )
 from util.release import get_release_version
 from common.ingest.nexrad.config import (
-    NEXRAD_HEARTBEAT_STALE_SECONDS,
-    NEXRAD_HEARTBEAT_STARTUP_GRACE_SECONDS,
+    heartbeat_stale_seconds,
+    heartbeat_startup_grace_seconds,
 )
 
 sys.stdout = TimestampedOutput(sys.stdout)
@@ -222,8 +222,11 @@ def main():
         args=(nexrad_log_queue, args.base_dir, nexrad_heartbeat_path),
         daemon=False,
         heartbeat_path=nexrad_heartbeat_path,
-        heartbeat_stale_seconds=NEXRAD_HEARTBEAT_STALE_SECONDS,
-        heartbeat_startup_grace_seconds=NEXRAD_HEARTBEAT_STARTUP_GRACE_SECONDS,
+        # Called here rather than bound at import: this module is imported
+        # before get_args() exports EDGEWARN_CONFIG_DIR, so an import-time read
+        # would freeze the repo default even in the parent process.
+        heartbeat_stale_seconds=heartbeat_stale_seconds(),
+        heartbeat_startup_grace_seconds=heartbeat_startup_grace_seconds(),
     )
     supervisor.start_all()
 
