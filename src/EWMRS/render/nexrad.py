@@ -10,19 +10,12 @@ import numpy as np
 from util.atomic import atomic_output_path, atomic_write_json
 
 import util.file as fs
+from EWMRS.render.config import nexrad_variable_colormaps
 from common.ingest.nexrad import config as nexrad_config
 from common.ingest.nexrad.parser import MSG_31_BLOCK_POINTERS, MSG_HEADER_LEN, MSG_31_PREFIX_LEN, iter_sweep_records, parse_grouped_ar2v_file_mmap
 
 
 NEXRAD_FIELD_MAGIC = b"EWFFv1S0"
-NEXRAD_VARIABLE_COLORMAP_KEYS = {
-    "DBZH": "NWS_Reflectivity",
-    "VRADH": "VRADH",
-    "WRADH": "WRADH",
-    "PHIDP": "PHIDP",
-    "RHOHV": "RHOHV",
-    "ZDR": "ZDR",
-}
 RAW_NEXRAD_BLOCK_VARIABLE_NAMES = {
     "DREF": "DBZH",
     "DVEL": "VRADH",
@@ -250,6 +243,7 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
     requested_groups = sorted(sweeps_by_group)
 
     manifest_layers = []
+    colormap_keys = nexrad_variable_colormaps()
     elevation_label = artifact.elevation
     elevation_dir = nexrad_render_elevation_dir(site, elevation_label)
     elevation_dir.mkdir(parents=True, exist_ok=True)
@@ -283,7 +277,7 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
                     "canonical_elevation": elevation_label,
                     "bin_path": str(bin_path),
                     "variable_name": variable_name,
-                    "colormap_key": NEXRAD_VARIABLE_COLORMAP_KEYS.get(variable_name),
+                    "colormap_key": colormap_keys.get(variable_name),
                     "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
                     "azimuth_count": int(ordered_azimuths.shape[0]),
                     "range_count": int(ranges.shape[0]),
@@ -304,6 +298,7 @@ def serialize_nexrad_render_intermediate(
     render_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_layers = []
+    colormap_keys = nexrad_variable_colormaps()
     datatree = getattr(parsed_volume, "datatree", None)
     scan_name = getattr(parsed_volume, "scan_name", None)
     if datatree is not None:
@@ -347,7 +342,7 @@ def serialize_nexrad_render_intermediate(
                         "canonical_elevation": canonical_elevation,
                         "bin_path": str(bin_path),
                         "variable_name": variable_name,
-                        "colormap_key": NEXRAD_VARIABLE_COLORMAP_KEYS.get(variable_name),
+                        "colormap_key": colormap_keys.get(variable_name),
                         "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
                         "azimuth_count": int(azimuths.shape[0]),
                         "range_count": int(ranges.shape[0]),

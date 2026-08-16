@@ -66,6 +66,24 @@ def chunk_format_descriptor(*, include_media_type: bool = False) -> dict:
         value["media_type"] = CHUNK_MEDIA_TYPE
     return value
 
+def nexrad_variable_colormaps() -> dict:
+    """Map each served radar moment to the colormap the GUI draws it with.
+
+    Resolved per call rather than bound at module scope: this package is imported
+    before ``get_args()`` exports ``EDGEWARN_CONFIG_DIR``, so an import-time read
+    would freeze the repo-default config directory and ``--config-dir`` could
+    never reach it.
+
+    Hoist the result out of per-sweep and per-moment loops. ``load_config`` stats
+    the catalog on every call, cache hit included, so calling this once per
+    rendered moment is a measurable cost rather than a style question.
+
+    A moment absent from this mapping is still served by the API; it simply has no
+    colormap, so the GUI does not draw it. ``CCORH`` is exactly that case.
+    """
+    return dict(_render_config()["nexrad_gui"]["variable_colormaps"])
+
+
 def get_mrms_file_list():
     """Return the MRMS-backed render configuration list."""
     return [

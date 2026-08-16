@@ -545,6 +545,36 @@ def test_ccorh_is_servable_but_deliberately_uncolored(api, render):
     assert colored - served == set()
 
 
+def test_the_renderer_reads_the_colormap_mapping_instead_of_restating_it(render):
+    """`ewmrs_render.yaml` is the sole owner of moment-to-colormap.
+
+    The renderer used to hold this mapping as a module constant, which meant the
+    catalog key was decorative: editing it changed nothing the GUI drew. Asserting
+    the constant is *absent* is the part that matters -- an accessor that agrees
+    with a surviving constant still leaves two owners.
+    """
+    from EWMRS.render import nexrad
+    from EWMRS.render.config import nexrad_variable_colormaps
+
+    assert not hasattr(nexrad, "NEXRAD_VARIABLE_COLORMAP_KEYS")
+    assert nexrad_variable_colormaps() == render["nexrad_gui"]["variable_colormaps"]
+
+
+def test_the_colormap_accessor_hands_back_a_mutable_copy(render):
+    """`load_config` deep-freezes, and callers must not be able to reach through.
+
+    The renderer only calls `.get`, but a frozen mapping returned directly would
+    make any future mutation raise from inside the catalog rather than at the call
+    site, and would let one caller's edit leak into every later reader.
+    """
+    from EWMRS.render.config import nexrad_variable_colormaps
+
+    mapping = nexrad_variable_colormaps()
+    mapping["DBZH"] = "mutated"
+    assert nexrad_variable_colormaps()["DBZH"] == render["nexrad_gui"]["variable_colormaps"]["DBZH"]
+    assert nexrad_variable_colormaps()["DBZH"] != "mutated"
+
+
 # --- API product catalog --------------------------------------------------
 
 def test_api_product_catalog_route_keys_are_unique():
