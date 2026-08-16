@@ -234,7 +234,7 @@ def test_remove_old_cells_stays_split_between_the_two_pipelines():
             f"{relative_path}::{qualified_name} still declares a literal default"
         )
 
-    recorded = _alerts_yaml()["api_index"]["remove_old_cells"]
+    recorded = _api_index_yaml()["api_index"]["remove_old_cells"]
     assert remove_old_cells_realtime() is recorded["realtime"] is True
     assert remove_old_cells_historical() is recorded["historical"] is False
 
@@ -244,28 +244,60 @@ def test_remove_old_cells_stays_split_between_the_two_pipelines():
 
 
 def test_inactive_cell_age_is_a_separate_owner_from_alert_cleanup_age():
-    """DECISION OWED: two 120s that must not be collapsed.
+    """RESOLVED: two 120s, two owners, and only one of them is in a catalog.
 
-    One expires cells from the API index, the other prunes alert files. They are
+    One expires cells from the API index; the other prunes alert files. They are
     equal today, which is exactly why a single key would look correct right up to
-    the first time one subsystem needs a different budget.
+    the first time one subsystem needs a different budget. CTAM alert extraction is
+    deferred, so `cleanup_expired` keeps its literal and remains its sole owner --
+    a later phase moves it, and this test is what stops it being folded into the
+    api_index key on the way.
     """
     from EdgeWARN.api_integration.config import inactive_cell_max_age_minutes
 
-    document = _alerts_yaml()
-    assert inactive_cell_max_age_minutes() == document["api_index"]["inactive_cell_max_age_minutes"] == 120
-    assert document["alerts"]["cleanup_max_age_minutes"] == 120
+    recorded = _api_index_yaml()["api_index"]["inactive_cell_max_age_minutes"]
+    assert inactive_cell_max_age_minutes() == recorded == 120
+
+    assert (
+        param_default("EdgeWARN/alerts/manager.py", "AlertManager.cleanup_expired", "max_age_minutes")
+        == 120
+    ), "the alert cleanup budget moved; give it its own key rather than reusing api_index's"
 
     source = (REPO_ROOT / "src/EdgeWARN/api_integration/index_manager.py").read_text(encoding="utf-8")
     assert "120 * 60" not in source
     assert "inactive_cell_max_age_minutes() * 60" in source
 
 
+def test_index_bootstrap_stays_split_between_the_two_pipelines():
+    """RESOLVED: the audit filed this under `runtime`, but api_index owns it.
+
+    It gates `APIIndexManager.initialize_indexes()`, so it belongs to the index
+    subsystem rather than to the historical runtime that happens to switch it off.
+    Same shape as `remove_old_cells`: `None` at the declaration site so an explicit
+    `False` stays distinguishable from "caller said nothing", and a literal restored
+    in `process_historical.py` would make every replay rebuild the realtime index.
+    """
+    from EdgeWARN.api_integration.config import (
+        initialize_at_startup_historical,
+        initialize_at_startup_realtime,
+    )
+
+    assert param_default("EdgeWARN/pipeline.py", "initialize_runtime", "initialize_indexes") is None
+
+    recorded = _api_index_yaml()["api_index"]["initialize_at_startup"]
+    assert initialize_at_startup_realtime() is recorded["realtime"] is True
+    assert initialize_at_startup_historical() is recorded["historical"] is False
+
+    historical_source = (REPO_ROOT / "src/process_historical.py").read_text(encoding="utf-8")
+    assert "initialize_indexes=initialize_at_startup_historical()" in historical_source
+    assert "initialize_indexes=False" not in historical_source
+
+
 def test_stormcell_resync_interval_comes_from_the_catalog():
     """The resync is what reconciles deletions, so a stale literal here loses them."""
     from EdgeWARN.api_integration.config import stormcell_resync_every_updates
 
-    assert stormcell_resync_every_updates() == _alerts_yaml()["api_index"]["resync_every_updates"] == 500
+    assert stormcell_resync_every_updates() == _api_index_yaml()["api_index"]["resync_every_updates"] == 500
 
     source = (REPO_ROOT / "src/EdgeWARN/api_integration/index_manager.py").read_text(encoding="utf-8")
     assert "self.stormcell_resync_interval = stormcell_resync_every_updates()" in source
@@ -273,10 +305,16 @@ def test_stormcell_resync_interval_comes_from_the_catalog():
 
 # --- Scheduler listing width: two keys, only one of them reached -----------
 
-def _alerts_yaml() -> dict:
+def _scheduler_yaml() -> dict:
     import yaml
 
-    return yaml.safe_load((REPO_ROOT / "config" / "alerts.yaml").read_text(encoding="utf-8"))
+    return yaml.safe_load((REPO_ROOT / "config" / "scheduler.yaml").read_text(encoding="utf-8"))
+
+
+def _api_index_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load((REPO_ROOT / "config" / "api_index.yaml").read_text(encoding="utf-8"))
 
 
 def test_scheduler_listing_widths_stay_two_separate_keys():
@@ -294,7 +332,7 @@ def test_scheduler_listing_widths_stay_two_separate_keys():
         mrms_update_checker_max_entries,
     )
 
-    recorded = _alerts_yaml()["scheduler"]
+    recorded = _scheduler_yaml()["scheduler"]
     assert mrms_update_checker_max_entries() == recorded["mrms_update_checker_max_entries"] == 10
     assert modifier_lookup_max_entries() == recorded["modifier_lookup_max_entries"] == 20
 
@@ -314,7 +352,7 @@ def test_scheduler_listing_widths_stay_two_separate_keys():
 def test_scheduler_lookback_and_perf_gate_have_no_literals():
     from EdgeWARN.schedule.config import s3_lookback_hours, slow_check_log_threshold_ms
 
-    recorded = _alerts_yaml()["scheduler"]
+    recorded = _scheduler_yaml()["scheduler"]
     assert s3_lookback_hours() == recorded["s3_lookback_hours"] == 2
     assert slow_check_log_threshold_ms() == recorded["slow_check_log_threshold_ms"] == 2000
 

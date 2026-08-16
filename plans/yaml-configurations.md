@@ -58,7 +58,8 @@ env/CLI, validation) is out of scope here.
 | `config/kalman.yaml` | §3, §4 | existing sections + filter/confidence/cost internals |
 | `config/lineage.yaml` | §4 | merge/split detection and confirmation buffer |
 | `config/integration.yaml` | §5 | stats catalog, azshear, GLM, RAP extraction |
-| `config/alerts.yaml` | §6 | alert defaults, scheduler, API index manager |
+| `config/scheduler.yaml` | §6 | MRMS S3 polling widths, lookback, slow-check gate |
+| `config/api_index.yaml` | §6 | index bootstrap, cell expiry, resync cadence |
 | `config/mrms_goes.yaml` | §7 | MRMS/GOES buckets and product catalogs |
 | `config/nexrad.yaml` | §1, §7 | buckets, selection, timeouts, concurrency, retention |
 | `config/synoptic_rap.yaml` | §7 | RAP source bucket and freshness |
@@ -130,12 +131,17 @@ Audit §5 (`integrate/core/stats.py:4`, `azshear/constants.py:1-5`,
 
 Keys and defaults: [`config/integration.yaml`](../config/integration.yaml).
 
-## `config/alerts.yaml`
+## `config/scheduler.yaml` and `config/api_index.yaml`
 
-Audit §6 (`alerts/schema.py`, `schedule/scheduler.py`,
-`api_integration/index_manager.py`, `EdgeWARN/pipeline.py`).
+Audit §6, which grouped three unrelated subsystems under one heading. The
+scheduler half (`schedule/scheduler.py`) and the index half
+(`api_integration/index_manager.py`, `EdgeWARN/pipeline.py`,
+`process_historical.py`) each own a file. The CTAM half (`alerts/schema.py`,
+`alerts/manager.py`) owns no catalog: its literals stay in place until CTAM is
+extracted deliberately, so nothing here concerns alert emission.
 
-Keys and defaults: [`config/alerts.yaml`](../config/alerts.yaml).
+Keys and defaults: [`config/scheduler.yaml`](../config/scheduler.yaml),
+[`config/api_index.yaml`](../config/api_index.yaml).
 
 ## `config/mrms_goes.yaml`
 
