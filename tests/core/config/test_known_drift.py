@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import json
 import re
+import ssl
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -674,6 +676,266 @@ def test_wpc_owns_its_retention_window_and_verifies_tls():
     main_source = (REPO_ROOT / "src/common/ingest/wpc/main.py").read_text(encoding="utf-8")
     assert "timedelta(hours=3)" not in main_source
     assert "wpc_sfc_*.geojson" not in main_source
+
+
+# --- METAR: the one subsystem that really does skip TLS verification -------
+
+def _metar_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load((REPO_ROOT / "config" / "metar.yaml").read_text(encoding="utf-8"))
+
+
+def _metar_source() -> str:
+    return (REPO_ROOT / "src/common/ingest/metar.py").read_text(encoding="utf-8")
+
+
+def test_metar_tls_is_off_in_one_place_and_says_so():
+    """DECISION OWED: `verify_tls` should become true; until then it must be loud.
+
+    Five call sites disabled verification independently -- three aiohttp
+    ``ssl=False`` and two ``ssl.CERT_NONE`` -- so flipping the policy meant
+    finding all five. They now share two helpers, and the count assertions below
+    are what stops a sixth site from quietly reintroducing its own.
+
+    The warning is deliberately not deduplicated: an ingest run builds only a
+    couple of contexts, and a single line at startup is easy to miss in a log.
+    """
+    from common.ingest.metar_config import aiohttp_ssl, ssl_context, verify_tls
+
+    recorded = _metar_yaml()["metar"]
+    assert verify_tls() is recorded["verify_tls"] is False
+
+    # Unlike wpc.verify_tls, the schema leaves this free -- it is a real switch.
+    schema = json.loads(
+        (REPO_ROOT / "config/schema/metar.schema.json").read_text(encoding="utf-8")
+    )
+    assert schema["properties"]["metar"]["properties"]["verify_tls"] == {"type": "boolean"}
+
+    # The value actually reaches the transport, in both spellings.
+    assert aiohttp_ssl() is False
+    context = ssl_context()
+    assert context.verify_mode == ssl.CERT_NONE
+    assert context.check_hostname is False
+
+    source = _metar_source()
+    assert "CERT_NONE" not in source, "the five inline downgrades must stay collapsed"
+    assert "ssl=False" not in source
+    assert source.count("ssl=aiohttp_ssl()") == 3
+    assert source.count("context=ssl_context()") == 2
+
+
+def test_flipping_metar_verify_tls_reaches_every_transport():
+    """Turning the switch on must actually verify, or the key is decorative."""
+    from common.config import loader
+    from common.ingest import metar_config
+
+    def _verifying():
+        return True
+
+    original = metar_config.verify_tls
+    metar_config.verify_tls = _verifying
+    try:
+        assert metar_config.aiohttp_ssl() is not False
+        context = metar_config.ssl_context()
+        assert context.verify_mode == ssl.CERT_REQUIRED
+        assert context.check_hostname is True
+    finally:
+        metar_config.verify_tls = original
+        loader.reset_cache()
+
+
+def test_metar_accept_encoding_still_excludes_brotli():
+    """DECISION PRESERVED: `br` is omitted because brotli responses failed to decode.
+
+    This header is narrower than the client default on purpose, which is easy to
+    read as an oversight and "fix" by restoring the default. Both request paths
+    send it, and neither handles a brotli body, so adding `br` back would break
+    the station download rather than speed it up.
+    """
+    from common.ingest.metar_config import accept_encoding
+
+    recorded = _metar_yaml()["metar"]
+    assert accept_encoding() == recorded["accept_encoding"] == "gzip, deflate"
+
+    encodings = {token.strip() for token in accept_encoding().split(",")}
+    assert "br" not in encodings, "nothing in metar.py decompresses brotli"
+    assert "gzip" in encodings, "the sync path branches on a gzip Content-Encoding"
+
+    source = _metar_source()
+    assert "gzip, deflate" not in source
+    assert source.count("accept_encoding()") == 2
+
+
+def test_metar_cycle_url_needs_the_hour_placeholder():
+    """A pattern without `{hour}` formats to itself, so every cycle repeats one hour.
+
+    `str.format` does not raise on an unused keyword, so this fails silently and
+    produces three identical fetches. The schema requires the placeholder.
+    """
+    from common.ingest.metar import _cycle_url
+    from common.ingest.metar_config import observation_url_pattern
+
+    recorded = _metar_yaml()["metar"]
+    assert observation_url_pattern() == recorded["observation_url_pattern"]
+    assert "{hour}" in observation_url_pattern()
+
+    assert _cycle_url("07") == (
+        "https://tgftp.nws.noaa.gov/data/observations/metar/cycles/07Z.TXT"
+    )
+    assert _cycle_url("07") != _cycle_url("18")
+
+    schema = json.loads(
+        (REPO_ROOT / "config/schema/metar.schema.json").read_text(encoding="utf-8")
+    )
+    pattern = schema["properties"]["metar"]["properties"]["observation_url_pattern"]["pattern"]
+    assert re.search(pattern, observation_url_pattern())
+
+    source = _metar_source()
+    assert "tgftp.nws.noaa.gov" not in source
+    assert source.count("_cycle_url(hour_str)") == 3, "one definition, two callers"
+
+
+def test_metar_keeps_two_timeouts_rather_than_one():
+    """RESOLVED: 60 and 30 describe different requests and must not be unified.
+
+    The station database is one large JSON document fetched once; the observation
+    cycles are small hourly text files fetched three at a time. Both were bare
+    literals repeated across five call sites.
+    """
+    from common.ingest.metar_config import (
+        observation_timeout_seconds,
+        station_timeout_seconds,
+    )
+
+    recorded = _metar_yaml()["metar"]
+    assert station_timeout_seconds() == recorded["station_timeout_seconds"] == 60
+    assert observation_timeout_seconds() == recorded["observation_timeout_seconds"] == 30
+    assert station_timeout_seconds() != observation_timeout_seconds()
+
+    source = _metar_source()
+    assert source.count("timeout=station_timeout_seconds()") == 2
+    # One for the sync fetch, one for the async `_read` the two async branches share.
+    assert source.count("timeout=observation_timeout_seconds()") == 2
+
+
+def test_metar_retention_is_its_own_key_despite_matching_the_generic_default():
+    """DECISION PRESERVED: two 60s, two owners, so retuning one cannot move the other.
+
+    `util.file.clean_old_files` already defaults the age to `filesystem.yaml`'s 60,
+    so METAR could have passed nothing. It passes its own key instead: the equal
+    value is a coincidence of tuning, not a shared policy. The file count cap is
+    the opposite call -- METAR does inherit that one, which is why only the age is
+    forwarded.
+    """
+    from common.ingest.metar_config import cleanup_max_age_minutes
+    from util.file_config import cleanup_max_age_minutes as generic_cleanup_age
+    from util.file_config import cleanup_max_files as generic_cleanup_files
+
+    recorded = _metar_yaml()["metar"]
+    assert cleanup_max_age_minutes() == recorded["cleanup_max_age_minutes"] == 60
+    assert generic_cleanup_age() == 60
+    assert generic_cleanup_files() == 10
+
+    assert "cleanup_max_files" not in recorded
+
+    source = _metar_source()
+    assert source.count("max_age_minutes=cleanup_max_age_minutes()") == 2
+    assert "max_files" not in source, "METAR takes the generic count cap"
+
+
+def test_metar_lookback_drives_both_entry_points():
+    """The sync and async ingests must cover the same span, and did so by two 3s."""
+    from common.ingest.metar_config import lookback_hours
+
+    recorded = _metar_yaml()["metar"]
+    assert lookback_hours() == recorded["lookback_hours"] == 3
+
+    source = _metar_source()
+    assert source.count("range(lookback_hours())") == 2
+    assert "range(3)" not in source
+
+
+def test_metar_station_parsing_rounds_once_from_the_catalog():
+    """The sync and async station downloads parsed the same payload twice.
+
+    Both rounded to 4 decimals with their own literal, so the two caches could
+    have diverged. They now share one parser.
+    """
+    from common.ingest.metar import _parse_station_entries
+    from common.ingest.metar_config import coordinate_decimals
+
+    recorded = _metar_yaml()["metar"]
+    assert coordinate_decimals() == recorded["coordinate_decimals"] == 4
+
+    parsed = _parse_station_entries(
+        [
+            {"icaoId": "KJFK", "lat": 40.63992345, "lon": -73.77869012},
+            {"stationId": "KORD", "lat": 41.9, "lon": -87.9},
+            {"icaoId": "KNOPE", "lat": None, "lon": 1.0},
+            {"lat": 1.0, "lon": 1.0},
+        ]
+    )
+    assert parsed == {"KJFK": [40.6399, -73.7787], "KORD": [41.9, -87.9]}
+
+    source = _metar_source()
+    assert source.count("_parse_station_entries(") == 3, "one definition, two callers"
+
+
+def test_metar_pressure_rounding_is_config_but_the_encoding_is_not():
+    """`/100` is the AXXXX altimeter encoding; only the rounding is a setting."""
+    from common.ingest.metar import parse_metar
+    from common.ingest.metar_config import pressure_decimals
+
+    recorded = _metar_yaml()["metar"]
+    assert pressure_decimals() == recorded["pressure_decimals"] == 2
+
+    parsed = parse_metar("KJFK 121756Z 31009KT A3039", "2023/01/12 17:56")
+    assert parsed["pressure"] == 30.39
+
+    source = _metar_source()
+    assert "alt_value / 100, pressure_decimals()" in source
+
+
+def test_metar_conus_bounds_are_the_audits_corrected_numbers():
+    """The audit recorded lon -125..-67; the code has always used -66.0.
+
+    Also pins that the filter reads the catalog once per call rather than through
+    the old `CONUS_BOUNDS` module constant.
+    """
+    from common.ingest import metar
+    from common.ingest.metar_config import conus_bounds
+
+    recorded = _metar_yaml()["metar"]["conus_bounds"]
+    assert dict(conus_bounds()) == recorded
+    assert recorded == {"lat_min": 24.0, "lat_max": 50.0, "lon_min": -125.0, "lon_max": -66.0}
+
+    assert not hasattr(metar, "CONUS_BOUNDS")
+    assert not hasattr(metar, "STATION_DB_URL")
+
+    # A station between the audit's -67 and the real -66 is kept.
+    with mock.patch.object(metar, "get_station_coordinates", return_value=[40.0, -66.5]):
+        kept = metar.process_content("2023/01/12 17:56\nKXYZ 121756Z 31009KT A3039\n")
+    assert [entry["station"] for entry in kept] == ["KXYZ"]
+
+
+def test_metar_station_cache_path_follows_the_runtime_data_dir():
+    """The filename was written twice and joined to `fs.DATA_DIR` at each site."""
+    from common.ingest import metar
+    from common.ingest.metar_config import station_cache_file, station_db_url
+
+    recorded = _metar_yaml()["metar"]
+    assert station_cache_file() == recorded["station_cache_file"] == "stations_cache.json"
+    assert station_db_url() == recorded["station_db_url"]
+    assert "aviationweather.gov" in station_db_url()
+
+    import util.file as fs
+
+    assert metar._station_cache_path() == fs.DATA_DIR / station_cache_file()
+
+    source = _metar_source()
+    assert "stations_cache.json" not in source
+    assert source.count("_station_cache_path()") == 3, "one definition, two callers"
 
 
 # --- Detection thresholds duplicated across eight declaration sites --------

@@ -183,7 +183,14 @@ Keys and defaults: [`config/wpc.yaml`](../config/wpc.yaml).
 
 ## `config/metar.yaml`
 
-Audit §7 METAR (`common/ingest/metar.py:19,306`).
+Audit §7 METAR. Read through the accessors in
+`common/ingest/metar_config.py`, which `common/ingest/metar.py` calls per use.
+
+`verify_tls` is still `false`, reproducing the five independent downgrades the
+code used to contain. It is now one decision that warns on every use, and
+flipping it to `true` is tested to actually verify — so closing it out needs a run
+against the live hosts, not a code change. This is the only subsystem where the
+key is a real switch; `wpc.verify_tls` merely pins verification on.
 
 Keys and defaults: [`config/metar.yaml`](../config/metar.yaml).
 

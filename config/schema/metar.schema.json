@@ -12,8 +12,8 @@
       "required": ["station_db_url", "station_cache_file", "observation_url_pattern", "station_timeout_seconds", "observation_timeout_seconds", "accept_encoding", "verify_tls", "lookback_hours", "cleanup_max_age_minutes", "coordinate_decimals", "pressure_decimals", "conus_bounds"],
       "properties": {
         "station_db_url": { "type": "string", "pattern": "^https://" },
-        "station_cache_file": { "type": "string" },
-        "observation_url_pattern": { "type": "string", "pattern": "^https://" },
+        "station_cache_file": { "type": "string", "pattern": "^[^/\\\\]+$" },
+        "observation_url_pattern": { "type": "string", "pattern": "^https://.*\\{hour\\}" },
         "station_timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "observation_timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "accept_encoding": { "type": "string" },

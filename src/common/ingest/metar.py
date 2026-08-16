@@ -8,6 +8,21 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import util.file as fs
+from common.ingest.metar_config import (
+    accept_encoding,
+    aiohttp_ssl,
+    conus_bounds,
+    coordinate_decimals,
+    cleanup_max_age_minutes,
+    lookback_hours,
+    observation_timeout_seconds,
+    observation_url_pattern,
+    pressure_decimals,
+    ssl_context,
+    station_cache_file,
+    station_db_url,
+    station_timeout_seconds,
+)
 from util.atomic import atomic_write_json
 from util.io import IOManager
 from util.release import format_user_agent
@@ -17,7 +32,27 @@ io = IOManager("[METAR Ingest]")
 
 # Station database cache
 _station_cache = None
-STATION_DB_URL = "https://aviationweather.gov/data/cache/stations.cache.json"
+
+
+def _station_cache_path():
+    """Where the station cache lives, resolved per call so --base-dir is honored."""
+    root = fs.DATA_DIR if hasattr(fs, 'DATA_DIR') else Path(".")
+    return root / station_cache_file()
+
+
+def _parse_station_entries(stations):
+    """ICAO -> [lat, lon] for the entries carrying a code and both coordinates."""
+    decimals = coordinate_decimals()
+    parsed = {}
+    for station in stations:
+        icao = station.get('icaoId') or station.get('stationId')
+        lat = station.get('lat')
+        lon = station.get('lon')
+
+        if icao and lat is not None and lon is not None:
+            parsed[icao] = [round(float(lat), decimals), round(float(lon), decimals)]
+    return parsed
+
 
 async def ensure_station_database():
     """
@@ -27,7 +62,7 @@ async def ensure_station_database():
     if _station_cache is not None:
         return
 
-    cache_file = fs.DATA_DIR / "stations_cache.json" if hasattr(fs, 'DATA_DIR') else Path("stations_cache.json")
+    cache_file = _station_cache_path()
     if cache_file.exists():
         # Will be loaded by sync function when needed
         return
@@ -35,27 +70,18 @@ async def ensure_station_database():
     # Download async
     io.write_info("Downloading station database from Aviation Weather (Async)...")
     try:
-         connector = aiohttp.TCPConnector(ssl=False)
-         # Force drop 'br' from default Accept-Encoding to prevent decoding failures
+         connector = aiohttp.TCPConnector(ssl=aiohttp_ssl())
          headers = {
              "User-Agent": format_user_agent(),
-             "Accept-Encoding": "gzip, deflate",
+             "Accept-Encoding": accept_encoding(),
          }
          async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
-            async with session.get(STATION_DB_URL, timeout=60) as response:
+            async with session.get(station_db_url(), timeout=station_timeout_seconds()) as response:
                 response.raise_for_status()
                 stations = await response.json()
-                
-                # Process
-                parsed_cache = {}
-                for station in stations:
-                    icao = station.get('icaoId') or station.get('stationId')
-                    lat = station.get('lat')
-                    lon = station.get('lon')
-                    
-                    if icao and lat is not None and lon is not None:
-                        parsed_cache[icao] = [round(float(lat), 4), round(float(lon), 4)]
-                
+
+                parsed_cache = _parse_station_entries(stations)
+
                 # Save to cache file
                 cache_file.parent.mkdir(parents=True, exist_ok=True)
                 loop = asyncio.get_running_loop()
@@ -76,8 +102,8 @@ def _load_station_database():
     if _station_cache is not None:
         return _station_cache
     
-    cache_file = fs.DATA_DIR / "stations_cache.json" if hasattr(fs, 'DATA_DIR') else Path("stations_cache.json")
-    
+    cache_file = _station_cache_path()
+
     # Try to load from cache file first
     if cache_file.exists():
         try:
@@ -92,32 +118,23 @@ def _load_station_database():
     _station_cache = {}
     try:
         io.write_info("Downloading station database from Aviation Weather...")
-        import ssl
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        
+
         req = urllib.request.Request(
-            STATION_DB_URL,
-            headers={"User-Agent": format_user_agent(), "Accept-Encoding": "gzip, deflate"}
+            station_db_url(),
+            headers={"User-Agent": format_user_agent(), "Accept-Encoding": accept_encoding()}
         )
-        with urllib.request.urlopen(req, context=ctx, timeout=60) as response:
+        with urllib.request.urlopen(
+            req, context=ssl_context(), timeout=station_timeout_seconds()
+        ) as response:
             import gzip
             if response.info().get('Content-Encoding') == 'gzip':
                 raw_data = gzip.decompress(response.read())
             else:
                 raw_data = response.read()
             stations = json.loads(raw_data.decode('utf-8'))
-        
-        # Parse JSON format - each station has icaoId, lat, lon
-        for station in stations:
-            icao = station.get('icaoId') or station.get('stationId')
-            lat = station.get('lat')
-            lon = station.get('lon')
-            
-            if icao and lat is not None and lon is not None:
-                _station_cache[icao] = [round(float(lat), 4), round(float(lon), 4)]
-        
+
+        _station_cache = _parse_station_entries(stations)
+
         io.write_info(f"Parsed {len(_station_cache)} stations")
         
         # Save to cache file
@@ -193,9 +210,10 @@ def parse_metar(metar_str, observation_time):
     # Pressure (altimeter setting) - convert from AXXXX format to decimal inHg
     alt_match = re.search(r'\bA(\d{4})\b', metar_str)
     if alt_match:
-        # Convert e.g. "3039" -> 30.39 inHg
+        # Convert e.g. "3039" -> 30.39 inHg. The /100 is the AXXXX encoding, not a
+        # tunable; only the rounding is.
         alt_value = int(alt_match.group(1))
-        data["pressure"] = round(alt_value / 100, 2)
+        data["pressure"] = round(alt_value / 100, pressure_decimals())
 
     # Clouds / Sky Condition
     clouds = []
@@ -243,22 +261,23 @@ def parse_metar(metar_str, observation_time):
 
     return data
 
+def _cycle_url(hour_str):
+    """URL of the cycle file for a two-digit UTC hour; the server publishes HHZ.TXT."""
+    return observation_url_pattern().format(hour=hour_str)
+
+
 def fetch_metar_cycle(dt):
     """
     Fetches the METAR cycle file for the given datetime.
     """
     hour_str = dt.strftime("%H")
-    # File is HHZ.TXT on server
-    url = f"https://tgftp.nws.noaa.gov/data/observations/metar/cycles/{hour_str}Z.TXT"
+    url = _cycle_url(hour_str)
     io.write_info(f"Fetching METAR data from {url}")
 
-    import ssl
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-
     try:
-        with urllib.request.urlopen(url, context=ctx, timeout=30) as response:
+        with urllib.request.urlopen(
+            url, context=ssl_context(), timeout=observation_timeout_seconds()
+        ) as response:
             content = response.read().decode('utf-8', errors='ignore')
             return content
     except urllib.error.HTTPError as e:
@@ -277,42 +296,29 @@ async def fetch_metar_cycle_async(dt, session=None):
     Async version of fetch_metar_cycle.
     """
     hour_str = dt.strftime("%H")
-    url = f"https://tgftp.nws.noaa.gov/data/observations/metar/cycles/{hour_str}Z.TXT"
+    url = _cycle_url(hour_str)
     io.write_info(f"Fetching METAR data (async) from {url}")
+
+    async def _read(open_session):
+        async with open_session.get(url, timeout=observation_timeout_seconds()) as response:
+            if response.status == 404:
+                io.write_warning(f"METAR file not found for {hour_str}Z (404)")
+                return None
+            response.raise_for_status()
+            return await response.text(encoding='utf-8', errors='ignore')
 
     try:
         if session:
-            async with session.get(url, timeout=30) as response:
-                if response.status == 404:
-                    io.write_warning(f"METAR file not found for {hour_str}Z (404)")
-                    return None
-                response.raise_for_status()
-                content = await response.text(encoding='utf-8', errors='ignore')
-                return content
-        else:
-             connector = aiohttp.TCPConnector(ssl=False)
-             async with aiohttp.ClientSession(connector=connector) as new_session:
-                async with new_session.get(url, timeout=30) as response:
-                    # ... duplication or call recursive? NO, simple logic
-                    if response.status == 404:
-                        io.write_warning(f"METAR file not found for {hour_str}Z (404)")
-                        return None
-                    response.raise_for_status()
-                    content = await response.text(encoding='utf-8', errors='ignore')
-                    return content
+            return await _read(session)
+
+        connector = aiohttp.TCPConnector(ssl=aiohttp_ssl())
+        async with aiohttp.ClientSession(connector=connector) as new_session:
+            return await _read(new_session)
 
     except Exception as e:
         io.write_error(f"Failed to fetch {url} (async): {e}")
     
     return None
-
-# CONUS Boundaries
-CONUS_BOUNDS = {
-    "lat_min": 24.0,
-    "lat_max": 50.0,
-    "lon_min": -125.0,
-    "lon_max": -66.0
-}
 
 def process_content(content):
     """
@@ -321,6 +327,7 @@ def process_content(content):
     lines = content.splitlines()
     parsed_data = []
     seen_stations = set()  # Track seen stations to avoid duplicates
+    bounds = conus_bounds()
 
     current_time = None
 
@@ -356,8 +363,8 @@ def process_content(content):
                 coords = metar_data.get("coordinates")
                 if coords:
                     lat, lon = coords
-                    if (CONUS_BOUNDS["lat_min"] <= lat <= CONUS_BOUNDS["lat_max"] and 
-                        CONUS_BOUNDS["lon_min"] <= lon <= CONUS_BOUNDS["lon_max"]):
+                    if (bounds["lat_min"] <= lat <= bounds["lat_max"] and
+                        bounds["lon_min"] <= lon <= bounds["lon_max"]):
                         parsed_data.append(metar_data)
                 # Skip if no coords or outside bounds
 
@@ -378,8 +385,7 @@ def _ensure_metar_dir():
 
 def save_metar_data(data, dt):
     """
-    Saves the parsed METAR data to a JSON file.
-    Enforces a 10-file limit using clean_old_files.
+    Saves the parsed METAR data to a JSON file, then applies retention.
     """
     if not data:
         io.write_warning("No METAR data to save.")
@@ -395,21 +401,20 @@ def save_metar_data(data, dt):
     except Exception as e:
         io.write_error(f"Failed to save METAR data to {filepath}: {e}")
     
-    # Enforce 10-file limit
-    fs.clean_old_files(fs.METAR_DIR, max_age_minutes=60)
+    # The file count cap comes from filesystem.yaml; only the age is METAR's own.
+    fs.clean_old_files(fs.METAR_DIR, max_age_minutes=cleanup_max_age_minutes())
 
 def ingest_metars():
     """
     Main entry point for METAR ingestion.
-    Fetches and processes METAR data for the last 3 hours.
+    Fetches and processes the most recent hourly cycles.
     """
     # Ensure paths are defined
     fs.initialize_filesystem()
 
     now = datetime.now(timezone.utc)
 
-    # Process current hour and previous 2 hours
-    for i in range(3):
+    for i in range(lookback_hours()):
         target_time = now - timedelta(hours=i)
         io.write_info(f"Processing METARs for {target_time.strftime('%Y-%m-%d %H:00')} UTC")
 
@@ -441,8 +446,7 @@ async def save_metar_data_async(data, dt):
     except Exception as e:
         io.write_error(f"Failed to save METAR data to {filepath}: {e}")
     
-    # Enforce 10-file limit (async)
-    await fs.async_clean_old_files(fs.METAR_DIR, max_age_minutes=60)
+    await fs.async_clean_old_files(fs.METAR_DIR, max_age_minutes=cleanup_max_age_minutes())
 
 def _write_json_sync(filepath, data):
     atomic_write_json(filepath, data, indent=2)
@@ -450,7 +454,7 @@ def _write_json_sync(filepath, data):
 async def ingest_metars_async():
     """
     Async entry point for METAR ingestion.
-    Fetches and processes METAR data for the last 3 hours concurrently.
+    Fetches and processes the most recent hourly cycles concurrently.
     """
     # Ensure paths are defined
     fs.initialize_filesystem()
@@ -459,9 +463,8 @@ async def ingest_metars_async():
     await ensure_station_database()
 
     now = datetime.now(timezone.utc)
-    
-    # Create tasks for current hour and previous 2 hours
-    connector = aiohttp.TCPConnector(ssl=False)
+
+    connector = aiohttp.TCPConnector(ssl=aiohttp_ssl())
     headers = {"User-Agent": format_user_agent()}
     async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
         async def _process_single_hour(i):
@@ -478,7 +481,7 @@ async def ingest_metars_async():
                  io.write_warning(f"Skipping {target_time.strftime('%H')}Z due to fetch failure.")
     
         tasks = []
-        for i in range(3):
+        for i in range(lookback_hours()):
             tasks.append(_process_single_hour(i))
         
         await asyncio.gather(*tasks)

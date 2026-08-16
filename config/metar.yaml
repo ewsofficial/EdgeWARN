@@ -1,45 +1,51 @@
 # metar.yaml — Audit §7 METAR
 #
-# Source: src/common/ingest/metar.py:19,29,37-41,89-100,194,248,257,276-291,
-#         305-311,395,408,441,459,476
-# Values verified against the working tree at commit e426fb2.
-# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
+# This file owns every value below. They are read through the accessors in
+# src/common/ingest/metar_config.py, which src/common/ingest/metar.py calls per
+# use -- no module constants remain.
 
 schema_version: 1
 
 metar:
   station_db_url: https://aviationweather.gov/data/cache/stations.cache.json
-  station_cache_file: stations_cache.json   # metar.py:29,75; relative to DATA_DIR
-  # metar.py:248,276. The server publishes one file per UTC hour named HHZ.TXT.
+  station_cache_file: stations_cache.json   # relative to fs.DATA_DIR
+  # The server publishes one file per UTC hour named HHZ.TXT.
   observation_url_pattern: 'https://tgftp.nws.noaa.gov/data/observations/metar/cycles/{hour}Z.TXT'
 
-  # Two distinct timeouts, not one: the station database download allows 60s
-  # (metar.py:41,100) and each hourly observation fetch allows 30s
-  # (metar.py:257,281,291).
+  # Two distinct timeouts, not one: the station database is a single large JSON
+  # document, while each observation fetch is one small hourly text file.
   station_timeout_seconds: 60
   observation_timeout_seconds: 30
 
   # The User-Agent is NOT here. It is one string for the whole application,
-  # `runtime.yaml identity`, applied at metar.py:41, :102 and :465. This subsystem
-  # used to carry a third distinct string with no contact address at all -- and
-  # only on the sync station-database fallback, so in production METAR actually
-  # sent aiohttp's default agent. All three sessions now identify themselves.
+  # `runtime.yaml identity`. This subsystem used to carry a third distinct string
+  # with no contact address at all -- and only on the sync station-database
+  # fallback, so in production METAR actually sent aiohttp's default agent. All
+  # three sessions now identify themselves.
   #
-  # metar.py:42,102. 'br' is dropped deliberately: brotli responses failed to
-  # decode, so the header is narrowed rather than left at the client default.
+  # 'br' is dropped deliberately: brotli responses failed to decode, so the
+  # header is narrowed rather than left at the client default.
   accept_encoding: 'gzip, deflate'
 
-  # SECURITY: false reproduces today's behavior. TLS verification is disabled in
-  # five places -- aiohttp `ssl=False` at metar.py:37,289,460 and
-  # `ssl.CERT_NONE` at metar.py:94,254. Nothing about these hosts requires it,
-  # so this should become true once a run confirms the certificates validate.
-  # A loader that reads this key must warn loudly while it is false.
+  # SECURITY: false reproduces the behavior before extraction, where five call
+  # sites disabled verification independently (three aiohttp `ssl=False`, two
+  # `ssl.CERT_NONE`). They now share `metar_config.ssl_context` and
+  # `metar_config.aiohttp_ssl`, which warn on every use while this is false.
+  # Nothing about these hosts requires it, so this should become true once a run
+  # confirms the certificates validate. Unlike `wpc.verify_tls`, this is a real
+  # switch, so the schema does not pin it.
   verify_tls: false
 
-  lookback_hours: 3                         # metar.py:408,459,476
-  cleanup_max_age_minutes: 60               # metar.py:395,441
-  coordinate_decimals: 4                    # metar.py:53,115
-  pressure_decimals: 2                      # metar.py:194
+  # How many hourly cycles each run ingests, counting the current hour.
+  lookback_hours: 3
+  # Equal to filesystem.yaml's generic default today, but declared separately so
+  # retuning the generic sweep does not silently retune METAR. The file count cap
+  # is not restated here: METAR takes the generic one.
+  cleanup_max_age_minutes: 60
+  coordinate_decimals: 4
+  # Applied after the AXXXX altimeter encoding is divided by 100; the /100 is the
+  # encoding itself and stays in code.
+  pressure_decimals: 2
 
   conus_bounds:
     lat_min: 24.0

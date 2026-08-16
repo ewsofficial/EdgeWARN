@@ -490,18 +490,23 @@ tree but absent from the audit.
 | `src/common/ingest/mrms/timestamp_utils.py` | MRMS nominal two-minute cadence and midpoint rounding/selection policy | `mrms_goes.yaml` |
 | `src/common/pipeline/coordinator.py`, `goes_readiness.py` | Max entries, GOES lookback, candidate count, and 20-minute source offset | `runtime.yaml` |
 | `src/common/ingest/synoptic/config.py`, `downloader.py` | RAP bucket/path patterns, age/file limits, hourly lookback behavior, and environment alias | `synoptic_rap.yaml` |
-| `src/common/ingest/metar.py` | Station database URL (`https://aviationweather.gov/data/cache/stations.cache.json`, not the audit's `api.aviationweather.gov/v1/stations/`) and cycle URLs; request timeouts; user agent; station cache filename; CONUS bounds (lon `-125.0..-66.0`, not `-125..-67`); lookback; rounding; retention | `metar.yaml` |
+| ~~`src/common/ingest/metar.py`~~ | **Done.** Station database URL (`https://aviationweather.gov/data/cache/stations.cache.json`, not the audit's `api.aviationweather.gov/v1/stations/`) and cycle URLs; the two request timeouts; station cache filename; CONUS bounds (lon `-125.0..-66.0`, not `-125..-67`); lookback; rounding; retention. The user agent is not a `metar.yaml` key — it resolves from `runtime.yaml identity` | `metar.yaml` |
 | `src/common/ingest/nws/main.py`, `registry.py`, `geomapper.py` | Alerts URL; user agent/contact; request/chunk settings; two-hour registry TTL; property drop list; geometry rounding/simplification | `nws.yaml` |
 | `src/common/ingest/nws/zone_sync.py` | API URL templates, timeout, retries/backoff, worker count, pause, geometry precision, output path policy, and the `:160` user agent | `nws.yaml` `zone_sync` section |
 | ~~`src/common/ingest/wpc/config.py`, `downloader.py`, `main.py`~~ | **Done.** Source URL, valid hours, source cadence, timeout, backfill lookback, file templates, cleanup glob/age, and the `FEATURE_TYPES` styling table | `wpc.yaml` |
 | `src/common/ingest/nexrad/config.py`, `s3_chunks.py`, `s3_async.py`, `main.py` | Buckets; station catalog URL (`https://api.weather.gov/radar/stations`, not the audit's `/api/stations`); user agent; timeout; cache TTL (`30`, not `0`); minimum volume chunks; chunk download semaphore (`max_chunk_downloads = 64`, not `8`); volume candidate count and volumes/site; heartbeat stale `240.0` and startup grace `60.0` (`:21-22`) | `nexrad.yaml`; shared concurrency in `runtime.yaml` |
 
-TLS verification policy currently disabled in METAR code must be an explicit
-boolean with a warning when false. **WPC was wrongly named here**: both of its
-download paths already set `check_hostname` and `CERT_REQUIRED`, so
-`wpc.verify_tls` pins that behavior rather than offering to relax it — the schema
-fixes it to `true` and the downloader raises if it ever reads false. METAR is the
-only subsystem that needs the warn-when-false treatment.
+**Done.** TLS verification policy disabled in METAR code is now `metar.verify_tls`,
+still `false`, routed through `metar_config.ssl_context` and
+`metar_config.aiohttp_ssl` so the five independent downgrades became one decision
+that warns on every use while it is off. Flipping the key to `true` is verified to
+actually verify, so the remaining work is a run against the live hosts, not code.
+
+**WPC was wrongly named here**: both of its download paths already set
+`check_hostname` and `CERT_REQUIRED`, so `wpc.verify_tls` pins that behavior
+rather than offering to relax it — the schema fixes it to `true` and the
+downloader raises if it ever reads false. METAR was the only subsystem that
+needed the warn-when-false treatment.
 
 Contact/user-agent values must not
 contain a copied package version; the loader formats a configured template
