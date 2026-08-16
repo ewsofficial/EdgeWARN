@@ -19,9 +19,9 @@ scheduler:
   # the value is real and the code path exists, it simply is not reached today.
   mrms_update_checker_max_entries: 10
 
-  # The live lookup width, held separately in _get_modifier_times rather than
-  # taken from max_entries above -- which is why editing that key does not widen
-  # the real scheduler check.
+  # The live lookup width. Resolved once per check in latest_common_minute_1h and
+  # passed down to _get_modifier_times, rather than taken from max_entries above
+  # -- which is why editing that key does not widen the real scheduler check.
   modifier_lookup_max_entries: 20
 
   # Only the StartAfter fallback when last_processed is unknown; with a known
@@ -30,3 +30,23 @@ scheduler:
 
   # Elapsed time above which a modifier check emits a [PERF] line.
   slow_check_log_threshold_ms: 2000
+
+  # TRI-STATE, like runtime.yaml's profiling.perf_tracker: null means "the stdlib
+  # default", which ThreadPoolExecutor computes as min(32, cpu_count + 4). An
+  # integer caps the fan-out instead.
+  #
+  # Recorded as null rather than a number because no number is value-preserving:
+  # the width this replaces was machine-dependent, so writing 12 would have
+  # widened the pool on a 4-core host (where the stdlib picks 8) while narrowing
+  # it on a 32-core one.
+  #
+  # One key for both pools in scheduler.py -- the primary S3 check in
+  # latest_common_minute_1h and the HTTPS fallback in check_https_fallback. They
+  # never run together (the fallback is entered only after the primary found
+  # nothing) and both fan out over the same 12 `check_products` against the same
+  # NOAA endpoints, so a single ceiling is the honest description of the load.
+  #
+  # 12 modifiers is the effective ceiling regardless: a value above that buys
+  # idle threads, and the reason to set this at all is to go *below* it and
+  # throttle concurrent listings.
+  check_max_workers: null

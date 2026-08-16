@@ -42,3 +42,13 @@ def s3_lookback_hours() -> int:
 def slow_check_log_threshold_ms() -> int:
     """Elapsed time above which a modifier check emits a ``[PERF]`` line."""
     return _scheduler()["slow_check_log_threshold_ms"]
+
+
+def check_max_workers() -> int | None:
+    """Ceiling on both scheduler check pools, or ``None`` for the stdlib default.
+
+    ``None`` is passed straight to :class:`~concurrent.futures.ThreadPoolExecutor`,
+    which then computes ``min(32, cpu_count + 4)`` -- so the deferral is the
+    executor's own, not a second default declared here.
+    """
+    return _scheduler()["check_max_workers"]

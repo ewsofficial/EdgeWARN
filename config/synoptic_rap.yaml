@@ -24,9 +24,14 @@ rap:
   # both ends, and not derived from `file_pattern`.
   filename_regex: '^RAP\.(?P<date>\d{8})-(?P<hour>\d{2})z\.awp130pgrbf00\.grib2$'
   # Age budget for accepting an older analysis hour. _eligible_analysis_times
-  # walks backwards one step at a time until the budget is exhausted. Note that
-  # the generic download_synoptic helper declares its own 60-minute default,
-  # which the RAP caller in download_rap always overrides with this value.
+  # walks backwards one step at a time until the budget is exhausted.
+  #
+  # The generic download_synoptic helper used to declare a competing 60-minute
+  # default, unreachable because download_rap always passed this value. It now
+  # requires the argument outright rather than defaulting to this key: the helper
+  # is dataset-generic, so a second dataset must name its own budget instead of
+  # inheriting RAP's. This key also bounds manifest freshness and cache
+  # retention, which that dataset would then have been contradicting.
   max_age_minutes: 180                  # validated int >= 0
   lookback_step_hours: 1                # _eligible_analysis_times step
   # Retained RAP analyses, applied by clean_rap_cache. The pre-download sweep in

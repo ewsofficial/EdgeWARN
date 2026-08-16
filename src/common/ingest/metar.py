@@ -274,9 +274,14 @@ def fetch_metar_cycle(dt):
     url = _cycle_url(hour_str)
     io.write_info(f"Fetching METAR data from {url}")
 
+    # No Accept-Encoding: urllib does not decompress for us, and this body is
+    # read straight to text. The station-database fetch can ask for gzip because
+    # it inspects Content-Encoding and inflates by hand.
+    req = urllib.request.Request(url, headers={"User-Agent": format_user_agent()})
+
     try:
         with urllib.request.urlopen(
-            url, context=ssl_context(), timeout=observation_timeout_seconds()
+            req, context=ssl_context(), timeout=observation_timeout_seconds()
         ) as response:
             content = response.read().decode('utf-8', errors='ignore')
             return content
@@ -311,8 +316,11 @@ async def fetch_metar_cycle_async(dt, session=None):
         if session:
             return await _read(session)
 
+        # Only reached when no caller-supplied session exists; the shared session
+        # in ingest_metars_async already carries this header.
         connector = aiohttp.TCPConnector(ssl=aiohttp_ssl())
-        async with aiohttp.ClientSession(connector=connector) as new_session:
+        headers = {"User-Agent": format_user_agent()}
+        async with aiohttp.ClientSession(connector=connector, headers=headers) as new_session:
             return await _read(new_session)
 
     except Exception as e:

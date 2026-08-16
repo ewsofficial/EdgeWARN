@@ -12,6 +12,7 @@ Every test below names the decision the migration still owes.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -22,7 +23,7 @@ from unittest import mock
 
 import pytest
 
-from tests.core.config.source_inspect import param_default
+from tests.core.config.source_inspect import has_param_default, param_default
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -370,6 +371,66 @@ def test_scheduler_lookback_and_perf_gate_have_no_literals():
     assert "dt > 2000" not in source
 
 
+def test_scheduler_check_pools_both_take_their_width_from_the_catalog():
+    """RESOLVED (Phase 5): two bare `ThreadPoolExecutor()` calls had no owner.
+
+    `check_max_workers` is tri-state like `profiling.perf_tracker`: null defers to
+    the executor, which computes min(32, cpu_count + 4). No integer would have
+    been value-preserving here, because the width being replaced was
+    machine-dependent -- 12 would widen a 4-core host and narrow a 32-core one.
+
+    Spied on the constructor argument rather than read from the source: a call
+    site that resolves the accessor and then discards it satisfies any textual
+    check while the pool still sizes itself.
+    """
+    from EdgeWARN.schedule import scheduler as scheduler_module
+    from EdgeWARN.schedule.config import check_max_workers
+
+    recorded = _scheduler_yaml()["scheduler"]
+    assert recorded["check_max_workers"] is None
+    assert check_max_workers() is None
+
+    widths: list = []
+    real_executor = concurrent.futures.ThreadPoolExecutor
+
+    class _SpyExecutor(real_executor):
+        def __init__(self, *args, max_workers=None, **kwargs):
+            widths.append(max_workers)
+            # 12 check_products, so an unconstrained pool would fan out that far.
+            super().__init__(*args, max_workers=max_workers or 2, **kwargs)
+
+    modifiers = [("CONUS", "EchoTop_18_00.50", "MRMS_ECHOTOP18_DIR")]
+    checker = scheduler_module.MRMSUpdateChecker()
+
+    # Both pools: the primary S3 check, then the HTTPS fallback it falls into when
+    # no timestamps come back.
+    with mock.patch.object(
+        scheduler_module.concurrent.futures, "ThreadPoolExecutor", _SpyExecutor
+    ), mock.patch.object(
+        scheduler_module.MRMSUpdateChecker, "_get_modifier_times", lambda *a, **k: set()
+    ), mock.patch(
+        "EdgeWARN.ingest.mrms.https_client.HttpsFileFinder"
+    ) as fake_finder:
+        fake_finder.return_value.find_files_sync.return_value = []
+        checker.latest_common_minute_1h(modifiers)
+
+    # One entry per pool, and the catalog's null reached both.
+    assert widths == [None, None]
+
+    # An integer must actually reach the executor, not just the accessor.
+    with mock.patch.object(
+        scheduler_module, "check_max_workers", lambda: 3
+    ), mock.patch.object(
+        scheduler_module.concurrent.futures, "ThreadPoolExecutor", _SpyExecutor
+    ), mock.patch.object(
+        scheduler_module.MRMSUpdateChecker, "_get_modifier_times", lambda *a, **k: {1}
+    ):
+        widths.clear()
+        checker.latest_common_minute_1h(modifiers)
+
+    assert widths == [3]
+
+
 # --- Historical replay: the loop literals now live in the catalog ---------
 
 def _historical_yaml() -> dict:
@@ -509,23 +570,41 @@ def test_rap_filename_regex_round_trips_the_local_file_pattern():
     assert rap_config.rap_max_files() == recorded["max_files"] == 3
 
 
-def test_generic_synoptic_download_keeps_its_own_age_default():
-    """DECISION OWED: the 60-minute default in `download_synoptic` is a second copy.
+def test_generic_synoptic_download_demands_an_age_budget():
+    """RESOLVED: `download_synoptic` declares no age default, so 180 is the only number.
 
-    It is harmless only because `download_rap` -- the sole caller -- always passes
-    `get_rap_max_age_minutes()`. A second dataset added without that argument would
-    silently run a 60-minute budget instead of the catalog's 180. Left as-is because
-    narrowing it to the RAP value would be retuning a shared helper for one caller.
+    It used to default to 60 while this catalog said 180. That was unreachable --
+    `download_rap`, the sole caller, always passed `get_rap_max_age_minutes()` --
+    but a second synoptic dataset added without the argument would have silently
+    run a budget its operator never chose. Defaulting to the RAP key instead would
+    be the same fault with the other number: the helper is dataset-generic, and
+    this budget also bounds manifest freshness and cache retention.
+
+    Asserted behaviourally, not by AST: re-adding any default (60, 180, or a
+    `None` that resolves the RAP key) makes the omitting call succeed.
     """
-    assert param_default(
-        "common/ingest/synoptic/downloader.py", "download_synoptic", "max_age_minutes"
-    ) == 60
     assert _synoptic_rap_yaml()["rap"]["max_age_minutes"] == 180
+    assert not has_param_default(
+        "common/ingest/synoptic/downloader.py", "download_synoptic", "max_age_minutes"
+    )
 
+    from common.ingest.synoptic import downloader as synoptic_downloader
+
+    # Raises at call time, before a coroutine exists, so nothing needs awaiting.
+    with pytest.raises(TypeError, match="max_age_minutes"):
+        synoptic_downloader.download_synoptic(
+            datetime(2026, 8, 15, 7, tzinfo=timezone.utc),
+            "bucket",
+            "file-{hour:02d}",
+            "dir-{date}",
+            Path("."),
+        )
+
+    # The RAP wrapper is where the catalog value enters, and it is the only site.
     downloader_source = (
         REPO_ROOT / "src/common/ingest/synoptic/downloader.py"
     ).read_text(encoding="utf-8")
-    assert "max_age_minutes=get_rap_max_age_minutes()" in downloader_source
+    assert downloader_source.count("max_age_minutes=get_rap_max_age_minutes()") == 1
 
 
 # --- WPC: four keys describing one naming scheme --------------------------
@@ -1121,6 +1200,76 @@ def test_every_outbound_user_agent_resolves_through_release():
     from common.ingest.nexrad import config as nexrad_config
 
     assert not hasattr(nexrad_config, "WEATHER_API_USER_AGENT")
+
+
+def test_no_metar_request_path_goes_out_anonymous():
+    """RESOLVED (Phase 5): two of METAR's five request paths sent no User-Agent.
+
+    `metar.yaml` claimed all of them identified themselves. In fact the sync
+    observation fetch passed a bare URL string to `urlopen` -- so urllib sent its
+    own `Python-urllib/3.x` -- and the async fallback session built a
+    `ClientSession` with a connector but no headers, sending aiohttp's default.
+    Aviation Weather asks callers to identify themselves with a contact address,
+    so both were a courtesy violation against a public service, and neither was
+    visible from the catalog.
+
+    The two repaired paths are asserted behaviourally rather than by reading the
+    source: a header dict that is built and then not passed to the client would
+    satisfy any AST check while still going out anonymous.
+    """
+    import asyncio
+    import urllib.request
+
+    from common.ingest import metar
+    from util.release import format_user_agent
+
+    expected = format_user_agent()
+    dt = datetime(2026, 8, 15, 7, tzinfo=timezone.utc)
+
+    # Path 3 of 5: sync observation fetch, urllib.
+    captured: list = []
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b""
+
+    def _fake_urlopen(request, *args, **kwargs):
+        captured.append(request)
+        return _FakeResponse()
+
+    with mock.patch.object(urllib.request, "urlopen", _fake_urlopen):
+        metar.fetch_metar_cycle(dt)
+
+    assert len(captured) == 1
+    assert captured[0].get_header("User-agent") == expected
+    # Deliberately absent: urllib would hand the raw gzip to .decode('utf-8').
+    assert captured[0].get_header("Accept-encoding") is None
+
+    # Path 4 of 5: the async fallback session, taken only when no caller supplies
+    # one. Recorded at construction; the fetch itself is allowed to fail.
+    sessions: list = []
+
+    class _RecordingSession:
+        def __init__(self, *args, **kwargs):
+            sessions.append(kwargs.get("headers"))
+            raise RuntimeError("no network in tests")
+
+    with mock.patch("aiohttp.ClientSession", _RecordingSession):
+        assert asyncio.run(metar.fetch_metar_cycle_async(dt)) is None
+
+    assert sessions == [{"User-Agent": expected}]
+
+    # Completeness guard for the other three: the two station-database fetches
+    # and the shared async observation session. Five resolutions, one per path --
+    # dropping any header drops the count.
+    metar_source = (REPO_ROOT / "src/common/ingest/metar.py").read_text(encoding="utf-8")
+    assert metar_source.count("format_user_agent()") == 5
 
 
 # --- zone_sync pause_seconds: flag default fights constructor default ------
