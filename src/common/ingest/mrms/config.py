@@ -52,6 +52,62 @@ def mrms_remove_old_files() -> bool:
     return _catalog()["mrms"]["remove_old_files"]
 
 
+def _ncep_https():
+    return _catalog()["mrms"]["ncep_https"]
+
+
+def ncep_base_url() -> str:
+    """Index root for the NCEP 2D HTTPS fallback.
+
+    A function rather than the module constant it replaces: ``run.py`` imports the
+    MRMS package before ``get_args()`` exports ``EDGEWARN_CONFIG_DIR``, so a
+    module-scope binding put this out of reach of ``--config-dir``.
+    """
+    return _ncep_https()["base_url"]
+
+
+def ncep_probsevere_url() -> str:
+    """Index root for ProbSevere, which is not under :func:`ncep_base_url`.
+
+    ProbSevere lives at ``/data/ProbSevere``, a sibling of ``/data/2D`` rather than
+    a product directory inside it, so this is a separate key and not a suffix
+    appended to the base URL.
+    """
+    return _ncep_https()["probsevere_url"]
+
+
+def ncep_sync_timeout_seconds() -> float:
+    """Request timeout for the sync index scrape used by the scheduler."""
+    return _ncep_https()["sync_timeout_seconds"]
+
+
+def ncep_match_window_seconds() -> float:
+    """How far from the requested minute a filename may sit and still be used.
+
+    Applied only after an exact-minute match fails.
+    """
+    return _ncep_https()["match_window_seconds"]
+
+
+def ncep_download_chunk_size_bytes() -> int:
+    """Read size for the streamed HTTPS download.
+
+    Sizes reads off the network; :func:`mrms_decompress_chunk_size_bytes` sizes a
+    local gzip expansion. Two owners because they bound different resources.
+    """
+    return _ncep_https()["download_chunk_size_bytes"]
+
+
+def ncep_directory_split_token() -> str:
+    """Token the product name is split on when it is absent from the map."""
+    return _ncep_https()["directory_split_token"]
+
+
+def ncep_directory_map():
+    """S3 modifier to NCEP directory name, for the names that do not derive."""
+    return _ncep_https()["directory_map"]
+
+
 def goes_bucket() -> str:
     """The S3 bucket GOES products are read from."""
     return _catalog()["goes"]["bucket"]
