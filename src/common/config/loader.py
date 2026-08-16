@@ -60,6 +60,19 @@ _ENV_CONFIG_DIR = "EDGEWARN_CONFIG_DIR"
 _config_cache: dict[tuple[str, str], Any] = {}
 _provenance_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
+# Resolving the root costs a ``Path.resolve()`` plus an ``is_file()`` stat --
+# ~260us on Windows -- and every accessor pays it on every read, some of them
+# per-polygon. Memoized keyed by the *input*, never unconditionally: a bare
+# cache over ``config_root()`` would freeze the first answer and put a later
+# ``EDGEWARN_CONFIG_DIR`` out of reach, which is the same freeze the per-call
+# accessor convention exists to avoid.
+#
+# Relative inputs are not memoized, because they resolve against the CWD and so
+# are not a function of the key alone. ``export_config_root`` publishes an
+# absolute string, so the production path is always the memoized one. The
+# ``None`` key is the walk-up result, which depends only on ``__file__``.
+_root_cache: dict[str | None, Path] = {}
+
 
 class ConfigError(Exception):
     """Raised for a missing config file, missing key, or schema violation."""
@@ -77,10 +90,14 @@ class ConfigError(Exception):
 
 
 def _find_config_root_by_walking_up() -> Path:
+    if None in _root_cache:
+        return _root_cache[None]
+
     here = Path(__file__).resolve()
     for candidate_dir in here.parents:
         config_dir = candidate_dir / "config"
         if (config_dir / "runtime.yaml").is_file():
+            _root_cache[None] = config_dir
             return config_dir
     raise ConfigError(
         "config/",
@@ -90,28 +107,37 @@ def _find_config_root_by_walking_up() -> Path:
     )
 
 
+def _resolve_given_root(raw: str | os.PathLike[str], invalid_message: str) -> Path:
+    """Resolve and validate an explicitly named config root.
+
+    ``invalid_message`` names whichever channel supplied ``raw``, so a bad value
+    reports the flag or variable the operator actually set. Only successes are
+    memoized; a failure re-raises on every call with its own message.
+    """
+    key = str(raw)
+    cached = _root_cache.get(key) if Path(key).is_absolute() else None
+    if cached is not None:
+        return cached
+
+    resolved = Path(raw).resolve()
+    if not (resolved / "runtime.yaml").is_file():
+        raise ConfigError(str(resolved), None, invalid_message)
+
+    if Path(key).is_absolute():
+        _root_cache[key] = resolved
+    return resolved
+
+
 def config_root(cli_dir: str | os.PathLike[str] | None = None) -> Path:
     """Resolve the config root directory using CLI > env > repo-root precedence."""
     if cli_dir is not None:
-        resolved = Path(cli_dir).resolve()
-        if not (resolved / "runtime.yaml").is_file():
-            raise ConfigError(
-                str(resolved),
-                None,
-                "--config-dir does not contain runtime.yaml",
-            )
-        return resolved
+        return _resolve_given_root(cli_dir, "--config-dir does not contain runtime.yaml")
 
     env_dir = os.environ.get(_ENV_CONFIG_DIR)
     if env_dir is not None:
-        resolved = Path(env_dir).resolve()
-        if not (resolved / "runtime.yaml").is_file():
-            raise ConfigError(
-                str(resolved),
-                None,
-                f"{_ENV_CONFIG_DIR} does not contain runtime.yaml",
-            )
-        return resolved
+        return _resolve_given_root(
+            env_dir, f"{_ENV_CONFIG_DIR} does not contain runtime.yaml"
+        )
 
     return _find_config_root_by_walking_up()
 
@@ -293,9 +319,10 @@ def _validate(name: str, document: dict[str, Any], schema_path: Path) -> None:
 
 
 def reset_cache() -> None:
-    """Clear memoized configs and provenance. Intended for tests."""
+    """Clear memoized configs, provenance, and resolved roots. Intended for tests."""
     _config_cache.clear()
     _provenance_cache.clear()
+    _root_cache.clear()
 
 
 def load_config(name: str, *, config_dir: str | os.PathLike[str] | None = None) -> Any:

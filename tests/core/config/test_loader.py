@@ -16,8 +16,9 @@ from common.config import loader as config_loader
 
 
 def _config_dir(tmp_path):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     (tmp_path / "runtime.yaml").write_text("schema_version: 1\n", encoding="utf-8")
-    (tmp_path / "schema").mkdir()
+    (tmp_path / "schema").mkdir(exist_ok=True)
     return tmp_path
 
 
@@ -226,6 +227,47 @@ def test_export_config_root_publishes_the_root_a_child_would_resolve(config_dir,
 
     assert returned == config_dir
     assert config_loader.config_root() == config_dir
+
+
+def test_a_changed_env_root_is_honoured_without_clearing_the_cache(tmp_path, monkeypatch):
+    """Root resolution is memoized, and the memo must be keyed by its input.
+
+    Resolving costs a `resolve()` plus a stat, which every accessor pays on
+    every read, so the result is cached. Caching it under no key -- an
+    `lru_cache` over `config_root()`, whose only argument is `None` on the env
+    path -- would pin whichever root resolved first for the life of the process
+    and put a later `EDGEWARN_CONFIG_DIR` out of reach. That is the same freeze
+    the per-call accessor convention exists to avoid, one layer lower down.
+    """
+    first = _config_dir(tmp_path / "first")
+    second = _config_dir(tmp_path / "second")
+
+    monkeypatch.setenv("EDGEWARN_CONFIG_DIR", str(first))
+    assert config_loader.config_root() == first
+
+    monkeypatch.setenv("EDGEWARN_CONFIG_DIR", str(second))
+    assert config_loader.config_root() == second, "the memo outranked the environment"
+
+    monkeypatch.delenv("EDGEWARN_CONFIG_DIR")
+    assert config_loader.config_root() not in (first, second)
+
+
+def test_a_relative_root_is_resolved_against_the_current_directory_each_time(tmp_path, monkeypatch):
+    """A relative root is not a function of its key alone, so it must not be memoized.
+
+    `Path("config").resolve()` answers differently from a different working
+    directory. Memoizing it by name would hand back the previous directory's
+    config after a chdir -- silently, since both paths exist.
+    """
+    _config_dir(tmp_path / "one" / "config")
+    _config_dir(tmp_path / "two" / "config")
+    monkeypatch.delenv("EDGEWARN_CONFIG_DIR", raising=False)
+
+    monkeypatch.chdir(tmp_path / "one")
+    assert config_loader.config_root("config") == (tmp_path / "one" / "config").resolve()
+
+    monkeypatch.chdir(tmp_path / "two")
+    assert config_loader.config_root("config") == (tmp_path / "two" / "config").resolve()
 
 
 def test_export_config_root_rejects_a_directory_without_runtime_yaml(tmp_path, monkeypatch):
