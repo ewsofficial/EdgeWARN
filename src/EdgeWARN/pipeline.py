@@ -13,6 +13,7 @@ from common.ingest.manifest import CycleInputManifest
 from common.ingest.mrms.config import get_goes_modifiers, get_mrms_modifiers
 from common.ingest.mrms.pipeline import get_output_dirs
 from common.pipeline.coordinator import run_tandem_ingest_cycle
+from EdgeWARN.api_integration.config import remove_old_cells_historical
 from EdgeWARN.api_integration.index_manager import APIIndexManager
 from EdgeWARN.historical_config import historical_cleanup_max_files
 from util.io import IOManager, QueueWriter
@@ -178,7 +179,7 @@ def run_edgewarn_detection_phase(
 def run_edgewarn_integration_phase(
     log,
     generated_file,
-    remove_old_cells=True,
+    remove_old_cells=None,
     disable_ctam=False,
     mrms_core_only=False,
     input_manifest: CycleInputManifest | None = None,
@@ -441,7 +442,7 @@ def historical_pipeline(
             integrated = run_edgewarn_integration_phase(
                 pipeline_io.write_info,
                 generated_file,
-                remove_old_cells=False,
+                remove_old_cells=remove_old_cells_historical(),
                 disable_ctam=disable_ctam,
                 input_manifest=input_manifest,
             )

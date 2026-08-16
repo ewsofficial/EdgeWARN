@@ -4,20 +4,28 @@ from datetime import datetime, timezone, timedelta
 from util.io import IOManager
 import util.file as fs
 from util.atomic import atomic_write_json
+from EdgeWARN.api_integration.config import (
+    inactive_cell_max_age_minutes,
+    remove_old_cells_realtime,
+    stormcell_resync_every_updates,
+)
 
 
 class APIIndexManager:
     """Manages index files for the API to track available resources."""
-    
-    def __init__(self, io_manager: IOManager, remove_old_cells=True):
+
+    def __init__(self, io_manager: IOManager, remove_old_cells=None):
         self.io_manager = io_manager
         self.stormcell_index_path = fs.STORMCELL_DIR / "stormcell_index.json"
         self.cell_index_path = fs.CELL_DIR / "cell_index.json"
-        self.remove_old_cells = remove_old_cells
+        # The realtime value is the default; historical callers pass their own.
+        self.remove_old_cells = (
+            remove_old_cells_realtime() if remove_old_cells is None else remove_old_cells
+        )
         self.cell_timestamps = {}
         self.stormcell_timestamps = set()
         self.stormcell_updates_since_resync = 0
-        self.stormcell_resync_interval = 500
+        self.stormcell_resync_interval = stormcell_resync_every_updates()
         self._initial_scan_done = False
         self._stormcell_initial_scan_done = False
         
@@ -161,15 +169,15 @@ class APIIndexManager:
     
     def cleanup_inactive_cells(self):
         """
-        Remove files older than 2 hours using our tracked state, then update index.
+        Expire cells past their age budget using our tracked state, then update index.
         Doesn't glob the directory.
         """
         if not self._initial_scan_done:
             self._initial_scan_cell_index()
-            
+
         if self.remove_old_cells:
             current_time = datetime.now(timezone.utc).timestamp()
-            cutoff_time = current_time - (120 * 60) # 120 minutes ago
+            cutoff_time = current_time - (inactive_cell_max_age_minutes() * 60)
             
             expired_cells = []
             for cell_id, timestamp in self.cell_timestamps.items():

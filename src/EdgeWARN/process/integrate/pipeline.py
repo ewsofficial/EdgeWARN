@@ -427,7 +427,7 @@ def _update_api_indexes(cells, remove_old_cells):
 
 def main(
     json_path=None,
-    remove_old_cells=True,
+    remove_old_cells=None,
     disable_ctam=False,
     mrms_core_only=False,
     input_manifest: CycleInputManifest | None = None,
