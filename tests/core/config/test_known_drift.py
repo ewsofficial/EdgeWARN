@@ -1357,20 +1357,11 @@ def test_max_chunk_downloads_has_a_single_owner_in_nexrad_yaml():
 
 
 @pytest.mark.parametrize(
-    ("module_name", "extra_args"),
-    [
-        ("common.ingest.nexrad.main", {"max_volumes_per_site": None}),
-        (
-            "common.ingest.nexrad.pipeline",
-            {
-                "scan_interval_seconds": None,
-                "completion_interval_seconds": None,
-            },
-        ),
-    ],
+    "module_name",
+    ["common.ingest.nexrad.main", "common.ingest.nexrad.pipeline"],
 )
 def test_nexrad_entry_points_export_the_config_root_for_parse_workers(
-    module_name, extra_args, tmp_path, monkeypatch
+    module_name, tmp_path, monkeypatch
 ):
     """RESOLVED (Phase 5): `--config-dir` never reached the parse workers.
 
@@ -1383,8 +1374,12 @@ def test_nexrad_entry_points_export_the_config_root_for_parse_workers(
 
     Asserted behaviourally rather than by grepping for the call, so that moving
     or renaming it cannot pass while the export silently stops happening.
+
+    The Namespace comes from the module's own parser rather than being assembled
+    by hand: every flag the entry point defines is then present with its real
+    default, so adding one cannot break this test with an AttributeError that
+    says nothing about the export.
     """
-    import argparse
     import importlib
     import shutil
 
@@ -1393,9 +1388,7 @@ def test_nexrad_entry_points_export_the_config_root_for_parse_workers(
 
     monkeypatch.delenv("EDGEWARN_CONFIG_DIR", raising=False)
     module = importlib.import_module(module_name)
-    args = argparse.Namespace(
-        config_dir=str(config_dir), max_candidate_volumes_per_site=None, **extra_args
-    )
+    args = module._build_parser().parse_args(["--config-dir", str(config_dir)])
 
     module._resolve_cli_args(args)
 

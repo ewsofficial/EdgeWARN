@@ -150,7 +150,9 @@ validation:
 
   # ancillary.js:6 RADAR_PRODUCTS. An allowlist -- a product absent from this set
   # is rejected before any file lookup, so the recorded names matter, not just
-  # the count.
+  # the count. CCORH is present here but absent from ewmrs_render.yaml
+  # `nexrad_gui.variable_colormaps`, which colors only the other six, so the API
+  # accepts one product the renderer never draws.
   radar_products: [DBZH, VRADH, WRADH, PHIDP, CCORH, RHOHV, ZDR]
 
   # artifactRepository.js:15 SAFE_SEGMENT, applied to every path segment

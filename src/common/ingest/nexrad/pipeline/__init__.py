@@ -432,13 +432,22 @@ def _resolve_cli_args(args):
     # repo default.
     config_loader.export_config_root(args.config_dir)
 
+    document = config_loader.load_config("nexrad", config_dir=args.config_dir)
+
     # The `realtime` section, not `cli`: these are pipeline settings that this
     # entry point may override, and the constructor resolves the same three from
     # the same place when no argv supplies them.
-    realtime_cfg = config_loader.load_config("nexrad", config_dir=args.config_dir)["realtime"]
+    realtime_cfg = document["realtime"]
     args.scan_interval_seconds = overlay.resolve(args.scan_interval_seconds, yaml_value=realtime_cfg["scan_interval_seconds"])
     args.completion_interval_seconds = overlay.resolve(args.completion_interval_seconds, yaml_value=realtime_cfg["completion_interval_seconds"])
     args.max_candidate_volumes_per_site = overlay.resolve(args.max_candidate_volumes_per_site, yaml_value=realtime_cfg["max_candidate_volumes_per_site"])
+
+    # `--site` appends, so args.site is a list or None -- the same shape as the
+    # catalog key, which is why this entry point can overlay `cli.sites` and
+    # nexrad/main.py cannot.
+    cli_cfg = document["cli"]
+    args.site = overlay.resolve(args.site, yaml_value=cli_cfg["sites"])
+    args.base_dir = overlay.resolve(args.base_dir, yaml_value=cli_cfg["base_dir"])
     return args
 
 
