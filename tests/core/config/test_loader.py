@@ -7,6 +7,7 @@ so each keyword it implements gets its own regression test here.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 import yaml
@@ -208,6 +209,33 @@ def test_unsupported_schema_keyword_is_a_startup_error(config_dir):
 
     assert "unsupported schema keyword" in excinfo.value.message
     assert excinfo.value.filename.endswith("sample.schema.json")
+
+
+def test_export_config_root_publishes_the_root_a_child_would_resolve(config_dir, monkeypatch):
+    """`--config-dir` only reaches a child process through the environment.
+
+    A spawned child gets no argv and, for a NEXRAD parse worker, no config in its
+    submit payload, so it calls `config_root()` with no argument. Exporting is
+    what makes that no-argument call agree with the parent instead of walking up
+    to the repo default.
+    """
+    monkeypatch.delenv("EDGEWARN_CONFIG_DIR", raising=False)
+    assert config_loader.config_root() != config_dir, "fixture must differ from the repo default"
+
+    returned = config_loader.export_config_root(config_dir)
+
+    assert returned == config_dir
+    assert config_loader.config_root() == config_dir
+
+
+def test_export_config_root_rejects_a_directory_without_runtime_yaml(tmp_path, monkeypatch):
+    """Publishing an invalid root would hand every child a broken override."""
+    monkeypatch.delenv("EDGEWARN_CONFIG_DIR", raising=False)
+
+    with pytest.raises(config_loader.ConfigError):
+        config_loader.export_config_root(tmp_path)
+
+    assert "EDGEWARN_CONFIG_DIR" not in os.environ
 
 
 def test_loaded_config_is_recursively_frozen(config_dir):

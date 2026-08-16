@@ -424,6 +424,14 @@ def _build_parser():
 
 
 def _resolve_cli_args(args):
+    # Exported before anything else here: this pipeline creates parse workers
+    # through a ProcessPoolExecutor, and those children receive no config in
+    # their submit payload, so the environment variable is the only way
+    # --config-dir reaches them. Passing config_dir= to load_config below would
+    # otherwise leave the parent reading the override while its workers read the
+    # repo default.
+    config_loader.export_config_root(args.config_dir)
+
     # The `realtime` section, not `cli`: these are pipeline settings that this
     # entry point may override, and the constructor resolves the same three from
     # the same place when no argv supplies them.

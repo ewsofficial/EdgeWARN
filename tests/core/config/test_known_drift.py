@@ -12,6 +12,7 @@ Every test below names the decision the migration still owes.
 from __future__ import annotations
 
 import json
+import os
 import re
 import ssl
 from datetime import datetime, timezone
@@ -1353,6 +1354,57 @@ def test_max_chunk_downloads_has_a_single_owner_in_nexrad_yaml():
     ):
         source = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
         assert "max_chunk_downloads=64" not in source, relative_path
+
+
+@pytest.mark.parametrize(
+    ("module_name", "extra_args"),
+    [
+        ("common.ingest.nexrad.main", {"max_volumes_per_site": None}),
+        (
+            "common.ingest.nexrad.pipeline",
+            {
+                "scan_interval_seconds": None,
+                "completion_interval_seconds": None,
+            },
+        ),
+    ],
+)
+def test_nexrad_entry_points_export_the_config_root_for_parse_workers(
+    module_name, extra_args, tmp_path, monkeypatch
+):
+    """RESOLVED (Phase 5): `--config-dir` never reached the parse workers.
+
+    Both NEXRAD entry points honoured the flag by passing `config_dir=` to
+    `load_config`, which configures the *parent* only. Parse workers are
+    ProcessPoolExecutor children that receive no config in their submit payload
+    (see `worker_pool._worker_parse`), so their sole channel is the inherited
+    environment. Before this fix the parent read the override while its workers
+    walked up to the repo default -- a split-brain config, not an error.
+
+    Asserted behaviourally rather than by grepping for the call, so that moving
+    or renaming it cannot pass while the export silently stops happening.
+    """
+    import argparse
+    import importlib
+    import shutil
+
+    shutil.copytree(REPO_ROOT / "config", tmp_path / "config")
+    config_dir = tmp_path / "config"
+
+    monkeypatch.delenv("EDGEWARN_CONFIG_DIR", raising=False)
+    module = importlib.import_module(module_name)
+    args = argparse.Namespace(
+        config_dir=str(config_dir), max_candidate_volumes_per_site=None, **extra_args
+    )
+
+    module._resolve_cli_args(args)
+
+    from common.config import loader
+
+    assert os.environ.get("EDGEWARN_CONFIG_DIR") == str(config_dir)
+    # The no-argument path is the one a spawned worker takes.
+    assert loader.config_root() == config_dir
+    loader.reset_cache()
 
 
 # --- EWMRS pipeline: three owners of 120, and one parameter nobody reads ---

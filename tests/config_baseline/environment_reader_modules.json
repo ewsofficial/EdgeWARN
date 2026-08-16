@@ -6,7 +6,6 @@
     "common/config/loader.py",
     "common/config/overlay.py",
     "common/ingest/synoptic/config.py",
-    "util/io.py",
     "util/performance.py"
   ],
   "shared_parser": [
