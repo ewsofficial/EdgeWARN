@@ -142,6 +142,10 @@ env_overrides:
   # io.py:87, --config-dir. The only row here with no counterpart key in this
   # document, and necessarily so: it selects the directory these YAML files are
   # read FROM, so it can never be set from inside one.
+  #
+  # Also the only row io.py *writes*: both arg parsers export the resolved root
+  # back into the environment, because accessory processes are spawned without
+  # argv and would otherwise re-resolve to the repo-default config/.
   config_dir: ['EDGEWARN_CONFIG_DIR']
   goes_coordination.pause_ingest_during_render: EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER
   cycle.retry.max_attempts: EDGEWARN_CYCLE_MAX_ATTEMPTS

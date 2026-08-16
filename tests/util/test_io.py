@@ -3,10 +3,13 @@ Tests for IO utility module
 """
 
 import pytest
+import shutil
 import sys
+import yaml
 from io import StringIO
 from datetime import datetime, timezone
 from unittest.mock import patch
+from common.config import loader as config_loader
 from util.io import TimestampedOutput, QueueWriter, IOManager
 
 
@@ -266,3 +269,52 @@ class TestIOManager:
             assert args.refl_threshold == 40.0
             assert args.min_seed_percentage == 0.01
             assert args.drop_offset == 12.0
+
+
+@pytest.fixture
+def alternate_config_dir(tmp_path):
+    """A full copy of ``config/`` with distinguishable values, outside the repo."""
+    destination = tmp_path / "alt_config"
+    shutil.copytree(config_loader.config_root(), destination)
+
+    runtime_path = destination / "runtime.yaml"
+    document = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
+    document["run"]["lat_limits"] = [21, 54]
+    runtime_path.write_text(yaml.safe_dump(document), encoding="utf-8")
+    return destination
+
+
+class TestConfigDirPropagation:
+    """``--config-dir`` must reach children that are spawned without argv."""
+
+    def test_get_args_exports_resolved_config_root(self, alternate_config_dir):
+        io = IOManager("[Test]")
+
+        with patch.object(sys, 'argv', ['script', '--config-dir', str(alternate_config_dir)]):
+            args = io.get_args()
+
+        assert args.lat_limits == [21, 54]
+        # A child resolving with no CLI argument now lands on the same root.
+        assert config_loader.config_root() == alternate_config_dir
+
+    def test_get_historical_args_exports_resolved_config_root(self, alternate_config_dir):
+        io = IOManager("[Test]")
+
+        with patch.object(sys, 'argv', [
+            'script',
+            '--start', '2024-01-01T00:00:00',
+            '--end', '2024-01-01T01:00:00',
+            '--config-dir', str(alternate_config_dir),
+        ]):
+            io.get_historical_args()
+
+        assert config_loader.config_root() == alternate_config_dir
+
+    def test_config_dir_without_runtime_yaml_fails_at_parse_time(self, tmp_path):
+        io = IOManager("[Test]")
+        empty = tmp_path / "empty"
+        empty.mkdir()
+
+        with patch.object(sys, 'argv', ['script', '--config-dir', str(empty)]):
+            with pytest.raises(config_loader.ConfigError):
+                io.get_args()
