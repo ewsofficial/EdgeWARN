@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 import argparse
-import os
 import sys
 import time
 
@@ -96,13 +95,8 @@ class IOManager:
 
     @staticmethod
     def _export_config_dir(args):
-        """Publish the resolved config root so spawned children inherit it.
-
-        Accessory processes are spawned without argv, so they re-resolve the
-        config root themselves; without this they would read the repo-default
-        ``config/`` while the parent used ``--config-dir``.
-        """
-        os.environ["EDGEWARN_CONFIG_DIR"] = str(config_loader.config_root(args.config_dir))
+        """Publish the resolved config root so spawned children inherit it."""
+        config_loader.export_config_root(args.config_dir)
 
     @staticmethod
     def _resolve_common_processing_args(args):

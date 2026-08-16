@@ -116,6 +116,22 @@ def config_root(cli_dir: str | os.PathLike[str] | None = None) -> Path:
     return _find_config_root_by_walking_up()
 
 
+def export_config_root(cli_dir: str | os.PathLike[str] | None = None) -> Path:
+    """Resolve the config root and publish it so child processes inherit it.
+
+    Any entry point that accepts ``--config-dir`` and later spawns a process must
+    call this. A child re-resolves the root on its own -- an accessory process is
+    spawned with no argv, and a NEXRAD parse worker is a ProcessPoolExecutor
+    child that receives no config in its payload -- so the environment variable
+    is the only channel that reaches it. Without the export the parent honours
+    ``--config-dir`` while its children silently walk up to the repo default,
+    which is a split-brain configuration rather than a visible error.
+    """
+    resolved = config_root(cli_dir)
+    os.environ[_ENV_CONFIG_DIR] = str(resolved)
+    return resolved
+
+
 def repo_root(cli_dir: str | os.PathLike[str] | None = None) -> Path:
     """The repository root, derived as the parent of the config root."""
     return config_root(cli_dir).parent

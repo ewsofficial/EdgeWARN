@@ -185,6 +185,11 @@ def _build_parser():
 
 
 def _resolve_cli_args(args):
+    # Exported first: volume ingest spawns parse workers that receive no config
+    # in their payload, so this variable is the only channel by which
+    # --config-dir reaches them. See loader.export_config_root.
+    config_loader.export_config_root(args.config_dir)
+
     document = config_loader.load_config("nexrad", config_dir=args.config_dir)
     # Two sections, deliberately: max_volumes_per_site exists only for this
     # one-shot entry point, while max_candidate_volumes_per_site is shared with
