@@ -2276,3 +2276,101 @@ def test_tornado_upgrade_phrases_cannot_be_written_lowercase():
         assert "description_contains" in str(excinfo.value)
     finally:
         loader.reset_cache()
+
+
+def test_geometry_precision_has_no_literal_owner_in_any_signature():
+    """One rounding precision, previously restated as four keyword defaults.
+
+    `round_coords`, `_normalize_ring`, `_geometry_to_polygon_rings`, and
+    `round_geojson_coords` each declared `precision: int = 4` and no caller
+    overrode any of them, so the four agreed only by coincidence and changing
+    the rounding meant finding all four. They keep the parameter -- a caller
+    holding the value passes it down instead of re-resolving per ring -- but the
+    default must be None so the catalog is the only owner.
+    """
+    for function in (
+        "round_coords",
+        "_normalize_ring",
+        "_geometry_to_polygon_rings",
+        "round_geojson_coords",
+    ):
+        assert param_default("common/ingest/nws/geomapper.py", function, "precision") is None, (
+            f"{function} restates the precision as a literal default"
+        )
+
+    assert param_default("common/ingest/nws/geomapper.py", "extract_exterior_polygon", "tolerance") is None
+    assert param_default("common/ingest/nws/geomapper.py", "extract_exterior_polygon", "precision") is None
+
+    from common.ingest.nws import geomapper
+
+    assert not hasattr(geomapper, "JUNK_KEYS"), (
+        "the property blocklist is back at module scope, which freezes it at import"
+    )
+
+
+def test_config_dir_reaches_the_geomapper_geometry_values_after_import():
+    """Import first, export second -- the order `src/run.py` uses.
+
+    Asserts through `process_warning`, not just the accessors: the precision has
+    to survive the call chain down to the ring that lands on disk, which is the
+    thing the four duplicated defaults used to control.
+    """
+    import shutil
+    import tempfile
+
+    from common.config import loader
+    from common.ingest.nws import config as nws_config
+    from common.ingest.nws import geomapper
+
+    config_dir = Path(tempfile.mkdtemp(prefix="cfgdir-geomapper-"))
+    shutil.copytree(REPO_ROOT / "config", config_dir, dirs_exist_ok=True)
+    catalog = config_dir / "nws.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8")
+            .replace("  geometry_precision: 4", "  geometry_precision: 1")
+            .replace("  simplify_tolerance: 0.01", "  simplify_tolerance: 0.5")
+            .replace("    - eventCode", "    - overriddenKey"),
+        encoding="utf-8",
+    )
+
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    try:
+        loader.export_config_root(config_dir)
+        loader.reset_cache()
+
+        assert nws_config.geometry_precision() == 1
+        assert nws_config.simplify_tolerance() == 0.5
+        assert "overriddenKey" in nws_config.junk_keys()
+
+        assert geomapper.round_coords([[1.23456, 2.34567]]) == [[1.2, 2.3]]
+
+        # The tolerance reaches the simplifier, not just the accessor: this notch
+        # survives the catalog's 0.01 and is flattened away by the 0.5 above.
+        notched = [[0, 0], [1, 0], [1, 1], [0.5, 0.9], [0, 1]]
+        simplified = geomapper.extract_exterior_polygon([notched], precision=4)
+        assert [0.5, 0.9] not in simplified[0], (
+            "the catalog tolerance did not reach the simplifier"
+        )
+
+        feature = {
+            "properties": {"event": "Test", "eventCode": "kept", "overriddenKey": "gone"},
+            "geometry": {"type": "Polygon", "coordinates": [[[1.23456, 2.34567]] * 4]},
+        }
+        processed = geomapper.process_warning(feature)
+
+        assert processed["geometry"]["coordinates"][0][0] == [1.2, 2.3], (
+            "the catalog precision did not reach the geometry written to disk"
+        )
+        assert "overriddenKey" not in processed["properties"]
+        assert processed["properties"]["eventCode"] == "kept", (
+            "the source blocklist outranked the catalog"
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+        loader.reset_cache()
+
+    assert nws_config.geometry_precision() == 4
+    assert "eventCode" in nws_config.junk_keys()

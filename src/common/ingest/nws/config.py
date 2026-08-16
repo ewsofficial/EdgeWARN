@@ -45,3 +45,22 @@ def tornado_upgrade_rules() -> tuple[tuple[str, str], ...]:
         (rule["description_contains"], rule["name"])
         for rule in _section("nws")["tornado_upgrade"]["rules"]
     )
+
+
+def geometry_precision() -> int:
+    """Decimal places kept when an alert polygon is rounded.
+
+    Distinct from ``zone_sync.geometry_precision``, which is a floor that
+    escalates rather than a fixed precision -- see the catalog comments.
+    """
+    return _section("geomapper")["geometry_precision"]
+
+
+def junk_keys() -> tuple[str, ...]:
+    """Alert properties stripped before the alert reaches disk."""
+    return _section("geomapper")["junk_keys"]
+
+
+def simplify_tolerance() -> float:
+    """Douglas-Peucker tolerance applied to a zone union, in degrees."""
+    return _section("geomapper")["simplify_tolerance"]

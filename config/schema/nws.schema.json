@@ -40,9 +40,10 @@
     "geomapper": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["geometry_precision", "junk_keys"],
+      "required": ["geometry_precision", "simplify_tolerance", "junk_keys"],
       "properties": {
         "geometry_precision": { "type": "integer", "minimum": 0 },
+        "simplify_tolerance": { "type": "number", "minimum": 0, "exclusiveMaximum": 1 },
         "junk_keys": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } }
       }
     },
