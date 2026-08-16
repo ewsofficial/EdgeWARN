@@ -23,7 +23,7 @@ import time
 
 import psutil
 
-from common.ingest.nexrad.config import ALLOWED_VCPS
+from common.ingest.nexrad.config import allowed_vcps
 from common.ingest.nexrad.s3_async import async_list_recent_volume_ids, async_list_volume_chunks, get_unsigned_s3_client_async
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 
@@ -60,7 +60,7 @@ def _is_complete_volume(chunks) -> bool:
 async def _discover_candidate(site: str, station, *, s3_client):
     if not str(site).upper().startswith("K"):
         return None
-    if station.vcp not in ALLOWED_VCPS:
+    if station.vcp not in allowed_vcps():
         return None
 
     volume_ids = await async_list_recent_volume_ids(
@@ -87,7 +87,7 @@ async def select_live_volumes(required_count: int) -> list[dict]:
         (
             (site, station)
             for site, station in stations.items()
-            if station is not None and station.vcp in ALLOWED_VCPS and str(site).upper().startswith("K")
+            if station is not None and station.vcp in allowed_vcps() and str(site).upper().startswith("K")
         ),
         key=lambda item: item[0],
     )[:SITE_CANDIDATE_LIMIT]

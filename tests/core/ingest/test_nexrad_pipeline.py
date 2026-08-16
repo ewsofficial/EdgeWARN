@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 import util.file as fs
-from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
+from common.ingest.nexrad.grouping import ingest_readiness_elevation_ids
 from common.ingest.nexrad.models import ChunkKey, NexradCompletionRecord, NexradIngestResult, RadarStationVcp
 from common.ingest.nexrad.pipeline import NexradRealtimeIngestionPipeline
 from common.ingest.nexrad.pipeline.models import PendingVolume
@@ -526,7 +526,7 @@ async def _track_call(calls):
 async def test_pipeline_removes_local_complete_pending_via_elevation_artifacts(tmp_path):
     fs.initialize_filesystem(tmp_path)
     chunks = _chunks()
-    for index, elev in enumerate(INGEST_READINESS_ELEVATION_IDS):
+    for index, elev in enumerate(ingest_readiness_elevation_ids()):
         timestamp = f"20260507-1500{index:02d}"
         nc_path = elevation_netcdf_path("KTLH", elev, timestamp)
         nc_path.parent.mkdir(parents=True, exist_ok=True)

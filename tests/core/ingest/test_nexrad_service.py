@@ -11,7 +11,7 @@ import pytest
 import util.file as fs
 import common.ingest.nexrad.service as nexrad_service_module
 from common.ingest.nexrad import parser as nexrad_parser
-from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
+from common.ingest.nexrad.grouping import ingest_readiness_elevation_ids
 from common.ingest.nexrad.models import ChunkKey
 from common.ingest.nexrad.service import NexradIngestService
 from common.ingest.nexrad.writer import (
@@ -277,7 +277,7 @@ async def test_stream_ingest_async_prunes_previous_runtime_volume_when_new_one_s
 
 
 def _write_completion_sidecars(site, volume_id, scan_timestamp):
-    for index, elev in enumerate(INGEST_READINESS_ELEVATION_IDS):
+    for index, elev in enumerate(ingest_readiness_elevation_ids()):
         elevation_timestamp = f"{scan_timestamp[:-2]}{index:02d}"
         nc_path = elevation_netcdf_path(site, elev, elevation_timestamp)
         nc_path.parent.mkdir(parents=True, exist_ok=True)

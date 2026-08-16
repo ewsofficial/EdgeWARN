@@ -5,14 +5,10 @@
 # EDGEWARN_CONFIG_DIR, so a module-level read there would freeze the repo default
 # even in the parent process and --config-dir could never reach NEXRAD.
 #
-# Not yet collapsed onto this file -- each still owns its value in code:
-#   selection.min_sweep_angle_deg          parser.py:33
-#   selection.canonical_elevation_bins     grouping.py:6
-#   selection.min_required_volume_chunks   s3_chunks.py:21
-#   selection.waveforms.*                  grouping.py:9-12
-#   selection.high_max_angle_deg           grouping.py:5 (as MAX_ELEVATION_DEG)
-#   retention.*                            writer.py:15-18
-#   vcp_sweep_elevation_labels             src/EWMRS/render/nexrad.py:16-50
+# Every key below is now read from here and nowhere else. The constants that
+# used to shadow them -- in parser.py, grouping.py, s3_chunks.py, writer.py and
+# src/EWMRS/render/nexrad.py -- are deleted rather than left as aliases, since an
+# alias is a second owner that happens to agree today.
 #
 # The API's radar-moment allowlist used to be duplicated here as well. Its only
 # consumer is src/api/services/ancillary.js, so api.yaml owns it alone; two
@@ -49,18 +45,22 @@ selection:
   angle_dedup_tolerance_deg: 0.1
   high_max_angle_deg: 4.0
   min_sweep_angle_deg: 0.4
-  # Readiness bin identities, and they agree with grouping.py exactly. They do
-  # NOT agree with vcp_sweep_elevation_labels below, which labels the third sweep
-  # 1.2 for VCP-12 and VCP-215 -- but that is two independent naming schemes, not
-  # a transcription error in either. Nothing is mis-binned: grouping.py assigns a
-  # sweep to its NEAREST bin with no tolerance, so a real VCP-12 sweep at
-  # 1.2305 degrees lands on 1.3 (distance 0.07) and 1.2 is never a bin at all.
-  # The 1.2 labels reach output only through serialize_nexrad_render_intermediate,
-  # which has no caller outside tests, so the divergence is inert today.
+  # Bin IDENTITIES, not range boundaries. grouping.py snaps a sweep to its
+  # NEAREST bin with no tolerance, so a real VCP-12 sweep at 1.2305 degrees
+  # lands on 1.3 (distance 0.07) and nothing is mis-binned.
+  #
+  # These do NOT agree with vcp_sweep_elevation_labels below, which labels the
+  # third sweep 1.2 for VCP-12 and VCP-215. That is two independent naming
+  # schemes rather than a transcription error in either, and the 1.2 labels reach
+  # output only through serialize_nexrad_render_intermediate, which has no caller
+  # outside tests -- so the divergence is inert today. Editing one does not
+  # implicitly correct the other.
   canonical_elevation_bins: [0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0]
   min_required_volume_chunks: 25
-  # grouping.py:9-12. A surveillance sweep is only complete once the matching
-  # doppler sweep arrives; the single-elevation waveforms stand alone.
+  # A surveillance sweep is only complete once the matching doppler sweep
+  # arrives; the single-elevation waveforms stand alone. A volume whose sweeps
+  # name none of these is grouped by raw elevation instead, so this set also
+  # selects between the two grouping strategies.
   waveforms:
     surveillance: contiguous_surveillance
     doppler: contiguous_doppler
@@ -112,14 +112,19 @@ cli:
   base_dir: null                        # --base-dir; null means util.file's default
   max_volumes_per_site: 1               # one-shot ingest only
 
+# Now that these are read from here, the schema floors are 1 and not 0. Zero is
+# not "retain nothing older": the keep-set is built by slicing the newest N, so
+# `scan_dirs_to_keep: 0` keeps nothing at all and prunes the scan being written.
+# A zero staleness window makes every manifest stale the moment it lands.
 retention:
   scan_dirs_to_keep: 3
-  elevation_dirs_to_keep: 2
+  elevation_dirs_to_keep: 2                # counted per file type, .nc and .ar2v
   stale_manifest_max_age_hours: 12
 
-# render/nexrad.py:16-50. Keys are sweep indices within the volume, values are
-# the elevation labels published to the GUI. VCP-215 deliberately skips indices
-# 6 and 7 (its supplemental SAILS sweeps are not rendered).
+# Keys are sweep indices within the volume, values are the elevation labels
+# published to the GUI. VCP-215 deliberately skips indices 6 and 7 -- its
+# supplemental SAILS sweeps are not rendered. An index absent from a VCP yields
+# no label rather than an error, so a gap is the way to omit a sweep.
 vcp_sweep_elevation_labels:
   VCP-12:  {0: '0.5', 1: '0.5', 2: '0.9', 3: '0.9', 4: '1.2', 5: '1.2', 6: '1.8', 7: '2.4', 8: '3.1'}
   VCP-212: {0: '0.5', 1: '0.5', 2: '0.9', 3: '0.9', 4: '1.3', 5: '1.3', 6: '1.8', 7: '2.4', 8: '3.1'}
