@@ -139,8 +139,14 @@ cycle:
     initial_backoff_seconds: 5.0
     max_backoff_seconds: 30.0
 
-  # cycle.py:478 -> coordinator.py:125. The S3 listing depth for MRMS detection
-  # and MRMS integration ingest, and for those two tasks only.
+  # Resolved inside run_tandem_ingest_cycle (coordinator.py) when the caller
+  # passes nothing, which is now every caller. The S3 listing depth for MRMS
+  # detection and MRMS integration ingest, and for those two tasks only.
+  #
+  # The parameter default was a literal 10 until this key became its owner. The
+  # realtime path passed the key explicitly and the historical path did not, so
+  # raising this value used to move realtime runs only -- a silent split that a
+  # single resolution site inside the coordinator now makes impossible.
   #
   # It does not reach GOES. The coordinator used to hand this same count to the
   # GOES task, which discarded it in favor of a fixed depth of 96, because GLM
