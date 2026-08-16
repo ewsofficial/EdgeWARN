@@ -5,10 +5,12 @@ import time
 import multiprocessing
 
 import util.file as fs
+from common.config import overlay
 from common.ingest.mrms.config import get_check_modifiers
 from EdgeWARN import initialize_runtime
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
+from util.runtime.config import resolve_file, section
 from util.runtime import (
     AccessorySupervisor,
     CycleRetryPolicy,
@@ -43,17 +45,17 @@ lon_limits = tuple(args.lon_limits)
 
 initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
 
-GOES_POLL_SECONDS = 60
-GOES_RENDER_WAIT_SECONDS = 30
-GOES_RENDER_WAIT_INTERVAL_SECONDS = 1.0
+GOES_COORDINATION = section("goes_coordination")
+GOES_POLL_SECONDS = GOES_COORDINATION["poll_seconds"]
+GOES_RENDER_WAIT_SECONDS = GOES_COORDINATION["render_wait_seconds"]
+GOES_RENDER_WAIT_INTERVAL_SECONDS = GOES_COORDINATION["render_wait_interval_seconds"]
 GOES_CYCLE_ACTIVE = multiprocessing.Event()
 GOES_RENDER_ACTIVE = multiprocessing.Event()
-GOES_PAUSE_INGEST_DURING_RENDER = os.environ.get("EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER", "0").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
+GOES_PAUSE_INGEST_DURING_RENDER = overlay.resolve(
+    None,
+    env_names=["EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER"],
+    yaml_value=GOES_COORDINATION["pause_ingest_during_render"],
+)
 MRMS_CORE_ONLY = args.mrms_core_only
 EWMRS_ENABLED = not args.disable_ewmrs and not MRMS_CORE_ONLY
 NWS_ENABLED = not args.disable_nws and not MRMS_CORE_ONLY
@@ -71,6 +73,7 @@ cycle_config = TandemCycleConfig(
     refl_threshold=args.refl_threshold,
     min_seed_percentage=args.min_seed_percentage,
     drop_offset=args.drop_offset,
+    config_dir=args.config_dir,
     ewmrs_enabled=EWMRS_ENABLED,
     goes_enabled=GOES_ENABLED,
     mrms_core_only=MRMS_CORE_ONLY,
@@ -112,7 +115,10 @@ def main():
     checker = MRMSUpdateChecker(verbose=True)
     stormcell_last_successful, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
-    cycle_state_store = CycleStateStore(fs.DATA_DIR / "runtime" / "cycle_state.json")
+    cycle_settings = section("cycle")
+    cycle_state_store = CycleStateStore(
+        resolve_file(cycle_settings["state_file"], "cycle.state_file")
+    )
     persisted_cycle_state = cycle_state_store.load()
     if stormcell_last_successful is not None:
         persisted_cycle_state = cycle_state_store.seed_last_successful(
@@ -127,16 +133,23 @@ def main():
         persisted_cycle_state.attempt_count if pending_timestamp is not None else 0
     )
     retry_not_before = 0.0
+    retry_settings = cycle_settings["retry"]
     retry_policy = CycleRetryPolicy(
-        max_attempts=max(1, int(os.environ.get("EDGEWARN_CYCLE_MAX_ATTEMPTS", "3"))),
-        initial_backoff_seconds=max(
-            0.0,
-            float(os.environ.get("EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS", "5")),
-        ),
-        max_backoff_seconds=max(
-            0.0,
-            float(os.environ.get("EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS", "30")),
-        ),
+        max_attempts=max(1, int(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_CYCLE_MAX_ATTEMPTS"],
+            yaml_value=retry_settings["max_attempts"],
+        ))),
+        initial_backoff_seconds=max(0.0, float(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS"],
+            yaml_value=retry_settings["initial_backoff_seconds"],
+        ))),
+        max_backoff_seconds=max(0.0, float(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS"],
+            yaml_value=retry_settings["max_backoff_seconds"],
+        ))),
     )
     print(
         "[Scheduler] Cycle progress: "
@@ -155,8 +168,18 @@ def main():
     goes_render_log_queue = multiprocessing.Queue()
     nexrad_log_queue = multiprocessing.Queue()
 
+    supervisor_settings = section("supervisor")
+    nexrad_heartbeat_path = str(resolve_file(
+        supervisor_settings["nexrad_heartbeat_file"], "supervisor.nexrad_heartbeat_file"
+    ))
     supervisor = AccessorySupervisor(
-        health_path=str(fs.DATA_DIR / "runtime" / "accessory_health.json"),
+        max_restarts=supervisor_settings["max_restarts"],
+        restart_window_seconds=supervisor_settings["restart_window_seconds"],
+        base_backoff_seconds=supervisor_settings["base_backoff_seconds"],
+        max_backoff_seconds=supervisor_settings["max_backoff_seconds"],
+        health_path=str(resolve_file(
+            supervisor_settings["health_file"], "supervisor.health_file"
+        )),
     )
     supervisor.add(
         "METAR", metar_loop,
@@ -196,9 +219,9 @@ def main():
     supervisor.add(
         "NEXRAD Ingest", nexrad_ingest_loop,
         enabled=bool(EWMRS_ENABLED and NEXRAD_ENABLED),
-        args=(nexrad_log_queue, args.base_dir, str(fs.DATA_DIR / "runtime" / "nexrad_ingest_heartbeat.json")),
+        args=(nexrad_log_queue, args.base_dir, nexrad_heartbeat_path),
         daemon=False,
-        heartbeat_path=str(fs.DATA_DIR / "runtime" / "nexrad_ingest_heartbeat.json"),
+        heartbeat_path=nexrad_heartbeat_path,
         heartbeat_stale_seconds=NEXRAD_HEARTBEAT_STALE_SECONDS,
         heartbeat_startup_grace_seconds=NEXRAD_HEARTBEAT_STARTUP_GRACE_SECONDS,
     )
@@ -329,9 +352,9 @@ def main():
                          f"selection cursor {selection_cursor}. Waiting..."
                      )
 
-            # Wait/Check loop (15 seconds) — also monitor accessory processes
-            for _ in range(30):
-                time.sleep(0.5)
+            # Wait/Check loop — also monitor accessory processes
+            for _ in range(supervisor_settings["check_ticks"]):
+                time.sleep(supervisor_settings["tick_seconds"])
                 supervisor.check()
 
     except KeyboardInterrupt:

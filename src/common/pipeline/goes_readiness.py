@@ -6,12 +6,17 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from common.config.loader import load_config
+
 _GOES_SCAN_WINDOW_PATTERN = re.compile(
     r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)"
     r"_e(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)"
 )
 _GOES_SCAN_START_PATTERN = re.compile(r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)")
-_GOES_RENDER_MAX_OFFSET_MINUTES = 20.0
+
+
+def _render_max_offset_minutes():
+    return load_config("runtime")["goes_coordination"]["render_max_offset_minutes"]
 
 
 def get_ewmrs_goes_render_specs():
@@ -116,8 +121,10 @@ def _window_distance_seconds(target_dt, start_dt, end_dt):
     return (target_dt - end_dt).total_seconds()
 
 
-def latest_goes_file_near_target(directory, target_dt, *, max_offset_minutes=_GOES_RENDER_MAX_OFFSET_MINUTES):
+def latest_goes_file_near_target(directory, target_dt, *, max_offset_minutes=None):
     """Return the staged GOES file nearest ``target_dt`` within the allowed offset."""
+    if max_offset_minutes is None:
+        max_offset_minutes = _render_max_offset_minutes()
     directory = Path(directory)
     try:
         candidates = [

@@ -17,6 +17,7 @@ from common.ingest.wpc.main import run_wpc_ingest
 from EWMRS.pipeline import ewmrs_goes_worker, run_nexrad_render_loop as _run_nexrad_render_loop
 from util.io import QueueWriter
 
+from .config import section
 from .logging import queue_log
 from .timing import sleep_for, sleep_until_boundary
 
@@ -71,12 +72,20 @@ def _configure_process_runtime(name: str) -> None:
     _install_exit_signal_handlers()
 
 
-def goes_loop(activity_event, render_active_event, pause_during_render=False, poll_seconds=60):
+def goes_loop(activity_event, render_active_event, pause_during_render=None, poll_seconds=None):
     try:
+        coordination = section("goes_coordination")
+        if pause_during_render is None:
+            pause_during_render = coordination["pause_ingest_during_render"]
+        if poll_seconds is None:
+            poll_seconds = coordination["poll_seconds"]
         abi_specs = get_abi_radc_channel_specs()
         while True:
             while pause_during_render and render_active_event.is_set():
-                sleep_for(1, interval=0.2)
+                sleep_for(
+                    coordination["render_pause_poll_seconds"],
+                    interval=coordination["render_pause_poll_interval_seconds"],
+                )
 
             target_dt = datetime.now(timezone.utc).replace(second=0, microsecond=0)
             try:
@@ -91,7 +100,7 @@ def goes_loop(activity_event, render_active_event, pause_during_render=False, po
             finally:
                 activity_event.clear()
 
-            sleep_for(poll_seconds, interval=1.0)
+            sleep_for(poll_seconds, interval=coordination["poll_interval_seconds"])
     except KeyboardInterrupt:
         return
 
@@ -192,6 +201,8 @@ def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
     latest_output = None
+    intervals = section("background_intervals")
+    restart_seconds = intervals["nexrad_seconds"]
 
     def _heartbeat(payload):
         nonlocal latest_output
@@ -210,7 +221,10 @@ def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
                 run_realtime_ingestion_pipeline(base_dir=base_dir, heartbeat_callback=_heartbeat)
                 if _SHUTDOWN_REQUESTED:
                     return
-                queue_log(log_queue, "WARNING: NEXRAD ingest pipeline exited; restarting in 5s")
+                queue_log(
+                    log_queue,
+                    f"WARNING: NEXRAD ingest pipeline exited; restarting in {restart_seconds}s",
+                )
             except (KeyboardInterrupt, SystemExit):
                 return
             except Exception as exc:
@@ -220,7 +234,10 @@ def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
 
             if _SHUTDOWN_REQUESTED:
                 return
-            sleep_for(5, interval=0.2)
+            sleep_for(
+                restart_seconds,
+                interval=intervals["nexrad_interval_seconds"],
+            )
     finally:
         shutdown_nexrad_pool(wait=False)
 
@@ -235,8 +252,9 @@ def nexrad_render_loop(base_dir):
 
 def metar_loop():
     try:
+        boundary_minutes = section("background_intervals")["metar_boundary_minutes"]
         while True:
-            sleep_until_boundary(5)
+            sleep_until_boundary(boundary_minutes)
 
             try:
                 asyncio.run(metar_ingest.ingest_metars_async())
@@ -248,21 +266,23 @@ def metar_loop():
 
 def nws_loop():
     try:
+        intervals = section("background_intervals")
         while True:
             try:
                 asyncio.run(nws_ingest.download_alerts_async(datetime.now(timezone.utc)))
             except Exception as exc:
                 print(f"[NWS Loop] Error: {exc}")
 
-            sleep_for(120, interval=1.0)
+            sleep_for(intervals["nws_seconds"], interval=intervals["nws_interval_seconds"])
     except KeyboardInterrupt:
         return
 
 
 def wpc_loop():
     try:
+        boundary_minutes = section("background_intervals")["wpc_boundary_minutes"]
         while True:
-            sleep_until_boundary(15)
+            sleep_until_boundary(boundary_minutes)
 
             try:
                 run_wpc_ingest()

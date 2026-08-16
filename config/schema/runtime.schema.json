@@ -27,7 +27,7 @@
     "goes_coordination": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["poll_seconds", "render_wait_seconds", "render_wait_interval_seconds", "render_max_offset_minutes", "pause_ingest_during_render", "render_pause_poll_seconds", "render_pause_poll_interval_seconds", "poll_interval_seconds", "render_task_max_entries"],
+      "required": ["poll_seconds", "render_wait_seconds", "render_wait_interval_seconds", "render_max_offset_minutes", "pause_ingest_during_render", "render_pause_poll_seconds", "render_pause_poll_interval_seconds", "poll_interval_seconds", "render_wait_interval_floor_seconds", "render_wait_poll_granularity_seconds", "render_task_max_entries"],
       "properties": {
         "poll_seconds": { "type": "number", "minimum": 0 },
         "render_wait_seconds": { "type": "number", "minimum": 0 },
@@ -37,13 +37,15 @@
         "render_pause_poll_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "render_pause_poll_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "poll_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "render_wait_interval_floor_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "render_wait_poll_granularity_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "render_task_max_entries": { "type": "integer", "minimum": 1 }
       }
     },
     "supervisor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["check_ticks", "tick_seconds", "max_restarts", "restart_window_seconds", "base_backoff_seconds", "max_backoff_seconds", "heartbeat_startup_grace_seconds", "stop_join_timeout_seconds", "stop_kill_join_timeout_seconds", "health_file", "nexrad_heartbeat_file"],
+      "required": ["check_ticks", "tick_seconds", "max_restarts", "restart_window_seconds", "base_backoff_seconds", "max_backoff_seconds", "stop_join_timeout_seconds", "stop_kill_join_timeout_seconds", "health_file", "nexrad_heartbeat_file"],
       "properties": {
         "check_ticks": { "type": "integer", "minimum": 1 },
         "tick_seconds": { "type": "number", "exclusiveMinimum": 0 },
@@ -51,7 +53,6 @@
         "restart_window_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "base_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "max_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 },
-        "heartbeat_startup_grace_seconds": { "type": "number", "minimum": 0 },
         "stop_join_timeout_seconds": { "type": "number", "minimum": 0 },
         "stop_kill_join_timeout_seconds": { "type": "number", "minimum": 0 },
         "health_file": {
@@ -90,7 +91,7 @@
     "cycle": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["state_file", "retry", "log_drain_poll_seconds"],
+      "required": ["state_file", "retry", "ingest_max_entries", "log_drain_poll_seconds"],
       "properties": {
         "state_file": {
           "type": "object",
@@ -111,6 +112,7 @@
             "max_backoff_seconds": { "type": "number", "minimum": 0 }
           }
         },
+        "ingest_max_entries": { "type": "integer", "minimum": 1 },
         "log_drain_poll_seconds": { "type": "number", "exclusiveMinimum": 0 }
       }
     },

@@ -11,17 +11,15 @@ import os
 from typing import Any, Iterable
 
 _TRUE_STRINGS = {"1", "true", "yes", "on"}
-_FALSE_STRINGS = {"0", "false", "no", "off"}
 
 
 def _coerce(raw: str, reference: Any) -> Any:
     if isinstance(reference, bool):
-        lowered = raw.strip().lower()
-        if lowered in _TRUE_STRINGS:
-            return True
-        if lowered in _FALSE_STRINGS:
-            return False
-        return raw
+        # An unrecognized value reads false rather than falling through as a
+        # (truthy) string. This is the pre-existing semantics of the boolean
+        # environment variables being routed through here: the opt-in set is
+        # tested after strip().lower(), so "2" and "enabled" mean off.
+        return raw.strip().lower() in _TRUE_STRINGS
     if isinstance(reference, int):
         return int(raw)
     if isinstance(reference, float):
