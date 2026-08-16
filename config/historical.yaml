@@ -16,6 +16,16 @@ schema_version: 1
 
 historical:
   lat: [20, 55]
+  # Signed -180..180 here, unlike runtime.yaml's lon_limits, which io.py:142
+  # rewrites to 0..360 on the realtime path. Nothing normalizes this key, so the
+  # two files really do carry different conventions for the same quantity.
+  #
+  # That split is safe rather than a bug to fix: handler.py:118-123 converts per
+  # dataset in whichever direction the file needs, so either convention reaches
+  # the same subset. Both schemas therefore state the same wide bound
+  # (-180..360) instead of one enforcing a convention the other ignores -- a
+  # narrow 180 cap here would have rejected an operator writing [230, 300],
+  # which handler.py handles correctly.
   lon: [-130, -60]
   output: stormcell_test.json
   # Cursor advance per replay iteration in process_historical.py, applied on every

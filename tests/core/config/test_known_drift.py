@@ -137,6 +137,58 @@ def test_every_kalman_yaml_section_is_consumed():
     assert sections <= subscripted
 
 
+def test_process_noise_declares_only_the_scalar_the_filter_reads():
+    """RESOLVED (Phase 5): `process_noise.position` and `.velocity` are gone.
+
+    Both were inert, and the catalog asserted the opposite -- it said all three
+    "enter np.diag directly, so each is a VARIANCE". They did enter an np.diag,
+    into `_Q` in `_initialize_noise_matrices`, but `_Q` was read by nothing.
+    `predict()` builds Q per step from dt via `_build_process_noise_matrix`, which
+    consumes `acceleration` alone. An operator retuning the filter would have
+    moved the two keys with no effect and believed the comment.
+
+    Deleted rather than wired: `_build_process_noise_matrix` implements the
+    piecewise-constant white-noise-jerk model, in which the position and velocity
+    blocks of Q are *derived* from this one scalar times a power of dt. Giving
+    them independent variances changes the filter's model, so it would retune
+    storm tracking rather than merely relocate a literal.
+
+    Asserted behaviourally: `predict()` must respond to `acceleration` and the
+    dead field must not come back.
+    """
+    import dataclasses
+
+    import numpy as np
+
+    from EdgeWARN.process.detect.kalman.config import KalmanConfig
+    from EdgeWARN.process.detect.kalman.filter import KalmanFilter
+
+    recorded = _kalman_yaml()["kalman_filter"]["process_noise"]
+    assert set(recorded) == {"acceleration"}
+
+    fields = {field.name for field in dataclasses.fields(KalmanConfig)}
+    assert "process_noise_position" not in fields
+    assert "process_noise_velocity" not in fields
+
+    # The precomputed constant Q is gone, not merely unread.
+    filter_source = (
+        REPO_ROOT / "src/EdgeWARN/process/detect/kalman/filter.py"
+    ).read_text(encoding="utf-8")
+    assert "self._Q" not in filter_source
+
+    # And the surviving scalar reaches the matrix predict() actually uses.
+    from EdgeWARN.process.detect.kalman.config import default_kalman_config
+
+    base = default_kalman_config()
+    loose = dataclasses.replace(base, process_noise_acceleration=10.0)
+    tight = dataclasses.replace(base, process_noise_acceleration=0.001)
+
+    def _q_trace(config):
+        return float(np.trace(KalmanFilter(config=config)._build_process_noise_matrix(60.0)))
+
+    assert _q_trace(loose) > _q_trace(tight)
+
+
 # --- Lineage overlap: three concepts, three owners, still shadowed ---------
 
 def test_each_lineage_overlap_concept_has_exactly_one_owner():
@@ -482,6 +534,56 @@ def test_historical_cleanup_caps_files_but_inherits_the_age_budget():
     pipeline_source = (REPO_ROOT / "src/EdgeWARN/pipeline.py").read_text(encoding="utf-8")
     assert "max_files=historical_cleanup_max_files()" in pipeline_source
     assert "max_age_minutes" not in pipeline_source
+
+
+def test_both_longitude_catalogs_state_the_same_wide_bound():
+    """RESOLVED: the two files disagree on convention, so neither schema picks one.
+
+    `runtime.yaml`'s lon_limits is rewritten to 0-360 by io.py:142; nothing
+    normalizes `historical.yaml`'s lon, so it stays signed. `handler.py:118-123`
+    converts per dataset in either direction, so both conventions reach the same
+    subset -- which is why the fix was to widen the schema rather than to force one
+    convention on the other file.
+
+    Pinned behaviourally: a 0-360 pair must validate in both files, and 400 must
+    still fail, so the bound cannot be "fixed" by narrowing it back to 180 or by
+    dropping it entirely.
+    """
+    import yaml
+
+    from common.config import loader
+
+    def _validates(name: str, document: dict) -> bool:
+        schema_path = REPO_ROOT / "config" / "schema" / f"{name}.schema.json"
+        try:
+            loader._validate(name, document, schema_path)
+        except loader.ConfigError:
+            return False
+        return True
+
+    def _document(name: str) -> dict:
+        return yaml.safe_load(
+            (REPO_ROOT / "config" / f"{name}.yaml").read_text(encoding="utf-8")
+        )
+
+    cases = (
+        ("historical", lambda doc, lon: doc["historical"].__setitem__("lon", lon)),
+        ("runtime", lambda doc, lon: doc["run"].__setitem__("lon_limits", lon)),
+    )
+    for name, set_lon in cases:
+        assert _validates(name, _document(name)), name
+
+        signed = _document(name)
+        set_lon(signed, [-130, -60])
+        assert _validates(name, signed), name
+
+        wrapped = _document(name)
+        set_lon(wrapped, [230, 300])
+        assert _validates(name, wrapped), name
+
+        beyond = _document(name)
+        set_lon(beyond, [230, 400])
+        assert not _validates(name, beyond), name
 
 
 def test_no_cleaner_in_util_file_restates_a_retention_number():
@@ -1327,6 +1429,43 @@ def test_nexrad_all_sites_sentinel_is_null_not_an_empty_list():
 
     recorded = yaml.safe_load((REPO_ROOT / "config/nexrad.yaml").read_text(encoding="utf-8"))
     assert recorded["cli"]["sites"] is None
+
+
+def test_nexrad_cli_declares_no_volume_count_it_cannot_use():
+    """RESOLVED (Phase 5): `cli.max_volumes_per_site` and its flag are gone.
+
+    Both were inert. `_resolve_cli_args` overlaid the flag onto the key and
+    `main()` never read the result: the `--volume-id` branch calls
+    `ingest_allowed_vcp_volume_async`, which takes one volume id and has no such
+    parameter, and the default branch calls
+    `NexradScanCoordinator.ingest_latest_station_scans_async`, which has none
+    either.
+
+    Deleted rather than threaded through, because the only functions honouring it
+    (`ingest_latest_allowed_vcp_scans` and its async twin) have no callers outside
+    the public re-export and tests. Wiring it would have made a dead path
+    configurable -- an operator would edit the key, observe nothing, and be right.
+    """
+    import yaml
+
+    recorded = yaml.safe_load((REPO_ROOT / "config/nexrad.yaml").read_text(encoding="utf-8"))
+    assert "max_volumes_per_site" not in recorded["cli"]
+
+    from common.ingest.nexrad.main import _build_parser
+
+    flags = {action.option_strings[0] for action in _build_parser()._actions if action.option_strings}
+    assert "--max-volumes-per-site" not in flags
+    # The sibling that is genuinely read stays, and still defaults to the catalog.
+    assert "--max-candidate-volumes-per-site" in flags
+
+    # The library defaults survive: with no key claiming them they are not copies.
+    for qualname in (
+        "ingest_latest_allowed_vcp_scans",
+        "ingest_latest_allowed_vcp_scans_async",
+    ):
+        assert param_default(
+            "common/ingest/nexrad/main.py", qualname, "max_volumes_per_site"
+        ) == 1
 
 
 # --- RAP colormap authority drift ----------------------------------------

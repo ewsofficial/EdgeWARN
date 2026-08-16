@@ -110,7 +110,22 @@ cli:
   # empty list is NOT the same thing -- it would filter every site away.
   sites: null
   base_dir: null                        # --base-dir; null means util.file's default
-  max_volumes_per_site: 1               # one-shot ingest only
+
+  # `max_volumes_per_site` was here, described as "one-shot ingest only". It was
+  # inert, and so was --max-volumes-per-site: main() resolved it onto args and
+  # then never read it. The one-shot branch calls ingest_allowed_vcp_volume_async,
+  # which takes a single volume id and has no such parameter, and the default
+  # branch calls NexradScanCoordinator.ingest_latest_station_scans_async, which
+  # has none either.
+  #
+  # The two functions that do honour it -- ingest_latest_allowed_vcp_scans and its
+  # async twin -- have no callers in the tree beyond the public re-export in
+  # nexrad/__init__.py and tests. Threading the key through to them would have
+  # made a dead code path configurable, which is worse than either wiring or
+  # deleting: an operator would edit a key, see no effect, and be right to.
+  #
+  # Their `max_volumes_per_site=1` signature defaults stay. With no catalog key
+  # claiming ownership they are ordinary library defaults, not a second copy.
 
 # Now that these are read from here, the schema floors are 1 and not 0. Zero is
 # not "retain nothing older": the keep-set is built by slicing the newest N, so

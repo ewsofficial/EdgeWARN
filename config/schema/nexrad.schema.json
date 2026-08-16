@@ -89,11 +89,10 @@
     "cli": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sites", "base_dir", "max_volumes_per_site"],
+      "required": ["sites", "base_dir"],
       "properties": {
         "sites": { "type": ["array", "null"], "items": { "type": "string" } },
-        "base_dir": { "type": ["string", "null"] },
-        "max_volumes_per_site": { "type": "integer", "minimum": 1 }
+        "base_dir": { "type": ["string", "null"] }
       }
     },
     "retention": {

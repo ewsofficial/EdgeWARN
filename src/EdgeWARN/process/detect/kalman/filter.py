@@ -57,8 +57,10 @@ class KalmanFilter:
     _last_timestamp: Optional[datetime] = None
     
     # Process noise matrix (Q)
-    _Q: Optional[np.ndarray] = None
-    
+    # No _Q field: predict() builds Q per step from dt via
+    # _build_process_noise_matrix. A stored constant Q was assigned here and read
+    # by nothing, which made two now-deleted config keys look load-bearing.
+
     # Measurement matrix (H) - observes position only
     _H: np.ndarray = field(default_factory=lambda: np.array([
         [1, 0, 0, 0, 0, 0],
@@ -73,21 +75,13 @@ class KalmanFilter:
         self._initialize_noise_matrices()
     
     def _initialize_noise_matrices(self):
-        """Initialize process and measurement noise matrices."""
+        """Initialize the measurement noise matrix.
+
+        Process noise is not precomputed: it depends on dt, so predict() calls
+        _build_process_noise_matrix per step.
+        """
         cfg = self.config
-        
-        # Process noise matrix Q (6x6)
-        # For constant acceleration model with dt=1 (normalized)
-        # Q models the uncertainty in the state transition
-        self._Q = np.diag([
-            cfg.process_noise_position,
-            cfg.process_noise_position,
-            cfg.process_noise_velocity,
-            cfg.process_noise_velocity,
-            cfg.process_noise_acceleration,
-            cfg.process_noise_acceleration
-        ]).astype(np.float64)
-        
+
         # Measurement noise matrix R (2x2 for position-only observations)
         # Convert km to degrees (approximate)
         pos_noise_deg = cfg.measurement_noise_position / 111.0

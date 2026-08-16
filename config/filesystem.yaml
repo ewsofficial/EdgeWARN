@@ -43,12 +43,13 @@ cleanup_defaults:
   # recursively via rglob but has no caller anywhere in the repo.
   skip_extensions: ['.idx']
 
-  # detect/main.py:105 calls clean_files_by_age(fs.STORMCELL_DIR,
-  # max_age_minutes=120), the one live caller that overrides the 60 above. It is
+  # detect/main.py:101-104 calls clean_files_by_age(fs.STORMCELL_DIR,
+  # max_age_minutes=...), the one live caller that overrides the 60 above. It is
   # recorded as detection.yaml's `stormcell_cleanup_max_age_minutes` because the
   # owner is the detector, not the filesystem layer. Noted here so the 60 is not
-  # mistaken for a global ceiling. (metar.py:395,441 pass 60 explicitly;
-  # mrms/downloader.py:173 passes per-product values.)
+  # mistaken for a global ceiling. (metar.py:413,457 pass this key's own accessor
+  # rather than a literal; common/ingest/mrms/downloader.py:195,208 pass
+  # per-product values.)
 
 # latest_files (file.py:203-248; the skip rules are at :234 and :236). Two
 # different rules, deliberately split: the old single `skip_extensions` list read

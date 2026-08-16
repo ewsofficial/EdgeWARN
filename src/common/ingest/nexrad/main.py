@@ -178,7 +178,8 @@ def _build_parser():
     parser.add_argument("--site")
     parser.add_argument("--volume-id")
     parser.add_argument("--base-dir")
-    parser.add_argument("--max-volumes-per-site", type=int, default=None, help="default: from nexrad.yaml")
+    # No --max-volumes-per-site: neither branch of main() takes a volume count.
+    # It used to be accepted and resolved onto args, then never read.
     parser.add_argument("--max-candidate-volumes-per-site", type=int, default=None, help="default: from nexrad.yaml")
     parser.add_argument("--config-dir", type=str, default=None, help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)")
     return parser
@@ -191,10 +192,9 @@ def _resolve_cli_args(args):
     config_loader.export_config_root(args.config_dir)
 
     document = config_loader.load_config("nexrad", config_dir=args.config_dir)
-    # Two sections, deliberately: max_volumes_per_site exists only for this
-    # one-shot entry point, while max_candidate_volumes_per_site is shared with
-    # the realtime pipeline and so lives under `realtime`.
-    args.max_volumes_per_site = overlay.resolve(args.max_volumes_per_site, yaml_value=document["cli"]["max_volumes_per_site"])
+    # `max_candidate_volumes_per_site` lives under `realtime` rather than `cli`
+    # because the realtime pipeline reads it too; this entry point is the second
+    # consumer, not the owner.
     args.max_candidate_volumes_per_site = overlay.resolve(
         args.max_candidate_volumes_per_site,
         yaml_value=document["realtime"]["max_candidate_volumes_per_site"],
