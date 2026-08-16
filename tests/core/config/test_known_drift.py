@@ -209,6 +209,58 @@ def _detection_yaml() -> dict:
     return yaml.safe_load((REPO_ROOT / "config" / "detection.yaml").read_text(encoding="utf-8"))
 
 
+# --- Scheduler listing width: two keys, only one of them reached -----------
+
+def _alerts_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load((REPO_ROOT / "config" / "alerts.yaml").read_text(encoding="utf-8"))
+
+
+def test_scheduler_listing_widths_stay_two_separate_keys():
+    """DECISION OWED: `mrms_update_checker_max_entries` reaches no production path.
+
+    It is read only by `has_update`, whose only in-repo caller is
+    `all_sources_available`, which nothing calls outside the scheduler tests. The
+    width the live scheduler actually uses is `modifier_lookup_max_entries`, held
+    separately inside `_get_modifier_times`. Collapsing the two would look like a
+    cleanup but would retune the live path from 20 to 10, so they stay distinct
+    until the dead path is either wired up or deleted.
+    """
+    from EdgeWARN.schedule.config import (
+        modifier_lookup_max_entries,
+        mrms_update_checker_max_entries,
+    )
+
+    recorded = _alerts_yaml()["scheduler"]
+    assert mrms_update_checker_max_entries() == recorded["mrms_update_checker_max_entries"] == 10
+    assert modifier_lookup_max_entries() == recorded["modifier_lookup_max_entries"] == 20
+
+    source = (REPO_ROOT / "src/EdgeWARN/schedule/scheduler.py").read_text(encoding="utf-8")
+    assert source.count("all_sources_available") == 1, "it gained a caller; revisit the dead-path note"
+
+    # The live path must reach the catalog, not a literal that happens to match it.
+    assert "modifier_lookup_max_entries()," in source
+    assert "bucket, 20," not in source
+
+    # A caller may still override, but no literal competes with the catalog.
+    assert param_default(
+        "EdgeWARN/schedule/scheduler.py", "MRMSUpdateChecker.__init__", "max_entries"
+    ) is None
+
+
+def test_scheduler_lookback_and_perf_gate_have_no_literals():
+    from EdgeWARN.schedule.config import s3_lookback_hours, slow_check_log_threshold_ms
+
+    recorded = _alerts_yaml()["scheduler"]
+    assert s3_lookback_hours() == recorded["s3_lookback_hours"] == 2
+    assert slow_check_log_threshold_ms() == recorded["slow_check_log_threshold_ms"] == 2000
+
+    source = (REPO_ROOT / "src/EdgeWARN/schedule/scheduler.py").read_text(encoding="utf-8")
+    assert "timedelta(hours=2)" not in source
+    assert "dt > 2000" not in source
+
+
 # --- Historical replay: the loop literals now live in the catalog ---------
 
 def _historical_yaml() -> dict:
