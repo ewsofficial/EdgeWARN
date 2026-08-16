@@ -30,13 +30,17 @@
 
 schema_version: 1
 
-# Outbound HTTP headers, shared by every subsystem that calls a public API. Seven
-# request sites, which once carried three different hardcoded User-Agents: four go
-# through util/release.py weather_api_headers() -- zone_sync.py:194,
-# nws/main.py:81,142 and nexrad/weather_api.py:101 -- and the three METAR fetches
-# (metar.py:75,124,468) read format_user_agent() directly, because they talk to
-# Aviation Weather rather than api.weather.gov and send their own
-# `Accept-Encoding` (metar.yaml) instead of the `Accept` below.
+# Outbound HTTP headers, shared by every subsystem that calls a public API. Nine
+# request sites, which once carried three different hardcoded User-Agents and left
+# two sites anonymous. Four go through util/release.py weather_api_headers() --
+# zone_sync.py:194, nws/main.py:81,142 and nexrad/weather_api.py:101 -- and the
+# five METAR fetches read format_user_agent() directly, because they talk to
+# Aviation Weather rather than api.weather.gov and never send the `Accept` below.
+#
+# Only two of those five ask for `Accept-Encoding` (metar.yaml explains why the
+# other three must not). The two anonymous sites were the sync observation fetch
+# and the async fallback session, which sent urllib's and aiohttp's default agents
+# to a service that asks callers to identify themselves.
 identity:
   # `{version}` is filled from package.json at call time by
   # util/release.py format_user_agent(), so the advertised version cannot drift

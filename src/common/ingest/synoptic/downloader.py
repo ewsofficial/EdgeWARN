@@ -165,13 +165,22 @@ async def download_synoptic(
     out_dir,
     dataset_name="Synoptic",
     *,
-    max_age_minutes=60,
+    max_age_minutes,
 ):
     """
     Select the newest acceptable local or remote synoptic analysis.
 
     Definitive S3 404 responses advance to the next analysis hour. Other async
     failures receive one synchronous attempt for the same candidate.
+
+    ``max_age_minutes`` is required rather than defaulted. It used to default to
+    60 while the RAP catalog said 180; only ``download_rap`` calls this and it
+    passes the catalog value, so the 60 was unreachable -- but a second synoptic
+    dataset added without the argument would have silently run a budget its
+    operator never chose. Defaulting to the RAP key instead would be the same
+    fault wearing the other number: this helper is dataset-generic, and the same
+    budget also bounds manifest freshness and cache retention for whichever
+    dataset it serves.
     """
     requested_time = _as_utc(dt)
     attempts = []

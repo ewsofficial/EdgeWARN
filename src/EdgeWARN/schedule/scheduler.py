@@ -8,6 +8,7 @@ from EdgeWARN.ingest.mrms.parse import parse_mrms_bucket_path
 from EdgeWARN.ingest.mrms.config import mrms_bucket
 from EdgeWARN.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 from EdgeWARN.schedule.config import (
+    check_max_workers,
     modifier_lookup_max_entries,
     mrms_update_checker_max_entries,
     s3_lookback_hours,
@@ -195,7 +196,9 @@ class MRMSUpdateChecker:
         t0 = time.time()
         s3_bucket = mrms_bucket()
         max_entries = modifier_lookup_max_entries()
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=check_max_workers()
+        ) as executor:
             # Map returns an iterator in the order of the inputs
             # Pass last_processed to _get_modifier_times
             results = executor.map(
@@ -275,8 +278,12 @@ class MRMSUpdateChecker:
                 print(f"[Scheduler] HTTPS Check Error for {modifier}: {e}")
                 return None
 
-        # Execute in parallel
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Execute in parallel, under the same ceiling as the primary S3 check:
+        # this path is entered only when that one found nothing, so the two never
+        # contend, and both fan out over the same modifier list.
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=check_max_workers()
+        ) as executor:
             results = executor.map(check_single_https, modifiers)
             
             modifier_times.extend(results)
