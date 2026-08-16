@@ -18,10 +18,9 @@
     "stations": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["catalog_url", "user_agent", "api_timeout_seconds", "api_cache_ttl_seconds"],
+      "required": ["catalog_url", "api_timeout_seconds", "api_cache_ttl_seconds"],
       "properties": {
         "catalog_url": { "type": "string" },
-        "user_agent": { "type": "string" },
         "api_timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "api_cache_ttl_seconds": { "type": "number", "minimum": 0 }
       }

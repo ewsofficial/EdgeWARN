@@ -3,9 +3,18 @@
   "title": "runtime.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run", "goes_coordination", "supervisor", "background_intervals", "cycle", "profiling"],
+  "required": ["schema_version", "identity", "run", "goes_coordination", "supervisor", "background_intervals", "cycle", "profiling"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "type": "integer", "const": 1 },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_agent_template", "contact"],
+      "properties": {
+        "user_agent_template": { "type": "string", "pattern": "^[^{}\\r\\n]*\\{version\\}[^{}\\r\\n]*\\{contact\\}[^{}\\r\\n]*$" },
+        "contact": { "type": "string", "pattern": "^[^\\s{}@]+@[^\\s{}@]+\\.[^\\s{}@]+$" }
+      }
+    },
     "run": {
       "type": "object",
       "additionalProperties": false,

@@ -16,6 +16,7 @@ from shapely.geometry import Polygon, MultiPolygon, shape
 
 from common.config import loader as config_loader
 from common.config import overlay
+from util.release import format_user_agent
 
 
 ZONE_TYPES: Tuple[str, ...] = ("forecast", "fire", "public", "county", "marine")
@@ -151,7 +152,7 @@ class NWSZoneSync:
         max_retries: int = 3,
         max_workers: int = 16,
         pause_seconds: float = 0.05,
-        user_agent: str = "(EdgeWARN/1.0, contact@edgewarn.com)",
+        user_agent: str | None = None,
         show_progress: bool = True,
     ) -> None:
         self.assets_dir = Path(assets_dir)
@@ -162,7 +163,7 @@ class NWSZoneSync:
         self.pause_seconds = pause_seconds
         self.show_progress = show_progress
         self.headers = {
-            "User-Agent": user_agent,
+            "User-Agent": user_agent or format_user_agent(),
             "Accept": "application/geo+json",
         }
         self._thread_local = threading.local()
@@ -241,6 +242,16 @@ class NWSZoneSync:
         return geometry_to_rings(geometry)
 
     def _fetch_missing_zone(self, code: str, zone_type: str) -> Tuple[str, Optional[Dict[str, Any]], str]:
+        # Paced here, in the worker, so it throttles api.weather.gov. Pausing in
+        # the collection loop instead only delays bookkeeping after every future
+        # has already been submitted.
+        #
+        # Scaled by the worker count so `pause_seconds` keeps its single-threaded
+        # meaning: N workers each waiting `pause * N` yields 1/pause requests per
+        # second in aggregate, not N/pause.
+        if self.pause_seconds > 0:
+            time.sleep(self.pause_seconds * max(1, self.max_workers))
+
         try:
             rings = self.fetch_zone_geometry(zone_type, code)
         except Exception:
@@ -320,9 +331,6 @@ class NWSZoneSync:
                     else:
                         fetch_errors += 1
                         unresolved_codes.append(code)
-
-                    if self.pause_seconds > 0:
-                        time.sleep(self.pause_seconds)
 
                     if self.show_progress:
                         self._print_progress(done, total_missing, fetched_with_geometry, fetched_missing_geometry, fetch_errors, started_at)

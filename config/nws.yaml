@@ -105,27 +105,24 @@ zone_sync:
   geometry_precision: 5
   geometry_precision_max: 8
 
-  # 0.0 is the effective value: --pause-seconds defaults to None (zone_sync.py:396)
-  # so this file wins. It DISABLES throttling against api.weather.gov, because
-  # zone_sync.py:324 guards `if self.pause_seconds > 0`.
+  # Per-request throttle against api.weather.gov, applied in the worker
+  # (zone_sync.py:253) before each zone-detail fetch and scaled by max_workers so
+  # this stays a whole-job rate: 0.05 is ~20 requests/second however many threads
+  # run. A full rebuild is ~8,600 codes, so ~7 minutes.
   #
-  # The constructor declares 0.05 (zone_sync.py:153). The two disagree, and 0.05
-  # now reaches only direct programmatic callers that skip the overlay. Recorded
-  # as 0.0 to state what runs, not to endorse it.
-  pause_seconds: 0.0
+  # This file used to record 0.0, which matched what ran but disabled throttling
+  # entirely; the pause was also in the collection loop, downstream of every
+  # submitted future, where it could not slow the API down at all. 0.05 is the
+  # constructor's long-standing intent (zone_sync.py:153) and is now the one value.
+  pause_seconds: 0.05
 
   progress: true                        # --no-progress disables
 
-  # zone_sync.py:154,166 -- also declared verbatim at main.py:106-107 and :170-171.
-  #
-  # These identify us to api.weather.gov, which asks for a contact address. This
-  # string DISAGREES with the NEXRAD ingest's "(EdgeWARN/2.7.0, ewsbackend@gmail.com)":
-  # different version, different mailbox. Recorded per-subsystem because that is
-  # the truth today; unifying them is a reviewed decision, not a transcription.
-  #
-  # Both are constructor defaults that main() does not pass, so a YAML edit needs
-  # the call sites updated before it takes effect.
-  user_agent: '(EdgeWARN/1.0, contact@edgewarn.com)'
+  # The User-Agent is NOT here. It is one string for the whole application,
+  # `runtime.yaml identity`, built from package.json by
+  # util/release.py format_user_agent() and applied at zone_sync.py:166 and
+  # nws/main.py:107,171. This subsystem used to carry its own copy, which
+  # advertised EdgeWARN/1.0 and a different mailbox than the NEXRAD ingest did.
   accept: application/geo+json
 
   # zone_sync.py:230 and :239. The catalog listing and the per-zone detail fetch.
