@@ -9,6 +9,7 @@ subsume without changing anything.
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from pathlib import Path, PurePath
 
@@ -245,6 +246,49 @@ def test_most_flags_cannot_express_unset(module):
 _ENV_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{2,}")
 
 
+def _string_constants(tree: ast.AST) -> dict[str, str]:
+    """Map identifier -> value for ``NAME = "literal"`` assignments."""
+    return {
+        target.id: node.value.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+
+
+@functools.lru_cache(maxsize=1)
+def _src_string_constants() -> dict[str, str]:
+    """Every ``NAME = "literal"`` under ``src``, for resolving imported names.
+
+    Accessor modules define their variable names as constants and the reading
+    site imports them, so a per-file table cannot resolve the identifier. Scoping
+    this repo-wide is imprecise -- two files could define the same name -- but the
+    table is only consulted for an identifier already in an ``os.environ`` or
+    ``env_names`` position, and the alternative is an inventory that silently
+    loses a variable every time one moves into an accessor.
+    """
+    constants: dict[str, str] = {}
+    for path in SRC.rglob("*.py"):
+        source = path.read_text(encoding="utf-8", errors="ignore")
+        constants.update(_string_constants(ast.parse(source)))
+    return constants
+
+
+def _resolve_env_name(node: ast.AST, local: dict[str, str]) -> str | None:
+    """The variable name a literal-or-identifier argument stands for."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        value = node.value
+    elif isinstance(node, ast.Name):
+        value = local.get(node.id) or _src_string_constants().get(node.id)
+    else:
+        return None
+    if value is None or not _ENV_PATTERN.fullmatch(value):
+        return None
+    return value
+
+
 def _overlay_env_names(tree: ast.AST) -> set[str]:
     """Names passed as ``overlay.resolve(env_names=[...])``.
 
@@ -253,6 +297,7 @@ def _overlay_env_names(tree: ast.AST) -> set[str]:
     would let the inventory shrink every time a site is migrated to the shared
     parser, reporting variables as dropped while they are still honored.
     """
+    local = _string_constants(tree)
     names: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -261,8 +306,9 @@ def _overlay_env_names(tree: ast.AST) -> set[str]:
             if keyword.arg != "env_names" or not isinstance(keyword.value, (ast.List, ast.Tuple)):
                 continue
             for element in keyword.value.elts:
-                if isinstance(element, ast.Constant) and isinstance(element.value, str):
-                    names.add(element.value)
+                resolved = _resolve_env_name(element, local)
+                if resolved is not None:
+                    names.add(resolved)
     return names
 
 
@@ -271,8 +317,9 @@ def _python_env_names() -> set[str]:
 
     Names are taken from ``os.environ`` subscripts and ``get``/``getenv`` calls,
     including the indirect case where the name is held in a module constant such
-    as ``RAP_MAX_AGE_ENV``, plus the ``env_names`` allowlists handed to
-    ``common.config.overlay.resolve``.
+    as ``RAP_MAX_AGE_ENV`` -- whether that constant is local to the reading file
+    or imported from an accessor module -- plus the ``env_names`` allowlists
+    handed to ``common.config.overlay.resolve``.
     """
     names: set[str] = set()
     for path in SRC.rglob("*.py"):
@@ -282,15 +329,7 @@ def _python_env_names() -> set[str]:
         if "environ" not in source and "getenv" not in source:
             continue
         tree = ast.parse(source)
-
-        constants = {
-            target.id: node.value.value
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
-            for target in node.targets
-            if isinstance(target, ast.Name)
-        }
+        local = _string_constants(tree)
 
         for node in ast.walk(tree):
             argument = None
@@ -304,13 +343,10 @@ def _python_env_names() -> set[str]:
                 ):
                     argument = node.args[0]
 
-            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
-                if _ENV_PATTERN.fullmatch(argument.value):
-                    names.add(argument.value)
-            elif isinstance(argument, ast.Name) and argument.id in constants:
-                value = constants[argument.id]
-                if _ENV_PATTERN.fullmatch(value):
-                    names.add(value)
+            if argument is not None:
+                resolved = _resolve_env_name(argument, local)
+                if resolved is not None:
+                    names.add(resolved)
     return names
 
 

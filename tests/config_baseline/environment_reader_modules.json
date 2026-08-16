@@ -12,6 +12,7 @@
     "util/performance.py"
   ],
   "shared_parser": [
+    "EWMRS/pipeline_config.py",
     "run.py"
   ]
 }

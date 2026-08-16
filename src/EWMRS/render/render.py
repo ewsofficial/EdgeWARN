@@ -10,6 +10,11 @@ import threading
 import numpy as np
 from .tools import TransformUtils
 from .tiler import save_float16_chunk
+from EWMRS.pipeline_config import (
+    TILE_THREADS_ENV,
+    colormap_cache_entries,
+    max_tile_threads,
+)
 import util.file as fs
 from util.atomic import atomic_write_json
 from xarray import Dataset
@@ -20,7 +25,7 @@ io_manager = IOManager("[Transform]")
 _CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16\.gz$")
 
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=colormap_cache_entries())
 def _get_cached_cmap(colormap_key: str):
     """Cache parsed colormap arrays. lru_cache provides thread-safe
     insertion via the GIL and replaces the previous double-checked-lock
@@ -96,7 +101,10 @@ def _resolve_tile_workers(tile_count: int) -> int:
     if tile_count <= 1:
         return 1
 
-    env_value = os.environ.get("EWMRS_TILE_THREADS")
+    # An explicit env cap bypasses the CPU cap; the catalog value does not. That
+    # asymmetry is deliberate and predates the extraction -- setting the variable
+    # is how an operator overrides what the machine looks like.
+    env_value = os.environ.get(TILE_THREADS_ENV)
     if env_value:
         try:
             configured_cap = max(1, int(env_value))
@@ -105,7 +113,7 @@ def _resolve_tile_workers(tile_count: int) -> int:
             pass
 
     cpu_cap = max(1, os.cpu_count() or 1)
-    return min(tile_count, 8, cpu_cap)
+    return min(tile_count, max_tile_threads(), cpu_cap)
 
 
 def _normalize_tile_grid(tile_grid: dict | None) -> dict | None:
