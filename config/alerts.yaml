@@ -64,20 +64,22 @@ scheduler:
   # Elapsed time above which a modifier check emits a [PERF] line.
   slow_check_log_threshold_ms: 2000
 
+# Consumed through src/EdgeWARN/api_integration/config.py.
 api_index:
-  # SPLIT because the two pipelines disagree. The signature default is True
-  # (index_manager.py:12, pipeline.py:184) and the realtime tandem worker takes
-  # it (pipeline.py:306 passes nothing); historical_pipeline passes False
-  # explicitly (pipeline.py:455). One key could not record both.
+  # SPLIT because the two pipelines disagree. `realtime` is the default every
+  # declaration site resolves to when a caller passes nothing, which is what the
+  # realtime tandem worker does; historical_pipeline passes `historical`
+  # explicitly. One key could not record both.
   remove_old_cells:
     realtime: true
     historical: false
 
-  resync_every_updates: 500             # index_manager.py:20 stormcell_resync_interval
+  # Updates between full directory resyncs, which reconcile deletions.
+  resync_every_updates: 500
 
-  # index_manager.py:172, written inline as `120 * 60`. A SEPARATE literal from
-  # alerts.cleanup_max_age_minutes above -- same number today, different owner,
-  # so changing one must not silently change the other.
+  # Age budget in cleanup_inactive_cells, converted to seconds at the use site. A
+  # SEPARATE owner from alerts.cleanup_max_age_minutes above -- same number
+  # today, different subsystem, so changing one must not silently change the other.
   inactive_cell_max_age_minutes: 120
 
 runtime:

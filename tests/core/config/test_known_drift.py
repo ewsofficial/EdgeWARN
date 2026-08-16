@@ -209,6 +209,68 @@ def _detection_yaml() -> dict:
     return yaml.safe_load((REPO_ROOT / "config" / "detection.yaml").read_text(encoding="utf-8"))
 
 
+# --- API index: one flag the two pipelines answer differently -------------
+
+def test_remove_old_cells_stays_split_between_the_two_pipelines():
+    """RESOLVED: three declaration sites, one resolution point, two recorded answers.
+
+    The realtime and historical pipelines genuinely disagree, so this cannot become
+    a single key. Every declaration site now defaults to `None` and forwards, and
+    only `APIIndexManager` resolves -- which is what keeps `False` distinguishable
+    from "caller said nothing". A literal `True` restored at any forwarding site
+    would make a replay start deleting cells.
+    """
+    from EdgeWARN.api_integration.config import (
+        remove_old_cells_historical,
+        remove_old_cells_realtime,
+    )
+
+    for relative_path, qualified_name in (
+        ("EdgeWARN/api_integration/index_manager.py", "APIIndexManager.__init__"),
+        ("EdgeWARN/pipeline.py", "run_edgewarn_integration_phase"),
+        ("EdgeWARN/process/integrate/pipeline.py", "main"),
+    ):
+        assert param_default(relative_path, qualified_name, "remove_old_cells") is None, (
+            f"{relative_path}::{qualified_name} still declares a literal default"
+        )
+
+    recorded = _alerts_yaml()["api_index"]["remove_old_cells"]
+    assert remove_old_cells_realtime() is recorded["realtime"] is True
+    assert remove_old_cells_historical() is recorded["historical"] is False
+
+    pipeline_source = (REPO_ROOT / "src/EdgeWARN/pipeline.py").read_text(encoding="utf-8")
+    assert "remove_old_cells=remove_old_cells_historical()" in pipeline_source
+    assert "remove_old_cells=False" not in pipeline_source
+
+
+def test_inactive_cell_age_is_a_separate_owner_from_alert_cleanup_age():
+    """DECISION OWED: two 120s that must not be collapsed.
+
+    One expires cells from the API index, the other prunes alert files. They are
+    equal today, which is exactly why a single key would look correct right up to
+    the first time one subsystem needs a different budget.
+    """
+    from EdgeWARN.api_integration.config import inactive_cell_max_age_minutes
+
+    document = _alerts_yaml()
+    assert inactive_cell_max_age_minutes() == document["api_index"]["inactive_cell_max_age_minutes"] == 120
+    assert document["alerts"]["cleanup_max_age_minutes"] == 120
+
+    source = (REPO_ROOT / "src/EdgeWARN/api_integration/index_manager.py").read_text(encoding="utf-8")
+    assert "120 * 60" not in source
+    assert "inactive_cell_max_age_minutes() * 60" in source
+
+
+def test_stormcell_resync_interval_comes_from_the_catalog():
+    """The resync is what reconciles deletions, so a stale literal here loses them."""
+    from EdgeWARN.api_integration.config import stormcell_resync_every_updates
+
+    assert stormcell_resync_every_updates() == _alerts_yaml()["api_index"]["resync_every_updates"] == 500
+
+    source = (REPO_ROOT / "src/EdgeWARN/api_integration/index_manager.py").read_text(encoding="utf-8")
+    assert "self.stormcell_resync_interval = stormcell_resync_every_updates()" in source
+
+
 # --- Scheduler listing width: two keys, only one of them reached -----------
 
 def _alerts_yaml() -> dict:
