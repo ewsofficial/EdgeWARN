@@ -57,14 +57,32 @@ security:
   # `origin: true` -- and even there only outside production, which already
   # collapsed to []. Leaving this empty is the safe default; widen it
   # deliberately, per deployment.
+  #
+  # The schema constrains each entry to a bare scheme://host[:port], which is what
+  # `parseOrigins` (config/index.js:37-41) already enforces at runtime by
+  # requiring `url.origin === origin`. It had been a plain string array, so the
+  # catalog accepted the `*` the code rejects -- documenting a weaker policy than
+  # the one that actually runs.
   allowed_origins: []
 
   # config/index.js:45-52. Tri-shaped: false when unset/'false'; the integer 1
   # when 'true' (and that form THROWS under NODE_ENV=production, :48); otherwise
   # the comma-split list from TRUST_PROXY_IPS.
+  #
+  # `true` is NOT rejectable here. The tri-shape means `type` must admit booleans,
+  # and both walkers apply minimum/maximum to numbers only, so no supported
+  # keyword separates the safe `false` from the unsafe `true`.
+  # test_catalog_invariants.py asserts `is not True` instead. What the schema does
+  # cover: the hop count is bounded, and a list entry must look like an address or
+  # one of Express's named presets rather than being any string at all.
   trust_proxy: false
 
-  cors:                                 # cors.js:10-13, all hardcoded
+  # cors.js:10-13, all hardcoded. The schema pins each to what the code sets --
+  # `credentials` and `csp_default_src` by `const`, the two lists by an item
+  # `enum` -- rather than describing a range the code cannot take. These are not
+  # settings yet, and recording them as though they were is how a reader comes to
+  # believe that editing them does something.
+  cors:
     methods: [GET, HEAD, OPTIONS]
     allowed_headers: [Content-Type, X-Request-Id]
     max_age: 600

@@ -46,20 +46,20 @@
       "additionalProperties": false,
       "required": ["allowed_origins", "trust_proxy", "cors", "csp_default_src", "compression_skip_media"],
       "properties": {
-        "allowed_origins": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
-        "trust_proxy": { "type": ["boolean", "integer", "array"], "minimum": 0, "items": { "type": "string" } },
+        "allowed_origins": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?$" } },
+        "trust_proxy": { "type": ["boolean", "integer", "array"], "minimum": 0, "maximum": 8, "items": { "type": "string", "pattern": "^(?:loopback|linklocal|uniquelocal|[0-9A-Fa-f.:]+(?:/[0-9]{1,3})?)$" } },
         "cors": {
           "type": "object",
           "additionalProperties": false,
           "required": ["methods", "allowed_headers", "max_age", "credentials"],
           "properties": {
-            "methods": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
-            "allowed_headers": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
-            "max_age": { "type": "integer", "minimum": 0 },
-            "credentials": { "type": "boolean" }
+            "methods": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "enum": ["GET", "HEAD", "OPTIONS"] } },
+            "allowed_headers": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": ["Content-Type", "X-Request-Id"] } },
+            "max_age": { "type": "integer", "minimum": 0, "maximum": 86400 },
+            "credentials": { "type": "boolean", "const": false }
           }
         },
-        "csp_default_src": { "type": "string" },
+        "csp_default_src": { "type": "string", "const": "'self'" },
         "compression_skip_media": { "type": "string" }
       }
     },
