@@ -6,10 +6,16 @@ import os
 import threading
 import time
 
+from .config import section
 
-def stop_process(process, name, *, join_timeout=5):
+
+def stop_process(process, name, *, join_timeout=None):
     if process is None:
         return
+
+    supervisor = section("supervisor")
+    if join_timeout is None:
+        join_timeout = supervisor["stop_join_timeout_seconds"]
 
     try:
         if process.is_alive():
@@ -21,7 +27,7 @@ def stop_process(process, name, *, join_timeout=5):
         if process.is_alive():
             print(f"[Scheduler] {name} did not stop in time; killing...")
             process.kill()
-            process.join(timeout=1)
+            process.join(timeout=supervisor["stop_kill_join_timeout_seconds"])
     except Exception as exc:
         print(f"[Scheduler] Failed to stop {name} process cleanly: {exc}")
 
@@ -69,10 +75,10 @@ class AccessorySupervisor:
     _restart_times: dict = field(default_factory=lambda: defaultdict(list))
     _stop_event: threading.Event = field(default_factory=threading.Event)
     _lock: threading.Lock = field(default_factory=threading.Lock)
-    max_restarts: int = 5
-    restart_window_seconds: float = 60.0
-    base_backoff_seconds: float = 1.0
-    max_backoff_seconds: float = 30.0
+    max_restarts: int = field(default_factory=lambda: section("supervisor")["max_restarts"])
+    restart_window_seconds: float = field(default_factory=lambda: section("supervisor")["restart_window_seconds"])
+    base_backoff_seconds: float = field(default_factory=lambda: section("supervisor")["base_backoff_seconds"])
+    max_backoff_seconds: float = field(default_factory=lambda: section("supervisor")["max_backoff_seconds"])
     health_path: str | None = None
 
     def add(

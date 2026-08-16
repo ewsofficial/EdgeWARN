@@ -12,8 +12,10 @@ import time
 from common.ingest.manifest import CycleInputManifest
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.pipeline import edgewarn_tandem_worker
+from EdgeWARN.process.detect.config import DetectionConfig
 from EWMRS.pipeline import ewmrs_tandem_worker
 
+from .config import section
 from .goes import (
     collect_local_goes_inputs,
     download_glm_for_scan,
@@ -124,9 +126,15 @@ class CycleOutcome:
 class CycleRetryPolicy:
     """Bounded exponential retry policy for a single scan."""
 
-    max_attempts: int = 3
-    initial_backoff_seconds: float = 5.0
-    max_backoff_seconds: float = 30.0
+    max_attempts: int = field(
+        default_factory=lambda: section("cycle")["retry"]["max_attempts"]
+    )
+    initial_backoff_seconds: float = field(
+        default_factory=lambda: section("cycle")["retry"]["initial_backoff_seconds"]
+    )
+    max_backoff_seconds: float = field(
+        default_factory=lambda: section("cycle")["retry"]["max_backoff_seconds"]
+    )
 
     def __post_init__(self):
         if self.max_attempts < 1:
@@ -322,6 +330,7 @@ class TandemCycleConfig:
     refl_threshold: float
     min_seed_percentage: float
     drop_offset: float
+    config_dir: str | None
     ewmrs_enabled: bool
     goes_enabled: bool
     mrms_core_only: bool
@@ -338,6 +347,8 @@ def run_tandem_cycle_once(
     config: TandemCycleConfig,
     goes_cycle_active_event,
 ):
+    cycle_settings = section("cycle")
+    goes_coordination = section("goes_coordination")
     log_queue = multiprocessing.Queue()
     shared_state = manager.dict()
 
@@ -364,15 +375,22 @@ def run_tandem_cycle_once(
         "errors": {},
     })
 
+    # Resolved in the parent so the spawned worker inherits one frozen, already
+    # validated object instead of re-reading and re-validating the YAML.
+    detection_config = DetectionConfig.from_yaml(
+        config_dir=config.config_dir,
+        refl_threshold=config.refl_threshold,
+        min_seed_percentage=config.min_seed_percentage,
+        drop_offset=config.drop_offset,
+    )
+
     edgewarn_proc = multiprocessing.Process(
         target=edgewarn_tandem_worker,
         args=(
             log_queue, shared_state, detection_ready_event, integration_ready_event,
-            dt, config.lat_limits, config.lon_limits, config.profile,
-            config.disable_ctam, config.disable_tracking,
-            config.disable_polygon_expansion, config.refl_threshold,
-            config.min_seed_percentage, config.drop_offset,
-            config.mrms_core_only,
+            dt, config.lat_limits, config.lon_limits, detection_config,
+            config.profile, config.disable_ctam, config.disable_tracking,
+            config.disable_polygon_expansion, config.mrms_core_only,
         ),
     )
     ewmrs_proc = (
@@ -456,7 +474,9 @@ def run_tandem_cycle_once(
                 publish_integration_if_ready()
 
             cycle_task = asyncio.create_task(run_tandem_ingest_cycle(
-                dt, lambda msg: queue_log(log_queue, msg), include_goes=False,
+                dt, lambda msg: queue_log(log_queue, msg),
+                max_entries=cycle_settings["ingest_max_entries"],
+                include_goes=False,
                 include_rap=not config.mrms_core_only,
                 include_ewmrs=config.ewmrs_enabled,
                 on_detection_ready=lambda state: publish(state, detection_ready_event, "detection_released"),
@@ -587,7 +607,7 @@ def run_tandem_cycle_once(
 
                 goes_render_task_queue.put((
                     dt,
-                    10,
+                    goes_coordination["render_task_max_entries"],
                     datetime.now(timezone.utc).isoformat(),
                     goes_manifest.as_dict(),
                 ))
@@ -621,7 +641,7 @@ def run_tandem_cycle_once(
         while edgewarn_proc.is_alive() or (ewmrs_proc is not None and ewmrs_proc.is_alive()) or not log_queue.empty():
             drain_log_queue(log_queue)
             drain_log_queue(goes_render_log_queue)
-            time.sleep(1)
+            time.sleep(cycle_settings["log_drain_poll_seconds"])
     except KeyboardInterrupt:
         print("CTRL+C detected, stopping tandem cycle workers...")
         raise

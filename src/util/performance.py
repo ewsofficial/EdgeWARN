@@ -3,6 +3,20 @@ import os
 import time
 import threading
 from collections import OrderedDict
+from functools import lru_cache
+
+from common.config.loader import load_config
+
+
+@lru_cache(maxsize=1)
+def _yaml_enabled() -> bool | None:
+    """``runtime.yaml``'s ``profiling.perf_tracker``, itself tri-state.
+
+    ``null`` there means "no opinion, defer to the environment variable", which
+    is what keeps EDGEWARN_PERF_TRACKER live for an operator who has not pinned
+    the setting.
+    """
+    return load_config("runtime")["profiling"]["perf_tracker"]
 
 
 def _resolve_enabled() -> bool:
@@ -13,7 +27,9 @@ def _resolve_enabled() -> bool:
     on every call inside per-cell, per-modifier, per-render hot paths.
     """
     raw = os.environ.get("EDGEWARN_PERF_TRACKER", "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    if raw:
+        return raw in {"1", "true", "yes", "on"}
+    return bool(_yaml_enabled())
 
 
 # Module-level flag with three states:

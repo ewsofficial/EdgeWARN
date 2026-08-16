@@ -10,6 +10,7 @@ from common.pipeline.goes_readiness import (
     get_ewmrs_goes_render_specs as _get_ewmrs_goes_render_specs_impl,
 )
 
+from .config import section
 from .timing import sleep_for
 
 
@@ -50,8 +51,11 @@ def wait_for_local_goes_ready(
     if not candidate_specs:
         return False, None
 
+    coordination = section("goes_coordination")
     timeout_seconds = max(0.0, float(timeout_seconds))
-    interval_seconds = max(0.1, float(interval_seconds))
+    interval_seconds = max(
+        coordination["render_wait_interval_floor_seconds"], float(interval_seconds)
+    )
     deadline = time.time() + timeout_seconds
 
     while True:
@@ -62,7 +66,10 @@ def wait_for_local_goes_ready(
         if time.time() >= deadline:
             return False, None
 
-        sleep_for(min(interval_seconds, max(0.0, deadline - time.time())), interval=0.2)
+        sleep_for(
+            min(interval_seconds, max(0.0, deadline - time.time())),
+            interval=coordination["render_wait_poll_granularity_seconds"],
+        )
 
 
 def wait_for_local_goes_inputs(
@@ -77,8 +84,11 @@ def wait_for_local_goes_inputs(
     if not candidate_specs:
         return ()
 
+    coordination = section("goes_coordination")
     timeout_seconds = max(0.0, float(timeout_seconds))
-    interval_seconds = max(0.1, float(interval_seconds))
+    interval_seconds = max(
+        coordination["render_wait_interval_floor_seconds"], float(interval_seconds)
+    )
     deadline = time.time() + timeout_seconds
 
     while True:
@@ -94,7 +104,7 @@ def wait_for_local_goes_inputs(
 
         sleep_for(
             min(interval_seconds, max(0.0, deadline - time.time())),
-            interval=0.2,
+            interval=coordination["render_wait_poll_granularity_seconds"],
         )
 
 

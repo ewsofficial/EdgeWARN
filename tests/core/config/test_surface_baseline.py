@@ -147,29 +147,40 @@ def test_supervisor_restart_policy_baseline():
 
     Named by the plan's "timers" category; verified during the plan's
     corrections-table audit but never previously pinned by a test.
+
+    The timers now reach the dataclass from `runtime.yaml` through
+    `default_factory`, so this reads them off a constructed instance. A snapshot
+    of `field.default` would be blank for exactly the fields worth pinning.
     """
     import dataclasses
 
     from util.runtime.processes import AccessorySupervisor
 
+    supervisor = AccessorySupervisor()
     defaults = {
-        field.name: field.default
+        field.name: getattr(supervisor, field.name)
         for field in dataclasses.fields(AccessorySupervisor)
-        if not isinstance(field.default, dataclasses._MISSING_TYPE)
+        if not field.name.startswith("_")
     }
 
     assert_baseline("supervisor_restart_policy", defaults)
 
 
-def test_supervisor_stop_process_join_timeouts_are_hardcoded():
-    """`stop_process` gives a process 5s to exit, then 1s after a kill signal."""
+def test_supervisor_stop_process_join_timeouts_come_from_runtime_yaml():
+    """`stop_process` gives a process 5s to exit, then 1s after a kill signal.
+
+    Both timeouts moved to `runtime.yaml`, so the parameter default is now `None`
+    and the values are resolved inside the call. The numbers themselves must not
+    have changed in the move.
+    """
     from tests.core.config.source_inspect import param_default
+    from util.runtime.config import section
 
-    join_timeout = param_default("util/runtime/processes.py", "stop_process", "join_timeout")
-    assert join_timeout == 5
+    assert param_default("util/runtime/processes.py", "stop_process", "join_timeout") is None
 
-    source = (SRC / "util/runtime/processes.py").read_text(encoding="utf-8")
-    assert "process.join(timeout=1)" in source
+    supervisor_settings = section("supervisor")
+    assert supervisor_settings["stop_join_timeout_seconds"] == 5
+    assert supervisor_settings["stop_kill_join_timeout_seconds"] == 1
 
 
 # --- CLI defaults ---------------------------------------------------------
@@ -223,16 +234,40 @@ def test_most_flags_cannot_express_unset(module):
 _ENV_PATTERN = re.compile(r"[A-Z][A-Z0-9_]{2,}")
 
 
+def _overlay_env_names(tree: ast.AST) -> set[str]:
+    """Names passed as ``overlay.resolve(env_names=[...])``.
+
+    A variable routed through the shared resolver never appears as an
+    ``os.environ`` read, so the direct scan below cannot see it. Omitting this
+    would let the inventory shrink every time a site is migrated to the shared
+    parser, reporting variables as dropped while they are still honored.
+    """
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        for keyword in node.keywords:
+            if keyword.arg != "env_names" or not isinstance(keyword.value, (ast.List, ast.Tuple)):
+                continue
+            for element in keyword.value.elts:
+                if isinstance(element, ast.Constant) and isinstance(element.value, str):
+                    names.add(element.value)
+    return names
+
+
 def _python_env_names() -> set[str]:
     """Collect every environment variable name read anywhere under ``src``.
 
     Names are taken from ``os.environ`` subscripts and ``get``/``getenv`` calls,
     including the indirect case where the name is held in a module constant such
-    as ``RAP_MAX_AGE_ENV``.
+    as ``RAP_MAX_AGE_ENV``, plus the ``env_names`` allowlists handed to
+    ``common.config.overlay.resolve``.
     """
     names: set[str] = set()
     for path in SRC.rglob("*.py"):
         source = path.read_text(encoding="utf-8", errors="ignore")
+        if "env_names" in source:
+            names.update(_overlay_env_names(ast.parse(source)))
         if "environ" not in source and "getenv" not in source:
             continue
         tree = ast.parse(source)
@@ -279,22 +314,32 @@ def test_python_environment_variable_inventory_baseline():
 
 
 def test_environment_variables_are_read_without_a_shared_parser():
-    """Each site re-implements its own parse and clamp.
+    """How many sites still re-implement their own parse and clamp.
 
-    Only `synoptic/config.py` raises on a malformed value; the rest coerce or
-    fall through, so identical malformed input behaves differently per variable.
+    Of the ad-hoc readers only `synoptic/config.py` raises on a malformed value;
+    the rest coerce or fall through, so identical malformed input behaves
+    differently per variable. Recording the two groups together means migrating a
+    site to `common.config.overlay` shows up as a move between them rather than
+    as an unexplained deletion.
     """
     synoptic = (SRC / "common/ingest/synoptic/config.py").read_text(encoding="utf-8")
     assert "RAP_MAX_AGE_ENV = \"EDGEWARN_RAP_MAX_AGE_MINUTES\"" in synoptic
     assert "must be a non-negative integer" in synoptic
 
-    readers = sorted(
-        path.relative_to(SRC).as_posix()
-        for path in SRC.rglob("*.py")
-        if "os.environ" in path.read_text(encoding="utf-8", errors="ignore")
-        or "getenv" in path.read_text(encoding="utf-8", errors="ignore")
+    ad_hoc: list[str] = []
+    shared: list[str] = []
+    for path in SRC.rglob("*.py"):
+        source = path.read_text(encoding="utf-8", errors="ignore")
+        name = path.relative_to(SRC).as_posix()
+        if "env_names" in source and _overlay_env_names(ast.parse(source)):
+            shared.append(name)
+        elif "os.environ" in source or "getenv" in source:
+            ad_hoc.append(name)
+
+    assert_baseline(
+        "environment_reader_modules",
+        {"ad_hoc": sorted(ad_hoc), "shared_parser": sorted(shared)},
     )
-    assert_baseline("environment_reader_modules", readers)
 
 
 def test_node_reads_only_edgewarn_base_dir():
