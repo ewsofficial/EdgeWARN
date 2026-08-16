@@ -1,0 +1,32 @@
+# scheduler.yaml — Audit §6
+#
+# Consumed through src/EdgeWARN/schedule/config.py, which reads this file per call
+# so a --config-dir resolved after import still applies. Every key below is the
+# single owner of its default; no literal in scheduler.py competes with it.
+#
+# Split out of alerts.yaml, which held these values only because the audit grouped
+# them there. Nothing here concerns alerts: this is the MRMS S3 polling loop.
+
+schema_version: 1
+
+scheduler:
+  # DEAD PATH. MRMSUpdateChecker.max_entries, read only inside has_update. Its
+  # only in-repo caller is all_sources_available, which itself has no callers
+  # anywhere -- production or tests. has_update is reached only when a test calls
+  # it directly, so this value is exercised by tests alone. Both production
+  # construction sites pass MRMSUpdateChecker(verbose=True) and use other methods.
+  # Kept, not deleted, for the same reason as integration.yaml's azshear block:
+  # the value is real and the code path exists, it simply is not reached today.
+  mrms_update_checker_max_entries: 10
+
+  # The live lookup width, held separately in _get_modifier_times rather than
+  # taken from max_entries above -- which is why editing that key does not widen
+  # the real scheduler check.
+  modifier_lookup_max_entries: 20
+
+  # Only the StartAfter fallback when last_processed is unknown; with a known
+  # cursor the key is built from it instead and this is unused.
+  s3_lookback_hours: 2
+
+  # Elapsed time above which a modifier check emits a [PERF] line.
+  slow_check_log_threshold_ms: 2000

@@ -13,7 +13,10 @@ from common.ingest.manifest import CycleInputManifest
 from common.ingest.mrms.config import get_goes_modifiers, get_mrms_modifiers
 from common.ingest.mrms.pipeline import get_output_dirs
 from common.pipeline.coordinator import run_tandem_ingest_cycle
-from EdgeWARN.api_integration.config import remove_old_cells_historical
+from EdgeWARN.api_integration.config import (
+    initialize_at_startup_realtime,
+    remove_old_cells_historical,
+)
 from EdgeWARN.api_integration.index_manager import APIIndexManager
 from EdgeWARN.historical_config import historical_cleanup_max_files
 from util.io import IOManager, QueueWriter
@@ -26,7 +29,7 @@ xr.set_options(use_new_combine_kwarg_defaults=True)
 sys.modules.pop("aiodns", None)
 
 
-def initialize_runtime(base_dir=None, io_manager=None, initialize_indexes=True):
+def initialize_runtime(base_dir=None, io_manager=None, initialize_indexes=None):
     runtime_io = io_manager or IOManager("[Pipeline]")
 
     if base_dir:
@@ -36,6 +39,8 @@ def initialize_runtime(base_dir=None, io_manager=None, initialize_indexes=True):
         f"Runtime filesystem initialized: base_dir={fs.BASE_DIR} rap_dir={fs.RAP_DIR}"
     )
 
+    if initialize_indexes is None:
+        initialize_indexes = initialize_at_startup_realtime()
     if not initialize_indexes:
         return
 

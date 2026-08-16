@@ -6,6 +6,7 @@ import time
 
 import common.ingest.mrms.config as mrms_config
 from EdgeWARN import historical_pipeline, initialize_runtime, parse_utc_time
+from EdgeWARN.api_integration.config import initialize_at_startup_historical
 from EdgeWARN.historical_config import (
     historical_step_minutes,
     historical_throttle_seconds,
@@ -40,7 +41,11 @@ def main():
     args = io_manager.get_historical_args()
 
     # Initialize custom filesystem if provided
-    initialize_runtime(base_dir=args.base_dir, io_manager=io_manager, initialize_indexes=False)
+    initialize_runtime(
+        base_dir=args.base_dir,
+        io_manager=io_manager,
+        initialize_indexes=initialize_at_startup_historical(),
+    )
 
     try:
         start_time = parse_utc_time(args.start)

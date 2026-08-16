@@ -195,32 +195,39 @@ The most important drift risks found in the baseline are:
 
 ## Target configuration tree
 
-The tree is the 18 flat per-subsystem files that already exist, plus one JSON
+The tree is the flat per-subsystem files that already exist, plus one JSON
 Schema per file. Use YAML for operator-edited settings and product catalogs,
 JSON for JSON Schema files. Add a maintained YAML parser to Node rather than
 introducing parallel JSON-only copies of shared settings.
 
 ```text
 config/
-├── alerts.yaml              ├── kalman.yaml
-├── api.yaml                 ├── lineage.yaml
+├── api.yaml                 ├── kalman.yaml
+├── api_index.yaml           ├── lineage.yaml
 ├── detection.yaml           ├── metar.yaml
 ├── ewmrs_pipeline.yaml      ├── mrms_goes.yaml
 ├── ewmrs_rap_uint16.yaml    ├── nexrad.yaml
 ├── ewmrs_render.yaml        ├── nws.yaml
 ├── filesystem.yaml          ├── runtime.yaml
-├── historical.yaml          ├── synoptic_rap.yaml
-├── integration.yaml         └── wpc.yaml
-└── schema/
-    └── <name>.schema.json   (one per file above, 18 total)
+├── historical.yaml          ├── scheduler.yaml
+├── integration.yaml         ├── synoptic_rap.yaml
+└── schema/                  └── wpc.yaml
+    └── <name>.schema.json   (one per file above, 19 total)
 ```
 
-No file is added and none is renamed. In particular there is no
-`config/paths.yaml`, no `config/products/`, no `config/ingest/`, no
-`config/render.yaml` and no `config/colormaps.json` — earlier drafts of this
-plan named those, and they do not exist. CTAM configuration and the
-`colormaps.json` relocation are out of scope here and become a separate
-follow-up.
+`alerts.yaml` is gone. It was never one subsystem: it held CTAM alert emission,
+the MRMS polling loop, the API index and a pipeline bootstrap flag, grouped only
+because the audit listed them together. The scheduler and index halves became
+`scheduler.yaml` and `api_index.yaml`; the CTAM half was dropped from the
+catalogs entirely, leaving `schema.py` and `manager.py` as the sole owners of
+those literals until CTAM is extracted on its own terms. Whatever file finally
+owns NWS alert *parsing* is `nws.yaml`, which already does.
+
+Otherwise no file is renamed. In particular there is no `config/paths.yaml`, no
+`config/products/`, no `config/ingest/`, no `config/render.yaml` and no
+`config/colormaps.json` — earlier drafts of this plan named those, and they do
+not exist. CTAM configuration and the `colormaps.json` relocation are out of
+scope here and become a separate follow-up.
 
 Do not create generated copies of these files under `src/`. Python and Node
 must resolve the repository configuration root through one loader contract.
@@ -507,8 +514,8 @@ using `package.json`.
 | `process/detect/kalman/filter.py` | Initial position uncertainty, reference origin if operational, innovation regularization, and direct gate defaults still copied from assignment configuration | `kalman.yaml`; matrix equations and unit conversions stay in code |
 | `process/detect/kalman/assignment.py`, `state.py` | Near-stationary/implied-motion cutoffs, fallback interval, and reference origin if still operationally selectable | `kalman.yaml`; physical conversion constants stay in code |
 | `process/detect/main.py` | Stormcell cleanup age and tracking fallback interval | `runtime.yaml` |
-| `alerts/alert_manager.py`, `src/EdgeWARN/alerts/schema.py`, alert payload modules | Alert cleanup age, default severity, geometry precision | `alerts.yaml`; required schema fields stay code |
-| `api_integration/index_manager.py` | Resync update count and inactive-cell retention | `alerts.yaml` |
+| `alerts/manager.py`, `src/EdgeWARN/alerts/schema.py`, alert payload modules | Alert cleanup age, default severity, geometry precision | Deferred with the rest of CTAM; these literals stay their own sole owners for now |
+| `api_integration/index_manager.py`, `pipeline.py`, `process_historical.py` | Resync update count, inactive-cell retention, and the realtime/historical splits for cell expiry and index bootstrap | `api_index.yaml` |
 
 Do not flatten different overlap concepts into one setting. Use names such as
 `tracking.lineage_overlap_ratio`, `lineage.event_overlap_ratio`, and
@@ -598,7 +605,7 @@ because API clients depend on it, and is marked **non-tunable**. Its
 | `src/util/runtime/background.py` | METAR 5-minute boundary, NWS 120-second poll, WPC 15-minute boundary, GOES poll, NEXRAD restart backoff, and interruptible-sleep granularity where operational (`:223,239,257,265`) | `runtime.yaml` |
 | `src/util/runtime/processes.py` | Graceful join and forced-stop timeouts (`stop_process` `join_timeout=5`, `:10,24`) and the **supervisor restart policy** at `:72-75` (`max_restarts=5`, `restart_window_seconds=60.0`, `base_backoff_seconds=1.0`, `max_backoff_seconds=30.0`) — currently absent from `runtime.yaml` | `runtime.yaml` |
 | `src/process_historical.py` | One-minute step, one-second throttle, historical bounds/output defaults | `historical.yaml` plus CLI overrides |
-| `src/EdgeWARN/schedule/scheduler.py` | MRMS search entries/lookback, worker cap, poll cadence, and slow-operation logging threshold | `alerts.yaml` scheduler section |
+| `src/EdgeWARN/schedule/scheduler.py` | MRMS search entries/lookback and slow-operation logging threshold | `scheduler.yaml`. The two bare `ThreadPoolExecutor()` calls are **excluded**: they have no cap today, so adding one is a retune, not an extraction |
 | `src/EdgeWARN/pipeline.py` | Historical ingest directories retained per family | `runtime.yaml`, with directory names derived |
 | `src/util/file.py` | Generic cleanup age and count defaults | `filesystem.yaml` |
 | `src/util/performance.py` | Performance tracker enablement and future thresholds | `runtime.yaml` with existing env alias |

@@ -1,4 +1,4 @@
-"""Scheduler settings read from ``config/alerts.yaml``'s ``scheduler`` section.
+"""Scheduler settings read from ``config/scheduler.yaml``.
 
 Accessors rather than module constants so the catalog is read per call. The
 scheduler is constructed inside processes spawned with no argv, which resolve the
@@ -8,7 +8,7 @@ module-level read would have frozen the repo default at import time.
 
 from common.config.loader import load_config
 
-_CONFIG_NAME = "alerts"
+_CONFIG_NAME = "scheduler"
 
 
 def _scheduler():
