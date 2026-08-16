@@ -6,7 +6,7 @@ import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from common.ingest.nexrad.config import chunks_bucket
+from common.ingest.nexrad.config import chunks_bucket, min_required_volume_chunks
 from common.ingest.nexrad.models import ChunkKey
 from util.handler import extract_timestamp
 
@@ -18,7 +18,6 @@ _CHUNK_KEY_RE = re.compile(
 _TIMESTAMP_RE = re.compile(r"(?P<stamp>[0-9]{8}-[0-9]{6})")
 _VOLUME_ID_TS_RE = re.compile(r"(?P<date>[0-9]{8})[_-](?P<time>[0-9]{6})")
 _TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
-MIN_REQUIRED_VOLUME_CHUNKS = 25
 
 
 @lru_cache(maxsize=1)
@@ -127,7 +126,7 @@ def required_volume_chunks(chunks):
         contiguous_chunks.append(selected)
         expected_chunk_number += 1
 
-    if len(contiguous_chunks) < MIN_REQUIRED_VOLUME_CHUNKS:
+    if len(contiguous_chunks) < min_required_volume_chunks():
         return []
     return contiguous_chunks
 

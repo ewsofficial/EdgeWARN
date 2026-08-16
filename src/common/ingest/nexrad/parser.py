@@ -16,6 +16,7 @@ import bz2
 import mmap
 import struct
 
+from common.ingest.nexrad import config as nexrad_config
 from common.ingest.nexrad.models import RawSweepRange, RawVolumeBuffer
 
 
@@ -30,7 +31,6 @@ START_STATUSES = {0, 3, 5}
 END_STATUSES = {2, 4}
 DUALPOL_BLOCKS = {"DZDR", "DPHI", "DRHO", "DCFP"}
 DOPPLER_BLOCKS = {"DVEL", "DSW "}
-MIN_SWEEP_ANGLE_DEG = 0.4
 DREF_BLOCK = frozenset({"DREF"})
 
 
@@ -132,6 +132,9 @@ def _walk_records(
         current = sweeps.pop()
 
     stream_len = len(record_stream)
+    # Hoisted out of the loop: this runs once per radial, and each accessor call
+    # re-resolves the config root with a stat.
+    min_sweep_angle_deg = nexrad_config.min_sweep_angle_deg()
     while offset + 12 + MSG_HEADER_LEN <= stream_len:
         header_probe = record_stream[offset : min(offset + RECORD_BYTES, stream_len)]
         size_words, msg_type = _read_msg_header(header_probe)
@@ -151,7 +154,7 @@ def _walk_records(
 
         radial_status, elevation_number, _collect_ms, elevation_angle, timestamp = _read_msg31_metadata(record)
         sweep_angle = float(elevation_angle)
-        if sweep_angle < MIN_SWEEP_ANGLE_DEG:
+        if sweep_angle < min_sweep_angle_deg:
             if radial_status in START_STATUSES and current is not None and current.record_ranges:
                 sweeps.append(current)
                 sweep_index = current.index + 1
@@ -443,6 +446,7 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolumeBuffer:
     current: RawSweepRange | None = None
     sweep_index = 0
 
+    min_sweep_angle_deg = nexrad_config.min_sweep_angle_deg()
     while offset + 12 + MSG_HEADER_LEN <= len(record_stream):
         header_probe = record_stream[offset : min(offset + RECORD_BYTES, len(record_stream))]
         size_words, msg_type = _read_msg_header(header_probe)
@@ -462,7 +466,7 @@ def parse_raw_volume_bytes(volume_bytes: bytes) -> RawVolumeBuffer:
 
         radial_status, elevation_number, _collect_ms, elevation_angle, timestamp = _read_msg31_metadata(record)
         sweep_angle = float(elevation_angle)
-        if sweep_angle < MIN_SWEEP_ANGLE_DEG:
+        if sweep_angle < min_sweep_angle_deg:
             if radial_status in START_STATUSES:
                 if current is not None and current.record_ranges:
                     sweeps.append(current)

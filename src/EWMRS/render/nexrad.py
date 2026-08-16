@@ -10,44 +10,9 @@ import numpy as np
 from util.atomic import atomic_output_path, atomic_write_json
 
 import util.file as fs
+from common.ingest.nexrad import config as nexrad_config
 from common.ingest.nexrad.parser import MSG_31_BLOCK_POINTERS, MSG_HEADER_LEN, MSG_31_PREFIX_LEN, iter_sweep_records, parse_grouped_ar2v_file_mmap
 
-
-VCP_SWEEP_ELEVATION_LABELS = {
-    "VCP-212": {
-        0: "0.5",
-        1: "0.5",
-        2: "0.9",
-        3: "0.9",
-        4: "1.3",
-        5: "1.3",
-        6: "1.8",
-        7: "2.4",
-        8: "3.1",
-    },
-    "VCP-215": {
-        0: "0.5",
-        1: "0.5",
-        2: "0.9",
-        3: "0.9",
-        4: "1.2",
-        5: "1.2",
-        8: "1.8",
-        9: "2.4",
-        10: "3.1",
-    },
-    "VCP-12": {
-        0: "0.5",
-        1: "0.5",
-        2: "0.9",
-        3: "0.9",
-        4: "1.2",
-        5: "1.2",
-        6: "1.8",
-        7: "2.4",
-        8: "3.1",
-    },
-}
 
 NEXRAD_FIELD_MAGIC = b"EWFFv1S0"
 NEXRAD_VARIABLE_COLORMAP_KEYS = {
@@ -103,7 +68,8 @@ def _canonical_elevation_label(scan_name: str | None, sweep_index: int) -> str |
     normalized_scan_name = _normalize_scan_name(scan_name)
     if normalized_scan_name is None:
         return None
-    return VCP_SWEEP_ELEVATION_LABELS.get(normalized_scan_name, {}).get(sweep_index)
+    labels = nexrad_config.vcp_sweep_elevation_labels()
+    return labels.get(normalized_scan_name, {}).get(sweep_index)
 def nexrad_render_elevation_dir(site: str, elevation_label: str) -> Path:
     return nexrad_render_site_dir(site) / str(elevation_label)
 

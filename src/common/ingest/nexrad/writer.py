@@ -6,16 +6,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import util.file as fs
-from common.ingest.nexrad.grouping import DOPPLER_WAVEFORM
+from common.ingest.nexrad import config as nexrad_config
 from common.ingest.nexrad.parser import DREF_BLOCK, filter_msg31_blocks, iter_metadata_records, iter_sweep_records
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, format_nexrad_timestamp, parse_nexrad_timestamp, required_volume_chunks
 from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
 
 IMPORTANT_DATA_VARS = None
-NEXRAD_SCAN_DIRS_TO_KEEP = 3
-NEXRAD_ELEVATION_DIRS_TO_KEEP = 2
 SCAN_TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
-STALE_MANIFEST_MAX_AGE_HOURS = 12
 
 
 def _write_text_if_changed(path: Path, content: str) -> Path:
@@ -77,7 +74,7 @@ class NexradLocalChunkStore:
             key=lambda child: child.name,
             reverse=True,
         )
-        keep_dirs = {child.name for child in timestamp_dirs[:NEXRAD_SCAN_DIRS_TO_KEEP]}
+        keep_dirs = {child.name for child in timestamp_dirs[:nexrad_config.scan_dirs_to_keep()]}
         keep_dirs.add(keep_timestamp)
 
         for child in timestamp_dirs:
@@ -153,8 +150,9 @@ class NexradElevationStore:
             key=lambda f: f.name,
             reverse=True,
         )
-        keep = {f.name for f in nc_files[:NEXRAD_ELEVATION_DIRS_TO_KEEP]}
-        keep.update(f.name for f in ar2v_files[:NEXRAD_ELEVATION_DIRS_TO_KEEP])
+        dirs_to_keep = nexrad_config.elevation_dirs_to_keep()
+        keep = {f.name for f in nc_files[:dirs_to_keep]}
+        keep.update(f.name for f in ar2v_files[:dirs_to_keep])
 
         for f in [*nc_files, *ar2v_files]:
             if f.name in keep:
@@ -253,7 +251,11 @@ def _site_manifest_candidate_dirs(site_dir: Path):
         yield child
 
 
-def prune_stale_site_manifests(base_dir: Path | None = None, *, max_age_hours: int = STALE_MANIFEST_MAX_AGE_HOURS) -> int:
+def prune_stale_site_manifests(base_dir: Path | None = None, *, max_age_hours: float | None = None) -> int:
+    # Resolved in the body, not as a default expression: a default binds at
+    # import time, and this module is imported before --config-dir is known.
+    if max_age_hours is None:
+        max_age_hours = nexrad_config.stale_manifest_max_age_hours()
     if base_dir:
         fs.initialize_filesystem(base_dir)
     root = fs.NEXRAD_LEVEL2_DIR
@@ -436,7 +438,7 @@ def build_site_manifest(
         volumes.values(),
         key=lambda volume: _volume_sort_key(volume.get("volume_timestamp"), volume.get("volume_id", "")),
         reverse=True,
-    )[:NEXRAD_ELEVATION_DIRS_TO_KEEP]
+    )[:nexrad_config.elevation_dirs_to_keep()]
 
     for volume in ordered_volumes:
         volume["sweeps"].sort(key=_raw_sweep_sort_key)
@@ -690,6 +692,7 @@ def _write_elevation_ar2v(path: Path, raw_volume, group_names: list[str]) -> Pat
     """Write a grouped elevation as a raw AR2V payload via streaming writes."""
     path.parent.mkdir(parents=True, exist_ok=True)
     sweeps_by_group = {sweep.group_name: sweep for sweep in getattr(raw_volume, "sweeps", [])}
+    doppler = nexrad_config.doppler_waveform()
     with open(path, "wb") as f:
         f.write(raw_volume.volume_header)
         for record in iter_metadata_records(raw_volume):
@@ -698,11 +701,11 @@ def _write_elevation_ar2v(path: Path, raw_volume, group_names: list[str]) -> Pat
             sweep = sweeps_by_group.get(group_name)
             if sweep is None:
                 continue
+            # Per sweep, not per record: the waveform is a property of the sweep,
+            # so testing it inside the record loop only repeated the work.
+            is_doppler = str(getattr(sweep, "waveform", "") or "").strip().lower() == doppler
             for record in iter_sweep_records(raw_volume, sweep):
-                output_record = record
-                if str(getattr(sweep, "waveform", "") or "").strip().lower() == DOPPLER_WAVEFORM:
-                    output_record = filter_msg31_blocks(record, DREF_BLOCK)
-                f.write(output_record)
+                f.write(filter_msg31_blocks(record, DREF_BLOCK) if is_doppler else record)
     return path
 
 

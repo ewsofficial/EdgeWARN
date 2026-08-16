@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import functools
+import inspect
 import re
 from pathlib import Path, PurePath
 
@@ -135,21 +136,24 @@ def test_cleanup_skip_rules_are_hardcoded():
     assert ".gz" in source
 
 
-def test_nexrad_manifest_staleness_is_a_python_default():
-    """`writer.py:18` holds the retention window for stale site manifests.
+def test_nexrad_manifest_staleness_comes_from_the_catalog():
+    """RESOLVED (Phase 5): the retention window was a `writer.py` constant.
 
-    Named by the plan's "retention" category; not covered by
-    `test_cleanup_retention_defaults_are_python_defaults` because it lives in
-    `nexrad/writer.py`, not `util/file.py`.
+    The parameter had to stop defaulting to it, rather than defaulting to the
+    accessor: a default expression is evaluated at import time, and this module
+    is imported before `--config-dir` is resolved, so the signature would have
+    frozen the repo-default value and no override could reach it.
     """
-    from common.ingest.nexrad.writer import STALE_MANIFEST_MAX_AGE_HOURS
+    from common.config import loader
+    from common.ingest.nexrad import writer
 
-    assert STALE_MANIFEST_MAX_AGE_HOURS == 12
+    assert not hasattr(writer, "STALE_MANIFEST_MAX_AGE_HOURS")
 
-    # The function parameter defaults to the module constant by reference, not
-    # a second inline literal, so there is exactly one place to change this.
-    source = (SRC / "common/ingest/nexrad/writer.py").read_text(encoding="utf-8")
-    assert "max_age_hours: int = STALE_MANIFEST_MAX_AGE_HOURS" in source
+    signature = inspect.signature(writer.prune_stale_site_manifests)
+    assert signature.parameters["max_age_hours"].default is None
+
+    catalog = loader.load_config("nexrad")["retention"]
+    assert catalog["stale_manifest_max_age_hours"] == 12
 
 
 # --- Process supervision timers --------------------------------------------

@@ -38,7 +38,7 @@ from common.ingest.nexrad.stream import (
     detect_next_volume_offset,
     split_at_boundary,
 )
-from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
+from common.ingest.nexrad.grouping import ingest_readiness_elevation_ids
 from common.ingest.nexrad.parser import normalize_chunk_payload
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
@@ -216,7 +216,7 @@ def _timestamp_is_newer(candidate: str | None, current: str | None) -> bool:
 
 def _required_elevation_paths_complete(site: str, elevation_timestamps: dict[str, str]) -> bool:
     required_elevations: list[tuple[str, str]] = []
-    for elevation in INGEST_READINESS_ELEVATION_IDS:
+    for elevation in ingest_readiness_elevation_ids():
         timestamp = elevation_timestamps.get(elevation)
         if not timestamp:
             return False

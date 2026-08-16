@@ -14,6 +14,7 @@ membership test alone would not catch one.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -49,6 +50,102 @@ def rap_uint16():
 @pytest.fixture(scope="module")
 def integration():
     return loader.load_config("integration")
+
+
+@pytest.fixture(scope="module")
+def nexrad():
+    return loader.load_config("nexrad")
+
+
+# --- NEXRAD sweep selection -----------------------------------------------
+#
+# The loader's schema walker has no `propertyNames` or cross-field support, so
+# these relationships can only be enforced here. Each one describes a way to
+# edit the catalog into a state that raises nothing and silently renders a bin
+# or a VCP unreachable.
+
+def test_canonical_elevation_bins_are_ascending(nexrad):
+    """Snapping is by nearest bin, so order is not required for correctness.
+
+    It is asserted anyway because the bins are published as an ordered readiness
+    tuple: `volume_discovery` walks them in catalog order, and an out-of-order
+    entry would reorder readiness checks for no stated reason.
+    """
+    bins = list(nexrad["selection"]["canonical_elevation_bins"])
+    assert bins == sorted(bins)
+
+
+def test_the_elevation_cutoff_does_not_orphan_the_top_bin(nexrad):
+    """A cutoff below the highest bin makes that bin unreachable.
+
+    `grouping._finalize_group` drops a group whose representative angle exceeds
+    `high_max_angle_deg` *before* snapping, so a cutoff of, say, 3.5 would leave
+    the 4.0 bin defined and permanently empty rather than erroring.
+    """
+    selection = nexrad["selection"]
+    assert selection["high_max_angle_deg"] >= max(selection["canonical_elevation_bins"])
+
+
+def test_the_sweep_floor_does_not_orphan_the_bottom_bin(nexrad):
+    """A floor above the lowest bin means that bin is only ever reached downward.
+
+    `parser` discards a sweep below `min_sweep_angle_deg` outright, so a floor
+    above 0.5 would leave the 0.5 bin reachable only by a higher sweep rounding
+    down onto it.
+    """
+    selection = nexrad["selection"]
+    assert selection["min_sweep_angle_deg"] <= min(selection["canonical_elevation_bins"])
+
+
+def test_waveform_names_are_distinct(nexrad):
+    """The grouper branches on these by equality, in order.
+
+    Were `doppler` to equal `surveillance`, every doppler sweep would open a new
+    group instead of joining one, and no group would ever satisfy its
+    required-waveform check -- a total ingest stall with nothing logged.
+    """
+    waveforms = nexrad["selection"]["waveforms"]
+    names = [waveforms["surveillance"], waveforms["doppler"], *waveforms["single_elevation"]]
+    assert duplicates(names) == {}
+
+
+def test_vcp_label_sets_match_the_allowed_vcps(nexrad):
+    """Labels for a rejected VCP are dead, and an allowed VCP with none renders bare.
+
+    The renderer keys this map by the `VCP-<n>` form that `_normalize_scan_name`
+    produces, and a miss returns None rather than raising, so neither direction
+    of drift announces itself.
+    """
+    labelled = set(nexrad["vcp_sweep_elevation_labels"])
+    expected = {f"VCP-{vcp}" for vcp in nexrad["selection"]["allowed_vcps"]}
+    assert labelled == expected
+
+
+def test_vcp_sweep_indices_are_non_negative_integers(nexrad):
+    """A string key would never match the integer `sweep_index` the renderer passes.
+
+    YAML makes `{0: '0.5'}` an int key and `{'0': '0.5'}` a string one, and the
+    schema cannot tell them apart, so the difference is invisible until a sweep
+    silently loses its label.
+    """
+    wrong = {
+        (vcp, index)
+        for vcp, labels in nexrad["vcp_sweep_elevation_labels"].items()
+        for index in labels
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0
+    }
+    assert wrong == set()
+
+
+def test_vcp_labels_are_numeric_elevation_strings(nexrad):
+    """Labels become directory names, so a stray unit or space would reach the path."""
+    bad = {
+        (vcp, index, label)
+        for vcp, labels in nexrad["vcp_sweep_elevation_labels"].items()
+        for index, label in labels.items()
+        if not re.fullmatch(r"\d+\.\d+", label)
+    }
+    assert bad == set()
 
 
 # --- MRMS ingest and readiness --------------------------------------------
