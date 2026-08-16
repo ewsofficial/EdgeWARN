@@ -1,21 +1,104 @@
-"""Configuration for WPC Surface Analysis ingestion."""
+"""WPC surface-analysis settings read from ``config/wpc.yaml``.
 
-# Base URL for WPC coded surface data
-WPC_CODED_SFC_BASE_URL = "https://ftp.wpc.ncep.noaa.gov/coded_sfc"
+Accessors rather than module constants so the catalog is read per call: the WPC
+ingest runs inside a process spawned with no argv, which resolves the config root
+from ``EDGEWARN_CONFIG_DIR`` after this module is imported, and a module-level
+read would have frozen the repo default at import time.
+"""
 
-# Update interval in hours (WPC updates every 3 hours)
-UPDATE_INTERVAL_HOURS = 3
+from common.config.loader import load_config
 
-# Valid hours for surface analysis (every 3 hours UTC)
-VALID_HOURS = [0, 3, 6, 9, 12, 15, 18, 21]
+_CONFIG_NAME = "wpc"
 
-# Feature type definitions for styling reference
-FEATURE_TYPES = {
-    "COLD": {"name": "Cold Front", "color": "#0000FF"},
-    "WARM": {"name": "Warm Front", "color": "#FF0000"},
-    "STNRY": {"name": "Stationary Front", "color": "#800080"},
-    "OCFNT": {"name": "Occluded Front", "color": "#800080"},
-    "TROF": {"name": "Trough", "color": "#8B4513"},
-    "HIGH": {"name": "High Pressure", "color": "#0000FF"},
-    "LOW": {"name": "Low Pressure", "color": "#FF0000"},
-}
+
+def _wpc():
+    """The ``wpc`` section. ``load_config`` is memoized, so this is cheap."""
+    return load_config(_CONFIG_NAME)["wpc"]
+
+
+def coded_sfc_base_url() -> str:
+    """Root of the WPC coded surface archive; the date directory is appended."""
+    return _wpc()["coded_sfc_base_url"]
+
+
+def update_interval_hours() -> float:
+    """How often WPC publishes, which is what makes ``valid_hours`` 3-hourly.
+
+    Distinct from :func:`previous_analysis_lookback_hours` despite the equal
+    value: this describes the upstream product, that one is our own choice of how
+    far back to backfill.
+    """
+    return _wpc()["update_interval_hours"]
+
+
+def valid_hours() -> tuple[int, ...]:
+    """The UTC hours WPC publishes at, in ascending order.
+
+    Order is load-bearing: the downloader steps backwards through this to pick a
+    fallback analysis, and wraps to the previous day off the last element.
+    """
+    return _wpc()["valid_hours"]
+
+
+def http_timeout_seconds() -> float:
+    """Per-request timeout for both the primary and the fallback download."""
+    return _wpc()["http_timeout_seconds"]
+
+
+def verify_tls() -> bool:
+    """Whether the WPC connection verifies certificates.
+
+    Pinned to ``true`` by ``wpc.schema.json``. It is read rather than assumed so
+    that a schema which ever allowed ``false`` would fail loudly instead of
+    silently downgrading the transport.
+    """
+    return _wpc()["verify_tls"]
+
+
+def date_format() -> str:
+    """``strftime`` format for the remote date directory and the local filename."""
+    return _wpc()["date_format"]
+
+
+def remote_filename_pattern() -> str:
+    """Remote basename, formatted with ``hour``."""
+    return _wpc()["remote_filename_pattern"]
+
+
+def output_filename_pattern() -> str:
+    """Local timestamped basename, formatted with ``date`` and ``hour``."""
+    return _wpc()["output_filename_pattern"]
+
+
+def latest_filename() -> str:
+    """Name of the always-overwritten copy, which ``cleanup_glob`` must not match."""
+    return _wpc()["latest_filename"]
+
+
+def cleanup_glob() -> str:
+    """Glob the retention sweep deletes from; pairs with the output pattern."""
+    return _wpc()["cleanup_glob"]
+
+
+def cleanup_max_age_minutes() -> int:
+    """Age budget for the timestamped copies.
+
+    WPC owns this rather than inheriting ``filesystem.yaml``'s default, because a
+    3-hourly product needs a window wider than an hour to keep anything at all.
+    """
+    return _wpc()["cleanup_max_age_minutes"]
+
+
+def previous_analysis_lookback_hours() -> float:
+    """How far back the ingest backfills a second analysis on each run."""
+    return _wpc()["previous_analysis_lookback_hours"]
+
+
+def fallback_geojson_color() -> str:
+    """Color for a parsed feature code absent from :func:`feature_types`."""
+    return _wpc()["fallback_geojson_color"]
+
+
+def feature_types():
+    """Code -> ``{name, color}`` for GeoJSON styling."""
+    return _wpc()["feature_types"]

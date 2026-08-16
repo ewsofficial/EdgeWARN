@@ -369,6 +369,32 @@ def test_azshear_constants_count():
     assert len(names) == 5
 
 
+# --- WPC surface-analysis styling ------------------------------------------
+
+def test_wpc_feature_types_baseline():
+    """The front and pressure-center styling catalog.
+
+    Absent from the audit and never snapshotted while it was a module constant.
+    Now that it comes from YAML, a dropped entry is silent: the converter falls
+    back to the raw code as its own label, so the GeoJSON still validates and the
+    front simply renders unnamed and black.
+    """
+    from common.ingest.wpc.config import feature_types
+
+    assert_baseline(
+        "wpc_feature_types",
+        {code: dict(style) for code, style in feature_types().items()},
+    )
+
+
+def test_wpc_feature_types_cover_every_converted_code():
+    """Every code the converter emits must have styling, or it renders as a fallback."""
+    from common.ingest.wpc.config import feature_types
+
+    converter_codes = {"COLD", "WARM", "STNRY", "OCFNT", "TROF", "HIGH", "LOW"}
+    assert set(feature_types()) == converter_codes
+
+
 # --- Node API product catalog ("API mappings") -----------------------------
 
 def test_node_product_catalog_baseline():
