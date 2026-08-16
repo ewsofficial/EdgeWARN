@@ -13,11 +13,16 @@
 #   selection.high_max_angle_deg           grouping.py:5 (as MAX_ELEVATION_DEG)
 #   retention.*                            writer.py:15-18
 #   vcp_sweep_elevation_labels             src/EWMRS/render/nexrad.py:16-50
-#   radar_products                         src/api/services/ancillary.js:6
+#
+# The API's radar-moment allowlist used to be duplicated here as well. Its only
+# consumer is src/api/services/ancillary.js, so api.yaml owns it alone; two
+# catalogs holding one list is the drift this project exists to remove.
 #
 # Two keys are read by nothing at all, here or in code -- they are not shadowed,
 # they are unused, and they are marked below rather than deleted so the decision
-# to drop them is made deliberately.
+# to drop them is made deliberately. A third, `cli.volume_id`, was deleted
+# outright: a fixed volume identifier is an argument to one invocation, not a
+# setting a deployment carries.
 
 schema_version: 1
 
@@ -31,7 +36,7 @@ buckets:
 stations:
   catalog_url: https://api.weather.gov/radar/stations
   # The User-Agent is NOT here. It is one string for the whole application,
-  # `runtime.yaml identity`, applied at nexrad/weather_api.py:75. This subsystem
+  # `runtime.yaml identity`, applied at nexrad/weather_api.py:102. This subsystem
   # used to hardcode the release number into its copy, so the advertised version
   # could not track package.json.
   api_timeout_seconds: 15
@@ -39,15 +44,19 @@ stations:
 
 selection:
   allowed_vcps: [12, 212, 215]
-  # UNUSED: nothing reads this. grouping.py:166 builds an elevation dedup key by
-  # exact match, not within a tolerance, so there is no site for this to reach.
+  # UNUSED: nothing reads this. grouping.py:167-168 builds an elevation dedup key
+  # by exact match, not within a tolerance, so there is no site for this to reach.
   angle_dedup_tolerance_deg: 0.1
   high_max_angle_deg: 4.0
   min_sweep_angle_deg: 0.4
-  # Readiness bin identities. These do NOT agree with the VCP sweep labels
-  # below: the third bin is 1.3 here, but VCP-12 and VCP-215 label that sweep
-  # 1.2 (only VCP-212 labels it 1.3). The disagreement is in the working tree,
-  # not a transcription error, and is left for a reviewed decision.
+  # Readiness bin identities, and they agree with grouping.py exactly. They do
+  # NOT agree with vcp_sweep_elevation_labels below, which labels the third sweep
+  # 1.2 for VCP-12 and VCP-215 -- but that is two independent naming schemes, not
+  # a transcription error in either. Nothing is mis-binned: grouping.py assigns a
+  # sweep to its NEAREST bin with no tolerance, so a real VCP-12 sweep at
+  # 1.2305 degrees lands on 1.3 (distance 0.07) and 1.2 is never a bin at all.
+  # The 1.2 labels reach output only through serialize_nexrad_render_intermediate,
+  # which has no caller outside tests, so the divergence is inert today.
   canonical_elevation_bins: [0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0]
   min_required_volume_chunks: 25
   # grouping.py:9-12. A surveillance sweep is only complete once the matching
@@ -91,15 +100,17 @@ realtime:
   # a `cli` key: two entry points need it.
   max_candidate_volumes_per_site: 3
 
-# Genuinely CLI-only: nothing outside an argv-bearing entry point reads these.
+# Defaults for the argv-bearing entry points. Each is overridden by its flag and
+# is read only where the corresponding flag exists, which is why the one-shot
+# volume id is absent: a fixed volume identifier is an argument, not a setting.
 cli:
-  # --site, repeatable. `null` means "every allowed station": pipeline/__init__.py
-  # keeps None as-is and station_filter.py:16 then applies no site filter. An
+  # --site, repeatable, and read by the realtime pipeline only -- nexrad/main.py
+  # takes a single site rather than a list. `null` means "every allowed station":
+  # None survives to station_filter.py:19, which then applies no site filter. An
   # empty list is NOT the same thing -- it would filter every site away.
   sites: null
-  base_dir: null
+  base_dir: null                        # --base-dir; null means util.file's default
   max_volumes_per_site: 1               # one-shot ingest only
-  volume_id: null                       # one-shot ingest only
 
 retention:
   scan_dirs_to_keep: 3
@@ -113,12 +124,6 @@ vcp_sweep_elevation_labels:
   VCP-12:  {0: '0.5', 1: '0.5', 2: '0.9', 3: '0.9', 4: '1.2', 5: '1.2', 6: '1.8', 7: '2.4', 8: '3.1'}
   VCP-212: {0: '0.5', 1: '0.5', 2: '0.9', 3: '0.9', 4: '1.3', 5: '1.3', 6: '1.8', 7: '2.4', 8: '3.1'}
   VCP-215: {0: '0.5', 1: '0.5', 2: '0.9', 3: '0.9', 4: '1.2', 5: '1.2', 8: '1.8', 9: '2.4', 10: '3.1'}
-
-# ancillary.js:6 RADAR_PRODUCTS, the API's moment allowlist. CCORH is present
-# here but absent from ewmrs_render.yaml `nexrad_gui.variable_colormaps`, which
-# renders only the other six -- so the API accepts one product the renderer
-# never colors.
-radar_products: [DBZH, VRADH, WRADH, PHIDP, CCORH, RHOHV, ZDR]
 
 env_overrides:
   concurrency.worker_pool_size: NEXRAD_WORKER_POOL_SIZE
