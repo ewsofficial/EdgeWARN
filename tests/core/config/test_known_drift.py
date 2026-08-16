@@ -2010,3 +2010,100 @@ def test_alert_matcher_cache_bounds_are_read_from_the_catalog():
     for line in source.splitlines():
         if "cache_max_entries" in line:
             assert line.startswith(" "), f"module-scope read of a cache bound: {line!r}"
+
+
+# --- MRMS/GOES: the retention and depth literals now have one owner each ------
+
+
+def _mrms_goes_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load((REPO_ROOT / "config" / "mrms_goes.yaml").read_text(encoding="utf-8"))
+
+
+def _src_text(relative_path: str) -> str:
+    return (REPO_ROOT / "src" / relative_path).read_text(encoding="utf-8")
+
+
+def test_decompress_chunk_size_has_no_module_level_owner():
+    """`s3_common.DECOMPRESS_CHUNK_SIZE` was a second owner of the catalog key.
+
+    It is distinct from `mrms.ncep_https.download_chunk_size_bytes` (8192): that
+    one sizes network reads, this one sizes a local gzip expansion. Both are
+    real, so the fix was to give this one an accessor, not to merge them.
+    """
+    from common.ingest.mrms import s3_common
+    from common.ingest.mrms.config import mrms_decompress_chunk_size_bytes
+
+    assert not hasattr(s3_common, "DECOMPRESS_CHUNK_SIZE")
+    assert mrms_decompress_chunk_size_bytes() == _mrms_goes_yaml()["mrms"]["decompress_chunk_size_bytes"]
+
+
+def test_goes_hour_lookback_has_one_resolution_site():
+    """The five GOES entry points must not restate the window as a default.
+
+    `_get_goes_bucket_paths` is the only consumer, so it is the only resolver;
+    the entry points pass `None` through, which keeps a per-call override
+    possible without making any of them a second owner.
+    """
+    from datetime import datetime, timezone
+
+    from common.ingest.mrms.downloader import _get_goes_bucket_paths
+
+    source = _src_text("common/ingest/mrms/downloader.py")
+    assert "hour_lookback=3" not in source
+
+    expected = _mrms_goes_yaml()["goes"]["hour_lookback"]
+    paths = _get_goes_bucket_paths(datetime(2026, 8, 16, 12, tzinfo=timezone.utc), "ABI-L1b-RadC")
+    assert len(paths) == expected
+
+
+def test_goes_cleanup_retention_is_catalog_owned():
+    """Six `max_age_minutes=60` literals in downloader.py, now none."""
+    from common.ingest.mrms.config import goes_cleanup_max_age_minutes
+
+    source = _src_text("common/ingest/mrms/downloader.py")
+    assert "max_age_minutes=60" not in source
+    assert goes_cleanup_max_age_minutes() == _mrms_goes_yaml()["goes"]["cleanup_max_age_minutes"]
+
+
+def test_mrms_and_goes_cleanup_windows_stay_separate_keys():
+    """Both are 60 today and must remain two keys.
+
+    GOES cleanup additionally enforces `max_files_per_spec`, so the two windows
+    bound different retention policies; collapsing them would tie a count cap to
+    an age cap that has no reason to move with it.
+    """
+    catalog = _mrms_goes_yaml()
+    assert catalog["mrms"]["cleanup_max_age_minutes"] == 60
+    assert catalog["goes"]["cleanup_max_age_minutes"] == 60
+    assert "max_files_per_spec" in catalog["goes"]
+
+
+def test_mrms_cleanup_and_pruning_flag_are_catalog_owned():
+    """main.py restated the retention window four times and the flag five."""
+    from common.ingest.mrms.main import _cleanup_kwargs, _resolve_ingest_args
+
+    source = _src_text("common/ingest/mrms/main.py")
+    assert '"max_age_minutes": 60' not in source
+    assert "remove_old_files=True" not in source
+
+    catalog = _mrms_goes_yaml()["mrms"]
+    assert _cleanup_kwargs() == {"max_age_minutes": catalog["cleanup_max_age_minutes"]}
+    assert _resolve_ingest_args(None, None)[1] == catalog["remove_old_files"]
+
+
+def test_mrms_ingest_depth_is_owned_only_by_runtime_yaml():
+    """`mrms_goes.yaml download_max_entries` was a third copy of one number.
+
+    `runtime.yaml cycle.ingest_max_entries` already owned the depth for the
+    callers that pass one; main.py's seven `max_entries=10` defaults owned it for
+    the callers that do not. Deleting the catalog key and defaulting the
+    signatures to `None` leaves exactly one owner.
+    """
+    from common.config.loader import load_config
+    from common.ingest.mrms.main import _ingest_max_entries
+
+    assert "download_max_entries" not in _mrms_goes_yaml()["mrms"]
+    assert "max_entries=10" not in _src_text("common/ingest/mrms/main.py")
+    assert _ingest_max_entries() == load_config("runtime")["cycle"]["ingest_max_entries"]

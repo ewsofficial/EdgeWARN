@@ -33,9 +33,43 @@ def mrms_bucket() -> str:
     return _catalog()["mrms"]["bucket"]
 
 
+def mrms_decompress_chunk_size_bytes() -> int:
+    """Copy length used when a gzipped MRMS grib is expanded to disk.
+
+    Distinct from ``mrms.ncep_https.download_chunk_size_bytes``: that one sizes
+    reads off the network, this one sizes a local ``copyfileobj``.
+    """
+    return _catalog()["mrms"]["decompress_chunk_size_bytes"]
+
+
+def mrms_cleanup_max_age_minutes() -> int:
+    """Retention window applied to MRMS output directories before a download."""
+    return _catalog()["mrms"]["cleanup_max_age_minutes"]
+
+
+def mrms_remove_old_files() -> bool:
+    """Whether an ingest run prunes its output directories at all."""
+    return _catalog()["mrms"]["remove_old_files"]
+
+
 def goes_bucket() -> str:
     """The S3 bucket GOES products are read from."""
     return _catalog()["goes"]["bucket"]
+
+
+def goes_cleanup_max_age_minutes() -> int:
+    """Retention window applied to GOES spec output directories.
+
+    A separate owner from :func:`mrms_cleanup_max_age_minutes` even though both
+    are 60 today: GOES cleanup also enforces ``max_files`` per spec, so the two
+    windows bound different retention policies and can legitimately diverge.
+    """
+    return _catalog()["goes"]["cleanup_max_age_minutes"]
+
+
+def goes_hour_lookback() -> int:
+    """How many hourly bucket prefixes a GOES lookup walks back through."""
+    return _catalog()["goes"]["hour_lookback"]
 
 
 def abi_radc_product() -> str:

@@ -152,8 +152,13 @@ cycle:
   #
   # The parameter default was a literal 10 until this key became its owner. The
   # realtime path passed the key explicitly and the historical path did not, so
-  # raising this value used to move realtime runs only -- a silent split that a
-  # single resolution site inside the coordinator now makes impossible.
+  # raising this value used to move realtime runs only -- a silent split that
+  # resolving it from here, in both resolution sites, now makes impossible.
+  #
+  # The second site is common/ingest/mrms/main.py, which resolves this same key
+  # for the entry points a caller invokes directly rather than through the
+  # coordinator. Two sites, one owner: mrms_goes.yaml deliberately holds no copy
+  # of this depth, because a copy there is what produced the split above.
   #
   # It does not reach GOES. The coordinator used to hand this same count to the
   # GOES task, which discarded it in favor of a fixed depth of 96, because GLM

@@ -1,4 +1,9 @@
-from common.ingest.mrms.config import get_mrms_modifiers, get_goes_modifiers
+from common.ingest.mrms.config import (
+    get_mrms_modifiers,
+    get_goes_modifiers,
+    mrms_cleanup_max_age_minutes,
+    mrms_remove_old_files,
+)
 from common.ingest.mrms.downloader import (
     download_all_files_async_internal,
     download_all_files_sync_fallback, download_files_sync_fallback,
@@ -16,6 +21,29 @@ import util.file as fs
 import asyncio
 
 io_manager = IOManager("[Ingest]")
+
+
+def _ingest_max_entries():
+    """The S3 listing depth for MRMS ingest.
+
+    Owned by ``runtime.yaml cycle.ingest_max_entries`` rather than by
+    ``mrms_goes.yaml``: the coordinator resolves the same key for the callers
+    that pass one, so a literal default here would be a second owner that
+    disagreed the moment an operator raised the catalog value.
+    """
+    return load_config("runtime")["cycle"]["ingest_max_entries"]
+
+
+def _cleanup_kwargs():
+    return {"max_age_minutes": mrms_cleanup_max_age_minutes()}
+
+
+def _resolve_ingest_args(max_entries, remove_old_files):
+    """Fill in whichever of the two an entry point's caller left unspecified."""
+    return (
+        _ingest_max_entries() if max_entries is None else max_entries,
+        mrms_remove_old_files() if remove_old_files is None else remove_old_files,
+    )
 
 
 def get_detection_modifiers():
@@ -42,7 +70,8 @@ def get_ewmrs_support_modifiers():
     detection_mods = set(get_detection_modifiers())
     return [mod for mod in get_ewmrs_modifiers() if mod not in detection_mods]
 
-async def download_all_files_async(dt, max_entries=10, remove_old_files=True):
+async def download_all_files_async(dt, max_entries=None, remove_old_files=None):
+    max_entries, remove_old_files = _resolve_ingest_args(max_entries, remove_old_files)
     mrms_modifiers = get_mrms_modifiers()
     goes_modifiers = get_goes_modifiers()
     cleanup_dirs = get_output_dirs(mrms_modifiers, goes_modifiers=goes_modifiers)
@@ -55,12 +84,13 @@ async def download_all_files_async(dt, max_entries=10, remove_old_files=True):
         ],
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
-        cleanup_kwargs={"max_age_minutes": 60},
+        cleanup_kwargs=_cleanup_kwargs(),
     )
     return results[0]
 
-async def download_detection_files_async(dt, max_entries=10, remove_old_files=True):
+async def download_detection_files_async(dt, max_entries=None, remove_old_files=None):
     """Downloads only files strictly required for detection phase."""
+    max_entries, remove_old_files = _resolve_ingest_args(max_entries, remove_old_files)
     mrms_modifiers = get_mrms_modifiers()
     detection_mods = get_detection_modifiers()
     cleanup_dirs = get_output_dirs(
@@ -76,15 +106,16 @@ async def download_detection_files_async(dt, max_entries=10, remove_old_files=Tr
         ],
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
-        cleanup_kwargs={"max_age_minutes": 60},
+        cleanup_kwargs=_cleanup_kwargs(),
         # Detection readiness is defined by its three downloads; background
         # housekeeping must not delay the EdgeWARN worker barrier.
         wait_for_cleanup=False,
     )
     return results[0]
 
-async def download_integration_files_async(dt, max_entries=10, remove_old_files=True):
+async def download_integration_files_async(dt, max_entries=None, remove_old_files=None):
     """Downloads MRMS integration products, excluding detection products."""
+    max_entries, remove_old_files = _resolve_ingest_args(max_entries, remove_old_files)
     mrms_modifiers = get_mrms_modifiers()
     detection_mods = get_detection_modifiers()
     integration_mods = get_integration_modifiers()
@@ -101,13 +132,14 @@ async def download_integration_files_async(dt, max_entries=10, remove_old_files=
         ],
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
-        cleanup_kwargs={"max_age_minutes": 60},
+        cleanup_kwargs=_cleanup_kwargs(),
     )
     return results[0]
 
 
-async def download_ewmrs_files_async(dt, max_entries=10, remove_old_files=True):
+async def download_ewmrs_files_async(dt, max_entries=None, remove_old_files=None):
     """Downloads the MRMS products required by the EWMRS render pipeline."""
+    max_entries, remove_old_files = _resolve_ingest_args(max_entries, remove_old_files)
     mrms_modifiers = get_mrms_modifiers()
     render_mods = get_ewmrs_support_modifiers()
     cleanup_dirs = get_output_dirs(
@@ -123,10 +155,11 @@ async def download_ewmrs_files_async(dt, max_entries=10, remove_old_files=True):
         ],
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
-        cleanup_kwargs={"max_age_minutes": 60},
+        cleanup_kwargs=_cleanup_kwargs(),
     )
 
-def download_all_files(dt, max_entries=10, remove_old_files=True):
+def download_all_files(dt, max_entries=None, remove_old_files=None):
+    max_entries, remove_old_files = _resolve_ingest_args(max_entries, remove_old_files)
     run_with_async_fallback(
         io_manager=io_manager,
         async_runner=lambda: download_all_files_async(dt, max_entries, remove_old_files),
@@ -137,11 +170,13 @@ def download_all_files(dt, max_entries=10, remove_old_files=True):
     )
 
 
-def download_detection_files(dt, max_entries=10):
+def download_detection_files(dt, max_entries=None):
     """Sync fallback scoped to the detection MRMS products."""
+    max_entries, _ = _resolve_ingest_args(max_entries, None)
     return download_files_sync_fallback(dt, max_entries, get_detection_modifiers())
 
 
-def download_integration_files(dt, max_entries=10):
+def download_integration_files(dt, max_entries=None):
     """Sync fallback scoped to the integration MRMS products."""
+    max_entries, _ = _resolve_ingest_args(max_entries, None)
     return download_files_sync_fallback(dt, max_entries, get_integration_modifiers())

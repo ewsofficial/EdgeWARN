@@ -13,10 +13,22 @@ mrms:
   # exports EDGEWARN_CONFIG_DIR -- so --config-dir could not reach it and an
   # operator override was silently ignored in favour of the value below.
   bucket: noaa-mrms-pds
+  # config.py mrms_decompress_chunk_size_bytes(), applied as the copyfileobj
+  # length in s3_sync.py and s3_async.py. Distinct from
+  # `ncep_https.download_chunk_size_bytes` below: that one sizes network reads,
+  # this one sizes a local gzip expansion.
   decompress_chunk_size_bytes: 1048576    # 1 MiB
-  download_max_entries: 10                # main.py:44 max_entries default
-  remove_old_files: true                  # main.py:44
-  cleanup_max_age_minutes: 60             # main.py:57,78,103,125
+
+  # The S3 listing depth for MRMS ingest is NOT here. It is owned by
+  # runtime.yaml `cycle.ingest_max_entries`, which the coordinator resolves for
+  # the callers that pass one and main.py resolves for the callers that do not.
+  # A copy here would be a second owner that disagreed the moment an operator
+  # raised one of them; there used to be one, and it did.
+
+  # Both read per call by main.py's four async entry points, which pass None
+  # through to mean "the caller expressed no preference".
+  remove_old_files: true
+  cleanup_max_age_minutes: 60
   cadence_minutes: 2                      # timestamp_utils.py:30 (current_minute % 2)
   rounding_half_up_seconds: 30            # timestamp_utils.py:32,39 (ts.second >= 30)
 
@@ -139,12 +151,17 @@ goes:
   # runtime.yaml (`cycle.ingest_max_entries`, 10) would never list back to the
   # requested scan.
   max_entries: 96
-  # Unlike max_entries above, this is still a per-call parameter and is not
-  # read from here: the five GOES download entry points in downloader.py each
-  # default `hour_lookback` to 3, and a caller may narrow it. Recorded so the
-  # catalog names the operative value.
+  # downloader.py _get_goes_bucket_paths(), the one place hour_lookback is
+  # consumed and therefore the one place it is resolved. The five GOES entry
+  # points default the parameter to None and pass it straight through, so a
+  # caller may still narrow the window per call without owning the default.
   hour_lookback: 3
-  cleanup_max_age_minutes: 60            # main.py:57
+
+  # config.py goes_cleanup_max_age_minutes(), applied by downloader.py's GOES
+  # pre-download cleanup. Deliberately separate from mrms.cleanup_max_age_minutes
+  # despite matching it today: GOES cleanup also enforces `max_files_per_spec`,
+  # so the two bound different retention policies.
+  cleanup_max_age_minutes: 60
   bucket_path_pattern: '{product}/{YYYY}/{DDD}/{HH}/'  # parse.py:53
   filename_matcher_template: '(?:_|-)M\d{channel_id}_' # config.py get_abi_radc_channel_specs()
   # 16 channels. `get_abi_radc_channel_specs(channel_ids=None)` selects all of
