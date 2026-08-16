@@ -9,7 +9,7 @@
     "detection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["refl_threshold", "min_seed_percentage", "drop_offset", "stormcell_cleanup_max_age_minutes", "fallback_dt_seconds", "tracking_disabled_defaults"],
+      "required": ["refl_threshold", "min_seed_percentage", "drop_offset", "stormcell_cleanup_max_age_minutes", "fallback_dt_seconds", "tracking_disabled_defaults", "dataset_load_max_workers"],
       "properties": {
         "refl_threshold": { "type": "number" },
         "min_seed_percentage": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -25,7 +25,8 @@
             "prediction_count": { "type": "integer", "minimum": 0 },
             "event_type": { "type": "string" }
           }
-        }
+        },
+        "dataset_load_max_workers": { "type": "integer", "minimum": 1 }
       }
     },
     "tracker": {
@@ -86,11 +87,13 @@
     "alert_matching": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["events", "polygon_match_buffer_deg", "point_match_buffer_deg"],
+      "required": ["events", "polygon_match_buffer_deg", "point_match_buffer_deg", "snapshot_cache_max_entries", "geometry_cache_max_entries"],
       "properties": {
         "events": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
         "polygon_match_buffer_deg": { "type": "number", "minimum": 0 },
-        "point_match_buffer_deg": { "type": "number", "minimum": 0 }
+        "point_match_buffer_deg": { "type": "number", "minimum": 0 },
+        "snapshot_cache_max_entries": { "type": "integer", "minimum": 1 },
+        "geometry_cache_max_entries": { "type": "integer", "minimum": 1 }
       }
     },
     "save": {

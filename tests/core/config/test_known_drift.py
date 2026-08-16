@@ -1948,3 +1948,65 @@ def test_assignment_has_no_second_regularization_owner():
     assert "covariance_regularization" not in load_config("kalman")["assignment"]
     fields = {field.name for field in dataclasses.fields(AssignmentConfig)}
     assert "covariance_regularization" not in fields
+
+
+# --- detect: concurrency and cache bounds are catalog-owned ----------------
+
+
+def test_dataset_load_worker_count_has_no_literal_owner():
+    """`detect.py` must take its pool size from the threaded config.
+
+    The literal `3` matched the three loads submitted below it, so raising it
+    bought nothing -- but it also meant an operator diagnosing I/O contention
+    had no way to serialize the loads without editing source.
+    """
+    from tests.core.config.source_inspect import SRC
+
+    source = (SRC / "EdgeWARN/process/detect/detect.py").read_text(encoding="utf-8")
+    assert "max_workers=detection_config.dataset_load_max_workers" in source
+    assert "max_workers=3" not in source
+
+
+def test_dataset_load_worker_count_reaches_the_typed_config():
+    from common.config.loader import load_config
+    from EdgeWARN.process.detect.config import DetectionConfig
+
+    expected = load_config("detection")["detection"]["dataset_load_max_workers"]
+    assert DetectionConfig.from_yaml().dataset_load_max_workers == expected
+
+
+def test_alert_matcher_caches_are_bounded():
+    """Both module-level caches were unbounded for the process lifetime.
+
+    They are keyed by `(registry_dir, snapshot)`, so a historical replay -- which
+    walks every retained snapshot -- grew them without limit. Eviction is
+    insertion-ordered because a run only ever revisits the snapshot for the scan
+    it is currently processing.
+    """
+    from EdgeWARN.process.detect.tools import alert_matcher
+
+    cache = {}
+    for index in range(10):
+        alert_matcher._store_bounded(cache, ("snapshot", index), index, 4)
+
+    assert list(cache) == [("snapshot", index) for index in range(6, 10)]
+
+
+def test_alert_matcher_cache_bounds_are_read_from_the_catalog():
+    """The bounds must be read per call, not frozen at import.
+
+    `alert_matcher` is imported from `detect/main.py`, so a module-scope read of
+    either bound would freeze the repo-default config directory the same way
+    `azshear/constants.py` did.
+    """
+    from tests.core.config.source_inspect import SRC
+    from common.config.loader import load_config
+
+    catalog = load_config("detection")["alert_matching"]
+    assert catalog["snapshot_cache_max_entries"] >= 1
+    assert catalog["geometry_cache_max_entries"] >= 1
+
+    source = (SRC / "EdgeWARN/process/detect/tools/alert_matcher.py").read_text(encoding="utf-8")
+    for line in source.splitlines():
+        if "cache_max_entries" in line:
+            assert line.startswith(" "), f"module-scope read of a cache bound: {line!r}"

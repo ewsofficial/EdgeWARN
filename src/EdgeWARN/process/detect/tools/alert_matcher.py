@@ -29,6 +29,18 @@ _ALERT_SNAPSHOT_CACHE: Dict[tuple, List[Dict[str, Any]]] = {}
 _ALERT_GEOMETRY_CACHE: Dict[tuple, tuple] = {}
 
 
+def _store_bounded(cache: dict, key: tuple, value: Any, max_entries: int) -> None:
+    """Insert into a FIFO-bounded cache, evicting oldest keys past the bound.
+
+    Insertion order is eviction order because a run only ever revisits the
+    snapshot for the scan it is currently processing; older keys belong to scans
+    that will not be asked for again.
+    """
+    cache[key] = value
+    while len(cache) > max_entries:
+        del cache[next(iter(cache))]
+
+
 def convective_flood_events() -> frozenset:
     """Allowlist of NWS event names eligible for attachment to a cell.
 
@@ -125,7 +137,12 @@ def _load_active_alerts_with_cache(
                 except Exception:
                     continue
 
-        _ALERT_SNAPSHOT_CACHE[cache_key] = features
+        _store_bounded(
+            _ALERT_SNAPSHOT_CACHE,
+            cache_key,
+            features,
+            section("alert_matching")["snapshot_cache_max_entries"],
+        )
         return [dict(feature) for feature in features], cache_key
         
     except Exception as e:
@@ -174,9 +191,11 @@ def _prepare_alert_geometries(
             alert_polys.append(alert_poly)
             alert_prepared.append(prep(alert_poly))
 
+    geometry_cache_max_entries = section("alert_matching")["geometry_cache_max_entries"]
+
     if not alert_polys:
         prepared = ([], [], [], None, {}, [])
-        _ALERT_GEOMETRY_CACHE[geometry_cache_key] = prepared
+        _store_bounded(_ALERT_GEOMETRY_CACHE, geometry_cache_key, prepared, geometry_cache_max_entries)
         return prepared
 
     try:
@@ -190,7 +209,7 @@ def _prepare_alert_geometries(
         fallback_alerts = []
 
     prepared = (alert_ids, alert_polys, alert_prepared, spatial_index, geom_id_to_index, fallback_alerts)
-    _ALERT_GEOMETRY_CACHE[geometry_cache_key] = prepared
+    _store_bounded(_ALERT_GEOMETRY_CACHE, geometry_cache_key, prepared, geometry_cache_max_entries)
     return prepared
 
 

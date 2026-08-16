@@ -39,6 +39,12 @@ detection:
     prediction_count: 0
     event_type: active
 
+  # detect.py loads radar, ProbSevere and PrecipType concurrently. Three because
+  # there are exactly three datasets, so raising it buys nothing; it is a knob
+  # only so an operator can lower it to serialize the loads when diagnosing I/O
+  # contention.
+  dataset_load_max_workers: 3
+
 tracker:
   # track.py:65 StormCellTracker.__init__, forwarded into LineageDetector at
   # :186. This -- not lineage.yaml's `event_overlap_ratio` -- is the value the
@@ -119,6 +125,14 @@ alert_matching:
   # slack than point cells because a point has no footprint of its own.
   polygon_match_buffer_deg: 0.005
   point_match_buffer_deg: 0.01
+
+  # Bounds on the two module-level caches in alert_matcher.py. Both are keyed by
+  # (registry_dir, snapshot) and were unbounded, so a long-lived process -- and
+  # especially a historical replay, which walks every retained snapshot -- grew
+  # them without limit for the process lifetime. Oldest-first eviction: the
+  # matcher only ever revisits the current scan's snapshot.
+  snapshot_cache_max_entries: 8
+  geometry_cache_max_entries: 512
 
 # tools/save.py geometry serialization. Both default to 3 today but are written
 # to separate keys because they round different things: `polygon_decimals`
