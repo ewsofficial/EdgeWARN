@@ -10,7 +10,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "bucket", "decompress_chunk_size_bytes", "download_max_entries",
+        "bucket", "decompress_chunk_size_bytes",
         "remove_old_files", "cleanup_max_age_minutes", "cadence_minutes",
         "rounding_half_up_seconds", "staged_filename_pattern", "path_patterns",
         "ncep_https", "products", "check_products", "membership_lists"
@@ -18,7 +18,6 @@
       "properties": {
         "bucket": { "type": "string" },
         "decompress_chunk_size_bytes": { "type": "integer", "exclusiveMinimum": 0 },
-        "download_max_entries": { "type": "integer", "minimum": 1 },
         "remove_old_files": { "type": "boolean" },
         "cleanup_max_age_minutes": { "type": "integer", "minimum": 1 },
         "cadence_minutes": { "type": "integer", "minimum": 1 },

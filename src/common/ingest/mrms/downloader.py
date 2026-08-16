@@ -9,6 +9,8 @@ from common.ingest.mrms.config import (
     get_goes_modifiers,
     get_mrms_modifiers,
     goes_bucket,
+    goes_cleanup_max_age_minutes,
+    goes_hour_lookback,
     mrms_bucket,
     normalize_goes_modifier,
 )
@@ -146,7 +148,17 @@ def _goes_search_max_entries():
     return get_goes_max_entries()
 
 
-def _get_goes_bucket_paths(dt, product, hour_lookback):
+def _get_goes_bucket_paths(dt, product, hour_lookback=None):
+    """The hourly bucket prefixes one GOES lookup walks, newest hour first.
+
+    The single resolution site for ``hour_lookback``. Every GOES entry point
+    passes its parameter straight through, so ``None`` there means "no caller
+    narrowed the window" and the catalog value applies here -- one owner, and
+    still overridable per call.
+    """
+    if hour_lookback is None:
+        hour_lookback = goes_hour_lookback()
+
     return [
         parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
         for hour_offset in range(hour_lookback)
@@ -173,8 +185,11 @@ def _filter_goes_files_for_spec(file_list, goes_spec, trace_id=None):
     return filtered_files
 
 
-def _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=60):
+def _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=None):
     """Run pre-download cleanup for a GOES product output directory (sync path)."""
+    if max_age_minutes is None:
+        max_age_minutes = goes_cleanup_max_age_minutes()
+
     try:
         outdir = goes_spec.outdir
         fs.clean_old_files(outdir, max_age_minutes=max_age_minutes, max_files=goes_spec.max_files)
@@ -183,8 +198,11 @@ def _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=60):
         io_manager.write_warning(f"[GOES:{label}] Pre-download cleanup failed for {outdir}: {e}")
 
 
-async def _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=60):
+async def _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=None):
     """Run pre-download cleanup for a GOES product output directory (async path)."""
+    if max_age_minutes is None:
+        max_age_minutes = goes_cleanup_max_age_minutes()
+
     try:
         outdir = goes_spec.outdir
         await fs.async_clean_old_files(outdir, max_age_minutes=max_age_minutes, max_files=goes_spec.max_files)
@@ -195,14 +213,14 @@ async def _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=60):
         )
 
 
-def _cleanup_goes_specs_sync(goes_specs, max_age_minutes=60):
+def _cleanup_goes_specs_sync(goes_specs, max_age_minutes=None):
     for goes_spec in goes_specs:
         _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=max_age_minutes)
     if goes_specs:
         io_manager.write_info(f"GOES pre-download cleanup completed for {len(goes_specs)} products")
 
 
-async def _cleanup_goes_specs_async(goes_specs, trace_id, max_age_minutes=60):
+async def _cleanup_goes_specs_async(goes_specs, trace_id, max_age_minutes=None):
     if not goes_specs:
         return
     await asyncio.gather(
@@ -485,14 +503,14 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
 
 # ==================== GOES-19 Download Functions ====================
 
-def download_goes_product(goes_spec, dt, hour_lookback=3, preloaded_files=None):
+def download_goes_product(goes_spec, dt, hour_lookback=None, preloaded_files=None):
     """
     Download a specific GOES-19 product.
 
     Args:
         goes_spec: GOES ingest specification or legacy ``(product, outdir)`` tuple
         dt (datetime): Target datetime (UTC, timezone-aware)
-        hour_lookback (int): Number of hours to look back (default: 3).
+        hour_lookback (int): Hours to look back; None uses goes.hour_lookback.
 
     Returns:
         Path: Path to downloaded file, or None if failed
@@ -751,14 +769,14 @@ async def _download_goes_product_async(
     perf_tracker.stop(f"Ingest - GOES - {label}")
 
 
-def download_goes_specs(goes_specs, dt, hour_lookback=3):
+def download_goes_specs(goes_specs, dt, hour_lookback=None):
     """Download a specific list of GOES-19 products."""
     goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
     if not goes_modifiers_list:
         return DownloadBatchResult(attempted=(), downloaded=(), failed=())
 
     io_manager.write_info("Starting GOES-19 downloads...")
-    _cleanup_goes_specs_sync(goes_modifiers_list, max_age_minutes=60)
+    _cleanup_goes_specs_sync(goes_modifiers_list)
 
     # Use ThreadPoolExecutor for concurrent downloads
     shared_channel_files_by_product = {}
@@ -821,13 +839,13 @@ def download_goes_specs(goes_specs, dt, hour_lookback=3):
     )
 
 
-def download_all_goes_files(dt, hour_lookback=3):
+def download_all_goes_files(dt, hour_lookback=None):
     """
     Download all configured GOES-19 products.
 
     Args:
         dt (datetime): Target datetime (UTC, timezone-aware)
-        hour_lookback (int): Number of hours to look back (default: 3)
+        hour_lookback (int): Hours to look back; None uses goes.hour_lookback.
     """
     return download_goes_specs(
         get_goes_modifiers(),
@@ -836,7 +854,7 @@ def download_all_goes_files(dt, hour_lookback=3):
     )
 
 
-async def download_goes_specs_async(goes_specs, dt, hour_lookback=3):
+async def download_goes_specs_async(goes_specs, dt, hour_lookback=None):
     """Async version: Download a specific list of GOES-19 products concurrently."""
     trace_id = f"GOES_ALL-{uuid.uuid4().hex[:8]}"
     goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
@@ -847,7 +865,7 @@ async def download_goes_specs_async(goes_specs, dt, hour_lookback=3):
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         io_manager.write_info(f"[{trace_id}] Starting async GOES-19 downloads...")
         perf_maps = {"lookup_ms": {}, "download_ms": {}, "decompress_ms": {}}
-        await _cleanup_goes_specs_async(goes_modifiers_list, trace_id, max_age_minutes=60)
+        await _cleanup_goes_specs_async(goes_modifiers_list, trace_id)
         shared_channel_files_by_product = {}
         s3_bucket = goes_bucket()
         search_max_entries = _goes_search_max_entries()
@@ -924,13 +942,13 @@ async def download_goes_specs_async(goes_specs, dt, hour_lookback=3):
         )
 
 
-async def download_all_goes_files_async(dt, hour_lookback=3):
+async def download_all_goes_files_async(dt, hour_lookback=None):
     """
     Async version: Download all configured GOES-19 products concurrently.
 
     Args:
         dt (datetime): Target datetime (UTC, timezone-aware)
-        hour_lookback (int): Number of hours to look back (default: 3)
+        hour_lookback (int): Hours to look back; None uses goes.hour_lookback.
     """
     return await download_goes_specs_async(
         get_goes_modifiers(),

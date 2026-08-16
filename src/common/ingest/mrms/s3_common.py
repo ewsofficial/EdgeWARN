@@ -3,8 +3,6 @@ Shared constants and utilities for MRMS S3 download modules.
 """
 from common.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 
-DECOMPRESS_CHUNK_SIZE = 1024 * 1024  # 1MB chunks to reduce syscall overhead during gzip copy
-
 
 def select_target_file(dt, file_list, io_manager, context: str | None = None):
     """
