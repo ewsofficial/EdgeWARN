@@ -564,21 +564,34 @@ def test_wpc_cleanup_glob_matches_the_timestamped_name_but_not_latest():
     assert get_latest_output_filepath().name == recorded["latest_filename"]
 
 
-def test_wpc_valid_hours_stay_consistent_with_the_publish_interval():
-    """DECISION OWED: `update_interval_hours` reaches no code except this check.
+def test_wpc_valid_hours_are_derived_from_the_publish_interval():
+    """RESOLVED (Phase 5): the hand-enumerated `valid_hours` key is gone.
 
-    `valid_hours` is the interval enumerated by hand, so the two can disagree. The
-    downloader reads only the list -- it steps backwards through it to pick a
-    fallback analysis -- which means a changed interval with a stale list would
-    request hours WPC never publishes and fall back on every run. Deriving the
-    list from the interval would be the real fix; until then this is the coupling.
+    It used to be a second key holding `update_interval_hours` written out by
+    hand, with nothing deriving one from the other. The downloader reads only the
+    list, so changing the interval alone left a stale list behind and every run
+    would request hours WPC never publishes and fall into its fallback path.
+
+    `valid_hours()` now computes `range(0, 24, interval)`, which leaves the
+    interval as the sole owner. What the catalog can no longer express, the schema
+    now constrains instead: the interval is an `enum` of the divisors of 24, since
+    the downloader wraps off the last publish hour to the previous day and an
+    interval that does not tile the day would leave a short gap across midnight.
     """
     from common.ingest.wpc.config import update_interval_hours, valid_hours
 
     recorded = _wpc_yaml()["wpc"]
+    assert "valid_hours" not in recorded, "the derived list must not return as a key"
+
     interval = recorded["update_interval_hours"]
     assert update_interval_hours() == interval == 3
-    assert tuple(valid_hours()) == tuple(recorded["valid_hours"]) == tuple(range(0, 24, interval))
+    assert isinstance(interval, int), "range() cannot step by a float"
+    assert 24 % interval == 0, "the publish hours must tile the day"
+
+    # Pinned against the literal the catalog used to hold, so the derivation
+    # cannot quietly start producing a different schedule than WPC publishes on.
+    assert valid_hours() == (0, 3, 6, 9, 12, 15, 18, 21)
+    assert valid_hours() == tuple(range(0, 24, interval))
 
     downloader_source = (
         REPO_ROOT / "src/common/ingest/wpc/downloader.py"

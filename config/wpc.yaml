@@ -9,11 +9,17 @@ schema_version: 1
 wpc:
   coded_sfc_base_url: https://ftp.wpc.ncep.noaa.gov/coded_sfc
 
-  # WPC publishes every 3 hours, and `valid_hours` is that interval enumerated by
-  # hand. Nothing derives one from the other, so a changed interval with a stale
-  # list would request hours WPC never publishes; a drift guard couples them.
+  # WPC publishes every 3 hours. The list of publish hours is NOT a key here:
+  # `config.valid_hours()` derives it as range(0, 24, this). It used to be a
+  # second key holding that interval enumerated by hand, with nothing coupling
+  # the two, so editing the interval alone left a stale list and the downloader
+  # asked for hours WPC never publishes -- failing into its fallback every run.
+  #
+  # The schema restricts this to a divisor of 24 rather than any positive number.
+  # The downloader wraps off the last publish hour to the previous day, so an
+  # interval that does not tile the day would leave a short gap across midnight,
+  # and a fractional one cannot index whole hours at all.
   update_interval_hours: 3
-  valid_hours: [0, 3, 6, 9, 12, 15, 18, 21]
   http_timeout_seconds: 30
 
   # SECURITY: this key pins verification on, it does not offer to turn it off.
