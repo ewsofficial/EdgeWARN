@@ -71,10 +71,10 @@ def test_mrms_goes_bucket_baseline():
     assert_baseline(
         "mrms_goes_buckets",
         {
-            "bucket": mrms_config.bucket,
-            "goes_bucket": mrms_config.goes_bucket,
-            "abi_radc_product": mrms_config.ABI_RADC_PRODUCT,
-            "default_abi_radc_channel_ids": mrms_config.DEFAULT_ABI_RADC_CHANNEL_IDS,
+            "bucket": mrms_config.mrms_bucket(),
+            "goes_bucket": mrms_config.goes_bucket(),
+            "abi_radc_product": mrms_config.abi_radc_product(),
+            "default_abi_radc_channel_ids": mrms_config.default_abi_radc_channel_ids(),
         },
     )
 

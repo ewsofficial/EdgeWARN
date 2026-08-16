@@ -5,7 +5,7 @@ from pathlib import Path
 from EdgeWARN.ingest.mrms.s3_sync import FileFinder
 from EdgeWARN.ingest.mrms.utils import extract_timestamp
 from EdgeWARN.ingest.mrms.parse import parse_mrms_bucket_path
-from EdgeWARN.ingest.mrms.config import bucket
+from EdgeWARN.ingest.mrms.config import mrms_bucket
 from EdgeWARN.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 from EdgeWARN.schedule.config import (
     modifier_lookup_max_entries,
@@ -40,7 +40,7 @@ class MRMSUpdateChecker:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
 
         # Pass shared client
-        finder = FileFinder(reference_dt, bucket, self.max_entries, io_manager, client=self.s3_client)
+        finder = FileFinder(reference_dt, mrms_bucket(), self.max_entries, io_manager, client=self.s3_client)
         try:
             bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False)
@@ -79,14 +79,32 @@ class MRMSUpdateChecker:
 
 
 
-    def _get_modifier_times(self, modifier_tuple, reference_dt, trace_id=None, last_processed=None):
-        """Helper to fetch timestamps for a single modifier."""
+    def _get_modifier_times(
+        self,
+        modifier_tuple,
+        reference_dt,
+        trace_id=None,
+        last_processed=None,
+        s3_bucket=None,
+        max_entries=None,
+    ):
+        """Helper to fetch timestamps for a single modifier.
+
+        ``s3_bucket`` and ``max_entries`` are resolved by the caller because this
+        runs once per modifier inside a thread pool. Reading them here meant one
+        catalog stat per modifier per tick, issued concurrently from every worker
+        thread against a config cache that is not synchronized.
+        """
         region, modifier, _ = modifier_tuple
+        if s3_bucket is None:
+            s3_bucket = mrms_bucket()
+        if max_entries is None:
+            max_entries = modifier_lookup_max_entries()
         # Pass shared client
         finder = FileFinder(
             reference_dt,
-            bucket,
-            modifier_lookup_max_entries(),
+            s3_bucket,
+            max_entries,
             io_manager,
             client=self.s3_client,
         )
@@ -175,10 +193,22 @@ class MRMSUpdateChecker:
 
         # Parallelize checks using ThreadPoolExecutor
         t0 = time.time()
+        s3_bucket = mrms_bucket()
+        max_entries = modifier_lookup_max_entries()
         with concurrent.futures.ThreadPoolExecutor() as executor:
             # Map returns an iterator in the order of the inputs
             # Pass last_processed to _get_modifier_times
-            results = executor.map(lambda m: self._get_modifier_times(m, reference_dt, trace_id, last_processed), modifiers)
+            results = executor.map(
+                lambda m: self._get_modifier_times(
+                    m,
+                    reference_dt,
+                    trace_id,
+                    last_processed,
+                    s3_bucket=s3_bucket,
+                    max_entries=max_entries,
+                ),
+                modifiers,
+            )
             
             modifier_times.extend(results)
         

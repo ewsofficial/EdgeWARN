@@ -79,7 +79,8 @@ def test_latest_common_minute_intersection(update_checker, mocker):
     # Mod 2 has [NEW, NEWER]
     # Common is NEW
     
-    def side_effect(mod, ref_dt, trace_id=None, last_processed=None):
+    def side_effect(mod, ref_dt, trace_id=None, last_processed=None,
+                    s3_bucket=None, max_entries=None):
         if mod[1] == "Mod1":
             return {TS_OLD, TS_NEW}
         else:
@@ -105,7 +106,8 @@ def test_latest_common_minute_logs_only_when_timestamp_advances(update_checker, 
 
 def test_latest_common_minute_no_intersection(update_checker, mocker):
     """Test behavior when no common timestamps exist."""
-    def side_effect(mod, ref_dt, trace_id=None, last_processed=None):
+    def side_effect(mod, ref_dt, trace_id=None, last_processed=None,
+                    s3_bucket=None, max_entries=None):
         if mod[1] == "Mod1":
             return {TS_OLD}
         else:

@@ -28,8 +28,39 @@ def _resolve_outdir(attribute_name):
         ) from None
 
 
-bucket = _catalog()["mrms"]["bucket"]
-goes_bucket = _catalog()["goes"]["bucket"]
+def mrms_bucket() -> str:
+    """The S3 bucket MRMS products are read from."""
+    return _catalog()["mrms"]["bucket"]
+
+
+def goes_bucket() -> str:
+    """The S3 bucket GOES products are read from."""
+    return _catalog()["goes"]["bucket"]
+
+
+def abi_radc_product() -> str:
+    """The ABI product every RadC channel spec is built against."""
+    return _catalog()["goes"]["abi_product"]
+
+
+def _abi_channel_definitions():
+    return tuple(
+        (channel["id"], channel["name"], channel["outdir"])
+        for channel in _catalog()["goes"]["abi_channels"]
+    )
+
+
+def default_abi_radc_channel_ids() -> tuple:
+    """Every ABI channel id in the catalog, in catalog order."""
+    return tuple(channel_id for channel_id, _, _ in _abi_channel_definitions())
+
+
+def goes_max_files_per_spec() -> int:
+    """The retained-file count cap applied per GOES spec during cleanup."""
+    return _catalog()["goes"]["max_files_per_spec"]
+
+
+_FROM_CATALOG = object()
 
 
 @dataclass(frozen=True)
@@ -39,7 +70,16 @@ class GoesIngestSpec:
     channel_id: str | None = None
     channel_name: str | None = None
     filename_matcher: str | None = None
-    max_files: int = _catalog()["goes"]["max_files_per_spec"]
+    # Resolved in __post_init__, not as a field default: a default is evaluated at
+    # class-definition time, which is before get_args() exports EDGEWARN_CONFIG_DIR,
+    # so --config-dir could never reach it. A distinct sentinel rather than None
+    # because None is a meaningful value for a count cap -- it means "no cap" to
+    # util.file.clean_old_files.
+    max_files: int | None = _FROM_CATALOG
+
+    def __post_init__(self):
+        if self.max_files is _FROM_CATALOG:
+            object.__setattr__(self, "max_files", goes_max_files_per_spec())
 
     @property
     def label(self) -> str:
@@ -49,17 +89,6 @@ class GoesIngestSpec:
     def is_glm(self) -> bool:
         return self.channel_id is None and "GLM" in self.product
 
-
-ABI_RADC_PRODUCT = _catalog()["goes"]["abi_product"]
-
-_ABI_CHANNEL_DEFINITIONS = tuple(
-    (channel["id"], channel["name"], channel["outdir"])
-    for channel in _catalog()["goes"]["abi_channels"]
-)
-
-DEFAULT_ABI_RADC_CHANNEL_IDS = tuple(channel_id for channel_id, _, _ in _ABI_CHANNEL_DEFINITIONS)
-
-_FILENAME_MATCHER_TEMPLATE = _catalog()["goes"]["filename_matcher_template"]
 
 def _catalog_triples(key):
     return [
@@ -91,21 +120,30 @@ def get_goes_max_entries():
     return _catalog()["goes"]["max_entries"]
 
 
-def get_abi_radc_channel_specs(channel_ids=DEFAULT_ABI_RADC_CHANNEL_IDS):
+def get_abi_radc_channel_specs(channel_ids=None):
+    """Build a spec per ABI channel, optionally restricted to ``channel_ids``.
+
+    ``None`` means every channel in the catalog. It used to mean that indirectly,
+    via a signature default of ``DEFAULT_ABI_RADC_CHANNEL_IDS`` -- which selected
+    every catalog channel and so produced the same result, but bound the channel
+    list at import time and put it out of reach of ``--config-dir``.
+    """
     selected_channel_ids = set(channel_ids) if channel_ids is not None else None
     specs = []
+    product = abi_radc_product()
+    matcher_template = _catalog()["goes"]["filename_matcher_template"]
 
-    for channel_id, channel_name, outdir_attr in _ABI_CHANNEL_DEFINITIONS:
+    for channel_id, channel_name, outdir_attr in _abi_channel_definitions():
         if selected_channel_ids is not None and channel_id not in selected_channel_ids:
             continue
 
         specs.append(
             GoesIngestSpec(
-                product=ABI_RADC_PRODUCT,
+                product=product,
                 outdir=_resolve_outdir(outdir_attr),
                 channel_id=channel_id,
                 channel_name=channel_name,
-                filename_matcher=_FILENAME_MATCHER_TEMPLATE.format(channel_id=channel_id),
+                filename_matcher=matcher_template.format(channel_id=channel_id),
             )
         )
 

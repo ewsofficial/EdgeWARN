@@ -1,7 +1,7 @@
 from common.ingest.mrms.config import (
-    ABI_RADC_PRODUCT,
-    DEFAULT_ABI_RADC_CHANNEL_IDS,
     GoesIngestSpec,
+    abi_radc_product,
+    default_abi_radc_channel_ids,
     get_check_modifiers,
     get_abi_radc_channel_specs,
     get_goes_modifiers,
@@ -14,10 +14,8 @@ import util.file as fs
 def test_get_abi_radc_channel_specs_includes_all_channels():
     specs = get_abi_radc_channel_specs(channel_ids=None)
 
-    from common.ingest.mrms.config import DEFAULT_ABI_RADC_CHANNEL_IDS
-
-    assert [spec.channel_id for spec in specs] == list(DEFAULT_ABI_RADC_CHANNEL_IDS)
-    assert all(spec.product == ABI_RADC_PRODUCT for spec in specs)
+    assert [spec.channel_id for spec in specs] == list(default_abi_radc_channel_ids())
+    assert all(spec.product == abi_radc_product() for spec in specs)
     assert all(spec.filename_matcher == rf"(?:_|-)M\d{spec.channel_id}_" for spec in specs)
 
 
@@ -25,7 +23,7 @@ def test_get_goes_modifiers_defaults_to_glm_plus_all_abi_channels():
     specs = get_goes_modifiers()
 
     assert specs[0] == GoesIngestSpec("GLM-L2-LCFA", specs[0].outdir)
-    assert [spec.channel_id for spec in specs[1:]] == list(DEFAULT_ABI_RADC_CHANNEL_IDS)
+    assert [spec.channel_id for spec in specs[1:]] == list(default_abi_radc_channel_ids())
 
 
 def test_normalize_goes_modifier_supports_legacy_tuple(tmp_path):

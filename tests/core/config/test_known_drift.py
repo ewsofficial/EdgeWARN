@@ -326,8 +326,8 @@ def test_scheduler_listing_widths_stay_two_separate_keys():
 
     It is read only by `has_update`, whose only in-repo caller is
     `all_sources_available`, which nothing calls outside the scheduler tests. The
-    width the live scheduler actually uses is `modifier_lookup_max_entries`, held
-    separately inside `_get_modifier_times`. Collapsing the two would look like a
+    width the live scheduler actually uses is `modifier_lookup_max_entries`,
+    resolved for `_get_modifier_times`. Collapsing the two would look like a
     cleanup but would retune the live path from 20 to 10, so they stay distinct
     until the dead path is either wired up or deleted.
     """
@@ -344,7 +344,11 @@ def test_scheduler_listing_widths_stay_two_separate_keys():
     assert source.count("all_sources_available") == 1, "it gained a caller; revisit the dead-path note"
 
     # The live path must reach the catalog, not a literal that happens to match it.
-    assert "modifier_lookup_max_entries()," in source
+    # Resolved once above the thread pool and passed in, rather than read inside
+    # the per-modifier helper: that helper runs once per modifier per tick from
+    # every worker thread, and `load_config` stats the catalog on every call.
+    assert "max_entries = modifier_lookup_max_entries()" in source
+    assert "max_entries=max_entries," in source
     assert "bucket, 20," not in source
 
     # A caller may still override, but no literal competes with the catalog.
@@ -1753,3 +1757,69 @@ def test_ewmrs_generic_render_phase_still_cleans_up_by_default():
     assert "cleanup_after: bool | None = None," in source
 
 
+
+
+# --- MRMS/GOES: --config-dir could not reach the ingest catalog ------------
+
+def test_mrms_catalog_values_are_resolved_per_call_not_at_import():
+    """RESOLVED (Phase 5): `--config-dir` reached none of these values.
+
+    `config.py` bound five values at module scope -- two S3 buckets, the ABI
+    product, the channel-id tuple, and `GoesIngestSpec.max_files` as a dataclass
+    field default. `src/run.py:9` imports this module 23 lines before `get_args()`
+    calls `export_config_root`, so every one of them froze the repo-default
+    catalog. An operator passing `--config-dir` was silently ingesting from the
+    default bucket, not theirs.
+
+    Asserting the module attributes are *absent* is the load-bearing half: an
+    accessor that agrees with a surviving constant still leaves two owners.
+    """
+    from common.ingest.mrms import config as mrms_config
+
+    for name in ("bucket", "ABI_RADC_PRODUCT", "DEFAULT_ABI_RADC_CHANNEL_IDS"):
+        assert not hasattr(mrms_config, name)
+
+    # `goes_bucket` kept its name but is now callable rather than a bound string.
+    assert callable(mrms_config.goes_bucket)
+
+    source = (REPO_ROOT / "src/common/ingest/mrms/config.py").read_text(encoding="utf-8")
+    # The field default was the subtlest of the five: it reads as per-instance but
+    # Python evaluates it once, at class-definition time.
+    assert 'max_files: int | None = _FROM_CATALOG' in source
+    assert '_catalog()["goes"]["max_files_per_spec"]' not in source.split("def goes_max_files_per_spec")[0]
+
+
+def test_config_dir_reaches_mrms_values_after_the_module_is_already_imported(tmp_path):
+    """The regression test for the ordering that made the bug invisible.
+
+    Importing first and exporting second is not artificial -- it is exactly what
+    `src/run.py` does. A test that exported before importing would pass against
+    the old module constants too, and so would prove nothing.
+    """
+    import shutil
+
+    from common.config import loader
+    from common.ingest.mrms import config as mrms_config
+
+    config_dir = tmp_path / "config"
+    shutil.copytree(REPO_ROOT / "config", config_dir)
+    catalog = config_dir / "mrms_goes.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8")
+            .replace(mrms_config.mrms_bucket(), "override-mrms")
+            .replace(mrms_config.goes_bucket(), "override-goes"),
+        encoding="utf-8",
+    )
+
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    try:
+        loader.export_config_root(config_dir)
+        assert mrms_config.mrms_bucket() == "override-mrms"
+        assert mrms_config.goes_bucket() == "override-goes"
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+
+    assert mrms_config.mrms_bucket() != "override-mrms"
