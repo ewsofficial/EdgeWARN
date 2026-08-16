@@ -23,6 +23,7 @@ from common.ingest.mrms.downloader import (
 )
 from common.ingest.synoptic.main import download_rap_async
 from common.ingest.synoptic.main import parse_rap_analysis_time
+from common.config.loader import load_config
 
 
 LogFunc = Callable[[str], None]
@@ -122,7 +123,7 @@ async def run_tandem_ingest_cycle(
     dt: datetime,
     log: LogFunc,
     *,
-    max_entries: int = 10,
+    max_entries: int | None = None,
     include_goes: bool = True,
     include_rap: bool = True,
     include_ewmrs: bool = True,
@@ -138,6 +139,11 @@ async def run_tandem_ingest_cycle(
     callbacks still expose readiness in dependency order, but every callback
     observes the same exact, timestamp-validated input selection.
     """
+
+    # Read through the loader rather than util.runtime.config: importing that
+    # module pulls in util.runtime.cycle, which imports this one.
+    if max_entries is None:
+        max_entries = load_config("runtime")["cycle"]["ingest_max_entries"]
 
     state = CycleState(timestamp=dt)
     log(f"INFO: Starting shared ingest cycle for timestamp {dt}")

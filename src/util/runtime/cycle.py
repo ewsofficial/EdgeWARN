@@ -475,7 +475,6 @@ def run_tandem_cycle_once(
 
             cycle_task = asyncio.create_task(run_tandem_ingest_cycle(
                 dt, lambda msg: queue_log(log_queue, msg),
-                max_entries=cycle_settings["ingest_max_entries"],
                 include_goes=False,
                 include_rap=not config.mrms_core_only,
                 include_ewmrs=config.ewmrs_enabled,
