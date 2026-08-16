@@ -1,8 +1,17 @@
 import express from 'express';
+import { readFileSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import cellsRouter from './features/cells.js';
 import timestampsRouter from './features/timestamps.js';
 import alertsRouter from './features/alerts.js';
 import metarRouter from './data/metar.js';
+
+// package.json owns the version; this file used to restate it as a literal.
+const PACKAGE_VERSION = JSON.parse(readFileSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../package.json'),
+  'utf8',
+)).version;
 
 const router = express.Router();
 
@@ -17,7 +26,7 @@ router.use('/data/metar', metarRouter);
 // Root v2 endpoint
 router.get('/', (req, res) => {
   // Only expose detailed version in non-production environments
-  const version = process.env.NODE_ENV === 'production' ? '2.x' : '2.7.0';
+  const version = process.env.NODE_ENV === 'production' ? '2.x' : PACKAGE_VERSION;
   res.json({
     message: 'EdgeWARN API v2',
     version: version,

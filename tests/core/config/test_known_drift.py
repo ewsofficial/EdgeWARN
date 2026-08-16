@@ -2107,3 +2107,27 @@ def test_mrms_ingest_depth_is_owned_only_by_runtime_yaml():
     assert "download_max_entries" not in _mrms_goes_yaml()["mrms"]
     assert "max_entries=10" not in _src_text("common/ingest/mrms/main.py")
     assert _ingest_max_entries() == load_config("runtime")["cycle"]["ingest_max_entries"]
+
+
+# --- package.json is the only owner of the version string -------------------
+
+
+def test_no_javascript_file_restates_the_package_version():
+    """Four sites carried a literal '2.7.0' -- three services and two tests.
+
+    Runnable without Node, which matters: the JS suite cannot run on every
+    machine that touches this repo, so the invariant is pinned from Python.
+
+    The `'2.x'` production mask is deliberately NOT covered here. It is not a
+    copy of the version -- it is a decision to withhold the version -- and its
+    owner is `api.yaml`, which has no production reader yet.
+    """
+    import json
+
+    version = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+    offenders = []
+    for path in list((REPO_ROOT / "src").rglob("*.js")) + list((REPO_ROOT / "tests").rglob("*.js")):
+        if f"'{version}'" in path.read_text(encoding="utf-8"):
+            offenders.append(str(path.relative_to(REPO_ROOT)))
+
+    assert offenders == [], f"version literal restated in {offenders}"

@@ -1,5 +1,14 @@
+import { readFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+// package.json is the sole owner of the version. This was a literal default,
+// which agreed with the manifest only until one of the two was bumped.
+const PACKAGE_VERSION = JSON.parse(readFileSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../package.json'),
+  'utf8',
+)).version;
 
 const DEFAULT_BASE_DIR = process.platform === 'win32'
   ? 'C:\\EdgeWARN_input'
@@ -51,7 +60,7 @@ function parseTrustProxy(value, env) {
   return Object.freeze(value.split(',').map((entry) => entry.trim()).filter(Boolean));
 }
 
-export function createConfig({ env = process.env, argv = process.argv.slice(2), packageVersion = '2.7.0' } = {}) {
+export function createConfig({ env = process.env, argv = process.argv.slice(2), packageVersion = PACKAGE_VERSION } = {}) {
   const canonicalCli = oneValue(readFlag(argv, ['--base-dir']), '--base-dir');
   const deprecatedCli = oneValue(readFlag(argv, ['--base_dir']), '--base_dir');
   const canonicalEnv = env.EDGEWARN_BASE_DIR;

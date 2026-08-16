@@ -2,6 +2,11 @@ import { describe, expect, it } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
 import v2Router from '../../../src/EdgeWARN/api/routes/v2/index.js';
+import { readFileSync } from 'fs';
+
+// Asserted against package.json rather than a literal: a version bump must not
+// need a test edit, and a literal here would be a second owner of the version.
+const PACKAGE_VERSION = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version;
 
 describe('API v2 index route', () => {
   function buildApp() {
@@ -19,7 +24,7 @@ describe('API v2 index route', () => {
       .expect(200);
 
     expect(response.body.message).toBe('EdgeWARN API v2');
-    expect(response.body.version).toBe('2.7.0');
+    expect(response.body.version).toBe(PACKAGE_VERSION);
     expect(response.body.endpoints.features.cells).toBe('/api/v2/features/cells[?id={int}]');
 
     process.env.NODE_ENV = originalNodeEnv;

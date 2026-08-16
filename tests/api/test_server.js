@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import request from 'supertest';
 import { createApp } from '../../src/EdgeWARN/api/server.js';
+import { readFileSync } from 'fs';
+
+// Asserted against package.json rather than a literal: a version bump must not
+// need a test edit, and a literal here would be a second owner of the version.
+const PACKAGE_VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 
 describe('API server', () => {
   afterEach(() => {
@@ -16,7 +21,7 @@ describe('API server', () => {
 
     expect(response.body).toEqual({
       message: 'EdgeWARN Backend API',
-      version: '2.7.0'
+      version: PACKAGE_VERSION
     });
   });
 

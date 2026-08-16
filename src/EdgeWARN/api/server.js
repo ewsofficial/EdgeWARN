@@ -8,11 +8,18 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import compression from 'compression';
 import cluster from 'cluster';
 import os from 'os';
-import { pathToFileURL } from 'url';
+import { pathToFileURL, fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
 import helmet from 'helmet';
 import config from './config.js';
 
 dotenv.config();
+
+// package.json owns the version; this file used to restate it as a literal.
+const PACKAGE_VERSION = JSON.parse(readFileSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../package.json'),
+  'utf8',
+)).version;
 
 function parseCliIntegerFlag(args, flagName) {
   for (let i = 0; i < args.length; i++) {
@@ -171,7 +178,7 @@ export function createApp(env = process.env, options = {}) {
   // Routes
   app.get('/', (req, res) => {
     // Only expose detailed version in non-production environments
-    const version = env.NODE_ENV === 'production' ? '2.x' : '2.7.0';
+    const version = env.NODE_ENV === 'production' ? '2.x' : PACKAGE_VERSION;
     res.json({ message: 'EdgeWARN Backend API', version: version });
   });
 
