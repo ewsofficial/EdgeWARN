@@ -412,6 +412,139 @@ def test_no_catalog_file_is_absent_from_the_loaders():
     assert on_disk == sorted(loader.CONFIG_NAMES)
 
 
+# --- API security settings the schema cannot constrain --------------------
+
+@pytest.fixture(scope="module")
+def api():
+    return loader.load_config("api")
+
+
+def test_trust_proxy_is_never_blanket_true(api):
+    """`true` means "trust every peer's X-Forwarded-For", and no schema can reject it.
+
+    The key is legitimately tri-shaped -- `false`, an integer hop count, or a list
+    of proxy addresses -- so `type` must admit booleans, and the walker applies
+    `minimum`/`maximum` only to numbers (loader.py, and loader.js:144 the same
+    way). `enum` cannot help either, because it would have to enumerate every
+    valid address list. The one distinguishing feature of the unsafe value is the
+    literal, so it can only be asserted here.
+
+    Spoofable forwarding headers defeat both the rate limiter and any
+    address-based decision made downstream of it.
+    """
+    assert api["security"]["trust_proxy"] is not True
+
+
+def test_credentialed_cors_is_never_paired_with_a_wildcard_origin(api):
+    """A cross-field rule, so it is unreachable from the schema walker.
+
+    Either half is defensible alone: a wildcard origin on an unauthenticated
+    read-only API is merely broad, and credentials with a fixed origin list is
+    ordinary. Together they are the classic full-read hole. `allowed_origins`
+    already rejects `*` by pattern, so this guards the pairing rather than
+    repeating that check.
+    """
+    security = api["security"]
+    if security["cors"]["credentials"]:
+        assert "*" not in security["allowed_origins"]
+        assert security["allowed_origins"], "credentialed CORS needs an explicit origin list"
+
+
+def test_pagination_and_grid_defaults_do_not_exceed_their_maxima(api):
+    """Defaults above their own ceilings, which no schema keyword can compare."""
+    pagination = api["pagination"]
+    assert pagination["default_limit"] <= pagination["max_limit"]
+
+    defaults = api["render_defaults"]
+    maxima = defaults["grid_maxima"]
+    for axis, ceiling in maxima.items():
+        assert defaults["grid"][axis] <= ceiling, axis
+
+
+# --- The radar-moment allowlist has four owners --------------------------
+#
+# `api.yaml validation.radar_products` is the owner of record, but three code
+# copies still restate it and none of them reads the catalog yet. Until they do,
+# these tests are what makes the duplication safe: they fail the moment any copy
+# is edited alone. They are deliberately written as equality against the catalog
+# rather than pairwise, so the catalog stays the thing being tracked.
+
+RADAR_OWNERS = "the radar allowlist has four owners; edit config/api.yaml and re-run"
+
+
+def _js_string_array(source: str, anchor: str) -> list[str]:
+    """The string literals of the `new Set([...])` that follows ``anchor``."""
+    start = source.index(anchor)
+    body = source[start:source.index("]", start)]
+    return re.findall(r"'([^']+)'", body)
+
+
+def test_ancillary_js_radar_products_match_the_catalog(api):
+    """`ancillary.js:6` gates every radar request before any file lookup."""
+    source = (REPO_ROOT / "src/api/services/ancillary.js").read_text(encoding="utf-8")
+    found = _js_string_array(source, "const RADAR_PRODUCTS = new Set([")
+    assert found == list(api["validation"]["radar_products"]), RADAR_OWNERS
+
+
+def test_ewmrs_route_allowlist_matches_the_catalog(api):
+    """The second copy, in a route tree reachable only from Jest today.
+
+    It is pinned rather than deleted because proving the tree unreachable is a
+    separate decision from proving the two lists agree, and the pin is what makes
+    that decision safe to defer.
+    """
+    source = (
+        REPO_ROOT / "src/EWMRS/api/routes/nexrad/validation.js"
+    ).read_text(encoding="utf-8")
+    found = _js_string_array(source, "export const ALLOWED_NEXRAD_PRODUCTS = new Set([")
+    assert found == list(api["validation"]["radar_products"]), RADAR_OWNERS
+
+
+def test_openapi_radar_product_enum_matches_the_catalog(api):
+    """The published contract, which has no runtime authority at all.
+
+    Despite the `.yaml` extension the document is JSON: it is read as text,
+    JSON-parsed for its `paths` keys, and served verbatim. Nothing validates a
+    request against this enum -- `productId` reaches `radarField` unchecked -- so
+    a stale enum misleads clients rather than rejecting them, which is precisely
+    why it needs a test instead of trust.
+    """
+    import json
+
+    document = json.loads(
+        (REPO_ROOT / "src/api/openapi/v3.yaml").read_text(encoding="utf-8")
+    )
+    enum = document["components"]["parameters"]["radarProductId"]["schema"]["enum"]
+    assert enum == list(api["validation"]["radar_products"]), RADAR_OWNERS
+
+
+def test_the_renderer_produces_exactly_the_moments_the_api_serves(api):
+    """`RAW_NEXRAD_BLOCK_VARIABLE_NAMES` maps tape codes to these same names.
+
+    This is the producing end: the API allowlist is only meaningful if the
+    renderer actually writes files under those names. Compared as sets because
+    the mapping is keyed by NEXRAD block code and carries no ordering.
+    """
+    from EWMRS.render.nexrad import RAW_NEXRAD_BLOCK_VARIABLE_NAMES
+
+    produced = set(RAW_NEXRAD_BLOCK_VARIABLE_NAMES.values())
+    assert produced == set(api["validation"]["radar_products"]), RADAR_OWNERS
+
+
+def test_ccorh_is_servable_but_deliberately_uncolored(api, render):
+    """The one intended asymmetry, pinned so it cannot be "fixed" by accident.
+
+    The API accepts CCORH and the renderer writes it, but it has no colormap, so
+    the GUI never draws it. Someone reconciling the two lists would either add a
+    colormap or drop the product; both are real decisions, and this test forces
+    them to be made rather than stumbled into.
+    """
+    colored = set(render["nexrad_gui"]["variable_colormaps"])
+    served = set(api["validation"]["radar_products"])
+    assert served - colored == {"CCORH"}
+    assert colored - served == set()
+
+
 # --- API product catalog --------------------------------------------------
 
 def test_api_product_catalog_route_keys_are_unique():
