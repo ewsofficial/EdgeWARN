@@ -2187,3 +2187,92 @@ def test_zone_sync_resolves_its_identity_from_the_same_root_as_its_settings():
         else:
             os.environ["EDGEWARN_CONFIG_DIR"] = previous
         loader.reset_cache()
+
+
+# --- The nws block: four values the catalog only documented -----------------
+
+
+def test_alert_ingest_constants_have_no_module_level_owner():
+    """`DROPPED_EVENTS` must be gone, not merely unread.
+
+    It was a module-scope set in `main.py`, so `--config-dir` could never reach
+    it -- and leaving it behind as an alias would restore that, since the alias
+    is evaluated at import. The two TTL signature defaults are the subtler half:
+    they read as per-call but Python binds them once.
+    """
+    from common.ingest.nws import main as nws_main
+
+    assert not hasattr(nws_main, "DROPPED_EVENTS")
+
+    for function in ("AlertRegistry.__init__", "get_registry"):
+        assert param_default(
+            "common/ingest/nws/registry.py", function, "ttl_hours"
+        ) is None
+
+
+def test_config_dir_reaches_the_nws_alert_values_after_import():
+    """Import first, export second -- the order `src/run.py` uses."""
+    import shutil
+    import tempfile
+
+    from common.config import loader
+    from common.ingest.nws import config as nws_config
+    from common.ingest.nws.registry import AlertRegistry
+
+    config_dir = Path(tempfile.mkdtemp(prefix="cfgdir-nws-"))
+    shutil.copytree(REPO_ROOT / "config", config_dir, dirs_exist_ok=True)
+    catalog = config_dir / "nws.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8")
+            .replace("registry_ttl_hours: 2.0", "registry_ttl_hours: 9.5")
+            .replace("    - Administrative Message", "    - Overridden Event")
+            .replace("event: Tornado Warning", "event: Overridden Warning"),
+        encoding="utf-8",
+    )
+
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    try:
+        loader.export_config_root(config_dir)
+        loader.reset_cache()
+        assert nws_config.registry_ttl_hours() == 9.5
+        assert "Overridden Event" in nws_config.dropped_events()
+        assert "Administrative Message" not in nws_config.dropped_events()
+        assert nws_config.tornado_upgrade_event() == "Overridden Warning"
+        # The TTL reaches the object, not just the accessor.
+        assert AlertRegistry(config_dir / "registry").ttl_hours == 9.5
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+        loader.reset_cache()
+
+    assert nws_config.registry_ttl_hours() == 2.0
+
+
+def test_tornado_upgrade_phrases_cannot_be_written_lowercase():
+    """The description is uppercased before matching, so a lowercase phrase
+    would never fire -- silently, with no alert renamed and no error raised.
+    """
+    import shutil
+    import tempfile
+
+    from common.config import loader
+    from common.config.loader import ConfigError
+
+    config_dir = Path(tempfile.mkdtemp(prefix="cfgdir-tornado-"))
+    shutil.copytree(REPO_ROOT / "config", config_dir, dirs_exist_ok=True)
+    catalog = config_dir / "nws.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8")
+            .replace("description_contains: TORNADO EMERGENCY", "description_contains: Tornado Emergency"),
+        encoding="utf-8",
+    )
+
+    loader.reset_cache()
+    try:
+        with pytest.raises(ConfigError) as excinfo:
+            loader.load_config("nws", config_dir=config_dir)
+        assert "description_contains" in str(excinfo.value)
+    finally:
+        loader.reset_cache()

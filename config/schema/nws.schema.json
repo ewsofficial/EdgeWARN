@@ -28,7 +28,7 @@
                 "additionalProperties": false,
                 "required": ["description_contains", "name"],
                 "properties": {
-                  "description_contains": { "type": "string" },
+                  "description_contains": { "type": "string", "pattern": "^[^a-z]+$" },
                   "name": { "type": "string" }
                 }
               }

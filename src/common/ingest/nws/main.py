@@ -6,8 +6,8 @@ filters them by event type, applies GeoMapper for zone-to-polygon mapping,
 and stores them in a deduplicated registry.
 
 Architecture:
-    - Downloads from https://api.weather.gov/alerts/active every 2 minutes
-    - Filters out non-severe event types (DROPPED_EVENTS blocklist)
+    - Downloads from nws.yaml's active_alerts_url every 2 minutes
+    - Filters out non-severe event types (nws.yaml dropped_events blocklist)
     - Applies GeoMapper to map UGC zone codes to actual polygons
     - Stores unique alerts in alerts_registry.json with deduplication
     - Reconciles saved alerts to the latest active upstream ID set each cycle
@@ -23,6 +23,7 @@ from decimal import Decimal
 import util.file as fs
 from util.io import IOManager
 from util.release import format_user_agent
+from .config import active_alerts_url, dropped_events, registry_ttl_hours
 import aiohttp
 import asyncio
 import tempfile
@@ -44,40 +45,9 @@ class DecimalEncoder(json.JSONEncoder):
 
 io_manager = IOManager("[NWS Ingest]")
 
-# Define the set of dropped events (blocklist)
-DROPPED_EVENTS = {
-    # Always drop
-    "Administrative Message",
-    "Freezing Spray Advisory",
-    "Low Water Advisory",
-    "High Surf Advisory",
-    "Small Craft Advisory",
-    "Brisk Wind Advisory",
-    "Freezing Spray Advisory",
-    "Low Water Advisory",
-    "High Surf Advisory",
-    "Small Craft Advisory",
-    "Brisk Wind Advisory",
-    "Practice/Demo Warning",
-    "Required Weekly Test",
-    "Required Monthly Test",
-    "Test Message",
-    "Hurricane Local Statement",
-    "Flood Statement",
-    "Flash Flood Statement",
-    "Rip Current Statement",
-    "Lakeshore Flood Statement",
-    "Hydrologic Outlook",
-    # Optional drops
-    "Air Quality Alert",
-    "Air Stagnation Advisory",
-    "Beach Hazards Statement",
-}
-
-
 def _get_registry() -> AlertRegistry:
     """Get or initialize the AlertRegistry singleton."""
-    return get_registry(fs.MRMS_NWS_DIR, ttl_hours=2.0)
+    return get_registry(fs.MRMS_NWS_DIR, ttl_hours=registry_ttl_hours())
 
 
 def download_alerts(dt: datetime):
@@ -88,7 +58,7 @@ def download_alerts(dt: datetime):
     Args:
         dt: Current datetime (used for timestamp tracking)
     """
-    url = "https://api.weather.gov/alerts/active"
+    url = active_alerts_url()
 
     # Ensure output directory exists
     if not fs.MRMS_NWS_DIR.exists():
@@ -152,7 +122,7 @@ async def download_alerts_async(dt: datetime):
     Args:
         dt: Current datetime (used for timestamp tracking)
     """
-    url = "https://api.weather.gov/alerts/active"
+    url = active_alerts_url()
 
     # Ensure output directory exists
     if not fs.MRMS_NWS_DIR.exists():
@@ -239,7 +209,10 @@ def _process_nws_file_with_registry(
     new_count = 0
     updated_count = 0
     seen_ids: Set[str] = set()
-    
+    # Read once per file rather than per feature: the blocklist cannot change
+    # mid-file, and a feed carries tens of thousands of features.
+    dropped = dropped_events()
+
     try:
         with open(input_path, 'r', encoding='utf-8') as infile:
             # Stream parsing
@@ -249,7 +222,7 @@ def _process_nws_file_with_registry(
                 props = feature.get('properties', {})
                 event = props.get('event')
 
-                if event in DROPPED_EVENTS:
+                if event in dropped:
                     continue
 
                 # Apply GeoMapper Logic

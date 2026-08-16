@@ -1,17 +1,19 @@
 # nws.yaml — Audit §1 zone_sync CLI, §7 NWS
 #
-# Source: src/common/ingest/nws/main.py:48-75,80,91,107-108,155,171-172,252;
-#         registry.py:76,233-249,565;
+# Read through src/common/ingest/nws/config.py, whose accessors are per-call --
+# `src/run.py` imports this package before get_args() publishes the config root,
+# so a value bound at module scope would freeze the repo default.
+#
+# Source: main.py:50,61,125,214,225; registry.py:89,235-253,569;
 #         zone_sync.py:22,58,89,150-155,166,189,231,240,369-429;
 #         geomapper.py:28,80,85,110,183,318,368
 #
-# Only ONE of the four blocks below is wired, and only in part:
-# _resolve_zone_sync_args (zone_sync.py:432-449) reads exactly seven of
-# `zone_sync`'s thirteen keys -- assets_dir, zone_types, timeout_seconds,
+# The `nws` block is fully wired. `geomapper` is not wired at all, and
+# `zone_sync` is wired in part: _resolve_zone_sync_args (zone_sync.py:432-449)
+# reads seven of its thirteen keys -- assets_dir, zone_types, timeout_seconds,
 # max_retries, max_workers, pause_seconds, progress -- and overlays the CLI on
-# top of each. The other six are marked UNUSED at their definitions. `nws` and
-# `geomapper` are unwired entirely; see
-# plans/source-configuration-extraction-plan.md.
+# top of each. The remaining eight keys across the two blocks are marked UNUSED
+# at their definitions; see plans/source-configuration-extraction-plan.md.
 #
 # `assets_dir` is the one key here with a second consumer: geomapper.py reads it
 # back to look polygons up. See its comment below.
@@ -25,16 +27,17 @@
 schema_version: 1
 
 nws:
-  # UNUSED. main.py:80 passes ttl_hours=2.0 explicitly; 2.0 is also the default at
-  # registry.py:76 and :565. All three agree today, and all three are literals --
-  # this key is the recorded intent, not yet the owner. Written as 2.0 to match
-  # the float the code declares.
+  # This used to be three literal 2.0s -- passed explicitly by main.py's
+  # _get_registry, and again as the signature default of both AlertRegistry and
+  # get_registry. They agreed, so the split was invisible; raising the retention
+  # window meant finding all three. The two signatures now default to None and
+  # resolve here, which also means a test constructing a registry without a TTL
+  # gets the operator's value rather than a second one.
   registry_ttl_hours: 2.0
 
-  # UNUSED. main.py:48-75 DROPPED_EVENTS, applied at main.py:252. An event named
-  # there is discarded on ingest, so nothing downstream can recover it. 19 unique
-  # entries; the source set literally repeats five of them (main.py:56-60), which
-  # a Python set silently collapses.
+  # Discarded on ingest, so nothing downstream can recover an event named here.
+  # 19 entries: the source set literally repeated five of them, which Python
+  # silently collapsed, and the duplicates are not reproduced here.
   dropped_events:
     - Administrative Message
     - Freezing Spray Advisory
@@ -56,13 +59,16 @@ nws:
     - Air Stagnation Advisory
     - Beach Hazards Statement
 
-  # UNUSED. The same literal twice, at main.py:91 (sync) and :155 (async).
+  # Was the same literal twice, in the sync and async downloads.
   active_alerts_url: https://api.weather.gov/alerts/active
 
-  # UNUSED. registry.py:233-249 _derive_snapshot_alert_name. Only "Tornado
-  # Warning" is rescored, by scanning the alert description; the first match wins,
-  # so "Tornado Emergency" outranks the PDS phrase. Every other event keeps its
-  # own name.
+  # registry.py _derive_snapshot_alert_name. Only `event` is rescored, by scanning
+  # the alert description. Order here is priority order -- the first match wins,
+  # so a description carrying both phrases reads as a Tornado Emergency. Every
+  # other event keeps its own name.
+  #
+  # `description_contains` is matched against the UPPERCASED description, so a
+  # lowercase phrase here can never match. The schema pattern enforces that.
   tornado_upgrade:
     event: Tornado Warning
     rules:
@@ -141,11 +147,11 @@ zone_sync:
   # The User-Agent is NOT here. It is one string for the whole application,
   # `runtime.yaml identity`, built from package.json by
   # util/release.py format_user_agent() and applied at zone_sync.py:166 and
-  # nws/main.py:107,171. This subsystem used to carry its own copy, which
+  # nws/main.py:77,141. This subsystem used to carry its own copy, which
   # advertised EdgeWARN/1.0 and a different mailbox than the NEXRAD ingest did.
   #
   # UNUSED, and mis-scoped besides: the same `application/geo+json` literal is
-  # sent from four places -- zone_sync.py:167, main.py:108 and :172, and
+  # sent from four places -- zone_sync.py:167, main.py:78 and :142, and
   # nexrad/weather_api.py:103 -- so a key nested under `zone_sync` can only own
   # one of them. Wiring this needs a home shared with the alerts fetches, the way
   # the User-Agent above already has one.
