@@ -87,7 +87,14 @@ geomapper:
     - eventCode
 
 zone_sync:
-  assets_dir: assets/nws_zones          # resolved against the repo root
+  # Resolved against the config root's parent, which is the repo root only for an
+  # unrelocated tree. Read by BOTH ends of the zone pipeline -- zone_sync.py:435
+  # writes polygons here, geomapper.py reads them back -- so despite living under
+  # `zone_sync` this key is not private to that CLI. The reader used to find the
+  # directory by walking up from its own __file__ instead, which agreed with the
+  # writer until either end was pointed elsewhere; a disagreement dropped alert
+  # polygons without an error.
+  assets_dir: assets/nws_zones
   zone_types: [forecast, fire, public, county, marine]  # zone_sync.py:21
   timeout_seconds: 30                   # zone_sync.py:150, --timeout-seconds type=int
   max_retries: 3                        # zone_sync.py:151

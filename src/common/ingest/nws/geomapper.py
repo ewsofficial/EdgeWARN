@@ -5,18 +5,24 @@ from typing import Dict, Any, List, Optional, Sequence, cast
 from shapely.geometry import Polygon, MultiPolygon, shape
 from shapely.ops import unary_union
 
-def _resolve_assets_dir() -> Path:
-    current_file = Path(__file__).resolve()
-
-    for parent in current_file.parents:
-        candidate = parent / "assets" / "nws_zones"
-        if candidate.exists():
-            return candidate
-
-    return current_file.parents[4] / "assets" / "nws_zones"
+from common.config.loader import load_config, repo_root
 
 
-_ASSETS_DIR = _resolve_assets_dir()
+def _assets_dir() -> Path:
+    """Where zone polygons are read from: ``nws.yaml zone_sync.assets_dir``.
+
+    The same key, resolved the same way, that zone_sync.py writes them to. This
+    used to walk up from ``__file__`` for any existing ``assets/nws_zones`` and
+    ignore the catalog, which agreed with the writer only for an unrelocated
+    tree -- under ``--config-dir``, ``EDGEWARN_CONFIG_DIR``, ``--assets-dir``, or
+    an edited catalog value, the sync populated one directory and lookups read
+    another, and a miss here is silent: alerts lose their polygons.
+
+    Resolved per call, not at import, because the config root is exported into
+    the environment after this module is imported.
+    """
+    zone_sync_cfg = load_config("nws")["zone_sync"]
+    return repo_root() / zone_sync_cfg["assets_dir"]
 
 # Keys to remove from properties (from GeoMapper)
 JUNK_KEYS = [
@@ -53,7 +59,7 @@ class ZoneLookup:
     @classmethod
     def _load_state(cls, state_code: str) -> None:
         """Load zone data for a state into cache."""
-        state_file = _ASSETS_DIR / state_code / "zones.json"
+        state_file = _assets_dir() / state_code / "zones.json"
         
         if not state_file.exists():
             cls._cache[state_code] = {}
