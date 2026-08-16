@@ -3,11 +3,43 @@
 from __future__ import annotations
 
 import util.file as fs
+from common.config.loader import load_config
 
 UINT16_NODATA = 65535
 UINT16_VALID_MAX = 65534
 RAP_WIND_PRESSURE_LEVELS_MB = (925, 850, 700, 500, 250)
 RAP_THERMO_PRESSURE_LEVELS_MB = (925, 850, 700, 500, 250)
+
+_CONFIG_NAME = "ewmrs_rap_uint16"
+
+
+def _catalog():
+    return load_config(_CONFIG_NAME)
+
+
+def rap_uint16_max_timestamps() -> int:
+    """Timestamp directories retained per layer, in the index and on disk.
+
+    One owner for both: ``_update_product_index`` truncates the published list
+    and ``cleanup_old_rap_uint16_layers`` deletes the directories behind it, so a
+    disagreement would leave the index advertising a timestamp whose data had
+    already been removed.
+    """
+    return _catalog()["max_timestamps"]
+
+
+def rap_uint16_timestamp_format() -> str:
+    """``strftime`` pattern for the per-timestamp output directory name.
+
+    Read per call rather than bound at module scope: ``run.py`` imports the
+    EWMRS package before ``get_args()`` exports ``EDGEWARN_CONFIG_DIR``.
+    """
+    return _catalog()["timestamp_format"]
+
+
+def rap_uint16_force() -> bool:
+    """Whether a run re-encodes layers whose output already exists."""
+    return _catalog()["force"]
 
 
 def _outdir(layer_name: str):

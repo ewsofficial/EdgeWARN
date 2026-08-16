@@ -37,16 +37,31 @@ mrms:
   # Source: common/pipeline/goes_readiness.py:82, EWMRS/render/tools.py:62.
   staged_filename_pattern: 'MRMS_MergedReflectivityQC_(\d{8})-(\d{6})'
 
-  # S3 key prefixes. Transcribed from parse.py:21,25 -- the modifier segment is
-  # omitted entirely when a product has no modifier (ProbSevere).
+  # S3 key grammars, read per call through the mrms/config.py accessor named
+  # against each key below. The modifier segment is omitted entirely -- not
+  # substituted empty -- when a product has no modifier (ProbSevere), because an
+  # empty substitution would double the slash and S3 treats that as a different
+  # prefix, which would silently match nothing.
+  #
+  # Placeholders are filled by one shared formatter, so {YYYYMMDD}, {HH} and
+  # {HHMM} mean the same thing here as in goes.bucket_path_pattern.
   path_patterns:
-    s3_prefix: '{region}/{modifier}/{YYYYMMDD}/'          # parse.py:25
-    s3_prefix_no_modifier: '{region}/{YYYYMMDD}/'         # parse.py:21
-    filename_prefix: 'MRMS_{modifier}_{YYYYMMDD}-{HH}'    # downloader.py:274,442
-    # ProbSevere uses an underscore before the hour, not a hyphen, and is used as
-    # an S3 StartAfter marker one hour behind the target time.
-    probsevere_start_after: 'MRMS_PROBSEVERE_{YYYYMMDD}_{HH}'  # downloader.py:306,447
-    probsevere_start_after_lookback_hours: 1                    # downloader.py:305,446
+    s3_prefix: '{region}/{modifier}/{YYYYMMDD}/'          # mrms_s3_prefix
+    s3_prefix_no_modifier: '{region}/{YYYYMMDD}/'         # mrms_s3_prefix
+    # Appended to the day prefix so S3 itself excludes every other hour. Stops at
+    # the hour on purpose: it narrows a listing rather than resuming one.
+    filename_prefix: 'MRMS_{modifier}_{YYYYMMDD}-{HH}'    # mrms_filename_prefix
+    # ProbSevere separates date and hour with an underscore where the standard
+    # products use a hyphen, so its prefix cannot be extended the same way and it
+    # needs an explicit StartAfter marker instead.
+    probsevere_start_after: 'MRMS_PROBSEVERE_{YYYYMMDD}_{HH}'  # mrms_probsevere_start_after
+    # Applies to the two download call sites. The scheduler overrides it with its
+    # own window (mrms.s3_lookback_hours) and does not read this.
+    probsevere_start_after_lookback_hours: 1                    # mrms_probsevere_start_after
+    # Minute precision, for the scheduler resuming after a known file: an
+    # hour-precision marker would re-list what it already processed this hour.
+    filename_start_after_minute: 'MRMS_{modifier}_{YYYYMMDD}-{HHMM}'   # mrms_filename_start_after
+    probsevere_start_after_minute: 'MRMS_PROBSEVERE_{YYYYMMDD}_{HHMM}' # mrms_probsevere_start_after_minute
 
   # HTTPS fallback against the NCEP 2D index, used when S3 lookup yields nothing.
   # Every key below is read per call by an https_client.py call site via a config.py

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 import util.file as fs
@@ -50,6 +51,102 @@ def mrms_cleanup_max_age_minutes() -> int:
 def mrms_remove_old_files() -> bool:
     """Whether an ingest run prunes its output directories at all."""
     return _catalog()["mrms"]["remove_old_files"]
+
+
+def _format_path_pattern(pattern: str, dt, **fields) -> str:
+    """Substitute the timestamp placeholders the S3 key grammars use.
+
+    One formatter for every pattern in the catalog, so ``{YYYYMMDD}`` cannot come
+    to mean two different things in two files. ``DDD`` is the zero-padded day of
+    year GOES keys use, not the day of month.
+    """
+    return pattern.format(
+        YYYY=dt.strftime("%Y"),
+        YYYYMMDD=dt.strftime("%Y%m%d"),
+        DDD=dt.strftime("%j"),
+        HH=dt.strftime("%H"),
+        HHMM=dt.strftime("%H%M"),
+        **fields,
+    )
+
+
+def _path_patterns():
+    return _catalog()["mrms"]["path_patterns"]
+
+
+def mrms_s3_prefix(dt, region, modifier) -> str:
+    """The S3 key prefix for one MRMS product on one day.
+
+    ProbSevere has no modifier segment, and the pattern for that case is a
+    separate key rather than the same pattern with an empty ``{modifier}``:
+    substituting empty would yield a doubled slash, which S3 treats as a
+    different prefix and would silently match nothing.
+    """
+    patterns = _path_patterns()
+    if modifier is None:
+        return _format_path_pattern(patterns["s3_prefix_no_modifier"], dt, region=region)
+    return _format_path_pattern(patterns["s3_prefix"], dt, region=region, modifier=modifier)
+
+
+def mrms_filename_prefix(dt, modifier) -> str:
+    """Filename prefix appended to the day prefix to narrow a listing to one hour.
+
+    This is the whole reason the standard products need no ``StartAfter`` marker:
+    S3 prefix filtering already excludes every other hour.
+    """
+    return _format_path_pattern(_path_patterns()["filename_prefix"], dt, modifier=modifier)
+
+
+def mrms_probsevere_start_after(dt, *, lookback_hours=None) -> str:
+    """The ``StartAfter`` marker filename for a ProbSevere listing.
+
+    ProbSevere cannot use :func:`mrms_filename_prefix` -- its filenames separate
+    the date and hour with an underscore where the standard products use a hyphen,
+    so it needs its own grammar and an explicit marker instead.
+
+    Returns the filename only. The caller prepends the bucket path, because the
+    marker has to be a key in the same prefix it is narrowing.
+
+    The default lookback is applied here rather than by the caller so the two
+    download call sites cannot disagree about how far back the marker sits. The
+    scheduler overrides it because its window is its own tunable, and passes 0
+    when it has already shifted ``dt`` itself.
+    """
+    patterns = _path_patterns()
+    if lookback_hours is None:
+        lookback_hours = patterns["probsevere_start_after_lookback_hours"]
+    shifted = dt - timedelta(hours=lookback_hours)
+    return _format_path_pattern(patterns["probsevere_start_after"], shifted)
+
+
+def mrms_filename_start_after(dt, modifier) -> str:
+    """Minute-precision ``StartAfter`` marker for a standard MRMS listing.
+
+    Distinct from :func:`mrms_filename_prefix` in precision, not in grammar: a
+    prefix that narrows a listing to one hour stops at ``HH``, while a marker that
+    resumes from a known file has to carry the minute or it would re-list the
+    whole hour.
+    """
+    return _format_path_pattern(
+        _path_patterns()["filename_start_after_minute"], dt, modifier=modifier
+    )
+
+
+def mrms_probsevere_start_after_minute(dt) -> str:
+    """Minute-precision ``StartAfter`` marker for a ProbSevere listing.
+
+    The minute-precision counterpart of :func:`mrms_probsevere_start_after`, and
+    like :func:`mrms_filename_start_after` it applies no lookback -- the caller
+    already has the exact timestamp it wants to resume after.
+    """
+    return _format_path_pattern(_path_patterns()["probsevere_start_after_minute"], dt)
+
+
+def goes_bucket_path(dt, product, hour_offset: int = 0) -> str:
+    """The S3 key prefix for one GOES product at one hour."""
+    shifted = dt - timedelta(hours=hour_offset)
+    pattern = _catalog()["goes"]["bucket_path_pattern"]
+    return _format_path_pattern(pattern, shifted, product=product)
 
 
 def _ncep_https():

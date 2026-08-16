@@ -24,6 +24,42 @@ def _resolve_dir(attribute_name):
         ) from None
 
 
+def goes_transform_resampling():
+    """The ``rasterio`` resampling method for the GOES ABI reprojection.
+
+    Returns the enum member rather than its name so no caller has to repeat the
+    lookup, and read per call so ``--config-dir`` can reach it -- ``run.py``
+    imports the render package before ``get_args()`` exports
+    ``EDGEWARN_CONFIG_DIR``.
+
+    Owns the GOES ABI path only. ``EWMRS/pipeline.py`` reprojects the non-GOES
+    layers with ``nearest`` on purpose, to keep radar edges crisp; that is a
+    different policy and deliberately not this key.
+    """
+    from rasterio.enums import Resampling
+    from rasterio.warp import SUPPORTED_RESAMPLING
+
+    name = _render_config()["goes_transform"]["resampling"]
+    try:
+        method = Resampling[name]
+    except KeyError:
+        raise ConfigError(
+            f"{_CONFIG_NAME}.yaml",
+            f"goes_transform.resampling: {name}",
+            "not a rasterio.enums.Resampling member",
+        ) from None
+
+    # The schema enum already excludes `gauss`, but rasterio decides what warp
+    # accepts and the two lists are maintained by different projects.
+    if method not in SUPPORTED_RESAMPLING:
+        raise ConfigError(
+            f"{_CONFIG_NAME}.yaml",
+            f"goes_transform.resampling: {name}",
+            "not supported for reprojection by this rasterio build",
+        )
+    return method
+
+
 _TILES = _render_config()["tiles"]
 TILE_SIZE = _TILES["tile_size"]
 TILE_GRID_ROWS = _TILES["grid_rows"]

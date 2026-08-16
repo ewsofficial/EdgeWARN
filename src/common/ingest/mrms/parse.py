@@ -1,56 +1,31 @@
-from datetime import datetime, timezone, timedelta
+"""S3 key prefixes for MRMS and GOES lookups.
+
+Both functions are thin wrappers now: the grammars live in `mrms_goes.yaml` under
+`mrms.path_patterns` and `goes.bucket_path_pattern`, so an upstream bucket
+reorganization is an operator edit. The wrappers stay because two other modules
+import them by name, and because the argument order is the useful part of the API.
+"""
+
+from common.ingest.mrms.config import goes_bucket_path, mrms_s3_prefix
 
 
 def parse_mrms_bucket_path(dt, region, modifier):
-    """
-    Parse bucket path from region, modifier, and datetime.
-    
-    Args:
-        dt (datetime): The datetime object to use for the path
-        region (str): The region name
-        modifier (str): The modifier/folder name to include in the path
-        
-    Returns:
-        str: Complete bucket path in format: region/modifier/YYYYMMDD/
-    """
-    # Extract date components from datetime object
-    date_str = dt.strftime('%Y%m%d')
+    """Return the MRMS S3 key prefix ``region/[modifier/]YYYYMMDD/``.
 
-    # Handle if modifier is none
-    if modifier is None:
-        path = f"{region}/{date_str}/"
-        return path
-    
-    # Construct the full path
-    path = f"{region}/{modifier}/{date_str}/"
-    
-    return path
+    Args:
+        dt (datetime): timestamp selecting the day segment
+        region (str): region name, e.g. ``CONUS`` or ``ProbSevere``
+        modifier (str | None): product/folder segment; ``None`` omits it entirely
+    """
+    return mrms_s3_prefix(dt, region, modifier)
 
 
 def parse_goes_bucket_path(dt, product, hour_offset=0):
-    """
-    Parse GOES bucket path from product and datetime.
-    GOES format: product/YYYY/DDD/HH/
-    
-    Args:
-        dt (datetime): The datetime object to use for the path
-        product (str): GOES product name (e.g., "GLM-L2-LCFA", "ABI-L2-ACHAC")
-        hour_offset (int): Hours to subtract from dt (for looking back in time)
-        
-    Returns:
-        str: Complete bucket path in GOES format: product/YYYY/DDD/HH/
-    """
-    
-    # Apply hour offset
-    adjusted_dt = dt - timedelta(hours=hour_offset)
-    
-    # Extract date components
-    year = adjusted_dt.strftime("%Y")
-    day_of_year = adjusted_dt.strftime("%j")  # Julian day (001-366)
-    hour = adjusted_dt.strftime("%H")
-    
-    # Construct the path
-    path = f"{product}/{year}/{day_of_year}/{hour}/"
-    
-    return path
+    """Return the GOES S3 key prefix ``product/YYYY/DDD/HH/``.
 
+    Args:
+        dt (datetime): timestamp selecting the hour segment
+        product (str): GOES product name, e.g. ``GLM-L2-LCFA``
+        hour_offset (int): hours subtracted from ``dt`` before formatting
+    """
+    return goes_bucket_path(dt, product, hour_offset=hour_offset)

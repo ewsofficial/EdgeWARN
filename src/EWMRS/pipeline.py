@@ -225,7 +225,6 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
                 layer,
                 shape=GOES_WEB_MERCATOR_SHAPE,
                 transform=GOES_WEB_MERCATOR_TRANSFORM,
-                resampling=Resampling.bilinear,
             )
             if payload is None:
                 io_mgr.write_error(f"Failed to reproject GOES ABI dataset for {latest_file}")

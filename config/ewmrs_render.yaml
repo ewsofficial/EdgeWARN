@@ -213,10 +213,23 @@ goes_layers:
       mask_max: {C16: 330.0, default: 330.0}
 
 goes_transform:                         # render/goes_transform.py
-  resampling: bilinear                  # goes_transform.py:370
+  # Resolved to a rasterio.enums.Resampling member by render/config.py
+  # goes_transform_resampling(), which both reprojection entry points defer to
+  # via a `resampling=None` parameter. It used to be a signature default on each
+  # of them AND an explicit argument at the one live call site, so this key was
+  # outvoted three times over.
+  #
+  # Owns the GOES ABI path only. EWMRS/pipeline.py reprojects the non-GOES layers
+  # with `nearest` on purpose, to keep radar edges crisp -- a different policy,
+  # deliberately not this key, and not a copy that drifted.
+  #
+  # The schema enum omits `gauss`, which rasterio defines but does not accept for
+  # warping. The accessor re-checks against rasterio.warp.SUPPORTED_RESAMPLING
+  # anyway, because that list belongs to a different project than this schema.
+  resampling: bilinear
   # CRS extraction (from_cf, then a +proj=geos from_proj4 reconstruction) and
   # radian-vs-metre axis detection are algorithms, not settings; they stay in
-  # goes_transform.py:65-95 and :243-244.
+  # goes_transform.py.
 
 nexrad_gui:
   # The sole owner, and the only key in this block a code path reads:

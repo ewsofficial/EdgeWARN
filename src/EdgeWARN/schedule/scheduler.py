@@ -5,7 +5,13 @@ from pathlib import Path
 from EdgeWARN.ingest.mrms.s3_sync import FileFinder
 from EdgeWARN.ingest.mrms.utils import extract_timestamp
 from EdgeWARN.ingest.mrms.parse import parse_mrms_bucket_path
-from EdgeWARN.ingest.mrms.config import mrms_bucket
+from EdgeWARN.ingest.mrms.config import (
+    mrms_bucket,
+    mrms_filename_prefix,
+    mrms_filename_start_after,
+    mrms_probsevere_start_after,
+    mrms_probsevere_start_after_minute,
+)
 from EdgeWARN.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 from EdgeWARN.schedule.config import (
     check_max_workers,
@@ -115,31 +121,24 @@ class MRMSUpdateChecker:
             # But we can log manually if verbose
             t0 = time.time()
             
-            # Optimization: StartAfter to skip previous history
-            # If last_processed is provided, start after that timestamp
-            start_after = None
-            
+            # StartAfter marker so the listing skips history already handled.
+            # Minute precision when resuming after a known file, hour precision for
+            # the cold-start fallback -- an hour-precision resume marker would
+            # re-list everything already processed within the current hour.
             if last_processed:
-                # Use last_processed timestamp converted to filename format
-                # This is much more efficient than looking back 2 hours
                 if modifier:
-                    # Standard MRMS: MRMS_{modifier}_{YYYYMMDD}-{HH}
-                    # We need to construct a key that is alphabetically just after the last processed file
-                    # Ideally we'd know the exact filename, but constructing a prefix based 
-                    # on last_processed is a good heuristic.
-                    # Start matching from last_processed
-                    start_after = f"{bucket_path}MRMS_{modifier}_{last_processed.strftime('%Y%m%d-%H%M')}"
+                    marker = mrms_filename_start_after(last_processed, modifier)
                 else:
-                    # ProbSevere: MRMS_PROBSEVERE_{YYYYMMDD}_{HH}
-                    start_after = f"{bucket_path}MRMS_PROBSEVERE_{last_processed.strftime('%Y%m%d_%H%M')}"
+                    marker = mrms_probsevere_start_after_minute(last_processed)
             else:
-                 # Standardfallback: skip to the configured lookback
-                 from datetime import timedelta
-                 sa_dt = reference_dt - timedelta(hours=s3_lookback_hours())
-                 if modifier:
-                    start_after = f"{bucket_path}MRMS_{modifier}_{sa_dt.strftime('%Y%m%d-%H')}"
-                 else:
-                    start_after = f"{bucket_path}MRMS_PROBSEVERE_{sa_dt.strftime('%Y%m%d_%H')}"
+                sa_dt = reference_dt - datetime.timedelta(hours=s3_lookback_hours())
+                if modifier:
+                    marker = mrms_filename_prefix(sa_dt, modifier)
+                else:
+                    # lookback_hours=0: sa_dt is already shifted, and the catalog
+                    # default belongs to the download path, not this window.
+                    marker = mrms_probsevere_start_after(sa_dt, lookback_hours=0)
+            start_after = f"{bucket_path}{marker}"
 
             files_with_timestamps = finder.lookup_files(bucket_path, verbose=False, start_after=start_after)
             dt = (time.time() - t0) * 1000
