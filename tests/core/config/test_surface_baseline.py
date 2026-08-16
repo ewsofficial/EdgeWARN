@@ -88,11 +88,17 @@ def test_base_dir_is_bound_at_import_time_from_the_platform():
     assert "_define_paths(" in tail
 
 
-def test_cleanup_retention_defaults_are_python_defaults():
-    """`retention.yaml` has no way to reach these until they are parameterized."""
+def test_cleanup_retention_defaults_resolve_from_the_catalog():
+    """No cleaner restates the retention numbers; every signature defers.
+
+    `max_files` uses a sentinel rather than `None` because `None` is already a
+    value there -- it means "age only, no count cap", which the RAP pre-download
+    sweep relies on. Collapsing the two would silently cap that directory.
+    """
     import inspect
 
     import util.file as fs
+    from util.file_config import cleanup_max_age_minutes, cleanup_max_files
 
     defaults = {}
     for name in (
@@ -108,12 +114,17 @@ def test_cleanup_retention_defaults_are_python_defaults():
             if parameter.default is not inspect.Parameter.empty
         }
 
+    sentinel = fs._FROM_CATALOG
+    assert sentinel is not None
     assert defaults == {
-        "clean_old_files": {"max_age_minutes": 60, "max_files": 10},
-        "async_clean_old_files": {"max_age_minutes": 60, "max_files": 10},
-        "clean_files_by_age": {"max_age_minutes": 60},
-        "async_clean_files_by_age": {"max_age_minutes": 60},
+        "clean_old_files": {"max_age_minutes": None, "max_files": sentinel},
+        "async_clean_old_files": {"max_age_minutes": None, "max_files": sentinel},
+        "clean_files_by_age": {"max_age_minutes": None},
+        "async_clean_files_by_age": {"max_age_minutes": None},
     }
+
+    assert cleanup_max_age_minutes() == 60
+    assert cleanup_max_files() == 10
 
 
 def test_cleanup_skip_rules_are_hardcoded():

@@ -7,10 +7,25 @@ import os
 import platform
 import sys
 
+from util.file_config import cleanup_max_age_minutes, cleanup_max_files
 from util.io import IOManager
 
 io_manager = IOManager("[Util]")
 BASE_DIR: Path = Path(".")
+
+
+class _FromCatalog:
+    """Sentinel for ``max_files``, whose ``None`` already means "no count cap".
+
+    The RAP pre-download sweep passes ``None`` deliberately to clean by age alone,
+    so ``None`` cannot double as "caller said nothing".
+    """
+
+    def __repr__(self) -> str:
+        return "<from filesystem.yaml>"
+
+
+_FROM_CATALOG = _FromCatalog()
 
 
 def _log(method, message):
@@ -279,12 +294,17 @@ def _is_safe_directory(directory: Path, allow_logical_inside=False):
         return False
 
 
-def clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
+def clean_old_files(directory: Path, max_age_minutes=None, max_files=_FROM_CATALOG):
     directory = Path(directory)
     base_dir = globals().get("BASE_DIR", Path("."))
     if not _is_safe_directory(directory, allow_logical_inside=True):
         _log("write_error", f"SAFETY ERROR: Attempting to clean {directory} which is not inside {base_dir}")
         return
+
+    if max_age_minutes is None:
+        max_age_minutes = cleanup_max_age_minutes()
+    if max_files is _FROM_CATALOG:
+        max_files = cleanup_max_files()
 
     now = datetime.now().timestamp()
     cutoff = now - (max_age_minutes * 60)
@@ -313,12 +333,15 @@ def clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
             except Exception as e:
                 _log("write_error", f"Could not delete {file_path.name}: {e}")
 
-def clean_files_by_age(directory: Path, max_age_minutes=60):
+def clean_files_by_age(directory: Path, max_age_minutes=None):
     directory = Path(directory)
     base_dir = globals().get("BASE_DIR", Path("."))
     if not _is_safe_directory(directory):
         _log("write_error", f"SAFETY ERROR: Attempting to clean {directory} which is not inside {base_dir}")
         return
+
+    if max_age_minutes is None:
+        max_age_minutes = cleanup_max_age_minutes()
 
     now = datetime.now().timestamp()
     cutoff = now - (max_age_minutes * 60)
@@ -332,11 +355,15 @@ def clean_files_by_age(directory: Path, max_age_minutes=60):
                 files_deleted += 1
         except Exception as e:
             _log("write_error", f"Could not process/delete {file_path.name}: {e}")
-async def async_clean_old_files(directory: Path, max_age_minutes=60, max_files=10):
+
+
+# The async wrappers forward whatever they were given so the sync cleaners stay
+# the single place either value is resolved.
+async def async_clean_old_files(directory: Path, max_age_minutes=None, max_files=_FROM_CATALOG):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, partial(clean_old_files, directory, max_age_minutes=max_age_minutes, max_files=max_files))
 
 
-async def async_clean_files_by_age(directory: Path, max_age_minutes=60):
+async def async_clean_files_by_age(directory: Path, max_age_minutes=None):
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, partial(clean_files_by_age, directory, max_age_minutes=max_age_minutes))

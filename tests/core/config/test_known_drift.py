@@ -394,31 +394,72 @@ def test_historical_replay_loop_holds_no_step_or_throttle_literals():
 
 
 def test_historical_cleanup_caps_files_but_inherits_the_age_budget():
-    """DECISION OWED: two files govern one cleanup call.
+    """RESOLVED: two catalogs still govern one cleanup call, on purpose.
 
     `_cleanup_historical_data_dirs` passes `max_files` only, so `clean_old_files`
-    still applies its own 60-minute `max_age_minutes`. A directory is therefore
-    trimmed to `cleanup_max_files` AND anything older than an hour is dropped.
-    Raising `cleanup_max_files` alone cannot retain more than an hour of data --
-    the age limit in filesystem.yaml, which reaches no code yet, is the real cap.
+    applies `filesystem.yaml`'s age budget for the other half. A directory is
+    therefore trimmed to `historical.cleanup_max_files` AND anything older than an
+    hour is dropped, which means raising the file count alone cannot retain more
+    than an hour of replay data. That is not a bug to consolidate away -- the two
+    keys have different owners -- but it is surprising enough to pin.
     """
     from EdgeWARN.historical_config import historical_cleanup_max_files
+    from util.file_config import cleanup_max_age_minutes
 
     assert historical_cleanup_max_files() == 5
-    assert param_default("util/file.py", "clean_old_files", "max_age_minutes") == 60
-    assert param_default("util/file.py", "clean_old_files", "max_files") == 10
+    assert cleanup_max_age_minutes() == 60
 
     pipeline_source = (REPO_ROOT / "src/EdgeWARN/pipeline.py").read_text(encoding="utf-8")
     assert "max_files=historical_cleanup_max_files()" in pipeline_source
     assert "max_age_minutes" not in pipeline_source
 
+
+def test_no_cleaner_in_util_file_restates_a_retention_number():
+    """The three cleaners are not interchangeable, so each defers separately.
+
+    `clean_old_files` applies age and count, `clean_files_by_age` applies age only,
+    and `clean_idx_files` applies neither. A literal restored in any signature
+    would let one of them drift from the catalog while the others tracked it.
+    """
     import yaml
 
-    filesystem = yaml.safe_load(
+    from util.file_config import cleanup_max_age_minutes, cleanup_max_files
+
+    for qualified_name in ("clean_old_files", "clean_files_by_age", "async_clean_files_by_age"):
+        assert param_default("util/file.py", qualified_name, "max_age_minutes") is None
+
+    recorded = yaml.safe_load(
         (REPO_ROOT / "config" / "filesystem.yaml").read_text(encoding="utf-8")
     )["cleanup_defaults"]
-    assert filesystem["max_age_minutes"] == 60
-    assert filesystem["max_files"] == 10
+    assert cleanup_max_age_minutes() == recorded["max_age_minutes"] == 60
+    assert cleanup_max_files() == recorded["max_files"] == 10
+
+    source = (REPO_ROOT / "src/util/file.py").read_text(encoding="utf-8")
+    assert "max_age_minutes=60" not in source
+    assert "max_files=10" not in source
+
+
+def test_rap_pre_download_sweep_keeps_its_uncapped_pass():
+    """DECISION PRESERVED: `max_files=None` means "no count cap", not "unset".
+
+    `download_rap` sweeps by age before downloading and only applies the count cap
+    afterwards, so the pre-download pass must be able to say "age only". That is
+    why `clean_old_files` resolves `max_files` from a sentinel rather than `None`:
+    treating `None` as unset here would trim the RAP directory a download early.
+    """
+    import util.file as fs
+
+    assert param_default("util/file.py", "clean_old_files", "max_files") is not None
+
+    source = (REPO_ROOT / "src/common/ingest/synoptic/main.py").read_text(encoding="utf-8")
+    assert source.count("max_files=None") == 2
+    assert source.count("max_files=rap_max_files()") == 2
+
+    file_source = (REPO_ROOT / "src/util/file.py").read_text(encoding="utf-8")
+    assert "if max_files is _FROM_CATALOG:" in file_source
+    assert "if max_files is None:" not in file_source.split("def clean_old_files")[1].split("now =")[0]
+
+    assert fs._FROM_CATALOG is not None
 
 
 # --- RAP filename: two keys describing one naming scheme ------------------

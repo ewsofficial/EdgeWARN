@@ -4,7 +4,10 @@
 #         316-328; src/api/config/index.js:55-58;
 #         src/EdgeWARN/process/detect/main.py:105
 # Values verified against the working tree at commit e426fb2.
-# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
+#
+# `cleanup_defaults` is consumed through src/util/file_config.py, which reads this
+# file per call so a --config-dir resolved after import still applies. The other
+# sections are documentation only, for the reasons given at each of them.
 
 schema_version: 1
 
@@ -16,12 +19,23 @@ base_dir:
   posix: ~/EdgeWARN_input
   container_fallback: /workspaces/EdgeWARN_input
 
-# file.py:282 clean_old_files signature. clean_files_by_age (:316) takes
-# max_age_minutes only.
+# The fallback every cleaner in util/file.py resolves to when its caller passes
+# nothing. clean_files_by_age takes max_age_minutes only, so max_files reaches
+# clean_old_files alone.
+#
+# max_files is resolved from a sentinel rather than from `None`, because `None` is
+# already a value there: it means "age only, no count cap", which the RAP
+# pre-download sweep passes deliberately. Raising max_files here does not raise it
+# for callers that pass their own, and does not affect that uncapped pass at all.
 cleanup_defaults:
   max_age_minutes: 60
   max_files: 10
 
+  # Documentation only -- clean_old_files hardcodes this and the two latest_files
+  # rules below, because they are behavioral invariants rather than tunables:
+  # `.gz` carries a third meaning at file.py:244, where it breaks ties in the
+  # sort order, and no single list could express all three.
+  #
   # Applies to clean_old_files only, which skips `.idx` unconditionally
   # (file.py:295). The three cleaners are NOT interchangeable:
   # clean_files_by_age (:316) does delete `.idx` -- it filters non-files and
