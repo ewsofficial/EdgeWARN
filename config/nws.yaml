@@ -5,23 +5,24 @@
 # so a value bound at module scope would freeze the repo default.
 #
 # Source: main.py:50,61,125,214,225; registry.py:89,235-253,569;
-#         zone_sync.py:22,58,89,150-155,166,189,231,240,369-429;
+#         zone_sync.py:57,104,162-202,226,268,278,471-488;
 #         geomapper.py:68,82,109,143,199,337,387
 #
-# The `nws` and `geomapper` blocks are fully wired. `zone_sync` is wired in part:
-# _resolve_zone_sync_args (zone_sync.py:432-449) reads seven of its thirteen keys
-# -- assets_dir, zone_types, timeout_seconds, max_retries, max_workers,
-# pause_seconds, progress -- and overlays the CLI on top of each. The remaining
-# six keys, all under `zone_sync`, are marked UNUSED at their definitions; see
-# plans/source-configuration-extraction-plan.md.
+# Every key here is read except `zone_sync.accept`, which is marked UNUSED at its
+# definition with the reason; see plans/source-configuration-extraction-plan.md.
+#
+# The seven `zone_sync` keys the CLI can override reach NWSZoneSync twice over:
+# _resolve_zone_sync_args (zone_sync.py:471-488) overlays the flags on this file
+# and main() passes the result explicitly, while the constructor falls back to
+# this file for any argument a non-CLI caller omits.
 #
 # `assets_dir` is the one key here with a second consumer: geomapper.py reads it
 # back to look polygons up. See its comment below.
 #
 # `zone_sync.apply` and `zone_sync.report_path` are deliberately absent, and no
 # UNUSED marker would fit them because there is nothing to mark: `--apply` is
-# `action="store_true"` (zone_sync.py:413-417) so argparse fixes its False before
-# any YAML could be consulted, and `--report-path` (:418-422) has no default at
+# `action="store_true"` (zone_sync.py:452-456) so argparse fixes its False before
+# any YAML could be consulted, and `--report-path` (:457-461) has no default at
 # all. A key for either could never be reached.
 
 schema_version: 1
@@ -125,59 +126,68 @@ geomapper:
 
 zone_sync:
   # Resolved against the config root's parent, which is the repo root only for an
-  # unrelocated tree. Read by BOTH ends of the zone pipeline -- zone_sync.py:441
-  # writes polygons here, geomapper.py:_assets_dir reads them back -- so despite
+  # unrelocated tree. Read by BOTH ends of the zone pipeline -- zone_sync.py:394
+  # writes polygons under here, geomapper.py:_assets_dir reads them back -- so despite
   # living under `zone_sync` this key is not private to that CLI. The reader used
   # to find the directory by walking up from its own __file__ instead, which
   # agreed with the writer until either end was pointed elsewhere; a disagreement
   # dropped alert polygons without an error.
   assets_dir: assets/nws_zones
-  zone_types: [forecast, fire, public, county, marine]  # zone_sync.py:22
-  timeout_seconds: 30                   # zone_sync.py:151, --timeout-seconds type=int
-  max_retries: 3                        # zone_sync.py:152
-  max_workers: 16                       # zone_sync.py:153
 
-  # UNUSED. zone_sync.py:189 `time.sleep(0.25 * attempt)`. Linear, not exponential,
-  # and multiplied by the 1-based attempt number, so three retries wait 0.25 s then
-  # 0.5 s. Unlike runtime.yaml's supervisor backoff there is no ceiling.
+  # These four, plus pause_seconds and progress below, reach NWSZoneSync from two
+  # directions: main() overlays the CLI on them, and the constructor falls back to
+  # them for a caller with no CLI. Each used to be restated as a signature default
+  # -- zone_types via a ZONE_TYPES module constant, the rest as literals -- so an
+  # instance built without arguments ran on the source copy rather than this file.
+  zone_types: [forecast, fire, public, county, marine]
+  timeout_seconds: 30                   # --timeout-seconds is type=int
+  max_retries: 3
+  max_workers: 16
+
+  # Linear, not exponential, and multiplied by the 1-based attempt number, so
+  # three retries wait 0.25 s then 0.5 s. Unlike runtime.yaml's supervisor
+  # backoff there is no ceiling.
   retry_backoff_seconds: 0.25
 
-  # UNUSED (both). zone_sync.py:58 geometry_to_rings. A FLOOR, not a fixed
-  # precision: zone_sync.py:89 is `range(precision, 8)`, so a ring that degenerates
-  # at 5 decimals is retried at 6 and 7 before being given up on. Raising the floor
-  # narrows that escalation window; the ceiling is exclusive. The 8 is the literal
-  # in that `range`, so wiring the floor without the ceiling would leave half the
-  # window owned by the source.
+  # A FLOOR, not a fixed precision: geometry_to_rings walks
+  # `range(precision, precision_max)`, so a ring that degenerates at 5 decimals is
+  # retried at 6 and 7 before being given up on. Raising the floor narrows that
+  # escalation window; the ceiling is exclusive. The ceiling was a literal `8` in
+  # that `range` while the floor was a parameter, which left half the window owned
+  # by the source -- hence both keys, resolved together.
   geometry_precision: 5
   geometry_precision_max: 8
 
-  # Per-request throttle against api.weather.gov, applied in the worker
-  # (zone_sync.py:253) before each zone-detail fetch and scaled by max_workers so
-  # this stays a whole-job rate: 0.05 is ~20 requests/second however many threads
-  # run. A full rebuild is ~8,600 codes, so ~7 minutes.
+  # Per-request throttle against api.weather.gov, applied in the worker before
+  # each zone-detail fetch and scaled by max_workers so this stays a whole-job
+  # rate: 0.05 is ~20 requests/second however many threads run. A full rebuild is
+  # ~8,600 codes, so ~7 minutes.
   #
   # This file used to record 0.0, which matched what ran but disabled throttling
   # entirely; the pause was also in the collection loop, downstream of every
   # submitted future, where it could not slow the API down at all. 0.05 is the
-  # constructor's long-standing intent (zone_sync.py:154) and is now the one value.
+  # constructor's long-standing intent and is now the one value.
   pause_seconds: 0.05
 
   progress: true                        # --no-progress disables
 
   # The User-Agent is NOT here. It is one string for the whole application,
   # `runtime.yaml identity`, built from package.json by
-  # util/release.py format_user_agent() and applied at zone_sync.py:166 and
+  # util/release.py format_user_agent() and applied at zone_sync.py:201 and
   # nws/main.py:77,141. This subsystem used to carry its own copy, which
   # advertised EdgeWARN/1.0 and a different mailbox than the NEXRAD ingest did.
   #
   # UNUSED, and mis-scoped besides: the same `application/geo+json` literal is
-  # sent from four places -- zone_sync.py:167, main.py:78 and :142, and
+  # sent from four places -- zone_sync.py:202, main.py:78 and :142, and
   # nexrad/weather_api.py:103 -- so a key nested under `zone_sync` can only own
-  # one of them. Wiring this needs a home shared with the alerts fetches, the way
-  # the User-Agent above already has one.
+  # one of them. Reading it here would make one of the four configurable and
+  # leave an operator believing all four had moved, which is why zone_sync still
+  # sends the literal. Wiring this needs a home shared with the alert fetches,
+  # the way the User-Agent above already has one.
   accept: application/geo+json
 
-  # UNUSED (both). zone_sync.py:231 and :240. The catalog listing and the per-zone
-  # detail fetch.
+  # `{zone_type}` for the catalog listing; `{zone_type}` and `{code}` for the
+  # per-zone detail fetch. Both are str.format patterns, so a placeholder the
+  # code does not supply is a KeyError at request time rather than a bad URL.
   zone_catalog_url_pattern: 'https://api.weather.gov/zones/{zone_type}'
   zone_detail_url_pattern: 'https://api.weather.gov/zones/{zone_type}/{code}'

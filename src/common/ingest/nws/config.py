@@ -64,3 +64,20 @@ def junk_keys() -> tuple[str, ...]:
 def simplify_tolerance() -> float:
     """Douglas-Peucker tolerance applied to a zone union, in degrees."""
     return _section("geomapper")["simplify_tolerance"]
+
+
+def zone_sync_settings():
+    """The whole ``zone_sync`` block, for a caller reading several keys at once."""
+    return _section("zone_sync")
+
+
+def zone_geometry_precision() -> tuple[int, int]:
+    """``(floor, ceiling)`` for the ring-rounding escalation in zone assets.
+
+    A floor rather than a fixed precision: a ring that degenerates at the floor
+    is retried at each higher precision below the ceiling, which is exclusive.
+    Returned as a pair because wiring one without the other would leave half the
+    escalation window owned by a source literal.
+    """
+    zone_sync = _section("zone_sync")
+    return zone_sync["geometry_precision"], zone_sync["geometry_precision_max"]
