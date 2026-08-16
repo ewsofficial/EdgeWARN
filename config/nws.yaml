@@ -1,33 +1,40 @@
 # nws.yaml — Audit §1 zone_sync CLI, §7 NWS
 #
-# Source: src/common/ingest/nws/main.py:47-74,79,90,106-107,154,170-171;
+# Source: src/common/ingest/nws/main.py:48-75,80,91,107-108,155,171-172,252;
 #         registry.py:76,233-249,565;
-#         zone_sync.py:21,57,88,150-155,166,188,230,239,363-420;
-#         geomapper.py:22,74,79,104,177,312,362
-# Values verified against the working tree at commit e426fb2.
+#         zone_sync.py:22,58,89,150-155,166,189,231,240,369-429;
+#         geomapper.py:28,80,85,110,183,318,368
 #
-# The `zone_sync` block IS consumed: _resolve_zone_sync_args (zone_sync.py:424-435)
-# loads it and overlays the CLI on top of it. The `nws` block is not wired yet;
-# see plans/source-configuration-extraction-plan.md.
+# Only ONE of the four blocks below is wired, and only in part:
+# _resolve_zone_sync_args (zone_sync.py:432-449) reads exactly seven of
+# `zone_sync`'s thirteen keys -- assets_dir, zone_types, timeout_seconds,
+# max_retries, max_workers, pause_seconds, progress -- and overlays the CLI on
+# top of each. The other six are marked UNUSED at their definitions. `nws` and
+# `geomapper` are unwired entirely; see
+# plans/source-configuration-extraction-plan.md.
 #
-# `zone_sync.apply` and `zone_sync.report_path` are deliberately absent.
-# _resolve_zone_sync_args reads exactly seven keys and neither is among them;
-# `--apply` is `action="store_true"` (zone_sync.py:405-409) so its False is fixed
-# by argparse, and `--report-path` (:410-414) has no default at all. A YAML value
-# for either could never be reached.
+# `assets_dir` is the one key here with a second consumer: geomapper.py reads it
+# back to look polygons up. See its comment below.
+#
+# `zone_sync.apply` and `zone_sync.report_path` are deliberately absent, and no
+# UNUSED marker would fit them because there is nothing to mark: `--apply` is
+# `action="store_true"` (zone_sync.py:413-417) so argparse fixes its False before
+# any YAML could be consulted, and `--report-path` (:418-422) has no default at
+# all. A key for either could never be reached.
 
 schema_version: 1
 
 nws:
-  # main.py:79 passes ttl_hours=2.0 explicitly; 2.0 is also the default at
-  # registry.py:76 and :565. All three agree. Written as 2.0 to match the float
-  # the code declares.
+  # UNUSED. main.py:80 passes ttl_hours=2.0 explicitly; 2.0 is also the default at
+  # registry.py:76 and :565. All three agree today, and all three are literals --
+  # this key is the recorded intent, not yet the owner. Written as 2.0 to match
+  # the float the code declares.
   registry_ttl_hours: 2.0
 
-  # main.py:47-74 DROPPED_EVENTS, applied at main.py:251. An event named here is
-  # discarded on ingest, so nothing downstream can recover it. 19 unique entries;
-  # the source set literally repeats five of them (main.py:55-59), which a Python
-  # set silently collapses.
+  # UNUSED. main.py:48-75 DROPPED_EVENTS, applied at main.py:252. An event named
+  # there is discarded on ingest, so nothing downstream can recover it. 19 unique
+  # entries; the source set literally repeats five of them (main.py:56-60), which
+  # a Python set silently collapses.
   dropped_events:
     - Administrative Message
     - Freezing Spray Advisory
@@ -49,11 +56,12 @@ nws:
     - Air Stagnation Advisory
     - Beach Hazards Statement
 
-  active_alerts_url: https://api.weather.gov/alerts/active   # main.py:90,154
+  # UNUSED. The same literal twice, at main.py:91 (sync) and :155 (async).
+  active_alerts_url: https://api.weather.gov/alerts/active
 
-  # registry.py:233-249 _derive_snapshot_alert_name. Only "Tornado Warning" is
-  # rescored, by scanning the alert description; the first match wins, so
-  # "Tornado Emergency" outranks the PDS phrase. Every other event keeps its
+  # UNUSED. registry.py:233-249 _derive_snapshot_alert_name. Only "Tornado
+  # Warning" is rescored, by scanning the alert description; the first match wins,
+  # so "Tornado Emergency" outranks the PDS phrase. Every other event keeps its
   # own name.
   tornado_upgrade:
     event: Tornado Warning
@@ -62,15 +70,18 @@ nws:
       - {description_contains: PARTICULARLY DANGEROUS SITUATION, name: PDS Tornado Warning}
 
 geomapper:
-  # geomapper.py:74,79,104,177. One value, declared four times as a keyword
-  # default; no caller overrides any of them, so editing this needs all four
-  # signatures updated. Applied while polygons are BUILT, which makes it
-  # DISTINCT from alerts.yaml's `geometry_round_decimals` (same number today, but
-  # that one rounds again on serialization) and from `zone_sync.geometry_precision`
-  # below, which starts one digit finer.
+  # UNUSED. One value, declared four times as a keyword default -- geomapper.py:80
+  # round_coords, :85 _normalize_ring, :110 _geometry_to_polygon_rings, :183
+  # round_geojson_coords -- and no caller overrides any of them, so editing the
+  # behaviour today means editing all four signatures.
+  #
+  # Deliberately NOT the same key as `zone_sync.geometry_precision` below, which
+  # is 5. This one is a fixed precision applied when an alert polygon is built;
+  # that one is a floor that escalates. Collapsing them would silently give the
+  # escalation a different starting digit.
   geometry_precision: 4
 
-  # geomapper.py:22, stripped at :312 and :362. Removed from every alert's
+  # UNUSED. geomapper.py:28, stripped at :318 and :368. Removed from every alert's
   # properties before it reaches disk, so anything listed here is unrecoverable
   # downstream -- the same one-way filter as `nws.dropped_events`, at field
   # granularity instead of event granularity.
@@ -88,27 +99,29 @@ geomapper:
 
 zone_sync:
   # Resolved against the config root's parent, which is the repo root only for an
-  # unrelocated tree. Read by BOTH ends of the zone pipeline -- zone_sync.py:435
-  # writes polygons here, geomapper.py reads them back -- so despite living under
-  # `zone_sync` this key is not private to that CLI. The reader used to find the
-  # directory by walking up from its own __file__ instead, which agreed with the
-  # writer until either end was pointed elsewhere; a disagreement dropped alert
-  # polygons without an error.
+  # unrelocated tree. Read by BOTH ends of the zone pipeline -- zone_sync.py:441
+  # writes polygons here, geomapper.py:_assets_dir reads them back -- so despite
+  # living under `zone_sync` this key is not private to that CLI. The reader used
+  # to find the directory by walking up from its own __file__ instead, which
+  # agreed with the writer until either end was pointed elsewhere; a disagreement
+  # dropped alert polygons without an error.
   assets_dir: assets/nws_zones
-  zone_types: [forecast, fire, public, county, marine]  # zone_sync.py:21
-  timeout_seconds: 30                   # zone_sync.py:150, --timeout-seconds type=int
-  max_retries: 3                        # zone_sync.py:151
-  max_workers: 16                       # zone_sync.py:152
+  zone_types: [forecast, fire, public, county, marine]  # zone_sync.py:22
+  timeout_seconds: 30                   # zone_sync.py:151, --timeout-seconds type=int
+  max_retries: 3                        # zone_sync.py:152
+  max_workers: 16                       # zone_sync.py:153
 
-  # zone_sync.py:188 `time.sleep(0.25 * attempt)`. Linear, not exponential, and
-  # multiplied by the 1-based attempt number, so three retries wait 0.25 s then
+  # UNUSED. zone_sync.py:189 `time.sleep(0.25 * attempt)`. Linear, not exponential,
+  # and multiplied by the 1-based attempt number, so three retries wait 0.25 s then
   # 0.5 s. Unlike runtime.yaml's supervisor backoff there is no ceiling.
   retry_backoff_seconds: 0.25
 
-  # zone_sync.py:57 geometry_to_rings. A FLOOR, not a fixed precision:
-  # zone_sync.py:88 is `range(precision, 8)`, so a ring that degenerates at 5
-  # decimals is retried at 6 and 7 before being given up on. Raising the floor
-  # narrows that escalation window; the ceiling is exclusive.
+  # UNUSED (both). zone_sync.py:58 geometry_to_rings. A FLOOR, not a fixed
+  # precision: zone_sync.py:89 is `range(precision, 8)`, so a ring that degenerates
+  # at 5 decimals is retried at 6 and 7 before being given up on. Raising the floor
+  # narrows that escalation window; the ceiling is exclusive. The 8 is the literal
+  # in that `range`, so wiring the floor without the ceiling would leave half the
+  # window owned by the source.
   geometry_precision: 5
   geometry_precision_max: 8
 
@@ -120,7 +133,7 @@ zone_sync:
   # This file used to record 0.0, which matched what ran but disabled throttling
   # entirely; the pause was also in the collection loop, downstream of every
   # submitted future, where it could not slow the API down at all. 0.05 is the
-  # constructor's long-standing intent (zone_sync.py:153) and is now the one value.
+  # constructor's long-standing intent (zone_sync.py:154) and is now the one value.
   pause_seconds: 0.05
 
   progress: true                        # --no-progress disables
@@ -130,8 +143,15 @@ zone_sync:
   # util/release.py format_user_agent() and applied at zone_sync.py:166 and
   # nws/main.py:107,171. This subsystem used to carry its own copy, which
   # advertised EdgeWARN/1.0 and a different mailbox than the NEXRAD ingest did.
+  #
+  # UNUSED, and mis-scoped besides: the same `application/geo+json` literal is
+  # sent from four places -- zone_sync.py:167, main.py:108 and :172, and
+  # nexrad/weather_api.py:103 -- so a key nested under `zone_sync` can only own
+  # one of them. Wiring this needs a home shared with the alerts fetches, the way
+  # the User-Agent above already has one.
   accept: application/geo+json
 
-  # zone_sync.py:230 and :239. The catalog listing and the per-zone detail fetch.
+  # UNUSED (both). zone_sync.py:231 and :240. The catalog listing and the per-zone
+  # detail fetch.
   zone_catalog_url_pattern: 'https://api.weather.gov/zones/{zone_type}'
   zone_detail_url_pattern: 'https://api.weather.gov/zones/{zone_type}/{code}'
