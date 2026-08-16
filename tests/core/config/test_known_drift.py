@@ -2119,6 +2119,219 @@ def test_config_dir_reaches_mrms_values_after_the_module_is_already_imported(tmp
     assert mrms_config.mrms_bucket() != "override-mrms"
 
 
+def test_ncep_https_fallback_reads_every_value_from_the_catalog():
+    """RESOLVED (Phase 5): the whole `mrms.ncep_https` block was inert.
+
+    Seven values were transcribed into the catalog and read by nothing -- the
+    client held its own copies. Editing `base_url` or `directory_map` to follow an
+    NCEP reorganization did nothing at all, which is the failure mode this
+    migration exists to remove.
+
+    Derivation is pinned three ways because the map is only half the rule: a mapped
+    product, an unmapped one that derives by splitting on the token, and ProbSevere
+    (a sibling of /data/2D, not a directory inside it, hence its own key).
+    """
+    from datetime import datetime, timezone
+
+    import common.ingest.mrms.https_client as https_client
+    from common.ingest.mrms import config as mrms_config
+
+    # A surviving constant would leave two owners even if they agreed today.
+    assert not hasattr(https_client, "NCEP_BASE_URL")
+
+    source = (REPO_ROOT / "src/common/ingest/mrms/https_client.py").read_text(encoding="utf-8")
+    for literal in (
+        '"https://mrms.ncep.noaa.gov',
+        "timeout=10",
+        "diff < 120",
+        "read(8192)",
+        'split("_00.")',
+        # The map entry, not the docstring's illustrative "EchoTop_18" example.
+        '"EchoTop_18_00.50":',
+    ):
+        assert literal not in source, literal
+
+    base = mrms_config.ncep_base_url()
+    finder = https_client.HttpsFileFinder(datetime(2026, 1, 24, 14, 0, tzinfo=timezone.utc))
+    # Mapped, so the level suffix cannot simply be dropped.
+    assert finder.construct_url("CONUS", "MESH_00.50") == f"{base}/MESH"
+    # Absent from the map, so the split-token fallback derives it.
+    assert finder.construct_url("CONUS", "EchoTop_50_00.50") == f"{base}/EchoTop_50"
+    assert finder.construct_url("CONUS", None) == mrms_config.ncep_probsevere_url()
+    assert mrms_config.ncep_probsevere_url() != f"{base}/ProbSevere"
+
+
+async def _record_download_read_sizes(https_client, dt, outdir):
+    """Run one HTTPS download against a fake session, returning the read sizes."""
+    sizes = []
+
+    class _Content:
+        async def read(self, size):
+            sizes.append(size)
+            # One chunk then EOF, so the size is recorded before the stream ends.
+            return b"" if sizes.count(size) > 1 else b"x"
+
+    class _Response:
+        status = 200
+        content = _Content()
+        content_length = 1
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        def get(self, _url):
+            return _Response()
+
+    name = f"MRMS_Test_{dt.strftime('%Y%m%d-%H%M')}00.grib2.gz"
+    with mock.patch.object(https_client.aiohttp, "ClientSession", _Session):
+        await https_client.HttpsFileDownloader(dt).download_matching(
+            [f"https://example.invalid/{name}"], outdir
+        )
+    return sizes[:1]
+
+
+def test_config_dir_reaches_the_ncep_https_values_after_import(tmp_path):
+    """Same import-then-export ordering as `src/run.py`, for the fallback block.
+
+    The timeout and the chunk size are observed at the call sites, not through the
+    accessors: an accessor that returns the catalog value while its caller keeps a
+    literal passes an accessor-only assertion.
+    """
+    import asyncio
+    import shutil
+    from datetime import datetime, timezone
+
+    from common.config import loader
+    import common.ingest.mrms.https_client as https_client
+    from common.ingest.mrms import config as mrms_config
+
+    config_dir = tmp_path / "config"
+    shutil.copytree(REPO_ROOT / "config", config_dir)
+    catalog = config_dir / "mrms_goes.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8")
+            .replace("base_url: https://mrms.ncep.noaa.gov/data/2D", "base_url: https://example.invalid/2D")
+            .replace("sync_timeout_seconds: 10", "sync_timeout_seconds: 4")
+            .replace("download_chunk_size_bytes: 8192", "download_chunk_size_bytes: 512")
+            .replace("MESH_00.50: MESH", "MESH_00.50: MESH_OVERRIDE"),
+        encoding="utf-8",
+    )
+
+    dt = datetime(2026, 1, 24, 14, 0, tzinfo=timezone.utc)
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    timeouts = []
+    try:
+        loader.export_config_root(config_dir)
+
+        finder = https_client.HttpsFileFinder(dt)
+        assert finder.construct_url("CONUS", "MESH_00.50") == "https://example.invalid/2D/MESH_OVERRIDE"
+
+        def _fake_get(url, timeout=None):
+            timeouts.append(timeout)
+            raise RuntimeError("no network in tests")
+
+        with mock.patch.object(https_client.requests, "get", _fake_get):
+            assert finder.find_files_sync("CONUS", "MESH_00.50") == []
+        assert timeouts == [4]
+
+        assert asyncio.run(
+            _record_download_read_sizes(https_client, dt, tmp_path / "out")
+        ) == [512]
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+        loader.reset_cache()
+
+    assert mrms_config.ncep_sync_timeout_seconds() == 10
+
+
+def test_ncep_fuzzy_match_window_widens_and_narrows_with_the_catalog(tmp_path):
+    """The one value with no other observable effect, pinned at both edges.
+
+    `match_window_seconds` is reached only after an exact-minute match fails, so a
+    test that offers an on-the-minute filename never exercises it. Both directions
+    are asserted: a file 100 s away is accepted under the shipped 120 and rejected
+    once the catalog narrows, so neither widening nor narrowing the literal back in
+    can pass.
+    """
+    import asyncio
+    import shutil
+    from datetime import datetime, timedelta, timezone
+
+    from common.config import loader
+    import common.ingest.mrms.https_client as https_client
+
+    dt = datetime(2026, 1, 24, 14, 0, 0, tzinfo=timezone.utc)
+    # 100 s away: inside the shipped 120 s window, outside a narrowed 60 s one, and
+    # far enough off the minute that the exact-match branch cannot claim it.
+    offset_name = (
+        f"MRMS_Test_{(dt + timedelta(seconds=100)).strftime('%Y%m%d-%H%M%S')}.grib2.gz"
+    )
+
+    def _attempt(outdir):
+        """True if the offset filename was accepted as a match.
+
+        Recorded rather than signalled by an exception: `download_matching` catches
+        `Exception`, so anything raised from the fake session is swallowed and the
+        return value is None either way.
+        """
+        requested = []
+
+        class _Session:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            def get(self, url):
+                requested.append(url)
+                raise ConnectionError("no network in tests")
+
+        with mock.patch.object(https_client.aiohttp, "ClientSession", _Session):
+            asyncio.run(
+                https_client.HttpsFileDownloader(dt).download_matching(
+                    [f"https://example.invalid/{offset_name}"], outdir
+                )
+            )
+        return bool(requested)
+
+    assert _attempt(tmp_path / "wide") is True
+
+    config_dir = tmp_path / "config"
+    shutil.copytree(REPO_ROOT / "config", config_dir)
+    catalog = config_dir / "mrms_goes.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8").replace(
+            "match_window_seconds: 120", "match_window_seconds: 60"
+        ),
+        encoding="utf-8",
+    )
+
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    try:
+        loader.export_config_root(config_dir)
+        assert _attempt(tmp_path / "narrow") is False
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+        loader.reset_cache()
+
+
 # --- Integrate: --config-dir must reach every value ------------------------
 
 

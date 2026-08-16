@@ -2,8 +2,9 @@
 #
 # Source: src/common/ingest/mrms/{config,parse,downloader,https_client,main}.py
 # Values verified against the working tree at commit e426fb2.
-# `products` / `check_products` are consumed by config.py; the remaining keys are
-# not yet wired -- see plans/source-configuration-extraction-plan.md.
+# Every key here is consumed through config.py accessors. Citations name functions
+# rather than line numbers where the value has a single call site, because the
+# numbers rot on the next edit to the module and a stale one is worse than none.
 
 schema_version: 1
 
@@ -48,19 +49,36 @@ mrms:
     probsevere_start_after_lookback_hours: 1                    # downloader.py:305,446
 
   # HTTPS fallback against the NCEP 2D index, used when S3 lookup yields nothing.
+  # Every key below is read per call by an https_client.py call site via a config.py
+  # ncep_* accessor. The client used to hold its own copy of all seven, so editing
+  # this block to follow an NCEP reorganization did nothing at all.
   ncep_https:
-    base_url: https://mrms.ncep.noaa.gov/data/2D    # https_client.py:24
-    probsevere_url: https://mrms.ncep.noaa.gov/data/ProbSevere  # https_client.py:107
-    sync_timeout_seconds: 10                        # https_client.py:168
-    match_window_seconds: 120                       # https_client.py:228
-    download_chunk_size_bytes: 8192                 # https_client.py:261
+    base_url: https://mrms.ncep.noaa.gov/data/2D              # construct_url
+    # A sibling of /data/2D rather than a directory inside it, so it is its own key
+    # and NOT base_url with a suffix appended.
+    probsevere_url: https://mrms.ncep.noaa.gov/data/ProbSevere  # construct_url
+    # find_files_sync only. Both aiohttp paths -- the async scrape and the async
+    # download -- construct a bare ClientSession and so rely on aiohttp's own
+    # timeout; this key does not reach them, and naming it `sync_` says so.
+    sync_timeout_seconds: 10
+    # How far off the requested minute a filename may sit. Reached only after an
+    # exact-minute match fails, so it has no effect on an on-the-minute hit.
+    match_window_seconds: 120
+    # Sizes reads off the network in download_matching. mrms.decompress_chunk_size_bytes
+    # is the local gzip expansion -- different resource, different owner.
+    download_chunk_size_bytes: 8192
     # Fallback when a product is absent from directory_map: split on this token
-    # and keep the leading segment. https_client.py:96-98
+    # and keep the leading segment.
     directory_split_token: '_00.'
-    # S3 modifier -> NCEP directory name. Transcribed verbatim from
-    # https_client.py:73-90. NOTE: the FLASH_QPE_FFG01H_00.00 key does not match
-    # any entry in `products` (the real product is FLASH_QPE_FFGMAX_00.00), so
-    # that mapping is dead today; preserved to keep this a faithful transcription.
+    # S3 modifier -> NCEP directory name, for the products whose directory does not
+    # derive by dropping the level suffix. NOTE: the FLASH_QPE_FFG01H_00.00 key
+    # matches no entry in `products` (the real product is FLASH_QPE_FFGMAX_00.00),
+    # so that row is dead today. Kept because deleting it changes nothing while a
+    # future rename upstream may need it, and the NCEP index really does list a
+    # FLASH/ directory.
+    #
+    # VIL, VIL_Density and LVL3_HighResVIL are distinct NCEP directories; do not
+    # collapse them onto one entry.
     directory_map:
       EchoTop_18_00.50: EchoTop_18
       EchoTop_30_00.50: EchoTop_30
