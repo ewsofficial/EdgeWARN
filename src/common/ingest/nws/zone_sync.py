@@ -18,8 +18,7 @@ from common.config import loader as config_loader
 from common.config import overlay
 from util.release import format_user_agent
 
-
-ZONE_TYPES: Tuple[str, ...] = ("forecast", "fire", "public", "county", "marine")
+from .config import zone_geometry_precision, zone_sync_settings
 
 
 def _normalize_ring(coords: Sequence[Any], precision: int) -> List[List[float]]:
@@ -55,10 +54,26 @@ def _rings_valid(rings: Sequence[Sequence[Sequence[float]]]) -> bool:
     return True
 
 
-def geometry_to_rings(geometry: Dict[str, Any], precision: int = 5) -> List[List[List[float]]]:
-    """Convert GeoJSON Polygon/MultiPolygon to asset ring format."""
+def geometry_to_rings(
+    geometry: Dict[str, Any],
+    precision: Optional[int] = None,
+    precision_max: Optional[int] = None,
+) -> List[List[List[float]]]:
+    """Convert GeoJSON Polygon/MultiPolygon to asset ring format.
+
+    ``precision`` is a floor, not a fixed precision: a ring that degenerates at
+    it is retried at each higher precision below ``precision_max``. Both default
+    to ``nws.yaml zone_sync.geometry_precision``/``_max`` -- the ceiling used to
+    be a literal ``8``, which left half the escalation window in source while
+    the floor was configurable.
+    """
     if not geometry or not isinstance(geometry, dict):
         return []
+
+    if precision is None or precision_max is None:
+        catalog_precision, catalog_max = zone_geometry_precision()
+        precision = catalog_precision if precision is None else precision
+        precision_max = catalog_max if precision_max is None else precision_max
 
     try:
         geom_obj = shape(geometry)
@@ -86,7 +101,7 @@ def geometry_to_rings(geometry: Dict[str, Any], precision: int = 5) -> List[List
         assert isinstance(multipolygon, MultiPolygon)
         geometries = list(multipolygon.geoms)
 
-    for active_precision in range(precision, 8):
+    for active_precision in range(precision, precision_max):
         rings: List[List[List[float]]] = []
         for polygon in geometries:
             ring = _normalize_ring(list(polygon.exterior.coords), precision=active_precision)
@@ -147,21 +162,41 @@ class NWSZoneSync:
     def __init__(
         self,
         assets_dir: Path,
-        zone_types: Sequence[str] = ZONE_TYPES,
-        timeout_seconds: int = 30,
-        max_retries: int = 3,
-        max_workers: int = 16,
-        pause_seconds: float = 0.05,
+        zone_types: Optional[Sequence[str]] = None,
+        timeout_seconds: Optional[int] = None,
+        max_retries: Optional[int] = None,
+        max_workers: Optional[int] = None,
+        pause_seconds: Optional[float] = None,
         user_agent: str | None = None,
-        show_progress: bool = True,
+        show_progress: Optional[bool] = None,
     ) -> None:
+        """Unsupplied settings come from ``nws.yaml zone_sync``.
+
+        Every one of these used to restate its catalog value as a signature
+        default, so the two agreed only as long as nobody edited one of them, and
+        an instance built without arguments -- as the tests do -- ran on the
+        source copy rather than the operator's. `main()` passes all of them
+        explicitly, having already overlaid the CLI on the catalog, so the
+        defaults below are what a non-CLI caller gets.
+        """
+        settings = zone_sync_settings()
+
         self.assets_dir = Path(assets_dir)
-        self.zone_types = tuple(zone_types)
-        self.timeout_seconds = timeout_seconds
-        self.max_retries = max_retries
-        self.max_workers = max_workers
-        self.pause_seconds = pause_seconds
-        self.show_progress = show_progress
+        self.zone_types = tuple(settings["zone_types"] if zone_types is None else zone_types)
+        self.timeout_seconds = settings["timeout_seconds"] if timeout_seconds is None else timeout_seconds
+        self.max_retries = settings["max_retries"] if max_retries is None else max_retries
+        self.max_workers = settings["max_workers"] if max_workers is None else max_workers
+        self.pause_seconds = settings["pause_seconds"] if pause_seconds is None else pause_seconds
+        self.show_progress = settings["progress"] if show_progress is None else show_progress
+        self.retry_backoff_seconds = settings["retry_backoff_seconds"]
+        self.zone_catalog_url_pattern = settings["zone_catalog_url_pattern"]
+        self.zone_detail_url_pattern = settings["zone_detail_url_pattern"]
+        # `Accept` is deliberately still a literal. The same `application/geo+json`
+        # goes out from four places -- here, both alert downloads in main.py, and
+        # nexrad/weather_api.py -- so reading `zone_sync.accept` would make one of
+        # the four configurable and leave an operator believing all four moved.
+        # It needs a home shared with the alert fetches first, the way the
+        # User-Agent already has one in `runtime.yaml identity`.
         self.headers = {
             "User-Agent": user_agent or format_user_agent(),
             "Accept": "application/geo+json",
@@ -186,7 +221,9 @@ class NWSZoneSync:
             except Exception as exc:
                 last_error = exc
                 if attempt < self.max_retries:
-                    time.sleep(0.25 * attempt)
+                    # Linear in the 1-based attempt number, not exponential, and
+                    # with no ceiling.
+                    time.sleep(self.retry_backoff_seconds * attempt)
         if last_error is None:
             raise RuntimeError(f"Failed to fetch {url}")
         raise last_error
@@ -228,7 +265,7 @@ class NWSZoneSync:
         """Return catalog map of code -> preferred zone type."""
         catalog: Dict[str, str] = {}
         for zone_type in self.zone_types:
-            data = self._request_json(f"https://api.weather.gov/zones/{zone_type}")
+            data = self._request_json(self.zone_catalog_url_pattern.format(zone_type=zone_type))
             for feature in data.get("features", []):
                 props = feature.get("properties") or {}
                 code = props.get("id")
@@ -237,7 +274,9 @@ class NWSZoneSync:
         return catalog
 
     def fetch_zone_geometry(self, zone_type: str, code: str) -> List[List[List[float]]]:
-        detail = self._request_json(f"https://api.weather.gov/zones/{zone_type}/{code}")
+        detail = self._request_json(
+            self.zone_detail_url_pattern.format(zone_type=zone_type, code=code)
+        )
         geometry = detail.get("geometry")
         return geometry_to_rings(geometry)
 

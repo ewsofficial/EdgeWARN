@@ -1132,16 +1132,18 @@ def test_zone_sync_pause_seconds_agrees_with_the_constructor_and_throttles():
     throttling against api.weather.gov. The pause was also in the `as_completed`
     collection loop, downstream of every submitted future, so even a non-zero
     value could not slow the API down. It now runs in the worker.
+
+    The constructor no longer carries its own 0.05 for the file to agree with --
+    it resolves the recorded value, so the two cannot disagree. What is checked
+    here is that the recorded value is non-zero and that the sleep still gates
+    the request rather than the bookkeeping.
     """
     from tests.core.config.source_inspect import argparse_defaults
 
-    constructor = param_default(
+    assert param_default(
         "common/ingest/nws/zone_sync.py", "NWSZoneSync.__init__", "pause_seconds"
-    )
-    flag = argparse_defaults("common/ingest/nws/zone_sync.py")["--pause-seconds"]["default"]
-
-    assert constructor == 0.05
-    assert flag is None
+    ) is None
+    assert argparse_defaults("common/ingest/nws/zone_sync.py")["--pause-seconds"]["default"] is None
 
     source = (REPO_ROOT / "src/common/ingest/nws/zone_sync.py").read_text(encoding="utf-8")
     assert "pause_seconds=args.pause_seconds" in source
@@ -1153,8 +1155,11 @@ def test_zone_sync_pause_seconds_agrees_with_the_constructor_and_throttles():
 
     import yaml
 
+    from common.ingest.nws.zone_sync import NWSZoneSync
+
     recorded = yaml.safe_load((REPO_ROOT / "config/nws.yaml").read_text(encoding="utf-8"))
-    assert recorded["zone_sync"]["pause_seconds"] == constructor
+    assert recorded["zone_sync"]["pause_seconds"] > 0, "throttling is disabled"
+    assert NWSZoneSync(Path(".")).pause_seconds == recorded["zone_sync"]["pause_seconds"]
 
 
 # --- NEXRAD sites sentinel ------------------------------------------------
@@ -2374,3 +2379,127 @@ def test_config_dir_reaches_the_geomapper_geometry_values_after_import():
 
     assert nws_config.geometry_precision() == 4
     assert "eventCode" in nws_config.junk_keys()
+
+
+def test_zone_sync_settings_have_no_literal_owner_in_the_constructor():
+    """Every NWSZoneSync setting used to restate its catalog value as a default.
+
+    They agreed only for as long as nobody edited one side, and an instance built
+    without arguments -- which the tests do -- ran on the source copy rather than
+    the operator's. `zone_types` was the worst of them: a `ZONE_TYPES` module
+    constant, bound at import and so unreachable from `--config-dir` even in
+    principle.
+    """
+    for parameter in (
+        "zone_types",
+        "timeout_seconds",
+        "max_retries",
+        "max_workers",
+        "pause_seconds",
+        "show_progress",
+    ):
+        assert param_default("common/ingest/nws/zone_sync.py", "NWSZoneSync.__init__", parameter) is None, (
+            f"NWSZoneSync.__init__ restates {parameter} as a literal default"
+        )
+
+    for parameter in ("precision", "precision_max"):
+        assert param_default("common/ingest/nws/zone_sync.py", "geometry_to_rings", parameter) is None
+
+    from common.ingest.nws import zone_sync
+
+    assert not hasattr(zone_sync, "ZONE_TYPES"), (
+        "the zone-type list is back at module scope, which freezes it at import"
+    )
+
+
+def test_config_dir_reaches_the_zone_sync_settings_after_import():
+    """Import first, export second -- the order `src/run.py` uses.
+
+    Covers the six keys that had no reader at all before: the backoff, both ends
+    of the precision escalation, and both URL patterns. The patterns are asserted
+    through the request the syncer actually makes, since an attribute that never
+    reaches a URL would be indistinguishable from a wired one.
+    """
+    import shutil
+    import tempfile
+    from unittest.mock import patch
+
+    from common.config import loader
+    from common.ingest.nws import config as nws_config
+    from common.ingest.nws import zone_sync as zone_sync_module
+    from common.ingest.nws.zone_sync import NWSZoneSync, geometry_to_rings
+
+    config_dir = Path(tempfile.mkdtemp(prefix="cfgdir-zonesync-"))
+    shutil.copytree(REPO_ROOT / "config", config_dir, dirs_exist_ok=True)
+    catalog = config_dir / "nws.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8")
+            .replace("  zone_types: [forecast, fire, public, county, marine]", "  zone_types: [marine]")
+            .replace("  timeout_seconds: 30", "  timeout_seconds: 7")
+            .replace("  max_retries: 3", "  max_retries: 9")
+            .replace("  max_workers: 16", "  max_workers: 2")
+            .replace("  retry_backoff_seconds: 0.25", "  retry_backoff_seconds: 1.5")
+            .replace("  geometry_precision: 5", "  geometry_precision: 6")
+            .replace("  geometry_precision_max: 8", "  geometry_precision_max: 7")
+            .replace("zones/{zone_type}'", "zones-relocated/{zone_type}'")
+            .replace("zones/{zone_type}/{code}'", "zones-relocated/{zone_type}/{code}'"),
+        encoding="utf-8",
+    )
+
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    try:
+        loader.export_config_root(config_dir)
+        loader.reset_cache()
+
+        assert nws_config.zone_geometry_precision() == (6, 7)
+
+        syncer = NWSZoneSync(Path("."))
+        assert syncer.zone_types == ("marine",)
+        assert syncer.timeout_seconds == 7
+        assert syncer.max_retries == 9
+        assert syncer.max_workers == 2
+        assert syncer.retry_backoff_seconds == 1.5
+
+        # An explicit argument still outranks the catalog, which is how main()
+        # delivers the CLI overlay.
+        assert NWSZoneSync(Path("."), max_workers=5).max_workers == 5
+
+        requested = []
+        with patch.object(NWSZoneSync, "_request_json", side_effect=lambda url: requested.append(url) or {}):
+            syncer.fetch_zone_catalog()
+            syncer.fetch_zone_geometry("marine", "TXZ001")
+
+        assert requested == [
+            "https://api.weather.gov/zones-relocated/marine",
+            "https://api.weather.gov/zones-relocated/marine/TXZ001",
+        ], "the catalog URL patterns did not reach the request"
+
+        # The backoff reaches the sleep, not just the attribute. Three attempts
+        # sleep twice, at 1x and 2x the catalog value, linearly.
+        retrier = NWSZoneSync(Path("."), max_retries=3)
+        slept = []
+        with patch("common.ingest.nws.zone_sync.time.sleep", side_effect=slept.append):
+            with patch.object(NWSZoneSync, "_get_thread_session", side_effect=RuntimeError("boom")):
+                with pytest.raises(RuntimeError):
+                    retrier._request_json("https://example.invalid")
+        assert slept == [1.5, 3.0], "the catalog backoff did not reach the sleep"
+
+        # Both ends of the escalation reach the loop: a 6..7 window tries one
+        # precision, where the repo default's 5..8 would try three.
+        attempted = []
+        square = {"type": "Polygon", "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]]}
+        with patch.object(
+            zone_sync_module,
+            "_normalize_ring",
+            side_effect=lambda coords, precision: attempted.append(precision) or [],
+        ):
+            geometry_to_rings(square)
+        assert attempted == [6], f"the escalation window came from source, not the catalog: {attempted}"
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+        loader.reset_cache()
+
+    assert nws_config.zone_geometry_precision() == (5, 8)
