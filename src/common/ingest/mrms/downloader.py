@@ -5,11 +5,11 @@ from statistics import fmean
 
 from common.ingest.manifest import StagedInput, staged_input_from_path
 from common.ingest.mrms.config import (
-    bucket,
     get_goes_max_entries,
     get_goes_modifiers,
     get_mrms_modifiers,
     goes_bucket,
+    mrms_bucket,
     normalize_goes_modifier,
 )
 from common.ingest.mrms.s3_sync import FileFinder, FileDownloader
@@ -264,8 +264,9 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
     trace_id = parent_trace_id or f"MOD-{uuid.uuid4().hex[:8]}"
     modifier_name = _mrms_modifier_label(modifier)
 
-    finder = AsyncFileFinder(dt, bucket, max_entries, io_manager, s3_client=s3_client)
-    downloader = AsyncFileDownloader(dt, bucket, io_manager, s3_client=s3_client)
+    s3_bucket = mrms_bucket()
+    finder = AsyncFileFinder(dt, s3_bucket, max_entries, io_manager, s3_client=s3_client)
+    downloader = AsyncFileDownloader(dt, s3_bucket, io_manager, s3_client=s3_client)
 
     perf_tracker.start(f"Ingest - MRMS - {modifier_name}")
     try:
@@ -434,8 +435,9 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
     # Enforce minute-precision dt
     dt = dt.replace(second=0, microsecond=0)
 
-    finder = FileFinder(dt, bucket, max_entries, io_manager)
-    downloader = FileDownloader(dt, bucket, io_manager)
+    s3_bucket = mrms_bucket()
+    finder = FileFinder(dt, s3_bucket, max_entries, io_manager)
+    downloader = FileDownloader(dt, s3_bucket, io_manager)
     modifier_name = _mrms_modifier_label(modifier)
 
     try:
@@ -503,8 +505,9 @@ def download_goes_product(goes_spec, dt, hour_lookback=3, preloaded_files=None):
     outdir = goes_spec.outdir
     label = _get_goes_spec_label(goes_spec)
 
-    finder = FileFinder(dt, goes_bucket, _goes_search_max_entries(), io_manager)
-    downloader = FileDownloader(dt, goes_bucket, io_manager)
+    s3_bucket = goes_bucket()
+    finder = FileFinder(dt, s3_bucket, _goes_search_max_entries(), io_manager)
+    downloader = FileDownloader(dt, s3_bucket, io_manager)
     
     try:
         all_files = preloaded_files
@@ -619,10 +622,11 @@ async def _download_goes_product_async(
     label = _get_goes_spec_label(goes_spec)
     trace_id = parent_trace_id or f"GOES-{uuid.uuid4().hex[:8]}"
 
+    s3_bucket = goes_bucket()
     finder = AsyncFileFinder(
-        dt, goes_bucket, _goes_search_max_entries(), io_manager, s3_client=s3_client
+        dt, s3_bucket, _goes_search_max_entries(), io_manager, s3_client=s3_client
     )
-    downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
+    downloader = AsyncFileDownloader(dt, s3_bucket, io_manager, s3_client=s3_client)
     
     perf_tracker.start(f"Ingest - GOES - {label}")
     try:
@@ -758,12 +762,14 @@ def download_goes_specs(goes_specs, dt, hour_lookback=3):
 
     # Use ThreadPoolExecutor for concurrent downloads
     shared_channel_files_by_product = {}
+    s3_bucket = goes_bucket()
+    search_max_entries = _goes_search_max_entries()
 
     for goes_spec in goes_modifiers_list:
         if not goes_spec.channel_id or goes_spec.product in shared_channel_files_by_product:
             continue
 
-        finder = FileFinder(dt, goes_bucket, _goes_search_max_entries(), io_manager)
+        finder = FileFinder(dt, s3_bucket, search_max_entries, io_manager)
         bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
         shared_channel_files_by_product[goes_spec.product] = finder.lookup_files(bucket_paths)
 
@@ -843,13 +849,15 @@ async def download_goes_specs_async(goes_specs, dt, hour_lookback=3):
         perf_maps = {"lookup_ms": {}, "download_ms": {}, "decompress_ms": {}}
         await _cleanup_goes_specs_async(goes_modifiers_list, trace_id, max_age_minutes=60)
         shared_channel_files_by_product = {}
+        s3_bucket = goes_bucket()
+        search_max_entries = _goes_search_max_entries()
 
         for goes_spec in goes_modifiers_list:
             if not goes_spec.channel_id or goes_spec.product in shared_channel_files_by_product:
                 continue
 
             finder = AsyncFileFinder(
-                dt, goes_bucket, _goes_search_max_entries(), io_manager, s3_client=s3
+                dt, s3_bucket, search_max_entries, io_manager, s3_client=s3
             )
             bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
             lookup_started_at = asyncio.get_running_loop().time()

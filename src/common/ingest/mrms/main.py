@@ -1,4 +1,4 @@
-from common.ingest.mrms.config import get_mrms_modifiers, get_goes_modifiers, bucket
+from common.ingest.mrms.config import get_mrms_modifiers, get_goes_modifiers
 from common.ingest.mrms.downloader import (
     download_all_files_async_internal,
     download_all_files_sync_fallback, download_files_sync_fallback,

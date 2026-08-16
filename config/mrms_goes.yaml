@@ -8,7 +8,11 @@
 schema_version: 1
 
 mrms:
-  bucket: noaa-mrms-pds                   # config.py:6
+  # Read per call via config.py mrms_bucket(). It used to be a module-scope
+  # constant, and src/run.py:9 imports this module 23 lines before get_args()
+  # exports EDGEWARN_CONFIG_DIR -- so --config-dir could not reach it and an
+  # operator override was silently ignored in favour of the value below.
+  bucket: noaa-mrms-pds
   decompress_chunk_size_bytes: 1048576    # 1 MiB
   download_max_entries: 10                # main.py:44 max_entries default
   remove_old_files: true                  # main.py:44
@@ -116,11 +120,19 @@ mrms:
     detection: [MergedReflectivityQCComposite_00.50, PrecipFlag_00.00, null]
 
 goes:
-  bucket: noaa-goes19                    # config.py:7
-  abi_product: ABI-L1b-RadC              # config.py:28
-  glm_product: GLM-L2-LCFA               # config.py:102
-  glm_outdir: GOES_GLM_DIR               # config.py:102
-  max_files_per_spec: 2                  # config.py:17 GoesIngestSpec.max_files
+  # These four are read per call, via config.py goes_bucket(), abi_radc_product()
+  # and _abi_channel_definitions(). See the note on `mrms.bucket` for why binding
+  # them at module scope put them out of reach of --config-dir.
+  bucket: noaa-goes19
+  abi_product: ABI-L1b-RadC
+  glm_product: GLM-L2-LCFA               # config.py get_goes_modifiers()
+  glm_outdir: GOES_GLM_DIR               # config.py get_goes_modifiers()
+  # The retained-file count cap per GOES spec, resolved in
+  # GoesIngestSpec.__post_init__ rather than as a field default -- a dataclass
+  # default is evaluated once, at class-definition time. A caller may still pass
+  # max_files explicitly, including None, which means "no cap" to
+  # util.file.clean_old_files.
+  max_files_per_spec: 2
   # downloader.py _goes_search_max_entries(). The listing depth for every GOES
   # lookup, and the only one -- no GOES entry point takes a per-call count.
   # GLM publishes roughly 180 objects an hour, so the MRMS depth in
@@ -134,8 +146,11 @@ goes:
   hour_lookback: 3
   cleanup_max_age_minutes: 60            # main.py:57
   bucket_path_pattern: '{product}/{YYYY}/{DDD}/{HH}/'  # parse.py:53
-  filename_matcher_template: '(?:_|-)M\d{channel_id}_' # config.py:123
-  abi_channels:                          # config.py:30-47, 16 channels, all enabled by default
+  filename_matcher_template: '(?:_|-)M\d{channel_id}_' # config.py get_abi_radc_channel_specs()
+  # 16 channels. `get_abi_radc_channel_specs(channel_ids=None)` selects all of
+  # them; passing an explicit list narrows the selection. The catalog order is the
+  # spec order.
+  abi_channels:
     - {id: C01, name: visible_blue,     outdir: GOES_ABI_VISIBLE_BLUE_DIR}
     - {id: C02, name: visible_red,      outdir: GOES_ABI_VISIBLE_RED_DIR}
     - {id: C03, name: veggie,           outdir: GOES_ABI_VEGGIE_DIR}
