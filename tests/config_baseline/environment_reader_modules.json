@@ -8,5 +8,6 @@
   "common/ingest/nexrad/worker_pool.py",
   "common/ingest/synoptic/config.py",
   "run.py",
+  "util/io.py",
   "util/performance.py"
 ]

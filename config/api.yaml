@@ -203,6 +203,10 @@ env_overrides:
   # key in this document, and necessarily so: it selects the directory these YAML
   # files are read FROM, so it can never be set from inside one. Listed to
   # document the variable, not to imply a settable key.
+  #
+  # On the Python side, io.py also *writes* this variable so that accessory
+  # processes -- spawned without argv -- inherit the parent's --config-dir
+  # choice instead of re-resolving to the repo-default config/.
   config_dir: ['EDGEWARN_CONFIG_DIR']
   # RATE_LIMIT_WINDOW_MS_SEC / RATE_LIMIT_WINDOW_MS_MIN are deliberately absent:
   # they are read only by the retired src/EdgeWARN/api/server.js:55,57. Setting

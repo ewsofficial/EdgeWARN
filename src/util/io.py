@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import argparse
+import os
 import sys
 import time
 
@@ -94,6 +95,16 @@ class IOManager:
         parser.add_argument("--drop-offset", type=float, default=None, help="Override the dynamic reflectivity drop offset used during gate expansion (default: from detection.yaml)")
 
     @staticmethod
+    def _export_config_dir(args):
+        """Publish the resolved config root so spawned children inherit it.
+
+        Accessory processes are spawned without argv, so they re-resolve the
+        config root themselves; without this they would read the repo-default
+        ``config/`` while the parent used ``--config-dir``.
+        """
+        os.environ["EDGEWARN_CONFIG_DIR"] = str(config_loader.config_root(args.config_dir))
+
+    @staticmethod
     def _resolve_common_processing_args(args):
         detection_cfg = config_loader.load_config("detection", config_dir=args.config_dir)["detection"]
         args.refl_threshold = overlay.resolve(args.refl_threshold, yaml_value=detection_cfg["refl_threshold"])
@@ -119,6 +130,7 @@ class IOManager:
             ),
         )
         args = parser.parse_args()
+        self._export_config_dir(args)
 
         runtime_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
         args.lat_limits = overlay.resolve(args.lat_limits, yaml_value=list(runtime_cfg["lat_limits"]))
@@ -145,6 +157,7 @@ class IOManager:
         parser.add_argument("--output", type=str, default=None, help="Output JSON file (default: from historical.yaml)")
         self._add_common_processing_args(parser)
         args = parser.parse_args()
+        self._export_config_dir(args)
 
         historical_cfg = config_loader.load_config("historical", config_dir=args.config_dir)["historical"]
         args.lat = overlay.resolve(args.lat, yaml_value=list(historical_cfg["lat"]))
