@@ -6,14 +6,14 @@
 #
 # Source: main.py:50,61,125,214,225; registry.py:89,235-253,569;
 #         zone_sync.py:22,58,89,150-155,166,189,231,240,369-429;
-#         geomapper.py:28,80,85,110,183,318,368
+#         geomapper.py:68,82,109,143,199,337,387
 #
-# The `nws` block is fully wired. `geomapper` is not wired at all, and
-# `zone_sync` is wired in part: _resolve_zone_sync_args (zone_sync.py:432-449)
-# reads seven of its thirteen keys -- assets_dir, zone_types, timeout_seconds,
-# max_retries, max_workers, pause_seconds, progress -- and overlays the CLI on
-# top of each. The remaining eight keys across the two blocks are marked UNUSED
-# at their definitions; see plans/source-configuration-extraction-plan.md.
+# The `nws` and `geomapper` blocks are fully wired. `zone_sync` is wired in part:
+# _resolve_zone_sync_args (zone_sync.py:432-449) reads seven of its thirteen keys
+# -- assets_dir, zone_types, timeout_seconds, max_retries, max_workers,
+# pause_seconds, progress -- and overlays the CLI on top of each. The remaining
+# six keys, all under `zone_sync`, are marked UNUSED at their definitions; see
+# plans/source-configuration-extraction-plan.md.
 #
 # `assets_dir` is the one key here with a second consumer: geomapper.py reads it
 # back to look polygons up. See its comment below.
@@ -76,10 +76,12 @@ nws:
       - {description_contains: PARTICULARLY DANGEROUS SITUATION, name: PDS Tornado Warning}
 
 geomapper:
-  # UNUSED. One value, declared four times as a keyword default -- geomapper.py:80
-  # round_coords, :85 _normalize_ring, :110 _geometry_to_polygon_rings, :183
-  # round_geojson_coords -- and no caller overrides any of them, so editing the
-  # behaviour today means editing all four signatures.
+  # Was one value declared four times as a keyword default, in round_coords,
+  # _normalize_ring, _geometry_to_polygon_rings, and round_geojson_coords, with no
+  # caller overriding any of them -- so changing the rounding meant finding and
+  # editing all four signatures. All four now default to None and resolve here.
+  # They stay parameters so a caller already holding the value can pass it down
+  # rather than re-resolve it per ring.
   #
   # Deliberately NOT the same key as `zone_sync.geometry_precision` below, which
   # is 5. This one is a fixed precision applied when an alert polygon is built;
@@ -87,10 +89,21 @@ geomapper:
   # escalation a different starting digit.
   geometry_precision: 4
 
-  # UNUSED. geomapper.py:28, stripped at :318 and :368. Removed from every alert's
-  # properties before it reaches disk, so anything listed here is unrecoverable
-  # downstream -- the same one-way filter as `nws.dropped_events`, at field
-  # granularity instead of event granularity.
+  # Douglas-Peucker tolerance in degrees, applied to the union of an alert's zone
+  # polygons (geomapper.py extract_exterior_polygon) to cut the point count on
+  # coastlines and rivers. ~1.1 km at the equator, so it is coarse enough to be
+  # visible: raising it shrinks the payload and moves the drawn boundary.
+  #
+  # Only ever reached through the default -- the sole production caller,
+  # _get_cached_union_exterior, passes no tolerance. `0` disables simplification
+  # entirely rather than meaning "no error", which is why the floor is inclusive.
+  simplify_tolerance: 0.01
+
+  # Removed from every alert's properties before it reaches disk, so anything
+  # listed here is unrecoverable downstream -- the same one-way filter as
+  # `nws.dropped_events`, at field granularity instead of event granularity.
+  # Applied at both exits of process_warning, the early geometry-present return
+  # and the zone-mapped path.
   junk_keys:
     - references
     - sender
@@ -102,6 +115,13 @@ geomapper:
     - language
     - web
     - eventCode
+
+  # The zone-union cache size is deliberately absent. It is `lru_cache(maxsize=1024)`
+  # on _get_cached_union_exterior, an argument evaluated when the module is
+  # imported -- which is before the config root is published, the one position a
+  # catalog value provably cannot be read from. Wiring it means building the cache
+  # lazily on first call, and that indirection costs more clarity than a sizing
+  # knob with a single owner and no duplicate is worth.
 
 zone_sync:
   # Resolved against the config root's parent, which is the repo root only for an
