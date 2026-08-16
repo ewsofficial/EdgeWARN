@@ -101,6 +101,32 @@ def test_integrate_glm_basic(mock_io_manager, glm_file, storm_cells):
     assert c2['properties']['GLM_FLASH_COUNT'] == 0
     assert c2['properties']['GLM_TOTAL_ENERGY'] == 0.0
 
+def test_glm_bin_size_does_not_change_flash_counts(
+    mock_io_manager, glm_file, storm_cells, override_integration_config
+):
+    """`glm.bin_size_degrees` indexes candidates; the polygon test decides.
+
+    integration.yaml claims the key affects performance only. Nothing enforced
+    that, so a bin size an operator considers reasonable could silently drop
+    flashes near a bin edge.
+    """
+    def mock_create_poly(cell):
+        return Polygon([(lon, lat) for lat, lon in cell["bbox"]])
+
+    def run(bin_size):
+        override_integration_config("glm", "bin_size_degrees", bin_size)
+        cells = [dict(cell, properties={}) for cell in storm_cells]
+        with patch(
+            "EdgeWARN.process.integrate.integrate_glm.StormIntegrationUtils.create_cell_polygon",
+            side_effect=mock_create_poly,
+        ), patch("EdgeWARN.process.integrate.integrate_glm.io_manager", mock_io_manager):
+            return [cell["properties"] for cell in integrate_glm(cells, glm_file)]
+
+    coarse = run(5.0)
+    assert coarse == run(1.0) == run(0.25)
+    assert coarse[0]["GLM_FLASH_COUNT"] > 0
+
+
 def test_integrate_glm_no_file(mock_io_manager, storm_cells):
     """Test behavior when file path is None."""
     with patch("EdgeWARN.process.integrate.integrate_glm.io_manager", mock_io_manager):

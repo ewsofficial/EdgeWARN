@@ -1823,3 +1823,128 @@ def test_config_dir_reaches_mrms_values_after_the_module_is_already_imported(tmp
             os.environ["EDGEWARN_CONFIG_DIR"] = previous
 
     assert mrms_config.mrms_bucket() != "override-mrms"
+
+
+# --- Integrate: --config-dir must reach every value ------------------------
+
+
+def test_config_dir_reaches_integrate_values_after_the_modules_are_imported():
+    """The two module-scope reads that made --config-dir unreachable are gone.
+
+    `EdgeWARN/pipeline.py` pulls `integrate.core.integrator` and, through it,
+    `azshear.constants` in from `src/run.py:14` -- 27 lines before `get_args()`
+    calls `export_config_root`. Both files used to read config at module scope,
+    so an operator's `--config-dir` was silently ignored. Worse, because
+    `integrate.config.section` is memoized, the frozen repo-default entry also
+    defeated the correctly-written per-call reads elsewhere in the package.
+
+    Import order here mirrors production deliberately: import first, export
+    second. A module-scope read reintroduced anywhere on that chain fails this.
+    """
+    import shutil
+    import tempfile
+
+    from common.config import loader
+    from EdgeWARN.process.integrate import config as integrate_config
+    from EdgeWARN.process.integrate.azshear import constants as azshear_constants
+
+    config_dir = Path(tempfile.mkdtemp(prefix="cfgdir-integrate-"))
+    shutil.copytree(REPO_ROOT / "config", config_dir, dirs_exist_ok=True)
+    catalog = config_dir / "integration.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8")
+            .replace("buffer_km: 1.5", "buffer_km: 9.9")
+            .replace("min_gate_count: 5", "min_gate_count: 77")
+            .replace("ProbSevere: ProbSevere", "ProbSevere: OVERRIDDEN"),
+        encoding="utf-8",
+    )
+
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    try:
+        loader.export_config_root(config_dir)
+        loader.reset_cache()
+        integrate_config.reset_cache()
+        assert azshear_constants.azshear_buffer_km() == 9.9
+        assert azshear_constants.azshear_min_gate_count() == 77
+        assert integrate_config.probsevere_field_map()["ProbSevere"] == "OVERRIDDEN"
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+        loader.reset_cache()
+        integrate_config.reset_cache()
+
+    assert azshear_constants.azshear_buffer_km() != 9.9
+
+
+def test_probsevere_field_map_has_no_module_level_owner():
+    """`integrator.py` must not rebind the mapping as a module constant.
+
+    Deleting `PROBSEVERE_FIELD_MAP` is what fixes the import-time freeze above;
+    reintroducing it as a convenience alias would restore the bug, since the
+    alias is evaluated at import.
+    """
+    from EdgeWARN.process.integrate.core import integrator
+
+    assert not hasattr(integrator, "PROBSEVERE_FIELD_MAP")
+
+
+# --- The 120-second scan cadence: two owners, kept distinct ----------------
+
+
+def test_fallback_and_default_dt_seconds_agree():
+    """`detection.fallback_dt_seconds` and `assignment_costs.default_dt_seconds`.
+
+    These are deliberately NOT collapsed: the first is the tracker's fallback
+    when elapsed time cannot be derived from timestamps, and belongs to the
+    subsystem that owns the timestamps; the second is a cost-function fallback in
+    the kalman package, unreachable in production because every live
+    `compute_cost` call site forwards a concrete dt.
+
+    They must nonetheless agree. Within one scan the state is propagated with
+    `kf.predict(dt_seconds)` and candidates are scored with the same dt, so if
+    the two diverged the cost function would score an implied velocity against a
+    different baseline than the state was advanced by.
+    """
+    from common.config.loader import load_config
+
+    detection = load_config("detection")["detection"]["fallback_dt_seconds"]
+    kalman = load_config("kalman")["assignment_costs"]["default_dt_seconds"]
+    assert detection == kalman == 120.0
+
+
+def test_update_cells_dt_seconds_has_no_literal_default():
+    """`track.py` must not restate the fallback as a signature default.
+
+    The production caller (`detect/main.py`) always computes and passes
+    `dt_seconds`, so a literal default there was reachable only from tests --
+    and it was a second owner of a catalog value.
+    """
+    assert param_default(
+        "EdgeWARN/process/detect/track.py",
+        "StormCellTracker.update_cells",
+        "dt_seconds",
+    ) is None
+
+
+# --- Kalman: the unused assignment regularization key is gone -------------
+
+
+def test_assignment_has_no_second_regularization_owner():
+    """`assignment.covariance_regularization` was a duplicate, now deleted.
+
+    It was loaded into `AssignmentConfig` but consumed by nothing; the value
+    actually applied to the innovation covariance is
+    `filter_internals.innovation_covariance_regularization`, read at
+    `filter.py:434`. Two keys, one concept, same number -- so the unread one was
+    a second owner waiting to disagree.
+    """
+    import dataclasses
+
+    from common.config.loader import load_config
+    from EdgeWARN.process.detect.kalman.config import AssignmentConfig
+
+    assert "covariance_regularization" not in load_config("kalman")["assignment"]
+    fields = {field.name for field in dataclasses.fields(AssignmentConfig)}
+    assert "covariance_regularization" not in fields

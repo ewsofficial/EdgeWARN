@@ -14,7 +14,8 @@
   {
     "name": "Ref15",
     "filepath": "fs:MRMS_REFM15C_DIR",
-    "key": "Ref15"
+    "key": "Ref15",
+    "method": "max"
   },
   {
     "name": "NLDN",

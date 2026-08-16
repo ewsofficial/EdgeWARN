@@ -264,6 +264,47 @@ def test_integrate_multi_stats_rounds_to_two_decimals(integrator, tmp_path):
     assert props["MeanRounded"] == 5.56
     assert props["P90Rounded"] == 5.56
 
+def test_output_decimals_is_live_at_both_integrator_sites(integrator, tmp_path, override_integration_config):
+    """Raising `output.decimals` must change what both entry points write.
+
+    The two round-to-2 tests above would still pass against a hardcoded 2, so
+    they cannot tell a wired key from an inert one.
+    """
+    override_integration_config("output", "decimals", 4)
+
+    lat = np.array([30.0, 30.01, 30.02])
+    lon = np.array([-95.02, -95.01, -95.0])
+    data = np.array([
+        [1.0, 2.0, 3.0],
+        [4.0, 12.3456789, 6.0],
+        [7.0, 8.0, 9.0],
+    ])
+    bbox = [
+        [30.005, -95.015],
+        [30.005, -95.005],
+        [30.015, -95.005],
+        [30.015, -95.015],
+        [30.005, -95.015],
+    ]
+
+    def cell():
+        return {"id": "c", "bbox": bbox, "centroid": [30.01, -95.01], "properties": {}}
+
+    coords = dict(latitude=(["latitude"], lat), longitude=(["longitude"], lon))
+
+    max_path = tmp_path / "decimals_max.nc"
+    xr.Dataset(data_vars=dict(unknown=(["latitude", "longitude"], data)), coords=coords).to_netcdf(max_path)
+    result = integrator.integrate_ds_via_max(str(max_path), [cell()], "MaxTest")
+    assert result[0]["properties"]["MaxTest"] == 12.3457
+
+    stats_path = tmp_path / "decimals_stats.nc"
+    xr.Dataset(data_vars=dict(test_var=(["latitude", "longitude"], data)), coords=coords).to_netcdf(stats_path)
+    result = integrator.integrate_multi_stats(
+        str(stats_path), [cell()], [{"key": "MaxStat", "method": "max"}]
+    )
+    assert result[0]["properties"]["MaxStat"] == 12.3457
+
+
 def test_integrate_empty_intersection(integrator, synthetic_dataset):
     """Test integration where cell is outside dataset bounds"""
     # Create cell far away (e.g., lat 40, lon -80)
@@ -1023,3 +1064,33 @@ def test_compute_component_metrics_uses_compact_pixel_storage():
     assert "_component_mask" not in metrics
     assert "_lat_grid" not in metrics
     assert "_lon_grid" not in metrics
+
+
+def test_azshear_tunables_are_live_not_frozen_at_import(override_integration_config):
+    """These two keys were inert until the module-scope reads were removed.
+
+    `azshear/constants.py` bound all five tunables at import. Because
+    `integrate.config.section` is memoized, that one frozen read also poisoned
+    the cache for the correctly-written per-call read in `azshear/integration.py`
+    -- so four keys, not two, silently ignored `--config-dir`.
+    """
+    from EdgeWARN.process.integrate.azshear import constants
+
+    override_integration_config("azshear", "buffer_km", 9.9)
+    assert constants.azshear_buffer_km() == 9.9
+
+    override_integration_config("azshear", "min_gate_count", 77)
+    assert constants.azshear_min_gate_count() == 77
+
+    override_integration_config("azshear", "history_window", 3)
+    from EdgeWARN.process.integrate.config import section
+
+    assert section("azshear")["history_window"] == 3
+
+
+def test_probsevere_field_map_is_live_not_frozen_at_import(override_integration_config):
+    """`integrator.py` bound the whole mapping at import, so it ignored --config-dir."""
+    from EdgeWARN.process.integrate.config import probsevere_field_map
+
+    override_integration_config("probsevere_field_map", "ProbSevere", "OVERRIDDEN")
+    assert probsevere_field_map()["ProbSevere"] == "OVERRIDDEN"

@@ -9,8 +9,7 @@ from util.io import IOManager
 from util.performance import tracker as perf_tracker
 
 from EdgeWARN.process.detect.tools.save import CellDataSaver
-from EdgeWARN.process.integrate.config import get_datasets_config
-from EdgeWARN.process.integrate.core.integrator import PROBSEVERE_FIELD_MAP
+from EdgeWARN.process.integrate.config import get_datasets_config, probsevere_field_map
 from EdgeWARN.process.integrate.integrate import StormCellIntegrator
 from EdgeWARN.process.integrate.integrate_glm import integrate_glm
 from EdgeWARN.process.integrate.integrate_rap import get_rap_output_roots, integrate_rap
@@ -263,7 +262,7 @@ def _stats_owned_keys():
 
 
 def _support_owned_keys():
-    return set(PROBSEVERE_FIELD_MAP.keys()) | set(_GLM_OUTPUT_KEYS) | set(get_rap_output_roots())
+    return set(probsevere_field_map().keys()) | set(_GLM_OUTPUT_KEYS) | set(get_rap_output_roots())
 
 
 def _run_enrichment_serial(
