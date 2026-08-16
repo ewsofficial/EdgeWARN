@@ -430,6 +430,12 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _resolve_zone_sync_args(args: argparse.Namespace) -> argparse.Namespace:
+    # Publish the root before reading anything from it. Every value below names
+    # `args.config_dir` explicitly, but the constructor's User-Agent comes from
+    # format_user_agent(), which resolves `runtime.yaml` on its own -- so without
+    # the export, `--config-dir X` gave this run X's zone settings and the repo
+    # default's outbound identity.
+    config_loader.export_config_root(args.config_dir)
     zone_sync_cfg = config_loader.load_config("nws", config_dir=args.config_dir)["zone_sync"]
 
     assets_dir_yaml = config_loader.repo_root(args.config_dir) / zone_sync_cfg["assets_dir"]
