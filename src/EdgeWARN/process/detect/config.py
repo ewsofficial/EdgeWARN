@@ -97,6 +97,7 @@ class DetectionConfig:
     tracking_disabled_mode: str
     tracking_disabled_prediction_count: int
     tracking_disabled_event_type: str
+    dataset_load_max_workers: int
     gatemapper: GateMapperConfig
 
     @classmethod
@@ -133,5 +134,6 @@ class DetectionConfig:
             tracking_disabled_mode=disabled["tracking_mode"],
             tracking_disabled_prediction_count=disabled["prediction_count"],
             tracking_disabled_event_type=disabled["event_type"],
+            dataset_load_max_workers=detection["dataset_load_max_workers"],
             gatemapper=GateMapperConfig.from_section(document["gatemapper"]),
         )

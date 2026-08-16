@@ -48,7 +48,7 @@ def detect_cells(
         finally:
             perf_tracker.stop(timer_name)
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=detection_config.dataset_load_max_workers) as executor:
         radar_future = executor.submit(_load_with_timing, "Detection - Load Radar", handler.load_subset)
         ps_future = executor.submit(_load_with_timing, "Detection - Load ProbSevere", handler.load_probsevere)
         preciptype_future = executor.submit(_load_with_timing, "Detection - Load PrecipType", handler.load_preciptype)
