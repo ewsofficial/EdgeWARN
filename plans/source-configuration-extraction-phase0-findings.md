@@ -46,7 +46,8 @@ is "how many places declare this."
 
 Three rows of the plan's "Corrections required before the files can be loaded"
 table need amending. Fifteen of the eighteen rows were verified correct against
-`HEAD` and need no change.
+`HEAD` and need no change. Two further claims the plan makes outside that table
+are also wrong, both about WPC (§1 and §1b below).
 
 ### 1. The WPC glob mismatch does not exist — strike it
 
@@ -58,8 +59,26 @@ writer emits a different prefix. It does not.
 
 `surface_analysis` is only a directory name (`src/util/file.py:176`).
 `src/EWMRS/pipeline.py` contains no WPC references at all. Cleanup and the
-writer already agree; there is nothing to reconcile. Pinned by
-`test_wpc_cleanup_glob_matches_the_generated_filenames`.
+writer already agree; there is nothing to reconcile.
+
+Now that both strings are keys in `wpc.yaml`, the pin lives in
+`test_wpc_cleanup_glob_matches_the_timestamped_name_but_not_latest`, which also
+asserts the glob does *not* match `latest_filename` — broadening it would delete
+the file the API serves.
+
+### 1b. WPC does not disable TLS verification — strike that too
+
+Plan lines 499-500 and `runtime-correctness-race-condition-remediation-plan.md`
+row L4 both claim WPC skips certificate and hostname validation. Both of its
+download paths already set `check_hostname = True` and
+`verify_mode = ssl.CERT_REQUIRED`; the two blocks were identical, which is
+probably how the claim arose from a partial read. METAR is the subsystem that
+actually disables verification.
+
+`wpc.verify_tls` therefore pins existing behavior rather than offering to relax
+it: the schema fixes it to `true` and `_verifying_ssl_context` raises if it ever
+reads false, so loosening either fails loudly. Pinned by
+`test_wpc_owns_its_retention_window_and_verifies_tls`.
 
 ### 2. `max_chunk_downloads` is in the wrong file
 

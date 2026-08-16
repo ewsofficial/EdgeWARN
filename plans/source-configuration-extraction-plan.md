@@ -189,9 +189,12 @@ The most important drift risks found in the baseline are:
   Python, the EdgeWARN API, and the EWMRS API.
 - EdgeWARN API version strings and the NEXRAD weather API user agent copy the
   package version instead of reading `package.json`.
-- WPC cleanup searches `surface_analysis_*.geojson` while generated artifacts
-  are named `wpc_sfc_*`; migration tests must expose and resolve this existing
-  mismatch separately from value-preserving extraction.
+- ~~WPC cleanup searches `surface_analysis_*.geojson` while generated artifacts
+  are named `wpc_sfc_*`.~~ **Refuted in Phase 0**: `surface_analysis` is only a
+  directory name, and the sweep and the writer have always agreed on the
+  `wpc_sfc_` prefix. The glob and the output template are now both keys in
+  `wpc.yaml`, coupled by a round-trip test that also pins that the glob does not
+  match `latest_filename`.
 
 ## Target configuration tree
 
@@ -447,8 +450,8 @@ radius from reading YAML.
 | `src/EdgeWARN/process/detect/tools/alert_matcher.py` | Convective/flood event allowlist used for cell matching | `integration.yaml` |
 | `src/common/ingest/nws/main.py` | NWS dropped-event blocklist | `nws.yaml` |
 | `src/common/ingest/nws/zone_sync.py` | Zone-type catalog used by the maintenance sync | `nws.yaml` |
-| `src/common/ingest/wpc/config.py` | WPC feature types and display styles (`FEATURE_TYPES`, 7 front/pressure types with colors — undocumented in the audit) | `wpc.yaml` |
-| `src/common/ingest/wpc/converter.py` | Duplicated coded-front to GeoJSON feature-type mapping and output metadata labels | `wpc.yaml` |
+| ~~`src/common/ingest/wpc/config.py`~~ | **Done.** WPC feature types and display styles (`FEATURE_TYPES`, 7 front/pressure types with colors — undocumented in the audit). Snapshotted, because the converter's fallback makes a dropped entry render unnamed and black rather than fail | `wpc.yaml` |
+| ~~`src/common/ingest/wpc/converter.py`~~ | **Done.** The two duplicated feature-type lookups collapse into one `_style_for` helper. The output metadata labels (`source: WPC`, `product: Surface Analysis`) stayed in code: they identify the product itself, not a setting | `wpc.yaml` |
 
 There are no GOES RGB rows in this table. `src/EWMRS/render/goes_rgb.py`,
 `GOES_RGB_RECIPES`, the terminator angles, the solar cache, the gamma values and
@@ -490,11 +493,17 @@ tree but absent from the audit.
 | `src/common/ingest/metar.py` | Station database URL (`https://aviationweather.gov/data/cache/stations.cache.json`, not the audit's `api.aviationweather.gov/v1/stations/`) and cycle URLs; request timeouts; user agent; station cache filename; CONUS bounds (lon `-125.0..-66.0`, not `-125..-67`); lookback; rounding; retention | `metar.yaml` |
 | `src/common/ingest/nws/main.py`, `registry.py`, `geomapper.py` | Alerts URL; user agent/contact; request/chunk settings; two-hour registry TTL; property drop list; geometry rounding/simplification | `nws.yaml` |
 | `src/common/ingest/nws/zone_sync.py` | API URL templates, timeout, retries/backoff, worker count, pause, geometry precision, output path policy, and the `:160` user agent | `nws.yaml` `zone_sync` section |
-| `src/common/ingest/wpc/config.py`, `downloader.py`, `main.py` | Source URL, valid hours, source cadence, timeout, fallback-cycle count, file templates, and cleanup age | `wpc.yaml` |
+| ~~`src/common/ingest/wpc/config.py`, `downloader.py`, `main.py`~~ | **Done.** Source URL, valid hours, source cadence, timeout, backfill lookback, file templates, cleanup glob/age, and the `FEATURE_TYPES` styling table | `wpc.yaml` |
 | `src/common/ingest/nexrad/config.py`, `s3_chunks.py`, `s3_async.py`, `main.py` | Buckets; station catalog URL (`https://api.weather.gov/radar/stations`, not the audit's `/api/stations`); user agent; timeout; cache TTL (`30`, not `0`); minimum volume chunks; chunk download semaphore (`max_chunk_downloads = 64`, not `8`); volume candidate count and volumes/site; heartbeat stale `240.0` and startup grace `60.0` (`:21-22`) | `nexrad.yaml`; shared concurrency in `runtime.yaml` |
 
-TLS verification policy currently disabled in METAR/WPC code must be an
-explicit boolean with a warning when false. Contact/user-agent values must not
+TLS verification policy currently disabled in METAR code must be an explicit
+boolean with a warning when false. **WPC was wrongly named here**: both of its
+download paths already set `check_hostname` and `CERT_REQUIRED`, so
+`wpc.verify_tls` pins that behavior rather than offering to relax it — the schema
+fixes it to `true` and the downloader raises if it ever reads false. METAR is the
+only subsystem that needs the warn-when-false treatment.
+
+Contact/user-agent values must not
 contain a copied package version; the loader formats a configured template
 using `package.json`.
 

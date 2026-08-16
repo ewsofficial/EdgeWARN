@@ -171,7 +171,13 @@ Keys and defaults: [`config/synoptic_rap.yaml`](../config/synoptic_rap.yaml).
 
 ## `config/wpc.yaml`
 
-Audit §7 WPC (`common/ingest/wpc/config.py`, `downloader.py`, `converter.py`).
+Audit §7 WPC, plus the `FEATURE_TYPES` styling table the audit omitted. Read
+through the accessors in `common/ingest/wpc/config.py`, which `downloader.py`,
+`converter.py`, and `main.py` call per use.
+
+Two of the audit's claims about WPC were wrong and are struck: the cleanup glob
+never mismatched the writer, and TLS verification was never disabled. See
+[Phase 0 findings §1 and §1b](source-configuration-extraction-phase0-findings.md).
 
 Keys and defaults: [`config/wpc.yaml`](../config/wpc.yaml).
 
