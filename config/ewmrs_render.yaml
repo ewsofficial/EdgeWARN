@@ -219,14 +219,31 @@ goes_transform:                         # render/goes_transform.py
   # goes_transform.py:65-95 and :243-244.
 
 nexrad_gui:
-  variable_colormaps:                   # nexrad.py:53-60
+  # The sole owner, and the only key in this block a code path reads:
+  # render/config.py nexrad_variable_colormaps(), called by render/nexrad.py once
+  # per serialization and hoisted above the per-sweep loop. The renderer used to
+  # restate this as a module constant, which made editing here change nothing the
+  # GUI drew.
+  #
+  # A moment omitted here is still served by the API; it just goes undrawn. CCORH
+  # is deliberately that case -- see test_ccorh_is_servable_but_deliberately_uncolored.
+  variable_colormaps:
     DBZH: NWS_Reflectivity
     VRADH: VRADH
     WRADH: WRADH
     PHIDP: PHIDP
     RHOHV: RHOHV
     ZDR: ZDR
-  field_magic: EWFFv1S0                 # nexrad.py:52; wire-format invariant
-  bin_name_pattern: '{site_upper}_{variable_name}_{elevation_label}_{scan_timestamp}.bin.gz'  # nexrad.py:112
-  manifest_name_pattern: '{site_upper}_{scan_timestamp}_{volume_id}.json'  # nexrad.py:391,441
-  manifest_timestamp_fallback: unknown  # nexrad.py:441 (manifest_timestamp or 'unknown')
+
+  # UNUSED -- the four keys below are read by nothing. They are documentation
+  # copies of literals that live in render/nexrad.py, kept in place rather than
+  # deleted so that dropping them stays a deliberate decision. Editing any of them
+  # changes no behaviour.
+  #
+  # field_magic is deliberately NOT wired: it is a wire-format invariant, written
+  # into every .bin.gz and checked on read back (nexrad.py:98,105). Making it
+  # settable would let a config edit produce files no reader accepts.
+  field_magic: EWFFv1S0                 # nexrad.py:18, as bytes
+  bin_name_pattern: '{site_upper}_{variable_name}_{elevation_label}_{scan_timestamp}.bin.gz'  # nexrad.py:71
+  manifest_name_pattern: '{site_upper}_{scan_timestamp}_{volume_id}.json'  # nexrad.py:352,402
+  manifest_timestamp_fallback: unknown  # nexrad.py:402 (manifest_timestamp or 'unknown')
