@@ -274,6 +274,47 @@ def test_named_directories_are_paths_not_arbitrary_globals():
     assert wrong == []
 
 
+# --- The two loaders must agree on which catalogs exist -------------------
+
+def _js_config_names() -> list[str]:
+    """The CONFIG_NAMES array from the JS loader, in declaration order."""
+    import re
+
+    source = (REPO_ROOT / "src/config/loader.js").read_text(encoding="utf-8")
+    match = re.search(r"CONFIG_NAMES\s*=\s*Object\.freeze\(\[(.*?)\]\)", source, re.DOTALL)
+    assert match, "could not locate CONFIG_NAMES in src/config/loader.js"
+    return re.findall(r"'([^']+)'", match.group(1))
+
+
+def test_python_and_js_loaders_list_the_same_catalogs():
+    """Two hand-rolled loaders, one set of files, and nothing kept them in step.
+
+    The JS list had gone on naming `alerts` after that catalog was split into
+    `scheduler` and `api_index`, which made `npm run validate-config` fail on a
+    missing file *and* silently skip validating the two replacements. Order is
+    compared too: these are parallel ports, and a diff is easier to read when
+    they stay aligned.
+    """
+    assert _js_config_names() == list(loader.CONFIG_NAMES)
+
+
+def test_every_listed_catalog_has_a_file_and_a_schema():
+    """A name in either list with no file on disk is a guaranteed load failure."""
+    missing = [
+        name
+        for name in loader.CONFIG_NAMES
+        if not (REPO_ROOT / "config" / f"{name}.yaml").is_file()
+        or not (REPO_ROOT / "config" / "schema" / f"{name}.schema.json").is_file()
+    ]
+    assert missing == []
+
+
+def test_no_catalog_file_is_absent_from_the_loaders():
+    """The reverse coverage check: a new YAML nobody validates is dead weight."""
+    on_disk = sorted(path.stem for path in (REPO_ROOT / "config").glob("*.yaml"))
+    assert on_disk == sorted(loader.CONFIG_NAMES)
+
+
 # --- API product catalog --------------------------------------------------
 
 def test_api_product_catalog_route_keys_are_unique():
