@@ -65,10 +65,9 @@ def accept_encoding() -> str:
 def verify_tls() -> bool:
     """Whether METAR requests verify certificates.
 
-    Currently false, which is what the code did before extraction. Unlike
-    ``wpc.verify_tls`` this is a real switch, so every path that builds transport
-    security goes through :func:`ssl_context` or :func:`aiohttp_ssl` and warns
-    while it is false.
+    Unlike ``wpc.verify_tls`` this is a real switch rather than a schema
+    constant, so every path that builds transport security goes through
+    :func:`ssl_context` or :func:`aiohttp_ssl` and warns while it is false.
     """
     return _metar()["verify_tls"]
 

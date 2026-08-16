@@ -27,14 +27,18 @@ metar:
   # header is narrowed rather than left at the client default.
   accept_encoding: 'gzip, deflate'
 
-  # SECURITY: false reproduces the behavior before extraction, where five call
-  # sites disabled verification independently (three aiohttp `ssl=False`, two
-  # `ssl.CERT_NONE`). They now share `metar_config.ssl_context` and
-  # `metar_config.aiohttp_ssl`, which warn on every use while this is false.
-  # Nothing about these hosts requires it, so this should become true once a run
-  # confirms the certificates validate. Unlike `wpc.verify_tls`, this is a real
-  # switch, so the schema does not pin it.
-  verify_tls: false
+  # SECURITY: true. Before extraction five call sites disabled verification
+  # independently (three aiohttp `ssl=False`, two `ssl.CERT_NONE`); they now
+  # share `metar_config.ssl_context` and `metar_config.aiohttp_ssl`, so this one
+  # key reaches all five. It stayed false only until a run confirmed the
+  # certificates validate; aviationweather.gov and tgftp.nws.noaa.gov both
+  # present chains that verify against the default trust store.
+  #
+  # Unlike `wpc.verify_tls` the schema does not pin this, so it remains a real
+  # switch: behind a TLS-intercepting proxy an operator can set it false and get
+  # the warning `_warn_if_unverified` emits on every use, rather than having to
+  # edit the schema.
+  verify_tls: true
 
   # How many hourly cycles each run ingests, counting the current hour.
   lookback_hours: 3
