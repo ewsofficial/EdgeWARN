@@ -2503,3 +2503,196 @@ def test_config_dir_reaches_the_zone_sync_settings_after_import():
         loader.reset_cache()
 
     assert nws_config.zone_geometry_precision() == (5, 8)
+
+
+# --- the api.weather.gov Accept header: one owner across two subsystems ----
+
+def test_the_weather_api_accept_header_has_no_literal_owner():
+    """RESOLVED: `application/geo+json` was the same literal at four sites.
+
+    They spanned two subsystems -- NWS zone sync, both NWS alert downloads, and
+    the NEXRAD station catalog -- which is why the key could not live in either
+    subsystem's catalog and sat in `nws.yaml zone_sync` as UNUSED instead. Wiring
+    it there would have made one of the four configurable while leaving an
+    operator believing all four had moved.
+    """
+    for relative in (
+        "src/common/ingest/nws/zone_sync.py",
+        "src/common/ingest/nws/main.py",
+        "src/common/ingest/nexrad/weather_api.py",
+    ):
+        source = (REPO_ROOT / relative).read_text(encoding="utf-8")
+        assert '"application/geo+json"' not in source, (
+            f"{relative} carries its own copy of the Accept header again"
+        )
+
+    # The retired key is gone from the catalog, not merely unread -- a leftover
+    # `zone_sync.accept` would read as the live owner of a value now held in
+    # runtime.yaml.
+    from common.config.loader import load_config
+
+    assert "accept" not in load_config("nws")["zone_sync"]
+    assert "weather_api_accept" in load_config("runtime")["identity"]
+
+
+def test_config_dir_reaches_every_outbound_weather_api_header_after_import():
+    """Import first, export second -- the order `src/run.py` uses.
+
+    Asserts through the header dicts the request layer is actually handed, so a
+    helper that resolved the catalog but was not reached by a call site would
+    still fail here.
+    """
+    import shutil
+    import tempfile
+
+    from common.config import loader
+    from common.ingest.nexrad.weather_api import RadarStationCatalog
+    from common.ingest.nws.zone_sync import NWSZoneSync
+    from util.release import weather_api_headers
+
+    config_dir = Path(tempfile.mkdtemp(prefix="cfgdir-accept-"))
+    shutil.copytree(REPO_ROOT / "config", config_dir, dirs_exist_ok=True)
+    catalog = config_dir / "runtime.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8")
+            .replace(
+                "  weather_api_accept: application/geo+json",
+                "  weather_api_accept: application/relocated+json",
+            )
+            .replace("  contact: ewsbackend@gmail.com", "  contact: relocated@example.org"),
+        encoding="utf-8",
+    )
+
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    try:
+        loader.export_config_root(config_dir)
+        loader.reset_cache()
+
+        expected_accept = "application/relocated+json"
+        assert weather_api_headers()["Accept"] == expected_accept
+        assert "relocated@example.org" in weather_api_headers()["User-Agent"]
+
+        assert NWSZoneSync(Path(".")).headers["Accept"] == expected_accept
+        assert RadarStationCatalog()._headers()["Accept"] == expected_accept
+
+        # The two callers that take an override still win over the catalog, and
+        # overriding the agent must not disturb the Accept.
+        overridden = NWSZoneSync(Path("."), user_agent="Explicit/1").headers
+        assert overridden["User-Agent"] == "Explicit/1"
+        assert overridden["Accept"] == expected_accept
+        assert RadarStationCatalog(user_agent="Explicit/2")._headers()["User-Agent"] == "Explicit/2"
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+        loader.reset_cache()
+
+    assert weather_api_headers()["Accept"] == "application/geo+json"
+
+
+# --- the async alert download's chunk size ---------------------------------
+
+def test_config_dir_reaches_the_alert_download_chunk_size_after_import():
+    """The 8192 at main.py's `iter_chunked` had no catalog key at all.
+
+    Asserted through the argument `iter_chunked` receives rather than through the
+    accessor, because a resolved value that never reached the call would look
+    identical from the outside.
+    """
+    import shutil
+    import tempfile
+
+    from common.config import loader
+    from common.ingest.nws import config as nws_config
+
+    source = (REPO_ROOT / "src/common/ingest/nws/main.py").read_text(encoding="utf-8")
+    assert "iter_chunked(8192)" not in source, "the chunk size is a literal again"
+
+    config_dir = Path(tempfile.mkdtemp(prefix="cfgdir-chunk-"))
+    shutil.copytree(REPO_ROOT / "config", config_dir, dirs_exist_ok=True)
+    catalog = config_dir / "nws.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8").replace(
+            "  download_chunk_size_bytes: 8192", "  download_chunk_size_bytes: 4096"
+        ),
+        encoding="utf-8",
+    )
+
+    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
+    try:
+        loader.export_config_root(config_dir)
+        loader.reset_cache()
+
+        assert nws_config.download_chunk_size_bytes() == 4096
+        assert _chunk_size_reaching_iter_chunked() == 4096
+    finally:
+        if previous is None:
+            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
+        else:
+            os.environ["EDGEWARN_CONFIG_DIR"] = previous
+        loader.reset_cache()
+
+    assert nws_config.download_chunk_size_bytes() == 8192
+
+
+def _chunk_size_reaching_iter_chunked() -> int:
+    """Run `download_alerts_async` far enough to see `iter_chunked`'s argument.
+
+    Everything past the streaming copy is stubbed: the aiohttp session, the
+    registry, and the file parse. The download is driven to completion rather
+    than aborted so the temp file it creates is still cleaned up by its own
+    `finally`.
+    """
+    import asyncio
+    from unittest.mock import patch
+
+    from common.ingest.nws import main as nws_main
+
+    recorded: list[int] = []
+
+    class _Content:
+        def iter_chunked(self, size):
+            recorded.append(size)
+
+            async def _gen():
+                yield b"{}"
+
+            return _gen()
+
+    class _Response:
+        content = _Content()
+
+        def raise_for_status(self):
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _Session:
+        def get(self, url):
+            return _Response()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    registry = mock.MagicMock()
+    registry.alert_count = 0
+    registry.reconcile_with_active_ids.return_value = 0
+    registry.cleanup_expired.return_value = 0
+
+    with patch.object(nws_main.aiohttp, "ClientSession", lambda *a, **k: _Session()), \
+         patch.object(nws_main, "_get_registry", return_value=registry), \
+         patch.object(
+             nws_main, "_process_nws_file_with_registry", return_value=(0, 0, set())
+         ):
+        asyncio.run(nws_main.download_alerts_async(datetime(2026, 8, 16, tzinfo=timezone.utc)))
+
+    assert len(recorded) == 1, f"expected one streaming copy, saw {recorded}"
+    return recorded[0]

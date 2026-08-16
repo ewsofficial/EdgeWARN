@@ -22,8 +22,13 @@ from pathlib import Path
 from decimal import Decimal
 import util.file as fs
 from util.io import IOManager
-from util.release import format_user_agent
-from .config import active_alerts_url, dropped_events, registry_ttl_hours
+from util.release import weather_api_headers
+from .config import (
+    active_alerts_url,
+    download_chunk_size_bytes,
+    dropped_events,
+    registry_ttl_hours,
+)
 import aiohttp
 import asyncio
 import tempfile
@@ -73,10 +78,7 @@ def download_alerts(dt: datetime):
     current_time = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     registry.cleanup_old_timestamps(current_time)
 
-    headers = {
-        "User-Agent": format_user_agent(),
-        "Accept": "application/geo+json"
-    }
+    headers = weather_api_headers()
 
     req = urllib.request.Request(url, headers=headers)
 
@@ -137,10 +139,9 @@ async def download_alerts_async(dt: datetime):
     current_time = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     registry.cleanup_old_timestamps(current_time)
 
-    headers = {
-        "User-Agent": format_user_agent(),
-        "Accept": "application/geo+json"
-    }
+    headers = weather_api_headers()
+    # Resolved once, not per chunk.
+    chunk_size = download_chunk_size_bytes()
 
     temp_path = None
     try:
@@ -151,7 +152,7 @@ async def download_alerts_async(dt: datetime):
             async with session.get(url) as response:
                 response.raise_for_status()
                 with open(temp_path, 'wb') as f:
-                    async for chunk in response.content.iter_chunked(8192):
+                    async for chunk in response.content.iter_chunked(chunk_size):
                         f.write(chunk)
 
         current_time = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)

@@ -16,7 +16,7 @@ from shapely.geometry import Polygon, MultiPolygon, shape
 
 from common.config import loader as config_loader
 from common.config import overlay
-from util.release import format_user_agent
+from util.release import weather_api_headers
 
 from .config import zone_geometry_precision, zone_sync_settings
 
@@ -191,16 +191,7 @@ class NWSZoneSync:
         self.retry_backoff_seconds = settings["retry_backoff_seconds"]
         self.zone_catalog_url_pattern = settings["zone_catalog_url_pattern"]
         self.zone_detail_url_pattern = settings["zone_detail_url_pattern"]
-        # `Accept` is deliberately still a literal. The same `application/geo+json`
-        # goes out from four places -- here, both alert downloads in main.py, and
-        # nexrad/weather_api.py -- so reading `zone_sync.accept` would make one of
-        # the four configurable and leave an operator believing all four moved.
-        # It needs a home shared with the alert fetches first, the way the
-        # User-Agent already has one in `runtime.yaml identity`.
-        self.headers = {
-            "User-Agent": user_agent or format_user_agent(),
-            "Accept": "application/geo+json",
-        }
+        self.headers = weather_api_headers(user_agent=user_agent)
         self._thread_local = threading.local()
 
     def _get_thread_session(self) -> requests.Session:
@@ -470,8 +461,8 @@ def _parse_args() -> argparse.Namespace:
 
 def _resolve_zone_sync_args(args: argparse.Namespace) -> argparse.Namespace:
     # Publish the root before reading anything from it. Every value below names
-    # `args.config_dir` explicitly, but the constructor's User-Agent comes from
-    # format_user_agent(), which resolves `runtime.yaml` on its own -- so without
+    # `args.config_dir` explicitly, but the constructor's headers come from
+    # weather_api_headers(), which resolves `runtime.yaml` on its own -- so without
     # the export, `--config-dir X` gave this run X's zone settings and the repo
     # default's outbound identity.
     config_loader.export_config_root(args.config_dir)
