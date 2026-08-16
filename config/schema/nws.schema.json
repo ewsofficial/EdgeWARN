@@ -9,11 +9,12 @@
     "nws": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["registry_ttl_hours", "dropped_events", "active_alerts_url", "tornado_upgrade"],
+      "required": ["registry_ttl_hours", "dropped_events", "active_alerts_url", "download_chunk_size_bytes", "tornado_upgrade"],
       "properties": {
         "registry_ttl_hours": { "type": "number", "exclusiveMinimum": 0 },
         "dropped_events": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
         "active_alerts_url": { "type": "string", "pattern": "^https://" },
+        "download_chunk_size_bytes": { "type": "integer", "exclusiveMinimum": 0 },
         "tornado_upgrade": {
           "type": "object",
           "additionalProperties": false,
@@ -50,7 +51,7 @@
     "zone_sync": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["assets_dir", "zone_types", "timeout_seconds", "max_retries", "max_workers", "retry_backoff_seconds", "geometry_precision", "geometry_precision_max", "pause_seconds", "progress", "accept", "zone_catalog_url_pattern", "zone_detail_url_pattern"],
+      "required": ["assets_dir", "zone_types", "timeout_seconds", "max_retries", "max_workers", "retry_backoff_seconds", "geometry_precision", "geometry_precision_max", "pause_seconds", "progress", "zone_catalog_url_pattern", "zone_detail_url_pattern"],
       "properties": {
         "assets_dir": { "type": "string" },
         "zone_types": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
@@ -62,7 +63,6 @@
         "geometry_precision_max": { "type": "integer", "exclusiveMinimum": 0 },
         "pause_seconds": { "type": "number", "minimum": 0 },
         "progress": { "type": "boolean" },
-        "accept": { "type": "string" },
         "zone_catalog_url_pattern": { "type": "string", "pattern": "^https://" },
         "zone_detail_url_pattern": { "type": "string", "pattern": "^https://" }
       }

@@ -9,7 +9,7 @@ from common.ingest.nexrad.config import (
     station_catalog_url,
 )
 from common.ingest.nexrad.models import RadarStationVcp
-from util.release import format_user_agent
+from util.release import weather_api_headers
 
 
 def normalize_weather_vcp(value) -> int | None:
@@ -98,10 +98,7 @@ class RadarStationCatalog:
         )
 
     def _headers(self) -> dict[str, str]:
-        return {
-            "User-Agent": self.user_agent or format_user_agent(),
-            "Accept": "application/geo+json",
-        }
+        return weather_api_headers(user_agent=self.user_agent)
 
     def fetch_radar_station_vcps(self, *, session=None) -> dict[str, RadarStationVcp]:
         headers = self._headers()

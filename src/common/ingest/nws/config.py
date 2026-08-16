@@ -34,6 +34,14 @@ def active_alerts_url() -> str:
     return _section("nws")["active_alerts_url"]
 
 
+def download_chunk_size_bytes() -> int:
+    """Read size for the async alert download's stream to a temp file.
+
+    The sync download has no counterpart: it reads the whole body at once.
+    """
+    return _section("nws")["download_chunk_size_bytes"]
+
+
 def tornado_upgrade_event() -> str:
     """The one event whose name is re-derived from the alert description."""
     return _section("nws")["tornado_upgrade"]["event"]

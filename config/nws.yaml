@@ -4,15 +4,17 @@
 # `src/run.py` imports this package before get_args() publishes the config root,
 # so a value bound at module scope would freeze the repo default.
 #
-# Source: main.py:50,61,125,214,225; registry.py:89,235-253,569;
-#         zone_sync.py:57,104,162-202,226,268,278,471-488;
-#         geomapper.py:68,82,109,143,199,337,387
+# Source: main.py:55,66,81,127,142,144,155,215; registry.py:89,239,249,569;
+#         zone_sync.py:74,104,182-194,226,259,269,462-479;
+#         geomapper.py:78,85,115,161,163,205,337,387
 #
-# Every key here is read except `zone_sync.accept`, which is marked UNUSED at its
-# definition with the reason; see plans/source-configuration-extraction-plan.md.
+# Every key in this file is read. The one exception used to be `zone_sync.accept`,
+# which has moved to `runtime.yaml identity.weather_api_accept` -- see the note at
+# the end of the zone_sync block; plans/source-configuration-extraction-plan.md
+# has the wider inventory.
 #
 # The seven `zone_sync` keys the CLI can override reach NWSZoneSync twice over:
-# _resolve_zone_sync_args (zone_sync.py:471-488) overlays the flags on this file
+# _resolve_zone_sync_args (zone_sync.py:462-479) overlays the flags on this file
 # and main() passes the result explicitly, while the constructor falls back to
 # this file for any argument a non-CLI caller omits.
 #
@@ -21,8 +23,8 @@
 #
 # `zone_sync.apply` and `zone_sync.report_path` are deliberately absent, and no
 # UNUSED marker would fit them because there is nothing to mark: `--apply` is
-# `action="store_true"` (zone_sync.py:452-456) so argparse fixes its False before
-# any YAML could be consulted, and `--report-path` (:457-461) has no default at
+# `action="store_true"` (zone_sync.py:443-447) so argparse fixes its False before
+# any YAML could be consulted, and `--report-path` (:448-452) has no default at
 # all. A key for either could never be reached.
 
 schema_version: 1
@@ -62,6 +64,16 @@ nws:
 
   # Was the same literal twice, in the sync and async downloads.
   active_alerts_url: https://api.weather.gov/alerts/active
+
+  # Read size for the async alert download's streaming copy to a temp file
+  # (main.py:155). The sync download at :89 has no counterpart key because it does
+  # not stream -- it calls `response.read()` for the whole body at once -- so this
+  # sizes one loop rather than being a shared knob the two downloads disagree on.
+  #
+  # Distinct from `mrms.ncep_https.download_chunk_size_bytes`, which is the same
+  # 8192 for a different subsystem's stream; collapsing them would couple the
+  # alert feed's memory profile to the MRMS grib fallback's.
+  download_chunk_size_bytes: 8192
 
   # registry.py _derive_snapshot_alert_name. Only `event` is rescored, by scanning
   # the alert description. Order here is priority order -- the first match wins,
@@ -126,7 +138,7 @@ geomapper:
 
 zone_sync:
   # Resolved against the config root's parent, which is the repo root only for an
-  # unrelocated tree. Read by BOTH ends of the zone pipeline -- zone_sync.py:394
+  # unrelocated tree. Read by BOTH ends of the zone pipeline -- zone_sync.py:385
   # writes polygons under here, geomapper.py:_assets_dir reads them back -- so despite
   # living under `zone_sync` this key is not private to that CLI. The reader used
   # to find the directory by walking up from its own __file__ instead, which
@@ -171,20 +183,17 @@ zone_sync:
 
   progress: true                        # --no-progress disables
 
-  # The User-Agent is NOT here. It is one string for the whole application,
-  # `runtime.yaml identity`, built from package.json by
-  # util/release.py format_user_agent() and applied at zone_sync.py:201 and
-  # nws/main.py:77,141. This subsystem used to carry its own copy, which
-  # advertised EdgeWARN/1.0 and a different mailbox than the NEXRAD ingest did.
+  # Neither outbound header is here. Both are one value for the whole
+  # application, in `runtime.yaml identity`, and both reach this subsystem
+  # through util/release.py weather_api_headers() at zone_sync.py:194 and
+  # nws/main.py:81,142.
   #
-  # UNUSED, and mis-scoped besides: the same `application/geo+json` literal is
-  # sent from four places -- zone_sync.py:202, main.py:78 and :142, and
-  # nexrad/weather_api.py:103 -- so a key nested under `zone_sync` can only own
-  # one of them. Reading it here would make one of the four configurable and
-  # leave an operator believing all four had moved, which is why zone_sync still
-  # sends the literal. Wiring this needs a home shared with the alert fetches,
-  # the way the User-Agent above already has one.
-  accept: application/geo+json
+  # `accept` used to live here, UNUSED on purpose: the same `application/geo+json`
+  # went out from four sites spanning this subsystem and NEXRAD, so a key nested
+  # under `zone_sync` could only ever own one of them. It moved to
+  # `identity.weather_api_accept` rather than being wired in place, which would
+  # have made one call site configurable while an operator reasonably believed all
+  # four had moved.
 
   # `{zone_type}` for the catalog listing; `{zone_type}` and `{code}` for the
   # per-zone detail fetch. Both are str.format patterns, so a placeholder the

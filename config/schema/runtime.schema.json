@@ -9,10 +9,11 @@
     "identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["user_agent_template", "contact"],
+      "required": ["user_agent_template", "contact", "weather_api_accept"],
       "properties": {
         "user_agent_template": { "type": "string", "pattern": "^[^{}\\r\\n]*\\{version\\}[^{}\\r\\n]*\\{contact\\}[^{}\\r\\n]*$" },
-        "contact": { "type": "string", "pattern": "^[^\\s{}@]+@[^\\s{}@]+\\.[^\\s{}@]+$" }
+        "contact": { "type": "string", "pattern": "^[^\\s{}@]+@[^\\s{}@]+\\.[^\\s{}@]+$" },
+        "weather_api_accept": { "type": "string", "pattern": "^[^\\s{}\\r\\n]+/[^\\s{}\\r\\n]+$" }
       }
     },
     "run": {

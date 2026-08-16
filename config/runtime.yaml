@@ -30,23 +30,36 @@
 
 schema_version: 1
 
-# Outbound HTTP identity, shared by every subsystem that calls a public API:
-# NWS zone sync (zone_sync.py:165), the NWS alert feed sync and async
-# (nws/main.py:106,170), the NEXRAD radar-station catalog (nexrad/weather_api.py:73)
-# and the METAR fetch (metar.py:98). Those five sites used to carry three
-# different hardcoded strings.
-#
-# `{version}` is filled from package.json at call time by
-# util/release.py format_user_agent(), so the advertised version cannot drift
-# from the release the way a copied literal did.
-#
-# api.weather.gov asks callers to identify themselves with a reachable contact
-# address, and the parenthesized `(app, contact)` shape is the form its
-# documentation shows. Both placeholders are pinned by the schema pattern, which
-# also forbids CR/LF, so this string cannot be used to inject a second header.
+# Outbound HTTP headers, shared by every subsystem that calls a public API. Seven
+# request sites, which once carried three different hardcoded User-Agents: four go
+# through util/release.py weather_api_headers() -- zone_sync.py:194,
+# nws/main.py:81,142 and nexrad/weather_api.py:101 -- and the three METAR fetches
+# (metar.py:75,124,468) read format_user_agent() directly, because they talk to
+# Aviation Weather rather than api.weather.gov and send their own
+# `Accept-Encoding` (metar.yaml) instead of the `Accept` below.
 identity:
+  # `{version}` is filled from package.json at call time by
+  # util/release.py format_user_agent(), so the advertised version cannot drift
+  # from the release the way a copied literal did.
+  #
+  # api.weather.gov asks callers to identify themselves with a reachable contact
+  # address, and the parenthesized `(app, contact)` shape is the form its
+  # documentation shows. Both placeholders are pinned by the schema pattern, which
+  # also forbids CR/LF, so this string cannot be used to inject a second header.
   user_agent_template: '(EdgeWARN/{version}, {contact})'
   contact: ewsbackend@gmail.com
+
+  # Content negotiation for api.weather.gov, whose zone, alert and radar-station
+  # endpoints all answer in GeoJSON. Narrower in scope than the User-Agent above:
+  # it covers the four api.weather.gov sites, not METAR.
+  #
+  # It lives here rather than under `nws.yaml zone_sync` -- where it sat UNUSED,
+  # unread on purpose -- because the identical literal went out from four sites
+  # spanning two subsystems, so a key nested under either could only ever own one
+  # of them, and wiring it there would have made one call site configurable while
+  # an operator reasonably believed all four had moved. The schema forbids
+  # whitespace and CR/LF here for the same header-injection reason as above.
+  weather_api_accept: application/geo+json
 
 run:
   # io.py:113-114,132-133. The CLI flags default to None so these values win
