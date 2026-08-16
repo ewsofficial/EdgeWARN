@@ -690,33 +690,36 @@ def _metar_source() -> str:
     return (REPO_ROOT / "src/common/ingest/metar.py").read_text(encoding="utf-8")
 
 
-def test_metar_tls_is_off_in_one_place_and_says_so():
-    """DECISION OWED: `verify_tls` should become true; until then it must be loud.
+def test_metar_tls_verifies_from_one_place():
+    """RESOLVED: `verify_tls` is true, and one key reaches all five call sites.
 
     Five call sites disabled verification independently -- three aiohttp
     ``ssl=False`` and two ``ssl.CERT_NONE`` -- so flipping the policy meant
     finding all five. They now share two helpers, and the count assertions below
-    are what stops a sixth site from quietly reintroducing its own.
+    are what stops a sixth site from quietly reintroducing its own downgrade.
 
-    The warning is deliberately not deduplicated: an ingest run builds only a
-    couple of contexts, and a single line at startup is easy to miss in a log.
+    The switch stayed false until a run confirmed both hosts present chains that
+    validate against the default trust store. It is asserted here rather than by
+    reaching the network, so this test does not depend on connectivity or on a
+    certificate that will eventually be reissued.
     """
     from common.ingest.metar_config import aiohttp_ssl, ssl_context, verify_tls
 
     recorded = _metar_yaml()["metar"]
-    assert verify_tls() is recorded["verify_tls"] is False
+    assert verify_tls() is recorded["verify_tls"] is True
 
-    # Unlike wpc.verify_tls, the schema leaves this free -- it is a real switch.
+    # Unlike wpc.verify_tls, the schema leaves this free -- it is a real switch,
+    # so an operator behind an intercepting proxy can still turn it off.
     schema = json.loads(
         (REPO_ROOT / "config/schema/metar.schema.json").read_text(encoding="utf-8")
     )
     assert schema["properties"]["metar"]["properties"]["verify_tls"] == {"type": "boolean"}
 
     # The value actually reaches the transport, in both spellings.
-    assert aiohttp_ssl() is False
+    assert aiohttp_ssl() is not False
     context = ssl_context()
-    assert context.verify_mode == ssl.CERT_NONE
-    assert context.check_hostname is False
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True
 
     source = _metar_source()
     assert "CERT_NONE" not in source, "the five inline downgrades must stay collapsed"
@@ -725,21 +728,36 @@ def test_metar_tls_is_off_in_one_place_and_says_so():
     assert source.count("context=ssl_context()") == 2
 
 
-def test_flipping_metar_verify_tls_reaches_every_transport():
-    """Turning the switch on must actually verify, or the key is decorative."""
+def test_turning_metar_verify_tls_off_still_reaches_every_transport():
+    """The escape hatch must work, and must be loud when used.
+
+    Runs at ``False`` -- the opposite of the shipped value -- so the key cannot
+    quietly become decorative. If a future edit hardcoded a verifying context,
+    this fails while the test above still passes.
+
+    The warning goes to the subsystem's IOManager, not ``warnings.warn``, so it
+    lands in the same log stream as the rest of the ingest run. It is
+    deliberately not deduplicated: an ingest run builds only a couple of
+    contexts, and a single line at startup is easy to miss in a log.
+    """
     from common.config import loader
     from common.ingest import metar_config
 
-    def _verifying():
-        return True
+    def _not_verifying():
+        return False
 
     original = metar_config.verify_tls
-    metar_config.verify_tls = _verifying
+    metar_config.verify_tls = _not_verifying
     try:
-        assert metar_config.aiohttp_ssl() is not False
-        context = metar_config.ssl_context()
-        assert context.verify_mode == ssl.CERT_REQUIRED
-        assert context.check_hostname is True
+        with mock.patch.object(metar_config, "_io") as recorder:
+            assert metar_config.aiohttp_ssl() is False
+            context = metar_config.ssl_context()
+        assert context.verify_mode == ssl.CERT_NONE
+        assert context.check_hostname is False
+
+        assert recorder.write_warning.call_count == 2, "every helper must warn"
+        for call in recorder.write_warning.call_args_list:
+            assert "metar.verify_tls is false" in call.args[0]
     finally:
         metar_config.verify_tls = original
         loader.reset_cache()
