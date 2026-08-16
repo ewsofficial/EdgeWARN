@@ -209,6 +209,66 @@ def _detection_yaml() -> dict:
     return yaml.safe_load((REPO_ROOT / "config" / "detection.yaml").read_text(encoding="utf-8"))
 
 
+# --- Historical replay: the loop literals now live in the catalog ---------
+
+def _historical_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load(
+        (REPO_ROOT / "config" / "historical.yaml").read_text(encoding="utf-8")
+    )
+
+
+def test_historical_replay_loop_holds_no_step_or_throttle_literals():
+    """RESOLVED: the replay cadence is owned by historical.yaml.
+
+    `step_minutes` is applied on all three branches of the scan loop, so a literal
+    surviving on any one of them would desynchronize the cursor from the other two
+    and silently skip or re-scan minutes.
+    """
+    from EdgeWARN.historical_config import (
+        historical_step_minutes,
+        historical_throttle_seconds,
+    )
+
+    source = (REPO_ROOT / "src/process_historical.py").read_text(encoding="utf-8")
+    assert "timedelta(minutes=1)" not in source
+    assert "time.sleep(1)" not in source
+    assert source.count("current_time += step") == 3
+
+    recorded = _historical_yaml()["historical"]
+    assert historical_step_minutes() == recorded["step_minutes"] == 1
+    assert historical_throttle_seconds() == recorded["throttle_seconds"] == 1
+
+
+def test_historical_cleanup_caps_files_but_inherits_the_age_budget():
+    """DECISION OWED: two files govern one cleanup call.
+
+    `_cleanup_historical_data_dirs` passes `max_files` only, so `clean_old_files`
+    still applies its own 60-minute `max_age_minutes`. A directory is therefore
+    trimmed to `cleanup_max_files` AND anything older than an hour is dropped.
+    Raising `cleanup_max_files` alone cannot retain more than an hour of data --
+    the age limit in filesystem.yaml, which reaches no code yet, is the real cap.
+    """
+    from EdgeWARN.historical_config import historical_cleanup_max_files
+
+    assert historical_cleanup_max_files() == 5
+    assert param_default("util/file.py", "clean_old_files", "max_age_minutes") == 60
+    assert param_default("util/file.py", "clean_old_files", "max_files") == 10
+
+    pipeline_source = (REPO_ROOT / "src/EdgeWARN/pipeline.py").read_text(encoding="utf-8")
+    assert "max_files=historical_cleanup_max_files()" in pipeline_source
+    assert "max_age_minutes" not in pipeline_source
+
+    import yaml
+
+    filesystem = yaml.safe_load(
+        (REPO_ROOT / "config" / "filesystem.yaml").read_text(encoding="utf-8")
+    )["cleanup_defaults"]
+    assert filesystem["max_age_minutes"] == 60
+    assert filesystem["max_files"] == 10
+
+
 # --- RAP filename: two keys describing one naming scheme ------------------
 
 def _synoptic_rap_yaml() -> dict:

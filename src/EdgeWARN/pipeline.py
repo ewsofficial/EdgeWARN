@@ -14,6 +14,7 @@ from common.ingest.mrms.config import get_goes_modifiers, get_mrms_modifiers
 from common.ingest.mrms.pipeline import get_output_dirs
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.api_integration.index_manager import APIIndexManager
+from EdgeWARN.historical_config import historical_cleanup_max_files
 from util.io import IOManager, QueueWriter
 from util.performance import tracker as perf_tracker
 
@@ -74,7 +75,7 @@ def _cleanup_historical_data_dirs(pipeline_io):
             continue
 
         seen_dirs.add(resolved_dir)
-        fs.clean_old_files(directory, max_files=5)
+        fs.clean_old_files(directory, max_files=historical_cleanup_max_files())
 
     pipeline_io.write_debug(
         "Historical cleanup applied to ingest data directories only; "
@@ -142,12 +143,10 @@ def run_edgewarn_detection_phase(
     log,
     lat_limits,
     lon_limits,
+    detection_config,
     output_path=Path("stormcell_test.json"),
     disable_tracking=False,
     disable_polygon_expansion=False,
-    refl_threshold=37.5,
-    min_seed_percentage=0.001,
-    drop_offset=10.0,
     input_manifest: CycleInputManifest | None = None,
 ):
     """Run only the realtime detection phase using already-ingested local files."""
@@ -169,11 +168,9 @@ def run_edgewarn_detection_phase(
         lat_limits,
         lon_limits,
         output_path,
+        detection_config,
         disable_tracking=disable_tracking,
         disable_polygon_expansion=disable_polygon_expansion,
-        refl_threshold=refl_threshold,
-        min_seed_percentage=min_seed_percentage,
-        drop_offset=drop_offset,
     )
     return generated_file
 
@@ -209,13 +206,11 @@ def edgewarn_tandem_worker(
     dt,
     lat_limits,
     lon_limits,
+    detection_config,
     profile=False,
     disable_ctam=False,
     disable_tracking=False,
     disable_polygon_expansion=False,
-    refl_threshold=37.5,
-    min_seed_percentage=0.001,
-    drop_offset=10.0,
     mrms_core_only=False,
 ):
     """Process target for staged EdgeWARN execution within the tandem runner."""
@@ -261,11 +256,9 @@ def edgewarn_tandem_worker(
             log,
             lat_limits,
             lon_limits,
+            detection_config,
             disable_tracking=disable_tracking,
             disable_polygon_expansion=disable_polygon_expansion,
-            refl_threshold=refl_threshold,
-            min_seed_percentage=min_seed_percentage,
-            drop_offset=drop_offset,
             input_manifest=input_manifest,
         )
         perf_tracker.stop("Detection")
@@ -369,15 +362,13 @@ def historical_pipeline(
     lat_limits,
     lon_limits,
     json_output,
+    detection_config,
     profile=False,
     cached_objs=(None, None, None),
     io_manager=None,
     disable_ctam=False,
     disable_tracking=False,
     disable_polygon_expansion=False,
-    refl_threshold=37.5,
-    min_seed_percentage=0.001,
-    drop_offset=10.0,
 ):
     pipeline_io = io_manager or IOManager("[HistoricalProcess]")
 
@@ -426,11 +417,9 @@ def historical_pipeline(
             lat_limits,
             lon_limits,
             json_output,
+            detection_config=detection_config,
             disable_tracking=disable_tracking,
             disable_polygon_expansion=disable_polygon_expansion,
-            refl_threshold=refl_threshold,
-            min_seed_percentage=min_seed_percentage,
-            drop_offset=drop_offset,
             input_manifest=input_manifest,
         )
         perf_tracker.stop("Detection")
