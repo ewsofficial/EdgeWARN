@@ -208,7 +208,48 @@ class TestLineageBuffer:
             assert buffer2.min_confirmations == 2
             assert 100 in buffer2.pending_merges
             assert buffer2.pending_merges[100].parent_ids == {100, 101}
-    
+
+    def test_buffer_file_does_not_override_configured_thresholds(self):
+        """A stale buffer file must not outrank the configured thresholds.
+
+        `save` records the thresholds alongside the pending events. If `load`
+        restored them, a buffer file written before a config change would keep
+        pinning the old values, so editing the config would silently do nothing.
+        Pending state must still survive the round trip.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stormcell_dir = Path(tmpdir)
+
+            saved = LineageBuffer(min_confirmations=2, max_pending=100)
+            saved.record_potential_merge(100, [100, 101], 100)
+            saved.save(stormcell_dir)
+
+            reloaded = LineageBuffer.load(
+                stormcell_dir, min_confirmations=4, max_pending=7
+            )
+
+            assert reloaded.min_confirmations == 4
+            assert reloaded.max_pending == 7
+            assert 100 in reloaded.pending_merges
+
+    def test_buffer_restores_scan_counter(self):
+        """The scan counter is state, not config, so it must be restored.
+
+        Consecutive-scan detection depends on it: a counter reset to 0 would
+        make the reloaded buffer treat an in-flight event as brand new.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stormcell_dir = Path(tmpdir)
+
+            saved = LineageBuffer(min_confirmations=2)
+            saved.record_potential_merge(100, [100, 101], 100)
+            saved.end_scan(stormcell_dir)
+            saved.save(stormcell_dir)
+            assert saved._scan_number > 0
+
+            reloaded = LineageBuffer.load(stormcell_dir)
+            assert reloaded._scan_number == saved._scan_number
+
     def test_buffer_clears_confirmed_events(self):
         """Buffer should clear confirmed events after processing."""
         buffer = LineageBuffer(min_confirmations=1)

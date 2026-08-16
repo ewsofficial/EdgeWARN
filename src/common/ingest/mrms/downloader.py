@@ -6,6 +6,7 @@ from statistics import fmean
 from common.ingest.manifest import StagedInput, staged_input_from_path
 from common.ingest.mrms.config import (
     bucket,
+    get_goes_max_entries,
     get_goes_modifiers,
     get_mrms_modifiers,
     goes_bucket,
@@ -29,8 +30,6 @@ from util.performance import tracker as perf_tracker
 import uuid
 
 io_manager = IOManager("[Ingest]")
-
-GOES_MAX_ENTRIES = 96
 
 
 @dataclass(frozen=True)
@@ -134,9 +133,17 @@ def _get_goes_spec_label(goes_spec):
     return goes_spec.label if goes_spec.channel_id else goes_spec.product
 
 
-def _get_goes_search_max_entries(goes_spec, max_entries):
-    _ = (goes_spec, max_entries)
-    return GOES_MAX_ENTRIES
+def _goes_search_max_entries():
+    """The GOES listing depth, deliberately independent of the MRMS depth.
+
+    GLM publishes roughly 180 objects an hour, so the MRMS depth of 10 would
+    never list back far enough to reach the requested scan. Every GOES caller
+    reads this value rather than supplying one per call.
+
+    Read per call, not at import, so a `--config-dir` that a spawned accessory
+    resolves after this module is imported is still honored.
+    """
+    return get_goes_max_entries()
 
 
 def _get_goes_bucket_paths(dt, product, hour_lookback):
@@ -476,30 +483,27 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
 
 # ==================== GOES-19 Download Functions ====================
 
-def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3, preloaded_files=None):
+def download_goes_product(goes_spec, dt, hour_lookback=3, preloaded_files=None):
     """
     Download a specific GOES-19 product.
-    
+
     Args:
         goes_spec: GOES ingest specification or legacy ``(product, outdir)`` tuple
         dt (datetime): Target datetime (UTC, timezone-aware)
-        max_entries (int): Maximum number of file entries to retrieve (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3).
-    
+
     Returns:
         Path: Path to downloaded file, or None if failed
     """
     # Enforce minute-precision dt
     # dt = dt.replace(second=0, microsecond=0) # Allow seconds for sliding window
-    
-    # Increase max_entries to ensure we find files in the past (GLM has ~180 files/hour)
+
     goes_spec = normalize_goes_modifier(goes_spec)
     product = goes_spec.product
     outdir = goes_spec.outdir
     label = _get_goes_spec_label(goes_spec)
 
-    search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
-    finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
+    finder = FileFinder(dt, goes_bucket, _goes_search_max_entries(), io_manager)
     downloader = FileDownloader(dt, goes_bucket, io_manager)
     
     try:
@@ -598,7 +602,6 @@ def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3, preloa
 async def _download_goes_product_async(
     goes_spec,
     dt,
-    max_entries,
     hour_lookback,
     s3_client,
     parent_trace_id=None,
@@ -607,7 +610,7 @@ async def _download_goes_product_async(
 ):
     """
     Async version of download_goes_product.
-    
+
     Internal async function for downloading a single GOES product using aioboto3.
     """
     goes_spec = normalize_goes_modifier(goes_spec)
@@ -616,9 +619,9 @@ async def _download_goes_product_async(
     label = _get_goes_spec_label(goes_spec)
     trace_id = parent_trace_id or f"GOES-{uuid.uuid4().hex[:8]}"
 
-    # Increase max_entries to ensure we find files in the past
-    search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
-    finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3_client)
+    finder = AsyncFileFinder(
+        dt, goes_bucket, _goes_search_max_entries(), io_manager, s3_client=s3_client
+    )
     downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
     
     perf_tracker.start(f"Ingest - GOES - {label}")
@@ -744,7 +747,7 @@ async def _download_goes_product_async(
     perf_tracker.stop(f"Ingest - GOES - {label}")
 
 
-def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
+def download_goes_specs(goes_specs, dt, hour_lookback=3):
     """Download a specific list of GOES-19 products."""
     goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
     if not goes_modifiers_list:
@@ -760,8 +763,7 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
         if not goes_spec.channel_id or goes_spec.product in shared_channel_files_by_product:
             continue
 
-        search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
-        finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
+        finder = FileFinder(dt, goes_bucket, _goes_search_max_entries(), io_manager)
         bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
         shared_channel_files_by_product[goes_spec.product] = finder.lookup_files(bucket_paths)
 
@@ -773,7 +775,6 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
                 download_goes_product,
                 goes_spec,
                 dt,
-                max_entries,
                 hour_lookback,
                 shared_channel_files_by_product.get(goes_spec.product)
                 if goes_spec.channel_id
@@ -814,24 +815,22 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
     )
 
 
-def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
+def download_all_goes_files(dt, hour_lookback=3):
     """
     Download all configured GOES-19 products.
-    
+
     Args:
         dt (datetime): Target datetime (UTC, timezone-aware)
-        max_entries (int): Maximum number of file entries per product (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3)
     """
     return download_goes_specs(
         get_goes_modifiers(),
         dt,
-        max_entries=max_entries,
         hour_lookback=hour_lookback,
     )
 
 
-async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookback=3):
+async def download_goes_specs_async(goes_specs, dt, hour_lookback=3):
     """Async version: Download a specific list of GOES-19 products concurrently."""
     trace_id = f"GOES_ALL-{uuid.uuid4().hex[:8]}"
     goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
@@ -849,8 +848,9 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
             if not goes_spec.channel_id or goes_spec.product in shared_channel_files_by_product:
                 continue
 
-            search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
-            finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3)
+            finder = AsyncFileFinder(
+                dt, goes_bucket, _goes_search_max_entries(), io_manager, s3_client=s3
+            )
             bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
             lookup_started_at = asyncio.get_running_loop().time()
             shared_channel_files_by_product[goes_spec.product] = await finder.async_lookup_files(bucket_paths)
@@ -865,7 +865,6 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
             _download_goes_product_async(
                 goes_spec,
                 dt,
-                max_entries,
                 hour_lookback,
                 s3,
                 trace_id,
@@ -917,18 +916,16 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
         )
 
 
-async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
+async def download_all_goes_files_async(dt, hour_lookback=3):
     """
     Async version: Download all configured GOES-19 products concurrently.
-    
+
     Args:
         dt (datetime): Target datetime (UTC, timezone-aware)
-        max_entries (int): Maximum number of file entries per product (default: 10)
         hour_lookback (int): Number of hours to look back (default: 3)
     """
     return await download_goes_specs_async(
         get_goes_modifiers(),
         dt,
-        max_entries=max_entries,
         hour_lookback=hour_lookback,
     )

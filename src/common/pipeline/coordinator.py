@@ -173,8 +173,6 @@ async def run_tandem_ingest_cycle(
                 download_all_goes_files_async,
                 download_all_goes_files,
                 dt,
-                max_entries,
-                3,
                 require_result=True,
             )
         )

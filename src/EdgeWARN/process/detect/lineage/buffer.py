@@ -203,18 +203,16 @@ class LineageBuffer:
                 split = PendingSplit.from_dict(split_data)
                 buffer.pending_splits[split.parent_id] = split
             
-            # Load configuration if present
+            # Only the scan counter is restored. The sibling `config` entries are
+            # written for diagnostics and deliberately not read back: they would
+            # outrank the constructor, so a buffer file left over from an earlier
+            # run would pin the old thresholds and make an edit to lineage.yaml
+            # appear to do nothing until the file was deleted.
             if 'config' in data:
-                buffer.min_confirmations = data['config'].get(
-                    'min_confirmations', buffer.min_confirmations
-                )
-                buffer.max_pending = data['config'].get(
-                    'max_pending', buffer.max_pending
-                )
                 buffer._scan_number = data['config'].get(
                     'scan_number', 0
                 )
-                
+
         except (json.JSONDecodeError, KeyError, IOError):
             # Return empty buffer on error
             pass

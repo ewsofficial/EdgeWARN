@@ -51,7 +51,7 @@ async def download_all_files_async(dt, max_entries=10, remove_old_files=True):
         io_manager=io_manager,
         async_downloads=[
             download_all_files_async_internal(dt, max_entries),
-            download_all_goes_files_async(dt, max_entries),
+            download_all_goes_files_async(dt),
         ],
         cleanup_dirs=cleanup_dirs if remove_old_files else (),
         cleanup_async=fs.async_clean_old_files,
@@ -132,7 +132,7 @@ def download_all_files(dt, max_entries=10, remove_old_files=True):
         async_runner=lambda: download_all_files_async(dt, max_entries, remove_old_files),
         sync_fallback=lambda: (
             download_all_files_sync_fallback(dt, max_entries),
-            download_all_goes_files(dt, max_entries),
+            download_all_goes_files(dt),
         ),
     )
 

@@ -121,8 +121,17 @@ goes:
   glm_product: GLM-L2-LCFA               # config.py:102
   glm_outdir: GOES_GLM_DIR               # config.py:102
   max_files_per_spec: 2                  # config.py:17 GoesIngestSpec.max_files
-  max_entries: 96                        # downloader.py:33 GOES_MAX_ENTRIES
-  hour_lookback: 3                       # downloader.py:479
+  # downloader.py _goes_search_max_entries(). The listing depth for every GOES
+  # lookup, and the only one -- no GOES entry point takes a per-call count.
+  # GLM publishes roughly 180 objects an hour, so the MRMS depth in
+  # runtime.yaml (`cycle.ingest_max_entries`, 10) would never list back to the
+  # requested scan.
+  max_entries: 96
+  # Unlike max_entries above, this is still a per-call parameter and is not
+  # read from here: the five GOES download entry points in downloader.py each
+  # default `hour_lookback` to 3, and a caller may narrow it. Recorded so the
+  # catalog names the operative value.
+  hour_lookback: 3
   cleanup_max_age_minutes: 60            # main.py:57
   bucket_path_pattern: '{product}/{YYYY}/{DDD}/{HH}/'  # parse.py:53
   filename_matcher_template: '(?:_|-)M\d{channel_id}_' # config.py:123

@@ -140,8 +140,13 @@ cycle:
     max_backoff_seconds: 30.0
 
   # cycle.py:478 -> coordinator.py:125. The S3 listing depth for MRMS detection
-  # and MRMS integration ingest. GOES passes its own count, so this governs the
-  # MRMS pair only.
+  # and MRMS integration ingest, and for those two tasks only.
+  #
+  # It does not reach GOES. The coordinator used to hand this same count to the
+  # GOES task, which discarded it in favor of a fixed depth of 96, because GLM
+  # publishes roughly 180 objects an hour and a depth of 10 would never list
+  # back to the target scan. The GOES signatures no longer accept a count at
+  # all, so raising this value cannot widen a GOES search.
   ingest_max_entries: 10
 
   # cycle.py:644. How often the tandem cycle drains its log queues while waiting
