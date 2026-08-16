@@ -7,7 +7,7 @@ Stores alerts by unique ID and removes alerts not seen within a configurable TTL
 Architecture:
     - Single registry file (alerts_registry.json) stores all active alerts
     - Each alert tracked with first_seen, last_seen, and expires timestamps
-    - TTL-based cleanup removes stale alerts (default 2 hours)
+    - TTL-based cleanup removes stale alerts (nws.yaml registry_ttl_hours)
 """
 
 import json
@@ -18,6 +18,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Tuple, Optional, Any, Iterable
 from decimal import Decimal
 from util.io import IOManager
+from .config import registry_ttl_hours, tornado_upgrade_event, tornado_upgrade_rules
 
 io_manager = IOManager("[AlertRegistry]")
 
@@ -73,18 +74,19 @@ class AlertRegistry:
         ids = registry.get_active_ids()
     """
     
-    def __init__(self, registry_dir: Path, ttl_hours: float = 2.0):
+    def __init__(self, registry_dir: Path, ttl_hours: Optional[float] = None):
         """
         Initialize the AlertRegistry.
-        
+
         Args:
             registry_dir: Path to the base official alerts directory
-            ttl_hours: Time-to-live in hours for alerts not seen (default 2.0)
+            ttl_hours: Time-to-live in hours for alerts not seen
+                (None resolves nws.yaml's registry_ttl_hours)
         """
         self.registry_dir = Path(registry_dir)
         self.ids_dir = self.registry_dir / "ids"
         self.ts_dir = self.registry_dir / "timestamps"
-        self.ttl_hours = ttl_hours
+        self.ttl_hours = registry_ttl_hours() if ttl_hours is None else ttl_hours
         
         self.ids_dir.mkdir(parents=True, exist_ok=True)
         self.ts_dir.mkdir(parents=True, exist_ok=True)
@@ -233,20 +235,22 @@ class AlertRegistry:
     def _derive_snapshot_alert_name(self, properties: Dict[str, Any]) -> Optional[str]:
         """Normalize official alert labels for snapshot consumers."""
         event = properties.get("event")
-        if event != "Tornado Warning":
-            return event or properties.get("headline") or properties.get("name")
+        fallback = event or properties.get("headline") or properties.get("name")
+        if event != tornado_upgrade_event():
+            return fallback
 
         description = properties.get("description")
         if not isinstance(description, str):
-            return event or properties.get("headline") or properties.get("name")
+            return fallback
 
         description_upper = description.upper()
-        if "TORNADO EMERGENCY" in description_upper:
-            return "Tornado Emergency"
-        if "PARTICULARLY DANGEROUS SITUATION" in description_upper:
-            return "PDS Tornado Warning"
+        # Catalog order is priority order: a description carrying both phrases
+        # takes the first, so Tornado Emergency outranks the PDS wording.
+        for phrase, name in tornado_upgrade_rules():
+            if phrase in description_upper:
+                return name
 
-        return event or properties.get("headline") or properties.get("name")
+        return fallback
     
     def _extract_alert_id(self, feature: Dict) -> Optional[str]:
         """
@@ -562,14 +566,15 @@ class AlertRegistry:
 _registry_instance: Optional[AlertRegistry] = None
 
 
-def get_registry(registry_dir: Optional[Path] = None, ttl_hours: float = 2.0) -> AlertRegistry:
+def get_registry(registry_dir: Optional[Path] = None, ttl_hours: Optional[float] = None) -> AlertRegistry:
     """
     Get or create the singleton AlertRegistry instance.
-    
+
     Args:
         registry_dir: Path to registry base directory (required on first call)
         ttl_hours: TTL in hours for expired alerts
-        
+            (None resolves nws.yaml's registry_ttl_hours)
+
     Returns:
         AlertRegistry instance
         
