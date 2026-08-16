@@ -1325,3 +1325,343 @@ def test_max_chunk_downloads_is_declared_in_two_places_and_not_in_s3_chunks():
     assert "max_chunk_downloads" not in chunks
 
 
+# --- EWMRS pipeline: three owners of 120, and one parameter nobody reads ---
+
+def _ewmrs_pipeline_yaml() -> dict:
+    import yaml
+
+    return yaml.safe_load(
+        (REPO_ROOT / "config" / "ewmrs_pipeline.yaml").read_text(encoding="utf-8")
+    )
+
+
+def _ewmrs_pipeline_source() -> str:
+    return (REPO_ROOT / "src/EWMRS/pipeline.py").read_text(encoding="utf-8")
+
+
+def _param_loads(relative_path: str, qualname: str, param: str) -> int:
+    """Count reads of ``param`` inside a function body.
+
+    The signature declares the parameter as an ``ast.arg``, not a ``Name``, so a
+    count of zero means the function accepts the parameter and never uses it.
+    """
+    import ast
+
+    from tests.core.config.source_inspect import SRC, _find_function
+
+    function = _find_function(
+        ast.parse((SRC / relative_path).read_text(encoding="utf-8")), qualname
+    )
+    return sum(
+        1
+        for node in ast.walk(function)
+        if isinstance(node, ast.Name) and node.id == param and isinstance(node.ctx, ast.Load)
+    )
+
+
+EWMRS_MAX_ENTRIES_SITES = (
+    "run_render_pipeline",
+    "run_mrms_render_pipeline",
+    "run_goes_render_pipeline",
+    "ewmrs_tandem_worker",
+    "ewmrs_goes_worker",
+)
+
+
+def test_ewmrs_max_entries_has_no_catalog_copy_because_nothing_reads_it():
+    """RESOLVED: `ewmrs_pipeline.yaml` deliberately omits `render.max_entries`.
+
+    Five EWMRS functions declared `max_entries: int = 10`, which looked like a
+    tunable with five duplicate defaults. It is not a tunable at all:
+    `run_render_pipeline` is where the chain terminates and it never reads the
+    value, because layer selection comes from the render catalogs rather than a
+    count. The parameter survives only because it rides in the GOES render task
+    tuple that `cycle.py` queues and `background.py` unpacks positionally.
+
+    So the single owner is `runtime.yaml goes_coordination.render_task_max_entries`
+    and a copy in `ewmrs_pipeline.yaml` would be a second owner of a dead value.
+    The five declarations are `None` so no literal shadows that owner either.
+    """
+    from util.runtime.config import section
+
+    recorded = _ewmrs_pipeline_yaml()
+    assert "max_entries" not in recorded["render"]
+
+    for qualname in EWMRS_MAX_ENTRIES_SITES:
+        assert param_default("EWMRS/pipeline.py", qualname, "max_entries") is None, qualname
+
+    assert _param_loads("EWMRS/pipeline.py", "run_render_pipeline", "max_entries") == 0
+    assert section("goes_coordination")["render_task_max_entries"] == 10
+
+
+def test_ewmrs_declaration_defaults_all_defer_to_the_catalog():
+    """RESOLVED: every EWMRS default that shadowed a catalog key is now `None`.
+
+    Listed as a sweep so adding a sixth caller with its own literal fails here
+    rather than at the next audit.
+    """
+    for qualname, param in (
+        ("run_render_pipeline", "phase_name"),
+        ("run_render_pipeline", "cleanup_after"),
+        ("cleanup_old_gui_files", "max_age_minutes"),
+        ("_cleanup_old_nexrad_gui_files", "max_age_minutes"),
+        ("_maybe_cleanup_goes_gui_files", "max_age_minutes"),
+        ("render_pending_nexrad_gui_files", "max_source_age_minutes"),
+        ("run_nexrad_render_loop", "poll_interval_seconds"),
+    ):
+        assert param_default("EWMRS/pipeline.py", qualname, param) is None, (qualname, param)
+
+
+def test_ewmrs_three_owners_of_120_stay_three_keys():
+    """RESOLVED: 120 appeared at five sites meaning three different things.
+
+    GUI output retention, GOES output retention, and NEXRAD *input* freshness all
+    read 120, and two of them were restated at call sites. Collapsing them into
+    one key would have coupled a retention sweep to a freshness window, so they
+    remain three keys that happen to agree today. The literal is gone from the
+    module, which is what stops them drifting back into one number.
+    """
+    from EWMRS.pipeline_config import (
+        goes_cleanup_max_age_minutes,
+        gui_cleanup_max_age_minutes,
+        nexrad_source_max_age_minutes,
+    )
+
+    recorded = _ewmrs_pipeline_yaml()
+    assert gui_cleanup_max_age_minutes() == recorded["render"]["gui_cleanup_max_age_minutes"] == 120
+    assert goes_cleanup_max_age_minutes() == recorded["render"]["goes_cleanup_max_age_minutes"] == 120
+    assert nexrad_source_max_age_minutes() == recorded["nexrad_gui"]["retention_minutes"] == 120
+
+    source = _ewmrs_pipeline_source()
+    assert "max_age_minutes=120" not in source
+    assert "= 120" not in source
+
+
+def test_ewmrs_goes_cleanup_interval_is_read_per_call_not_frozen_at_import():
+    """RESOLVED: the rate limit was an import-time `os.environ` read.
+
+    `_GOES_CLEANUP_MIN_INTERVAL_SECONDS` was computed at module scope, so a
+    render worker that imported the module before the environment was arranged
+    kept the wrong interval for its whole life. It is now read per sweep.
+
+    The zero floor is kept in the accessor: a negative interval would make the
+    elapsed-time comparison always true and disable cleanup entirely.
+    """
+    from EWMRS.pipeline_config import (
+        GOES_CLEANUP_MIN_INTERVAL_ENV,
+        goes_cleanup_min_interval_seconds,
+    )
+
+    recorded = _ewmrs_pipeline_yaml()
+    assert (
+        goes_cleanup_min_interval_seconds()
+        == recorded["render"]["goes_cleanup_min_interval_seconds"]
+        == 300
+    )
+
+    source = _ewmrs_pipeline_source()
+    assert "_GOES_CLEANUP_MIN_INTERVAL_SECONDS" not in source
+    assert "goes_cleanup_min_interval_seconds()" in source
+
+    with mock.patch.dict("os.environ", {GOES_CLEANUP_MIN_INTERVAL_ENV: "45"}):
+        assert goes_cleanup_min_interval_seconds() == 45.0
+    with mock.patch.dict("os.environ", {GOES_CLEANUP_MIN_INTERVAL_ENV: "-5"}):
+        assert goes_cleanup_min_interval_seconds() == 0.0
+    assert goes_cleanup_min_interval_seconds() == 300.0
+
+
+def test_ewmrs_worker_budget_is_coupled_to_the_goes_phase_name():
+    """DECISION PRESERVED: the memory budget is selected by a phase-name prefix.
+
+    `worker_budget_mb` dispatches on `phase_name.upper().startswith("GOES")`, so
+    the phase label is not a free-form string -- renaming the GOES phase would
+    silently halve its budget. `render.phase_name` is pinned here alongside the
+    budgets to make that coupling fail loudly rather than quietly.
+    """
+    from EWMRS.pipeline_config import render_phase_name, worker_budget_mb
+
+    recorded = _ewmrs_pipeline_yaml()
+    assert render_phase_name() == recorded["render"]["phase_name"] == "EWMRS"
+    assert not render_phase_name().upper().startswith("GOES")
+
+    assert worker_budget_mb("GOES") == recorded["workers"]["budget_mb"]["goes"] == 1200.0
+    assert worker_budget_mb("MRMS") == recorded["workers"]["budget_mb"]["default"] == 768.0
+    assert worker_budget_mb(render_phase_name()) == 768.0
+
+    source = _ewmrs_pipeline_source()
+    assert "1200.0" not in source
+    assert "768.0" not in source
+
+
+def test_ewmrs_worker_memory_env_vars_still_outrank_the_catalog():
+    """RESOLVED: both budgets kept their environment overrides.
+
+    One variable covers the GOES and default budgets, which means setting it
+    flattens the distinction the catalog draws. That is the pre-extraction
+    behavior and is preserved rather than split, because splitting it would
+    invent a variable no deployment sets.
+    """
+    from EWMRS.pipeline_config import (
+        WORKER_BUDGET_MB_ENV,
+        WORKER_RESERVE_MB_ENV,
+        worker_budget_mb,
+        worker_psutil_fallback_max,
+        worker_reserve_mb,
+    )
+
+    recorded = _ewmrs_pipeline_yaml()
+    assert worker_reserve_mb() == recorded["workers"]["reserve_mb"] == 1024.0
+    assert worker_psutil_fallback_max() == recorded["workers"]["psutil_fallback_max"] == 2
+
+    with mock.patch.dict("os.environ", {WORKER_BUDGET_MB_ENV: "256.5"}):
+        assert worker_budget_mb("GOES") == 256.5
+        assert worker_budget_mb("MRMS") == 256.5
+    with mock.patch.dict("os.environ", {WORKER_RESERVE_MB_ENV: "64"}):
+        assert worker_reserve_mb() == 64.0
+
+    # 1024.0 is not asserted absent: the bytes-to-MiB conversion legitimately
+    # uses it twice, and that arithmetic is not a tunable.
+    source = _ewmrs_pipeline_source()
+    assert "worker_reserve_mb()" in source
+    assert "worker_psutil_fallback_max()" in source
+    assert "EWMRS_WORKER" not in source
+
+
+def test_ewmrs_worker_strategy_is_pinned_by_the_schema_not_an_accessor():
+    """DECISION PRESERVED: `workers.strategy` has exactly one implementation.
+
+    `_adaptive_process_worker_count` is the only strategy in the tree. Rather
+    than an accessor that raises on anything else -- unreachable, since the
+    loader would have to accept the value first -- the schema carries a
+    single-member enum, so an unknown strategy fails at load with the file and
+    key named.
+    """
+    recorded = _ewmrs_pipeline_yaml()
+    assert recorded["workers"]["strategy"] == "adaptive_memory"
+
+    schema = json.loads(
+        (REPO_ROOT / "config/schema/ewmrs_pipeline.schema.json").read_text(encoding="utf-8")
+    )
+    strategy_schema = schema["properties"]["workers"]["properties"]["strategy"]
+    assert strategy_schema == {"enum": ["adaptive_memory"]}
+
+
+def test_ewmrs_numeric_thread_caps_are_one_value_across_a_fixed_list():
+    """RESOLVED: four BLAS-family variables share one cap, set to 1.
+
+    The catalog cannot express per-variable caps because the code sets them in a
+    single loop, so the list and the value are separate keys rather than a map.
+    The cap is 1 so the process pool owns the parallelism; letting each worker
+    thread out would oversubscribe every core.
+    """
+    import os as _os
+
+    from EWMRS.pipeline import _configure_numerical_thread_caps
+    from EWMRS.pipeline_config import numeric_thread_cap_value, numeric_thread_cap_variables
+
+    recorded = _ewmrs_pipeline_yaml()["workers"]["numeric_thread_caps"]
+    assert numeric_thread_cap_value() == recorded["value"] == 1
+    assert list(numeric_thread_cap_variables()) == recorded["variables"]
+    assert numeric_thread_cap_variables() == (
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+    )
+
+    with mock.patch.dict("os.environ", {}, clear=True):
+        _configure_numerical_thread_caps()
+        for variable in numeric_thread_cap_variables():
+            assert _os.environ[variable] == str(numeric_thread_cap_value())
+
+    source = _ewmrs_pipeline_source()
+    assert "OMP_NUM_THREADS" not in source
+
+
+def test_ewmrs_tile_threads_env_bypasses_the_cpu_cap_but_the_catalog_does_not():
+    """DECISION PRESERVED: the override and the catalog value are not equivalent.
+
+    `EWMRS_TILE_THREADS` returns `min(tile_count, cap)`, skipping the CPU count;
+    the catalog value goes through `min(tile_count, cap, cpu_count)`. Routing
+    both through `overlay.resolve` would have been tidier and would have changed
+    behavior on any machine with fewer than 8 cores, so the two branches stay.
+    """
+    import os as _os
+
+    from EWMRS.pipeline_config import TILE_THREADS_ENV, max_tile_threads
+    from EWMRS.render.render import _resolve_tile_workers
+
+    recorded = _ewmrs_pipeline_yaml()
+    assert max_tile_threads() == recorded["render_threads"]["max_tile_threads"] == 8
+
+    cpu_count = max(1, _os.cpu_count() or 1)
+    with mock.patch.dict("os.environ", {}, clear=True):
+        assert _resolve_tile_workers(1000) == min(8, cpu_count)
+    with mock.patch.dict("os.environ", {TILE_THREADS_ENV: "1000"}):
+        assert _resolve_tile_workers(1000) == 1000
+
+    render_source = (REPO_ROOT / "src/EWMRS/render/render.py").read_text(encoding="utf-8")
+    assert "min(tile_count, max_tile_threads(), cpu_cap)" in render_source
+
+
+def test_ewmrs_lru_cache_sizes_come_from_the_catalog_at_import():
+    """DECISION PRESERVED: two keys are read once at import, not per call.
+
+    `maxsize` is a decorator argument, so Python evaluates it when the module
+    loads and a cache cannot be resized per call. Every other key in this file is
+    read per use; these two need a restart, which is why the catalog says so.
+    """
+    from EWMRS.pipeline import _load_timestamp_chunk_index_cached
+    from EWMRS.pipeline_config import colormap_cache_entries, tile_index_cache_entries
+    from EWMRS.render.render import _get_cached_cmap
+
+    recorded = _ewmrs_pipeline_yaml()
+    assert tile_index_cache_entries() == recorded["caches"]["tile_index_entries"] == 512
+    assert colormap_cache_entries() == recorded["caches"]["colormap_entries"] == 128
+
+    assert _load_timestamp_chunk_index_cached.cache_info().maxsize == tile_index_cache_entries()
+    assert _get_cached_cmap.cache_info().maxsize == colormap_cache_entries()
+
+
+def test_ewmrs_nexrad_render_loop_floor_and_width_come_from_the_catalog():
+    """RESOLVED: the poll floor was a bare `max(1.0, ...)` beside its own default.
+
+    The floor exists so a caller passing 0 cannot spin the loop, and it is a
+    separate key from the interval because it is a safety bound rather than a
+    cadence. `max_workers` is a ceiling, not the pool size -- the effective width
+    is capped by the number of pending artifacts.
+    """
+    from EWMRS.pipeline_config import (
+        nexrad_poll_interval_min_seconds,
+        nexrad_poll_interval_seconds,
+        nexrad_render_max_workers,
+    )
+
+    recorded = _ewmrs_pipeline_yaml()["nexrad_gui"]
+    assert nexrad_poll_interval_seconds() == recorded["poll_interval_seconds"] == 30.0
+    assert nexrad_poll_interval_min_seconds() == recorded["poll_interval_min_seconds"] == 1.0
+    assert nexrad_render_max_workers() == recorded["max_workers"] == 8
+
+    source = _ewmrs_pipeline_source()
+    assert "max(nexrad_poll_interval_min_seconds(), float(poll_interval_seconds))" in source
+    assert "min(nexrad_render_max_workers(), len(pending_metadata))" in source
+
+
+def test_ewmrs_generic_render_phase_still_cleans_up_by_default():
+    """RESOLVED: `cleanup_after` is a catalog key, and GOES still opts out.
+
+    The GOES phase passes `cleanup_after=False` explicitly because it runs its
+    own rate-limited sweep afterwards. That literal is a caller decision, not a
+    default, so it stays in code -- but the default it overrides is now the
+    catalog's.
+    """
+    from EWMRS.pipeline_config import render_cleanup_after
+
+    recorded = _ewmrs_pipeline_yaml()
+    assert render_cleanup_after() is recorded["render"]["cleanup_after"] is True
+
+    source = _ewmrs_pipeline_source()
+    assert "cleanup_after=False," in source
+    assert "cleanup_after: bool | None = None," in source
+
+

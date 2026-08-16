@@ -22,6 +22,23 @@ from EWMRS.render.config import (
     get_mrms_file_list,
 )
 from EWMRS.render.tools import configure_proj_runtime
+from EWMRS.pipeline_config import (
+    goes_cleanup_max_age_minutes,
+    goes_cleanup_min_interval_seconds,
+    gui_cleanup_max_age_minutes,
+    nexrad_poll_interval_min_seconds,
+    nexrad_poll_interval_seconds,
+    nexrad_render_max_workers,
+    nexrad_source_max_age_minutes,
+    numeric_thread_cap_value,
+    numeric_thread_cap_variables,
+    render_cleanup_after,
+    render_phase_name,
+    tile_index_cache_entries,
+    worker_budget_mb,
+    worker_psutil_fallback_max,
+    worker_reserve_mb,
+)
 import util.file as fs
 from common.ingest.manifest import CycleInputManifest
 from util.atomic import atomic_write_json
@@ -54,18 +71,14 @@ GOES_WEB_MERCATOR_TRANSFORM = rasterio.transform.from_bounds(
     GOES_WEB_MERCATOR_SHAPE[0],
 )
 _RUNTIME_CONFIGURED = False
-_GOES_CLEANUP_MIN_INTERVAL_SECONDS = max(0.0, float(os.environ.get("EWMRS_GOES_CLEANUP_MIN_INTERVAL_SECONDS", "300")))
 _LAST_GOES_GUI_CLEANUP_S = 0.0
 _LAST_GOES_GUI_CLEANUP_FUNC_ID: int | None = None
-_NEXRAD_GUI_RETENTION_MINUTES = 120
 _NEXRAD_SITE_DIR_PATTERN = re.compile(r"^[A-Z0-9]{4}$")
 _NEXRAD_ELEVATION_DIR_PATTERN = re.compile(r"^\d{1,3}(?:\.\d{1,2})?$")
 _NEXRAD_TIMESTAMP_PATTERN = re.compile(r"^\d{8}-\d{6}$")
-_NEXRAD_POLL_INTERVAL_SECONDS = 30.0
-_NEXRAD_RENDER_MAX_WORKERS = 8
 
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=tile_index_cache_entries())
 def _load_timestamp_chunk_index_cached(
     index_path_str: str,
     mtime_ns: int,
@@ -118,13 +131,9 @@ def _ensure_dt(dt_in) -> datetime:
 
 
 def _configure_numerical_thread_caps() -> None:
-    for env_var in (
-        "OMP_NUM_THREADS",
-        "MKL_NUM_THREADS",
-        "OPENBLAS_NUM_THREADS",
-        "NUMEXPR_NUM_THREADS",
-    ):
-        os.environ.setdefault(env_var, "1")
+    cap = str(numeric_thread_cap_value())
+    for env_var in numeric_thread_cap_variables():
+        os.environ.setdefault(env_var, cap)
 
 
 def _adaptive_process_worker_count(layer_count: int, phase_name: str) -> int:
@@ -135,19 +144,18 @@ def _adaptive_process_worker_count(layer_count: int, phase_name: str) -> int:
     if cpu_cap <= 1:
         return 1
 
-    default_worker_budget_mb = 1200.0 if phase_name.upper().startswith("GOES") else 768.0
-    worker_budget_mb = float(os.environ.get("EWMRS_WORKER_BUDGET_MB", default_worker_budget_mb))
-    reserve_mb = float(os.environ.get("EWMRS_WORKER_RESERVE_MB", 1024.0))
+    budget_mb = worker_budget_mb(phase_name)
+    reserve_mb = worker_reserve_mb()
 
     try:
         import psutil
 
         available_mb = psutil.virtual_memory().available / (1024.0 * 1024.0)
         usable_mb = max(0.0, available_mb - reserve_mb)
-        memory_cap = max(1, int(usable_mb // max(1.0, worker_budget_mb)))
+        memory_cap = max(1, int(usable_mb // max(1.0, budget_mb)))
         return max(1, min(cpu_cap, memory_cap))
     except Exception:
-        return max(1, min(cpu_cap, 2))
+        return max(1, min(cpu_cap, worker_psutil_fallback_max()))
 
 
 def _render_layer(layer) -> tuple[str, RenderOutput]:
@@ -340,8 +348,11 @@ def _normalize_render_timestamp(timestamp_iso: str) -> str:
     return dt.strftime(r"%Y%m%d-%H%M00")
 
 
-def _cleanup_old_nexrad_gui_files(max_age_minutes: int = 120) -> int:
+def _cleanup_old_nexrad_gui_files(max_age_minutes: int | None = None) -> int:
     """Remove stale NEXRAD GUI files and empty site/elevation directories."""
+
+    if max_age_minutes is None:
+        max_age_minutes = gui_cleanup_max_age_minutes()
 
     nexrad_root = Path(fs.GUI_NEXRAD_DIR)
     if not nexrad_root.exists():
@@ -548,8 +559,11 @@ def _render_pending_nexrad_gui_artifact(metadata: dict) -> bool:
     return _nexrad_gui_timestamp_exists(site, elevation, timestamp)
 
 
-def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: int = _NEXRAD_GUI_RETENTION_MINUTES) -> int:
+def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: int | None = None) -> int:
     import concurrent.futures
+
+    if max_source_age_minutes is None:
+        max_source_age_minutes = nexrad_source_max_age_minutes()
 
     if base_dir:
         fs.initialize_filesystem(base_dir)
@@ -570,7 +584,7 @@ def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: in
     if not pending_metadata:
         return 0
 
-    max_workers = min(_NEXRAD_RENDER_MAX_WORKERS, len(pending_metadata))
+    max_workers = min(nexrad_render_max_workers(), len(pending_metadata))
     rendered_count = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(_render_pending_nexrad_gui_artifact, metadata) for metadata in pending_metadata]
@@ -581,8 +595,10 @@ def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: in
     return rendered_count
 
 
-def run_nexrad_render_loop(*, base_dir=None, poll_interval_seconds: float = _NEXRAD_POLL_INTERVAL_SECONDS) -> None:
-    poll_interval_seconds = max(1.0, float(poll_interval_seconds))
+def run_nexrad_render_loop(*, base_dir=None, poll_interval_seconds: float | None = None) -> None:
+    if poll_interval_seconds is None:
+        poll_interval_seconds = nexrad_poll_interval_seconds()
+    poll_interval_seconds = max(nexrad_poll_interval_min_seconds(), float(poll_interval_seconds))
     while True:
         try:
             rendered = render_pending_nexrad_gui_files(base_dir=base_dir)
@@ -595,9 +611,12 @@ def run_nexrad_render_loop(*, base_dir=None, poll_interval_seconds: float = _NEX
         time.sleep(poll_interval_seconds)
 
 
-def cleanup_old_gui_files(max_age_minutes: int = 120):
+def cleanup_old_gui_files(max_age_minutes: int | None = None):
     """Remove old files/folders from GUI output directories."""
     import shutil
+
+    if max_age_minutes is None:
+        max_age_minutes = gui_cleanup_max_age_minutes()
 
     now = time.time()
     max_age_seconds = max_age_minutes * 60
@@ -674,14 +693,27 @@ def cleanup_old_gui_files(max_age_minutes: int = 120):
 
 def run_render_pipeline(
     dt,
-    max_entries: int = 10,
+    max_entries: int | None = None,
     layers=None,
-    phase_name: str = "EWMRS",
-    cleanup_after: bool = True,
+    phase_name: str | None = None,
+    cleanup_after: bool | None = None,
     input_manifest: CycleInputManifest | None = None,
 ) -> Dict[str, RenderOutput]:
-    """Render configured EWMRS layers from already staged local files."""
+    """Render configured EWMRS layers from already staged local files.
+
+    ``max_entries`` is accepted and ignored. It is part of the GOES render task
+    tuple that ``util.runtime.cycle`` queues and ``util.runtime.background``
+    unpacks, so the parameter has to stay, but nothing downstream of here reads
+    it: layer selection comes from the catalogs, not a count. Its only owner is
+    ``runtime.yaml goes_coordination.render_task_max_entries``, which is why
+    ``ewmrs_pipeline.yaml`` does not carry a second copy.
+    """
     from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    if phase_name is None:
+        phase_name = render_phase_name()
+    if cleanup_after is None:
+        cleanup_after = render_cleanup_after()
 
     dt = _ensure_dt(dt)
     results: Dict[str, RenderOutput] = {}
@@ -728,13 +760,13 @@ def run_render_pipeline(
         io_manager.write_warning(f"{phase_name} failed layers: {', '.join(failed_layers)}")
 
     if cleanup_after:
-        cleanup_old_gui_files(max_age_minutes=120)
+        cleanup_old_gui_files(max_age_minutes=gui_cleanup_max_age_minutes())
     return results
 
 
 def run_mrms_render_pipeline(
     dt,
-    max_entries: int = 10,
+    max_entries: int | None = None,
     input_manifest: CycleInputManifest | None = None,
 ) -> Dict[str, RenderOutput]:
     """Run the MRMS-backed EWMRS render phase."""
@@ -747,15 +779,19 @@ def run_mrms_render_pipeline(
     )
 
 
-def _maybe_cleanup_goes_gui_files(max_age_minutes: int = 120) -> None:
+def _maybe_cleanup_goes_gui_files(max_age_minutes: int | None = None) -> None:
     global _LAST_GOES_GUI_CLEANUP_S, _LAST_GOES_GUI_CLEANUP_FUNC_ID
 
+    if max_age_minutes is None:
+        max_age_minutes = goes_cleanup_max_age_minutes()
+
+    min_interval_s = goes_cleanup_min_interval_seconds()
     now_s = time.perf_counter()
     current_cleanup_func_id = id(cleanup_old_gui_files)
     if (
         _LAST_GOES_GUI_CLEANUP_FUNC_ID == current_cleanup_func_id
-        and _GOES_CLEANUP_MIN_INTERVAL_SECONDS > 0
-        and (now_s - _LAST_GOES_GUI_CLEANUP_S) < _GOES_CLEANUP_MIN_INTERVAL_SECONDS
+        and min_interval_s > 0
+        and (now_s - _LAST_GOES_GUI_CLEANUP_S) < min_interval_s
     ):
         io_manager.write_debug(
             f"Skipping GOES GUI cleanup: last run was {(now_s - _LAST_GOES_GUI_CLEANUP_S):.1f}s ago"
@@ -769,7 +805,7 @@ def _maybe_cleanup_goes_gui_files(max_age_minutes: int = 120) -> None:
 
 def run_goes_render_pipeline(
     dt,
-    max_entries: int = 10,
+    max_entries: int | None = None,
     input_manifest: CycleInputManifest | None = None,
 ) -> Dict[str, RenderOutput]:
     """Run the GOES-backed EWMRS render phase for raw ABI channels.
@@ -791,7 +827,7 @@ def run_goes_render_pipeline(
         cleanup_after=False,
         input_manifest=input_manifest,
     )
-    _maybe_cleanup_goes_gui_files(max_age_minutes=120)
+    _maybe_cleanup_goes_gui_files()
 
     io_manager.write_info(f"GOES render pipeline completed in {time.perf_counter() - pipeline_start_s:.3f}s")
 
@@ -814,8 +850,8 @@ def ewmrs_tandem_worker(
     shared_state,
     ewmrs_mrms_ready_event,
     dt,
-    max_entries: int = 10,
-): 
+    max_entries: int | None = None,
+):
     """Process target for staged EWMRS rendering within the tandem runner."""
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
@@ -892,7 +928,7 @@ def ewmrs_tandem_worker(
 def ewmrs_goes_worker(
     log_queue,
     dt,
-    max_entries: int = 10,
+    max_entries: int | None = None,
     input_manifest=None,
 ):
     """Process target for decoupled GOES rendering outside tandem completion."""

@@ -9,9 +9,8 @@
     "render": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["max_entries", "cleanup_after", "phase_name", "goes_cleanup_max_age_minutes", "goes_cleanup_min_interval_seconds", "gui_cleanup_max_age_minutes"],
+      "required": ["cleanup_after", "phase_name", "goes_cleanup_max_age_minutes", "goes_cleanup_min_interval_seconds", "gui_cleanup_max_age_minutes"],
       "properties": {
-        "max_entries": { "type": "integer", "minimum": 1 },
         "cleanup_after": { "type": "boolean" },
         "phase_name": { "type": "string" },
         "goes_cleanup_max_age_minutes": { "type": "integer", "minimum": 1 },
