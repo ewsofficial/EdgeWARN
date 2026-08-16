@@ -86,6 +86,11 @@ def get_goes_modifiers():
     ]
 
 
+def get_goes_max_entries():
+    """The S3 listing depth for every GOES lookup."""
+    return _catalog()["goes"]["max_entries"]
+
+
 def get_abi_radc_channel_specs(channel_ids=DEFAULT_ABI_RADC_CHANNEL_IDS):
     selected_channel_ids = set(channel_ids) if channel_ids is not None else None
     specs = []
