@@ -1,5 +1,10 @@
 # historical.yaml — Audit §1
 #
+# The historical path is not served by this file alone: `get_historical_args`
+# also resolves the four shared processing toggles (`profile`, `disable_ctam`,
+# `disable_tracking`, `disable_polygon_expansion`) against `runtime.yaml`'s `run`
+# block, so a `--config-dir` must carry runtime.yaml and detection.yaml too.
+#
 # `lat` and `lon` are consumed through `IOManager.get_historical_args`,
 # which overlays them onto CLI flags so a flag still outranks this file. The
 # remaining keys have no flag and are consumed through
@@ -16,7 +21,7 @@ schema_version: 1
 
 historical:
   lat: [20, 55]
-  # Signed -180..180 here, unlike runtime.yaml's lon_limits, which io.py:142
+  # Signed -180..180 here, unlike runtime.yaml's lon_limits, which io.py:158
   # rewrites to 0..360 on the realtime path. Nothing normalizes this key, so the
   # two files really do carry different conventions for the same quantity.
   #

@@ -85,10 +85,10 @@ class IOManager:
     def _add_common_processing_args(parser):
         parser.add_argument("--base_dir", "--base-dir", dest="base_dir", type=str, default=None, help="Custom base directory for input/output data")
         parser.add_argument("--config-dir", type=str, default=None, help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)")
-        parser.add_argument("--profile", action="store_true", help="Enable performance profiling")
-        parser.add_argument("--disable-ctam", action="store_true", help="Skip CTAM module execution during integration")
-        parser.add_argument("--disable-tracking", action="store_true", help="Skip lineage detection and Kalman tracking in storm cell detection")
-        parser.add_argument("--disable-polygon-expansion", action="store_true", help="Use original ProbSevere polygons directly and skip radar gate mapping plus watershed expansion")
+        parser.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None, help="Enable performance profiling (default: from runtime.yaml; --no-profile disables)")
+        parser.add_argument("--disable-ctam", action=argparse.BooleanOptionalAction, default=None, help="Skip CTAM module execution during integration (default: from runtime.yaml; --no-disable-ctam re-enables)")
+        parser.add_argument("--disable-tracking", action=argparse.BooleanOptionalAction, default=None, help="Skip lineage detection and Kalman tracking in storm cell detection (default: from runtime.yaml; --no-disable-tracking re-enables)")
+        parser.add_argument("--disable-polygon-expansion", action=argparse.BooleanOptionalAction, default=None, help="Use original ProbSevere polygons directly and skip radar gate mapping plus watershed expansion (default: from runtime.yaml; --no-disable-polygon-expansion re-enables)")
         parser.add_argument("--refl-threshold", type=float, default=None, help="Override the baseline reflectivity threshold used by storm cell detection (default: from detection.yaml)")
         parser.add_argument("--min-seed-percentage", type=float, default=None, help="Override the minimum polygon seed coverage ratio used during gate expansion (default: from detection.yaml)")
         parser.add_argument("--drop-offset", type=float, default=None, help="Override the dynamic reflectivity drop offset used during gate expansion (default: from detection.yaml)")
@@ -100,6 +100,14 @@ class IOManager:
 
     @staticmethod
     def _resolve_common_processing_args(args):
+        # Both parsers share these four, so resolving here is what gives
+        # process_historical.py the same YAML defaults run.py gets.
+        run_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
+        args.profile = overlay.resolve(args.profile, yaml_value=run_cfg["profile"], key="run.profile")
+        args.disable_ctam = overlay.resolve(args.disable_ctam, yaml_value=run_cfg["disable_ctam"], key="run.disable_ctam")
+        args.disable_tracking = overlay.resolve(args.disable_tracking, yaml_value=run_cfg["disable_tracking"], key="run.disable_tracking")
+        args.disable_polygon_expansion = overlay.resolve(args.disable_polygon_expansion, yaml_value=run_cfg["disable_polygon_expansion"], key="run.disable_polygon_expansion")
+
         detection_cfg = config_loader.load_config("detection", config_dir=args.config_dir)["detection"]
         args.refl_threshold = overlay.resolve(args.refl_threshold, yaml_value=detection_cfg["refl_threshold"], key="detection.refl_threshold")
         args.min_seed_percentage = overlay.resolve(args.min_seed_percentage, yaml_value=detection_cfg["min_seed_percentage"], key="detection.min_seed_percentage")
@@ -110,17 +118,19 @@ class IOManager:
         parser.add_argument("--lat_limits", type=float, nargs=2, metavar=("LAT_MIN", "LAT_MAX"), default=None, help="Latitude limits for processing (default: from runtime.yaml)")
         parser.add_argument("--lon_limits", type=float, nargs=2, metavar=("LON_MIN", "LON_MAX"), default=None, help="Longitude limits for processing (default: from runtime.yaml)")
         self._add_common_processing_args(parser)
-        parser.add_argument("--disable-ewmrs", action="store_true", help="Disable EWMRS workers and rendering pipeline")
-        parser.add_argument("--disable-nws", action="store_true", help="Disable background NWS alert ingestion")
-        parser.add_argument("--disable-metar", action="store_true", help="Disable background METAR ingestion")
-        parser.add_argument("--disable-goes", action="store_true", help="Disable GOES ingest, GLM ingest, and GOES rendering components")
-        parser.add_argument("--disable-nexrad", action="store_true", help="Disable background NEXRAD ingest and rendering")
+        parser.add_argument("--disable-ewmrs", action=argparse.BooleanOptionalAction, default=None, help="Disable EWMRS workers and rendering pipeline (default: from runtime.yaml)")
+        parser.add_argument("--disable-nws", action=argparse.BooleanOptionalAction, default=None, help="Disable background NWS alert ingestion (default: from runtime.yaml)")
+        parser.add_argument("--disable-metar", action=argparse.BooleanOptionalAction, default=None, help="Disable background METAR ingestion (default: from runtime.yaml)")
+        parser.add_argument("--disable-goes", action=argparse.BooleanOptionalAction, default=None, help="Disable GOES ingest, GLM ingest, and GOES rendering components (default: from runtime.yaml)")
+        parser.add_argument("--disable-nexrad", action=argparse.BooleanOptionalAction, default=None, help="Disable background NEXRAD ingest and rendering (default: from runtime.yaml)")
         parser.add_argument(
             "--mrms-core-only",
-            action="store_true",
+            action=argparse.BooleanOptionalAction,
+            default=None,
             help=(
                 "Run only MRMS detection, MRMS feature integration, and CTAM; "
-                "disable EWMRS, GOES/GLM, RAP, NEXRAD, NWS, METAR, and WPC."
+                "disable EWMRS, GOES/GLM, RAP, NEXRAD, NWS, METAR, and WPC. "
+                "(default: from runtime.yaml)"
             ),
         )
         args = parser.parse_args()
@@ -129,6 +139,12 @@ class IOManager:
         runtime_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
         args.lat_limits = overlay.resolve(args.lat_limits, yaml_value=list(runtime_cfg["lat_limits"]), key="run.lat_limits")
         args.lon_limits = overlay.resolve(args.lon_limits, yaml_value=list(runtime_cfg["lon_limits"]), key="run.lon_limits")
+        args.disable_ewmrs = overlay.resolve(args.disable_ewmrs, yaml_value=runtime_cfg["disable_ewmrs"], key="run.disable_ewmrs")
+        args.disable_nws = overlay.resolve(args.disable_nws, yaml_value=runtime_cfg["disable_nws"], key="run.disable_nws")
+        args.disable_metar = overlay.resolve(args.disable_metar, yaml_value=runtime_cfg["disable_metar"], key="run.disable_metar")
+        args.disable_goes = overlay.resolve(args.disable_goes, yaml_value=runtime_cfg["disable_goes"], key="run.disable_goes")
+        args.disable_nexrad = overlay.resolve(args.disable_nexrad, yaml_value=runtime_cfg["disable_nexrad"], key="run.disable_nexrad")
+        args.mrms_core_only = overlay.resolve(args.mrms_core_only, yaml_value=runtime_cfg["mrms_core_only"], key="run.mrms_core_only")
         self._resolve_common_processing_args(args)
 
         if len(args.lat_limits) != 2 or len(args.lon_limits) != 2:
