@@ -1,8 +1,16 @@
 # wpc.yaml — Audit §7 WPC
 #
-# This file owns every value below. They are read through the accessors in
-# src/common/ingest/wpc/config.py, which the downloader, converter, and ingest
-# entry point call per use -- no module constants remain.
+# This file owns every value below, but it has two readers rather than one.
+#
+# Every key except the two named next is read on the ingest side through the
+# accessors in src/common/ingest/wpc/config.py, which the downloader, converter,
+# and ingest entry point call per use -- no module constants remain.
+#
+# `surface_filename_prefix` and `surface_filename_suffix` have no Python accessor at
+# all. They are read only by the Node API, which loads this file through
+# src/config/loader.js and builds from them the surface-analysis filenames it
+# serves. Renaming either means editing src/api/services/ancillary.js, and nothing
+# on the Python side will reveal that.
 
 schema_version: 1
 
@@ -34,6 +42,20 @@ wpc:
   remote_filename_pattern: 'codsus{hour:02d}_hr'
   output_filename_pattern: 'wpc_sfc_{date}-{hour:02d}0000.geojson'
   latest_filename: latest.geojson
+
+  # The two halves of the same name as the *reader* sees it. The API's
+  # listWpcSurface and wpcSurface both match these files and rebuild their names,
+  # and cannot use `output_filename_pattern`: that is a Python `str.format` template
+  # and `{hour:02d}` is not something JS can evaluate. Splitting the invariant part
+  # into a prefix and a suffix lets the API derive both an anchored regex and a
+  # filename from one pair of strings, instead of carrying a hand-written regex
+  # that would be a fifth shape to keep in agreement with the four above.
+  #
+  # Deliberately looser than the writer: Python always emits `HH0000`, while the
+  # API accepts any `\d{8}-\d{6}`, so it still serves the older non-hour-aligned
+  # files already on disk. Tightening the reader would strand them.
+  surface_filename_prefix: wpc_sfc_
+  surface_filename_suffix: .geojson
 
   # The retention sweep matches `output_filename_pattern` but not
   # `latest_filename`, so the file the API serves is never deleted. Three

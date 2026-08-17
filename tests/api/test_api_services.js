@@ -12,6 +12,14 @@ const RENDER_DEFAULTS = {
   grid_maxima: { rows: 100, cols: 100, tile_size: 4096 },
 };
 
+// Deliberately one product short of api.yaml's `validation.radar_products`. A
+// service that still carried its own allowlist would accept VRADH regardless of
+// what it was handed, so the narrow fixture is what proves the catalog is read.
+const ANCILLARY_CONFIG = {
+  validation: { radar_products: ['DBZH'] },
+  wpc: { surface_filename_prefix: 'wpc_sfc_', surface_filename_suffix: '.geojson' },
+};
+
 describe('unified API services', () => {
   let root;
   afterEach(async () => { if (root) await fs.rm(root, { recursive: true, force: true }); });
@@ -71,8 +79,34 @@ describe('unified API services', () => {
       open: jest.fn().mockResolvedValue({ handle: { close }, size: 1 }),
       readJson: jest.fn().mockRejectedValue(Object.assign(new Error('malformed'), { code: 'IN_PROGRESS' }))
     };
-    const service = createAncillaryServices(repository);
+    const service = createAncillaryServices(repository, ANCILLARY_CONFIG);
     await expect(service.rapData('CAPE', '20260317-200000')).rejects.toMatchObject({ code: 'IN_PROGRESS' });
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  // KDP is a real NEXRAD moment absent from every copy of the allowlist; VRADH is
+  // present in api.yaml but not in ANCILLARY_CONFIG, so it is the leg that fails if
+  // the service stops consulting what it was handed. The DBZH leg is the control:
+  // without it this would pass for any reason radarField rejects, a malformed
+  // elevation or timestamp included.
+  it('refuses a radar moment outside the injected allowlist before any file lookup', async () => {
+    const opened = { handle: { close: jest.fn() }, size: 1 };
+    const repository = { open: jest.fn().mockResolvedValue(opened) };
+    const service = createAncillaryServices(repository, ANCILLARY_CONFIG);
+    await expect(service.radarField('KTLH', '20260317-200000', '0.5', 'KDP')).rejects.toMatchObject({ code: 'INVALID_PATH' });
+    await expect(service.radarField('KTLH', '20260317-200000', '0.5', 'VRADH')).rejects.toMatchObject({ code: 'INVALID_PATH' });
+    expect(repository.open).not.toHaveBeenCalled();
+    await expect(service.radarField('KTLH', '20260317-200000', '0.5', 'DBZH')).resolves.toBe(opened);
+  });
+
+  it('builds the WPC surface names it lists and reads from wpc.yaml', async () => {
+    const repository = {
+      list: jest.fn().mockResolvedValue([{ name: 'wpc_sfc_20260317-200000.geojson' }, { name: 'latest.geojson' }]),
+      readJson: jest.fn().mockResolvedValue({ type: 'FeatureCollection' })
+    };
+    const service = createAncillaryServices(repository, ANCILLARY_CONFIG);
+    await expect(service.listWpcSurface()).resolves.toEqual(['20260317-200000']);
+    await expect(service.wpcSurface('20260317-200000')).resolves.toEqual({ type: 'FeatureCollection' });
+    expect(repository.readJson).toHaveBeenCalledWith('wpc', ['surface_analysis', 'wpc_sfc_20260317-200000.geojson']);
   });
 });

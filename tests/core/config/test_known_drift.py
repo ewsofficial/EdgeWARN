@@ -709,7 +709,7 @@ def test_generic_synoptic_download_demands_an_age_budget():
     assert downloader_source.count("max_age_minutes=get_rap_max_age_minutes()") == 1
 
 
-# --- WPC: four keys describing one naming scheme --------------------------
+# --- WPC: six keys describing one naming scheme ---------------------------
 
 def _wpc_yaml() -> dict:
     import yaml
@@ -748,6 +748,46 @@ def test_wpc_cleanup_glob_matches_the_timestamped_name_but_not_latest():
     ).name
     assert fnmatch.fnmatch(written, glob)
     assert get_latest_output_filepath().name == recorded["latest_filename"]
+
+
+def test_wpc_surface_filename_halves_bracket_the_pattern_the_writer_uses():
+    """RESOLVED: the Node reader's two keys and Python's one template name one file.
+
+    `ancillary.js` cannot use `output_filename_pattern` -- it is a `str.format`
+    template and `{hour:02d}` means nothing in JS -- so the reader owns a prefix and
+    a suffix instead, and those are only safe while they still bracket what the
+    writer emits. Drift would not raise: the API would list an empty directory and
+    404 files sitting right there. Nothing but this test couples the three strings.
+
+    The reader is deliberately *looser* than the writer, which is pinned here too.
+    Python always emits `HH0000`; the API accepts any `\\d{6}`, so hour-aligned names
+    are a subset rather than the whole language. Tightening the API to match would
+    strand any non-hour-aligned file already on disk.
+    """
+    recorded = _wpc_yaml()["wpc"]
+    prefix = recorded["surface_filename_prefix"]
+    suffix = recorded["surface_filename_suffix"]
+
+    written = recorded["output_filename_pattern"].format(date="20260815", hour=18)
+    assert written.startswith(prefix)
+    assert written.endswith(suffix)
+
+    reader = re.compile(rf"^{re.escape(prefix)}(\d{{8}}-\d{{6}}){re.escape(suffix)}$")
+    assert reader.fullmatch(written).group(1) == "20260815-180000"
+    assert reader.fullmatch("wpc_sfc_20260815-183000.geojson") is not None
+    assert reader.fullmatch(recorded["latest_filename"]) is None
+
+    # The point of the two keys is that the reader stopped restating the name. The
+    # regex above is re-derived in Python, so it proves the *keys* agree with the
+    # writer but not that JS builds the same thing from them; these pin the two
+    # derivations that Node cannot be run here to check.
+    source = (REPO_ROOT / "src/api/services/ancillary.js").read_text(encoding="utf-8")
+    assert "wpc_sfc_" not in source
+    assert ".geojson" not in source
+    assert "escapeLiteral(config.wpc.surface_filename_prefix)" in source
+    assert "escapeLiteral(config.wpc.surface_filename_suffix)" in source
+    assert r"(\\d{8}-\\d{6})" in source
+    assert "${config.wpc.surface_filename_prefix}${value}${config.wpc.surface_filename_suffix}" in source
 
 
 def test_wpc_valid_hours_are_derived_from_the_publish_interval():

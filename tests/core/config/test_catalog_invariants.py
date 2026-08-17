@@ -459,29 +459,51 @@ def test_pagination_and_grid_defaults_do_not_exceed_their_maxima(api):
         assert defaults["grid"][axis] <= ceiling, axis
 
 
-# --- The radar-moment allowlist has four owners --------------------------
+# --- The radar-moment allowlist has three owners -------------------------
 #
-# `api.yaml validation.radar_products` is the owner of record, but three code
-# copies still restate it and none of them reads the catalog yet. Until they do,
-# these tests are what makes the duplication safe: they fail the moment any copy
-# is edited alone. They are deliberately written as equality against the catalog
+# `api.yaml validation.radar_products` is the owner of record. `ancillary.js` used
+# to be a fourth owner and is now a reader, so the test below asserts the absence
+# of its copy rather than agreement with it. Two copies remain -- the OpenAPI enum
+# and the renderer's producing map -- and neither reads the catalog, so for those
+# these tests are what makes the duplication safe: they fail the moment a copy is
+# edited alone. They are deliberately written as equality against the catalog
 # rather than pairwise, so the catalog stays the thing being tracked.
 
-RADAR_OWNERS = "the radar allowlist has four owners; edit config/api.yaml and re-run"
+RADAR_OWNERS = "the radar allowlist has three owners; edit config/api.yaml and re-run"
 
 
-def _js_string_array(source: str, anchor: str) -> list[str]:
-    """The string literals of the `new Set([...])` that follows ``anchor``."""
-    start = source.index(anchor)
-    body = source[start:source.index("]", start)]
-    return re.findall(r"'([^']+)'", body)
+def test_ancillary_js_reads_the_radar_allowlist_instead_of_restating_it(api):
+    """The service that gates every radar request now derives its set from the catalog.
 
-
-def test_ancillary_js_radar_products_match_the_catalog(api):
-    """`ancillary.js:6` gates every radar request before any file lookup."""
+    This replaces an equality check against a module-level
+    `const RADAR_PRODUCTS = new Set([...])`. That literal is gone, so the thing worth
+    guarding inverted: no copy may grow back, and the read has to stay *inside* the
+    factory. `createConfig` resolves the config directory from argv and env after
+    every import has already been evaluated, so a module-scope read would bind to the
+    default `config/` however `--config-dir` was set -- and would do it silently.
+    """
     source = (REPO_ROOT / "src/api/services/ancillary.js").read_text(encoding="utf-8")
-    found = _js_string_array(source, "const RADAR_PRODUCTS = new Set([")
-    assert found == list(api["validation"]["radar_products"]), RADAR_OWNERS
+
+    assert "RADAR_PRODUCTS" not in source
+    products = list(api["validation"]["radar_products"])
+    assert products, "an empty allowlist would make the loop below vacuous"
+    for product in products:
+        assert product not in source, RADAR_OWNERS
+
+    assert "new Set(config.validation.radar_products)" in source
+
+    # The factory parameter must be the only way config enters this module. Bounding
+    # the reads below the factory's opening line is not enough on its own -- anything
+    # appended after its closing brace is also "below" it -- so the load-bearing half
+    # is that the module never imports the loader and so has nothing to read at
+    # import time.
+    assert "config/loader.js" not in source
+    assert "loadConfig" not in source
+    factory = source.index("export function createAncillaryServices(repository, config)")
+    assert all(
+        index > factory
+        for index in (match.start() for match in re.finditer(r"\bconfig\.", source))
+    )
 
 
 def test_openapi_radar_product_enum_matches_the_catalog(api):
@@ -561,14 +583,57 @@ def test_the_colormap_accessor_hands_back_a_mutable_copy(render):
 
 # --- API product catalog --------------------------------------------------
 
-def test_api_product_catalog_route_keys_are_unique():
-    """`id` and `legacyId` are both used to address a product over HTTP."""
+PRODUCT_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+
+
+def _node_product_catalog():
     import json
 
-    catalog_path = REPO_ROOT / "src/api/config/product-catalog.json"
-    entries = json.loads(catalog_path.read_text(encoding="utf-8"))
-    assert len(entries) == 31
+    return json.loads(
+        (REPO_ROOT / "src/api/config/product-catalog.json").read_text(encoding="utf-8")
+    )
+
+
+def test_api_product_catalog_route_keys_are_unique(api):
+    """`id` and `legacyId` are both used to address a product over HTTP.
+
+    The length is compared against `product_catalog.entries` rather than a literal.
+    api.yaml records the count and the JSON holds the entries; nothing derives one
+    from the other, and `createConfig` reports the *recorded* number as
+    `diagnostics.effective.renderProductCount`, so a catalog that gained an entry
+    would keep serving the stale count with no schema able to notice.
+    """
+    entries = _node_product_catalog()
+    assert len(entries) == api["product_catalog"]["entries"]
 
     assert duplicates([entry["id"] for entry in entries]) == {}
     assert duplicates([entry["legacyId"] for entry in entries]) == {}
+    assert duplicates([entry["storageDirectory"] for entry in entries]) == {}
     assert duplicates([entry["legacyFilePrefix"] for entry in entries]) == {}
+
+
+def test_api_product_catalog_entries_carry_every_field_the_loader_dereferences():
+    """A count alone would pass for 31 entries that are missing every field.
+
+    `productCatalog.js:5-19` validates at import, so a malformed entry takes the API
+    down at startup rather than on the request that needs it. It checks the `id` slug
+    and the three uniqueness constraints, but only truthiness for the rest, and it
+    never looks at `representation` -- which `renders.js:48,51` copies straight into
+    an HTTP response.
+
+    Deliberately shape-only, no values: `baselines/node_product_catalog.json` already
+    pins this file byte-for-byte, so asserting particular ids or colormaps here would
+    only duplicate that snapshot and fail twice for one edit. What is *not* in the
+    snapshot is which fields the code dereferences, so that is what this covers.
+    """
+    entries = _node_product_catalog()
+    required = {"id", "legacyId", "storageDirectory", "legacyFilePrefix", "representation"}
+
+    for entry in entries:
+        label = entry.get("id")
+        assert required <= set(entry), label
+        assert re.fullmatch(PRODUCT_SLUG, entry["id"]), label
+        for field in required - {"id"}:
+            assert isinstance(entry[field], str) and entry[field], (label, field)
+        if "colormapId" in entry:
+            assert isinstance(entry["colormapId"], str) and entry["colormapId"], label
