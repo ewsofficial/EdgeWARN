@@ -9,20 +9,28 @@
       "action": null
     },
     "--profile": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--disable-ctam": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--disable-tracking": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--disable-polygon-expansion": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--refl-threshold": {
       "default": null,
@@ -45,28 +53,40 @@
       "action": null
     },
     "--disable-ewmrs": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--disable-nws": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--disable-metar": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--disable-goes": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--disable-nexrad": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--mrms-core-only": {
-      "default": false,
-      "action": "store_true"
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     },
     "--start": {
       "default": null,

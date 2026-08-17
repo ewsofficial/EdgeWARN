@@ -1,7 +1,7 @@
 # runtime.yaml — Audit §1 (src/util/io.py shared parser), §2 env vars, §7 scheduler
 #
 # Source: src/run.py:48-58,118-120,136-152,171-182,195,222-224,356-357;
-#         src/util/io.py:86-87,110-111,129-142;
+#         src/util/io.py:86-87,118-119,139-158;
 #         src/util/runtime/config.py; src/util/runtime/processes.py:16-30,78-81,99;
 #         src/util/runtime/background.py:77-103,204-239,255-285;
 #         src/util/runtime/goes.py:54-107; src/util/runtime/cycle.py:128-137,350,478,610,644;
@@ -13,11 +13,14 @@
 # supervisor receive no argv, so they re-read this file through
 # util/runtime/config.py using the EDGEWARN_CONFIG_DIR that io.py exports.
 #
-# Ten keys are deliberately absent from `run`: `profile`, `mrms_core_only`, and
-# the eight `disable.*` toggles. Every one is an argparse `action="store_true"`
-# flag (io.py:88-91, 108-120), so argparse fixes the value to False before any
-# YAML could be consulted -- writing `true` here could never take effect. The
-# flags themselves are real; only a YAML default for them is unreachable.
+# `profile`, `mrms_core_only` and the eight `disable_*` toggles were absent while
+# each was an argparse `action="store_true"` flag, which fixed the value to False
+# before any YAML could be consulted -- writing `true` here could never take
+# effect. io.py:88-91,121-135 now declares them with
+# `argparse.BooleanOptionalAction` and `default=None`, so a flag says True
+# (`--profile`), False (`--no-profile`), or nothing at all, and this file owns the
+# "nothing" case. Every value below reproduces the old argparse default, so the
+# effective behavior of a bare `run.py` is unchanged.
 #
 # --mrms-core-only fans out further than the old comment here claimed: it forces
 # EWMRS, NWS, METAR, GOES and NEXRAD off (run.py:59-64), WPC off (:195), and RAP
@@ -66,16 +69,38 @@ identity:
   weather_api_accept: application/geo+json
 
 run:
-  # io.py:110-111,130-131. The CLI flags default to None so these values win
+  # io.py:118-119,140-141. The CLI flags default to None so these values win
   # unless --lat_limits/--lon_limits is passed.
   lat_limits: [20, 55]
-  # io.py:142 rewrites this to `lon % 360` after the overlay, so a negative
+  # io.py:158 rewrites this to `lon % 360` after the overlay, so a negative
   # western longitude here becomes its 0-360 equivalent. Recorded pre-normalized.
   #
   # historical.yaml's `lon` is NOT normalized and stays signed; both schemas
   # therefore permit -180..360 rather than one enforcing a convention the other
   # ignores. handler.py:118-123 converts per dataset either way.
   lon_limits: [230, 300]
+
+  # io.py:88-91, resolved in _resolve_common_processing_args, so these four are
+  # the only toggles that reach process_historical.py as well as run.py.
+  #
+  # `profile: true` only calls perf_tracker.set_enabled(True)
+  # (pipeline.py:235,380). It does not compete with `profiling.perf_tracker`
+  # below, which stays the tri-state owner for everything else.
+  profile: false
+  disable_ctam: false
+  disable_tracking: false
+  disable_polygon_expansion: false
+
+  # io.py:121-135, resolved in get_args. run.py only; process_historical.py
+  # declares no such flags, so these keys are not read on the historical path.
+  disable_ewmrs: false
+  disable_nws: false
+  disable_metar: false
+  disable_goes: false
+  disable_nexrad: false
+  # Setting this true here forces seven subsystems off, exactly as the flag does
+  # (run.py:60-65, :195, cycle.py:479) -- see the note at the top of this file.
+  mrms_core_only: false
 
 goes_coordination:
   poll_seconds: 60                      # run.py:49 -> background.py:81
