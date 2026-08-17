@@ -3,6 +3,23 @@
 Works uniformly for booleans too: ``argparse.BooleanOptionalAction`` with
 ``default=None`` produces ``True``/``False``/``None`` (unset), so the same
 ``is not None`` check used for other types applies.
+
+This module is the only place that parses an environment variable into a
+configuration *value*. The one other environment read in the config layer is
+``loader.config_root``'s ``EDGEWARN_CONFIG_DIR`` (``loader.py:155``), which selects
+*which catalog to load* and so cannot come from a catalog; it is resolved before any
+key exists and stays outside this precedence chain by necessity.
+``plans/source-configuration-extraction-plan.md`` names
+``synoptic/config.py``'s ``get_rap_max_age_minutes`` as the reference shape for
+an override -- a named env-var constant, an unset test, and a ``ValueError``
+that re-quotes the raw value -- while also requiring that no domain module parse
+the environment itself. Those two only reconcile one way: the reference is a
+description of the *semantics*, not of the location, so the semantics live here
+and domain modules pass ``env_names=`` instead of reading ``os.environ``.
+Concretely that means ``value_type`` for a key whose YAML value is ``null`` (so
+there is no reference value to infer a type from), ``minimum`` for a bound that
+was previously enforced by hand, and a message naming the variable rather than
+the bare ``invalid literal for int()`` that ``int(raw)`` used to raise.
 """
 
 from __future__ import annotations
@@ -24,17 +41,51 @@ _TRUE_STRINGS = {"1", "true", "yes", "on"}
 _origins: dict[str, str] = {}
 
 
-def _coerce(raw: str, reference: Any) -> Any:
-    if isinstance(reference, bool):
+def _target_type(value_type: type | None, yaml_value: Any) -> type | None:
+    """The type an environment string should be parsed into.
+
+    Inferred from the YAML value, because the catalog is authoritative about the
+    shape of every key. ``value_type`` is the explicit override for the case the
+    inference cannot cover: a tri-state key whose YAML value is ``null``, which
+    carries no type at all and would otherwise leave the raw string uncoerced.
+    """
+    if value_type is not None:
+        return value_type
+    # bool is checked first because it is a subclass of int.
+    for candidate in (bool, int, float):
+        if isinstance(yaml_value, candidate):
+            return candidate
+    return None
+
+
+def _expected(target: type, minimum: Any) -> str:
+    noun = "integer" if target is int else "number"
+    article = "an" if target is int else "a"
+    if minimum == 0:
+        # Spelled this way rather than ">= 0" because it is the wording the RAP
+        # age override has always used, and its error message is asserted on.
+        return f"a non-negative {noun}"
+    if minimum is not None:
+        return f"{article} {noun} >= {minimum}"
+    return f"{article} {noun}"
+
+
+def _coerce(raw: str, target: type | None, env_name: str, minimum: Any) -> Any:
+    if target is bool:
         # An unrecognized value reads false rather than falling through as a
         # (truthy) string. This is the pre-existing semantics of the boolean
         # environment variables being routed through here: the opt-in set is
         # tested after strip().lower(), so "2" and "enabled" mean off.
         return raw.strip().lower() in _TRUE_STRINGS
-    if isinstance(reference, int):
-        return int(raw)
-    if isinstance(reference, float):
-        return float(raw)
+    if target is int or target is float:
+        expected = _expected(target, minimum)
+        try:
+            value = target(raw)
+        except ValueError as exc:
+            raise ValueError(f"{env_name} must be {expected}, got {raw!r}") from exc
+        if minimum is not None and value < minimum:
+            raise ValueError(f"{env_name} must be {expected}, got {raw!r}")
+        return value
     return raw
 
 
@@ -44,6 +95,8 @@ def resolve(
     env_names: Iterable[str] = (),
     yaml_value: Any = None,
     key: str | None = None,
+    value_type: type | None = None,
+    minimum: Any = None,
 ) -> Any:
     """Return the highest-precedence value among CLI, environment, and YAML.
 
@@ -54,21 +107,46 @@ def resolve(
     ``key`` is the dotted catalog path this value came from. When supplied, the
     winning layer is recorded for :func:`overrides`; a value resolved without it
     is simply absent from that report.
+
+    ``value_type`` names the parse target when ``yaml_value`` is ``None`` and so
+    cannot supply one. ``minimum`` rejects an out-of-range override instead of
+    letting it through; both raise ``ValueError`` naming the variable.
+
+    An environment variable that is set but blank counts as unset and the search
+    continues. Exporting an empty value is how a shell or a compose file clears a
+    setting, so a variable the operator believes is switched off must not make the
+    process raise.
+
+    Two of the three migrated sites already resolved a blank to the same answer
+    they resolve it to now, by different routes: ``render.py`` tested
+    ``if env_value:``, so a blank fell through to the catalog, and
+    ``performance.py`` tested ``raw in {"1", "true", ...}`` after ``strip()``, so a
+    blank was simply not truthy and the tracker stayed off -- which is still what
+    happens, since the catalog's ``perf_tracker`` is ``null`` and the call site
+    collapses that through ``bool()``. The RAP age override is the one that
+    differed: it tested ``if raw_value is None``, so a blank reached ``int("")``
+    and raised.
+    Widening that one to "blank is unset" is an intended behavior change, not a
+    side effect of the move; it is the only case where a value the old code
+    rejected is now accepted, and ``test_overlay.py`` pins it at both the generic
+    layer and the RAP site so a future tightening has to be deliberate.
     """
     if cli_value is not None:
         if key is not None:
             _origins[key] = "cli"
         return cli_value
 
+    target = _target_type(value_type, yaml_value)
     for env_name in env_names:
         raw = os.environ.get(env_name)
-        if raw is not None:
-            # Coerce before recording: an unparseable override raises, and a
-            # layer that never produced a value must not be named the winner.
-            coerced = _coerce(raw, yaml_value)
-            if key is not None:
-                _origins[key] = f"env:{env_name}"
-            return coerced
+        if raw is None or not raw.strip():
+            continue
+        # Coerce before recording: an unparseable override raises, and a
+        # layer that never produced a value must not be named the winner.
+        coerced = _coerce(raw, target, env_name, minimum)
+        if key is not None:
+            _origins[key] = f"env:{env_name}"
+        return coerced
 
     if key is not None:
         _origins[key] = "yaml"

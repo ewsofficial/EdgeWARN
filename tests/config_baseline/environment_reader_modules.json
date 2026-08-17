@@ -1,16 +1,16 @@
 {
   "ad_hoc": [
     "EWMRS/pipeline.py",
-    "EWMRS/render/render.py",
     "EWMRS/render/tools.py",
     "common/config/loader.py",
-    "common/config/overlay.py",
-    "common/ingest/synoptic/config.py",
-    "util/performance.py"
+    "common/config/overlay.py"
   ],
   "shared_parser": [
     "EWMRS/pipeline_config.py",
+    "EWMRS/render/render.py",
     "common/ingest/nexrad/config.py",
-    "run.py"
+    "common/ingest/synoptic/config.py",
+    "run.py",
+    "util/performance.py"
   ]
 }

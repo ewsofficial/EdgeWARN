@@ -16,6 +16,7 @@ import concurrent.futures
 import json
 import os
 import re
+import shutil
 import ssl
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1570,28 +1571,130 @@ def test_reflectance_colormap_ternary_is_resolved():
 
 # --- Import-time binding hazards -----------------------------------------
 
-def test_render_config_snapshots_the_file_list_at_import_time():
-    """Captures pre-`--base-dir` paths; the loader work must delete or defer it."""
+def test_render_config_no_longer_snapshots_the_file_list_at_import_time():
+    """RESOLVED: the `file_list = get_file_list()` module-scope snapshot is gone.
+
+    It froze two things at import, both before an entry point could speak: the
+    config root, because `get_file_list` loads `ewmrs_render.yaml` and `run.py`
+    imports this package before `get_args()` exports `EDGEWARN_CONFIG_DIR`; and
+    every `filepath`/`outdir` path, because `_resolve_dir` reads them off
+    `util.file` and `--base_dir` had not been applied yet.
+
+    Deleted rather than deferred. Its comment offered it "for backward
+    compatibility", but nothing in `src/` read it -- `EWMRS/pipeline.py` imports
+    the three accessors and calls them per use.
+    """
     from EWMRS.render import config as render_config
 
-    assert hasattr(render_config, "file_list")
+    assert not hasattr(render_config, "file_list")
     source = (REPO_ROOT / "src/EWMRS/render/config.py").read_text(encoding="utf-8")
-    assert "\nfile_list = get_file_list()" in source
+    assert "\nfile_list = " not in source
 
 
-def test_util_file_binds_paths_at_import_time():
-    """`_define_paths()` runs at module scope, before argparse sees --base_dir."""
+def test_util_file_binds_paths_at_import_but_already_knows_base_dir():
+    """RESOLVED as far as it can be: the bind stays, the value is now correct.
+
+    `_define_paths()` still runs at module scope, and deliberately so -- 36
+    modules read the 113 globals as `fs.<NAME>` attributes, so making them lazy
+    is a 250-site change with no behavioral gain. What was actually broken is
+    that the value bound was always the platform default, leaving a window in
+    which anything reading a path between this import and the entry point's
+    `initialize_filesystem` call got the wrong directory.
+
+    `IOManager.get_base_dir_arg()` closes it by answering `--base_dir` from
+    `sys.argv` before the real parser exists. `initialize_filesystem` is still
+    phase two: a spawned child has no argv, and programmatic callers pass a
+    directory directly.
+    """
     source = (REPO_ROOT / "src/util/file.py").read_text(encoding="utf-8")
+
+    assert "Path(IOManager.get_base_dir_arg() or _platform_base_dir())" in source
+    # The platform default is now a return value, not a call site, so there is
+    # exactly one unconditional `_define_paths` at module scope.
     tail = source.split("def initialize_filesystem")[1]
-    assert 'if platform.system() == "Windows":' in tail
-    assert "_define_paths(Path(r\"C:\\EdgeWARN_input\"))" in tail
+    assert 'if platform.system() == "Windows":' not in tail
+    assert tail.count("_define_paths(") == 2
 
 
-def test_colormap_json_resolution_depends_on_the_working_directory():
-    """`Path.cwd()` is the first candidate, so the token allowlist needs <src_dir>."""
+def test_base_dir_argv_resolution_beats_the_platform_default(monkeypatch, tmp_path):
+    """The two-phase resolution has to work at import, not just in principle.
+
+    Re-imported in a subprocess because `util.file` binds at module scope and
+    this process already did it; `importlib.reload` would not re-run the
+    `sys.argv` read under a different argv in a way that proves the entry-point
+    ordering.
+    """
+    import subprocess
+    import sys
+
+    script = (
+        "import sys; sys.path.insert(0, r'{src}')\n"
+        "import util.file as fs\n"
+        "print(fs.BASE_DIR)\n"
+    ).format(src=REPO_ROOT / "src")
+
+    chosen = tmp_path / "elsewhere"
+    for flag in ("--base_dir", "--base-dir"):
+        result = subprocess.run(
+            [sys.executable, "-c", script, flag, str(chosen)],
+            capture_output=True, text=True, cwd=REPO_ROOT,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(chosen), f"{flag} did not reach the import-time bind"
+
+    bare = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, cwd=REPO_ROOT
+    )
+    assert bare.returncode == 0, bare.stderr
+    assert bare.stdout.strip() != str(chosen)
+
+
+def test_colormap_json_resolution_no_longer_depends_on_the_working_directory():
+    """RESOLVED: the candidate list moved to filesystem.yaml, tokenized.
+
+    `Path.cwd() / "colormaps.json"` led the list, so which file the renderer drew
+    with depended on the directory the operator launched from -- and silently, since
+    a colormaps.json anywhere on the launch path simply won. It is not carried over:
+    `src/EWMRS/colormaps.json` is the shipped file and the `<src_dir>` candidate
+    that replaces it resolves against the installed tree instead.
+
+    The two surviving candidates are tokens rather than absolute paths because
+    neither location is knowable when the catalog is written: `<gui_dir>` follows
+    `--base_dir`, and `<src_dir>` is wherever the tree was installed.
+    """
+    from common.config.loader import load_config
+
     source = (REPO_ROOT / "src/util/file.py").read_text(encoding="utf-8")
-    assert "Path.cwd() / \"colormaps.json\"" in source
-    assert 'Path(__file__).resolve().parents[1] / "EWMRS" / "colormaps.json"' in source
+    assert 'Path.cwd() / "colormaps.json"' not in source
+    assert '"EWMRS" / "colormaps.json"' not in source
+    assert "colormap_search_path(" in source, "the candidate list belongs to the catalog now"
+
+    assert list(load_config("filesystem")["colormap_search_path"]) == [
+        "<src_dir>/EWMRS/colormaps.json",
+        "<gui_dir>/colormaps.json",
+    ]
+
+    # `EWMRS/pipeline.py` overwrote the resolved path with its own `__file__`-relative
+    # literal at module scope, which would have silently outranked the catalog for
+    # every EWMRS run. It resolved to the same file, so deleting it is not a
+    # behavior change -- it is what leaves the catalog as the only owner.
+    pipeline = (REPO_ROOT / "src/EWMRS/pipeline.py").read_text(encoding="utf-8")
+    assert "fs.GUI_COLORMAP_JSON =" not in pipeline
+    assert "EWMRS_COLORMAP_JSON" not in pipeline
+
+
+def test_the_colormap_candidates_still_find_the_shipped_file():
+    """The tokens have to land on the same file the `__file__` candidate used to.
+
+    Asserted against the shipped path directly rather than against `fs`, because
+    the point is that the expansion agrees with the repository layout -- a
+    `<src_dir>` that resolved one directory too high would still produce a plausible
+    path and only fail at open time.
+    """
+    import util.file as fs
+
+    assert fs.GUI_COLORMAP_JSON == (REPO_ROOT / "src/EWMRS/colormaps.json").resolve()
+    assert fs.GUI_COLORMAP_JSON.is_file()
 
 
 def test_run_module_scope_is_outside_a_main_guard():
@@ -2011,13 +2114,28 @@ def test_ewmrs_tile_threads_env_bypasses_the_cpu_cap_but_the_catalog_does_not():
     assert "min(tile_count, max_tile_threads(), cpu_cap)" in render_source
 
 
-def test_ewmrs_lru_cache_sizes_come_from_the_catalog_at_import():
+def test_ewmrs_lru_cache_sizes_come_from_the_catalog_at_import(tmp_path):
     """DECISION PRESERVED: two keys are read once at import, not per call.
 
     `maxsize` is a decorator argument, so Python evaluates it when the module
     loads and a cache cannot be resized per call. Every other key in this file is
     read per use; these two need a restart, which is why the catalog says so.
+
+    Re-examined alongside the other import-time bindings and deliberately left
+    alone. It is the one import-time read that `--config-dir` cannot reach, since
+    both modules are imported before `get_args()` exports `EDGEWARN_CONFIG_DIR`.
+    Two facts make that acceptable rather than merely tolerated:
+
+    - It cannot mislead a later reader. `load_config` memoizes on
+      `(resolved_root, name)`, asserted below, so an import-time load under the
+      repo default does not become the answer a subsequent `--config-dir` load
+      receives. The stale value is confined to these two `maxsize` arguments.
+    - The only fix is to build the cache lazily behind a first-call check, which
+      puts an extra indirection and a mutable module global into the per-tile and
+      per-colormap paths. A cache holding 512 entries instead of a configured 256
+      is a memory-footprint difference, not a wrong answer.
     """
+    from common.config import loader as config_loader
     from EWMRS.pipeline import _load_timestamp_chunk_index_cached
     from EWMRS.pipeline_config import colormap_cache_entries, tile_index_cache_entries
     from EWMRS.render.render import _get_cached_cmap
@@ -2028,6 +2146,32 @@ def test_ewmrs_lru_cache_sizes_come_from_the_catalog_at_import():
 
     assert _load_timestamp_chunk_index_cached.cache_info().maxsize == tile_index_cache_entries()
     assert _get_cached_cmap.cache_info().maxsize == colormap_cache_entries()
+
+    # The keying claim is exercised by loading the same catalog from a second
+    # root, not by inspecting the existing keys: a loader keyed by name alone
+    # would still record absolute roots, so `is_absolute()` could not fail for
+    # the reason that matters here.
+    alternate = tmp_path / "config"
+    shutil.copytree(REPO_ROOT / "config", alternate)
+    catalog = alternate / "ewmrs_pipeline.yaml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8").replace(
+            "tile_index_entries: 512", "tile_index_entries: 64"
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        from_alternate = config_loader.load_config("ewmrs_pipeline", config_dir=alternate)
+        assert from_alternate["caches"]["tile_index_entries"] == 64
+        assert config_loader.load_config("ewmrs_pipeline")["caches"]["tile_index_entries"] == 512
+        assert (str(alternate.resolve()), "ewmrs_pipeline") in config_loader._config_cache
+    finally:
+        # The entry above is keyed by a `tmp_path` that pytest is about to delete.
+        # Nothing else looks that key up, so this is hygiene rather than a fix, but
+        # leaving a cache pointing at a removed directory is the kind of state that
+        # makes a later failure hard to attribute.
+        config_loader.reset_cache()
 
 
 def test_ewmrs_nexrad_render_loop_floor_and_width_come_from_the_catalog():

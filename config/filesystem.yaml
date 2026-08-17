@@ -1,16 +1,22 @@
 # filesystem.yaml — Audit §7 Filesystem
 #
-# Source: src/util/file.py:17-28,36-43,79,197-201,204,209-215,218-263,266-284,
-#         297-334,336-357; src/api/config/index.js:55-58;
-#         src/EdgeWARN/process/detect/main.py:101-104
+# Source: src/util/file.py -- _FromCatalog:17, _find_existing_path:36,
+#         the GUI_COLORMAP_JSON probe inside _define_paths:197,
+#         initialize_filesystem:219, the module-scope _define_paths bind:238,
+#         latest_files:244, clean_idx_files:292, _is_safe_directory:313,
+#         clean_old_files:323, clean_files_by_age:362;
+#         src/api/config/index.js -- createConfig:74;
+#         src/EdgeWARN/process/detect/main.py -- main:83
 #
-# Line citations below name the anchor they were recomputed from, not an offset
-# from an earlier revision. util/file.py has shifted ~20-40 lines since these were
-# first written; a citation that points at the wrong function is worse than none.
+# Citations name the function they point into, not a bare line span. util/file.py
+# has shifted ~26 lines twice while this file existed, and a span silently drifts
+# onto the wrong function whereas a name plus a line can be checked in one grep.
+# A citation that points at the wrong function is worse than none.
 #
-# `cleanup_defaults` is consumed through src/util/file_config.py, which reads this
-# file per call so a --config-dir resolved after import still applies. The other
-# sections are documentation only, for the reasons given at each of them.
+# `cleanup_defaults` and `colormap_search_path` are consumed through
+# src/util/file_config.py, which reads this file per call so a --config-dir
+# resolved after import still applies. `env_overrides` is documentation only, for
+# the reason given at it.
 
 schema_version: 1
 
@@ -26,17 +32,36 @@ cleanup_defaults:
   max_age_minutes: 60
   max_files: 10
 
-  # detect/main.py:101-104 calls clean_files_by_age(fs.STORMCELL_DIR,
+  # detect/main.py:107 calls clean_files_by_age(fs.STORMCELL_DIR,
   # max_age_minutes=...), the one live caller that overrides the 60 above. It is
   # recorded as detection.yaml's `stormcell_cleanup_max_age_minutes` because the
   # owner is the detector, not the filesystem layer. Noted here so the 60 is not
   # mistaken for a global ceiling. (metar.py:413,457 pass this key's own accessor
-  # rather than a literal; common/ingest/mrms/downloader.py:195,208 pass
+  # rather than a literal; common/ingest/mrms/downloader.py:218,231 pass
   # per-product values.)
 
-# NODE ONLY. src/api/config/index.js:57-58 reads both names (BASE_DIR is the
-# deprecated alias) and :55-56 accepts --base-dir/--base_dir; conflicting values
-# raise at :60. util/file.py reads no environment variable at all -- Python
-# reconfiguration goes through initialize_filesystem(base_dir) (file.py:204).
+# The ordered candidates util/file.py probes for colormaps.json, first hit wins;
+# if none exists the first is used anyway, so it is also the reported location.
+#
+# Tokens, not absolute paths, because neither location is knowable when this file
+# is written: <src_dir> is wherever the tree was installed and <gui_dir> follows
+# --base_dir. They are expanded by common.config.loader.expand_path against the
+# <base_dir>/<gui_dir>/<src_dir> allowlist, which rejects `..` and anything
+# resolving outside the named root.
+#
+# A `Path.cwd() / "colormaps.json"` probe used to lead this list, which made the
+# answer depend on where the operator happened to launch from. It is deliberately
+# not carried over: src/EWMRS/colormaps.json is the shipped file, so the entry
+# that used to sit behind the cwd probe now leads, and the resolved path is
+# unchanged for every launch directory that did not shadow it.
+colormap_search_path:
+  - <src_dir>/EWMRS/colormaps.json
+  - <gui_dir>/colormaps.json
+
+# NODE ONLY. src/api/config/index.js:87-88 reads both names (BASE_DIR is the
+# deprecated alias) and :85-86 accepts --base-dir/--base_dir; conflicting values
+# raise at :90. util/file.py reads no environment variable at all -- Python takes
+# --base_dir through a sys.argv peek before its import-time bind (file.py:238)
+# and otherwise reconfigures via initialize_filesystem(base_dir) (file.py:219).
 env_overrides:
   base_dir: ['EDGEWARN_BASE_DIR', 'BASE_DIR']

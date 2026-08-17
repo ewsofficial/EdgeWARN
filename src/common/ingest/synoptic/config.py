@@ -6,9 +6,8 @@ accessories receive no argv and re-resolve the root themselves -- and a
 module-level read would have frozen the repo default at import time.
 """
 
-import os
-
 from common.config.loader import load_config
+from common.config.overlay import resolve
 
 _CONFIG_NAME = "synoptic_rap"
 
@@ -65,25 +64,15 @@ def get_rap_max_age_minutes() -> int:
     """Return the configured maximum RAP analysis age.
 
     The environment variable outranks the catalog, per the project's
-    CLI > env > YAML precedence. Kept as a bespoke read rather than routed
-    through ``common.config.overlay`` because this is the one site that rejects a
-    malformed value outright instead of coercing it; ``overlay._coerce`` would
-    turn "abc" into an uncaught ``ValueError`` from ``int()`` and "-1" into a
-    silently accepted negative budget.
+    CLI > env > YAML precedence. ``minimum=0`` is what keeps a malformed or
+    negative override an outright error here; it was a hand-written parse until
+    ``overlay.resolve`` learned to enforce a bound, and the rejection -- not the
+    hand-written form -- was the part worth keeping.
     """
-    raw_value = os.environ.get(RAP_MAX_AGE_ENV)
-    if raw_value is None:
-        return _rap()["max_age_minutes"]
-
-    try:
-        value = int(raw_value)
-    except ValueError as exc:
-        raise ValueError(
-            f"{RAP_MAX_AGE_ENV} must be a non-negative integer, got {raw_value!r}"
-        ) from exc
-
-    if value < 0:
-        raise ValueError(
-            f"{RAP_MAX_AGE_ENV} must be a non-negative integer, got {raw_value!r}"
-        )
-    return value
+    return resolve(
+        None,
+        env_names=(RAP_MAX_AGE_ENV,),
+        yaml_value=_rap()["max_age_minutes"],
+        key="synoptic_rap.rap.max_age_minutes",
+        minimum=0,
+    )

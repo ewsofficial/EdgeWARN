@@ -10,6 +10,7 @@ import threading
 import numpy as np
 from .tools import TransformUtils
 from .tiler import save_float16_chunk
+from common.config.overlay import resolve
 from EWMRS.pipeline_config import (
     TILE_THREADS_ENV,
     colormap_cache_entries,
@@ -103,14 +104,33 @@ def _resolve_tile_workers(tile_count: int) -> int:
 
     # An explicit env cap bypasses the CPU cap; the catalog value does not. That
     # asymmetry is deliberate and predates the extraction -- setting the variable
-    # is how an operator overrides what the machine looks like.
-    env_value = os.environ.get(TILE_THREADS_ENV)
-    if env_value:
-        try:
-            configured_cap = max(1, int(env_value))
-            return min(tile_count, configured_cap)
-        except ValueError:
-            pass
+    # is how an operator overrides what the machine looks like. `yaml_value=None`
+    # is what expresses it: a non-None answer can only have come from the
+    # environment, since the catalog value is applied by the fallback below.
+    try:
+        env_cap = resolve(
+            None,
+            env_names=(TILE_THREADS_ENV,),
+            yaml_value=None,
+            value_type=int,
+            key="ewmrs_pipeline.render_threads.max_tile_threads",
+        )
+    except ValueError as exc:
+        # The only overlay site that swallows a malformed override, because it is
+        # the only one with a working fallback -- the CPU cap below still yields a
+        # usable pool. Failing the render over a typo in a thread hint would be a
+        # worse trade. `minimum=1` is likewise not passed: the clamp below has
+        # always accepted "0" as 1 rather than rejecting it.
+        #
+        # Warned rather than dropped silently: `resolve` records an origin only
+        # after coercing, so a rejected override leaves this key absent from
+        # `overlay.overrides()` entirely. Without this line an operator who
+        # mistyped the variable would see neither the effect they wanted nor any
+        # indication of why.
+        io_manager.write_warning(f"Ignoring {TILE_THREADS_ENV}: {exc}")
+        env_cap = None
+    if env_cap is not None:
+        return min(tile_count, max(1, env_cap))
 
     cpu_cap = max(1, os.cpu_count() or 1)
     return min(tile_count, max_tile_threads(), cpu_cap)

@@ -70,10 +70,39 @@ class IOManager:
 
     @staticmethod
     def get_base_dir_arg():
-        parser = argparse.ArgumentParser(add_help=False)
+        """Read ``--base_dir`` from ``sys.argv`` before the real parser exists.
+
+        Phase one of the two-phase resolution ``util.file`` performs at import:
+        it binds 113 path globals at module scope, long before an entry point
+        reaches ``get_args()``, so it needs the answer earlier than the parser
+        can give it. Unknown arguments are ignored, which is what makes this safe
+        to call from any argv -- a pytest or notebook process simply gets
+        ``None`` and the platform default.
+
+        ``allow_abbrev=False`` because this runs at import time: an ambiguous
+        prefix such as ``--base`` matches both spellings and would otherwise
+        exit here, ahead of the real parser that can report it in context.
+        """
+        parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
         parser.add_argument("--base_dir", "--base-dir", dest="base_dir", type=str, default=None)
         args, _ = parser.parse_known_args()
         return args.base_dir
+
+    @staticmethod
+    def get_config_dir_arg():
+        """Read ``--config-dir`` from ``sys.argv``, for the same reason as above.
+
+        ``util.file`` reads ``filesystem.yaml`` during its module-scope bind to
+        resolve the colormap search path, which is earlier than
+        ``export_config_root`` publishes ``EDGEWARN_CONFIG_DIR``. Without this
+        peek that one read would resolve the repo default however
+        ``--config-dir`` was set -- silently, because ``load_config`` is keyed by
+        resolved root and so would simply cache both.
+        """
+        parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+        parser.add_argument("--config-dir", dest="config_dir", type=str, default=None)
+        args, _ = parser.parse_known_args()
+        return args.config_dir
 
     @staticmethod
     def _validate_common_args(args):

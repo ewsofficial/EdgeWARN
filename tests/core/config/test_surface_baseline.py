@@ -364,18 +364,38 @@ def test_python_environment_variable_inventory_baseline():
     assert_baseline("environment_variables_python", sorted(_python_env_names()))
 
 
-def test_environment_variables_are_read_without_a_shared_parser():
+def test_environment_variables_are_read_without_a_shared_parser(monkeypatch):
     """How many sites still re-implement their own parse and clamp.
 
-    Of the ad-hoc readers only `synoptic/config.py` raises on a malformed value;
-    the rest coerce or fall through, so identical malformed input behaves
-    differently per variable. Recording the two groups together means migrating a
-    site to `common.config.overlay` shows up as a move between them rather than
-    as an unexplained deletion.
+    Recording the two groups together means migrating a site to
+    `common.config.overlay` shows up as a move between them rather than as an
+    unexplained deletion.
+
+    `synoptic/config.py` was the only ad-hoc reader that rejected a malformed
+    value outright, so its migration is the one that could have quietly lost a
+    property. It did not: the rejection moved into the overlay, where `minimum=`
+    makes it available to every site instead of to one. The assertions below
+    follow it there, because a resolve call that dropped the bound would still
+    return the right number for well-formed input and would only be visible on
+    the malformed input no snapshot covers.
+
+    The overlay half is asserted by calling it, not by searching its source for
+    "non-negative". The word appears there once, in the returned message, so a text
+    search would in fact notice that line being deleted -- but it cannot tell the
+    message being *produced* from the string merely being present, and it says
+    nothing about whether `minimum=` still rejects anything. Calling `resolve`
+    covers the property the docstring above actually claims.
     """
     synoptic = (SRC / "common/ingest/synoptic/config.py").read_text(encoding="utf-8")
     assert "RAP_MAX_AGE_ENV = \"EDGEWARN_RAP_MAX_AGE_MINUTES\"" in synoptic
-    assert "must be a non-negative integer" in synoptic
+    assert "minimum=0" in synoptic
+    assert "must be a non-negative integer" not in synoptic, "bound left behind in the caller"
+
+    from common.config.overlay import resolve
+
+    monkeypatch.setenv("EDGEWARN_TEST_BOUND", "-1")
+    with pytest.raises(ValueError, match=r"must be a non-negative integer, got '-1'"):
+        resolve(None, env_names=("EDGEWARN_TEST_BOUND",), yaml_value=5, minimum=0)
 
     ad_hoc: list[str] = []
     shared: list[str] = []
@@ -409,9 +429,12 @@ def test_node_reads_only_edgewarn_base_dir():
 def test_base_dir_alias_is_asymmetric_between_python_and_node():
     """DECISION OWED: Python never reads `EDGEWARN_BASE_DIR`.
 
-    Node resolves its base directory from the environment; Python resolves it
-    from `platform.system()` at import time and only accepts an override through
-    `initialize_filesystem(base_dir=...)`. Nothing keeps the two in agreement.
+    Node resolves its base directory from the environment or from `--base-dir`.
+    Python accepts the flag -- `util.file` peeks it out of `sys.argv` before its
+    module-scope bind -- and otherwise falls back to `platform.system()`; the
+    variable reaches it through neither channel. Nothing keeps the two in
+    agreement, which is why the check below is on the absence of any `environ`
+    read rather than on the two resolutions matching.
     """
     assert "EDGEWARN_BASE_DIR" not in _python_env_names()
 

@@ -317,6 +317,117 @@ def test_provenance_reports_the_path_and_version_of_a_loaded_catalog(config_dir)
     }
 
 
+# --- Path token expansion -------------------------------------------------
+#
+# `expand_path` is the only sanctioned way a catalog names a filesystem location,
+# so its rejections are the security boundary: a catalog is data, and a path value
+# in it must not be able to reach outside the root it names.
+
+
+def _expand(template, **roots):
+    return config_loader.expand_path(
+        template, roots, filename="sample.yaml", dotted_path="paths[0]"
+    )
+
+
+def test_a_token_expands_against_the_root_the_caller_supplied(tmp_path):
+    root = tmp_path / "src"
+    root.mkdir()
+
+    assert _expand("<src_dir>/EWMRS/colormaps.json", src_dir=root) == (
+        root / "EWMRS" / "colormaps.json"
+    ).resolve()
+
+
+@pytest.mark.parametrize("template", [
+    "<src_dir>/../secrets.json",
+    "<src_dir>/a/../../b",
+    "<src_dir>//etc/passwd",
+    "<src_dir>/",
+])
+def test_traversal_out_of_the_named_root_is_rejected(tmp_path, template):
+    """The catalog may name a location below its root and nowhere else.
+
+    Rejected textually, before any path is built, so a hostile value cannot even
+    be used to probe for what exists.
+    """
+    with pytest.raises(config_loader.ConfigError, match="not a relative path below"):
+        _expand(template, src_dir=tmp_path)
+
+
+def test_a_bare_relative_path_is_rejected_rather_than_resolved_against_the_cwd(tmp_path):
+    """The defect the tokens replace: `Path.cwd()` made the answer depend on argv[0]'s directory."""
+    with pytest.raises(config_loader.ConfigError, match="must begin with one of"):
+        _expand("colormaps.json", src_dir=tmp_path)
+
+
+def test_a_token_outside_the_allowlist_is_rejected(tmp_path):
+    """An allowlist, so a plausible-looking token fails loudly instead of expanding to itself."""
+    with pytest.raises(config_loader.ConfigError, match="<repo_dir> is not an expandable path token"):
+        _expand("<repo_dir>/config", src_dir=tmp_path)
+
+
+def test_an_allowlisted_token_with_no_value_here_is_rejected(tmp_path):
+    """`<base_dir>` is allowlisted but meaningless to a caller that has no base directory."""
+    with pytest.raises(config_loader.ConfigError, match="<base_dir> has no value in this context"):
+        _expand("<base_dir>/data", src_dir=tmp_path)
+
+
+def test_a_backslash_template_is_reported_as_a_separator_problem(tmp_path):
+    r"""Catalog paths are posix-style on every platform.
+
+    Worth its own message because on Windows `<src_dir>\..\x` would otherwise be
+    one opaque filename rather than the traversal it is.
+    """
+    with pytest.raises(config_loader.ConfigError, match="must use '/' separators"):
+        _expand(r"<src_dir>\EWMRS\colormaps.json", src_dir=tmp_path)
+
+
+def test_a_non_string_path_value_names_its_key(tmp_path):
+    with pytest.raises(config_loader.ConfigError, match=r"sample\.yaml: paths\[0\]: expected a path string"):
+        _expand(None, src_dir=tmp_path)
+
+
+def test_a_symlink_pointing_out_of_the_root_is_rejected(tmp_path):
+    """What the textual check cannot see, which is why both checks exist."""
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        (root / "escape").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation requires privileges not held here")
+
+    with pytest.raises(config_loader.ConfigError, match="resolves outside <src_dir>"):
+        _expand("<src_dir>/escape/passwd", src_dir=root)
+
+
+@pytest.mark.parametrize("root", ["", ".", "relative/dir"])
+def test_a_root_that_is_not_an_absolute_directory_is_rejected(root):
+    """Otherwise `Path.resolve()` silently falls back to the working directory.
+
+    This is the defect the mandatory leading token exists to prevent, arriving
+    through the other argument: `Path("").resolve()` is the cwd, so an empty root
+    produced a plausible path that moved with the launch directory. Caught here
+    rather than trusted from the caller because the roots come from `util.file`'s
+    import-time bind, the least observable point in the process.
+    """
+    with pytest.raises(config_loader.ConfigError, match="must be an absolute directory"):
+        _expand("<src_dir>/colormaps.json", src_dir=root)
+
+
+def test_a_nul_byte_in_a_path_is_rejected(tmp_path):
+    """On Windows a NUL renders as a space, so this would reach a real other file.
+
+    Rejected here rather than left to the filesystem call: `expand_path` returns a
+    path that may be stored, compared, or logged long before anything opens it, and
+    the eventual error would name neither the catalog nor the key.
+    """
+    with pytest.raises(config_loader.ConfigError, match="NUL byte"):
+        _expand("<src_dir>/color\x00maps.json", src_dir=tmp_path)
+
+
 def test_loaded_config_names_lists_only_the_catalogs_read_from_that_root(config_dir, tmp_path):
     """A startup summary must describe a process without loading 19 catalogs.
 

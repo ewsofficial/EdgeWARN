@@ -7,7 +7,7 @@ import os
 import platform
 import sys
 
-from util.file_config import cleanup_max_age_minutes, cleanup_max_files
+from util.file_config import cleanup_max_age_minutes, cleanup_max_files, colormap_search_path
 from util.io import IOManager
 
 io_manager = IOManager("[Util]")
@@ -43,7 +43,7 @@ def _find_existing_path(candidates, missing_message=None):
     return Path(candidates[0]) if candidates else Path(".")
 
 
-def _define_paths(base_path):
+def _define_paths(base_path, config_dir=None):
     global BASE_DIR
     global DATA_DIR, ALERTS_DIR
     global EDGEWARN_ALERTS_DIR, EDGEWARN_ALERTS_IDS_DIR, EDGEWARN_ALERTS_TS_DIR
@@ -194,11 +194,26 @@ def _define_paths(base_path):
     NEXRAD_LEVEL2_LOW_DIR = NEXRAD_LEVEL2_DIR / "Low"
     NEXRAD_LEVEL2_HIGH_DIR = NEXRAD_LEVEL2_DIR / "High"
     NEXRAD_LEVEL2_MANIFEST_DIR = NEXRAD_LEVEL2_DIR / "manifests"
-    GUI_COLORMAP_JSON = _find_existing_path([
-        Path.cwd() / "colormaps.json",
-        Path(__file__).resolve().parents[1] / "EWMRS" / "colormaps.json",
-        gui_dir / "colormaps.json",
-    ], missing_message="colormaps.json not found in common locations; using relative path 'colormaps.json'")
+    GUI_COLORMAP_JSON = _find_existing_path(
+        colormap_search_path(
+            src_dir=Path(__file__).resolve().parents[1],
+            gui_dir=gui_dir,
+            config_dir=config_dir,
+        ),
+        missing_message="colormaps.json not found in any configured location; using the first candidate",
+    )
+
+
+def _platform_base_dir() -> Path:
+    """Where input data lives when the operator names no directory."""
+    if platform.system() == "Windows":
+        return Path(r"C:\EdgeWARN_input")
+    try:
+        return Path.home() / "EdgeWARN_input"
+    except Exception:
+        # `Path.home()` raises when no home directory can be determined, which is
+        # the container case this fallback was added for.
+        return Path(r"/workspaces/EdgeWARN_input")
 
 
 def initialize_filesystem(base_dir=None):
@@ -206,13 +221,24 @@ def initialize_filesystem(base_dir=None):
         _define_paths(Path(base_dir))
 
 
-if platform.system() == "Windows":
-    _define_paths(Path(r"C:\EdgeWARN_input"))
-else:
-    try:
-        _define_paths(Path.home() / "EdgeWARN_input")
-    except Exception:
-        _define_paths(Path(r"/workspaces/EdgeWARN_input"))
+# Phase one of base-directory resolution. Binding 113 path globals is a module-
+# scope side effect, and it cannot become lazy cheaply: 36 modules read them as
+# `fs.<NAME>` attributes across 250-odd sites. So instead of deferring the bind,
+# the bind is made already-correct -- `get_base_dir_arg` is a throwaway parser
+# over `sys.argv` that answers `--base_dir` before the real parser exists, which
+# closes the window in which a path read between this import and the entry
+# point's `initialize_filesystem` call would have pointed at the platform
+# default. Phase two is `initialize_filesystem`, still needed for a spawned
+# child (no argv) and for a programmatic caller that passes a directory.
+#
+# `--config-dir` is peeked the same way, and only here: this bind reads
+# `filesystem.yaml` for the colormap search path before `export_config_root` has
+# published anything. `initialize_filesystem` does not pass it, because by then
+# the exported EDGEWARN_CONFIG_DIR is the more current answer.
+_define_paths(
+    Path(IOManager.get_base_dir_arg() or _platform_base_dir()),
+    config_dir=IOManager.get_config_dir_arg(),
+)
 
 
 def latest_files(directory, count):

@@ -10,16 +10,34 @@ full JSON Schema implementation. It supports exactly the keywords used by
 ``required``, ``additionalProperties``, ``items``, ``minItems``,
 ``maxItems``, ``uniqueItems``, ``minimum``, ``maximum``, ``exclusiveMinimum``,
 ``exclusiveMaximum``, ``const``, ``enum``, and ``pattern``. Any other keyword
-in a schema is a startup error (``_UNSUPPORTED_KEYWORDS`` guard) rather than
+in a schema is a startup error (``_KNOWN_SCHEMA_KEYWORDS`` guard) rather than
 a silently-unenforced constraint, so a schema author who reaches for
 ``oneOf``/``$ref``/``format`` finds out immediately instead of shipping a
 schema that looks stricter than it is.
+
+``jsonschema`` is deliberately not used, which is a departure from
+``plans/source-configuration-extraction-plan.md`` as originally written; that
+document has been corrected. Three reasons, in order of weight. ``src/config/
+loader.js`` implements the same walker over the same keyword set, and
+cross-language parity is a requirement -- adopting a full validator here alone
+would mean Python quietly accepting ``$ref``/``oneOf``/``format`` schemas that
+Node still rejects. The unknown-keyword guard is a property a real validator
+would remove rather than add: ``jsonschema`` ignores keywords it does not
+recognize, so a misspelled ``requred`` would silently enforce nothing. And
+``environment.yml`` is the repository's only dependency manifest, and it does
+not list ``jsonschema``; it being importable from some ambient interpreter is
+not the same as it being declared. Revisit if a schema genuinely needs
+composition keywords -- at that point the JS walker has to grow too, and taking
+the dependency on both sides is the cheaper answer.
 
 Precedence for locating the config root, highest first:
 1. An explicit ``config_dir`` argument (typically sourced from a ``--config-dir``
    CLI flag).
 2. The ``EDGEWARN_CONFIG_DIR`` environment variable.
 3. A ``config/`` directory found by walking up from this file's location.
+
+Path values inside a catalog are expanded by :func:`expand_path` against an
+explicit token allowlist, never against the working directory.
 """
 
 from __future__ import annotations
@@ -27,7 +45,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from pathlib import Path
+from collections.abc import Mapping
+from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any
 
@@ -161,6 +180,92 @@ def export_config_root(cli_dir: str | os.PathLike[str] | None = None) -> Path:
 def repo_root(cli_dir: str | os.PathLike[str] | None = None) -> Path:
     """The repository root, derived as the parent of the config root."""
     return config_root(cli_dir).parent
+
+
+# The complete set of tokens a catalog path value may begin with. An allowlist
+# rather than a scan for bare `<`/`>`: six comment lines and one regex value
+# (`synoptic_rap.yaml`'s named capture groups) would false-positive. Runtime format
+# fields are spelled `{}` instead (`mrms_goes.yaml:42-56`, `metar.yaml:13`,
+# `integration.yaml:149-150`), so the two classes stay visually distinct and only
+# these three are ever expanded at load time. Mirrored by `PATH_TOKENS` in
+# `src/config/loader.js`.
+PATH_TOKENS: tuple[str, ...] = ("base_dir", "gui_dir", "src_dir")
+
+
+def expand_path(
+    template: str,
+    roots: Mapping[str, str | os.PathLike[str]],
+    *,
+    filename: str,
+    dotted_path: str,
+) -> Path:
+    """Expand a leading ``<token>/`` in a catalog path value against ``roots``.
+
+    Tokens exist so a catalog can name a location whose absolute path it cannot
+    know: the runtime base directory is chosen per machine, and ``<src_dir>``
+    points into the installed tree. The token is mandatory and must lead --
+    a bare relative path would silently resolve against the working directory,
+    which is the defect this replaces.
+
+    ``roots`` supplies only the tokens meaningful in the calling context, so
+    naming one that is not (``<base_dir>`` where no base directory exists) is an
+    error rather than an empty expansion.
+
+    Traversal is rejected twice over, because the two checks fail on different
+    inputs. The textual check catches ``..`` and a leading ``/`` before any
+    filesystem access, so a malicious catalog cannot even probe. The containment
+    check afterwards catches what text cannot: a symlink inside the root that
+    points out of it.
+    """
+    if not isinstance(template, str):
+        raise ConfigError(filename, dotted_path, f"expected a path string, got {template!r}")
+
+    # Checked before the prefix match so a Windows-style template is reported as
+    # the separator problem it is, rather than as a malformed remainder.
+    if "\\" in template:
+        raise ConfigError(filename, dotted_path, f"{template!r} must use '/' separators")
+
+    # A NUL is never valid in a path and does not survive to a useful error on its
+    # own: Windows silently renders it as a space, so `a\0b.json` would resolve to
+    # a real but different file rather than failing.
+    if "\x00" in template:
+        raise ConfigError(filename, dotted_path, "path contains a NUL byte")
+
+    match = re.match(r"<([a-z_]+)>/", template)
+    if match is None:
+        expected = ", ".join(f"<{token}>/" for token in PATH_TOKENS)
+        raise ConfigError(filename, dotted_path, f"{template!r} must begin with one of {expected}")
+
+    token = match.group(1)
+    if token not in PATH_TOKENS:
+        raise ConfigError(filename, dotted_path, f"<{token}> is not an expandable path token")
+    if token not in roots:
+        raise ConfigError(filename, dotted_path, f"<{token}> has no value in this context")
+
+    remainder = template[match.end():]
+    parts = PurePosixPath(remainder).parts if remainder else ()
+    if not parts or PurePosixPath(remainder).is_absolute() or ".." in parts:
+        raise ConfigError(
+            filename, dotted_path, f"{remainder!r} is not a relative path below <{token}>"
+        )
+
+    # An empty or non-absolute root would make `Path.resolve()` fall back to the
+    # working directory, reintroducing exactly the defect the mandatory token
+    # exists to prevent -- and silently, since the result is a plausible path.
+    # Checked here rather than trusted from the caller because the roots come from
+    # `util.file`'s import-time bind, which is the earliest and least observable
+    # point in the process.
+    given_root = roots[token]
+    if not given_root or not Path(given_root).is_absolute():
+        raise ConfigError(
+            filename, dotted_path, f"<{token}> must be an absolute directory, got {given_root!r}"
+        )
+
+    root = Path(given_root).resolve()
+    resolved = (root / remainder).resolve()
+    if not resolved.is_relative_to(root):
+        raise ConfigError(filename, dotted_path, f"{template!r} resolves outside <{token}>")
+    return resolved
 
 
 def _freeze(value: Any) -> Any:

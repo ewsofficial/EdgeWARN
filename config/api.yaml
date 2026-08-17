@@ -22,26 +22,26 @@
 schema_version: 1
 
 server:
-  host: 0.0.0.0                         # server.js:7
-  port: 5000                            # config/index.js:65, env PORT
-  debug_port: 3001                      # server.js:8, --debug-server
-  request_timeout_ms: 30000             # config/index.js:66; responds 503 (security.js:19)
+  host: 0.0.0.0                         # server.js:8
+  port: 5000                            # config/index.js:93, env PORT
+  debug_port: 3001                      # server.js:7, --debug-server
+  request_timeout_ms: 30000             # config/index.js:94; responds 503 (security.js:21)
   static_root: src/EWMRS                # app.js:26, joined to the src/ directory
-  openapi_spec: openapi/v3.yaml         # app.js:22, relative to src/api/
-  # app.js:29. In production the real package version is withheld and this label
+  openapi_spec: openapi/v3.yaml         # app.js:23, relative to src/api/
+  # app.js:33. In production the real package version is withheld and this label
   # is served instead.
   production_version_label: '2.x'
 
-  # routes/v3/index.js:37, self-reported at GET /api/v3. Duplicated as
+  # routes/v3/index.js:40, self-reported at GET /api/v3. Duplicated as
   # `info.version` in openapi/v3.yaml, and unrelated to the package version above.
   v3_api_version: '3.0.0'
 
 base_dir:
   windows: 'C:\EdgeWARN_input'
   posix: ~/EdgeWARN_input
-  # config/index.js:55-60. All four inputs are read and compared after
-  # path.resolve; two that disagree raise 'Conflicting base directory settings'
-  # rather than one silently winning.
+  # config/index.js:85-90, inside createConfig. All four inputs are read and
+  # compared after path.resolve; two that disagree raise 'Conflicting base
+  # directory settings' rather than one silently winning.
   derived: {data: <base_dir>/data, gui: <base_dir>/gui, wpc: <base_dir>/wpc}
 
 security:
@@ -54,7 +54,7 @@ security:
   # deliberately, per deployment.
   #
   # The schema constrains each entry to a bare scheme://host[:port], which is what
-  # `parseOrigins` (config/index.js:37-41) already enforces at runtime by
+  # `parseOrigins` (config/index.js:41) already enforces at runtime by
   # requiring `url.origin === origin`. It had been a plain string array, so the
   # catalog accepted the `*` the code rejects -- documenting a weaker policy than
   # the one that actually runs.
