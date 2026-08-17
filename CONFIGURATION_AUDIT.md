@@ -36,7 +36,6 @@ Legend for "Override" column:
 | `--end` | *required* | process_historical.py (line 126) |
 | `--lat` | `[20, 55]` | process_historical.py (line 127) |
 | `--lon` | `[-130, -60]` | process_historical.py (line 128) |
-| `--output` | `stormcell_test.json` | process_historical.py (line 129) |
 
 ### `src/common/ingest/nexrad/pipeline/__init__.py` — NEXRAD pipeline CLI
 | Flag | Default | Line |

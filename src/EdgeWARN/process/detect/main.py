@@ -89,7 +89,6 @@ def main(
     pt_new,
     lat_bounds: tuple,
     lon_bounds: tuple,
-    json_output,
     detection_config: DetectionConfig | None = None,
     radar_old_obj=None,
     ps_old_obj=None,

@@ -137,7 +137,6 @@ def test_single_frame_detects_current_radar_and_updates_index(monkeypatch, tmp_p
             None,
             (20, 55),
             (-130, -60),
-            tmp_path / "unused.json",
             cleanup_stormcells=False,
         )
 
@@ -173,7 +172,7 @@ def test_single_frame_keeps_newer_radar_when_optional_inputs_are_missing(monkeyp
 
         output_path, _ = detect_main.main(
             old_radar, new_radar, None, None, None, None,
-            (20, 55), (-130, -60), tmp_path / "unused.json", cleanup_stormcells=False,
+            (20, 55), (-130, -60), cleanup_stormcells=False,
         )
 
         assert detector.call_args.args[0] == new_radar
@@ -379,7 +378,6 @@ def _historical_args(tmp_path, start, end):
         end=end.isoformat(),
         lat=[20, 55],
         lon=[-130, -60],
-        output=str(tmp_path / "historical.json"),
         base_dir=tmp_path,
         profile=False,
         disable_ctam=False,

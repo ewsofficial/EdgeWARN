@@ -98,7 +98,7 @@ The GOES render path renders each single-channel layer through the shared EWMRS 
 Current CLI coverage:
 
 - `run.py`: `--lat_limits`, `--lon_limits`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
-- `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--output` (compatibility arg; final runtime artifacts still land under `<BASE_DIR>/data/stormcells`), `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
 - `common/ingest/nws/zone_sync.py`: `--assets-dir`, `--zone-types`, `--timeout-seconds`, `--max-retries`, `--max-workers`, `--pause-seconds`, `--no-progress`, `--apply`, `--report-path`
 
 ## Additional References

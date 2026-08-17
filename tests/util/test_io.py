@@ -241,7 +241,6 @@ class TestIOManager:
             assert args.end == '2024-01-01T01:00:00'
             assert args.lat == [20, 55]
             assert args.lon == [-130, -60]
-            assert args.output == 'stormcell_test.json'
             assert args.base_dir is None
 
     def test_get_historical_args_common_flags(self):

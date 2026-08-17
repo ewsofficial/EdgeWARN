@@ -19,7 +19,6 @@
     "--lon_limits",
     "--min-seed-percentage",
     "--mrms-core-only",
-    "--output",
     "--profile",
     "--refl-threshold",
     "--start"
