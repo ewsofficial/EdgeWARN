@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { configRoot, loadConfig, repoRoot } from '../../config/loader.js';
+import { configRoot, getProvenance, loadConfig, repoRoot } from '../../config/loader.js';
 
 // package.json is the sole owner of the version. This was a literal default,
 // which agreed with the manifest only until one of the two was bumped.
@@ -74,6 +74,7 @@ export function createConfig({ env = process.env, argv = process.argv.slice(2), 
   const selectedConfigDir = configDirCli || configDirEnv;
   const api = loadConfig('api', { configDir: selectedConfigDir });
   const resolvedConfigRoot = configRoot(selectedConfigDir);
+  const apiProvenance = getProvenance('api', { configDir: selectedConfigDir });
   const canonicalCli = oneValue(readFlag(argv, ['--base-dir']), '--base-dir');
   const deprecatedCli = oneValue(readFlag(argv, ['--base_dir']), '--base_dir');
   const canonicalEnv = env.EDGEWARN_BASE_DIR;
@@ -86,6 +87,29 @@ export function createConfig({ env = process.env, argv = process.argv.slice(2), 
   const requestTimeoutMs = parseInteger(env.REQUEST_TIMEOUT_MS, api.server.request_timeout_ms, 'REQUEST_TIMEOUT_MS', { minimum: 1 });
   const rateLimitMaxSec = parseInteger(env.RATE_LIMIT_MAX_SEC, api.rate_limits.per_second.max, 'RATE_LIMIT_MAX_SEC');
   const rateLimitMaxMin = parseInteger(env.RATE_LIMIT_MAX_MIN, api.rate_limits.per_minute.max, 'RATE_LIMIT_MAX_MIN');
+  const activeOverrides = [
+    ...(configDirCli ? ['--config-dir'] : configDirEnv ? ['EDGEWARN_CONFIG_DIR'] : []),
+    ...(canonicalCli ? ['--base-dir'] : canonicalEnv ? ['EDGEWARN_BASE_DIR'] : deprecatedCli ? ['--base_dir'] : deprecatedEnv ? ['BASE_DIR'] : []),
+    ...(env.PORT === undefined ? [] : ['PORT']),
+    ...(env.REQUEST_TIMEOUT_MS === undefined ? [] : ['REQUEST_TIMEOUT_MS']),
+    ...(env.RATE_LIMIT_MAX_SEC === undefined ? [] : ['RATE_LIMIT_MAX_SEC']),
+    ...(env.RATE_LIMIT_MAX_MIN === undefined ? [] : ['RATE_LIMIT_MAX_MIN']),
+    ...(env.ALLOWED_ORIGINS === undefined ? [] : ['ALLOWED_ORIGINS']),
+    ...(env.TRUST_PROXY_IPS === undefined && env.TRUST_PROXY === undefined ? [] : [env.TRUST_PROXY_IPS === undefined ? 'TRUST_PROXY' : 'TRUST_PROXY_IPS']),
+  ];
+  const diagnostics = Object.freeze({
+    source: Object.freeze({ file: apiProvenance.path, schemaVersion: apiProvenance.schema_version, root: resolvedConfigRoot }),
+    overrides: Object.freeze(activeOverrides),
+    effective: Object.freeze({
+      baseDir,
+      port,
+      requestTimeoutMs,
+      rateLimits: Object.freeze({ perSecond: rateLimitMaxSec, perMinute: rateLimitMaxMin }),
+      allowedOriginCount: env.ALLOWED_ORIGINS === undefined ? api.security.allowed_origins.length : parseOrigins(env.ALLOWED_ORIGINS).length,
+      renderProductCount: api.product_catalog.entries,
+      radarProductCount: api.validation.radar_products.length,
+    }),
+  });
   return Object.freeze({
     baseDir,
     dataDir: resolveRuntimeDirectory(baseDir, api.base_dir.derived.data, 'data'),
@@ -94,6 +118,7 @@ export function createConfig({ env = process.env, argv = process.argv.slice(2), 
     configDir: resolvedConfigRoot,
     repoDir: repoRoot(selectedConfigDir),
     api,
+    diagnostics,
     port, packageVersion, isProduction: env.NODE_ENV === 'production', requestTimeoutMs,
     allowedOrigins: parseOrigins(env.ALLOWED_ORIGINS === undefined ? api.security.allowed_origins : env.ALLOWED_ORIGINS),
     trustProxy: parseTrustProxy(env.TRUST_PROXY_IPS || env.TRUST_PROXY || api.security.trust_proxy, env),

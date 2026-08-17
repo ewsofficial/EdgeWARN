@@ -21,7 +21,14 @@ describe('unified API app', () => {
     expect(root.body.links.api).toBe('/api/v3');
     await request(app).get('/api/v2').expect(200).expect((response) => expect(response.body.version).toBe(root.body.version));
     await request(app).get('/robots.txt').expect(200).expect('Content-Type', /text\/plain/);
-    await request(app).get('/health/ready').expect(200);
+    const live = await request(app).get('/health/live').expect(200);
+    expect(live.body.config).toMatchObject({
+      source: { schemaVersion: 1 },
+      overrides: ['EDGEWARN_BASE_DIR', 'RATE_LIMIT_MAX_SEC', 'RATE_LIMIT_MAX_MIN'],
+      effective: { baseDir, renderProductCount: 31, radarProductCount: 7 },
+    });
+    const ready = await request(app).get('/health/ready').expect(200);
+    expect(ready.body.config).toEqual(live.body.config);
     const cells = await request(app).get('/api/v3/cells').expect(200);
     expect(cells.body.data).toEqual(['4']);
     expect(cells.body.meta.requestId).toBeUndefined();
