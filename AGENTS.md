@@ -110,7 +110,6 @@ Supported historical flags include:
 - `--end`
 - `--lat`
 - `--lon`
-- `--output`
 - `--base_dir` / `--base-dir`
 - `--profile`
 - `--disable-ctam`

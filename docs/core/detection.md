@@ -28,20 +28,19 @@ main(
     pt_new,
     lat_bounds,
     lon_bounds,
-    json_output,
+    detection_config=None,    # DetectionConfig; loaded from detection.yaml when omitted
     radar_old_obj=None,       # cached prior-radar dataset, optional
     ps_old_obj=None,          # cached prior-ProbSevere dataset, optional
     pt_old_obj=None,          # cached prior-PrecipType dataset, optional
     disable_tracking=False,
     disable_polygon_expansion=False,
     cleanup_stormcells=True,
-    refl_threshold=37.5,
-    min_seed_percentage=0.001,
-    drop_offset=10.0,
 )
 ```
 
-`json_output` is accepted by the historical pipeline call path, but the detector currently writes its persisted runtime artifact to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json`. It does not use `json_output` to relocate the final saved file.
+The detector writes its persisted runtime artifact to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json`; callers cannot redirect it. It returns a `(path, cached_datasets)` tuple, or `(None, None)` when no radar frame is available.
+
+`refl_threshold`, `min_seed_percentage` and `drop_offset` are carried on `detection_config` rather than passed individually.
 
 `disable_polygon_expansion` skips the ProbSevere polygon-to-radar gate mapping and watershed-style expansion path, using the raw ProbSevere geometry directly instead.
 

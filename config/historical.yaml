@@ -1,6 +1,6 @@
 # historical.yaml — Audit §1
 #
-# `lat`, `lon` and `output` are consumed through `IOManager.get_historical_args`,
+# `lat` and `lon` are consumed through `IOManager.get_historical_args`,
 # which overlays them onto CLI flags so a flag still outranks this file. The
 # remaining keys have no flag and are consumed through
 # src/EdgeWARN/historical_config.py. Every key below is the single owner of its
@@ -27,7 +27,6 @@ historical:
   # narrow 180 cap here would have rejected an operator writing [230, 300],
   # which handler.py handles correctly.
   lon: [-130, -60]
-  output: stormcell_test.json
   # Cursor advance per replay iteration in process_historical.py, applied on every
   # branch of the scan loop.
   step_minutes: 1

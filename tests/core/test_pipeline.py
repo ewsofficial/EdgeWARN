@@ -82,7 +82,6 @@ def test_historical_pipeline_preserves_cell_and_stormcell_dirs(tmp_path):
             dt=pipeline.datetime(2024, 1, 1, 12, 0, tzinfo=pipeline.timezone.utc),
             lat_limits=(20, 55),
             lon_limits=(-130, -60),
-            json_output="stormcell_test.json",
             detection_config=DetectionConfig.from_yaml(),
         )
 
@@ -120,7 +119,6 @@ def test_historical_pipeline_reports_incomplete_when_staged_inputs_are_missing(t
             dt=pipeline.datetime(2024, 1, 1, 12, 0, tzinfo=pipeline.timezone.utc),
             lat_limits=(20, 55),
             lon_limits=(-130, -60),
-            json_output="stormcell_test.json",
             detection_config=DetectionConfig.from_yaml(),
         )
 

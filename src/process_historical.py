@@ -56,8 +56,7 @@ def main():
 
     lat_limits = tuple(args.lat)
     lon_limits = tuple(args.lon)
-    json_output = Path(args.output)
-    
+
     # Initialize scheduler
     checker = MRMSUpdateChecker(verbose=True)
     
@@ -118,7 +117,6 @@ def main():
                 latest_common,
                 lat_limits,
                 lon_limits,
-                json_output,
                 profile=args.profile,
                 io_manager=io_manager,
                 disable_ctam=args.disable_ctam,

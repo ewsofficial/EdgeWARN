@@ -83,10 +83,6 @@
     "--lon": {
       "default": null,
       "action": null
-    },
-    "--output": {
-      "default": null,
-      "action": null
     }
   },
   "common/ingest/nexrad/main.py": {

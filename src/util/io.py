@@ -148,7 +148,6 @@ class IOManager:
         parser.add_argument("--end", type=str, required=True, help="End timestamp (ISO)")
         parser.add_argument("--lat", nargs=2, type=float, default=None, help="Latitude limits (min max) (default: from historical.yaml)")
         parser.add_argument("--lon", nargs=2, type=float, default=None, help="Longitude limits (min max) (default: from historical.yaml)")
-        parser.add_argument("--output", type=str, default=None, help="Output JSON file (default: from historical.yaml)")
         self._add_common_processing_args(parser)
         args = parser.parse_args()
         self._export_config_dir(args)
@@ -156,7 +155,6 @@ class IOManager:
         historical_cfg = config_loader.load_config("historical", config_dir=args.config_dir)["historical"]
         args.lat = overlay.resolve(args.lat, yaml_value=list(historical_cfg["lat"]), key="historical.lat")
         args.lon = overlay.resolve(args.lon, yaml_value=list(historical_cfg["lon"]), key="historical.lon")
-        args.output = overlay.resolve(args.output, yaml_value=historical_cfg["output"], key="historical.output")
         self._resolve_common_processing_args(args)
         self._validate_common_args(args)
         return args

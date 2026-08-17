@@ -9,11 +9,10 @@
     "historical": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["lat", "lon", "output", "step_minutes", "throttle_seconds", "cleanup_max_files"],
+      "required": ["lat", "lon", "step_minutes", "throttle_seconds", "cleanup_max_files"],
       "properties": {
         "lat": { "type": "array", "items": { "type": "number", "minimum": -90, "maximum": 90 }, "minItems": 2, "maxItems": 2 },
         "lon": { "type": "array", "items": { "type": "number", "minimum": -180, "maximum": 360 }, "minItems": 2, "maxItems": 2 },
-        "output": { "type": "string" },
         "step_minutes": { "type": "integer", "minimum": 1 },
         "throttle_seconds": { "type": "number", "minimum": 0 },
         "cleanup_max_files": { "type": ["integer", "null"], "minimum": 0 }

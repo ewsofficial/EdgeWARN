@@ -62,11 +62,11 @@ python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:
 
 Key realtime flags include `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
-Historical processing supports `--output`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
+Historical processing supports `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
 `run.py` normalizes `--lon_limits` into the `0-360` domain internally.
 
-`--output` is currently a compatibility argument only. Historical runs still persist the final stormcell artifacts to `<BASE_DIR>/data/stormcells/` using the runtime timestamped filenames, even though `process_historical.py` still checks whether the provided output path exists after each run.
+Historical runs persist the final stormcell artifacts to `<BASE_DIR>/data/stormcells/` using the runtime timestamped filenames.
 
 ## Runtime Base Directory
 

@@ -127,7 +127,6 @@ Common optional flags:
 - `--end <ISO8601>` required
 - `--lat <LAT_MIN> <LAT_MAX>` default `20 55`
 - `--lon <LON_MIN> <LON_MAX>` default `-130 -60`
-- `--output <path>` compatibility argument; currently does not redirect the final runtime stormcell output path
 - `--base_dir` / `--base-dir`
 - `--profile`
 - `--disable-ctam`
@@ -139,7 +138,7 @@ Common optional flags:
 
 Historical-processing note:
 
-- `process_historical.py` still writes its actual stormcell products to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json` through the normal detection and integration pipeline. `--output` is parsed and later checked for existence logging, but is not currently used to relocate the final persisted runtime artifact.
+- `process_historical.py` writes its stormcell products to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json` through the normal detection and integration pipeline.
 
 ## Maintaining NWS Zone Assets
 

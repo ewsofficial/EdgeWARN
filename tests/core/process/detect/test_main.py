@@ -26,7 +26,6 @@ def test_detect_main_preserves_stormcell_dir_when_cleanup_disabled(tmp_path):
         None,
         (20, 55),
         (-130, -60),
-        tmp_path / "stormcell_test.json",
         DetectionConfig.from_yaml(),
         cleanup_stormcells=False,
     )
@@ -52,7 +51,6 @@ def test_detect_main_cleans_stormcell_dir_when_cleanup_enabled(tmp_path):
         None,
         (20, 55),
         (-130, -60),
-        tmp_path / "stormcell_test.json",
         DetectionConfig.from_yaml(),
         cleanup_stormcells=True,
     )
@@ -89,7 +87,6 @@ def test_detect_main_single_frame_generates_vectors_from_history(tmp_path):
             None,
             (20, 55),
             (-130, -60),
-            tmp_path / "stormcell_test.json",
             DetectionConfig.from_yaml(),
             cleanup_stormcells=False,
         )
@@ -183,7 +180,6 @@ def test_detect_main_dual_frame_preserves_previous_snapshot_for_vectors(tmp_path
             pt_new,
             (20, 55),
             (-130, -60),
-            tmp_path / "stormcell_test.json",
             DetectionConfig.from_yaml(),
             cleanup_stormcells=False,
         )
