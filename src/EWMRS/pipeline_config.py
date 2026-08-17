@@ -71,6 +71,7 @@ def goes_cleanup_min_interval_seconds() -> float:
         None,
         env_names=(GOES_CLEANUP_MIN_INTERVAL_ENV,),
         yaml_value=float(_section("render")["goes_cleanup_min_interval_seconds"]),
+        key="ewmrs_pipeline.render.goes_cleanup_min_interval_seconds",
     )
     return max(0.0, float(configured))
 
@@ -105,7 +106,14 @@ def worker_budget_mb(phase_name: str) -> float:
     """
     budgets = _section("workers")["budget_mb"]
     default = budgets["goes"] if phase_name.upper().startswith("GOES") else budgets["default"]
-    return float(resolve(None, env_names=(WORKER_BUDGET_MB_ENV,), yaml_value=float(default)))
+    return float(
+        resolve(
+            None,
+            env_names=(WORKER_BUDGET_MB_ENV,),
+            yaml_value=float(default),
+            key="ewmrs_pipeline.workers.budget_mb",
+        )
+    )
 
 
 def worker_reserve_mb() -> float:
@@ -115,6 +123,7 @@ def worker_reserve_mb() -> float:
             None,
             env_names=(WORKER_RESERVE_MB_ENV,),
             yaml_value=float(_section("workers")["reserve_mb"]),
+            key="ewmrs_pipeline.workers.reserve_mb",
         )
     )
 

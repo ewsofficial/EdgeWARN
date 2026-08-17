@@ -187,6 +187,7 @@ def worker_pool_size() -> int:
         None,
         env_names=("NEXRAD_WORKER_POOL_SIZE",),
         yaml_value=_nexrad()["concurrency"]["worker_pool_size"],
+        key="nexrad.concurrency.worker_pool_size",
     )
 
 
@@ -196,6 +197,7 @@ def worker_recycle_interval() -> int:
         None,
         env_names=("NEXRAD_WORKER_RECYCLE_INTERVAL",),
         yaml_value=_nexrad()["concurrency"]["worker_recycle_interval"],
+        key="nexrad.concurrency.worker_recycle_interval",
     )
 
 
@@ -205,6 +207,7 @@ def worker_timeout_seconds() -> float:
         None,
         env_names=("NEXRAD_WORKER_TIMEOUT_SECONDS",),
         yaml_value=_nexrad()["concurrency"]["worker_timeout_seconds"],
+        key="nexrad.concurrency.worker_timeout_seconds",
     )
 
 
