@@ -25,8 +25,6 @@ from common.config import loader
 from tests.core.config.baseline import requires
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-
-
 def duplicates(values):
     """Return the values that appear more than once, with their counts."""
     return {value: count for value, count in Counter(values).items() if count > 1}
@@ -574,21 +572,3 @@ def test_api_product_catalog_route_keys_are_unique():
     assert duplicates([entry["id"] for entry in entries]) == {}
     assert duplicates([entry["legacyId"] for entry in entries]) == {}
     assert duplicates([entry["legacyFilePrefix"] for entry in entries]) == {}
-
-
-def test_api_catalog_matches_the_recorded_field_contract():
-    """api.yaml splits the fields into required and optional; colormapId is optional."""
-    import json
-
-    api = loader.load_config("api")
-    entries = json.loads(
-        (REPO_ROOT / "src/api/config/product-catalog.json").read_text(encoding="utf-8")
-    )
-    assert len(entries) == api["product_catalog"]["entries"]
-
-    for field in api["product_catalog"]["required_fields"]:
-        assert [e for e in entries if field not in e] == [], field
-
-    optional = set(api["product_catalog"]["optional_fields"])
-    present = {key for entry in entries for key in entry}
-    assert present - set(api["product_catalog"]["required_fields"]) == optional

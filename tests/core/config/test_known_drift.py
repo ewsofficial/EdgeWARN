@@ -1913,25 +1913,6 @@ def test_ewmrs_worker_memory_env_vars_still_outrank_the_catalog():
     assert "EWMRS_WORKER" not in source
 
 
-def test_ewmrs_worker_strategy_is_pinned_by_the_schema_not_an_accessor():
-    """DECISION PRESERVED: `workers.strategy` has exactly one implementation.
-
-    `_adaptive_process_worker_count` is the only strategy in the tree. Rather
-    than an accessor that raises on anything else -- unreachable, since the
-    loader would have to accept the value first -- the schema carries a
-    single-member enum, so an unknown strategy fails at load with the file and
-    key named.
-    """
-    recorded = _ewmrs_pipeline_yaml()
-    assert recorded["workers"]["strategy"] == "adaptive_memory"
-
-    schema = json.loads(
-        (REPO_ROOT / "config/schema/ewmrs_pipeline.schema.json").read_text(encoding="utf-8")
-    )
-    strategy_schema = schema["properties"]["workers"]["properties"]["strategy"]
-    assert strategy_schema == {"enum": ["adaptive_memory"]}
-
-
 def test_ewmrs_numeric_thread_caps_are_one_value_across_a_fixed_list():
     """RESOLVED: four BLAS-family variables share one cap, set to 1.
 

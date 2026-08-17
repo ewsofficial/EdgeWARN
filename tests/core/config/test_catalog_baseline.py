@@ -265,8 +265,6 @@ def test_ewmrs_chunk_format_descriptor_baseline():
         "ewmrs_chunk_format",
         {
             "tile_size": render_config.TILE_SIZE,
-            "tile_grid_rows": render_config.TILE_GRID_ROWS,
-            "tile_grid_cols": render_config.TILE_GRID_COLS,
             "chunk_schema_version": render_config.CHUNK_SCHEMA_VERSION,
             "descriptor": render_config.chunk_format_descriptor(),
             "descriptor_with_media_type": render_config.chunk_format_descriptor(

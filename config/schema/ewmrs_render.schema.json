@@ -3,23 +3,21 @@
   "title": "ewmrs_render.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "tiles", "chunk_format", "timestamp_format", "mrms_layers", "goes_layers", "goes_transform", "nexrad_gui"],
+  "required": ["schema_version", "tiles", "chunk_format", "mrms_layers", "goes_layers", "goes_transform", "nexrad_gui"],
   "properties": {
     "schema_version": { "const": 1 },
     "tiles": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tile_size", "grid_rows", "grid_cols"],
+      "required": ["tile_size"],
       "properties": {
-        "tile_size": { "type": "integer", "exclusiveMinimum": 0 },
-        "grid_rows": { "type": "integer", "exclusiveMinimum": 0 },
-        "grid_cols": { "type": "integer", "exclusiveMinimum": 0 }
+        "tile_size": { "type": "integer", "exclusiveMinimum": 0 }
       }
     },
     "chunk_format": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["wire_version", "format_version", "encoding", "data_type", "channels", "value_kind", "no_data", "file_suffix", "compression", "media_type", "bytes_per_component", "pixel_row_order", "grid_origin", "filename_pattern", "gzip_compress_level", "gzip_mtime"],
+      "required": ["wire_version", "format_version", "encoding", "data_type", "channels", "value_kind", "no_data", "file_suffix", "compression", "media_type", "bytes_per_component", "pixel_row_order", "grid_origin"],
       "properties": {
         "wire_version": { "type": "integer" },
         "format_version": { "type": "integer" },
@@ -33,13 +31,9 @@
         "media_type": { "type": "string" },
         "bytes_per_component": { "type": "integer", "minimum": 1 },
         "pixel_row_order": { "type": "string" },
-        "grid_origin": { "type": "string" },
-        "filename_pattern": { "type": "string" },
-        "gzip_compress_level": { "type": "integer", "minimum": 0, "maximum": 9 },
-        "gzip_mtime": { "type": "integer", "minimum": 0 }
+        "grid_origin": { "type": "string" }
       }
     },
-    "timestamp_format": { "type": "string" },
     "mrms_layers": {
       "type": "array",
       "minItems": 1,
@@ -114,16 +108,12 @@
     "nexrad_gui": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["variable_colormaps", "field_magic", "bin_name_pattern", "manifest_name_pattern", "manifest_timestamp_fallback"],
+      "required": ["variable_colormaps"],
       "properties": {
         "variable_colormaps": {
           "type": "object",
           "additionalProperties": { "type": "string" }
-        },
-        "field_magic": { "type": "string" },
-        "bin_name_pattern": { "type": "string" },
-        "manifest_name_pattern": { "type": "string" },
-        "manifest_timestamp_fallback": { "type": "string" }
+        }
       }
     }
   }

@@ -49,12 +49,6 @@ nexrad_gui:
   max_workers: 8
 
 workers:
-  # The CPU/memory arithmetic stays in code; only the budgets, the reserve, and
-  # the no-psutil ceiling are tunable. `adaptive_memory` is the only strategy
-  # implemented, so the schema pins it with a single-member enum -- there is no
-  # accessor for it, because any other value fails to load rather than reaching
-  # code that would ignore it.
-  strategy: adaptive_memory
   budget_mb:
     # GOES workers hold a full-disk ABI array through reprojection.
     goes: 1200.0

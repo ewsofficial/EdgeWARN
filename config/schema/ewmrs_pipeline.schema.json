@@ -32,9 +32,8 @@
     "workers": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["strategy", "budget_mb", "reserve_mb", "psutil_fallback_max", "numeric_thread_caps"],
+      "required": ["budget_mb", "reserve_mb", "psutil_fallback_max", "numeric_thread_caps"],
       "properties": {
-        "strategy": { "enum": ["adaptive_memory"] },
         "budget_mb": {
           "type": "object",
           "additionalProperties": false,

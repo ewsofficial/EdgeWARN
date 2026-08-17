@@ -44,14 +44,6 @@ tracking:
   # whenever the key was present, which was always.
   max_prediction_time_minutes: 6.0
   
-  # Maximum distance for re-acquisition (km)
-  # A new ProbSevere detection within this radius of a predicted cell
-  # will be considered a re-acquisition
-  # UNUSED. Loaded into TrackingConfig but no code consumes it: its former
-  # consumer `_check_reacquisition` was deleted, and gating now runs entirely on
-  # Mahalanobis distance. Kept so removing it stays a deliberate decision.
-  reacquisition_radius_km: 5.0
-  
   # Minimum confidence before termination
   # Confidence decays over time while in prediction mode
   # When confidence drops below this threshold, the storm is terminated

@@ -31,7 +31,7 @@ function methodNotAllowed(openApi) {
 }
 
 export function createV3Router({ analysis, renders, ancillary, openApi, apiConfig }) {
-  const collection = (req, res, items) => { const result = page(items, listOptions(req)); res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.collection}`).json({ data: result.data, meta: { nextCursor: result.nextCursor } }); };
+  const collection = (req, res, items) => { const result = page(items, listOptions(req), apiConfig.pagination); res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.collection}`).json({ data: result.data, meta: { nextCursor: result.nextCursor } }); };
   const resource = (req, res, data) => res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.resource}`).json({ data, meta: {} });
   const geojson = (req, res, data) => res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.resource}`).type('application/geo+json').json(data);
   const send = (req, res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).set({ 'Cache-Control': `public, max-age=${apiConfig.cache_control_max_age.asset}, immutable`, ETag: opened.etag }).type(type); if (req.fresh) { opened.handle.close(); return res.status(304).end(); } res.set('Content-Length', String(opened.size)); if (req.method === 'HEAD') { opened.handle.close(); return res.end(); } opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };

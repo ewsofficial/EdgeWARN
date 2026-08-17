@@ -21,9 +21,10 @@ function assertSegments(segments) {
 }
 
 export class ArtifactRepository {
-  constructor(roots, limits = {}, cache = {}) {
+  constructor(roots, limits = {}, cache = {}, listLimit) {
     this.roots = Object.freeze({ ...roots });
     this.limits = Object.freeze({ ...DEFAULT_LIMITS, ...limits });
+    this.listLimit = listLimit ?? Infinity;
     this.realRoots = new Map();
     this.jsonCache = new LRUCache({
       max: cache.max_entries ?? 256,
@@ -77,7 +78,7 @@ export class ArtifactRepository {
     }
   }
 
-  async list(rootName, segments = [], { limit = 1000 } = {}) {
+  async list(rootName, segments = [], { limit = this.listLimit } = {}) {
     if (segments.length) assertSegments(segments);
     const root = await this.root(rootName);
     const directory = path.join(root, ...segments);
