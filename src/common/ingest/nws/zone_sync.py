@@ -469,13 +469,13 @@ def _resolve_zone_sync_args(args: argparse.Namespace) -> argparse.Namespace:
     zone_sync_cfg = config_loader.load_config("nws", config_dir=args.config_dir)["zone_sync"]
 
     assets_dir_yaml = config_loader.repo_root(args.config_dir) / zone_sync_cfg["assets_dir"]
-    args.assets_dir = overlay.resolve(args.assets_dir, yaml_value=assets_dir_yaml)
-    args.zone_types = overlay.resolve(args.zone_types, yaml_value=list(zone_sync_cfg["zone_types"]))
-    args.timeout_seconds = overlay.resolve(args.timeout_seconds, yaml_value=zone_sync_cfg["timeout_seconds"])
-    args.max_retries = overlay.resolve(args.max_retries, yaml_value=zone_sync_cfg["max_retries"])
-    args.max_workers = overlay.resolve(args.max_workers, yaml_value=zone_sync_cfg["max_workers"])
-    args.pause_seconds = overlay.resolve(args.pause_seconds, yaml_value=zone_sync_cfg["pause_seconds"])
-    args.progress = overlay.resolve(args.progress, yaml_value=zone_sync_cfg["progress"])
+    args.assets_dir = overlay.resolve(args.assets_dir, yaml_value=assets_dir_yaml, key="nws.zone_sync.assets_dir")
+    args.zone_types = overlay.resolve(args.zone_types, yaml_value=list(zone_sync_cfg["zone_types"]), key="nws.zone_sync.zone_types")
+    args.timeout_seconds = overlay.resolve(args.timeout_seconds, yaml_value=zone_sync_cfg["timeout_seconds"], key="nws.zone_sync.timeout_seconds")
+    args.max_retries = overlay.resolve(args.max_retries, yaml_value=zone_sync_cfg["max_retries"], key="nws.zone_sync.max_retries")
+    args.max_workers = overlay.resolve(args.max_workers, yaml_value=zone_sync_cfg["max_workers"], key="nws.zone_sync.max_workers")
+    args.pause_seconds = overlay.resolve(args.pause_seconds, yaml_value=zone_sync_cfg["pause_seconds"], key="nws.zone_sync.pause_seconds")
+    args.progress = overlay.resolve(args.progress, yaml_value=zone_sync_cfg["progress"], key="nws.zone_sync.progress")
     return args
 
 

@@ -198,10 +198,11 @@ def _resolve_cli_args(args):
     args.max_candidate_volumes_per_site = overlay.resolve(
         args.max_candidate_volumes_per_site,
         yaml_value=document["realtime"]["max_candidate_volumes_per_site"],
+        key="nexrad.realtime.max_candidate_volumes_per_site",
     )
     # `cli.sites` is deliberately not overlaid here: --site is a single station
     # for this entry point, so a list default cannot apply to it.
-    args.base_dir = overlay.resolve(args.base_dir, yaml_value=document["cli"]["base_dir"])
+    args.base_dir = overlay.resolve(args.base_dir, yaml_value=document["cli"]["base_dir"], key="nexrad.cli.base_dir")
     return args
 
 

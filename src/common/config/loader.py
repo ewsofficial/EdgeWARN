@@ -366,3 +366,14 @@ def get_provenance(name: str, *, config_dir: str | os.PathLike[str] | None = Non
     if cache_key not in _provenance_cache:
         load_config(name, config_dir=config_dir)
     return dict(_provenance_cache[cache_key])
+
+
+def loaded_config_names(*, config_dir: str | os.PathLike[str] | None = None) -> tuple[str, ...]:
+    """Catalogs this process has actually loaded, in load order.
+
+    Lets a diagnostic report what a process read without asking
+    :func:`get_provenance` for all of ``CONFIG_NAMES``, which would load and
+    validate every catalog just to describe it.
+    """
+    root = str(config_root(config_dir))
+    return tuple(name for cached_root, name in _provenance_cache if cached_root == root)

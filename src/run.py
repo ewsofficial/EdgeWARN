@@ -5,7 +5,7 @@ import time
 import multiprocessing
 
 import util.file as fs
-from common.config import overlay
+from common.config import loader as config_loader, overlay
 from common.ingest.mrms.config import get_check_modifiers
 from EdgeWARN import initialize_runtime
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
@@ -55,6 +55,7 @@ GOES_PAUSE_INGEST_DURING_RENDER = overlay.resolve(
     None,
     env_names=["EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER"],
     yaml_value=GOES_COORDINATION["pause_ingest_during_render"],
+    key="goes_coordination.pause_ingest_during_render",
 )
 MRMS_CORE_ONLY = args.mrms_core_only
 EWMRS_ENABLED = not args.disable_ewmrs and not MRMS_CORE_ONLY
@@ -81,6 +82,31 @@ cycle_config = TandemCycleConfig(
     goes_render_wait_interval_seconds=GOES_RENDER_WAIT_INTERVAL_SECONDS,
 )
 
+
+
+def report_effective_config():
+    """Where this process's configuration actually came from.
+
+    Names only the catalogs already read, not all of ``CONFIG_NAMES``:
+    ``get_provenance`` loads on a miss, so naming every catalog would parse and
+    schema-validate 19 files purely to describe them.
+
+    Reports the winning layer per key rather than the value, so a key holding a
+    credential cannot be disclosed by a diagnostic.
+    """
+    root = config_loader.config_root(args.config_dir)
+    catalogs = ", ".join(
+        f"{name}@{config_loader.get_provenance(name, config_dir=args.config_dir)['schema_version']}"
+        for name in config_loader.loaded_config_names(config_dir=args.config_dir)
+    )
+    print(f"[Scheduler] Config root: {root}")
+    print(f"[Scheduler] Catalogs loaded: {catalogs or 'none'}")
+    active = overlay.overrides()
+    if active:
+        summary = ", ".join(f"{key} <- {layer}" for key, layer in sorted(active.items()))
+    else:
+        summary = "none; every resolved value came from YAML"
+    print(f"[Scheduler] Active overrides: {summary}")
 
 
 def main():
@@ -139,18 +165,25 @@ def main():
             None,
             env_names=["EDGEWARN_CYCLE_MAX_ATTEMPTS"],
             yaml_value=retry_settings["max_attempts"],
+            key="cycle.retry.max_attempts",
         ))),
         initial_backoff_seconds=max(0.0, float(overlay.resolve(
             None,
             env_names=["EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS"],
             yaml_value=retry_settings["initial_backoff_seconds"],
+            key="cycle.retry.initial_backoff_seconds",
         ))),
         max_backoff_seconds=max(0.0, float(overlay.resolve(
             None,
             env_names=["EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS"],
             yaml_value=retry_settings["max_backoff_seconds"],
+            key="cycle.retry.max_backoff_seconds",
         ))),
     )
+    # After the retry policy, not at module scope: the three EDGEWARN_CYCLE_*
+    # variables above resolve here, and module scope re-executes in every child
+    # spawned by the supervisor, which would repeat the block per process.
+    report_effective_config()
     print(
         "[Scheduler] Cycle progress: "
         f"last_successful={last_successful}, "

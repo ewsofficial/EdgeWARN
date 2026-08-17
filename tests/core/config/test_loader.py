@@ -299,3 +299,42 @@ def test_loaded_config_is_recursively_frozen(config_dir):
     with pytest.raises(TypeError):
         loaded["nested"]["items"] = ()
     assert isinstance(loaded["nested"]["items"], tuple)
+
+
+def test_provenance_reports_the_path_and_version_of_a_loaded_catalog(config_dir):
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"schema_version": {"type": "integer"}, "a": {"type": "integer"}},
+    }
+    _write(config_dir, "sample", {"schema_version": 4, "a": 1}, schema)
+
+    provenance = config_loader.get_provenance("sample", config_dir=config_dir)
+
+    assert provenance == {
+        "path": str(config_dir / "sample.yaml"),
+        "schema_version": 4,
+    }
+
+
+def test_loaded_config_names_lists_only_the_catalogs_read_from_that_root(config_dir, tmp_path):
+    """A startup summary must describe a process without loading 19 catalogs.
+
+    `get_provenance` loads on a cache miss, so iterating `CONFIG_NAMES` to
+    report paths would parse and schema-validate every catalog as a side effect
+    of describing them. The answer is per root because the cache is keyed by
+    root: a name loaded under one root must not be reported under another.
+    """
+    schema = {"type": "object", "additionalProperties": False, "properties": {"a": {"type": "integer"}}}
+    _write(config_dir, "sample", {"a": 1}, schema)
+    other_root = _config_dir(tmp_path / "other")
+    _write(other_root, "sample", {"a": 2}, schema)
+
+    config_loader.load_config("sample", config_dir=other_root)
+
+    assert config_loader.loaded_config_names(config_dir=config_dir) == ()
+    assert config_loader.loaded_config_names(config_dir=other_root) == ("sample",)
+
+    config_loader.load_config("sample", config_dir=config_dir)
+
+    assert config_loader.loaded_config_names(config_dir=config_dir) == ("sample",)

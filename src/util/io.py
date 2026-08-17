@@ -101,9 +101,9 @@ class IOManager:
     @staticmethod
     def _resolve_common_processing_args(args):
         detection_cfg = config_loader.load_config("detection", config_dir=args.config_dir)["detection"]
-        args.refl_threshold = overlay.resolve(args.refl_threshold, yaml_value=detection_cfg["refl_threshold"])
-        args.min_seed_percentage = overlay.resolve(args.min_seed_percentage, yaml_value=detection_cfg["min_seed_percentage"])
-        args.drop_offset = overlay.resolve(args.drop_offset, yaml_value=detection_cfg["drop_offset"])
+        args.refl_threshold = overlay.resolve(args.refl_threshold, yaml_value=detection_cfg["refl_threshold"], key="detection.refl_threshold")
+        args.min_seed_percentage = overlay.resolve(args.min_seed_percentage, yaml_value=detection_cfg["min_seed_percentage"], key="detection.min_seed_percentage")
+        args.drop_offset = overlay.resolve(args.drop_offset, yaml_value=detection_cfg["drop_offset"], key="detection.drop_offset")
 
     def get_args(self):
         parser = argparse.ArgumentParser(description="EdgeWARN modifier specification")
@@ -127,8 +127,8 @@ class IOManager:
         self._export_config_dir(args)
 
         runtime_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
-        args.lat_limits = overlay.resolve(args.lat_limits, yaml_value=list(runtime_cfg["lat_limits"]))
-        args.lon_limits = overlay.resolve(args.lon_limits, yaml_value=list(runtime_cfg["lon_limits"]))
+        args.lat_limits = overlay.resolve(args.lat_limits, yaml_value=list(runtime_cfg["lat_limits"]), key="run.lat_limits")
+        args.lon_limits = overlay.resolve(args.lon_limits, yaml_value=list(runtime_cfg["lon_limits"]), key="run.lon_limits")
         self._resolve_common_processing_args(args)
 
         if len(args.lat_limits) != 2 or len(args.lon_limits) != 2:
@@ -154,9 +154,9 @@ class IOManager:
         self._export_config_dir(args)
 
         historical_cfg = config_loader.load_config("historical", config_dir=args.config_dir)["historical"]
-        args.lat = overlay.resolve(args.lat, yaml_value=list(historical_cfg["lat"]))
-        args.lon = overlay.resolve(args.lon, yaml_value=list(historical_cfg["lon"]))
-        args.output = overlay.resolve(args.output, yaml_value=historical_cfg["output"])
+        args.lat = overlay.resolve(args.lat, yaml_value=list(historical_cfg["lat"]), key="historical.lat")
+        args.lon = overlay.resolve(args.lon, yaml_value=list(historical_cfg["lon"]), key="historical.lon")
+        args.output = overlay.resolve(args.output, yaml_value=historical_cfg["output"], key="historical.output")
         self._resolve_common_processing_args(args)
         self._validate_common_args(args)
         return args
