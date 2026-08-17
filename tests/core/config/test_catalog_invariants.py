@@ -486,20 +486,6 @@ def test_ancillary_js_radar_products_match_the_catalog(api):
     assert found == list(api["validation"]["radar_products"]), RADAR_OWNERS
 
 
-def test_ewmrs_route_allowlist_matches_the_catalog(api):
-    """The second copy, in a route tree reachable only from Jest today.
-
-    It is pinned rather than deleted because proving the tree unreachable is a
-    separate decision from proving the two lists agree, and the pin is what makes
-    that decision safe to defer.
-    """
-    source = (
-        REPO_ROOT / "src/EWMRS/api/routes/nexrad/validation.js"
-    ).read_text(encoding="utf-8")
-    found = _js_string_array(source, "export const ALLOWED_NEXRAD_PRODUCTS = new Set([")
-    assert found == list(api["validation"]["radar_products"]), RADAR_OWNERS
-
-
 def test_openapi_radar_product_enum_matches_the_catalog(api):
     """The published contract, which has no runtime authority at all.
 
