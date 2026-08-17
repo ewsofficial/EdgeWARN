@@ -43,11 +43,6 @@ def initialize_at_startup_historical() -> bool:
     return _api_index()["initialize_at_startup"]["historical"]
 
 
-def stormcell_resync_every_updates() -> int:
-    """Updates between full directory resyncs, which reconcile deletions."""
-    return _api_index()["resync_every_updates"]
-
-
 def inactive_cell_max_age_minutes() -> int:
     """Age above which a tracked cell is expired by ``cleanup_inactive_cells``.
 

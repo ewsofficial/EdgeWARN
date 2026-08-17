@@ -31,22 +31,11 @@ scheduler:
   # Elapsed time above which a modifier check emits a [PERF] line.
   slow_check_log_threshold_ms: 2000
 
-  # TRI-STATE, like runtime.yaml's profiling.perf_tracker: null means "the stdlib
-  # default", which ThreadPoolExecutor computes as min(32, cpu_count + 4). An
-  # integer caps the fan-out instead.
-  #
-  # Recorded as null rather than a number because no number is value-preserving:
-  # the width this replaces was machine-dependent, so writing 12 would have
-  # widened the pool on a 4-core host (where the stdlib picks 8) while narrowing
-  # it on a 32-core one.
-  #
-  # One key for both pools in scheduler.py -- the primary S3 check in
-  # latest_common_minute_1h and the HTTPS fallback in check_https_fallback. They
-  # never run together (the fallback is entered only after the primary found
-  # nothing) and both fan out over the same 12 `check_products` against the same
-  # NOAA endpoints, so a single ceiling is the honest description of the load.
-  #
-  # 12 modifiers is the effective ceiling regardless: a value above that buys
-  # idle threads, and the reason to set this at all is to go *below* it and
-  # throttle concurrent listings.
-  check_max_workers: null
+  # NO check_max_workers KEY, deliberately. The two bare ThreadPoolExecutor()
+  # calls in scheduler.py (the primary S3 check and the HTTPS fallback) are
+  # excluded by plans/source-configuration-extraction-plan.md:622: they have no
+  # cap today, so adding one is a retune, not an extraction. A key was added here
+  # once and reverted -- if a ceiling is genuinely wanted, note that the two pools
+  # are independent (check_https_fallback has its own production caller in
+  # src/run.py, so both can run in the same tick) and give each its own key rather
+  # than coupling them under one.

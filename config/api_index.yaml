@@ -3,7 +3,8 @@
 # Consumed through src/EdgeWARN/api_integration/config.py, which reads this file
 # per call so a --config-dir resolved after import still applies. Every key below
 # is the single owner of its default; no literal in the index manager or either
-# pipeline competes with it.
+# pipeline competes with it. The one exception is resync_every_updates, which has
+# no accessor at all -- see its own comment for why.
 #
 # Split out of alerts.yaml, which held these values only because the audit grouped
 # them there. Nothing here concerns alerts: this is the index the API serves.
@@ -31,7 +32,23 @@ api_index:
     historical: false
 
   # Updates between full directory resyncs, which reconcile deletions.
-  resync_every_updates: 500
+  #
+  # NOT READ BY CODE TODAY, and that is deliberate rather than an oversight. An
+  # interval only means something if the counter survives more than one update,
+  # and it cannot: the only path reaching update_stormcell_index is detection, and
+  # src/util/runtime/cycle.py starts edgewarn_tandem_worker in a fresh
+  # multiprocessing.Process for every cycle. Each update therefore begins with a
+  # zeroed counter no matter what scope the manager is hoisted into, so
+  # update_stormcell_index rescans the directory every time -- which is also
+  # exactly what it did while the counter existed.
+  #
+  # 128 rather than the previous 500 because 500 was a literal in code that never
+  # ran and so was never validated against anything. 128 is the interval to adopt
+  # if the index commit is ever moved somewhere that outlives one cycle: either
+  # the long-lived loop in src/run.py, or by persisting the counter into
+  # stormcell_index.json (whose only external reader, src/api/services/analysis.js,
+  # takes `timestamps` and ignores other fields).
+  resync_every_updates: 128
 
   # Age budget in cleanup_inactive_cells, converted to seconds at the use site.
   #
