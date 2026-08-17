@@ -18,6 +18,24 @@ describe('unified API configuration', () => {
     expect(config.allowedOrigins).toEqual(['https://one.example', 'https://two.example']);
     expect(() => createConfig({ env: { NODE_ENV: 'production', TRUST_PROXY: 'true' }, argv: [] })).toThrow('TRUST_PROXY=true');
   });
+
+  it('uses api.yaml defaults from an explicitly selected config root', async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'edgewarn-api-config-'));
+    const configDir = path.join(parent, 'config');
+    try {
+      await fs.cp(path.resolve('config'), configDir, { recursive: true });
+      const apiYaml = path.join(configDir, 'api.yaml');
+      const yaml = await fs.readFile(apiYaml, 'utf8');
+      await fs.writeFile(apiYaml, yaml.replace('port: 5000', 'port: 5100'));
+
+      const config = createConfig({ env: {}, argv: ['--config-dir', configDir] });
+      expect(config.port).toBe(5100);
+      expect(config.configDir).toBe(configDir);
+      expect(config.api.server.port).toBe(5100);
+    } finally {
+      await fs.rm(parent, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('ArtifactRepository', () => {

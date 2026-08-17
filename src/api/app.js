@@ -18,22 +18,25 @@ import { createCompatibilityRouter } from './routes/compatibility/index.js';
 
 export async function createApp(options = {}) {
   const apiDirectory = path.dirname(fileURLToPath(import.meta.url));
-  const sourceDirectory = path.resolve(apiDirectory, '..');
-  const openApi = await fs.readFile(path.join(apiDirectory, 'openapi/v3.yaml'), 'utf8');
-  const packageManifest = JSON.parse(await fs.readFile(path.join(sourceDirectory, '..', 'package.json'), 'utf8'));
+  const packageManifest = JSON.parse(await fs.readFile(path.join(apiDirectory, '..', '..', 'package.json'), 'utf8'));
   const config = options.config || createConfig({ ...options, packageVersion: packageManifest.version });
+  const openApi = await fs.readFile(path.join(apiDirectory, config.api.server.openapi_spec), 'utf8');
   const routeTemplates = Object.keys(JSON.parse(openApi).paths);
-  const repository = new ArtifactRepository({ data: config.dataDir, gui: config.guiDir, wpc: config.wpcDir, static: path.join(sourceDirectory, 'EWMRS') });
+  const repository = new ArtifactRepository(
+    { data: config.dataDir, gui: config.guiDir, wpc: config.wpcDir, static: path.join(config.repoDir, config.api.server.static_root) },
+    config.api.artifacts.size_limits_bytes,
+    config.api.artifacts.json_cache,
+  );
   const app = express();
   app.set('trust proxy', config.trustProxy);
-  const exposedVersion = config.isProduction ? '2.x' : config.packageVersion;
-  app.use(requestId, createAccessLog(routeTemplates), ...securityMiddleware(), createCors(config.allowedOrigins), ...createRateLimiters(config.rateLimits), requestTimeout(config.requestTimeoutMs));
+  const exposedVersion = config.isProduction ? config.api.server.production_version_label : config.packageVersion;
+  app.use(requestId, createAccessLog(routeTemplates), ...securityMiddleware(config.api.security), createCors(config.allowedOrigins, config.api.security.cors), ...createRateLimiters(config.rateLimits), requestTimeout(config.requestTimeoutMs));
   app.get('/', (req, res) => res.json({ service: 'EdgeWARN Unified API', version: exposedVersion, links: { api: '/api/v3', openapi: '/api/v3/openapi.json' } }));
   app.get('/robots.txt', (req, res) => res.type('text/plain').send("# No clankers\nUser-agent: *\nDisallow: /\n"));
   app.get('/health/live', (req, res) => res.json({ status: 'ok', requestId: req.requestId }));
-  app.get('/health/ready', async (req, res) => { const checks = await Promise.all([config.dataDir, config.guiDir, config.wpcDir].map(async (dir) => { try { return (await fs.stat(dir)).isDirectory(); } catch { return false; } })); res.status(checks.every(Boolean) ? 200 : 503).json({ status: checks.every(Boolean) ? 'ready' : 'not-ready', requestId: req.requestId }); });
+  app.get('/health/ready', async (req, res) => { const checks = await Promise.all([config.dataDir, config.guiDir, config.wpcDir].map(async (dir) => { try { return (await fs.stat(dir)).isDirectory(); } catch { return false; } })); res.status(checks.every(Boolean) ? 200 : 503).json({ status: checks.every(Boolean) ? 'ready' : 'not-ready', requestId: req.requestId, config: { source: 'api.yaml', schemaVersion: config.api.schema_version, root: config.configDir } }); });
   const analysis = createAnalysisService(repository); const renders = createRenderService(repository); const ancillary = createAncillaryServices(repository);
-  app.use('/api/v3', createV3Router({ analysis, renders, ancillary, openApi }));
+  app.use('/api/v3', createV3Router({ analysis, renders, ancillary, openApi, apiConfig: config.api }));
   app.use(createCompatibilityRouter({ analysis, renders, ancillary, packageVersion: exposedVersion }));
   app.use(notFound); app.use(errorHandler);
   return { app, config };

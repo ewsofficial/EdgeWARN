@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { configRoot, loadConfig, repoRoot } from '../../config/loader.js';
 
 // package.json is the sole owner of the version. This was a literal default,
 // which agreed with the manifest only until one of the two was bumped.
@@ -10,9 +11,6 @@ const PACKAGE_VERSION = JSON.parse(readFileSync(
   'utf8',
 )).version;
 
-const DEFAULT_BASE_DIR = process.platform === 'win32'
-  ? 'C:\\EdgeWARN_input'
-  : path.join(os.homedir(), 'EdgeWARN_input');
 const INTEGER = /^(?:0|[1-9][0-9]*)$/;
 
 function readFlag(argv, names) {
@@ -41,6 +39,7 @@ function parseInteger(value, fallback, label, { minimum = 0 } = {}) {
 }
 
 function parseOrigins(value) {
+  if (Array.isArray(value)) return Object.freeze([...new Set(value)]);
   if (!value) return [];
   const origins = value.split(',').map((origin) => origin.trim()).filter(Boolean);
   for (const origin of origins) {
@@ -52,7 +51,8 @@ function parseOrigins(value) {
 }
 
 function parseTrustProxy(value, env) {
-  if (value === undefined || value === '' || value === 'false') return false;
+  if (value === false || value === undefined || value === '' || value === 'false') return false;
+  if (Number.isInteger(value) || Array.isArray(value)) return value;
   if (value === 'true') {
     if (env.NODE_ENV === 'production') throw new Error('TRUST_PROXY=true is unsafe in production; set TRUST_PROXY_IPS');
     return 1;
@@ -60,26 +60,50 @@ function parseTrustProxy(value, env) {
   return Object.freeze(value.split(',').map((entry) => entry.trim()).filter(Boolean));
 }
 
+function resolveRuntimeDirectory(baseDir, template, label) {
+  const prefix = '<base_dir>/';
+  if (typeof template !== 'string' || !template.startsWith(prefix)) throw new Error(`Invalid api.yaml base_dir.derived.${label}`);
+  const resolved = path.resolve(baseDir, template.slice(prefix.length));
+  if (path.relative(baseDir, resolved).startsWith('..')) throw new Error(`Invalid api.yaml base_dir.derived.${label}`);
+  return resolved;
+}
+
 export function createConfig({ env = process.env, argv = process.argv.slice(2), packageVersion = PACKAGE_VERSION } = {}) {
+  const configDirCli = oneValue(readFlag(argv, ['--config-dir']), '--config-dir');
+  const configDirEnv = env.EDGEWARN_CONFIG_DIR;
+  const selectedConfigDir = configDirCli || configDirEnv;
+  const api = loadConfig('api', { configDir: selectedConfigDir });
+  const resolvedConfigRoot = configRoot(selectedConfigDir);
   const canonicalCli = oneValue(readFlag(argv, ['--base-dir']), '--base-dir');
   const deprecatedCli = oneValue(readFlag(argv, ['--base_dir']), '--base_dir');
   const canonicalEnv = env.EDGEWARN_BASE_DIR;
   const deprecatedEnv = env.BASE_DIR;
   const explicit = [canonicalCli, canonicalEnv, deprecatedCli, deprecatedEnv].filter(Boolean);
   if (new Set(explicit.map((value) => path.resolve(value))).size > 1) throw new Error('Conflicting base directory settings');
-  const baseDir = path.resolve(explicit[0] || DEFAULT_BASE_DIR);
-  const configDirCli = oneValue(readFlag(argv, ['--config-dir']), '--config-dir');
-  const configDirEnv = env.EDGEWARN_CONFIG_DIR;
-  const configDir = configDirCli || configDirEnv ? path.resolve(configDirCli || configDirEnv) : undefined;
-  const port = parseInteger(env.PORT, 5000, 'PORT', { minimum: 1 });
-  const requestTimeoutMs = parseInteger(env.REQUEST_TIMEOUT_MS, 30_000, 'REQUEST_TIMEOUT_MS', { minimum: 1 });
-  const rateLimitMaxSec = parseInteger(env.RATE_LIMIT_MAX_SEC, 40, 'RATE_LIMIT_MAX_SEC');
-  const rateLimitMaxMin = parseInteger(env.RATE_LIMIT_MAX_MIN, 2000, 'RATE_LIMIT_MAX_MIN');
+  const configuredBaseDir = process.platform === 'win32' ? api.base_dir.windows : api.base_dir.posix;
+  const baseDir = path.resolve(explicit[0] || configuredBaseDir.replace(/^~(?=$|[\\/])/, os.homedir()));
+  const port = parseInteger(env.PORT, api.server.port, 'PORT', { minimum: 1 });
+  const requestTimeoutMs = parseInteger(env.REQUEST_TIMEOUT_MS, api.server.request_timeout_ms, 'REQUEST_TIMEOUT_MS', { minimum: 1 });
+  const rateLimitMaxSec = parseInteger(env.RATE_LIMIT_MAX_SEC, api.rate_limits.per_second.max, 'RATE_LIMIT_MAX_SEC');
+  const rateLimitMaxMin = parseInteger(env.RATE_LIMIT_MAX_MIN, api.rate_limits.per_minute.max, 'RATE_LIMIT_MAX_MIN');
   return Object.freeze({
-    baseDir, dataDir: path.join(baseDir, 'data'), guiDir: path.join(baseDir, 'gui'), wpcDir: path.join(baseDir, 'wpc'),
-    configDir,
+    baseDir,
+    dataDir: resolveRuntimeDirectory(baseDir, api.base_dir.derived.data, 'data'),
+    guiDir: resolveRuntimeDirectory(baseDir, api.base_dir.derived.gui, 'gui'),
+    wpcDir: resolveRuntimeDirectory(baseDir, api.base_dir.derived.wpc, 'wpc'),
+    configDir: resolvedConfigRoot,
+    repoDir: repoRoot(selectedConfigDir),
+    api,
     port, packageVersion, isProduction: env.NODE_ENV === 'production', requestTimeoutMs,
-    allowedOrigins: parseOrigins(env.ALLOWED_ORIGINS), trustProxy: parseTrustProxy(env.TRUST_PROXY_IPS || env.TRUST_PROXY, env),
-    rateLimits: Object.freeze({ perSecond: rateLimitMaxSec, perMinute: rateLimitMaxMin })
+    allowedOrigins: parseOrigins(env.ALLOWED_ORIGINS === undefined ? api.security.allowed_origins : env.ALLOWED_ORIGINS),
+    trustProxy: parseTrustProxy(env.TRUST_PROXY_IPS || env.TRUST_PROXY || api.security.trust_proxy, env),
+    rateLimits: Object.freeze({
+      perSecond: rateLimitMaxSec,
+      perMinute: rateLimitMaxMin,
+      perSecondWindowMs: api.rate_limits.per_second.window_ms,
+      perMinuteWindowMs: api.rate_limits.per_minute.window_ms,
+      standardHeaders: api.rate_limits.standard_headers,
+      legacyHeaders: api.rate_limits.legacy_headers,
+    })
   });
 }
