@@ -11,6 +11,7 @@ from EdgeWARN.process.detect.kalman.config import (
     KalmanConfig,
 )
 from EdgeWARN.process.detect.detect import detect_cells
+from EdgeWARN.process.detect.config import DetectionConfig
 from util.io import IOManager
 import util.file as fs
 import json as js
@@ -89,7 +90,7 @@ def main(
     lat_bounds: tuple,
     lon_bounds: tuple,
     json_output,
-    detection_config,
+    detection_config: DetectionConfig | None = None,
     radar_old_obj=None,
     ps_old_obj=None,
     pt_old_obj=None,
@@ -97,6 +98,12 @@ def main(
     disable_polygon_expansion=False,
     cleanup_stormcells=True,
 ):
+    # Pipeline entry points pass their already-resolved config so CLI overrides
+    # keep their precedence.  Keep direct callers compatible by loading the
+    # same YAML-backed config when none was supplied.
+    if detection_config is None:
+        detection_config = DetectionConfig.from_yaml()
+
     if cleanup_stormcells:
         fs.clean_files_by_age(
             fs.STORMCELL_DIR,
