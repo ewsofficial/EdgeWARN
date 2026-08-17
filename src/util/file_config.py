@@ -4,16 +4,18 @@ Accessors rather than module constants so the catalog is read per call: a
 ``--config-dir`` may be resolved after this module is imported, and a
 module-level read would have frozen the repo default at import time.
 
-``base_dir`` is deliberately not exposed. ``util.file`` picks it by platform at
-import time, before any ``--config-dir`` or environment override could be
-resolved, so the catalog records those three paths for visibility without owning
-them; reconfiguration goes through ``initialize_filesystem(base_dir)``.
+``base_dir`` is deliberately not exposed. ``util.file`` binds it at import, from
+a ``sys.argv`` peek at ``--base_dir`` or the platform default, so the catalog
+records those three paths for visibility without owning them; reconfiguration
+goes through ``initialize_filesystem(base_dir)``.
 
 The scan skip rules are also absent. See ``test_scan_skip_rules_stay_in_code``
 for why they are not operator tunables.
 """
 
-from common.config.loader import load_config
+from pathlib import Path
+
+from common.config.loader import expand_path, load_config
 
 _CONFIG_NAME = "filesystem"
 
@@ -39,3 +41,28 @@ def cleanup_max_files() -> int:
     why the two cleaners are not interchangeable.
     """
     return _cleanup_defaults()["max_files"]
+
+
+def colormap_search_path(*, src_dir, gui_dir, config_dir=None) -> list[Path]:
+    """The ordered candidates ``util.file`` probes for ``colormaps.json``.
+
+    The two roots are passed in rather than read here, because ``util.file`` is
+    the module that knows them: ``gui_dir`` moves with ``--base_dir``, and
+    ``src_dir`` is a fact about where the tree was installed. That also keeps
+    this module free of a ``util.file`` import, which would be a cycle.
+
+    ``config_dir`` is accepted because the one caller resolves this at import
+    time, ahead of ``export_config_root``, and so has to name the directory it
+    peeked from ``sys.argv`` itself.
+    """
+    roots = {"src_dir": src_dir, "gui_dir": gui_dir}
+    templates = load_config(_CONFIG_NAME, config_dir=config_dir)["colormap_search_path"]
+    return [
+        expand_path(
+            template,
+            roots,
+            filename=f"{_CONFIG_NAME}.yaml",
+            dotted_path=f"colormap_search_path[{index}]",
+        )
+        for index, template in enumerate(templates)
+    ]

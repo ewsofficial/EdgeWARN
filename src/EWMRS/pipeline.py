@@ -47,9 +47,6 @@ from util.io import IOManager, QueueWriter
 RenderOutput = Optional[list[Path]]
 _CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16\.gz$")
 
-EWMRS_COLORMAP_JSON = Path(__file__).resolve().with_name("colormaps.json")
-fs.GUI_COLORMAP_JSON = EWMRS_COLORMAP_JSON
-
 io_manager = IOManager("[Pipeline]")
 
 WEB_MERCATOR_BOUNDS = (-14471533.8, 2273030.9, -6679169.5, 7361866.1)

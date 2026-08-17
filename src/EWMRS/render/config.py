@@ -157,6 +157,3 @@ def get_goes_file_list():
 def get_file_list():
     """Return the combined render configuration list."""
     return get_mrms_file_list() + get_goes_file_list()
-
-# For backward compatibility - returns list at import time (use get_file_list() for dynamic paths)
-file_list = get_file_list()

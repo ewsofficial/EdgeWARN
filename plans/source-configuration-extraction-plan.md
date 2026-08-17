@@ -285,9 +285,20 @@ Add:
   validation, and domain accessors, with frozen dataclasses per file following
   the `from_yaml` pattern in `src/EdgeWARN/process/detect/kalman/config.py`.
   This is one module, not a `src/util/config/` loader plus a separate
-  `src/common/config/` model package. It must import only the standard library,
-  `yaml` and `jsonschema` — no `util.file`, no domain modules — so it can be
-  imported before the filesystem is initialized.
+  `src/common/config/` model package. It must import only the standard library
+  and `yaml` — no `util.file`, no domain modules — so it can be imported before
+  the filesystem is initialized.
+- **Schema validation is a hand-rolled walker, not `jsonschema`.** Earlier
+  drafts of this plan required `jsonschema` here and in Phase 1; that is
+  **corrected**. `src/config/loader.js` implements the same walker over the same
+  keyword set, and cross-language parity is an acceptance requirement — a full
+  validator on the Python side alone would accept `$ref`/`oneOf`/`format`
+  schemas that Node still rejects. The walker's unknown-keyword guard is also a
+  property `jsonschema` would remove rather than add, since it ignores keywords
+  it does not recognize and would let a misspelled `requred` enforce nothing.
+  And `environment.yml` is the only dependency manifest in the tree; it does not
+  list `jsonschema`. Revisit only if a schema needs composition keywords, at
+  which point both loaders take the dependency together.
 - `src/config/loader.js` for Node loading and the same schema validation.
 - **`schema_version: 1` in all 18 files.** None has one today. Note the
   collision: `ewmrs_render.yaml:12` already uses `schema_version: 2` for the
@@ -319,19 +330,83 @@ Three import-time behaviors will silently defeat a naive loader:
 - **`src/EWMRS/render/config.py:221` snapshots `file_list = get_file_list()` at
   import time**, capturing pre-`--base-dir` paths. Delete it or make it lazy.
 
+**Done, with one bullet deliberately unfinished.**
+
+`util/file.py` no longer binds a stale answer: `IOManager.get_base_dir_arg()` peeks
+`--base_dir` off `sys.argv` before the module-scope `_define_paths()` call, so the
+113 path globals are already correct at import. A sibling `get_config_dir_arg()`
+does the same for `--config-dir`, needed because that bind now reads
+`filesystem.yaml` for the colormap search path — earlier than `export_config_root`
+publishes `EDGEWARN_CONFIG_DIR`. `initialize_filesystem()` remains as phase two,
+for a spawned child (which has no argv) and for a programmatic caller.
+
+`render/config.py`'s `file_list` snapshot is deleted; `get_file_list()` is called
+per use, and `test_known_drift.py` asserts the attribute's absence on that module.
+`tests/integration/test_ewmrs_pipeline.py` had a `raising=False` setattr for
+`file_list` on `EWMRS.pipeline`, which was always a no-op — the snapshot was never
+there, and `pipeline.py` imports the accessors by name — so it is gone rather than
+retargeted, to avoid implying cleanup once read it.
+
+`src/run.py:41` still calls `get_args()` at module scope, outside the `__main__`
+guard. The hard requirement is met — the loader is memoized on
+`(resolved_root, name)` and idempotent, so `spawn` re-execution is cheap and a YAML
+error surfaces once per process — but the preference to move the work into `main()`
+is not. The module scope binds a large set of globals that the loop functions close
+over, so relocating it is a refactor of `run.py`'s structure rather than a
+configuration change, and it is out of scope here. The accessor-per-use pattern at
+`run.py:259` is the pattern to follow for any value added later.
+
 ### Token expansion
 
 Expand only an explicit allowlist of tokens in configured path values:
 `<base_dir>`, `<gui_dir>`, and a new `<src_dir>` needed by
-`filesystem.yaml:22`, because `src/util/file.py:184` resolves
+`filesystem.yaml`'s colormap search path, because `src/util/file.py` resolves
 `src/EWMRS/colormaps.json` relative to `__file__`, not the working directory.
 
-Leave `<SITE>`, `<scan_timestamp>` and `<volume_id>` in `ewmrs_render.yaml:86`
-alone — those are runtime format fields consumed by
-`src/EWMRS/render/nexrad.py`, not load-time tokens. Rewrite them to `{}` form so
-the two classes are visually distinct. Do not implement the allowlist by scanning
-for bare `<`/`>`: six comment lines and one expression value would
-false-positive.
+**Done.** `PATH_TOKENS` and `expand_path` in `src/common/config/loader.py`, mirrored
+by `PATH_TOKENS`/`expandPath` in `src/config/loader.js`. The token is mandatory and
+must lead, so a bare relative value is an error rather than something that quietly
+resolves against the working directory. `roots` carries only the tokens meaningful
+to the caller, which is what makes `<base_dir>` an error in a context that has no
+base directory instead of an empty expansion. `config/schema/filesystem.schema.json`
+repeats the allowlist as a `pattern` so a misspelled token is caught during
+validation, in both languages, before any expander runs; a test pins the two lists
+to each other.
+
+Traversal is rejected twice: textually (`..` segment, leading `/`, backslash
+separators) before any path is built, and by containment after resolving, which on
+the Python side is what catches a symlink inside the root pointing out of it.
+
+Two further rejections were added after a review pass found both loaders sharing the
+same two holes. A falsy or relative `roots` entry made `Path.resolve()` /
+`path.resolve` fall back to the working directory — the defect the mandatory leading
+token exists to prevent, arriving through the other argument, and silent because the
+result is still a plausible path. And a NUL byte was accepted, which on Windows
+renders as a space and so resolves to a real but different file. Neither is reachable
+from a schema-valid catalog today; both are two lines to reject, so they are rejected
+rather than documented as acceptable. The
+Node half of that check is the one `src/api/config/index.js` already had — that copy
+is gone, and `resolveRuntimeDirectory` now delegates to the shared expander, so the
+`<base_dir>` prefix rule has one implementation rather than two.
+
+`src/EWMRS/pipeline.py` assigned `fs.GUI_COLORMAP_JSON` from its own
+`__file__`-relative literal at module scope, which would have silently outranked the
+catalog for every EWMRS run. It resolved to the same file, so it was deleted rather
+than reconciled.
+
+Leave `<SITE>`, `<scan_timestamp>` and `<volume_id>` alone — none is a load-time
+token, and no rewrite is owed because none ever reached a catalog in either
+spelling. `SITE` and `scan_timestamp` are f-string parameters in
+`src/EWMRS/render/nexrad.py:70-77`, built per scan. `volume_id` is not a render
+field at all: it was a `cli.volume_id` key, deleted outright as an argument to one
+invocation rather than a deployment setting, and recorded as such at
+`config/nexrad.yaml:19-21`.
+
+The runtime fields that *are* in the catalogs already use `{}`
+(`mrms_goes.yaml:42-56`, `metar.yaml:13`, `integration.yaml:149-150`), so that class
+stays visually distinct from the `<token>/` the expander claims. Do not implement the allowlist by scanning for bare `<`/`>`: six
+comment lines and one expression value (`synoptic_rap.yaml`'s named capture groups)
+would false-positive.
 
 Both loaders must:
 
@@ -389,9 +464,22 @@ This affects the 16 flags in `src/util/io.py:83-109`, the historical flags at
 Help strings that read "(default: 37.5)" must stop naming a literal, since the
 default now comes from YAML.
 
-Use `src/common/ingest/synoptic/config.py:12-30` (`get_rap_max_age_minutes`) as
-the reference shape for an environment override: a named env-var constant, an
-`is None` unset test, and a `ValueError` that re-quotes the raw value.
+An environment override should keep the shape
+`src/common/ingest/synoptic/config.py`'s `get_rap_max_age_minutes` established: a
+named env-var constant, an unset test, and a `ValueError` that re-quotes the raw
+value. **That describes the semantics, not the location.** Earlier drafts read it
+as an endorsement of the bespoke `os.environ` read inside that function, which
+contradicted Phase 1 step 6 ("Implement CLI/environment overlay adapters without
+putting environment parsing inside domain modules") and the Phase 6 audit that
+flags new `os.environ` reads outside the overlay loaders. **Resolved in favour of
+the location rules.** The three properties now live in
+`common.config.overlay.resolve`: `value_type` for a key whose YAML value is
+`null` and therefore carries no type to infer, `minimum` for a bound that was
+previously enforced by hand, and an error message naming the variable instead of
+the bare `invalid literal for int()` that `int(raw)` produced. Domain modules
+pass `env_names=` and retain only the decision of whether a bad value is fatal —
+`EWMRS/render/render.py`'s `_resolve_tile_workers` still swallows one, because it
+alone has a working fallback in the CPU cap.
 
 Preserve existing aliases for one deprecation window:
 
@@ -711,7 +799,7 @@ row was verified against the source at this baseline.
 | `nws.yaml` `zone_sync.assets_dir` | `assets/nws_zones` | `_resolve_assets_dir()` probes the filesystem (`zone_sync.py:21-27`) | Decide literal versus probe |
 | `nws.yaml` | omits | `zone_sync.py:160` `user_agent`, which differs from `nexrad.yaml` `stations.user_agent` in both version and contact | Add; interpolate the package version |
 | `detection.yaml` `gatemapper.baseline_refl_floor`, `dynamic_min_threshold` | recorded as settings | `gatemapper.py:101` `min(37.5, self.refl_threshold)` is a **hard floor**, so raising `refl_threshold` above 37.5 has no effect on the baseline mask; `gatemapper.py:174` `np.where(valid_max_refl < 45.0, 37.5, 40.0)` is fully inline | Must be parameterized or these keys are inert and misleading |
-| `filesystem.yaml:22` colormap search path | `src/EWMRS/colormaps.json` | `file.py:184` resolves it relative to `__file__`, not cwd | Needs the `<src_dir>` token |
+| `filesystem.yaml` colormap search path | `src/EWMRS/colormaps.json` | `file.py` resolved it relative to `__file__`, not cwd | **Done.** `<src_dir>/EWMRS/colormaps.json` plus a `<gui_dir>` fallback; the `Path.cwd()` candidate that led the list is gone |
 | `runtime.yaml` | omits | supervisor restart policy (`processes.py:72-75`); `stop_process` `join_timeout=5` (`processes.py:10,24`); background loop cadences (`background.py:223,239,257,265`); `goes.py:54,65` poll granularity `0.2` and floor `0.1`; `cycle.py:589` and `coordinator.py:125` `max_entries=10`; NEXRAD heartbeat `240.0` / grace `60.0` (`nexrad/config.py:21-22`) | Add |
 | all 18 files | no `schema_version` | this plan requires one | Add `schema_version: 1` |
 
@@ -762,10 +850,12 @@ retuning.
 
 ### Phase 1: Build config loading and validation
 
-1. Add Python and Node dependencies for YAML and JSON Schema validation.
+1. Add Python and Node dependencies for YAML. JSON Schema validation is
+   hand-rolled in both loaders over a shared keyword set — see the loader
+   contract above for why no validator dependency is taken.
 2. Implement `src/common/config/loader.py` with config-root discovery, caching,
    memoization, immutability, provenance, schema versioning, and dotted-key
-   errors. Stdlib + `yaml` + `jsonschema` imports only.
+   errors. Stdlib + `yaml` imports only.
 3. Write the 18 `config/schema/<name>.schema.json` files and add
    `schema_version: 1` to all 18 config files, renaming the
    `ewmrs_render.yaml` wire version first.

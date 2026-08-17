@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { configRoot, getProvenance, loadConfig, repoRoot } from '../../config/loader.js';
+import { configRoot, expandPath, getProvenance, loadConfig, repoRoot } from '../../config/loader.js';
 
 // package.json is the sole owner of the version. This was a literal default,
 // which agreed with the manifest only until one of the two was bumped.
@@ -60,12 +60,15 @@ function parseTrustProxy(value, env) {
   return Object.freeze(value.split(',').map((entry) => entry.trim()).filter(Boolean));
 }
 
+// The token expansion and traversal rejection moved into the shared loader, so
+// Python and Node enforce one contract instead of two. What is left here is the
+// only part specific to this caller: which token is in scope, and which key to
+// name when the value is bad.
 function resolveRuntimeDirectory(baseDir, template, label) {
-  const prefix = '<base_dir>/';
-  if (typeof template !== 'string' || !template.startsWith(prefix)) throw new Error(`Invalid api.yaml base_dir.derived.${label}`);
-  const resolved = path.resolve(baseDir, template.slice(prefix.length));
-  if (path.relative(baseDir, resolved).startsWith('..')) throw new Error(`Invalid api.yaml base_dir.derived.${label}`);
-  return resolved;
+  return expandPath(template, { base_dir: baseDir }, {
+    filename: 'api.yaml',
+    dottedPath: `base_dir.derived.${label}`,
+  });
 }
 
 export function createConfig({ env = process.env, argv = process.argv.slice(2), packageVersion = PACKAGE_VERSION } = {}) {

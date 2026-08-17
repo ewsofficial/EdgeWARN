@@ -185,6 +185,65 @@ export function repoRoot(cliDir = null) {
   return path.dirname(configRoot(cliDir));
 }
 
+// Mirrors PATH_TOKENS and expand_path in src/common/config/loader.py. An
+// allowlist rather than a scan for bare `<`/`>`, which would false-positive on
+// comment lines and on synoptic_rap.yaml's named capture groups.
+export const PATH_TOKENS = Object.freeze(['base_dir', 'gui_dir', 'src_dir']);
+
+export function expandPath(template, roots, { filename, dottedPath }) {
+  if (typeof template !== 'string') {
+    throw new ConfigError(filename, dottedPath, `expected a path string, got ${JSON.stringify(template)}`);
+  }
+  // Checked before the prefix match so a Windows-style template is reported as
+  // the separator problem it is, rather than as a malformed remainder.
+  if (template.includes('\\')) {
+    throw new ConfigError(filename, dottedPath, `${JSON.stringify(template)} must use '/' separators`);
+  }
+  // A NUL is never valid in a path. Node throws only once one reaches an fs call,
+  // and expandPath returns a string that may be stored or logged well before that,
+  // so it is rejected at the same point the Python side rejects it.
+  if (template.includes('\0')) {
+    throw new ConfigError(filename, dottedPath, 'path contains a NUL byte');
+  }
+  const match = /^<([a-z_]+)>\//.exec(template);
+  if (match === null) {
+    const expected = PATH_TOKENS.map((token) => `<${token}>/`).join(', ');
+    throw new ConfigError(filename, dottedPath, `${JSON.stringify(template)} must begin with one of ${expected}`);
+  }
+  const token = match[1];
+  if (!PATH_TOKENS.includes(token)) {
+    throw new ConfigError(filename, dottedPath, `<${token}> is not an expandable path token`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(roots, token)) {
+    throw new ConfigError(filename, dottedPath, `<${token}> has no value in this context`);
+  }
+  const remainder = template.slice(match[0].length);
+  const segments = remainder.split('/');
+  if (remainder === '' || remainder.startsWith('/') || segments.includes('..')) {
+    throw new ConfigError(filename, dottedPath, `${JSON.stringify(remainder)} is not a relative path below <${token}>`);
+  }
+  // Kept after the textual check rather than instead of it. This is the guard
+  // the API config has always used, and it stays as the backstop that fails on
+  // anything path.resolve normalizes out of the root; the check above is what
+  // rejects a hostile template before any path is built from it. Unlike the
+  // Python side, path.resolve does not follow symlinks, so this is defense in
+  // depth rather than a second class of input.
+  // An empty or relative root would make path.resolve fall back to process.cwd(),
+  // reintroducing the working-directory dependence the mandatory token exists to
+  // prevent -- and silently, since the result is still a plausible path.
+  const givenRoot = roots[token];
+  if (!givenRoot || !path.isAbsolute(givenRoot)) {
+    throw new ConfigError(filename, dottedPath, `<${token}> must be an absolute directory, got ${JSON.stringify(givenRoot)}`);
+  }
+  const root = path.resolve(givenRoot);
+  const resolved = path.resolve(root, remainder);
+  const relative = path.relative(root, resolved);
+  if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new ConfigError(filename, dottedPath, `${JSON.stringify(template)} resolves outside <${token}>`);
+  }
+  return resolved;
+}
+
 function deepFreeze(value) {
   if (Array.isArray(value)) {
     return Object.freeze(value.map(deepFreeze));

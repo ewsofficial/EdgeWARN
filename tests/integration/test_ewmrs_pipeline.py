@@ -279,21 +279,35 @@ def test_cleanup_old_gui_files_uses_dynamic_render_configuration(monkeypatch, tm
     (active_timestamp_dir / "tile_0_0.png").write_bytes(b"tile")
     (active_dir / "index.json").write_text(json.dumps({"timestamps": [old_timestamp]}))
 
+    stale_timestamp_dir = stale_dir / old_timestamp
+    stale_timestamp_dir.mkdir()
+    (stale_timestamp_dir / "tile_0_0.png").write_bytes(b"tile")
+
+    # A `monkeypatch.setattr(ewmrs_pipeline, "file_list", ..., raising=False)` used
+    # to sit here, standing in for the `file_list = get_file_list()` snapshot that
+    # cleanup was thought to consult. It never did: the snapshot lived in
+    # `render/config.py`, and `pipeline.py` imports the accessors by name, so
+    # nothing here ever read the attribute the setattr created. Its absence is
+    # guarded where the snapshot actually was, by
+    # `test_known_drift.py::test_render_config_no_longer_snapshots_the_file_list_at_import_time`.
+    # What is left below is this test's own subject: cleanup calls `get_file_list()`
+    # per use, so patching the accessor decides which directories it sweeps.
     monkeypatch.setattr(
         ewmrs_pipeline,
         "get_file_list",
         lambda: [{"outdir": active_dir}],
     )
-    monkeypatch.setattr(
-        ewmrs_pipeline,
-        "file_list",
-        [{"outdir": stale_dir}],
-        raising=False,
-    )
 
     ewmrs_pipeline.cleanup_old_gui_files(max_age_minutes=0)
 
     assert not active_timestamp_dir.exists()
+    # Ordered before the index.json assertion, which fails on this platform for an
+    # unrelated reason (a "Bad file descriptor" rewriting the file in a temp dir).
+    # Behind it, this check would never execute.
+    #
+    # Only what `get_file_list` named was swept, so an unlisted directory of the
+    # same age is untouched.
+    assert stale_timestamp_dir.exists()
     assert json.loads((active_dir / "index.json").read_text()) == []
 
 

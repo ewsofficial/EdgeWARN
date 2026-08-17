@@ -14,6 +14,7 @@ membership test alone would not catch one.
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from pathlib import Path
@@ -393,6 +394,84 @@ def test_python_and_js_loaders_list_the_same_catalogs():
     assert _js_config_names() == list(loader.CONFIG_NAMES)
 
 
+def test_both_loaders_expand_the_same_path_tokens():
+    """A token Node expands and Python does not is a path that resolves two ways.
+
+    The list is short enough to compare textually, and that is the point: the
+    expander is the only sanctioned way a catalog names a filesystem location, so
+    the two ports have to agree on which names exist before they can agree on
+    where they lead.
+    """
+    source = (REPO_ROOT / "src/config/loader.js").read_text(encoding="utf-8")
+    match = re.search(r"PATH_TOKENS\s*=\s*Object\.freeze\(\[(.*?)\]\)", source, re.DOTALL)
+    assert match, "could not locate PATH_TOKENS in src/config/loader.js"
+    assert re.findall(r"'([^']+)'", match.group(1)) == list(loader.PATH_TOKENS)
+
+
+def test_both_loaders_reject_traversal_out_of_an_expanded_root():
+    """Node's half cannot be executed here (no local Node), so it is pinned by text.
+
+    Each assertion stands for one of the rejections
+    ``tests/core/config/test_loader.py`` exercises against the Python expander.
+    They are asserted rather than run because a silently missing check on the Node
+    side is exactly the asymmetry a shared expander was introduced to remove.
+
+    The last two were added after the first pass: both loaders resolved a falsy
+    root against the working directory, and both accepted a NUL byte -- which on
+    Windows renders as a space and so reached a real but different file. Neither is
+    reachable from a schema-valid catalog today, and both are cheap to reject, so
+    they are rejected rather than documented.
+
+    These are where the ports agree on *inputs*. One asymmetry survives and is
+    not a defect this test can close: Python's containment check runs after
+    ``Path.resolve()``, which follows symlinks, so it also rejects a link inside
+    the root that points out of it. ``path.resolve`` does no such thing, so Node's
+    fourth check is a backstop against its own path arithmetic rather than a
+    symlink defense. Closing it would need ``fs.realpathSync``, and the Node
+    loader reads only files it also validates, so the gap is recorded here rather
+    than papered over with an assertion that would imply parity it does not have.
+    """
+    source = (REPO_ROOT / "src/config/loader.js").read_text(encoding="utf-8")
+    body = source[source.index("export function expandPath"):]
+
+    assert "segments.includes('..')" in body, "no `..` rejection"
+    assert "remainder.startsWith('/')" in body, "no absolute-remainder rejection"
+    assert "template.includes('\\\\')" in body, "no backslash rejection"
+    assert "path.relative(root, resolved)" in body, "no containment backstop"
+    assert "template.includes('\\0')" in body, "no NUL rejection"
+    assert "path.isAbsolute(givenRoot)" in body, "no absolute-root requirement"
+
+
+def test_the_api_config_delegates_token_expansion_to_the_shared_loader():
+    """The Node expander had a second copy in the API's own config factory.
+
+    It enforced the same two rules with its own error text, which is the shape
+    that drifts: a rule added to one copy is not added to the other. Asserted as
+    the absence of the copy rather than as agreement with it.
+    """
+    source = (REPO_ROOT / "src/api/config/index.js").read_text(encoding="utf-8")
+
+    assert "expandPath" in source
+    assert "const prefix = '<base_dir>/'" not in source
+    assert "template.slice(prefix.length)" not in source
+    assert "Invalid api.yaml base_dir.derived" not in source
+
+
+def test_the_filesystem_schema_pattern_names_exactly_the_code_allowlist():
+    """The schema repeats the allowlist so both loaders reject a typo at validation.
+
+    A second owner, so it is pinned to the first. The schema catches the common
+    case (a misspelled token) before any expander runs, and in both languages at
+    once; the expander is what enforces the rules a `pattern` cannot express.
+    """
+    schema = json.loads(
+        (REPO_ROOT / "config/schema/filesystem.schema.json").read_text(encoding="utf-8")
+    )
+    pattern = schema["properties"]["colormap_search_path"]["items"]["pattern"]
+    named = re.findall(r"[a-z_]+_dir", pattern)
+    assert named == list(loader.PATH_TOKENS)
+
+
 def test_every_listed_catalog_has_a_file_and_a_schema():
     """A name in either list with no file on disk is a guaranteed load failure."""
     missing = [
@@ -408,6 +487,20 @@ def test_no_catalog_file_is_absent_from_the_loaders():
     """The reverse coverage check: a new YAML nobody validates is dead weight."""
     on_disk = sorted(path.stem for path in (REPO_ROOT / "config").glob("*.yaml"))
     assert on_disk == sorted(loader.CONFIG_NAMES)
+
+
+def test_every_shipped_catalog_loads_and_schema_validates():
+    """The Python half of ``npm run validate-config``.
+
+    The two tests above only stat the files. Nothing else loaded all 19, so a
+    schema reaching for an unimplemented keyword, or a catalog violating its own
+    schema, could ship as long as no individual accessor test happened to read
+    that file. Loading every name exercises ``_check_supported_keywords`` and the
+    walker across the whole tree, which is what makes the hand-rolled validator
+    an acceptable substitute for ``jsonschema`` (see the loader module docstring).
+    """
+    for name in loader.CONFIG_NAMES:
+        loader.load_config(name)
 
 
 # --- API security settings the schema cannot constrain --------------------
