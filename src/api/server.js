@@ -4,8 +4,8 @@ import { createApp } from './app.js';
 export async function startServer(options = {}) {
   const { app, config } = await createApp(options);
   const debug = (options.argv || process.argv.slice(2)).includes('--debug-server');
-  const port = options.port || (debug ? 3001 : config.port);
-  const server = app.listen(port, options.host || '0.0.0.0', () => console.log(`Unified EdgeWARN API listening on port ${port}`));
+  const port = options.port || (debug ? config.api.server.debug_port : config.port);
+  const server = app.listen(port, options.host || config.api.server.host, () => console.log(`Unified EdgeWARN API listening on port ${port} (api.yaml schema v${config.api.schema_version}, ${config.configDir})`));
   return { app, server, port, config };
 }
 

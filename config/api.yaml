@@ -9,8 +9,8 @@
 #         config/productCatalog.js:3,10,13-14;
 #         routes/v3/index.js:6-9,10,13-18,36-37;
 #         src/EWMRS/api/server.js:17-18,71-80,145,245-247
-# Values verified against the working tree at commit e426fb2.
-# Not yet consumed by code; see plans/source-configuration-extraction-plan.md.
+# Loaded and schema-validated by src/api/config/index.js before the unified API
+# starts. CLI and environment overlays retain their documented precedence.
 #
 # Three keys that were here are deleted, not moved: `server.json_body_limit`,
 # `server.cluster_max_workers`, and `security.hsts_max_age_seconds`. Each existed
@@ -31,11 +31,6 @@ server:
   # app.js:29. In production the real package version is withheld and this label
   # is served instead.
   production_version_label: '2.x'
-
-  # config/index.js:54, the `packageVersion` parameter default. Reached only when
-  # createConfig is called without app.js supplying package.json's version; it
-  # matches package.json:3 today, so the two must be bumped together.
-  package_version_fallback: '2.7.0'
 
   # routes/v3/index.js:37, self-reported at GET /api/v3. Duplicated as
   # `info.version` in openapi/v3.yaml, and unrelated to the package version above.

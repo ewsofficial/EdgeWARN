@@ -9,7 +9,7 @@
     "server": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["host", "port", "debug_port", "request_timeout_ms", "static_root", "openapi_spec", "production_version_label", "package_version_fallback", "v3_api_version"],
+      "required": ["host", "port", "debug_port", "request_timeout_ms", "static_root", "openapi_spec", "production_version_label", "v3_api_version"],
       "properties": {
         "host": { "type": "string" },
         "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
@@ -18,7 +18,6 @@
         "static_root": { "type": "string" },
         "openapi_spec": { "type": "string" },
         "production_version_label": { "type": "string" },
-        "package_version_fallback": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
         "v3_api_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
       }
     },

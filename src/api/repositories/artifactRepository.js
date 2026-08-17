@@ -21,11 +21,15 @@ function assertSegments(segments) {
 }
 
 export class ArtifactRepository {
-  constructor(roots, limits = {}) {
+  constructor(roots, limits = {}, cache = {}) {
     this.roots = Object.freeze({ ...roots });
     this.limits = Object.freeze({ ...DEFAULT_LIMITS, ...limits });
     this.realRoots = new Map();
-    this.jsonCache = new LRUCache({ max: 256, maxSize: 32 * 1024 * 1024, sizeCalculation: (entry) => entry.size });
+    this.jsonCache = new LRUCache({
+      max: cache.max_entries ?? 256,
+      maxSize: cache.max_size_bytes ?? 32 * 1024 * 1024,
+      sizeCalculation: (entry) => entry.size,
+    });
   }
 
   async root(rootName) {

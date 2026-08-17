@@ -1,13 +1,15 @@
 import compression from 'compression';
 import helmet from 'helmet';
 
-export function securityMiddleware() {
+export function securityMiddleware(policy = {}) {
   return [
-    helmet({ contentSecurityPolicy: { useDefaults: true, directives: { defaultSrc: ["'self'"] } } }),
+    helmet({ contentSecurityPolicy: { useDefaults: true, directives: { defaultSrc: [policy.csp_default_src ?? "'self'"] } } }),
     compression({
       filter(req, res) {
         const type = res.getHeader('Content-Type');
-        return !(typeof type === 'string' && /^image\//i.test(type)) && compression.filter(req, res);
+        const skipMedia = policy.compression_skip_media ?? 'image/*';
+        const mediaPattern = new RegExp(`^${skipMedia.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\*', '.*')}$`, 'i');
+        return !(typeof type === 'string' && mediaPattern.test(type)) && compression.filter(req, res);
       }
     })
   ];
