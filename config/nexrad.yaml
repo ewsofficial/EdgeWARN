@@ -24,11 +24,6 @@ schema_version: 1
 
 buckets:
   chunks: unidata-nexrad-level2-chunks
-  # UNUSED: nothing reads this. The pipeline is chunk-stream only; the archive
-  # bucket had a constant in config.py with no consumer either, so this records
-  # a bucket the code has never opened.
-  archive: unidata-nexrad-level2
-
 stations:
   catalog_url: https://api.weather.gov/radar/stations
   # The User-Agent is NOT here. It is one string for the whole application,
@@ -40,9 +35,6 @@ stations:
 
 selection:
   allowed_vcps: [12, 212, 215]
-  # UNUSED: nothing reads this. grouping.py:167-168 builds an elevation dedup key
-  # by exact match, not within a tolerance, so there is no site for this to reach.
-  angle_dedup_tolerance_deg: 0.1
   high_max_angle_deg: 4.0
   min_sweep_angle_deg: 0.4
   # Bin IDENTITIES, not range boundaries. grouping.py snaps a sweep to its

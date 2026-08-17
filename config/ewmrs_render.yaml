@@ -12,10 +12,6 @@ schema_version: 1
 
 tiles:
   tile_size: 350                        # config.py:4 px
-  # config.py:5-6. Invariants tied to the 3500x7000 MRMS CONUS grid
-  # (3500/350, 7000/350); changing tile_size without these is incoherent.
-  grid_rows: 10
-  grid_cols: 20
 
 chunk_format:                           # config.py:10-18,27-41 wire-format invariant, NOT operator-tunable
   wire_version: 2                       # CHUNK_SCHEMA_VERSION
@@ -31,12 +27,6 @@ chunk_format:                           # config.py:10-18,27-41 wire-format inva
   bytes_per_component: 2
   pixel_row_order: top_to_bottom
   grid_origin: bottom_left
-  filename_pattern: 'chunk_{x}_{y}.f16.gz'
-  gzip_compress_level: 1                # tiler.py:32
-  gzip_mtime: 0                         # tiler.py:32; fixed mtime keeps chunks byte-reproducible
-
-timestamp_format: '%Y%m%d-%H%M00'
-
 # 15 entries. `filepath` (ingest source) and `outdir` (render target) are
 # util.file attribute names resolved by getattr at call time; an unknown name is
 # a startup error. Note MRMS_VILDensity maps MRMS_DVIL_DIR -> GUI_VILD_DIR --
@@ -247,16 +237,3 @@ nexrad_gui:
     PHIDP: PHIDP
     RHOHV: RHOHV
     ZDR: ZDR
-
-  # UNUSED -- the four keys below are read by nothing. They are documentation
-  # copies of literals that live in render/nexrad.py, kept in place rather than
-  # deleted so that dropping them stays a deliberate decision. Editing any of them
-  # changes no behaviour.
-  #
-  # field_magic is deliberately NOT wired: it is a wire-format invariant, written
-  # into every .bin.gz and checked on read back (nexrad.py:98,105). Making it
-  # settable would let a config edit produce files no reader accepts.
-  field_magic: EWFFv1S0                 # nexrad.py:18, as bytes
-  bin_name_pattern: '{site_upper}_{variable_name}_{elevation_label}_{scan_timestamp}.bin.gz'  # nexrad.py:71
-  manifest_name_pattern: '{site_upper}_{scan_timestamp}_{volume_id}.json'  # nexrad.py:352,402
-  manifest_timestamp_fallback: unknown  # nexrad.py:402 (manifest_timestamp or 'unknown')

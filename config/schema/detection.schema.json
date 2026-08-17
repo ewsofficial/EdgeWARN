@@ -114,10 +114,6 @@
         "preciptype_class": { "type": "integer" },
         "contour_level": { "type": "number" }
       }
-    },
-    "env_overrides": {
-      "type": "object",
-      "additionalProperties": { "type": "string" }
     }
   }
 }

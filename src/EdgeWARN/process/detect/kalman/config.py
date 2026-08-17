@@ -132,7 +132,6 @@ class TrackingConfig:
     """Prediction-mode limits and the confidence policy applied within them."""
 
     max_prediction_time_minutes: float
-    reacquisition_radius_km: float
     confidence_threshold: float
     confidence_decay_factor: float
     confidence: ConfidenceConfig
@@ -143,7 +142,6 @@ class TrackingConfig:
         tracking = document["tracking"]
         return cls(
             max_prediction_time_minutes=tracking["max_prediction_time_minutes"],
-            reacquisition_radius_km=tracking["reacquisition_radius_km"],
             confidence_threshold=tracking["confidence_threshold"],
             confidence_decay_factor=tracking["confidence_decay_factor"],
             confidence=ConfidenceConfig.from_section(document["confidence"]),

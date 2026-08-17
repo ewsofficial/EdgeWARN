@@ -14,14 +14,6 @@
 
 schema_version: 1
 
-# file.py:209-215. Chosen by platform at import time, not configured: the posix
-# branch is `Path.home() / "EdgeWARN_input"`, and container_fallback is reached
-# only if that raises.
-base_dir:
-  windows: 'C:\EdgeWARN_input'
-  posix: ~/EdgeWARN_input
-  container_fallback: /workspaces/EdgeWARN_input
-
 # The fallback every cleaner in util/file.py resolves to when its caller passes
 # nothing. clean_files_by_age takes max_age_minutes only, so max_files reaches
 # clean_old_files alone.
@@ -34,18 +26,6 @@ cleanup_defaults:
   max_age_minutes: 60
   max_files: 10
 
-  # Documentation only -- clean_old_files hardcodes this and the two latest_files
-  # rules below, because they are behavioral invariants rather than tunables:
-  # `.gz` carries a third meaning at file.py:259, where it breaks ties in the
-  # sort order, and no single list could express all three.
-  #
-  # Applies to clean_old_files only, which skips `.idx` unconditionally
-  # (file.py:315). The three cleaners are NOT interchangeable:
-  # clean_files_by_age (:336) does delete `.idx` -- it filters non-files and
-  # nothing else (:349-351) -- and clean_idx_files (:266-284) deletes them
-  # recursively via rglob but has no caller anywhere in the repo.
-  skip_extensions: ['.idx']
-
   # detect/main.py:101-104 calls clean_files_by_age(fs.STORMCELL_DIR,
   # max_age_minutes=...), the one live caller that overrides the 60 above. It is
   # recorded as detection.yaml's `stormcell_cleanup_max_age_minutes` because the
@@ -53,30 +33,6 @@ cleanup_defaults:
   # mistaken for a global ceiling. (metar.py:413,457 pass this key's own accessor
   # rather than a literal; common/ingest/mrms/downloader.py:195,208 pass
   # per-product values.)
-
-# latest_files (file.py:218-263; the skip rules are at :249 and :251). Two
-# different rules, deliberately split: the old single `skip_extensions` list read
-# as though both were conditional.
-scan:
-  skip_extensions_always: ['.idx']              # file.py:249, no condition
-  # file.py:251 -- dropped only when the same name without `.gz` is also in the
-  # directory, so a lone `.gz` IS returned.
-  skip_extensions_when_base_present: ['.gz']
-
-# _find_existing_path (file.py:36-43), called with these candidates at :197-201.
-# First existing candidate wins.
-colormaps:
-  search_path:
-    - <cwd>/colormaps.json                      # Path.cwd(), file.py:198
-    # file.py:199 is parents[1] of src/util/file.py -- resolved from the module,
-    # not from the working directory, so this candidate is stable across cwds.
-    - <src_dir>/EWMRS/colormaps.json
-    - <gui_dir>/colormaps.json                  # base_dir/gui, file.py:79,200
-
-  # When nothing exists, _find_existing_path returns Path(candidates[0])
-  # (file.py:43) -- the cwd candidate, not a bare relative name. The string
-  # 'colormaps.json' appears only in the warning text at file.py:201.
-  fallback: <cwd>/colormaps.json
 
 # NODE ONLY. src/api/config/index.js:57-58 reads both names (BASE_DIR is the
 # deprecated alias) and :55-56 accepts --base-dir/--base_dir; conflicting values

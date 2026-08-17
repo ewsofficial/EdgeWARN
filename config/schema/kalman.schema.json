@@ -32,10 +32,9 @@
     "tracking": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["max_prediction_time_minutes", "reacquisition_radius_km", "confidence_threshold", "confidence_decay_factor"],
+      "required": ["max_prediction_time_minutes", "confidence_threshold", "confidence_decay_factor"],
       "properties": {
         "max_prediction_time_minutes": { "type": "number", "minimum": 0 },
-        "reacquisition_radius_km": { "type": "number", "minimum": 0 },
         "confidence_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
         "confidence_decay_factor": { "type": "number", "minimum": 0, "maximum": 1 }
       }

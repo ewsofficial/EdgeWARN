@@ -152,8 +152,3 @@ hail:
   # `gatemapper.contour_level` but a separate literal with a separate owner, so
   # changing one must not silently change the other.
   contour_level: 0.5
-
-# UNUSED. No loader reads `env_overrides` in any catalog; the three overridable
-# thresholds are resolved from argparse only (--refl-threshold,
-# --min-seed-percentage, --drop-offset). Kept so removing it stays deliberate.
-env_overrides: {}

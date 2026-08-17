@@ -141,26 +141,6 @@ render_defaults:
   grid_maxima: {rows: 100, cols: 100, tile_size: 4096}
 
 validation:
-  # DESCRIPTIVE ONLY. The enforced form is /^\d{8}-\d{6}$/ (validation.js:1),
-  # followed by a UTC round-trip check that rejects impossible calendar dates.
-  timestamp_format: 'YYYYMMDD-HHMMSS'
-
-  alert_sources: [official, edgewarn]           # services/analysis.js:4
-  cell_id_pattern: '^[1-9][0-9]*$'              # validation.js:2, no leading zero
-  # validation.js:3-4, each with one extra exclusion the pattern cannot express:
-  # the alert id also rejects __proto__/constructor/prototype (:15), and the
-  # layer id also rejects any '..' (:16). The two exclusions are different -- one
-  # is not applied to both.
-  alert_id_pattern: '^[A-Za-z0-9_.:-]{1,200}$'
-  layer_id_pattern: '^[A-Za-z0-9_.-]{1,128}$'
-
-  # middleware/requestId.js:3. An inbound X-Request-Id matching this is echoed;
-  # anything else is replaced by a generated UUID, so a malformed header is never
-  # an error.
-  request_id_pattern: '^[A-Za-z0-9_-]{8,128}$'
-  radar_site_pattern: '^[A-Z0-9]{4}$'           # ancillary.js:4
-  elevation_pattern: '^\d{1,3}(?:\.\d{1,2})?$'  # ancillary.js:5
-
   # ancillary.js:6 RADAR_PRODUCTS. An allowlist -- a product absent from this set
   # is rejected before any file lookup, so the recorded names matter, not just
   # the count. CCORH is present here but absent from ewmrs_render.yaml
@@ -168,49 +148,14 @@ validation:
   # accepts one product the renderer never draws.
   radar_products: [DBZH, VRADH, WRADH, PHIDP, CCORH, RHOHV, ZDR]
 
-  # artifactRepository.js:15 SAFE_SEGMENT, applied to every path segment
-  # (assertSegments, :17-21). `.` and `..` are rejected separately at :18, since
-  # the pattern alone would admit both.
-  safe_path_segment_pattern: '^[A-Za-z0-9_.-]+$'
-
 product_catalog:
-  file: src/api/config/product-catalog.json
   entries: 31
-  # `colormapId` is present on only 21 of the 31 entries; the other five fields
-  # are on all 31. Do not treat it as required.
-  #
-  # These are the PRESENCE counts, which are stricter than what the loader
-  # enforces: productCatalog.js:10 requires only id/legacyId/storageDirectory/
-  # legacyFilePrefix. `representation` is universally present but unvalidated, so
-  # dropping it from an entry would pass the code and break this contract.
-  required_fields: [id, legacyId, storageDirectory, legacyFilePrefix, representation]
-  optional_fields: [colormapId]
-
-  # productCatalog.js:3 SLUG, enforced on `id` at :10. `legacyId` and
-  # `storageDirectory` have no shape rule, only the uniqueness check at :13-14.
-  id_pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
-
-# RETIRED MODULE. src/EWMRS/api/server.js still exports createApp/startServer and
-# these literals are live inside it, but its CLI entry point delegates to the
-# unified API (:245-247) and no npm script targets it -- `api:ewmrs` runs
-# `src/api/server.js --compat=ewmrs`. Nothing reaches port 3003 in normal
-# operation; editing this block changes nothing unless a caller imports
-# startServer directly.
-legacy_ewmrs:
-  port: 3003                            # :17
-  debug_port: 3004                      # :18
-  # :76,:78 hardcode the windows; only the maxima are configurable, via
-  # --ewmrs-rate-limit-1s/-1m or the env vars below (:77,:79).
-  rate_limits: {per_second: 30, per_minute: 1800, window_ms: [1000, 60000]}
-  list_files_limit: 50                  # :145, excludes .idx
 
 env_overrides:
   server.port: PORT
   server.request_timeout_ms: REQUEST_TIMEOUT_MS
   rate_limits.per_second.max: RATE_LIMIT_MAX_SEC
   rate_limits.per_minute.max: RATE_LIMIT_MAX_MIN
-  legacy_ewmrs.rate_limits.per_second: EWMRS_RATE_LIMIT_MAX_SEC
-  legacy_ewmrs.rate_limits.per_minute: EWMRS_RATE_LIMIT_MAX_MIN
   security.allowed_origins: ALLOWED_ORIGINS
   security.trust_proxy: ['TRUST_PROXY_IPS', 'TRUST_PROXY']
   base_dir: ['EDGEWARN_BASE_DIR', 'BASE_DIR']

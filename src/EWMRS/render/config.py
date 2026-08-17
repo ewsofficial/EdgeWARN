@@ -62,8 +62,6 @@ def goes_transform_resampling():
 
 _TILES = _render_config()["tiles"]
 TILE_SIZE = _TILES["tile_size"]
-TILE_GRID_ROWS = _TILES["grid_rows"]
-TILE_GRID_COLS = _TILES["grid_cols"]
 
 # EWMRS value-chunk wire-format invariants. Keep these values together: they
 # are written to both index levels and consumed by API clients.

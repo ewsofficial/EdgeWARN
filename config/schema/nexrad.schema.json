@@ -9,10 +9,9 @@
     "buckets": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["chunks", "archive"],
+      "required": ["chunks"],
       "properties": {
-        "chunks": { "type": "string" },
-        "archive": { "type": "string" }
+        "chunks": { "type": "string" }
       }
     },
     "stations": {
@@ -28,10 +27,9 @@
     "selection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["allowed_vcps", "angle_dedup_tolerance_deg", "high_max_angle_deg", "min_sweep_angle_deg", "canonical_elevation_bins", "min_required_volume_chunks", "waveforms"],
+      "required": ["allowed_vcps", "high_max_angle_deg", "min_sweep_angle_deg", "canonical_elevation_bins", "min_required_volume_chunks", "waveforms"],
       "properties": {
         "allowed_vcps": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer" } },
-        "angle_dedup_tolerance_deg": { "type": "number", "minimum": 0 },
         "high_max_angle_deg": { "type": "number" },
         "min_sweep_angle_deg": { "type": "number", "minimum": 0 },
         "canonical_elevation_bins": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "number" } },

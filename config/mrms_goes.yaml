@@ -30,13 +30,6 @@ mrms:
   # through to mean "the caller expressed no preference".
   remove_old_files: true
   cleanup_max_age_minutes: 60
-  cadence_minutes: 2                      # timestamp_utils.py:30 (current_minute % 2)
-  rounding_half_up_seconds: 30            # timestamp_utils.py:32,39 (ts.second >= 30)
-
-  # Staged-file timestamp grammar shared by GOES coordination and EWMRS render.
-  # Source: common/pipeline/goes_readiness.py:82, EWMRS/render/tools.py:62.
-  staged_filename_pattern: 'MRMS_MergedReflectivityQC_(\d{8})-(\d{6})'
-
   # S3 key grammars, read per call through the mrms/config.py accessor named
   # against each key below. The modifier segment is omitted entirely -- not
   # substituted empty -- when a product has no modifier (ProbSevere), because an
@@ -86,18 +79,13 @@ mrms:
     # and keep the leading segment.
     directory_split_token: '_00.'
     # S3 modifier -> NCEP directory name, for the products whose directory does not
-    # derive by dropping the level suffix. NOTE: the FLASH_QPE_FFG01H_00.00 key
-    # matches no entry in `products` (the real product is FLASH_QPE_FFGMAX_00.00),
-    # so that row is dead today. Kept because deleting it changes nothing while a
-    # future rename upstream may need it, and the NCEP index really does list a
-    # FLASH/ directory.
+    # derive by dropping the level suffix.
     #
     # VIL, VIL_Density and LVL3_HighResVIL are distinct NCEP directories; do not
     # collapse them onto one entry.
     directory_map:
       EchoTop_18_00.50: EchoTop_18
       EchoTop_30_00.50: EchoTop_30
-      FLASH_QPE_FFG01H_00.00: FLASH
       MESH_00.50: MESH
       NLDN_CG_005min_AvgDensity_00.00: NLDN_CG_005min_AvgDensity
       PrecipRate_00.00: PrecipRate
