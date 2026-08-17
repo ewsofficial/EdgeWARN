@@ -12,7 +12,6 @@ Every test below names the decision the migration still owes.
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import json
 import os
 import re
@@ -352,14 +351,31 @@ def test_index_bootstrap_stays_split_between_the_two_pipelines():
     assert "initialize_indexes=False" not in historical_source
 
 
-def test_stormcell_resync_interval_comes_from_the_catalog():
-    """The resync is what reconciles deletions, so a stale literal here loses them."""
-    from EdgeWARN.api_integration.config import stormcell_resync_every_updates
+def test_stormcell_resync_interval_is_recorded_but_deliberately_unread():
+    """UNWIRED (Phase 5): no counter can reach an interval here, so none pretends to.
 
-    assert stormcell_resync_every_updates() == _api_index_yaml()["api_index"]["resync_every_updates"] == 500
+    The only path reaching `update_stormcell_index` is detection, and
+    `src/util/runtime/cycle.py` starts `edgewarn_tandem_worker` in a fresh
+    `multiprocessing.Process` per cycle. A per-instance counter is therefore zeroed
+    before every update, so hoisting the manager inside the worker cannot help --
+    the interval needs the counter to outlive the process, not just the call.
+
+    The key stays in the catalog to record the number a reused manager should use.
+    This test exists to stop it being "wired up" again without also moving the
+    index commit somewhere that survives a cycle.
+    """
+    assert _api_index_yaml()["api_index"]["resync_every_updates"] == 128
+
+    config_source = (REPO_ROOT / "src/EdgeWARN/api_integration/config.py").read_text(encoding="utf-8")
+    assert "resync_every_updates" not in config_source, (
+        "an accessor came back; the counter still cannot survive a cycle"
+    )
 
     source = (REPO_ROOT / "src/EdgeWARN/api_integration/index_manager.py").read_text(encoding="utf-8")
-    assert "self.stormcell_resync_interval = stormcell_resync_every_updates()" in source
+    assert "stormcell_resync_interval" not in source
+    assert "stormcell_updates_since_resync" not in source
+    # No literal stood in for the accessor either.
+    assert "128" not in source and "500" not in source
 
 
 # --- Scheduler listing width: two keys, only one of them reached -----------
@@ -424,64 +440,35 @@ def test_scheduler_lookback_and_perf_gate_have_no_literals():
     assert "dt > 2000" not in source
 
 
-def test_scheduler_check_pools_both_take_their_width_from_the_catalog():
-    """RESOLVED (Phase 5): two bare `ThreadPoolExecutor()` calls had no owner.
+def test_scheduler_check_pools_stay_uncapped_with_no_catalog_key():
+    """REVERTED (Phase 5): the two check pools are excluded from extraction.
 
-    `check_max_workers` is tri-state like `profiling.perf_tracker`: null defers to
-    the executor, which computes min(32, cpu_count + 4). No integer would have
-    been value-preserving here, because the width being replaced was
-    machine-dependent -- 12 would widen a 4-core host and narrow a 32-core one.
+    `plans/source-configuration-extraction-plan.md:622` excludes both bare
+    `ThreadPoolExecutor()` calls -- they have no cap today, so adding one is a
+    retune, not an extraction. A `check_max_workers` key was added anyway and then
+    reverted; this test is what stops it coming back a third time.
 
-    Spied on the constructor argument rather than read from the source: a call
-    site that resolves the accessor and then discards it satisfies any textual
-    check while the pool still sizes itself.
+    If a ceiling is ever genuinely wanted, the two pools need separate keys:
+    `check_https_fallback` has its own production caller at `src/run.py`, so it is
+    not merely the path the primary falls into and the two can run in one tick.
     """
-    from EdgeWARN.schedule import scheduler as scheduler_module
-    from EdgeWARN.schedule.config import check_max_workers
+    assert "check_max_workers" not in _scheduler_yaml()["scheduler"]
 
-    recorded = _scheduler_yaml()["scheduler"]
-    assert recorded["check_max_workers"] is None
-    assert check_max_workers() is None
+    schema = json.loads(
+        (REPO_ROOT / "config/schema/scheduler.schema.json").read_text(encoding="utf-8")
+    )
+    scheduler_schema = schema["properties"]["scheduler"]
+    assert "check_max_workers" not in scheduler_schema["properties"]
+    assert "check_max_workers" not in scheduler_schema["required"]
 
-    widths: list = []
-    real_executor = concurrent.futures.ThreadPoolExecutor
+    config_source = (REPO_ROOT / "src/EdgeWARN/schedule/config.py").read_text(encoding="utf-8")
+    assert "check_max_workers" not in config_source
 
-    class _SpyExecutor(real_executor):
-        def __init__(self, *args, max_workers=None, **kwargs):
-            widths.append(max_workers)
-            # 12 check_products, so an unconstrained pool would fan out that far.
-            super().__init__(*args, max_workers=max_workers or 2, **kwargs)
-
-    modifiers = [("CONUS", "EchoTop_18_00.50", "MRMS_ECHOTOP18_DIR")]
-    checker = scheduler_module.MRMSUpdateChecker()
-
-    # Both pools: the primary S3 check, then the HTTPS fallback it falls into when
-    # no timestamps come back.
-    with mock.patch.object(
-        scheduler_module.concurrent.futures, "ThreadPoolExecutor", _SpyExecutor
-    ), mock.patch.object(
-        scheduler_module.MRMSUpdateChecker, "_get_modifier_times", lambda *a, **k: set()
-    ), mock.patch(
-        "EdgeWARN.ingest.mrms.https_client.HttpsFileFinder"
-    ) as fake_finder:
-        fake_finder.return_value.find_files_sync.return_value = []
-        checker.latest_common_minute_1h(modifiers)
-
-    # One entry per pool, and the catalog's null reached both.
-    assert widths == [None, None]
-
-    # An integer must actually reach the executor, not just the accessor.
-    with mock.patch.object(
-        scheduler_module, "check_max_workers", lambda: 3
-    ), mock.patch.object(
-        scheduler_module.concurrent.futures, "ThreadPoolExecutor", _SpyExecutor
-    ), mock.patch.object(
-        scheduler_module.MRMSUpdateChecker, "_get_modifier_times", lambda *a, **k: {1}
-    ):
-        widths.clear()
-        checker.latest_common_minute_1h(modifiers)
-
-    assert widths == [3]
+    # Both pools stay bare. Counted rather than merely searched, so a cap
+    # reintroduced at one of the two sites still fails.
+    source = (REPO_ROOT / "src/EdgeWARN/schedule/scheduler.py").read_text(encoding="utf-8")
+    assert source.count("concurrent.futures.ThreadPoolExecutor() as executor:") == 2
+    assert "max_workers" not in source
 
 
 # --- Historical replay: the loop literals now live in the catalog ---------

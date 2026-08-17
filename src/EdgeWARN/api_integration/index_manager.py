@@ -7,7 +7,6 @@ from util.atomic import atomic_write_json
 from EdgeWARN.api_integration.config import (
     inactive_cell_max_age_minutes,
     remove_old_cells_realtime,
-    stormcell_resync_every_updates,
 )
 
 
@@ -24,8 +23,6 @@ class APIIndexManager:
         )
         self.cell_timestamps = {}
         self.stormcell_timestamps = set()
-        self.stormcell_updates_since_resync = 0
-        self.stormcell_resync_interval = stormcell_resync_every_updates()
         self._initial_scan_done = False
         self._stormcell_initial_scan_done = False
         
@@ -62,7 +59,6 @@ class APIIndexManager:
                 timestamps.append(timestamp)
 
         self.stormcell_timestamps = set(timestamps)
-        self.stormcell_updates_since_resync = 0
         self._stormcell_initial_scan_done = True
         
         # Create index
@@ -120,26 +116,23 @@ class APIIndexManager:
             
     def update_stormcell_index(self, timestamp: str):
         """
-        Update stormcell_index.json incrementally for new timestamps.
-        Falls back to full directory resync periodically to reconcile deletions.
-        
+        Update stormcell_index.json incrementally, or resync if no timestamp.
+
+        No periodic resync counter: every caller constructs a fresh manager, so a
+        per-instance counter would reset before it could ever reach an interval.
+        `api_index.resync_every_updates` records the interval a reused manager
+        should adopt and is deliberately left unread until one exists.
+
         Args:
             timestamp: Timestamp of the latest stormcell output.
         """
         if not self._stormcell_initial_scan_done:
             self._initialize_stormcell_index()
 
-        self.stormcell_updates_since_resync += 1
-
-        should_resync = (
-            self.stormcell_updates_since_resync >= self.stormcell_resync_interval
-            or not timestamp
-        )
-
         timestamp_str = str(timestamp) if timestamp is not None else ""
         stormcell_file = fs.STORMCELL_DIR / f"stormcells_{timestamp_str}.json"
 
-        if not should_resync and stormcell_file.exists():
+        if timestamp and stormcell_file.exists():
             self.stormcell_timestamps.add(timestamp_str)
             index_data = {
                 "timestamps": sorted(self.stormcell_timestamps),
