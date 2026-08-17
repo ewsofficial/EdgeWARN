@@ -4,7 +4,7 @@
 #         middleware/cors.js:6-13; middleware/rateLimit.js:4-5;
 #         middleware/requestId.js:3; middleware/security.js:6,10,19;
 #         repositories/artifactRepository.js:14-15,17-21,28,76;
-#         services/validation.js:1-4,15-16,18-19; services/ancillary.js:4-6;
+#         services/validation.js:1-4,15-16,18-19; services/ancillary.js RADAR_PRODUCTS;
 #         services/analysis.js:4; services/renders.js:5-7,16-17,47,50,60,62,85;
 #         config/productCatalog.js:3,10,13-14;
 #         routes/v3/index.js:6-9,10,13-18,36-37;
@@ -141,14 +141,20 @@ render_defaults:
   grid_maxima: {rows: 100, cols: 100, tile_size: 4096}
 
 validation:
-  # ancillary.js:6 RADAR_PRODUCTS. An allowlist -- a product absent from this set
-  # is rejected before any file lookup, so the recorded names matter, not just
-  # the count. CCORH is present here but absent from ewmrs_render.yaml
+  # Read by services/ancillary.js, which builds its Set from this key inside
+  # createAncillaryServices and keeps no copy of its own. An allowlist -- a product
+  # absent from this set is rejected before any file lookup, so the recorded names
+  # matter, not just the count. CCORH is present here but absent from ewmrs_render.yaml
   # `nexrad_gui.variable_colormaps`, which colors only the other six, so the API
   # accepts one product the renderer never draws.
   radar_products: [DBZH, VRADH, WRADH, PHIDP, CCORH, RHOHV, ZDR]
 
 product_catalog:
+  # A count of src/api/config/product-catalog.json, which the Node API imports
+  # directly. Nothing derives one from the other and this is the number reported as
+  # diagnostics.effective.renderProductCount, so a catalog that gained an entry
+  # would keep serving the stale count. An invariant test compares the two and
+  # checks each entry's fields, since a count alone would pass for 31 empty objects.
   entries: 31
 
 env_overrides:

@@ -460,7 +460,7 @@ The current API supports only the surface-analysis type `sfc`.
 
 ### GET /wpc/fetch?type=sfc
 
-Lists available timestamped WPC surface-analysis GeoJSON artifacts. The route scans files matching `wpc_sfc_YYYYMMDD-HH0000.geojson`, ignores `latest.geojson`, and returns timestamps newest first.
+Lists available timestamped WPC surface-analysis GeoJSON artifacts. The route scans files matching `wpc_sfc_YYYYMMDD-HHMMSS.geojson`, ignores `latest.geojson`, and returns timestamps newest first. The ingest side only ever writes hour-aligned names (`HH0000`), so that is all you will see in practice, but the reader accepts any valid time.
 
 Responses:
 

@@ -3,13 +3,19 @@ import { isLayerId, timestamp } from './validation.js';
 
 const RADAR_SITE = /^[A-Z0-9]{4}$/;
 const ELEVATION = /^\d{1,3}(?:\.\d{1,2})?$/;
-const RADAR_PRODUCTS = new Set(['DBZH', 'VRADH', 'WRADH', 'PHIDP', 'CCORH', 'RHOHV', 'ZDR']);
 const noRoot = async (fn, fallback = []) => { try { return await fn(); } catch (error) { if (error.code === 'NOT_FOUND') return fallback; throw error; } };
+const escapeLiteral = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function radarFile(site, product, elevation, value) { return `${site}_${product}_${elevation}_${value}.bin.gz`; }
-function validRadar(site, elevation, value, product) { return RADAR_SITE.test(site) && ELEVATION.test(elevation) && timestamp(value) && RADAR_PRODUCTS.has(product); }
 
-export function createAncillaryServices(repository) {
+// `config` carries api.yaml's `validation` block and wpc.yaml's `wpc` block. Read
+// here and not at module scope: createConfig resolves the config directory from
+// argv and env, which happens after every import has already been evaluated.
+export function createAncillaryServices(repository, config) {
+  const radarProducts = new Set(config.validation.radar_products);
+  const validRadar = (site, elevation, value, product) => RADAR_SITE.test(site) && ELEVATION.test(elevation) && timestamp(value) && radarProducts.has(product);
+  const wpcSurfaceFile = (value) => `${config.wpc.surface_filename_prefix}${value}${config.wpc.surface_filename_suffix}`;
+  const wpcSurfaceName = new RegExp(`^${escapeLiteral(config.wpc.surface_filename_prefix)}(\\d{8}-\\d{6})${escapeLiteral(config.wpc.surface_filename_suffix)}$`);
   const radarAvailability = async (site) => {
     if (!RADAR_SITE.test(site)) throw new ArtifactError('INVALID_PATH', 'Invalid radar site');
     const elevations = await repository.list('gui', ['NEXRAD', site]);
@@ -19,7 +25,7 @@ export function createAncillaryServices(repository) {
       const scans = new Map();
       for (const file of files.filter((entry) => entry.isFile())) {
         const match = file.name.match(new RegExp(`^${site}_([A-Z0-9]+)_${elevationEntry.name.replace('.', '\\.')}_(\\d{8}-\\d{6})\\.bin\\.gz$`));
-        if (match && RADAR_PRODUCTS.has(match[1]) && timestamp(match[2])) {
+        if (match && radarProducts.has(match[1]) && timestamp(match[2])) {
           const products = scans.get(match[2]) || []; products.push(match[1]); scans.set(match[2], products);
         }
       }
@@ -79,9 +85,9 @@ export function createAncillaryServices(repository) {
     async rapMappings() { return repository.readJson('static', ['mappings.json']); },
     async listWpcSurface() {
       const entries = await noRoot(() => repository.list('wpc', ['surface_analysis']));
-      return entries.map((entry) => entry.name.match(/^wpc_sfc_(\d{8}-\d{6})\.geojson$/)?.[1]).filter((value) => value && timestamp(value)).sort().reverse();
+      return entries.map((entry) => entry.name.match(wpcSurfaceName)?.[1]).filter((value) => value && timestamp(value)).sort().reverse();
     },
-    async wpcSurface(value) { if (!timestamp(value)) throw new ArtifactError('INVALID_PATH', 'Invalid timestamp'); return repository.readJson('wpc', ['surface_analysis', `wpc_sfc_${value}.geojson`]); },
+    async wpcSurface(value) { if (!timestamp(value)) throw new ArtifactError('INVALID_PATH', 'Invalid timestamp'); return repository.readJson('wpc', ['surface_analysis', wpcSurfaceFile(value)]); },
     async colormaps() { return repository.readJson('static', ['colormaps.json']); }
   };
 }

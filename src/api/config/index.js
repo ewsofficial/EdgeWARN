@@ -73,8 +73,12 @@ export function createConfig({ env = process.env, argv = process.argv.slice(2), 
   const configDirEnv = env.EDGEWARN_CONFIG_DIR;
   const selectedConfigDir = configDirCli || configDirEnv;
   const api = loadConfig('api', { configDir: selectedConfigDir });
+  // The API serves WPC surface analyses out of a directory the ingest side names,
+  // so it reads that file's naming keys rather than restating them here.
+  const wpc = loadConfig('wpc', { configDir: selectedConfigDir }).wpc;
   const resolvedConfigRoot = configRoot(selectedConfigDir);
   const apiProvenance = getProvenance('api', { configDir: selectedConfigDir });
+  const wpcProvenance = getProvenance('wpc', { configDir: selectedConfigDir });
   const canonicalCli = oneValue(readFlag(argv, ['--base-dir']), '--base-dir');
   const deprecatedCli = oneValue(readFlag(argv, ['--base_dir']), '--base_dir');
   const canonicalEnv = env.EDGEWARN_BASE_DIR;
@@ -98,7 +102,14 @@ export function createConfig({ env = process.env, argv = process.argv.slice(2), 
     ...(env.TRUST_PROXY_IPS === undefined && env.TRUST_PROXY === undefined ? [] : [env.TRUST_PROXY_IPS === undefined ? 'TRUST_PROXY' : 'TRUST_PROXY_IPS']),
   ];
   const diagnostics = Object.freeze({
-    source: Object.freeze({ file: apiProvenance.path, schemaVersion: apiProvenance.schema_version, root: resolvedConfigRoot }),
+    source: Object.freeze({
+      file: apiProvenance.path,
+      schemaVersion: apiProvenance.schema_version,
+      root: resolvedConfigRoot,
+      // ancillary.js derives the surface-analysis filenames from wpc.yaml, making it
+      // a second effective source that /health/live would otherwise not name.
+      wpc: Object.freeze({ file: wpcProvenance.path, schemaVersion: wpcProvenance.schema_version }),
+    }),
     overrides: Object.freeze(activeOverrides),
     effective: Object.freeze({
       baseDir,
@@ -118,6 +129,7 @@ export function createConfig({ env = process.env, argv = process.argv.slice(2), 
     configDir: resolvedConfigRoot,
     repoDir: repoRoot(selectedConfigDir),
     api,
+    wpc,
     diagnostics,
     port, packageVersion, isProduction: env.NODE_ENV === 'production', requestTimeoutMs,
     allowedOrigins: parseOrigins(env.ALLOWED_ORIGINS === undefined ? api.security.allowed_origins : env.ALLOWED_ORIGINS),

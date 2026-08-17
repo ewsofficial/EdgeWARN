@@ -464,13 +464,24 @@ def test_node_product_catalog_baseline():
     assert_baseline("node_product_catalog", catalog)
 
 
+def _recorded_entry_count() -> int:
+    """`api.yaml product_catalog.entries` -- the sole owner of the expected count.
+
+    Restating the number here would put a third and fourth copy in this file alone,
+    and neither would be the one `createConfig` actually serves.
+    """
+    from common.config import loader
+
+    return loader.load_config("api")["product_catalog"]["entries"]
+
+
 def test_node_product_catalog_length_and_unique_ids():
     import json
 
     catalog = json.loads(
         (REPO_ROOT / "src/api/config/product-catalog.json").read_text(encoding="utf-8")
     )
-    assert len(catalog) == 31
+    assert len(catalog) == _recorded_entry_count()
 
     ids = [entry["id"] for entry in catalog]
     assert len(ids) == len(set(ids))
@@ -490,4 +501,4 @@ def test_node_product_catalog_length_matches_ewmrs_file_list_by_coincidence_or_d
     catalog = json.loads(
         (REPO_ROOT / "src/api/config/product-catalog.json").read_text(encoding="utf-8")
     )
-    assert len(catalog) == len(get_file_list()) == 31
+    assert len(catalog) == len(get_file_list()) == _recorded_entry_count()
