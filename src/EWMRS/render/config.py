@@ -60,21 +60,14 @@ def goes_transform_resampling():
     return method
 
 
-_TILES = _render_config()["tiles"]
-TILE_SIZE = _TILES["tile_size"]
+def tile_size() -> int:
+    """Chunk edge length, resolved after entry points select a config root."""
+    return _render_config()["tiles"]["tile_size"]
 
-# EWMRS value-chunk wire-format invariants. Keep these values together: they
-# are written to both index levels and consumed by API clients.
-_CHUNK = _render_config()["chunk_format"]
-CHUNK_SCHEMA_VERSION = _CHUNK["wire_version"]
-CHUNK_FORMAT_VERSION = _CHUNK["format_version"]
-CHUNK_ENCODING = _CHUNK["encoding"]
-CHUNK_MEDIA_TYPE = _CHUNK["media_type"]
-CHUNK_FILE_SUFFIX = _CHUNK["file_suffix"]
-CHUNK_COMPRESSION = _CHUNK["compression"]
-CHUNK_BYTES_PER_COMPONENT = _CHUNK["bytes_per_component"]
-CHUNK_PIXEL_ROW_ORDER = _CHUNK["pixel_row_order"]
-CHUNK_GRID_ORIGIN = _CHUNK["grid_origin"]
+
+def chunk_schema_version() -> int:
+    """Schema version written into both EWMRS chunk index levels."""
+    return _render_config()["chunk_format"]["wire_version"]
 
 
 def chunk_format_descriptor(*, include_media_type: bool = False) -> dict:
@@ -83,21 +76,22 @@ def chunk_format_descriptor(*, include_media_type: bool = False) -> dict:
     EWMRS serves raw single-channel science values; derived color products
     (for example GOES RGB composites) are a client-side concern.
     """
+    chunk = _render_config()["chunk_format"]
     value = {
-        "version": CHUNK_FORMAT_VERSION,
-        "encoding": CHUNK_ENCODING,
-        "file_suffix": CHUNK_FILE_SUFFIX,
-        "compression": CHUNK_COMPRESSION,
-        "data_type": _CHUNK["data_type"],
-        "channels": _CHUNK["channels"],
-        "value_kind": _CHUNK["value_kind"],
-        "no_data": _CHUNK["no_data"],
-        "bytes_per_component": CHUNK_BYTES_PER_COMPONENT,
-        "pixel_row_order": CHUNK_PIXEL_ROW_ORDER,
-        "grid_origin": CHUNK_GRID_ORIGIN,
+        "version": chunk["format_version"],
+        "encoding": chunk["encoding"],
+        "file_suffix": chunk["file_suffix"],
+        "compression": chunk["compression"],
+        "data_type": chunk["data_type"],
+        "channels": chunk["channels"],
+        "value_kind": chunk["value_kind"],
+        "no_data": chunk["no_data"],
+        "bytes_per_component": chunk["bytes_per_component"],
+        "pixel_row_order": chunk["pixel_row_order"],
+        "grid_origin": chunk["grid_origin"],
     }
     if include_media_type:
-        value["media_type"] = CHUNK_MEDIA_TYPE
+        value["media_type"] = chunk["media_type"]
     return value
 
 def nexrad_variable_colormaps() -> dict:

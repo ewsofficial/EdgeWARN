@@ -162,7 +162,7 @@ class GUIValueWriter:
         *,
         timing_context: dict | None = None,
     ) -> Tuple[List[Path], str]:
-        from .config import TILE_SIZE
+        from .config import tile_size
 
         render_start_s = time.perf_counter()
         dt = self._coerce_timestamp(self.timestamp)
@@ -170,16 +170,17 @@ class GUIValueWriter:
         self.outdir.mkdir(parents=True, exist_ok=True)
 
         if tile_output:
+            chunk_size = tile_size()
             values = np.asarray(values, dtype=np.float32)
             if values.ndim != 2:
                 raise ValueError("Rendered values must be scalar [height,width]")
-            if values.shape[0] % TILE_SIZE or values.shape[1] % TILE_SIZE:
+            if values.shape[0] % chunk_size or values.shape[1] % chunk_size:
                 raise ValueError(
-                    f"Rendered value dimensions {values.shape[:2]} are not divisible by chunk size {TILE_SIZE}"
+                    f"Rendered value dimensions {values.shape[:2]} are not divisible by chunk size {chunk_size}"
                 )
-            rows = values.shape[0] // TILE_SIZE
-            cols = values.shape[1] // TILE_SIZE
-            tile_grid = {"rows": rows, "cols": cols, "tile_size": TILE_SIZE}
+            rows = values.shape[0] // chunk_size
+            cols = values.shape[1] // chunk_size
+            tile_grid = {"rows": rows, "cols": cols, "tile_size": chunk_size}
             artifact_paths = self._save_chunks_from_array(
                 values,
                 timestamp,
@@ -297,7 +298,7 @@ class GUIValueWriter:
         return [tile_path for _, tile_path in tile_specs]
 
     def _write_timestamp_index(self, timestamp_dir: Path, tile_specs: list[tuple[np.ndarray, Path]], tile_grid: dict) -> None:
-        from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
+        from .config import chunk_format_descriptor, chunk_schema_version
         normalized_tile_grid = _normalize_tile_grid(tile_grid)
         chunks: list[list[int]] = []
         for _, tile_path in tile_specs:
@@ -308,7 +309,7 @@ class GUIValueWriter:
 
         chunks.sort(key=lambda item: (item[1], item[0]))
         output_data = {
-            "schema_version": CHUNK_SCHEMA_VERSION,
+            "schema_version": chunk_schema_version(),
             "timestamp": timestamp_dir.name,
             "representation": "binary_chunks",
             "chunk_format": chunk_format_descriptor(),
@@ -323,7 +324,7 @@ class GUIValueWriter:
             io_manager.write_error(f"Failed to update index.json in {timestamp_dir}: {e}")
 
     def _update_index(self, new_timestamp, tile_grid=None):
-        from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
+        from .config import chunk_format_descriptor, chunk_schema_version
         index_file = self.outdir / "index.json"
         timestamps = []
         existing_tile_grid = None
@@ -347,7 +348,7 @@ class GUIValueWriter:
 
             try:
                 output_data = {
-                    "schema_version": CHUNK_SCHEMA_VERSION,
+                    "schema_version": chunk_schema_version(),
                     "timestamps": timestamps,
                     "representation": "binary_chunks",
                     "chunk_format": chunk_format_descriptor(include_media_type=True),

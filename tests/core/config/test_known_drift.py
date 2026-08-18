@@ -1562,6 +1562,17 @@ def test_render_config_no_longer_snapshots_the_file_list_at_import_time():
     assert "\nfile_list = " not in source
 
 
+def test_render_chunk_format_resolves_after_config_root_selection(tmp_path):
+    """`run.py` imports EWMRS before `get_args()`, so chunk settings stay lazy."""
+    from EWMRS.render import config as render_config
+
+    config_dir = _config_dir_with_overrides(
+        tmp_path, "ewmrs_render", indent="  ", tile_size="175"
+    )
+    with _with_config_root(config_dir):
+        assert render_config.tile_size() == 175
+
+
 def test_util_file_binds_paths_at_import_but_already_knows_base_dir():
     """RESOLVED as far as it can be: the bind stays, the value is now correct.
 
