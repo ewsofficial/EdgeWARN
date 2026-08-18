@@ -1,13 +1,13 @@
 # runtime.yaml — Audit §1 (src/util/io.py shared parser), §2 env vars, §7 scheduler
 #
-# Source: src/run.py:48-58,118-120,136-152,171-182,195,222-224,356-357;
-#         src/util/io.py:86-87,118-119,139-158;
-#         src/util/runtime/config.py; src/util/runtime/processes.py:16-30,78-81,99;
-#         src/util/runtime/background.py:77-103,204-239,255-285;
-#         src/util/runtime/goes.py:54-107; src/util/runtime/cycle.py:128-137,350,478,610,644;
-#         src/util/performance.py:12-32,77-87; src/EdgeWARN/pipeline.py:230,376;
+# Source: src/run.py:48-58,60-65,168-169,186-204,228-238,252,284,415-416;
+#         src/util/io.py:86-89,92-105,113-127,130-143,147-164,166-176,187;
+#         src/util/runtime/config.py; src/util/runtime/processes.py:12-30,78-81,84-99,152-173;
+#         src/util/runtime/background.py:77-103,204-205,236-239,255-258,277,284-287;
+#         src/util/runtime/goes.py:54-107; src/util/runtime/cycle.py:128-137,350,479,609,643;
+#         src/util/performance.py:14-44,50,96-105; src/EdgeWARN/pipeline.py:235,380;
 #         src/common/pipeline/goes_readiness.py:18-19,127;
-#         src/common/pipeline/coordinator.py:125
+#         src/common/pipeline/coordinator.py:146
 #
 # Every key below is read by the source it names. Children spawned by the
 # supervisor receive no argv, so they re-read this file through
@@ -16,15 +16,16 @@
 # `profile`, `mrms_core_only` and the eight `disable_*` toggles were absent while
 # each was an argparse `action="store_true"` flag, which fixed the value to False
 # before any YAML could be consulted -- writing `true` here could never take
-# effect. io.py:88-91,121-135 now declares them with
+# effect. io.py:117-120,150-164 now declares them with
 # `argparse.BooleanOptionalAction` and `default=None`, so a flag says True
 # (`--profile`), False (`--no-profile`), or nothing at all, and this file owns the
-# "nothing" case. Every value below reproduces the old argparse default, so the
-# effective behavior of a bare `run.py` is unchanged.
+# "nothing" case; :135-138,171-176 resolve them against the values below. Every
+# value below reproduces the old argparse default, so the effective behavior of a
+# bare `run.py` is unchanged.
 #
 # --mrms-core-only fans out further than the old comment here claimed: it forces
-# EWMRS, NWS, METAR, GOES and NEXRAD off (run.py:59-64), WPC off (:195), and RAP
-# ingest off (cycle.py:480) -- seven subsystems, not three.
+# EWMRS, NWS, METAR, GOES and NEXRAD off (run.py:61-65), WPC off (:252), and RAP
+# ingest off (cycle.py:479) -- seven subsystems, not three.
 #
 # `env_overrides.run.base_dir` is also gone. Python reads no environment variable
 # for the base directory at all -- util/file.py chooses by platform.system() at
@@ -69,10 +70,10 @@ identity:
   weather_api_accept: application/geo+json
 
 run:
-  # io.py:118-119,140-141. The CLI flags default to None so these values win
+  # io.py:147-148,169-170. The CLI flags default to None so these values win
   # unless --lat_limits/--lon_limits is passed.
   lat_limits: [20, 55]
-  # io.py:158 rewrites this to `lon % 360` after the overlay, so a negative
+  # io.py:187 rewrites this to `lon % 360` after the overlay, so a negative
   # western longitude here becomes its 0-360 equivalent. Recorded pre-normalized.
   #
   # historical.yaml's `lon` is NOT normalized and stays signed; both schemas
@@ -80,8 +81,9 @@ run:
   # ignores. handler.py:118-123 converts per dataset either way.
   lon_limits: [230, 300]
 
-  # io.py:88-91, resolved in _resolve_common_processing_args, so these four are
-  # the only toggles that reach process_historical.py as well as run.py.
+  # io.py:117-120, resolved at :135-138 in _resolve_common_processing_args, so
+  # these four are the only toggles that reach process_historical.py as well as
+  # run.py.
   #
   # `profile: true` only calls perf_tracker.set_enabled(True)
   # (pipeline.py:235,380). It does not compete with `profiling.perf_tracker`
@@ -91,15 +93,16 @@ run:
   disable_tracking: false
   disable_polygon_expansion: false
 
-  # io.py:121-135, resolved in get_args. run.py only; process_historical.py
-  # declares no such flags, so these keys are not read on the historical path.
+  # io.py:150-164, resolved at :171-176 in get_args. run.py only;
+  # process_historical.py declares no such flags, so these keys are not read on
+  # the historical path.
   disable_ewmrs: false
   disable_nws: false
   disable_metar: false
   disable_goes: false
   disable_nexrad: false
   # Setting this true here forces seven subsystems off, exactly as the flag does
-  # (run.py:60-65, :195, cycle.py:479) -- see the note at the top of this file.
+  # (run.py:61-65, :252, cycle.py:479) -- see the note at the top of this file.
   mrms_core_only: false
 
 goes_coordination:
@@ -127,7 +130,7 @@ goes_coordination:
   # goes.py:71,107, the subdivision of each readiness-wait sleep.
   render_wait_poll_granularity_seconds: 0.2
 
-  # cycle.py:610, the second element of the render task tuple; background.py:136
+  # cycle.py:609, the second element of the render task tuple; background.py:136
   # unpacks it as `dt, max_entries = latest_task[:2]`.
   render_task_max_entries: 10
 
@@ -135,15 +138,15 @@ goes_coordination:
 # backoff; more than max_restarts deaths inside restart_window_seconds disables
 # restarts for that child rather than looping forever.
 supervisor:
-  # run.py:356-357, the shutdown-watch loop -- 30 ticks of 0.5 s, so the
+  # run.py:415-416, the shutdown-watch loop -- 30 ticks of 0.5 s, so the
   # scheduler notices a dead accessory within 15 s. These two are consumed in
   # run.py, not processes.py.
   check_ticks: 30
   tick_seconds: 0.5
-  max_restarts: 5                       # processes.py:78, and run.py:176
-  restart_window_seconds: 60.0          # :79, run.py:177
-  base_backoff_seconds: 1.0             # :80, run.py:178
-  max_backoff_seconds: 30.0             # :81, run.py:179
+  max_restarts: 5                       # processes.py:78, and run.py:232
+  restart_window_seconds: 60.0          # :79, run.py:233
+  base_backoff_seconds: 1.0             # :80, run.py:234
+  max_backoff_seconds: 30.0             # :81, run.py:235
 
   # processes.py:16-30 stop_process. terminate() is given join_timeout seconds;
   # a child still alive after that is kill()ed and joined for one more second.
@@ -154,7 +157,7 @@ supervisor:
   # reaches a child only if that child was registered with BOTH a heartbeat_path
   # and a heartbeat_stale_seconds -- _stale_heartbeat_age returns None without
   # the pair (processes.py:155) -- and the sole such child, NEXRAD Ingest,
-  # supplies its own from nexrad.yaml at run.py:229. A value here could never
+  # supplies its own from nexrad.yaml at run.py:284. A value here could never
   # reach a consumer.
   #
   # It is also narrower than "startup grace" suggests: it is read only in the
@@ -166,34 +169,34 @@ supervisor:
   # DATA_DIR-relative artifacts the supervisor writes. Named by filesystem
   # attribute, resolved with getattr(util.file, dir) at call time so a base
   # directory rebound by initialize_filesystem() is honored.
-  health_file: {dir: DATA_DIR, name: runtime/accessory_health.json}      # run.py:180-182
-  nexrad_heartbeat_file: {dir: DATA_DIR, name: runtime/nexrad_ingest_heartbeat.json}  # run.py:172-173
+  health_file: {dir: DATA_DIR, name: runtime/accessory_health.json}      # run.py:236-238
+  nexrad_heartbeat_file: {dir: DATA_DIR, name: runtime/nexrad_ingest_heartbeat.json}  # run.py:228-230
 
 # background.py accessory loop cadences. `sleep_until_boundary(n)` waits for the
 # next n-minute wall-clock boundary; `sleep_for(n, ...)` waits n seconds.
 background_intervals:
-  metar_boundary_minutes: 5             # background.py:255
-  boundary_wait_interval_seconds: 1.0   # :257,:285 shutdown-check granularity
-  nws_seconds: 120                      # :276
-  nws_interval_seconds: 1.0             # :276, the subdivision of that 120 s
-  wpc_boundary_minutes: 15              # :283
+  metar_boundary_minutes: 5             # background.py:256
+  boundary_wait_interval_seconds: 1.0   # :258,:287 shutdown-check granularity
+  nws_seconds: 120                      # :277
+  nws_interval_seconds: 1.0             # :277, the subdivision of that 120 s
+  wpc_boundary_minutes: 15              # :285
   # :205,238. A restart delay, not a cadence: the NEXRAD pipeline is expected to
   # run continuously, and this is how long the loop waits before relaunching it.
   nexrad_seconds: 5
   nexrad_interval_seconds: 0.2          # :239, the subdivision of that 5 s
 
 cycle:
-  # run.py:118-120. Named by filesystem attribute so it follows a relocated base dir.
+  # run.py:168-169. Named by filesystem attribute so it follows a relocated base dir.
   state_file: {dir: DATA_DIR, name: runtime/cycle_state.json}
 
   retry:                                # cycle.py:128-137 CycleRetryPolicy
     max_attempts: 3
-    # run.py:136-152 clamps both with max(0.0, ...), so 0 is legal and means
+    # run.py:193,199 clamp both with max(0.0, ...), so 0 is legal and means
     # "retry immediately" -- these are not exclusive-positive bounds.
     initial_backoff_seconds: 5.0
     max_backoff_seconds: 30.0
 
-  # Resolved inside run_tandem_ingest_cycle (coordinator.py) when the caller
+  # Resolved inside run_tandem_ingest_cycle (coordinator.py:146) when the caller
   # passes nothing, which is now every caller. The S3 listing depth for MRMS
   # detection and MRMS integration ingest, and for those two tasks only.
   #
@@ -202,7 +205,7 @@ cycle:
   # raising this value used to move realtime runs only -- a silent split that
   # resolving it from here, in both resolution sites, now makes impossible.
   #
-  # The second site is common/ingest/mrms/main.py, which resolves this same key
+  # The second site is common/ingest/mrms/main.py:34, which resolves this same key
   # for the entry points a caller invokes directly rather than through the
   # coordinator. Two sites, one owner: mrms_goes.yaml deliberately holds no copy
   # of this depth, because a copy there is what produced the split above.
@@ -214,21 +217,21 @@ cycle:
   # all, so raising this value cannot widen a GOES search.
   ingest_max_entries: 10
 
-  # cycle.py:644. How often the tandem cycle drains its log queues while waiting
+  # cycle.py:643. How often the tandem cycle drains its log queues while waiting
   # on the worker processes.
   log_drain_poll_seconds: 1
 
 profiling:
-  # TRI-STATE, not a boolean. performance.py:23 declares `_ENABLED: bool | None`
-  # and null here means "no opinion": _resolve_enabled (:22-32) consults
+  # TRI-STATE, not a boolean. performance.py:50 declares `_ENABLED: bool | None`
+  # and null here means "no opinion": _resolve_enabled (:24-44) consults
   # EDGEWARN_PERF_TRACKER first and falls back to this value, so writing `false`
   # would pin profiling off for anyone who has not set the variable. Either way
-  # the deferral ends once TimingTracker.set_enabled (:77-87) pins the global,
-  # which `--profile` does at EdgeWARN/pipeline.py:230,376.
+  # the deferral ends once TimingTracker.set_enabled (:96-105) pins the global,
+  # which `--profile` does at EdgeWARN/pipeline.py:235,380.
   perf_tracker: null
 
 env_overrides:
-  # io.py:87, --config-dir. The only row here with no counterpart key in this
+  # io.py:103,116, --config-dir. The only row here with no counterpart key in this
   # document, and necessarily so: it selects the directory these YAML files are
   # read FROM, so it can never be set from inside one.
   #

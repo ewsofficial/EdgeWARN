@@ -36,9 +36,11 @@ cleanup_defaults:
   # max_age_minutes=...), the one live caller that overrides the 60 above. It is
   # recorded as detection.yaml's `stormcell_cleanup_max_age_minutes` because the
   # owner is the detector, not the filesystem layer. Noted here so the 60 is not
-  # mistaken for a global ceiling. (metar.py:413,457 pass this key's own accessor
-  # rather than a literal; common/ingest/mrms/downloader.py:218,231 pass
-  # per-product values.)
+  # mistaken for a global ceiling. (common/ingest/metar.py:413,457 pass this key's
+  # own accessor rather than a literal; common/ingest/mrms/downloader.py:218,231
+  # pass per-product values. That path is spelled out because an
+  # EdgeWARN/ingest/metar.py also exists -- a four-line re-export shim, so a bare
+  # `metar.py:413` names a file with only 4 lines in it.)
 
 # The ordered candidates util/file.py probes for colormaps.json, first hit wins;
 # if none exists the first is used anyway, so it is also the reported location.
