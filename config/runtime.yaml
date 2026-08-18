@@ -173,6 +173,7 @@ supervisor:
 # next n-minute wall-clock boundary; `sleep_for(n, ...)` waits n seconds.
 background_intervals:
   metar_boundary_minutes: 5             # background.py:255
+  boundary_wait_interval_seconds: 1.0   # :257,:285 shutdown-check granularity
   nws_seconds: 120                      # :276
   nws_interval_seconds: 1.0             # :276, the subdivision of that 120 s
   wpc_boundary_minutes: 15              # :283

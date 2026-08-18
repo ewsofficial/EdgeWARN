@@ -89,9 +89,10 @@
     "background_intervals": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["metar_boundary_minutes", "nws_seconds", "nws_interval_seconds", "wpc_boundary_minutes", "nexrad_seconds", "nexrad_interval_seconds"],
+      "required": ["metar_boundary_minutes", "boundary_wait_interval_seconds", "nws_seconds", "nws_interval_seconds", "wpc_boundary_minutes", "nexrad_seconds", "nexrad_interval_seconds"],
       "properties": {
         "metar_boundary_minutes": { "type": "integer", "exclusiveMinimum": 0 },
+        "boundary_wait_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "nws_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "nws_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "wpc_boundary_minutes": { "type": "integer", "exclusiveMinimum": 0 },
