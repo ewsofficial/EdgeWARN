@@ -2486,6 +2486,27 @@ def test_probsevere_field_map_has_no_module_level_owner():
 # --- The 120-second scan cadence: two owners, kept distinct ----------------
 
 
+def test_fallback_and_default_dt_seconds_agree():
+    """`detection.fallback_dt_seconds` and `assignment_costs.default_dt_seconds`.
+
+    These are deliberately NOT collapsed: the first is the tracker's fallback
+    when elapsed time cannot be derived from timestamps, and belongs to the
+    subsystem that owns the timestamps; the second is a cost-function fallback in
+    the kalman package, unreachable in production because every live
+    `compute_cost` call site forwards a concrete dt.
+
+    They must nonetheless agree. Within one scan the state is propagated with
+    `kf.predict(dt_seconds)` and candidates are scored with the same dt, so if
+    the two diverged the cost function would score an implied velocity against a
+    different baseline than the state was advanced by.
+    """
+    from common.config.loader import load_config
+
+    detection = load_config("detection")["detection"]["fallback_dt_seconds"]
+    kalman = load_config("kalman")["assignment_costs"]["default_dt_seconds"]
+    assert detection == kalman == 120.0
+
+
 def test_update_cells_dt_seconds_has_no_literal_default():
     """`track.py` must not restate the fallback as a signature default.
 
