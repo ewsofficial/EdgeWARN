@@ -261,7 +261,7 @@ than an idealized model.
 | `ewmrs_render.yaml` `mrms_layers` | `{name, colormap_key}`, plus `filepath` and `outdir` to be added | 15 |
 | `ewmrs_render.yaml` `goes_layers` | `common` / `reflectance` / `brightness_temp` groups | 16 |
 | `integration.yaml` `stats_datasets` | `{name, source, key, method, percentile?}` | 25 |
-| `ewmrs_rap_uint16.yaml` `layers` | `{name, short_names, filter, units, scale, colormap_key}` | 23 explicit + 20 generated from `pressure_levels_mb` |
+| `ewmrs_rap_uint16.yaml` | `{schema_version, max_timestamps, timestamp_format, force}` runtime policy | 4 keys; the 43-layer Uint16 display catalog remains code-owned in `src/EWMRS/rap/config.py` by the Phase 5 decision not to ship inert catalog keys |
 
 There are no stable lowercase product IDs and no `roles:` membership map. The
 readiness subset is a separate list of product strings, not a role flag, and
@@ -507,7 +507,7 @@ uppercase constants.
 | `src/util/file.py` | Default base directories (Windows `C:\EdgeWARN_input`, POSIX `~/EdgeWARN_input`, workspace fallback), the cleanup age/count defaults, the `.idx`/`.gz` scan skip rules, and the colormap search path | `filesystem.yaml` |
 | `src/util/file.py` | The ~113 MRMS/GOES/RAP/METAR/NWS/stormcell/cell/alert/NEXRAD directory and manifest names | **Stays in code.** Derived from base dir; referenced by catalogs via attribute name |
 | `src/api/config/index.js` | Base-dir fallback and all API data/index directory mappings and required-directory list | `filesystem.yaml` plus `api.yaml` |
-| `src/EdgeWARN/api/config.js`, `src/EWMRS/api/server.js` | Legacy duplicates of the base-dir fallback, GUI root, and `GUI_SUBDIRS` | Legacy services; retire rather than wire. Flag if still deployed |
+| `src/EdgeWARN/api/`, `src/EWMRS/api/` | Legacy API services | Resolved: server source was deleted in `a3d6cbb`; only `src/api/` is active |
 | `src/EWMRS/api/routes/colormaps.js`, `src/EWMRS/api/routes/rap.js`, `src/EWMRS/pipeline.py` | Source-relative `colormaps.json` and `mappings.json` paths | Out of scope for this plan; see the follow-up note below |
 | `src/EWMRS/colormaps.json`, `src/EWMRS/mappings.json` | Colormap payload; RAP layer-to-colormap mapping | **Out of scope.** These stay where they are for now |
 
@@ -531,7 +531,7 @@ radius from reading YAML.
 | `src/EdgeWARN/process/integrate/core/integrator.py` | Complete ProbSevere source-field to output-field map | `integration.yaml` |
 | `src/EdgeWARN/process/integrate/integrate_rap.py` | Names chosen from the trusted transform registry; derived-field formula strings | `integration.yaml`; implementations stay in code. See the derived-formula note below |
 | `src/EWMRS/render/config.py` | Fifteen MRMS render layers and 16 GOES ABI layers, including source variables, fallbacks, ranges, colormaps, transforms, prefixes, and `fs.*` path attributes | `ewmrs_render.yaml` |
-| `src/EWMRS/rap/config.py` | Wind/thermodynamic pressure levels; full Uint16 RAP layer catalog; GRIB filters; variables/aliases; units; ranges; descriptions; output names; colormap keys | `ewmrs_rap_uint16.yaml` (colormap *matching* helpers stay in code) |
+| `src/EWMRS/rap/config.py` | 43-layer Uint16 display catalog, pressure levels, filters, scales, descriptions, output names, and colormap selection | Deliberately stays in this typed code registry. `ewmrs_rap_uint16.yaml` owns only retention/timestamp/force policy; extracting the display catalog would be a separate schema migration |
 | `src/common/ingest/nexrad/config.py`, `grouping.py` | Source buckets/API, allowed VCPs, elevation dedup/range policy, canonical elevation bins/readiness IDs, and supported waveform policy | `nexrad.yaml` |
 | `src/EWMRS/render/nexrad.py` | VCP-to-elevation labels and NEXRAD variable-to-colormap mapping | `nexrad.yaml` (selection policy) and `ewmrs_render.yaml` (colormaps) |
 | `src/api/routes/` NEXRAD validation | Duplicated allowed NEXRAD product set | Derived from `nexrad.yaml`; regexes remain code |
@@ -752,11 +752,10 @@ not.
 
 ### Node API service
 
-`src/api/` is the current service and the only one this plan wires.
-`src/EdgeWARN/api/` and `src/EWMRS/api/` both still exist in the tree but are
-**legacy**; they duplicate ports, CORS, base-dir fallbacks and `GUI_SUBDIRS`.
-Retire them rather than teaching them to read `api.yaml`, and confirm nothing
-deploys them before deleting.
+`src/api/` is the current service and the only one this plan wires. The legacy
+server source under `src/EdgeWARN/api/` and `src/EWMRS/api/` was retired in
+`a3d6cbb`; do not recreate legacy adapters solely to give them configuration
+ownership.
 
 | Current source | Values to extract | Destination |
 | --- | --- | --- |
@@ -905,8 +904,10 @@ transcription already happened.
    implement `getattr` resolution with a load-time error on unknown names.
 4. Restore the per-channel dict shape for GOES `mask_min`/`mask_max`.
 5. Delete `scale_rule`, `radian_detection` and `crs_strategy`.
-6. Complete the RAP catalogs to their real 43-layer and `get_rap_products()`
-   contents, and validate `transform` names against `TRANSFORMS`.
+6. Keep the RAP integration catalog complete in `integration.yaml` and validate
+   `transform` names against `TRANSFORMS`. The 43-layer Uint16 *display* catalog
+   deliberately remains in `EWMRS/rap/config.py`; Phase 5 rejected unused YAML
+   catalog keys rather than adding a second owner.
 7. Fix the NEXRAD `sites` sentinel and add the missing CLI key.
 8. Add uniqueness and coverage tests for upstream modifier, output name,
    directory, API route key, and list membership.
@@ -1024,8 +1025,9 @@ file-ownership invariant rather than a value.
 - The Node `product-catalog.json` and the Python catalogs contain the same
   product names and directory names.
 - Catalog lengths are asserted explicitly: 28 and 12 MRMS, 16 ABI, 15 MRMS
-  render, 16 GOES render, 25 stats, 43 RAP, 31 Node product catalog. A silent
-  drop during transcription is the most likely regression.
+  render, 16 GOES render, 25 stats, 43 code-owned RAP Uint16 display layers,
+  and 31 Node product catalog. A silent drop during transcription is the most
+  likely regression.
 - List order is explicit where it affects readiness, output, or tests; no loader
   relies on unordered map iteration.
 
@@ -1121,12 +1123,13 @@ but the schemas and checked-in config remain authoritative.
   `mrms_goes.yaml`, and the source lists are deleted.
 - [ ] GOES ingest and render views read from `mrms_goes.yaml` and
   `ewmrs_render.yaml`, cross-checked by test.
-- [ ] RAP integration reads `integration.yaml`; RAP render reads
-  `ewmrs_rap_uint16.yaml`; both are complete at 43 layers and
-  `get_rap_products()` parity.
+- [ ] RAP integration reads `integration.yaml` with `get_rap_products()` parity;
+  RAP Uint16 retention/timestamp/force policy reads `ewmrs_rap_uint16.yaml`.
+  Its 43-layer display catalog remains code-owned by recorded decision and is
+  pinned by `tests/config_baseline/rap_uint16_layers.json`.
 - [ ] NEXRAD VCP/elevation/product/render/API policy reads `nexrad.yaml`.
 - [ ] Python and Node share base-directory and API settings without duplicated
-  defaults; the legacy API services are retired.
+  defaults; the legacy API server source is retired.
 - [ ] `kalman.yaml` is actually injected and has no source fallback copies.
 - [ ] All duplicate defaults listed above are reduced to one.
 - [ ] All detection and integration empirical parameters in this inventory are
@@ -1151,4 +1154,3 @@ but the schemas and checked-in config remain authoritative.
   `RAP_BestLiftedIndex_180_0mbAGL` drift.
 - Introducing stable product IDs and a `roles:` membership model in place of the
   parallel catalogs. This is a schema change, not a value-preserving extraction.
-- Deleting the legacy `src/EdgeWARN/api/` and `src/EWMRS/api/` services.
