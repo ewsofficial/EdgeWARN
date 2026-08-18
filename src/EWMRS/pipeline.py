@@ -21,7 +21,7 @@ from EWMRS.render.config import (
     get_goes_file_list,
     get_mrms_file_list,
 )
-from EWMRS.render.tools import configure_proj_runtime
+from EWMRS.render.tools import WEB_MERCATOR_BOUNDS, configure_proj_runtime
 from EWMRS.pipeline_config import (
     goes_cleanup_max_age_minutes,
     goes_cleanup_min_interval_seconds,
@@ -49,7 +49,6 @@ _CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16\.gz$")
 
 io_manager = IOManager("[Pipeline]")
 
-WEB_MERCATOR_BOUNDS = (-14471533.8, 2273030.9, -6679169.5, 7361866.1)
 WEB_MERCATOR_SHAPE = (3500, 7000)
 WEB_MERCATOR_TRANSFORM = rasterio.transform.from_bounds(*WEB_MERCATOR_BOUNDS, WEB_MERCATOR_SHAPE[1], WEB_MERCATOR_SHAPE[0])
 
