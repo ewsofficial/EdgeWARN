@@ -11,7 +11,7 @@ export class ArtifactError extends Error {
   }
 }
 
-const DEFAULT_LIMITS = Object.freeze({ json: 8 * 1024 * 1024, binary: 128 * 1024 * 1024, image: 32 * 1024 * 1024 });
+const ARTIFACT_KINDS = Object.freeze(['json', 'binary', 'image']);
 const SAFE_SEGMENT = /^[A-Za-z0-9_.-]+$/;
 
 function assertSegments(segments) {
@@ -21,14 +21,23 @@ function assertSegments(segments) {
 }
 
 export class ArtifactRepository {
-  constructor(roots, limits = {}, cache = {}, listLimit) {
+  constructor(roots, limits, cache, listLimit) {
     this.roots = Object.freeze({ ...roots });
-    this.limits = Object.freeze({ ...DEFAULT_LIMITS, ...limits });
-    this.listLimit = listLimit ?? Infinity;
+    // A missing kind would leave `stat.size > this.limits[kind]` vacuously false and
+    // so read an unbounded artifact; api.yaml is the only base default, so an
+    // incomplete map is a caller error rather than something to fill in here.
+    const missing = ARTIFACT_KINDS.filter((kind) => typeof limits?.[kind] !== 'number');
+    if (missing.length) throw new TypeError(`ArtifactRepository requires numeric size limits for: ${missing.join(', ')}`);
+    if (typeof listLimit !== 'number') throw new TypeError('ArtifactRepository requires a numeric listLimit');
+    if (typeof cache?.max_entries !== 'number' || typeof cache?.max_size_bytes !== 'number') {
+      throw new TypeError('ArtifactRepository requires numeric cache max_entries and max_size_bytes');
+    }
+    this.limits = Object.freeze({ ...limits });
+    this.listLimit = listLimit;
     this.realRoots = new Map();
     this.jsonCache = new LRUCache({
-      max: cache.max_entries ?? 256,
-      maxSize: cache.max_size_bytes ?? 32 * 1024 * 1024,
+      max: cache.max_entries,
+      maxSize: cache.max_size_bytes,
       sizeCalculation: (entry) => entry.size,
     });
   }

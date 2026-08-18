@@ -360,8 +360,8 @@ def test_index_bootstrap_stays_split_between_the_two_pipelines():
     assert "initialize_indexes=False" not in historical_source
 
 
-def test_stormcell_resync_interval_is_recorded_but_deliberately_unread():
-    """UNWIRED (Phase 5): no counter can reach an interval here, so none pretends to.
+def test_stormcell_resync_interval_has_no_config_key():
+    """No counter can reach an interval here, so no key offers to tune one.
 
     The only path reaching `update_stormcell_index` is detection, and
     `src/util/runtime/cycle.py` starts `edgewarn_tandem_worker` in a fresh
@@ -369,11 +369,15 @@ def test_stormcell_resync_interval_is_recorded_but_deliberately_unread():
     before every update, so hoisting the manager inside the worker cannot help --
     the interval needs the counter to outlive the process, not just the call.
 
-    The key stays in the catalog to record the number a reused manager should use.
-    This test exists to stop it being "wired up" again without also moving the
-    index commit somewhere that survives a cycle.
+    `api_index.resync_every_updates` used to record the number a reused manager
+    should adopt, but an operator could edit it and observe nothing, which the
+    extraction plan forbids. The rationale now lives in `update_stormcell_index`.
+    This test stops the key returning without the index commit first moving
+    somewhere that survives a cycle.
     """
-    assert _api_index_yaml()["api_index"]["resync_every_updates"] == 128
+    assert "resync_every_updates" not in _api_index_yaml()["api_index"], (
+        "the key is back; a counter still cannot survive a cycle, so it would be inert"
+    )
 
     config_source = (REPO_ROOT / "src/EdgeWARN/api_integration/config.py").read_text(encoding="utf-8")
     assert "resync_every_updates" not in config_source, (
@@ -2753,14 +2757,16 @@ def test_mrms_ingest_depth_is_owned_only_by_runtime_yaml():
 
 
 def test_no_javascript_file_restates_the_package_version():
-    """Four sites carried a literal '2.7.0' -- three services and two tests.
+    """Services and their tests each carried their own literal version string.
 
     Runnable without Node, which matters: the JS suite cannot run on every
     machine that touches this repo, so the invariant is pinned from Python.
 
     The `'2.x'` production mask is deliberately NOT covered here. It is not a
-    copy of the version -- it is a decision to withhold the version -- and its
-    owner is `api.yaml`, which has no production reader yet.
+    copy of the version -- it is a decision to withhold the version -- so a
+    string equal to package.json's is exactly what it must never be. It is
+    owned by `api.yaml` as `server.production_version_label` and read at
+    src/api/app.js:33, where it replaces the real version under NODE_ENV=production.
     """
     import json
 

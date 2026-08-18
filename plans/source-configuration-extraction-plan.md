@@ -169,11 +169,12 @@ The most important drift risks found in the baseline are:
 - `nws/zone_sync.py` `pause_seconds` is `0.0` in argparse but `0.05` in the
   constructor (`zone_sync.py:159`). `config/nws.yaml` recorded `0.0`, so
   transcription silently picked one side of a live disagreement.
-- Two different user-agent strings exist: `zone_sync.py:160`
-  `"(EdgeWARN/1.0, contact@edgewarn.com)"` versus `nexrad/config.py:9`
+- Two different user-agent strings existed: `zone_sync.py`
+  `"(EdgeWARN/1.0, contact@edgewarn.com)"` versus `nexrad/config.py`
   `"(EdgeWARN/2.7.0, ewsbackend@gmail.com)"` — different versions *and*
-  different contacts. Both must become one configured template interpolating
-  `package.json`.
+  different contacts. **Done.** Both are gone; `runtime.yaml identity` is the one
+  owner and `format_user_agent()` interpolates the `package.json` version, so
+  neither line can be cited any more.
 - `config/nexrad.yaml` `cli.sites: []` misreads the source sentinel.
   `nexrad/pipeline/__init__.py:74` distinguishes `None` from `[]`, so `[]` is
   not "all sites".
@@ -582,7 +583,7 @@ tree but absent from the audit.
 | `src/common/ingest/nws/main.py`, `registry.py`, `geomapper.py` | Alerts URL; user agent/contact; request/chunk settings; two-hour registry TTL; property drop list; geometry rounding/simplification | `nws.yaml` |
 | `src/common/ingest/nws/zone_sync.py` | API URL templates, timeout, retries/backoff, worker count, pause, geometry precision, output path policy, and the `:160` user agent | `nws.yaml` `zone_sync` section |
 | ~~`src/common/ingest/wpc/config.py`, `downloader.py`, `main.py`~~ | **Done.** Source URL, valid hours, source cadence, timeout, backfill lookback, file templates, cleanup glob/age, and the `FEATURE_TYPES` styling table | `wpc.yaml` |
-| `src/common/ingest/nexrad/config.py`, `s3_chunks.py`, `s3_async.py`, `main.py` | Buckets; station catalog URL (`https://api.weather.gov/radar/stations`, not the audit's `/api/stations`); user agent; timeout; cache TTL (`30`, not `0`); minimum volume chunks; chunk download semaphore (`max_chunk_downloads = 64`, not `8`); volume candidate count and volumes/site; heartbeat stale `240.0` and startup grace `60.0` (`:21-22`) | `nexrad.yaml`; shared concurrency in `runtime.yaml` |
+| `src/common/ingest/nexrad/config.py`, `s3_chunks.py`, `s3_async.py`, `main.py` | Buckets; station catalog URL (`https://api.weather.gov/radar/stations`, not the audit's `/api/stations`); user agent; timeout; cache TTL (`30`, not `0`); minimum volume chunks; chunk download semaphore (`max_chunk_downloads = 64`, not `8`); volume candidate count and volumes/site; heartbeat stale `240.0` and startup grace `60.0` (now reached through the accessors at `:139-151`) | `nexrad.yaml`; shared concurrency in `runtime.yaml` |
 
 **Done.** TLS verification policy disabled in METAR code is now `metar.verify_tls`,
 still `false`, routed through `metar_config.ssl_context` and
@@ -703,18 +704,18 @@ because API clients depend on it, and is marked **non-tunable**. Its
 
 | Current source | Values to extract | Destination |
 | --- | --- | --- |
-| `src/run.py`, `src/util/runtime/cycle.py`, `goes.py` | GOES poll/wait intervals, optional ingest pause, cycle polling cadence (`run.py:333-334`, 30 × 0.5 s), cycle retry attempts/backoff, `goes.py:54,65` poll granularity `0.2` and floor `0.1`, and `cycle.py:589` `max_entries=10` | `runtime.yaml` |
-| `src/util/runtime/background.py` | METAR 5-minute boundary, NWS 120-second poll, WPC 15-minute boundary, GOES poll, NEXRAD restart backoff, and interruptible-sleep granularity where operational (`:223,239,257,265`) | `runtime.yaml` |
-| `src/util/runtime/processes.py` | Graceful join and forced-stop timeouts (`stop_process` `join_timeout=5`, `:10,24`) and the **supervisor restart policy** at `:72-75` (`max_restarts=5`, `restart_window_seconds=60.0`, `base_backoff_seconds=1.0`, `max_backoff_seconds=30.0`) — currently absent from `runtime.yaml` | `runtime.yaml` |
+| `src/run.py`, `src/util/runtime/cycle.py`, `goes.py` | GOES poll/wait intervals, optional ingest pause, cycle polling cadence, cycle retry attempts/backoff, render-wait poll granularity and interval floor, and the render-task entry cap. DONE — now read at `run.py:48-49,167,187-191,227,416`, `goes.py:54,57,71` (and the second waiter at `:87,90,107`), and `cycle.py:609` | `runtime.yaml` |
+| `src/util/runtime/background.py` | METAR 5-minute boundary, NWS 120-second poll, WPC 15-minute boundary, GOES poll, NEXRAD restart backoff, and interruptible-sleep granularity where operational. DONE — each loop reads its own section at `:77,204,255,270,284` | `runtime.yaml` |
+| `src/util/runtime/processes.py` | Graceful join and forced-stop timeouts and the **supervisor restart policy**. DONE — `stop_process` takes `join_timeout=None` and falls through to `supervisor.stop_join_timeout_seconds` / `stop_kill_join_timeout_seconds` (`:12,17-18,25,30`), and the four restart-policy fields are `field(default_factory=...)` reads at `:78-81` | `runtime.yaml` |
 | `src/process_historical.py` | One-minute step, one-second throttle, historical bounds/output defaults | `historical.yaml` plus CLI overrides |
 | `src/EdgeWARN/schedule/scheduler.py` | MRMS search entries/lookback and slow-operation logging threshold | `scheduler.yaml`. The two bare `ThreadPoolExecutor()` calls are **excluded**: they have no cap today, so adding one is a retune, not an extraction |
 | `src/EdgeWARN/pipeline.py` | Historical ingest directories retained per family | `runtime.yaml`, with directory names derived |
 | `src/util/file.py` | Generic cleanup age and count defaults | `filesystem.yaml` |
 | `src/util/performance.py` | Performance tracker enablement and future thresholds | `runtime.yaml` with existing env alias |
-| `src/common/ingest/nexrad/pipeline/__init__.py` | Scan/completion intervals and volume candidate defaults. Both intervals are re-clamped `max(1.0, ...)` at `:76-77`, and `coordinator.py:95` clamps `max(1, ...)` — schema needs `minimum: 1` | `nexrad.yaml` with CLI overrides |
+| `src/common/ingest/nexrad/pipeline/__init__.py` | Scan/completion intervals and volume candidate defaults. Both intervals are re-clamped `max(1.0, ...)` at `:101-102`, and `coordinator.py:100` clamps `max(1, ...)` — schema needs `minimum: 1` | `nexrad.yaml` with CLI overrides |
 | `src/common/ingest/nexrad/service.py`, `worker_pool.py` | Site/chunk concurrency, parse checkpoint, prefetch, pool size, recycle interval, timeout, and memory behavior | `nexrad.yaml` with existing env aliases |
 | `src/common/ingest/nexrad/writer.py` | Scan/elevation directories retained and stale-manifest age | `nexrad.yaml` |
-| `src/common/pipeline/coordinator.py` | `:125` `max_entries=10` | `runtime.yaml` |
+| `src/common/pipeline/coordinator.py` | The ingest entry cap. DONE — `max_entries` defaults to `None` (`:126`) and resolves to `cycle.ingest_max_entries` at `:145-146`, so the keyword no longer carries a second copy of the number | `runtime.yaml` |
 
 Hardware-derived defaults may use a named strategy such as
 `render.workers.strategy: adaptive_memory`. Its tunable caps, reserves, and
@@ -793,14 +794,14 @@ row was verified against the source at this baseline.
 | `integration.yaml` `output.decimals: 2` | config | `integrate_rap.py:135` and `:156` hardcode `round(..., 2)` | Must be parameterized or the key is inert |
 | `integration.yaml` `rap_products[].transform` | `kelvin_to_celsius` | Registry key with a silent identity fallback (`integrate_rap.py:87`) | Loader validates against `TRANSFORMS.keys()` |
 | `nexrad.yaml` `cli.sites: []` | `[]` = all sites | `pipeline/__init__.py:74` distinguishes `None` from `[]`; `[]` is not "all" | Use `null` |
-| `nexrad.yaml` `cli.scan_interval_seconds` / `completion_interval_seconds` | `20` / `10` | Re-clamped `max(1.0, ...)` at `pipeline/__init__.py:76-77`; `coordinator.py:95` clamps `max(1, ...)` | Schema `minimum: 1` |
-| `nexrad.yaml` `cli` | omits | `nexrad/main.py:178` also exposes `--max-candidate-volumes-per-site` | Add |
-| `nws.yaml` `zone_sync.pause_seconds` | `0.0` | argparse `0.0` versus constructor `0.05` (`zone_sync.py:159`) — real drift | Resolve; pick one and document why |
-| `nws.yaml` `zone_sync.assets_dir` | `assets/nws_zones` | `_resolve_assets_dir()` probes the filesystem (`zone_sync.py:21-27`) | Decide literal versus probe |
-| `nws.yaml` | omits | `zone_sync.py:160` `user_agent`, which differs from `nexrad.yaml` `stations.user_agent` in both version and contact | Add; interpolate the package version |
+| `nexrad.yaml` `cli.scan_interval_seconds` / `completion_interval_seconds` | `20` / `10` | Re-clamped `max(1.0, ...)` at `pipeline/__init__.py:101-102`; `coordinator.py:100` clamps `max(1, ...)` | Schema `minimum: 1`. Both keys also moved out of `cli` into `realtime`, since production reaches the pipeline through `background.py` and never through argparse |
+| `nexrad.yaml` `cli` | omitted it | `nexrad/main.py:183` also exposes `--max-candidate-volumes-per-site` | **Done.** Added as `realtime.max_candidate_volumes_per_site`, not under `cli`: the one-shot coordinator needs it too, so it is a pipeline setting a flag may override |
+| `nws.yaml` `zone_sync.pause_seconds` | `0.0` | argparse `0.0` versus constructor `0.05` — real drift | **Done.** Both defaults are now `None` (`zone_sync.py:169`); the value resolves from YAML at `:189` for the constructor and `:477` for argparse, so there is one owner and nothing to disagree with |
+| `nws.yaml` `zone_sync.assets_dir` | `assets/nws_zones` | `_resolve_assets_dir()` probed the filesystem | **Done.** Literal wins and the probe is gone. `zone_sync.py:471` joins the key onto `repo_root(args.config_dir)`, so the path follows `--config-dir` instead of whichever candidate happened to exist; the constructor takes it as a required `Path` (`:164`) with no fallback |
+| `nws.yaml` | omitted it | `zone_sync.py` `user_agent`, which differed from `nexrad.yaml` `stations.user_agent` in both version and contact | **Done.** Neither file owns a user agent now. The constructor parameter defaults to `None` (`zone_sync.py:170`) and `weather_api_headers` builds the header at `:194` from `runtime.yaml identity`, interpolating the `package.json` version |
 | `detection.yaml` `gatemapper.baseline_refl_floor`, `dynamic_min_threshold` | recorded as settings | `gatemapper.py:101` `min(37.5, self.refl_threshold)` is a **hard floor**, so raising `refl_threshold` above 37.5 has no effect on the baseline mask; `gatemapper.py:174` `np.where(valid_max_refl < 45.0, 37.5, 40.0)` is fully inline | Must be parameterized or these keys are inert and misleading |
 | `filesystem.yaml` colormap search path | `src/EWMRS/colormaps.json` | `file.py` resolved it relative to `__file__`, not cwd | **Done.** `<src_dir>/EWMRS/colormaps.json` plus a `<gui_dir>` fallback; the `Path.cwd()` candidate that led the list is gone |
-| `runtime.yaml` | omits | supervisor restart policy (`processes.py:72-75`); `stop_process` `join_timeout=5` (`processes.py:10,24`); background loop cadences (`background.py:223,239,257,265`); `goes.py:54,65` poll granularity `0.2` and floor `0.1`; `cycle.py:589` and `coordinator.py:125` `max_entries=10`; NEXRAD heartbeat `240.0` / grace `60.0` (`nexrad/config.py:21-22`) | Add |
+| `runtime.yaml` | omitted them | supervisor restart policy; `stop_process` join timeouts; background loop cadences; render-wait poll granularity and interval floor; the two `max_entries=10` literals; NEXRAD heartbeat stale/startup-grace | **Done.** `runtime.yaml` now owns all of them, read at `processes.py:17-18,30,78-81`, `background.py:77,204,255,270,284`, `goes.py:54,57,71`, `cycle.py:609`, and `coordinator.py:145-146`. The NEXRAD pair stayed in `nexrad.yaml` (`timeouts`) rather than moving here, since it is a subsystem timeout and not a shared runtime one — reached via `nexrad/config.py:139-151` |
 | all 19 files | no `schema_version` | this plan requires one | Add `schema_version: 1` |
 
 Rows marked "must be parameterized or the key is inert" are the dangerous class:
@@ -819,16 +820,25 @@ currently have several, and there is no module-level constant to point at.
   `process/detect/detect.py:24-26`, `process/detect/main.py:29-31`, `:100-102`,
   and `tools/gatemapper.py:12`. Plus the two inline literals at
   `gatemapper.py:101` and `:174` noted above.
-  `TandemCycleConfig` (`util/runtime/cycle.py:322-324`) declares these with **no**
-  defaults and is the correct seam — leave it alone.
-- **`max_candidate_volumes_per_site`** — 3 copies:
-  `nexrad/pipeline/__init__.py:61`, `nexrad/coordinator.py:26`,
-  `nexrad/pipeline/volume_discovery.py:66`.
-- **`max_volumes_per_site`** — recorded exception in `nexrad.yaml`: its four
-  operational literals remain at `nexrad/main.py:110`, `:154` and
-  `nexrad/service.py:1286`, `:1314`, with a test pinning them.
-- **`zone_sync`** — 6 keys duplicated across argparse and `NWSZoneSync.__init__`
-  (`zone_sync.py:152-162`), one of which disagrees with its flag.
+  `TandemCycleConfig` (`util/runtime/cycle.py:323`, fields at `:330-332`) declares
+  these with **no** defaults and is the correct seam — leave it alone.
+- **`max_candidate_volumes_per_site`** — was 3 copies. **Done.** All three now
+  default to `None` and resolve through `nexrad_config` (`pipeline/__init__.py:57`,
+  `coordinator.py:27` resolving at `:29-30`, `pipeline/volume_discovery.py:67`
+  resolving at `:69-70`), so `realtime.max_candidate_volumes_per_site` is the sole
+  owner.
+- **`max_volumes_per_site`** — **no longer a catalog key.** The `nexrad.yaml` entry
+  was deleted rather than wired: the two functions that honour the parameter have
+  no callers outside `nexrad/__init__.py`'s re-export and tests, so threading it
+  through would have made a dead path configurable. Its four `=1` signature
+  defaults stay at `nexrad/main.py:110`, `:154` and `nexrad/service.py:1286`,
+  `:1314` — with no key claiming ownership they are ordinary library defaults, not
+  a second copy. A test pins them.
+- **`zone_sync`** — 6 keys were duplicated across argparse and
+  `NWSZoneSync.__init__`, one of which disagreed with its flag. **Done.** Every
+  optional parameter in that signature is now `None` (`zone_sync.py:162-171`) and
+  the docstring at `:173` records that unsupplied settings come from
+  `nws.yaml zone_sync`.
 - **`kalman.yaml`** — every `.get()` call in
   `process/detect/kalman/config.py` passes an inline literal fallback, and the
   dataclass field defaults repeat them a third time.
@@ -939,9 +949,27 @@ catalogs. HSTS, proxy parsing, source-root paths, diagnostics provenance,
 product counts, restart semantics, boundary-wait granularity, and access-log
 mode are all owned by configuration and covered by tests. The health-check
 limiter bypass remains deliberately absent: restoring it would retune the live
-service, not extract a setting. Enrichment concurrency is derived from the two
-or three scheduled enrichment tasks (`len(future_order)`), so a cap key would
-be inert and is deliberately excluded.
+service, not extract a setting.
+
+Enrichment concurrency is deliberately excluded, but not because a key would be
+inert — that reasoning was too strong. `integrate/pipeline.py:353` sizes the pool
+as `max_workers=len(future_order)`, and `future_order` holds exactly the tasks
+being scheduled: `["stats", "support"]`, plus `"azshear"` only when
+`_AZSHEAR_SUPPORT_ENABLED` is on, which it is not (`:20`). So the pool is two
+threads, and a cap key could reach only two values with any effect: `>= 2` is a
+no-op, and `1` serializes. Serializing two threads is a performance decision about
+a fixed two-item workload, not a deployment setting, so the key is excluded as
+out of scope rather than as inert. If the azshear path is ever enabled the task
+count becomes variable and this is worth revisiting.
+
+Two other Phase 5 candidates were resolved by deletion rather than wiring, on the
+same "do not ship a key that does nothing" rule as the discrepancy table above:
+`api_index.resync_every_updates` (a per-update counter cannot survive
+`cycle.py`'s fresh `multiprocessing.Process` per cycle, so no interval could ever
+be reached) and `nexrad.cli.max_volumes_per_site` (resolved onto `args` and then
+never read). NEXRAD `trim_buffer` stayed a code parameter for a different reason:
+it authorizes rewriting the caller's partial volume in place, which is a
+file-ownership invariant rather than a value.
 
 ### Phase 6: Remove fallbacks and enforce the boundary
 

@@ -8,6 +8,12 @@ import { createApp } from '../../src/api/app.js';
 import { resetCache } from '../../src/config/loader.js';
 import { ArtifactRepository, ArtifactError } from '../../src/api/repositories/artifactRepository.js';
 
+// api.yaml is the only base default for these, so the constructor no longer fills
+// them in and every caller -- including a test -- states them.
+const REPOSITORY_LIMITS = { json: 8 * 1024 * 1024, binary: 128 * 1024 * 1024, image: 32 * 1024 * 1024 };
+const REPOSITORY_CACHE = { max_entries: 256, max_size_bytes: 32 * 1024 * 1024 };
+const REPOSITORY_LIST_LIMIT = 1000;
+
 describe('unified API configuration', () => {
   it('uses one resolved base directory and accepts deprecated aliases only when equal', () => {
     const config = createConfig({ env: { EDGEWARN_BASE_DIR: '/tmp/edgewarn', BASE_DIR: '/tmp/edgewarn', PORT: '5001' }, argv: [] });
@@ -142,7 +148,7 @@ describe('ArtifactRepository', () => {
     await fs.writeFile(path.join(root, 'valid.json'), '{"ok":true}');
     await fs.writeFile(path.join(outside, 'secret.json'), '{"secret":true}');
     await fs.symlink(path.join(outside, 'secret.json'), path.join(root, 'escape.json'));
-    const repository = new ArtifactRepository({ runtime: root });
+    const repository = new ArtifactRepository({ runtime: root }, REPOSITORY_LIMITS, REPOSITORY_CACHE, REPOSITORY_LIST_LIMIT);
     await expect(repository.readJson('runtime', ['valid.json'])).resolves.toEqual({ ok: true });
     await expect(repository.readJson('runtime', ['escape.json'])).rejects.toMatchObject({ code: 'INVALID_PATH' });
     await fs.rm(outside, { recursive: true, force: true });
@@ -153,7 +159,7 @@ describe('ArtifactRepository', () => {
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-outside-'));
     await fs.writeFile(path.join(outside, 'index.json'), '{"private":true}');
     await fs.symlink(outside, path.join(root, 'linked-directory'));
-    const repository = new ArtifactRepository({ runtime: root });
+    const repository = new ArtifactRepository({ runtime: root }, REPOSITORY_LIMITS, REPOSITORY_CACHE, REPOSITORY_LIST_LIMIT);
     await expect(repository.list('runtime', ['linked-directory'])).rejects.toMatchObject({ code: 'INVALID_PATH' });
     await fs.rm(outside, { recursive: true, force: true });
   });
@@ -162,7 +168,7 @@ describe('ArtifactRepository', () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-repository-'));
     await fs.writeFile(path.join(root, 'broken.json'), '{');
     await fs.writeFile(path.join(root, 'large.json'), 'x'.repeat(64));
-    const repository = new ArtifactRepository({ runtime: root }, { json: 32 });
+    const repository = new ArtifactRepository({ runtime: root }, { ...REPOSITORY_LIMITS, json: 32 }, REPOSITORY_CACHE, REPOSITORY_LIST_LIMIT);
     await expect(repository.readJson('runtime', ['broken.json'])).rejects.toBeInstanceOf(ArtifactError);
     await expect(repository.readJson('runtime', ['large.json'])).rejects.toMatchObject({ code: 'INVALID_ARTIFACT' });
   });
@@ -171,7 +177,7 @@ describe('ArtifactRepository', () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'artifact-repository-'));
     const target = path.join(root, 'index.json');
     await fs.writeFile(target, '{"generation":1}');
-    const repository = new ArtifactRepository({ runtime: root });
+    const repository = new ArtifactRepository({ runtime: root }, REPOSITORY_LIMITS, REPOSITORY_CACHE, REPOSITORY_LIST_LIMIT);
     await expect(repository.readJson('runtime', ['index.json'])).resolves.toEqual({ generation: 1 });
     await new Promise((resolve) => setTimeout(resolve, 2));
     await fs.writeFile(target, '{"generation":2}');
