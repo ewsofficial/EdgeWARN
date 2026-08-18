@@ -1,6 +1,8 @@
-# EWMRS API Endpoints
+# EWMRS Compatibility Endpoints
 
-This document describes the current HTTP routes implemented in `src/EWMRS/api`.
+These legacy EWMRS routes are compatibility adapters mounted by the unified
+`src/api/` service. New clients should use the `/api/v3` resources documented in
+`docs/api/api_endpoints.md`.
 
 ## API Overview
 

@@ -158,7 +158,7 @@ Current timestamp-level `index.json` format is:
 
 ## API Exposure
 
-The EWMRS API under `src/EWMRS/api` serves GOES products through:
+The unified API's EWMRS compatibility adapter serves GOES products through:
 
 - `GET /renders/get-items`
 - `GET /renders/fetch?product={product}`

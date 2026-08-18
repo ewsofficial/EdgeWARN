@@ -1,6 +1,8 @@
-# EdgeWARN API v2 Endpoints
+# EdgeWARN API Compatibility Endpoints
 
-This document describes the current HTTP routes implemented in `src/EdgeWARN/api`.
+The live API is implemented in `src/api/` and exposes `/api/v3` as its primary
+contract. The v2 routes described here are compatibility adapters, not a
+separate service under `src/EdgeWARN/api`.
 
 For backing file schemas, see `docs/api/data_keys.md`.
 
@@ -193,7 +195,7 @@ Cache:
 
 ## EWMRS Render Products
 
-The EWMRS service under `src/EWMRS/api` exposes tiled GUI products through:
+The unified API's EWMRS compatibility adapter exposes tiled GUI products through:
 
 - `GET /renders/get-items`
 - `GET /renders/fetch?product={product}`
@@ -262,7 +264,7 @@ Response:
 
 ### GET /robots.txt
 
-Serves `src/EdgeWARN/api/robots.txt`.
+Serves the unified API's robots response.
 
 ### Legacy v1-style routes
 
