@@ -199,7 +199,7 @@ def test_each_lineage_overlap_concept_has_exactly_one_owner():
     without a literal shadowing the catalog:
 
     - the tracked merge/split gate -> `lineage.yaml tracked_overlap_ratio`
-    - a directly built detector     -> `lineage.yaml event_overlap_ratio`
+    - a directly built detector     -> `lineage.yaml tracked_overlap_ratio`
 
     A bare spatial query must receive an explicit threshold, eliminating the
     former third configuration path.
@@ -219,7 +219,6 @@ def test_each_lineage_overlap_concept_has_exactly_one_owner():
     ).read_text(encoding="utf-8")
     assert "DEFAULT_OVERLAP_THRESHOLD" not in detector_source
 
-    assert _lineage_yaml()["lineage"]["event_overlap_ratio"] == 0.15
     assert _lineage_yaml()["lineage"]["tracked_overlap_ratio"] == 0.10
     assert "lineage_overlap_ratio" not in _detection_yaml()["tracker"]
 
@@ -229,7 +228,7 @@ def test_each_lineage_overlap_concept_has_exactly_one_owner():
 
     assert tracked_overlap_ratio() == 0.10
     assert StormCellTracker(None, None, None).overlap_threshold == 0.10
-    assert LineageDetector().overlap_threshold == 0.15
+    assert LineageDetector().overlap_threshold == 0.10
 
     assert not has_param_default(
         "EdgeWARN/process/detect/lineage/spatial.py",

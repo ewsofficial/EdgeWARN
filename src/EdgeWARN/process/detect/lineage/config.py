@@ -31,11 +31,6 @@ def reset_cache() -> None:
     section.cache_clear()
 
 
-def event_overlap_ratio() -> float:
-    """Minimum overlap ratio for direct merge/split detection."""
-    return section("lineage")["event_overlap_ratio"]
-
-
 def tracked_overlap_ratio() -> float:
     """Minimum overlap ratio the storm-cell tracker applies to merge/splits."""
     return section("lineage")["tracked_overlap_ratio"]

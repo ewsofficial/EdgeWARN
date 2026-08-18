@@ -21,10 +21,6 @@
 schema_version: 1
 
 lineage:
-  # LineageDetector.overlap_threshold, applied to merge/split candidates when a
-  # detector is built directly or through detect_lineage_events.
-  event_overlap_ratio: 0.15
-
   # StormCellTracker.overlap_threshold. The threshold the tracker applies to
   # merge/split detection before forwarding it into LineageDetector.
   tracked_overlap_ratio: 0.10
