@@ -87,8 +87,9 @@
     "assignment_costs": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["predicted_speed_deadband_ms", "implied_speed_deadband_ms", "reflectivity_diff_cap", "size_ratio_log2_divisor", "size_cost_cap"],
+      "required": ["default_dt_seconds", "predicted_speed_deadband_ms", "implied_speed_deadband_ms", "reflectivity_diff_cap", "size_ratio_log2_divisor", "size_cost_cap"],
       "properties": {
+        "default_dt_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "predicted_speed_deadband_ms": { "type": "number", "minimum": 0 },
         "implied_speed_deadband_ms": { "type": "number", "minimum": 0 },
         "reflectivity_diff_cap": { "type": "number", "minimum": 0 },
