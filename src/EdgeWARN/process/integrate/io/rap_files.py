@@ -1,5 +1,7 @@
 import numpy as np
 
+from EdgeWARN.process.integrate.config import rap_fallback_dataset_score_levels
+
 
 class RAPFileHandler:
     """Handles RAP GRIB2 files specifically using cfgrib.open_datasets."""
@@ -58,9 +60,9 @@ class RAPFileHandler:
 
                 try:
                     levels = ds.isobaricInhPa.values
-                    target_levels = [850, 700, 500, 250]
+                    target_levels = rap_fallback_dataset_score_levels()
                     available_target_levels = [l for l in target_levels if l in levels]
-                    score += len(available_target_levels) / 4.0
+                    score += len(available_target_levels) / len(target_levels)
                 except Exception:
                     pass
 
