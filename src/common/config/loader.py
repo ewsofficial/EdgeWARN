@@ -69,7 +69,6 @@ CONFIG_NAMES: tuple[str, ...] = (
     "metar",
     "nws",
     "ewmrs_render",
-    "ewmrs_rap_uint16",
     "ewmrs_pipeline",
     "api",
     "kalman",

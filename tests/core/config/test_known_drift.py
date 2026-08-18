@@ -3329,7 +3329,7 @@ def _config_dir_with_overrides(tmp_path, catalog_name, indent="", **overrides):
 
 
 def _rap_uint16_config_dir(tmp_path, **overrides):
-    return _config_dir_with_overrides(tmp_path, "ewmrs_rap_uint16", **overrides)
+    return _config_dir_with_overrides(tmp_path, "ewmrs_pipeline", indent="  ", **overrides)
 
 
 def _with_config_root(config_dir):

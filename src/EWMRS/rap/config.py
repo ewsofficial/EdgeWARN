@@ -1,7 +1,8 @@
 """YAML-backed RAP Uint16 catalog accessors.
 
-The product registry belongs to ``config/ewmrs_rap_uint16.yaml``.  This module
-only expands its declarative pressure-level templates and resolves output paths.
+The product registry lives in the ``rap_uint16`` section of
+``config/ewmrs_pipeline.yaml``.  This module only expands its declarative
+pressure-level templates and resolves output paths.
 """
 
 from __future__ import annotations
@@ -12,11 +13,11 @@ from typing import Any
 from common.config.loader import load_config
 import util.file as fs
 
-_CONFIG_NAME = "ewmrs_rap_uint16"
+_CONFIG_NAME = "ewmrs_pipeline"
 
 
 def _catalog():
-    return load_config(_CONFIG_NAME)
+    return load_config(_CONFIG_NAME)["rap_uint16"]
 
 
 def _copy(value: Any) -> Any:
