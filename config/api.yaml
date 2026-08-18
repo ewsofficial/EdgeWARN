@@ -12,12 +12,11 @@
 # Loaded and schema-validated by src/api/config/index.js before the unified API
 # starts. CLI and environment overlays retain their documented precedence.
 #
-# Three keys that were here are deleted, not moved: `server.json_body_limit`,
-# `server.cluster_max_workers`, and `security.hsts_max_age_seconds`. Each existed
-# only in src/EdgeWARN/api/server.js (:169, :256, :73-75), whose CLI entry point
-# now delegates to the unified API (server.js:282). The live service under
-# src/api/ sets no HSTS header, mounts no JSON body parser, and does not cluster.
-# Recording them under `server`/`security` claimed the live server honored them.
+# Two keys that were here are deleted, not moved: `server.json_body_limit` and
+# `server.cluster_max_workers`. Each existed only in src/EdgeWARN/api/server.js
+# (:169, :256), whose CLI entry point now delegates to the unified API
+# (server.js:282). The live service mounts no JSON body parser and does not
+# cluster. Recording them under `server` claimed the live server honored them.
 
 schema_version: 1
 
@@ -45,6 +44,7 @@ base_dir:
   derived: {data: <base_dir>/data, gui: <base_dir>/gui, wpc: <base_dir>/wpc}
 
 security:
+  hsts_max_age_seconds: 31536000        # security.js:6; preserves Helmet 8's shipped max-age
   # DENY-ALL, in every environment. cors.js:6-9 answers `callback(null, false)`
   # for an origin absent from the set and for a missing Origin header; there is
   # no allow-all branch. The permissive fallback existed only in the retired

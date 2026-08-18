@@ -19,6 +19,7 @@ describe('unified API app', () => {
     const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
     const root = await request(app).get('/').expect(200);
     expect(root.body.links.api).toBe('/api/v3');
+    expect(root.headers['strict-transport-security']).toBe('max-age=31536000; includeSubDomains');
     await request(app).get('/api/v2').expect(200).expect((response) => expect(response.body.version).toBe(root.body.version));
     await request(app).get('/robots.txt').expect(200).expect('Content-Type', /text\/plain/);
     const live = await request(app).get('/health/live').expect(200);

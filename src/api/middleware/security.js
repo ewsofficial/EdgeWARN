@@ -1,9 +1,12 @@
 import compression from 'compression';
 import helmet from 'helmet';
 
-export function securityMiddleware(policy = {}) {
+export function securityMiddleware(policy) {
   return [
-    helmet({ contentSecurityPolicy: { useDefaults: true, directives: { defaultSrc: [policy.csp_default_src ?? "'self'"] } } }),
+    helmet({
+      contentSecurityPolicy: { useDefaults: true, directives: { defaultSrc: [policy.csp_default_src ?? "'self'"] } },
+      strictTransportSecurity: { maxAge: policy.hsts_max_age_seconds }
+    }),
     compression({
       filter(req, res) {
         const type = res.getHeader('Content-Type');
