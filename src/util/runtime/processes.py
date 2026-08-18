@@ -93,7 +93,7 @@ class AccessorySupervisor:
         cleanup_event=None,
         heartbeat_path=None,
         heartbeat_stale_seconds=None,
-        heartbeat_startup_grace_seconds=0.0,
+        heartbeat_startup_grace_seconds=None,
     ):
         entry = {
             "name": name,
@@ -106,7 +106,12 @@ class AccessorySupervisor:
             "cleanup_event": cleanup_event,
             "heartbeat_path": heartbeat_path,
             "heartbeat_stale_seconds": heartbeat_stale_seconds,
-            "heartbeat_startup_grace_seconds": max(0.0, float(heartbeat_startup_grace_seconds)),
+            "heartbeat_startup_grace_seconds": max(
+                0.0,
+                float(heartbeat_startup_grace_seconds)
+                if heartbeat_startup_grace_seconds is not None
+                else 0.0,
+            ),
             "started_monotonic": None,
         }
         self._process_info.append(entry)
