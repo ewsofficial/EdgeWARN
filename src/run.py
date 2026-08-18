@@ -431,3 +431,10 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")
         sys.exit(0)
+    except config_loader.ConfigError:
+        # This catches configuration failures reached after module initialization
+        # (for example a malformed filesystem attribute in cycle.state_file).
+        # Import-time ConfigError instances cannot be caught here; CI's
+        # validate-config gate is responsible for rejecting those before startup.
+        report_effective_config()
+        raise
