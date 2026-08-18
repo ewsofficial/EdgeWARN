@@ -14,12 +14,12 @@ import eccodes
 import numpy as np
 
 from EWMRS.rap.config import (
-    UINT16_NODATA,
-    UINT16_VALID_MAX,
     get_rap_uint16_layers,
     rap_uint16_force,
     rap_uint16_max_timestamps,
     rap_uint16_timestamp_format,
+    uint16_nodata,
+    uint16_valid_max,
 )
 from util.io import IOManager
 import util.file as fs
@@ -158,10 +158,10 @@ def scale_to_uint16(values, scale: dict[str, float], *, missing_value=None) -> n
     if missing_value is not None and np.isfinite(missing_value):
         valid &= data != float(missing_value)
 
-    encoded = np.full(data.shape, UINT16_NODATA, dtype=np.dtype("<u2"))
+    encoded = np.full(data.shape, uint16_nodata(), dtype=np.dtype("<u2"))
     if np.any(valid):
         clipped = np.clip(data[valid], min_value, max_value)
-        scaled = np.rint((clipped - min_value) / (max_value - min_value) * UINT16_VALID_MAX)
+        scaled = np.rint((clipped - min_value) / (max_value - min_value) * uint16_valid_max())
         encoded[valid] = scaled.astype(np.dtype("<u2"), copy=False)
     return encoded
 
@@ -260,7 +260,7 @@ def _build_metadata(
         "dtype": "uint16",
         "byte_order": "little_endian",
         "scale": layer["scale"],
-        "missing_value": UINT16_NODATA,
+        "missing_value": uint16_nodata(),
         "units": layer.get("units"),
         "grib": {
             "shortName": message["shortName"],
@@ -296,7 +296,7 @@ def _update_product_index(out_dir: Path, timestamp: str, max_timestamps: int | N
         "timestamps": timestamps[:max_timestamps],
         "format": "uint16",
         "byte_order": "little_endian",
-        "missing_value": UINT16_NODATA,
+        "missing_value": uint16_nodata(),
     }
     atomic_write_json(index_path, index_data, indent=2)
 

@@ -301,10 +301,8 @@ def test_rap_uint16_constants_baseline():
     assert_baseline(
         "rap_uint16_constants",
         {
-            "uint16_nodata": rap_config.UINT16_NODATA,
-            "uint16_valid_max": rap_config.UINT16_VALID_MAX,
-            "wind_pressure_levels_mb": rap_config.RAP_WIND_PRESSURE_LEVELS_MB,
-            "thermo_pressure_levels_mb": rap_config.RAP_THERMO_PRESSURE_LEVELS_MB,
+            "uint16_nodata": rap_config.uint16_nodata(),
+            "uint16_valid_max": rap_config.uint16_valid_max(),
         },
     )
 

@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from EWMRS.rap.config import UINT16_NODATA, get_rap_uint16_layers
+from EWMRS.rap.config import get_rap_uint16_layers, uint16_nodata
 from EWMRS.rap.uint16_pipeline import run_rap_uint16_pipeline, scale_to_uint16
 
 
@@ -177,7 +177,7 @@ def test_scale_to_uint16_clips_and_reserves_nodata():
     encoded = scale_to_uint16(values, {"min": 0.0, "max": 100.0})
 
     assert encoded.dtype == np.dtype("<u2")
-    assert encoded.tolist() == [[0, 0, 32767, 65534, 65534, UINT16_NODATA]]
+    assert encoded.tolist() == [[0, 0, 32767, 65534, 65534, uint16_nodata()]]
 
 
 def test_rap_uint16_pipeline_writes_entire_grid_array_and_metadata(tmp_path):
@@ -234,7 +234,7 @@ def test_rap_uint16_pipeline_writes_entire_grid_array_and_metadata(tmp_path):
     assert data_path.is_file()
     written_values = np.fromfile(data_path, dtype="<u2")
     assert written_values.size == 6
-    assert written_values.tolist() == [0, 13107, 26214, 39320, 65534, UINT16_NODATA]
+    assert written_values.tolist() == [0, 13107, 26214, 39320, 65534, uint16_nodata()]
 
     metadata = json.loads(metadata_path.read_text())
     assert metadata["shape"] == [2, 3]
@@ -248,7 +248,7 @@ def test_rap_uint16_pipeline_writes_entire_grid_array_and_metadata(tmp_path):
 
     index = json.loads(index_path.read_text())
     assert index["timestamps"] == ["20260427-130000"]
-    assert index["missing_value"] == UINT16_NODATA
+    assert index["missing_value"] == uint16_nodata()
     assert metadata["conversion_time_seconds"] >= 0.0
     assert timings["RAP_TestLayer"]["status"] == "converted"
     assert timings["RAP_TestLayer"]["point_count"] == 6
