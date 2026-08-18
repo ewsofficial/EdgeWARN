@@ -15,6 +15,14 @@ from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[3] / "src"
 
+
+def production_sources(root: Path = SRC):
+    """Yield Python and JavaScript production sources, including NUL-containing JS."""
+    for path in root.rglob("*"):
+        if path.suffix not in {".py", ".js"} or {"__pycache__", "node_modules"} & set(path.parts):
+            continue
+        yield path
+
 class _Missing:
     """Marks a default that is an expression rather than a literal.
 
