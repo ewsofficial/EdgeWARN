@@ -23,7 +23,7 @@ from .spatial import (
     calculate_overlap_ratio,
 )
 from .buffer import LineageBuffer
-from .config import event_overlap_ratio
+from .config import tracked_overlap_ratio
 
 
 class LineageDetector:
@@ -62,7 +62,7 @@ class LineageDetector:
         """
         self.buffer = buffer or LineageBuffer()
         self.overlap_threshold = (
-            event_overlap_ratio() if overlap_threshold is None else overlap_threshold
+            tracked_overlap_ratio() if overlap_threshold is None else overlap_threshold
         )
         self.io_manager = io_manager
     
