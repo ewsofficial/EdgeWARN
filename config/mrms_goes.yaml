@@ -10,9 +10,10 @@ schema_version: 1
 
 mrms:
   # Read per call via config.py mrms_bucket(). It used to be a module-scope
-  # constant, and src/run.py:9 imports this module 23 lines before get_args()
-  # exports EDGEWARN_CONFIG_DIR -- so --config-dir could not reach it and an
-  # operator override was silently ignored in favour of the value below.
+  # constant, and src/run.py:9 imports this module while get_args() does not
+  # export EDGEWARN_CONFIG_DIR until src/run.py:41 -- so --config-dir could not
+  # reach it and an operator override was silently ignored in favour of the value
+  # below.
   bucket: noaa-mrms-pds
   # config.py mrms_decompress_chunk_size_bytes(), applied as the copyfileobj
   # length in s3_sync.py and s3_async.py. Distinct from
@@ -146,9 +147,11 @@ mrms:
     - {region: CONUS, product: MergedReflectivityQCComposite_00.50,  outdir: MRMS_COMPOSITE_DIR}
     - {region: CONUS, product: VII_00.50,                            outdir: MRMS_VII_DIR}
 
-  # Only the detection list is a literal (main.py:21). The integration, ewmrs, and
-  # ewmrs_support lists are derived from it plus `products` and the render layer
-  # set (main.py:24-42) and must stay derived so they cannot drift.
+  # Only the detection list is a literal, read by main.py get_detection_modifiers().
+  # The integration, ewmrs and ewmrs_support lists are derived from it plus
+  # `products` and the render layer set -- get_integration_modifiers(),
+  # get_ewmrs_modifiers() and get_ewmrs_support_modifiers() -- and must stay
+  # derived so they cannot drift.
   membership_lists:
     detection: [MergedReflectivityQCComposite_00.50, PrecipFlag_00.00, null]
 
@@ -183,7 +186,8 @@ goes:
   # despite matching it today: GOES cleanup also enforces `max_files_per_spec`,
   # so the two bound different retention policies.
   cleanup_max_age_minutes: 60
-  bucket_path_pattern: '{product}/{YYYY}/{DDD}/{HH}/'  # parse.py:53
+  # config.py goes_bucket_path(); parse.py parse_goes_bucket_path() only wraps it.
+  bucket_path_pattern: '{product}/{YYYY}/{DDD}/{HH}/'
   filename_matcher_template: '(?:_|-)M\d{channel_id}_' # config.py get_abi_radc_channel_specs()
   # 16 channels. `get_abi_radc_channel_specs(channel_ids=None)` selects all of
   # them; passing an explicit list narrows the selection. The catalog order is the

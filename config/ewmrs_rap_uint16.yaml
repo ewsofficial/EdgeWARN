@@ -50,7 +50,8 @@ layers:                                 # {name, short_names, filter, units, sca
   - {name: RAP_VWind_10m, short_names: [10v, v10, v], filter: {typeOfLevel: heightAboveGround, level: 10}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_LL, outdir: VWind_10m, description: RAP 10 meter v-component wind}
   # --- surface and precip ---
   # RAP_MSLP_Surface is the one layer with no colormap: _with_colormap_key
-  # (rap/config.py:62-66) drops the key entirely rather than emitting null.
+  # (rap/config.py:81, MSLP branch at :94-95) drops the key entirely at :98 rather
+  # than emitting null.
   - {name: RAP_Temperature_Surface, short_names: [t], filter: {typeOfLevel: surface, level: 0}, units: K, scale: {min: 180.0, max: 330.0}, colormap_key: RAP_Temperature_LL, outdir: Temperature_Surface, description: RAP surface temperature}
   - {name: RAP_RelativeHumidity_2m, short_names: [2r, r], filter: {typeOfLevel: heightAboveGround, level: 2}, units: '%', scale: {min: 0.0, max: 100.0}, colormap_key: RAP_RelativeHumidity, outdir: RelativeHumidity_2m, description: RAP 2 meter relative humidity}
   - {name: RAP_ThetaE_Surface, short_names: [papt], filter: {typeOfLevel: surface, level: 0}, units: K, scale: {min: 250.0, max: 390.0}, colormap_key: RAP_ThetaE_Surface, outdir: ThetaE_Surface, description: RAP surface pseudo-adiabatic potential temperature}

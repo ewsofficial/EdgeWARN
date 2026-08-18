@@ -2,8 +2,12 @@
 #
 # Source: src/EWMRS/render/{config,render,tiler,tools,goes_transform,nexrad}.py
 # Values verified against the working tree at commit e426fb2.
-# `mrms_layers` / `goes_layers` are consumed by render/config.py; the remaining
-# keys are not yet wired -- see plans/source-configuration-extraction-plan.md.
+# Every block below is wired, by one of two mechanisms. `mrms_layers`,
+# `goes_layers`, `goes_transform` and `nexrad_gui` are read per call through the
+# render/config.py accessor named at each block. `tiles` and `chunk_format` are
+# the exception: they bind module constants at config.py:63-77, because they are
+# wire-format invariants rather than operator settings and so have nothing to
+# gain from following a late --config-dir.
 #
 # Worker/thread and cache sizing live in ewmrs_pipeline.yaml, which owns all
 # EWMRS concurrency knobs.
@@ -11,9 +15,15 @@
 schema_version: 1
 
 tiles:
-  tile_size: 350                        # config.py:4 px
+  # config.py:63-64. Pixels. render.py:176-182 requires the rendered dimensions to
+  # be an exact multiple of it and raises rather than padding, so this is not a
+  # free knob: it must divide every layer's grid.
+  tile_size: 350
 
-chunk_format:                           # config.py:10-18,27-41 wire-format invariant, NOT operator-tunable
+# config.py:68-77, republished to clients by chunk_format_descriptor (:80-101) and
+# stamped into both index levels at render.py:311-314,350-353. Wire-format
+# invariant, NOT operator-tunable.
+chunk_format:
   wire_version: 2                       # CHUNK_SCHEMA_VERSION
   format_version: 2                     # CHUNK_FORMAT_VERSION
   encoding: float16
@@ -27,10 +37,10 @@ chunk_format:                           # config.py:10-18,27-41 wire-format inva
   bytes_per_component: 2
   pixel_row_order: top_to_bottom
   grid_origin: bottom_left
-# 15 entries. `filepath` (ingest source) and `outdir` (render target) are
-# util.file attribute names resolved by getattr at call time; an unknown name is
-# a startup error. Note MRMS_VILDensity maps MRMS_DVIL_DIR -> GUI_VILD_DIR --
-# the names are deliberately asymmetric.
+# config.py get_mrms_file_list(), 15 entries. `filepath` (ingest source) and
+# `outdir` (render target) are util.file attribute names resolved by getattr at
+# call time; an unknown name is a startup error. Note MRMS_VILDensity maps
+# MRMS_DVIL_DIR -> GUI_VILD_DIR -- the names are deliberately asymmetric.
 mrms_layers:
   - {name: MRMS_MergedReflectivityQC,         colormap_key: NWS_Reflectivity, filepath: MRMS_COMPOSITE_DIR,   outdir: GUI_COMPOSITE_DIR}
   - {name: MRMS_EchoTop18,                    colormap_key: EnhancedEchoTop,  filepath: MRMS_ECHOTOP18_DIR,   outdir: GUI_ECHOTOP18_DIR}
@@ -48,11 +58,13 @@ mrms_layers:
   - {name: MRMS_MergedAzShear_3-6kmAGL,       colormap_key: AzShear,          filepath: MRMS_AZSHEARMID_DIR,  outdir: GUI_AZSHEARMID_DIR}
   - {name: MRMS_MESH,                         colormap_key: MESH,             filepath: MRMS_MESH_DIR,        outdir: GUI_MESH_DIR}
 
-# 16 entries, one per ABI channel. `mask_min`/`mask_max` are per-channel maps
-# with a `default` fallback because goes_transform.py looks the bound up by
-# channel id and falls back to `default` when the channel is absent.
+# config.py get_goes_file_list(), 16 entries, one per ABI channel.
+# `mask_min`/`mask_max` are per-channel maps with a `default` fallback because
+# goes_transform.py looks the bound up by channel id and falls back to `default`
+# when the channel is absent.
 goes_layers:
-  common:                               # config.py:172-174,196-198 -- identical on every layer
+  # config.py:137, spread onto every layer at :144-146 by get_goes_file_list().
+  common:
     source_type: goes_abi
     variable_name: CMI
     fallback_variable_names: [Rad]

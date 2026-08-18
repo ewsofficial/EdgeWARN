@@ -27,7 +27,7 @@ buckets:
 stations:
   catalog_url: https://api.weather.gov/radar/stations
   # The User-Agent is NOT here. It is one string for the whole application,
-  # `runtime.yaml identity`, applied at nexrad/weather_api.py:102. This subsystem
+  # `runtime.yaml identity`, applied at nexrad/weather_api.py:101. This subsystem
   # used to hardcode the release number into its copy, so the advertised version
   # could not track package.json.
   api_timeout_seconds: 15
