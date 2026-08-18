@@ -11,7 +11,7 @@ from shapely.strtree import STRtree
 from shapely.validation import make_valid
 import numpy as np
 
-from .config import bounds_prefilter_buffer_deg, spatial_query_overlap_ratio
+from .config import bounds_prefilter_buffer_deg
 
 
 def calculate_overlap_ratio(parent_bbox: List[List[float]], 
@@ -249,7 +249,7 @@ def bounds_overlap(bounds1: Dict[str, float],
 def find_overlapping_cells(
     target_cell: Dict[str, Any],
     cell_index: Dict[str, Any],
-    overlap_threshold: Optional[float] = None
+    overlap_threshold: float,
 ) -> List[Tuple[int, float]]:
     """
     Find all cells that overlap with a target cell above a threshold.
@@ -261,16 +261,11 @@ def find_overlapping_cells(
     Args:
         target_cell: Cell dictionary with 'id' and 'bbox'
         cell_index: Spatial index from build_spatial_index()
-        overlap_threshold: Minimum overlap ratio to include. None reads
-                           ``lineage.spatial_query_overlap_ratio``; the detector
-                           always passes its own value instead.
+        overlap_threshold: Minimum overlap ratio to include.
 
     Returns:
         List of (cell_id, overlap_ratio) tuples, sorted by overlap ratio descending.
     """
-    if overlap_threshold is None:
-        overlap_threshold = spatial_query_overlap_ratio()
-
     target_id = int(target_cell.get('id', 0))
     target_bbox = target_cell.get('bbox', [])
     tree = cell_index.get('tree')

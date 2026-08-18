@@ -27,6 +27,7 @@ from EdgeWARN.process.detect.lineage import (
     select_dominant_child,
 )
 from EdgeWARN.process.detect.lineage.detector import LineageDetector
+from EdgeWARN.process.detect.lineage.spatial import find_overlapping_cells
 
 
 class TestOverlapCalculation:
@@ -122,6 +123,11 @@ class TestSpatialIndex:
         
         assert len(cells_data) == 1
         assert 1 in cells_data
+
+    def test_find_overlapping_cells_requires_threshold(self):
+        """A bare spatial query cannot silently select a configured fallback."""
+        with pytest.raises(TypeError):
+            find_overlapping_cells({}, {})
 
 
 class TestDominantSelection:

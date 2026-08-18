@@ -32,22 +32,13 @@ def reset_cache() -> None:
 
 
 def event_overlap_ratio() -> float:
-    """Minimum overlap ratio for a merge/split candidate.
-
-    Shadowed on the tracked path: ``StormCellTracker`` forwards its own
-    ``tracker.lineage_overlap_ratio`` from ``detection.yaml`` into the detector,
-    so this applies only to a detector built directly.
-    """
+    """Minimum overlap ratio for direct merge/split detection."""
     return section("lineage")["event_overlap_ratio"]
 
 
-def spatial_query_overlap_ratio() -> float:
-    """Minimum overlap ratio for a bare ``find_overlapping_cells`` query.
-
-    A separate, weaker gate than :func:`event_overlap_ratio`: the detector always
-    passes its own threshold, so this applies only to direct spatial queries.
-    """
-    return section("lineage")["spatial_query_overlap_ratio"]
+def tracked_overlap_ratio() -> float:
+    """Minimum overlap ratio the storm-cell tracker applies to merge/splits."""
+    return section("lineage")["tracked_overlap_ratio"]
 
 
 def bounds_prefilter_buffer_deg() -> float:

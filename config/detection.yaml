@@ -46,11 +46,6 @@ detection:
   dataset_load_max_workers: 3
 
 tracker:
-  # track.py:65 StormCellTracker.__init__, forwarded into LineageDetector at
-  # :186. This -- not lineage.yaml's `event_overlap_ratio` -- is the value the
-  # pipeline actually applies, because the tracker always passes its own.
-  lineage_overlap_ratio: 0.10
-
   # track.py:641-644. A cell whose observed max reflectivity falls below
   # `decay_max_refl_dbz` is marked decaying and has its confidence multiplied by
   # `decay_confidence_factor` each scan, but never driven below

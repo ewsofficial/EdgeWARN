@@ -189,29 +189,25 @@ def test_process_noise_declares_only_the_scalar_the_filter_reads():
     assert _q_trace(loose) > _q_trace(tight)
 
 
-# --- Lineage overlap: three concepts, three owners, still shadowed ---------
+# --- Lineage overlap: two defaults, each owned in lineage.yaml --------------
 
 def test_each_lineage_overlap_concept_has_exactly_one_owner():
-    """RESOLVED: no literal competes with the YAML for any of the three ratios.
+    """RESOLVED: no literal competes with the YAML for either ratio.
 
-    `overlap_threshold` named three different things. Now each has one owner and
-    every declaration site defaults to `None`, so a caller can still override
+    `overlap_threshold` has two configured meanings. Each has one owner and the
+    optional declaration sites default to `None`, so callers can still override
     without a literal shadowing the catalog:
 
-    - the tracked merge/split gate -> `detection.yaml tracker.lineage_overlap_ratio`
+    - the tracked merge/split gate -> `lineage.yaml tracked_overlap_ratio`
     - a directly built detector     -> `lineage.yaml event_overlap_ratio`
-    - a bare spatial query          -> `lineage.yaml spatial_query_overlap_ratio`
 
-    The shadowing itself is deliberate and still in force: the tracker always
-    forwards its own value into `LineageDetector`, so `event_overlap_ratio`
-    applies only to a detector built directly. That is why the two must stay
-    separate keys -- collapsing them would silently retune the tracked path.
+    A bare spatial query must receive an explicit threshold, eliminating the
+    former third configuration path.
     """
     declaration_sites = {
         ("EdgeWARN/process/detect/track.py", "StormCellTracker.__init__"),
         ("EdgeWARN/process/detect/lineage/detector.py", "LineageDetector.__init__"),
         ("EdgeWARN/process/detect/lineage/detector.py", "detect_lineage_events"),
-        ("EdgeWARN/process/detect/lineage/spatial.py", "find_overlapping_cells"),
     }
     for relative_path, qualified_name in declaration_sites:
         assert param_default(relative_path, qualified_name, "overlap_threshold") is None, (
@@ -224,11 +220,24 @@ def test_each_lineage_overlap_concept_has_exactly_one_owner():
     assert "DEFAULT_OVERLAP_THRESHOLD" not in detector_source
 
     assert _lineage_yaml()["lineage"]["event_overlap_ratio"] == 0.15
-    assert _lineage_yaml()["lineage"]["spatial_query_overlap_ratio"] == 0.0
-    assert _detection_yaml()["tracker"]["lineage_overlap_ratio"] == 0.10
+    assert _lineage_yaml()["lineage"]["tracked_overlap_ratio"] == 0.10
+    assert "lineage_overlap_ratio" not in _detection_yaml()["tracker"]
 
-    # The tracker forwards its own value, so the lineage.yaml ratio never applies
-    # on the tracked path. Keep the two keys distinct.
+    from EdgeWARN.process.detect.lineage.config import tracked_overlap_ratio
+    from EdgeWARN.process.detect.lineage.detector import LineageDetector
+    from EdgeWARN.process.detect.track import StormCellTracker
+
+    assert tracked_overlap_ratio() == 0.10
+    assert StormCellTracker(None, None, None).overlap_threshold == 0.10
+    assert LineageDetector().overlap_threshold == 0.15
+
+    assert not has_param_default(
+        "EdgeWARN/process/detect/lineage/spatial.py",
+        "find_overlapping_cells",
+        "overlap_threshold",
+    )
+
+    # The tracker forwards its configured value into the detector.
     track_source = (REPO_ROOT / "src/EdgeWARN/process/detect/track.py").read_text(encoding="utf-8")
     assert "overlap_threshold=self.overlap_threshold" in track_source
 
