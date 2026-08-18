@@ -1,9 +1,10 @@
 # integration.yaml — Audit §5
 #
-# Source: src/EdgeWARN/process/integrate/config.py:3-253; core/stats.py:4,9;
-#         core/integrator.py:15-56; azshear/constants.py:1-5;
-#         azshear/integration.py:73; integrate_glm.py:7; integrate_rap.py:32-48,111,119;
-#         pipeline.py:21,52,93,283,350,359; core/history.py:52,92;
+# Source: src/EdgeWARN/process/integrate/config.py:28-30,33-41,55,83-93;
+#         core/stats.py:3,9; core/integrator.py:5,346; azshear/constants.py:1,10-12;
+#         azshear/integration.py:74; integrate_glm.py:60;
+#         integrate_rap.py:12,32-48,119,150,159;
+#         pipeline.py:20,50,92,282,349,358; history.py:52,92;
 #         src/util/grib_loader.py:54,58
 # Read through src/EdgeWARN/process/integrate/config.py. Every section here is
 # the single source of truth -- no value below is also declared in Python.
@@ -22,8 +23,8 @@ output:
   decimals: 2
 
 azshear:
-  # RETIRED PATH, recorded not wired. pipeline.py:21 hardcodes
-  # `_AZSHEAR_SUPPORT_ENABLED = False` and :93,283,350,359 all gate on it, so
+  # RETIRED PATH, recorded not wired. pipeline.py:20 hardcodes
+  # `_AZSHEAR_SUPPORT_ENABLED = False` and :92,282,349,358 all gate on it, so
   # every tunable below reaches code that never runs. `enabled` is deliberately
   # *not* read by pipeline.py: turning this key into a live switch would offer
   # operators a feature that has never executed in production. Flip the Python
@@ -37,13 +38,13 @@ azshear:
   min_gate_count: 5
   max_pair_separation_km: 12.0
   # How many trailing cell-history entries persistence features look back over
-  # (azshear/integration.py _read_recent_history).
+  # (azshear/integration.py:74, inside _read_recent_history).
   history_window: 5
 
 glm:
   # Coarse lat/lon bin edge used to index flash candidates before the exact
   # point-in-polygon test. Affects performance only, never the flash counts.
-  bin_size_degrees: 1.0
+  bin_size_degrees: 1.0                 # integrate_glm.py:60
 
 # 25 entries. `filepath` is a util.file attribute name, resolved with getattr so
 # that initialize_filesystem rebinds are picked up -- same convention as
@@ -78,9 +79,10 @@ stats_datasets:
   - {name: Reflectivity at Lowest Altitude, filepath: MRMS_RALA_DIR, key: maxRALA, method: max}
   - {name: VII,             filepath: MRMS_VII_DIR,       key: maxVII,             method: max}
 
-# core/integrator.py:15-56 PROBSEVERE_FIELD_MAP, 40 pairs.
-# output_property: probsevere_source_field. The mapping is not mechanical --
-# casing, underscores and abbreviations all vary -- so it cannot be generated.
+# 40 pairs, reached through config.py:33-41 probsevere_field_map() and applied at
+# core/integrator.py:346. output_property: probsevere_source_field. The mapping is
+# not mechanical -- casing, underscores and abbreviations all vary -- so it cannot
+# be generated.
 probsevere_field_map:
   ProbSevere: ProbSevere
   ProbWind: ProbWind
@@ -97,10 +99,11 @@ probsevere_field_map:
   MLLR: MLLR
   EBShear: EBSHEAR
   SRH01km: SRH01KM
-  # VERBATIM SOURCE TYPO (integrator.py:31): the storm-relative *helicity* key
-  # 0-2 km reads the storm-relative *wind* field SRW02KM. Reproduced exactly so
-  # the catalog matches running behavior; fixing it changes output values and
-  # must be a reviewed decision, not a transcription.
+  # VERBATIM SOURCE TYPO, carried over from the PROBSEVERE_FIELD_MAP constant this
+  # section replaced: the storm-relative *helicity* key 0-2 km reads the
+  # storm-relative *wind* field SRW02KM. Reproduced exactly so the catalog matches
+  # running behavior; fixing it changes output values and must be a reviewed
+  # decision, not a transcription.
   SRH02km: SRW02KM
   SRW46km: SRW46KM
   MeanWind_1-3kmAGL: MEANWIND_1-3kmAGL
@@ -127,9 +130,10 @@ probsevere_field_map:
   PWAT: PWAT
   avg_beam_hgt: AVG_BEAM_HGT
 
-rap_products:                           # config.py:178-253 get_rap_products()
-  # The 37 isobaric levels the u/v products expand over. Kept as one anchor
-  # because config.py:190-194 and :201-205 repeat the identical list.
+rap_products:                           # config.py:83-93 get_rap_products()
+  # The 37 isobaric levels the u/v products expand over. Kept as one anchor so the
+  # identical list is not written out twice; the loader resolves it before
+  # get_rap_products() returns, so no consumer sees the alias.
   isobaric_levels_mb: &isobaric_levels_mb
     [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750,
      725, 700, 675, 650, 625, 600, 575, 550, 525, 500, 475,
@@ -141,8 +145,8 @@ rap_products:                           # config.py:178-253 get_rap_products()
   # `aliases` key would
   # be ignored and every product would fall back to its single `var` short name.
   #
-  # `levels` is required on the u/v entries: integrate_rap.py:111 branches on
-  # `"levels" in product`, and the else branch reads `product["key"]`, which
+  # `levels` is required on the u/v entries: integrate_rap.py:150 branches on
+  # `"levels" in product`, and the else branch reads `product["key"]` (:159), which
   # these two do not have. Without it the 74 wind_field.* values vanish and the
   # apply loop raises KeyError.
   products:
@@ -152,12 +156,12 @@ rap_products:                           # config.py:178-253 get_rap_products()
     - {var: v10, var_aliases: [v10, 10v, v],   filter: {typeOfLevel: heightAboveGround, level: 10}, key: v10m}
     - {var: t2m, var_aliases: [t2m, 2t, t],    filter: {typeOfLevel: heightAboveGround, level: 2}, key: temp_2m,     transform: kelvin_to_celsius}
     - {var: d2m, var_aliases: [d2m, 2d, dpt],  filter: {typeOfLevel: heightAboveGround, level: 2}, key: dewpoint_2m, transform: kelvin_to_celsius}
-    # config.py:237-241 declares no var_aliases, so grib_loader.py:58 falls back
-    # to the single `var` short name.
+    # The only product that declares no var_aliases, so grib_loader.py:58 falls
+    # back to the single `var` short name.
     - {var: gh,  filter: {typeOfLevel: isothermZero}, key: freezing_level_m}
 
-  # `transform` names are validated against integrate_rap.TRANSFORMS at load
-  # time (integrate_rap.py:32-48); an unknown name aborts the run.
+  # `transform` names are validated against integrate_rap.TRANSFORMS (:12) at load
+  # time by _transform_for (:32-48); an unknown name aborts the run.
   derived:
     - {key: dewpoint_depression,   formula: 'temp_2m - dewpoint_2m'}
     - {key: freezing_level_height, formula: 'freezing_level_m / 1000'}

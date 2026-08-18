@@ -4,13 +4,13 @@ import helmet from 'helmet';
 export function securityMiddleware(policy) {
   return [
     helmet({
-      contentSecurityPolicy: { useDefaults: true, directives: { defaultSrc: [policy.csp_default_src ?? "'self'"] } },
+      contentSecurityPolicy: { useDefaults: true, directives: { defaultSrc: [policy.csp_default_src] } },
       strictTransportSecurity: { maxAge: policy.hsts_max_age_seconds }
     }),
     compression({
       filter(req, res) {
         const type = res.getHeader('Content-Type');
-        const skipMedia = policy.compression_skip_media ?? 'image/*';
+        const skipMedia = policy.compression_skip_media;
         const mediaPattern = new RegExp(`^${skipMedia.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('\\*', '.*')}$`, 'i');
         return !(typeof type === 'string' && mediaPattern.test(type)) && compression.filter(req, res);
       }

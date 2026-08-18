@@ -79,6 +79,14 @@ concurrency:
   parse_checkpoint_chunk_interval: 8    # re-parse the accumulated volume every N chunks
   in_volume_prefetch: 4                 # effective value is min(this, pending chunks)
 
+  # Buffer trimming is NOT a key here. worker.py's `trim_buffer` rewrites the
+  # partial .ar2v in place to drop already-exported sweeps, so it is safe only for
+  # a caller that owns that file. service.py's streaming path does and passes
+  # True; the parameter defaults to False so that any other caller cannot mutate
+  # an input it merely borrowed. That is a file-ownership invariant, which this
+  # project keeps in code -- an operator toggling it off would not save memory,
+  # it would change which module is allowed to write to whose file.
+
 # Settings the realtime pipeline needs whether or not anyone typed a command.
 # These three used to live under `cli` below, which is precisely how they came to
 # be ignored: production reaches the pipeline through background.py, never
