@@ -21,10 +21,6 @@
         "lookback_step_hours": { "type": "integer", "minimum": 1 },
         "max_files": { "type": "integer", "minimum": 0 }
       }
-    },
-    "env_overrides": {
-      "type": "object",
-      "additionalProperties": { "type": "string" }
     }
   }
 }

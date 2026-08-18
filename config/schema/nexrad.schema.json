@@ -109,10 +109,6 @@
         "type": "object",
         "additionalProperties": { "type": "string" }
       }
-    },
-    "env_overrides": {
-      "type": "object",
-      "additionalProperties": { "type": "string" }
     }
   }
 }

@@ -38,6 +38,3 @@ rap:
   # download_rap/download_rap_async passes None (no cap); only the post-download
   # sweep applies this.
   max_files: 3
-
-env_overrides:
-  rap.max_age_minutes: EDGEWARN_RAP_MAX_AGE_MINUTES

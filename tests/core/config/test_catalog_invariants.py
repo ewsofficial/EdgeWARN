@@ -34,18 +34,6 @@ def test_every_catalog_declares_schema_version_one():
         assert loader.load_config(name)["schema_version"] == 1
 
 
-def test_documented_api_and_runtime_environment_overrides_have_source_readers():
-    """`env_overrides` is executable documentation, not a dead inventory."""
-    source = "\n".join(
-        path.read_text(encoding="utf-8", errors="ignore")
-        for path in (REPO_ROOT / "src").rglob("*")
-        if path.suffix in {".py", ".js"}
-    )
-    for catalog_name in ("api", "runtime"):
-        documented = loader.load_config(catalog_name)["env_overrides"]
-        for names in documented.values():
-            for name in names if isinstance(names, (list, tuple)) else [names]:
-                assert name in source, f"{catalog_name}.yaml documents unread environment variable {name}"
 def duplicates(values):
     """Return the values that appear more than once, with their counts."""
     return {value: count for value, count in Counter(values).items() if count > 1}

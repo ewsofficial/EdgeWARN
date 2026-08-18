@@ -77,10 +77,6 @@
         "tile_index_entries": { "type": "integer", "minimum": 1 },
         "colormap_entries": { "type": "integer", "minimum": 1 }
       }
-    },
-    "env_overrides": {
-      "type": "object",
-      "additionalProperties": { "type": "string" }
     }
   }
 }

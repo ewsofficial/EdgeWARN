@@ -195,10 +195,6 @@
       "properties": {
         "entries": { "type": "integer", "minimum": 0 }
       }
-    },
-    "env_overrides": {
-      "type": "object",
-      "additionalProperties": { "type": ["string", "array"], "items": { "type": "string" } }
     }
   }
 }

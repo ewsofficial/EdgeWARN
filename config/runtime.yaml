@@ -229,18 +229,3 @@ profiling:
   # the deferral ends once TimingTracker.set_enabled (:96-105) pins the global,
   # which `--profile` does at EdgeWARN/pipeline.py:235,380.
   perf_tracker: null
-
-env_overrides:
-  # io.py:103,116, --config-dir. The only row here with no counterpart key in this
-  # document, and necessarily so: it selects the directory these YAML files are
-  # read FROM, so it can never be set from inside one.
-  #
-  # Also the only row io.py *writes*: both arg parsers export the resolved root
-  # back into the environment, because accessory processes are spawned without
-  # argv and would otherwise re-resolve to the repo-default config/.
-  config_dir: ['EDGEWARN_CONFIG_DIR']
-  goes_coordination.pause_ingest_during_render: EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER
-  cycle.retry.max_attempts: EDGEWARN_CYCLE_MAX_ATTEMPTS
-  cycle.retry.initial_backoff_seconds: EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS
-  cycle.retry.max_backoff_seconds: EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS
-  profiling.perf_tracker: EDGEWARN_PERF_TRACKER

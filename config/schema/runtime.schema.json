@@ -135,10 +135,6 @@
       "properties": {
         "perf_tracker": { "type": ["boolean", "null"] }
       }
-    },
-    "env_overrides": {
-      "type": "object",
-      "additionalProperties": { "type": ["string", "array"], "items": { "type": "string" } }
     }
   }
 }
