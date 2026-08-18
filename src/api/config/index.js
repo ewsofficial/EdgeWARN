@@ -38,6 +38,13 @@ function parseInteger(value, fallback, label, { minimum = 0 } = {}) {
   return parsed;
 }
 
+function parseIntegerOverride(value, fallback, label, options) {
+  return Object.freeze({
+    value: parseInteger(value, fallback, label, options),
+    overridden: value !== undefined && value !== '',
+  });
+}
+
 function parseOrigins(value) {
   if (Array.isArray(value)) return Object.freeze([...new Set(value)]);
   if (!value) return [];
@@ -113,17 +120,21 @@ export function createConfig({ env = defaultEnvironment(), argv = process.argv.s
   if (new Set(explicit.map((value) => path.resolve(value))).size > 1) throw new Error('Conflicting base directory settings');
   const configuredBaseDir = process.platform === 'win32' ? api.base_dir.windows : api.base_dir.posix;
   const baseDir = path.resolve(explicit[0] || configuredBaseDir.replace(/^~(?=$|[\\/])/, os.homedir()));
-  const port = parseInteger(env.PORT, api.server.port, 'PORT', { minimum: 1 });
-  const requestTimeoutMs = parseInteger(env.REQUEST_TIMEOUT_MS, api.server.request_timeout_ms, 'REQUEST_TIMEOUT_MS', { minimum: 1 });
-  const rateLimitMaxSec = parseInteger(env.RATE_LIMIT_MAX_SEC, api.rate_limits.per_second.max, 'RATE_LIMIT_MAX_SEC');
-  const rateLimitMaxMin = parseInteger(env.RATE_LIMIT_MAX_MIN, api.rate_limits.per_minute.max, 'RATE_LIMIT_MAX_MIN');
+  const portSetting = parseIntegerOverride(env.PORT, api.server.port, 'PORT', { minimum: 1 });
+  const requestTimeoutSetting = parseIntegerOverride(env.REQUEST_TIMEOUT_MS, api.server.request_timeout_ms, 'REQUEST_TIMEOUT_MS', { minimum: 1 });
+  const rateLimitMaxSecSetting = parseIntegerOverride(env.RATE_LIMIT_MAX_SEC, api.rate_limits.per_second.max, 'RATE_LIMIT_MAX_SEC');
+  const rateLimitMaxMinSetting = parseIntegerOverride(env.RATE_LIMIT_MAX_MIN, api.rate_limits.per_minute.max, 'RATE_LIMIT_MAX_MIN');
+  const { value: port } = portSetting;
+  const { value: requestTimeoutMs } = requestTimeoutSetting;
+  const { value: rateLimitMaxSec } = rateLimitMaxSecSetting;
+  const { value: rateLimitMaxMin } = rateLimitMaxMinSetting;
   const activeOverrides = [
     ...(configDirCli ? ['--config-dir'] : configDirEnv ? ['EDGEWARN_CONFIG_DIR'] : []),
     ...(canonicalCli ? ['--base-dir'] : canonicalEnv ? ['EDGEWARN_BASE_DIR'] : deprecatedCli ? ['--base_dir'] : deprecatedEnv ? ['BASE_DIR'] : []),
-    ...(env.PORT === undefined ? [] : ['PORT']),
-    ...(env.REQUEST_TIMEOUT_MS === undefined ? [] : ['REQUEST_TIMEOUT_MS']),
-    ...(env.RATE_LIMIT_MAX_SEC === undefined ? [] : ['RATE_LIMIT_MAX_SEC']),
-    ...(env.RATE_LIMIT_MAX_MIN === undefined ? [] : ['RATE_LIMIT_MAX_MIN']),
+    ...(portSetting.overridden ? ['PORT'] : []),
+    ...(requestTimeoutSetting.overridden ? ['REQUEST_TIMEOUT_MS'] : []),
+    ...(rateLimitMaxSecSetting.overridden ? ['RATE_LIMIT_MAX_SEC'] : []),
+    ...(rateLimitMaxMinSetting.overridden ? ['RATE_LIMIT_MAX_MIN'] : []),
     ...(env.ALLOWED_ORIGINS === undefined ? [] : ['ALLOWED_ORIGINS']),
     ...(env.TRUST_PROXY_IPS ? ['TRUST_PROXY_IPS'] : env.TRUST_PROXY ? ['TRUST_PROXY'] : []),
   ];
@@ -137,6 +148,7 @@ export function createConfig({ env = defaultEnvironment(), argv = process.argv.s
       wpc: Object.freeze({ file: wpcProvenance.path, schemaVersion: wpcProvenance.schema_version }),
     }),
     overrides: Object.freeze(activeOverrides),
+    restartRequired: true,
     effective: Object.freeze({
       baseDir,
       port,
