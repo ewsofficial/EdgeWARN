@@ -25,8 +25,8 @@ server:
   port: 5000                            # config/index.js:93, env PORT
   debug_port: 3001                      # server.js:7, --debug-server
   request_timeout_ms: 30000             # config/index.js:94; responds 503 (security.js:21)
-  static_root: src/EWMRS                # app.js:26, joined to the src/ directory
-  openapi_spec: openapi/v3.yaml         # app.js:23, relative to src/api/
+  static_root: <src_dir>/EWMRS          # app.js consumes the validated source-tree path
+  openapi_spec: <src_dir>/api/openapi/v3.yaml
   # app.js:33. In production the real package version is withheld and this label
   # is served instead.
   production_version_label: '2.x'
