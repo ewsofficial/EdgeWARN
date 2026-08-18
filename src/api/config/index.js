@@ -60,6 +60,12 @@ function parseTrustProxy(value, env) {
   return Object.freeze(value.split(',').map((entry) => entry.trim()).filter(Boolean));
 }
 
+function defaultEnvironment() {
+  // Keep the canonical shared base-directory variable explicit on the Node
+  // surface while still copying the environment for dependency injection.
+  return { ...process.env, EDGEWARN_BASE_DIR: process.env.EDGEWARN_BASE_DIR };
+}
+
 // The token expansion and traversal rejection moved into the shared loader, so
 // Python and Node enforce one contract instead of two. What is left here is the
 // only part specific to this caller: which token is in scope, and which key to
@@ -71,7 +77,7 @@ function resolveRuntimeDirectory(baseDir, template, label) {
   });
 }
 
-export function createConfig({ env = process.env, argv = process.argv.slice(2), packageVersion = PACKAGE_VERSION } = {}) {
+export function createConfig({ env = defaultEnvironment(), argv = process.argv.slice(2), packageVersion = PACKAGE_VERSION } = {}) {
   const configDirCli = oneValue(readFlag(argv, ['--config-dir']), '--config-dir');
   const configDirEnv = env.EDGEWARN_CONFIG_DIR;
   const selectedConfigDir = configDirCli || configDirEnv;
