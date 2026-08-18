@@ -300,7 +300,7 @@ Add:
   list `jsonschema`. Revisit only if a schema needs composition keywords, at
   which point both loaders take the dependency together.
 - `src/config/loader.js` for Node loading and the same schema validation.
-- **`schema_version: 1` in all 18 files.** None has one today. Note the
+- **`schema_version: 1` in all 19 files.** None has one today. Note the
   collision: `ewmrs_render.yaml:12` already uses `schema_version: 2` for the
   chunk *wire* format; rename that key to `chunk_format.wire_version` before
   adding the config-level one.
@@ -516,7 +516,7 @@ The loader joins derived names to the selected runtime base directory via
 
 Relocating `colormaps.json`, deleting `mappings.json` as an independent
 authority, and reconciling the `RAP_BestLiftedIndex_180_0mbAGL` drift noted above
-are a **separate follow-up**, not part of wiring the 18 files. They require a
+are a **separate follow-up**, not part of wiring the 19 files. They require a
 Node-side path change and an API response change, which is a different blast
 radius from reading YAML.
 
@@ -775,7 +775,7 @@ proxy trust because a config key is missing.
 
 ## Corrections required before the files can be loaded
 
-The 18 files were produced by transcription, and the transcription has errors.
+The 19 files were produced by transcription, and the transcription has errors.
 **This table gates implementation** — the files cannot be wired as written. Each
 row was verified against the source at this baseline.
 
@@ -801,7 +801,7 @@ row was verified against the source at this baseline.
 | `detection.yaml` `gatemapper.baseline_refl_floor`, `dynamic_min_threshold` | recorded as settings | `gatemapper.py:101` `min(37.5, self.refl_threshold)` is a **hard floor**, so raising `refl_threshold` above 37.5 has no effect on the baseline mask; `gatemapper.py:174` `np.where(valid_max_refl < 45.0, 37.5, 40.0)` is fully inline | Must be parameterized or these keys are inert and misleading |
 | `filesystem.yaml` colormap search path | `src/EWMRS/colormaps.json` | `file.py` resolved it relative to `__file__`, not cwd | **Done.** `<src_dir>/EWMRS/colormaps.json` plus a `<gui_dir>` fallback; the `Path.cwd()` candidate that led the list is gone |
 | `runtime.yaml` | omits | supervisor restart policy (`processes.py:72-75`); `stop_process` `join_timeout=5` (`processes.py:10,24`); background loop cadences (`background.py:223,239,257,265`); `goes.py:54,65` poll granularity `0.2` and floor `0.1`; `cycle.py:589` and `coordinator.py:125` `max_entries=10`; NEXRAD heartbeat `240.0` / grace `60.0` (`nexrad/config.py:21-22`) | Add |
-| all 18 files | no `schema_version` | this plan requires one | Add `schema_version: 1` |
+| all 19 files | no `schema_version` | this plan requires one | Add `schema_version: 1` |
 
 Rows marked "must be parameterized or the key is inert" are the dangerous class:
 the YAML *looks* authoritative, so an operator can change the value and observe no
@@ -824,8 +824,9 @@ currently have several, and there is no module-level constant to point at.
 - **`max_candidate_volumes_per_site`** — 3 copies:
   `nexrad/pipeline/__init__.py:61`, `nexrad/coordinator.py:26`,
   `nexrad/pipeline/volume_discovery.py:66`.
-- **`max_volumes_per_site`** — 4 copies: `nexrad/main.py:106`, `:150`,
-  `nexrad/service.py:1276`, `:1304`.
+- **`max_volumes_per_site`** — recorded exception in `nexrad.yaml`: its four
+  operational literals remain at `nexrad/main.py:110`, `:154` and
+  `nexrad/service.py:1286`, `:1314`, with a test pinning them.
 - **`zone_sync`** — 6 keys duplicated across argparse and `NWSZoneSync.__init__`
   (`zone_sync.py:152-162`), one of which disagrees with its flag.
 - **`kalman.yaml`** — every `.get()` call in
@@ -857,7 +858,7 @@ retuning.
    memoization, immutability, provenance, schema versioning, and dotted-key
    errors. Stdlib + `yaml` imports only.
 3. Write the 18 `config/schema/<name>.schema.json` files and add
-   `schema_version: 1` to all 18 config files, renaming the
+   `schema_version: 1` to all 19 config files, renaming the
    `ewmrs_render.yaml` wire version first.
 4. Convert argparse to `None` sentinels across the five entrypoints listed
    above, so CLI-beats-YAML is expressible.
@@ -933,6 +934,15 @@ behavior from the flat files without circular imports.
 4. Derive version strings from `package.json`.
 5. Add effective-config summaries to startup logs and health diagnostics.
 
+**Phase 5 completion note.** Runtime and API settings now use the 19 validated
+catalogs. HSTS, proxy parsing, source-root paths, diagnostics provenance,
+product counts, restart semantics, boundary-wait granularity, and access-log
+mode are all owned by configuration and covered by tests. The health-check
+limiter bypass remains deliberately absent: restoring it would retune the live
+service, not extract a setting. Enrichment concurrency is derived from the two
+or three scheduled enrichment tasks (`len(future_order)`), so a cap key would
+be inert and is deliberately excluded.
+
 ### Phase 6: Remove fallbacks and enforce the boundary
 
 1. Delete obsolete source `config.py` catalogs or reduce them to typed adapter
@@ -960,7 +970,7 @@ behavior from the flat files without circular imports.
 - Missing files, unknown keys, wrong types, invalid enum values, duplicate
   entries, non-finite numbers, inverted ranges, negative intervals, and unsafe
   paths fail before service startup.
-- All 18 config files have `schema_version: 1`, and no file uses that key for
+- All 19 config files have `schema_version: 1`, and no file uses that key for
   anything else.
 - Precedence is tested per override in all four combinations: YAML only, env
   over YAML, CLI over YAML, and CLI over env over YAML. A `store_true` flag that
@@ -1074,7 +1084,7 @@ but the schemas and checked-in config remain authoritative.
 
 - [ ] Every row of the corrections table is resolved, and no config key remains
   that an operator can change with no observable effect.
-- [ ] All 18 `config/*.yaml` files carry `schema_version: 1`, have a sibling
+- [ ] All 19 `config/*.yaml` files carry `schema_version: 1`, have a sibling
   schema in `config/schema/`, and pass both loaders.
 - [ ] No config file still carries the "Not yet consumed by code" header.
 - [ ] Argparse uses `None` sentinels, and precedence is demonstrably
