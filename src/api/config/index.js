@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { configRoot, expandPath, getProvenance, loadConfig, repoRoot } from '../../config/loader.js';
+import { configRoot, expandPath, getProvenance, loadConfig, repoRoot, srcRoot } from '../../config/loader.js';
 
 // package.json is the sole owner of the version. This was a literal default,
 // which agreed with the manifest only until one of the two was bumped.
@@ -87,6 +87,13 @@ function resolveRuntimeDirectory(baseDir, template, label) {
   });
 }
 
+function resolveSourcePath(template, label) {
+  return expandPath(template, { src_dir: srcRoot() }, {
+    filename: 'api.yaml',
+    dottedPath: `server.${label}`,
+  });
+}
+
 export function createConfig({ env = defaultEnvironment(), argv = process.argv.slice(2), packageVersion = PACKAGE_VERSION } = {}) {
   const configDirCli = oneValue(readFlag(argv, ['--config-dir']), '--config-dir');
   const configDirEnv = env.EDGEWARN_CONFIG_DIR;
@@ -147,6 +154,8 @@ export function createConfig({ env = defaultEnvironment(), argv = process.argv.s
     wpcDir: resolveRuntimeDirectory(baseDir, api.base_dir.derived.wpc, 'wpc'),
     configDir: resolvedConfigRoot,
     repoDir: repoRoot(selectedConfigDir),
+    staticDir: resolveSourcePath(api.server.static_root, 'static_root'),
+    openApiPath: resolveSourcePath(api.server.openapi_spec, 'openapi_spec'),
     api,
     wpc,
     diagnostics,

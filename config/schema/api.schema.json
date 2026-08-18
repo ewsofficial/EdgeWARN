@@ -15,8 +15,8 @@
         "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "debug_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "request_timeout_ms": { "type": "integer", "exclusiveMinimum": 0 },
-        "static_root": { "type": "string" },
-        "openapi_spec": { "type": "string" },
+        "static_root": { "type": "string", "pattern": "^<(base_dir|gui_dir|src_dir)>/[^/]" },
+        "openapi_spec": { "type": "string", "pattern": "^<(base_dir|gui_dir|src_dir)>/[^/]" },
         "production_version_label": { "type": "string" },
         "v3_api_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
       }

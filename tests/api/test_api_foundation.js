@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from '@jest/globals';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import request from 'supertest';
 import { createConfig, parseTrustProxy } from '../../src/api/config/index.js';
+import { createApp } from '../../src/api/app.js';
 import { resetCache } from '../../src/config/loader.js';
 import { ArtifactRepository, ArtifactError } from '../../src/api/repositories/artifactRepository.js';
 
@@ -49,7 +51,25 @@ describe('unified API configuration', () => {
       expect(config.port).toBe(5100);
       expect(config.configDir).toBe(configDir);
       expect(config.api.server.port).toBe(5100);
+      expect(config.openApiPath).toBe(path.resolve('src/api/openapi/v3.yaml'));
+      expect(config.staticDir).toBe(path.resolve('src/EWMRS'));
     } finally {
+      await fs.rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('serves OpenAPI from the installed source tree with an external config directory', async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'edgewarn-api-config-'));
+    const configDir = path.join(parent, 'config');
+    const baseDir = path.join(parent, 'runtime');
+    try {
+      await fs.cp(path.resolve('config'), configDir, { recursive: true });
+      await Promise.all(['data', 'gui', 'wpc'].map((directory) => fs.mkdir(path.join(baseDir, directory), { recursive: true })));
+      const { app, config } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir }, argv: ['--config-dir', configDir] });
+      expect(config.openApiPath).toBe(path.resolve('src/api/openapi/v3.yaml'));
+      await request(app).get('/api/v3/openapi.json').expect(200).expect('Content-Type', /application\/json/);
+    } finally {
+      resetCache();
       await fs.rm(parent, { recursive: true, force: true });
     }
   });

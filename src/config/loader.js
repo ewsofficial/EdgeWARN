@@ -185,6 +185,10 @@ export function repoRoot(cliDir = null) {
   return path.dirname(configRoot(cliDir));
 }
 
+export function srcRoot() {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+}
+
 // Mirrors PATH_TOKENS and expand_path in src/common/config/loader.py. An
 // allowlist rather than a scan for bare `<`/`>`, which would false-positive on
 // comment lines and on synoptic_rap.yaml's named capture groups.
