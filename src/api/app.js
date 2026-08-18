@@ -31,7 +31,9 @@ export async function createApp(options = {}) {
   const app = express();
   app.set('trust proxy', config.trustProxy);
   const exposedVersion = config.isProduction ? config.api.server.production_version_label : config.packageVersion;
-  app.use(requestId, createAccessLog(routeTemplates), ...securityMiddleware(config.api.security), createCors(config.allowedOrigins, config.api.security.cors), ...createRateLimiters(config.rateLimits), requestTimeout(config.requestTimeoutMs));
+  app.use(requestId);
+  if (config.api.logging.access_log_enabled) app.use(createAccessLog(routeTemplates));
+  app.use(...securityMiddleware(config.api.security), createCors(config.allowedOrigins, config.api.security.cors), ...createRateLimiters(config.rateLimits), requestTimeout(config.requestTimeoutMs));
   app.get('/', (req, res) => res.json({ service: 'EdgeWARN Unified API', version: exposedVersion, links: { api: '/api/v3', openapi: '/api/v3/openapi.json' } }));
   app.get('/robots.txt', (req, res) => res.type('text/plain').send("# No clankers\nUser-agent: *\nDisallow: /\n"));
   app.get('/health/live', (req, res) => res.json({ status: 'ok', requestId: req.requestId, config: config.diagnostics }));

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from '@jest/globals';
+import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -69,6 +69,26 @@ describe('unified API configuration', () => {
       expect(config.openApiPath).toBe(path.resolve('src/api/openapi/v3.yaml'));
       await request(app).get('/api/v3/openapi.json').expect(200).expect('Content-Type', /application\/json/);
     } finally {
+      resetCache();
+      await fs.rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('can disable access logging through api.yaml', async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'edgewarn-api-config-'));
+    const configDir = path.join(parent, 'config');
+    const baseDir = path.join(parent, 'runtime');
+    const log = jest.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      await fs.cp(path.resolve('config'), configDir, { recursive: true });
+      const apiYaml = path.join(configDir, 'api.yaml');
+      await fs.writeFile(apiYaml, (await fs.readFile(apiYaml, 'utf8')).replace('access_log_enabled: true', 'access_log_enabled: false'));
+      await Promise.all(['data', 'gui', 'wpc'].map((directory) => fs.mkdir(path.join(baseDir, directory), { recursive: true })));
+      const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir }, argv: ['--config-dir', configDir] });
+      await request(app).get('/').expect(200);
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
       resetCache();
       await fs.rm(parent, { recursive: true, force: true });
     }
