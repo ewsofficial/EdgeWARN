@@ -9,11 +9,10 @@
     "base_dir": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["posix", "windows", "fallback"],
+      "required": ["posix", "windows"],
       "properties": {
         "posix": { "type": "string" },
-        "windows": { "type": "string" },
-        "fallback": { "type": "string" }
+        "windows": { "type": "string" }
       }
     },
     "cleanup_defaults": {

@@ -27,7 +27,7 @@ def _ingest_max_entries():
     """The S3 listing depth for MRMS ingest.
 
     Owned by ``runtime.yaml cycle.ingest_max_entries`` rather than by
-    ``mrms_goes.yaml``: the coordinator resolves the same key for the callers
+    ``ingest.yaml``: the coordinator resolves the same key for the callers
     that pass one, so a literal default here would be a second owner that
     disagreed the moment an operator raised the catalog value.
     """
@@ -47,7 +47,7 @@ def _resolve_ingest_args(max_entries, remove_old_files):
 
 
 def get_detection_modifiers():
-    return list(load_config("mrms_goes")["mrms"]["membership_lists"]["detection"])
+    return list(load_config("ingest")["mrms"]["membership_lists"]["detection"])
 
 
 def get_integration_modifiers():

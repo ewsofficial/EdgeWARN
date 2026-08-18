@@ -193,10 +193,5 @@ def resolve_base_dir(
         key="filesystem.base_dir",
     )
     if platform_name != "Windows" and str(selected).startswith("~"):
-        try:
-            return Path(selected).expanduser()
-        except RuntimeError:
-            # Path.home()/expanduser can fail in stripped-down containers.
-            _origins["filesystem.base_dir"] = "yaml"
-            return Path(defaults["fallback"])
+        return Path(selected).expanduser()
     return Path(selected)

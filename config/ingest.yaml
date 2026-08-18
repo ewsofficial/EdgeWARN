@@ -1,4 +1,4 @@
-# mrms_goes.yaml — Audit §7 MRMS & GOES
+# ingest.yaml — Audit §7 MRMS & GOES
 #
 # Source: src/common/ingest/mrms/{config,parse,downloader,https_client,main}.py
 # Values verified against the working tree at commit e426fb2.

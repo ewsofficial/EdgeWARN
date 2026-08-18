@@ -53,7 +53,7 @@ class HttpsFileFinder:
         S3: "ProbSevere" -> NCEP: "ProbSevere" (handled separately usually)
 
         The map and the split-token fallback both come from
-        `mrms.ncep_https` in mrms_goes.yaml, so a directory rename upstream is an
+        `mrms.ncep_https` in ingest.yaml, so a directory rename upstream is an
         operator edit rather than a code change. Most names derive by dropping the
         level suffix; the map exists for the ones that do not, and the NCEP index
         keeps VIL/, VIL_Density/ and LVL3_HighResVIL/ as distinct directories, so

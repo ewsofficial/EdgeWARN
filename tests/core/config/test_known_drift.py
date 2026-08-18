@@ -1269,9 +1269,10 @@ def test_gatemapper_hard_floor_makes_a_raised_threshold_ineffective():
 def test_one_user_agent_template_interpolates_the_package_version():
     """RESOLVED (Phase 5): three strings across five sites became one template.
 
-    `runtime.yaml identity` is the sole authority. `util/release.py
-    format_user_agent()` fills `{version}` from package.json, so the advertised
-    version tracks the release instead of being copied into source.
+    The template shape is hardcoded in `util/release.py format_user_agent()`,
+    with the contact half resolved from `runtime.yaml identity`. `{version}` is
+    filled from package.json, so the advertised version tracks the release
+    instead of being copied into source.
     """
     from util.release import format_user_agent
 
@@ -2244,7 +2245,7 @@ def test_config_dir_reaches_mrms_values_after_the_module_is_already_imported(tmp
 
     config_dir = tmp_path / "config"
     shutil.copytree(REPO_ROOT / "config", config_dir)
-    catalog = config_dir / "mrms_goes.yaml"
+    catalog = config_dir / "ingest.yaml"
     catalog.write_text(
         catalog.read_text(encoding="utf-8")
             .replace(mrms_config.mrms_bucket(), "override-mrms")
@@ -2364,7 +2365,7 @@ def test_config_dir_reaches_the_ncep_https_values_after_import(tmp_path):
 
     config_dir = tmp_path / "config"
     shutil.copytree(REPO_ROOT / "config", config_dir)
-    catalog = config_dir / "mrms_goes.yaml"
+    catalog = config_dir / "ingest.yaml"
     catalog.write_text(
         catalog.read_text(encoding="utf-8")
             .replace("base_url: https://mrms.ncep.noaa.gov/data/2D", "base_url: https://example.invalid/2D")
@@ -2459,7 +2460,7 @@ def test_ncep_fuzzy_match_window_widens_and_narrows_with_the_catalog(tmp_path):
 
     config_dir = tmp_path / "config"
     shutil.copytree(REPO_ROOT / "config", config_dir)
-    catalog = config_dir / "mrms_goes.yaml"
+    catalog = config_dir / "ingest.yaml"
     catalog.write_text(
         catalog.read_text(encoding="utf-8").replace(
             "match_window_seconds: 120", "match_window_seconds: 60"
@@ -2619,10 +2620,10 @@ def test_alert_matcher_cache_bounds_are_read_from_the_catalog():
 # --- MRMS/GOES: the retention and depth literals now have one owner each ------
 
 
-def _mrms_goes_yaml() -> dict:
+def _ingest_yaml() -> dict:
     import yaml
 
-    return yaml.safe_load((REPO_ROOT / "config" / "mrms_goes.yaml").read_text(encoding="utf-8"))
+    return yaml.safe_load((REPO_ROOT / "config" / "ingest.yaml").read_text(encoding="utf-8"))
 
 
 def _src_text(relative_path: str) -> str:
@@ -2640,7 +2641,7 @@ def test_decompress_chunk_size_has_no_module_level_owner():
     from common.ingest.mrms.config import mrms_decompress_chunk_size_bytes
 
     assert not hasattr(s3_common, "DECOMPRESS_CHUNK_SIZE")
-    assert mrms_decompress_chunk_size_bytes() == _mrms_goes_yaml()["mrms"]["decompress_chunk_size_bytes"]
+    assert mrms_decompress_chunk_size_bytes() == _ingest_yaml()["mrms"]["decompress_chunk_size_bytes"]
 
 
 def test_goes_hour_lookback_has_one_resolution_site():
@@ -2657,7 +2658,7 @@ def test_goes_hour_lookback_has_one_resolution_site():
     source = _src_text("common/ingest/mrms/downloader.py")
     assert "hour_lookback=3" not in source
 
-    expected = _mrms_goes_yaml()["goes"]["hour_lookback"]
+    expected = _ingest_yaml()["goes"]["hour_lookback"]
     paths = _get_goes_bucket_paths(datetime(2026, 8, 16, 12, tzinfo=timezone.utc), "ABI-L1b-RadC")
     assert len(paths) == expected
 
@@ -2668,7 +2669,7 @@ def test_goes_cleanup_retention_is_catalog_owned():
 
     source = _src_text("common/ingest/mrms/downloader.py")
     assert "max_age_minutes=60" not in source
-    assert goes_cleanup_max_age_minutes() == _mrms_goes_yaml()["goes"]["cleanup_max_age_minutes"]
+    assert goes_cleanup_max_age_minutes() == _ingest_yaml()["goes"]["cleanup_max_age_minutes"]
 
 
 def test_mrms_and_goes_cleanup_windows_stay_separate_keys():
@@ -2678,7 +2679,7 @@ def test_mrms_and_goes_cleanup_windows_stay_separate_keys():
     bound different retention policies; collapsing them would tie a count cap to
     an age cap that has no reason to move with it.
     """
-    catalog = _mrms_goes_yaml()
+    catalog = _ingest_yaml()
     assert catalog["mrms"]["cleanup_max_age_minutes"] == 60
     assert catalog["goes"]["cleanup_max_age_minutes"] == 60
     assert "max_files_per_spec" in catalog["goes"]
@@ -2692,13 +2693,13 @@ def test_mrms_cleanup_and_pruning_flag_are_catalog_owned():
     assert '"max_age_minutes": 60' not in source
     assert "remove_old_files=True" not in source
 
-    catalog = _mrms_goes_yaml()["mrms"]
+    catalog = _ingest_yaml()["mrms"]
     assert _cleanup_kwargs() == {"max_age_minutes": catalog["cleanup_max_age_minutes"]}
     assert _resolve_ingest_args(None, None)[1] == catalog["remove_old_files"]
 
 
 def test_mrms_ingest_depth_is_owned_only_by_runtime_yaml():
-    """`mrms_goes.yaml download_max_entries` was a third copy of one number.
+    """`ingest.yaml download_max_entries` was a third copy of one number.
 
     `runtime.yaml cycle.ingest_max_entries` already owned the depth for the
     callers that pass one; main.py's seven `max_entries=10` defaults owned it for
@@ -2708,7 +2709,7 @@ def test_mrms_ingest_depth_is_owned_only_by_runtime_yaml():
     from common.config.loader import load_config
     from common.ingest.mrms.main import _ingest_max_entries
 
-    assert "download_max_entries" not in _mrms_goes_yaml()["mrms"]
+    assert "download_max_entries" not in _ingest_yaml()["mrms"]
     assert "max_entries=10" not in _src_text("common/ingest/mrms/main.py")
     assert _ingest_max_entries() == load_config("runtime")["cycle"]["ingest_max_entries"]
 

@@ -62,7 +62,7 @@ CONFIG_NAMES: tuple[str, ...] = (
     "integration",
     "scheduler",
     "api_index",
-    "mrms_goes",
+    "ingest",
     "nexrad",
     "synoptic_rap",
     "wpc",
@@ -186,7 +186,7 @@ def repo_root(cli_dir: str | os.PathLike[str] | None = None) -> Path:
 # The complete set of tokens a catalog path value may begin with. An allowlist
 # rather than a scan for bare `<`/`>`: six comment lines and one regex value
 # (`synoptic_rap.yaml`'s named capture groups) would false-positive. Runtime format
-# fields are spelled `{}` instead (`mrms_goes.yaml:42-56`, `metar.yaml:13`,
+# fields are spelled `{}` instead (`ingest.yaml:42-56`, `metar.yaml:13`,
 # `integration.yaml:149-150`), so the two classes stay visually distinct and only
 # these three are ever expanded at load time. Mirrored by `PATH_TOKENS` in
 # `src/config/loader.js`.

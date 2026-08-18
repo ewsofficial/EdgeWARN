@@ -7,6 +7,8 @@ recording is faithful and that it stays invisible to resolution itself.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from common.config import overlay
@@ -69,6 +71,13 @@ def test_a_yaml_value_is_recorded_but_not_reported_as_an_override():
     assert resolved == 3
     assert overlay.overrides() == {}
     assert overlay.origins() == {"cycle.retry.max_attempts": "yaml"}
+
+
+def test_base_dir_resolution_uses_only_platform_defaults():
+    defaults = {"posix": "~/EdgeWARN_input", "windows": r"C:\\EdgeWARN_input"}
+
+    assert overlay.resolve_base_dir(None, defaults, system="Linux") == Path.home() / "EdgeWARN_input"
+    assert overlay.resolve_base_dir(None, defaults, system="Windows") == Path(r"C:\\EdgeWARN_input")
 
 
 def test_the_registry_holds_no_values(monkeypatch):

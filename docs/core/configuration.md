@@ -19,7 +19,7 @@ then `filesystem.yaml`. All catalog edits require a process restart.
 | `integration.yaml` | Dataset sources, statistics, rounding, and RAP products. |
 | `scheduler.yaml` | MRMS update-selection and scheduling policy. |
 | `api_index.yaml` | Generated EdgeWARN index/snapshot retention. |
-| `mrms_goes.yaml` | MRMS/GOES ingest products, source keys, and retention. |
+| `ingest.yaml` | MRMS/GOES ingest products, source keys, and retention. |
 | `nexrad.yaml` | NEXRAD discovery, parsing, grouping, and output selection. |
 | `synoptic_rap.yaml` | RAP source discovery, freshness, and request policy. |
 | `wpc.yaml` | WPC surface-analysis sources and artifact naming. |

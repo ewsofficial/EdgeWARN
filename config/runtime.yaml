@@ -46,15 +46,16 @@ schema_version: 1
 # and the async fallback session, which sent urllib's and aiohttp's default agents
 # to a service that asks callers to identify themselves.
 identity:
-  # `{version}` is filled from package.json at call time by
-  # util/release.py format_user_agent(), so the advertised version cannot drift
-  # from the release the way a copied literal did.
+  # Only the contact half of the outbound User-Agent is configured here.
+  # `util/release.py format_user_agent()` hardcodes the `(EdgeWARN/{version},
+  # {contact})` shape and fills `{version}` from package.json at call time, so the
+  # advertised version cannot drift from the release the way a copied literal did.
   #
   # api.weather.gov asks callers to identify themselves with a reachable contact
   # address, and the parenthesized `(app, contact)` shape is the form its
-  # documentation shows. Both placeholders are pinned by the schema pattern, which
-  # also forbids CR/LF, so this string cannot be used to inject a second header.
-  user_agent_template: '(EdgeWARN/{version}, {contact})'
+  # documentation shows. The shape is fixed in code, so this address is the only
+  # operator-controlled fragment that reaches the header and it cannot deliver a
+  # second header.
   contact: ewsbackend@gmail.com
 
   # Content negotiation for api.weather.gov, whose zone, alert and radar-station
@@ -207,7 +208,7 @@ cycle:
   #
   # The second site is common/ingest/mrms/main.py:34, which resolves this same key
   # for the entry points a caller invokes directly rather than through the
-  # coordinator. Two sites, one owner: mrms_goes.yaml deliberately holds no copy
+  # coordinator. Two sites, one owner: ingest.yaml deliberately holds no copy
   # of this depth, because a copy there is what produced the split above.
   #
   # It does not reach GOES. The coordinator used to hand this same count to the

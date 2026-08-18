@@ -5,7 +5,7 @@ from pathlib import Path
 import util.file as fs
 from common.config.loader import ConfigError, load_config
 
-_CONFIG_NAME = "mrms_goes"
+_CONFIG_NAME = "ingest"
 
 
 def _catalog():
