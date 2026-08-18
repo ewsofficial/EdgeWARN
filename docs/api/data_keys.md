@@ -1,6 +1,7 @@
 # EdgeWARN API Data Keys
 
-This document describes the JSON file shapes that back the API routes in `src/EdgeWARN/api`.
+This document describes the JSON file shapes served by the unified API in
+`src/api/`, including its legacy compatibility routes.
 
 When a route serves a file directly, the response shape is usually the same as the file shape. Some files are passed through as-is, so producer-specific keys may appear in addition to the fields listed here.
 

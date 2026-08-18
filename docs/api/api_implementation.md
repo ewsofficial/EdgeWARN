@@ -1,10 +1,16 @@
-# EdgeWARN API v2 Technical Implementation
+# EdgeWARN Unified API Technical Implementation
 
-This document describes the current implementation in `src/EdgeWARN/api`.
+The live Express implementation is `src/api/`, started with `npm run api`
+(or `npm run debug:api`). It serves `/api/v3` and retains selected `/api/v2`,
+`/renders`, `/rap`, `/wpc`, and `/colormaps` endpoints as compatibility adapters.
+The v2-specific implementation details below are historical route context;
+`src/EdgeWARN/api` is not a live service tree.
 
 ## Server Architecture
 
-The EdgeWARN API is an Express.js service with clustered workers (up to 4), file-backed JSON responses, centralized validation, and safe file reads.
+The unified API is an Express.js service with file-backed responses, centralized
+validation, and safe file reads. The following tree documents the retired v2
+implementation for compatibility-reference purposes only.
 
 ### File Structure
 
@@ -69,7 +75,7 @@ Debug mode:
 - Enabled with `--debug_server`
 - Default port `5000`
 - Debug port `3001`
-- The packaged debug command is `npm run debug:edgewarn`
+- The current debug command is `npm run debug:api`.
 
 ## Routing
 
@@ -195,14 +201,12 @@ EWMRS-specific environment variables are documented in `docs/api/ewmrs_api_endpo
 
 ## Runtime Modes
 
-- Primary API server: `npm run api:edgewarn`
-- Debug API server: `npm run debug:edgewarn`
-- EWMRS API server: `npm run api:ewmrs` on port `3003` by default
-- EWMRS debug API server: `npm run debug:ewmrs` passes `--debug-server` and uses port `3004` unless `PORT` is set
-- EWMRS rate-limit CLI overrides: `--ewmrs-rate-limit-1s`, `--ewmrs-rate-limit-1m`; `0` disables the respective limiter window
+- Unified API server: `npm run api` (default port `5000`)
+- Unified debug API server: `npm run debug:api` (default port `3001`)
+- EWMRS compatibility routes are served by that same process.
 
 See also:
 
-- `docs/api/api_endpoints.md` (EdgeWARN API v2)
-- `docs/api/ewmrs_api_endpoints.md` (EWMRS API routes and product mapping)
+- `docs/api/api_endpoints.md` (unified API and compatibility routes)
+- `docs/api/ewmrs_api_endpoints.md` (EWMRS compatibility route mapping)
 - `docs/core/goes_pipeline.md` (GOES ingest, readiness, rendering, and GUI output flow)

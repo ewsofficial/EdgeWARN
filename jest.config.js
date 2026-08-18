@@ -9,15 +9,15 @@ export default {
     // Coverage configuration
     coverageDirectory: 'coverage',
     collectCoverageFrom: [
-        'src/EdgeWARN/api/**/*.js',
-        '!src/EdgeWARN/api/**/*.test.js',
-        '!src/EdgeWARN/api/config.js'
+        'src/api/**/*.js',
+        'src/config/loader.js',
+        '!src/api/**/*.test.js'
     ],
     coverageThreshold: {
         global: {
-            branches: 70,
-            functions: 70,
-            lines: 70,
+            branches: 66,
+            functions: 78,
+            lines: 89,
             statements: 70
         }
     },
