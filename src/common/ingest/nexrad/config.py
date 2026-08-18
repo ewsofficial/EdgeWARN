@@ -226,18 +226,6 @@ def max_candidate_volumes_per_site() -> int:
     return _nexrad()["realtime"]["max_candidate_volumes_per_site"]
 
 
-def vcp_sweep_elevation_labels():
-    """Sweep index -> published elevation label, per VCP.
-
-    A second, independent naming scheme from
-    :func:`canonical_elevation_bins`, which is why the two disagree on the
-    third sweep for VCP-12 and VCP-215 without either being wrong. Consumed by
-    the renderer rather than by ingest, but the catalog is nexrad.yaml, so the
-    accessor belongs beside the rest of it.
-    """
-    return _nexrad()["vcp_sweep_elevation_labels"]
-
-
 def scan_dirs_to_keep() -> int:
     """Timestamped scan directories retained per site before pruning."""
     return _nexrad()["retention"]["scan_dirs_to_keep"]

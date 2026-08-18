@@ -145,7 +145,6 @@ def get_goes_file_list():
             "variable_name": common["variable_name"],
             "fallback_variable_names": list(common["fallback_variable_names"]),
             "channel_id": layer["channel_id"],
-            "display_name": layer["display_name"],
             "value_transform": layer["value_transform"],
             "mask_min": dict(layer["mask_min"]),
             "mask_max": dict(layer["mask_max"]),

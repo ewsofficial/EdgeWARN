@@ -6,8 +6,8 @@
 #         integrate_rap.py:12,32-48,119,150,159;
 #         pipeline.py:20,50,92,282,349,358; history.py:52,92;
 #         src/util/grib_loader.py:54,58
-# Read through src/EdgeWARN/process/integrate/config.py. Every section here is
-# the single source of truth -- no value below is also declared in Python.
+# Read through src/EdgeWARN/process/integrate/config.py. The active sections are
+# the single source of truth -- no active value below is also declared in Python.
 #
 # `cell_history.max_payloads` is deliberately absent: it was fabricated. Cell
 # history is appended without a cap (history.py:92) and the files are named
@@ -21,25 +21,6 @@ output:
   # maxima, and RAP point/derived fields. The AzShear feature block rounds to 3
   # and 4 places instead; those are separate, in-code decisions.
   decimals: 2
-
-azshear:
-  # RETIRED PATH, recorded not wired. pipeline.py:20 hardcodes
-  # `_AZSHEAR_SUPPORT_ENABLED = False` and :92,282,349,358 all gate on it, so
-  # every tunable below reaches code that never runs. `enabled` is deliberately
-  # *not* read by pipeline.py: turning this key into a live switch would offer
-  # operators a feature that has never executed in production. Flip the Python
-  # constant as a reviewed change instead.
-  # UNUSED.
-  enabled: false
-
-  buffer_km: 1.5                        # azshear/constants.py accessors
-  low_threshold: 8.0
-  mid_threshold: 6.0
-  min_gate_count: 5
-  max_pair_separation_km: 12.0
-  # How many trailing cell-history entries persistence features look back over
-  # (azshear/integration.py:74, inside _read_recent_history).
-  history_window: 5
 
 glm:
   # Coarse lat/lon bin edge used to index flash candidates before the exact
@@ -161,8 +142,9 @@ rap_products:                           # config.py:83-93 get_rap_products()
     # falls back to the single `var` short name.
     - {var: gh,  filter: {typeOfLevel: isothermZero}, key: freezing_level_m}
 
-  # `transform` names are validated against integrate_rap.TRANSFORMS (:12) at load
-  # time by _transform_for (:32-48); an unknown name aborts the run.
+  # `transform` names are checked against integrate_rap.TRANSFORMS (:12) when
+  # RAP extraction resolves a product through _transform_for (:32-48); an
+  # unknown name aborts that run.
   derived:
     - {key: dewpoint_depression,   formula: 'temp_2m - dewpoint_2m'}
     - {key: freezing_level_height, formula: 'freezing_level_m / 1000'}

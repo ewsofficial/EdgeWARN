@@ -5,9 +5,10 @@ from pathlib import Path
 
 import netCDF4
 import numpy as np
+import pytest
 import util.file as fs
 import xarray as xr
-from EWMRS.render.nexrad import NEXRAD_FIELD_MAGIC, serialize_nexrad_elevation_artifacts, serialize_nexrad_render_intermediate
+from EWMRS.render.nexrad import NEXRAD_FIELD_MAGIC, serialize_nexrad_elevation_artifacts
 
 from common.ingest.nexrad.models import ElevationArtifact
 
@@ -213,6 +214,7 @@ def test_write_grouped_netcdf_preserves_all_variables(tmp_path):
         reopened.close()
 
 
+@pytest.mark.skip(reason="retired intermediate serializer")
 def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(tmp_path):
     fs.initialize_filesystem(tmp_path)
     dataset = xr.Dataset(
@@ -308,6 +310,7 @@ def test_serialize_nexrad_render_intermediate_writes_dense_range_azimuth_files(t
     np.testing.assert_allclose(data, expected, equal_nan=True)
 
 
+@pytest.mark.skip(reason="retired intermediate serializer")
 def test_serialize_nexrad_render_intermediate_skips_dbzh_for_contiguous_doppler_sweeps(tmp_path):
     fs.initialize_filesystem(tmp_path)
     dataset = xr.Dataset(
@@ -343,6 +346,7 @@ def test_serialize_nexrad_render_intermediate_skips_dbzh_for_contiguous_doppler_
     assert [layer["colormap_key"] for layer in manifest["layers"]] == ["VRADH", "WRADH"]
 
 
+@pytest.mark.skip(reason="retired intermediate serializer")
 def test_serialize_nexrad_render_intermediate_normalizes_azimuth_order_for_consistent_orientation(tmp_path):
     fs.initialize_filesystem(tmp_path)
     dataset = xr.Dataset(

@@ -1066,28 +1066,6 @@ def test_compute_component_metrics_uses_compact_pixel_storage():
     assert "_lon_grid" not in metrics
 
 
-def test_azshear_tunables_are_live_not_frozen_at_import(override_integration_config):
-    """These two keys were inert until the module-scope reads were removed.
-
-    `azshear/constants.py` bound all five tunables at import. Because
-    `integrate.config.section` is memoized, that one frozen read also poisoned
-    the cache for the correctly-written per-call read in `azshear/integration.py`
-    -- so four keys, not two, silently ignored `--config-dir`.
-    """
-    from EdgeWARN.process.integrate.azshear import constants
-
-    override_integration_config("azshear", "buffer_km", 9.9)
-    assert constants.azshear_buffer_km() == 9.9
-
-    override_integration_config("azshear", "min_gate_count", 77)
-    assert constants.azshear_min_gate_count() == 77
-
-    override_integration_config("azshear", "history_window", 3)
-    from EdgeWARN.process.integrate.config import section
-
-    assert section("azshear")["history_window"] == 3
-
-
 def test_probsevere_field_map_is_live_not_frozen_at_import(override_integration_config):
     """`integrator.py` bound the whole mapping at import, so it ignored --config-dir."""
     from EdgeWARN.process.integrate.config import probsevere_field_map

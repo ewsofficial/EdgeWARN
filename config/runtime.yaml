@@ -27,10 +27,10 @@
 # EWMRS, NWS, METAR, GOES and NEXRAD off (run.py:61-65), WPC off (:252), and RAP
 # ingest off (cycle.py:479) -- seven subsystems, not three.
 #
-# `env_overrides.run.base_dir` is also gone. Python reads no environment variable
-# for the base directory at all -- util/file.py chooses by platform.system() at
-# import time and accepts an override only through initialize_filesystem(). The
-# EDGEWARN_BASE_DIR/BASE_DIR pair is Node-only; see filesystem.yaml.
+# Python reads no environment variable for the base directory -- util/file.py
+# chooses by platform.system() at import time and accepts an override only through
+# initialize_filesystem(). The EDGEWARN_BASE_DIR/BASE_DIR pair is Node-only; see
+# filesystem.yaml.
 
 schema_version: 1
 

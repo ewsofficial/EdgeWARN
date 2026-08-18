@@ -1,103 +1,19 @@
-# ewmrs_rap_uint16.yaml — Audit §8 RAP uint16
+# ewmrs_rap_uint16.yaml — EWMRS RAP Uint16 conversion policy
 #
 # Source: src/EWMRS/rap/config.py; uint16_pipeline.py
 #
-# The three scalars below are consumed through rap/config.py accessors, read per
-# call. `layers` and `output_root` are NOT: get_rap_uint16_layers() still builds
-# the list in Python, and this block mirrors it. The mirror is pinned by
-# test_the_layer_catalog_mirrors_the_python_authority, so it cannot drift
-# silently -- which is the whole difference between a documented mirror and an
-# inert tunable. Editing `layers` here still changes nothing at runtime.
-#
-# All 43 layers are listed explicitly. `pressure_levels_mb` is deliberately
-# absent: rap/config.py holds the wind and thermo level tuples only to generate
-# the 20 isobaric entries below, so a YAML copy would be a second editable
-# authority that could silently disagree with the layer list.
-#
-# `scale_rule` is deliberately absent: the uint16 quantization in
-# `scale_to_uint16` is a hardcoded `np.rint` algorithm, and UINT16_VALID_MAX /
-# UINT16_NODATA are wire-format constants. Only the per-layer
-# `scale.min`/`scale.max` are settings.
+# Layer definitions remain code-owned because they encode derived output paths
+# and pressure-level colormap rules. Only runtime conversion policy belongs here.
 
 schema_version: 1
 
-# One owner for two consumers: `_update_product_index` truncates the published
-# timestamp list and `cleanup_old_rap_uint16_layers` deletes the directories
-# behind it. They used to hold separate `= 3` defaults, so raising one alone
-# would have published a timestamp whose data the other had just removed.
+# Shared by published indexes and on-disk cleanup, preventing indexes from
+# advertising timestamp directories that cleanup has removed.
 max_timestamps: 3
 
-# strftime pattern for the per-timestamp output directory name. Not the RAP
-# *input* filename grammar -- that is a regex in _parse_rap_filename_timestamp
-# and is not configurable, because it describes an upstream product.
+# strftime pattern for per-timestamp output directories.
 timestamp_format: '%Y%m%d-%H%M00'
 
-# Whether a run re-encodes layers whose output already exists. Reached through a
-# `force=None` parameter default, not `force=False`: False is a real caller
-# choice (tests/benchmarks/benchmark_rap_uint16.py passes True), so None is what
-# means "no preference, use this value".
+# Re-encode layers whose output already exists when no explicit caller choice is
+# supplied.
 force: false
-
-# util.file attribute holding the RAP render root. Each layer's `outdir` is a
-# child directory name under it (rap/config.py:13-14).
-output_root: GUI_RAP_DIR
-
-layers:                                 # {name, short_names, filter, units, scale, colormap_key, outdir, description}
-  # --- near-surface ---
-  - {name: RAP_Temperature_2m, short_names: [2t, t, t2m], filter: {typeOfLevel: heightAboveGround, level: 2}, units: K, scale: {min: 180.0, max: 330.0}, colormap_key: RAP_Temperature_LL, outdir: Temperature_2m, description: RAP 2 meter temperature}
-  - {name: RAP_Dewpoint_2m, short_names: [2d, d2m, dpt], filter: {typeOfLevel: heightAboveGround, level: 2}, units: K, scale: {min: 180.0, max: 330.0}, colormap_key: RAP_Dewpoint_2m, outdir: Dewpoint_2m, description: RAP 2 meter dewpoint temperature}
-  - {name: RAP_UWind_10m, short_names: [10u, u10, u], filter: {typeOfLevel: heightAboveGround, level: 10}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_LL, outdir: UWind_10m, description: RAP 10 meter u-component wind}
-  - {name: RAP_VWind_10m, short_names: [10v, v10, v], filter: {typeOfLevel: heightAboveGround, level: 10}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_LL, outdir: VWind_10m, description: RAP 10 meter v-component wind}
-  # --- surface and precip ---
-  # RAP_MSLP_Surface is the one layer with no colormap: _with_colormap_key
-  # (rap/config.py:81, MSLP branch at :94-95) drops the key entirely at :98 rather
-  # than emitting null.
-  - {name: RAP_Temperature_Surface, short_names: [t], filter: {typeOfLevel: surface, level: 0}, units: K, scale: {min: 180.0, max: 330.0}, colormap_key: RAP_Temperature_LL, outdir: Temperature_Surface, description: RAP surface temperature}
-  - {name: RAP_RelativeHumidity_2m, short_names: [2r, r], filter: {typeOfLevel: heightAboveGround, level: 2}, units: '%', scale: {min: 0.0, max: 100.0}, colormap_key: RAP_RelativeHumidity, outdir: RelativeHumidity_2m, description: RAP 2 meter relative humidity}
-  - {name: RAP_ThetaE_Surface, short_names: [papt], filter: {typeOfLevel: surface, level: 0}, units: K, scale: {min: 250.0, max: 390.0}, colormap_key: RAP_ThetaE_Surface, outdir: ThetaE_Surface, description: RAP surface pseudo-adiabatic potential temperature}
-  - {name: RAP_MSLP_Surface, short_names: [prmsl], filter: {typeOfLevel: surface, level: 0}, units: Pa, scale: {min: 95000.0, max: 105000.0}, colormap_key: null, outdir: MSLP_Surface, description: RAP surface mean sea level pressure}
-  - {name: RAP_SnowWaterEquivalent_Surface, short_names: [sdwe], filter: {typeOfLevel: surface, level: 0}, units: kg m-2, scale: {min: 0.0, max: 200.0}, colormap_key: RAP_SnowWaterEquivalent_Surface, outdir: SnowWaterEquivalent_Surface, description: RAP snow water equivalent}
-  - {name: RAP_SnowDepth_Surface, short_names: [sde], filter: {typeOfLevel: surface, level: 0}, units: m, scale: {min: 0.0, max: 5.0}, colormap_key: RAP_SnowDepth_Surface, outdir: SnowDepth_Surface, description: RAP snow depth}
-  - {name: RAP_WetBulbZeroHeight, short_names: [gh], filter: {typeOfLevel: lowestLevelWetBulb0, level: 0}, units: gpm, scale: {min: 0.0, max: 6000.0}, colormap_key: RAP_WetBulbZeroHeight, outdir: WetBulbZeroHeight, description: RAP wet bulb zero height}
-  - {name: RAP_FreezingLevelHeight, short_names: [gh], filter: {typeOfLevel: isothermZero, level: 0}, units: gpm, scale: {min: 0.0, max: 6000.0}, colormap_key: RAP_FreezingLevelHeight, outdir: FreezingLevelHeight, description: RAP 0C isotherm height}
-  # --- instability and shear ---
-  # Three outdirs here are NOT derivable from the layer name by the
-  # `removeprefix("RAP_")` rule: CAPE_0-3km, SRH-0-1km, and
-  # LiftedIndex_Surface_500-1000mb (rap/config.py:228,246,255).
-  - {name: RAP_CAPE_Surface, short_names: [cape], filter: {typeOfLevel: surface, level: 0}, units: J kg-1, scale: {min: 0.0, max: 6000.0}, colormap_key: RAP_CAPE, outdir: CAPE_Surface, description: RAP surface convective available potential energy}
-  - {name: RAP_CIN_Surface, short_names: [cin], filter: {typeOfLevel: surface, level: 0}, units: J kg-1, scale: {min: -1000.0, max: 0.0}, colormap_key: RAP_CIN_Surface, outdir: CIN_Surface, description: RAP surface convective inhibition}
-  - {name: RAP_MLCAPE, short_names: [cape], filter: {typeOfLevel: pressureFromGroundLayer, level: 9000}, units: J kg-1, scale: {min: 0.0, max: 6000.0}, colormap_key: RAP_CAPE, outdir: MLCAPE, description: RAP mixed-layer CAPE from the 90-0 mb above ground layer}
-  - {name: RAP_MLCIN, short_names: [cin], filter: {typeOfLevel: pressureFromGroundLayer, level: 9000}, units: J kg-1, scale: {min: -1000.0, max: 0.0}, colormap_key: RAP_MLCIN, outdir: MLCIN, description: RAP mixed-layer CIN from the 90-0 mb above ground layer}
-  - {name: RAP_MUCAPE, short_names: [cape], filter: {typeOfLevel: pressureFromGroundLayer, level: 25500}, units: J kg-1, scale: {min: 0.0, max: 6000.0}, colormap_key: RAP_CAPE, outdir: MUCAPE, description: RAP most-unstable CAPE from the 255-0 mb above ground layer}
-  - {name: RAP_MUCIN, short_names: [cin], filter: {typeOfLevel: pressureFromGroundLayer, level: 25500}, units: J kg-1, scale: {min: -1000.0, max: 0.0}, colormap_key: RAP_MUCIN, outdir: MUCIN, description: RAP most-unstable CIN from the 255-0 mb above ground layer}
-  - {name: RAP_CAPE_0_3km, short_names: [cape], filter: {typeOfLevel: heightAboveGroundLayer, level: 0}, units: J kg-1, scale: {min: 0.0, max: 6000.0}, colormap_key: RAP_CAPE, outdir: CAPE_0-3km, description: RAP 0-3 km CAPE}
-  - {name: RAP_SRH_0-3km, short_names: [hlcy], filter: {typeOfLevel: heightAboveGroundLayer, level: 3000}, units: m2 s-2, scale: {min: -500.0, max: 1000.0}, colormap_key: RAP_SRH, outdir: SRH_0-3km, description: RAP 0-3 km storm-relative helicity}
-  - {name: RAP_SRH_0-1km, short_names: [hlcy], filter: {typeOfLevel: heightAboveGroundLayer, level: 1000}, units: m2 s-2, scale: {min: -500.0, max: 1000.0}, colormap_key: RAP_SRH, outdir: SRH-0-1km, description: RAP 0-1 km storm-relative helicity}
-  - {name: RAP_LiftedIndex_Surface_500_1000mb, short_names: [lftx], filter: {typeOfLevel: isobaricLayer, level: 500}, units: K, scale: {min: -15.0, max: 15.0}, colormap_key: RAP_LiftedIndex_Surface_500_1000mb, outdir: LiftedIndex_Surface_500-1000mb, description: RAP surface lifted index over the 500-1000 mb layer}
-  - {name: RAP_AbsoluteVorticity_500mb, short_names: [absv], filter: {typeOfLevel: isobaricInhPa, level: 500}, units: s-1, scale: {min: -0.0002, max: 0.0002}, colormap_key: RAP_AbsoluteVorticity_500mb, outdir: AbsoluteVorticity_500mb, description: RAP 500 mb absolute vorticity}
-  # --- isobaric thermo ---
-  # Temperature switches colormap at 500 mb: LL for 925/850/700, HL for 500/250
-  # (rap/config.py:32-46).
-  - {name: RAP_Temperature_925mb, short_names: [t], filter: {typeOfLevel: isobaricInhPa, level: 925}, units: K, scale: {min: 180.0, max: 330.0}, colormap_key: RAP_Temperature_LL, outdir: Temperature_925mb, description: RAP 925 mb temperature}
-  - {name: RAP_RelativeHumidity_925mb, short_names: [r], filter: {typeOfLevel: isobaricInhPa, level: 925}, units: '%', scale: {min: 0.0, max: 100.0}, colormap_key: RAP_RelativeHumidity, outdir: RelativeHumidity_925mb, description: RAP 925 mb relative humidity}
-  - {name: RAP_Temperature_850mb, short_names: [t], filter: {typeOfLevel: isobaricInhPa, level: 850}, units: K, scale: {min: 180.0, max: 330.0}, colormap_key: RAP_Temperature_LL, outdir: Temperature_850mb, description: RAP 850 mb temperature}
-  - {name: RAP_RelativeHumidity_850mb, short_names: [r], filter: {typeOfLevel: isobaricInhPa, level: 850}, units: '%', scale: {min: 0.0, max: 100.0}, colormap_key: RAP_RelativeHumidity, outdir: RelativeHumidity_850mb, description: RAP 850 mb relative humidity}
-  - {name: RAP_Temperature_700mb, short_names: [t], filter: {typeOfLevel: isobaricInhPa, level: 700}, units: K, scale: {min: 180.0, max: 330.0}, colormap_key: RAP_Temperature_LL, outdir: Temperature_700mb, description: RAP 700 mb temperature}
-  - {name: RAP_RelativeHumidity_700mb, short_names: [r], filter: {typeOfLevel: isobaricInhPa, level: 700}, units: '%', scale: {min: 0.0, max: 100.0}, colormap_key: RAP_RelativeHumidity, outdir: RelativeHumidity_700mb, description: RAP 700 mb relative humidity}
-  - {name: RAP_Temperature_500mb, short_names: [t], filter: {typeOfLevel: isobaricInhPa, level: 500}, units: K, scale: {min: 180.0, max: 330.0}, colormap_key: RAP_Temperature_HL, outdir: Temperature_500mb, description: RAP 500 mb temperature}
-  - {name: RAP_RelativeHumidity_500mb, short_names: [r], filter: {typeOfLevel: isobaricInhPa, level: 500}, units: '%', scale: {min: 0.0, max: 100.0}, colormap_key: RAP_RelativeHumidity, outdir: RelativeHumidity_500mb, description: RAP 500 mb relative humidity}
-  - {name: RAP_Temperature_250mb, short_names: [t], filter: {typeOfLevel: isobaricInhPa, level: 250}, units: K, scale: {min: 180.0, max: 330.0}, colormap_key: RAP_Temperature_HL, outdir: Temperature_250mb, description: RAP 250 mb temperature}
-  - {name: RAP_RelativeHumidity_250mb, short_names: [r], filter: {typeOfLevel: isobaricInhPa, level: 250}, units: '%', scale: {min: 0.0, max: 100.0}, colormap_key: RAP_RelativeHumidity, outdir: RelativeHumidity_250mb, description: RAP 250 mb relative humidity}
-  # --- isobaric wind ---
-  # Wind colormap bands: LL for 925/850, ML for 700/500, HL for 250
-  # (rap/config.py:17-29).
-  - {name: RAP_UWind_925mb, short_names: [u], filter: {typeOfLevel: isobaricInhPa, level: 925}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_LL, outdir: UWind_925mb, description: RAP 925 mb u-component wind}
-  - {name: RAP_VWind_925mb, short_names: [v], filter: {typeOfLevel: isobaricInhPa, level: 925}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_LL, outdir: VWind_925mb, description: RAP 925 mb v-component wind}
-  - {name: RAP_UWind_850mb, short_names: [u], filter: {typeOfLevel: isobaricInhPa, level: 850}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_LL, outdir: UWind_850mb, description: RAP 850 mb u-component wind}
-  - {name: RAP_VWind_850mb, short_names: [v], filter: {typeOfLevel: isobaricInhPa, level: 850}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_LL, outdir: VWind_850mb, description: RAP 850 mb v-component wind}
-  - {name: RAP_UWind_700mb, short_names: [u], filter: {typeOfLevel: isobaricInhPa, level: 700}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_ML, outdir: UWind_700mb, description: RAP 700 mb u-component wind}
-  - {name: RAP_VWind_700mb, short_names: [v], filter: {typeOfLevel: isobaricInhPa, level: 700}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_ML, outdir: VWind_700mb, description: RAP 700 mb v-component wind}
-  - {name: RAP_UWind_500mb, short_names: [u], filter: {typeOfLevel: isobaricInhPa, level: 500}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_ML, outdir: UWind_500mb, description: RAP 500 mb u-component wind}
-  - {name: RAP_VWind_500mb, short_names: [v], filter: {typeOfLevel: isobaricInhPa, level: 500}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_ML, outdir: VWind_500mb, description: RAP 500 mb v-component wind}
-  - {name: RAP_UWind_250mb, short_names: [u], filter: {typeOfLevel: isobaricInhPa, level: 250}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_HL, outdir: UWind_250mb, description: RAP 250 mb u-component wind}
-  - {name: RAP_VWind_250mb, short_names: [v], filter: {typeOfLevel: isobaricInhPa, level: 250}, units: m s-1, scale: {min: -80.0, max: 80.0}, colormap_key: RAP_Wind_HL, outdir: VWind_250mb, description: RAP 250 mb v-component wind}
