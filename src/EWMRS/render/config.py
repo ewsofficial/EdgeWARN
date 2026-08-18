@@ -70,6 +70,28 @@ def chunk_schema_version() -> int:
     return _render_config()["chunk_format"]["wire_version"]
 
 
+def __getattr__(name):
+    """Resolve legacy constant imports only when the attribute is requested."""
+    if name == "TILE_SIZE":
+        return tile_size()
+    if name == "CHUNK_SCHEMA_VERSION":
+        return chunk_schema_version()
+    chunk_keys = {
+        "CHUNK_FORMAT_VERSION": "format_version",
+        "CHUNK_ENCODING": "encoding",
+        "CHUNK_MEDIA_TYPE": "media_type",
+        "CHUNK_FILE_SUFFIX": "file_suffix",
+        "CHUNK_COMPRESSION": "compression",
+        "CHUNK_BYTES_PER_COMPONENT": "bytes_per_component",
+        "CHUNK_PIXEL_ROW_ORDER": "pixel_row_order",
+        "CHUNK_GRID_ORIGIN": "grid_origin",
+    }
+    try:
+        return _render_config()["chunk_format"][chunk_keys[name]]
+    except KeyError:
+        raise AttributeError(name) from None
+
+
 def chunk_format_descriptor(*, include_media_type: bool = False) -> dict:
     """Return the JSON-serializable float16 value-chunk contract.
 

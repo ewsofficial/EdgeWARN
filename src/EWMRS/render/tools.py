@@ -69,6 +69,7 @@ _TIMESTAMP_PATTERNS = tuple(
 
 # Cached transformer for EPSG:4326 to EPSG:3857 (thread-safe per pyproj docs)
 _TRANSFORMER_4326_TO_3857 = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+WEB_MERCATOR_BOUNDS = (-14471533.8, 2273030.9, -6679169.5, 7361866.1)
 
 class TransformUtils:
     @staticmethod
@@ -184,12 +185,8 @@ class OverlayManifestUtils:
         # North: 55° → ~7,361,866 m
         # Precise bounds in EPSG:3857 (Web Mercator) - in meters
         # Exact conversion for: 20-55 N, -130 to -60 W
-        self.bounds = {
-            'north': 7361866.1,
-            'south': 2273030.9,
-            'west': -14471533.8,
-            'east': -6679169.5
-        }
+        west, south, east, north = WEB_MERCATOR_BOUNDS
+        self.bounds = {"north": north, "south": south, "west": west, "east": east}
 
     def validate_bounds(self, bounds):
         """
