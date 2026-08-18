@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "mrms_goes.yaml",
+  "title": "ingest.yaml",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "mrms", "goes"],

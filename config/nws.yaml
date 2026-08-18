@@ -183,10 +183,11 @@ zone_sync:
 
   progress: true                        # --no-progress disables
 
-  # Neither outbound header is here. Both are one value for the whole
-  # application, in `runtime.yaml identity`, and both reach this subsystem
-  # through util/release.py weather_api_headers() at zone_sync.py:194 and
-  # nws/main.py:81,142.
+  # Neither outbound header is here. The User-Agent template is hardcoded in
+  # `util/release.py format_user_agent()`, with the `identity.contact` half still
+  # coming from `runtime.yaml identity`; the Accept is `identity.weather_api_accept`.
+  # Both reach this subsystem through util/release.py weather_api_headers() at
+  # zone_sync.py:194 and nws/main.py:81,142.
   #
   # `accept` used to live here, UNUSED on purpose: the same `application/geo+json`
   # went out from four sites spanning this subsystem and NEXRAD, so a key nested

@@ -10,7 +10,7 @@ const ENV_CONFIG_DIR = 'EDGEWARN_CONFIG_DIR';
 
 export const CONFIG_NAMES = Object.freeze([
   'runtime', 'historical', 'filesystem', 'detection', 'lineage',
-  'integration', 'scheduler', 'api_index', 'mrms_goes', 'nexrad', 'synoptic_rap',
+  'integration', 'scheduler', 'api_index', 'ingest', 'nexrad', 'synoptic_rap',
   'wpc', 'metar', 'nws', 'ewmrs_render', 'ewmrs_rap_uint16',
   'ewmrs_pipeline', 'api', 'kalman',
 ]);

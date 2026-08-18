@@ -41,7 +41,7 @@ def duplicates(values):
 
 @pytest.fixture(scope="module")
 def mrms_goes():
-    return loader.load_config("mrms_goes")
+    return loader.load_config("ingest")
 
 
 @pytest.fixture(scope="module")
@@ -243,7 +243,7 @@ def test_rap_isobaric_levels_are_unique_and_descending(integration):
 
 def _attribute_names():
     """Every catalog value that is meant to name a ``util.file`` attribute."""
-    mrms_goes = loader.load_config("mrms_goes")
+    mrms_goes = loader.load_config("ingest")
     render = loader.load_config("ewmrs_render")
     integration = loader.load_config("integration")
     runtime = loader.load_config("runtime")

@@ -17,7 +17,8 @@ metar:
   station_timeout_seconds: 60
   observation_timeout_seconds: 30
 
-  # The User-Agent is NOT here. It is one string for the whole application,
+  # The User-Agent is NOT here. Its template is hardcoded in
+  # `util/release.py format_user_agent()` with the `identity.contact` half from
   # `runtime.yaml identity`. This subsystem used to carry a third distinct string
   # with no contact address at all -- and only on the sync station-database
   # fallback, so in production METAR actually sent aiohttp's default agent. All

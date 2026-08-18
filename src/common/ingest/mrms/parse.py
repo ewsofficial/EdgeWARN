@@ -1,6 +1,6 @@
 """S3 key prefixes for MRMS and GOES lookups.
 
-Both functions are thin wrappers now: the grammars live in `mrms_goes.yaml` under
+Both functions are thin wrappers now: the grammars live in `ingest.yaml` under
 `mrms.path_patterns` and `goes.bucket_path_pattern`, so an upstream bucket
 reorganization is an operator edit. The wrappers stay because two other modules
 import them by name, and because the argument order is the useful part of the API.

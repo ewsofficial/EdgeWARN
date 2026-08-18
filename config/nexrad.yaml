@@ -26,7 +26,8 @@ buckets:
   chunks: unidata-nexrad-level2-chunks
 stations:
   catalog_url: https://api.weather.gov/radar/stations
-  # The User-Agent is NOT here. It is one string for the whole application,
+  # The User-Agent is NOT here. Its template is hardcoded in
+  # `util/release.py format_user_agent()` with the `identity.contact` half from
   # `runtime.yaml identity`, applied at nexrad/weather_api.py:101. This subsystem
   # used to hardcode the release number into its copy, so the advertised version
   # could not track package.json.
