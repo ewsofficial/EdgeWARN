@@ -264,8 +264,8 @@ def test_ewmrs_chunk_format_descriptor_baseline():
     assert_baseline(
         "ewmrs_chunk_format",
         {
-            "tile_size": render_config.TILE_SIZE,
-            "chunk_schema_version": render_config.CHUNK_SCHEMA_VERSION,
+            "tile_size": render_config.tile_size(),
+            "chunk_schema_version": render_config.chunk_schema_version(),
             "descriptor": render_config.chunk_format_descriptor(),
             "descriptor_with_media_type": render_config.chunk_format_descriptor(
                 include_media_type=True
