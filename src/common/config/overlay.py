@@ -158,6 +158,11 @@ def overrides() -> dict[str, str]:
     return {key: layer for key, layer in _origins.items() if layer != "yaml"}
 
 
+def origins() -> dict[str, str]:
+    """Every tracked key origin, including values resolved from YAML."""
+    return dict(_origins)
+
+
 def reset_origins() -> None:
     """Forget every recorded origin. Intended for tests."""
     _origins.clear()

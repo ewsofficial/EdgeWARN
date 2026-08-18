@@ -68,6 +68,7 @@ def test_a_yaml_value_is_recorded_but_not_reported_as_an_override():
 
     assert resolved == 3
     assert overlay.overrides() == {}
+    assert overlay.origins() == {"cycle.retry.max_attempts": "yaml"}
 
 
 def test_the_registry_holds_no_values(monkeypatch):
