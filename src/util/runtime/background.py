@@ -252,9 +252,10 @@ def nexrad_render_loop(base_dir):
 
 def metar_loop():
     try:
-        boundary_minutes = section("background_intervals")["metar_boundary_minutes"]
+        intervals = section("background_intervals")
+        boundary_minutes = intervals["metar_boundary_minutes"]
         while True:
-            sleep_until_boundary(boundary_minutes)
+            sleep_until_boundary(boundary_minutes, intervals["boundary_wait_interval_seconds"])
 
             try:
                 asyncio.run(metar_ingest.ingest_metars_async())
@@ -280,9 +281,10 @@ def nws_loop():
 
 def wpc_loop():
     try:
-        boundary_minutes = section("background_intervals")["wpc_boundary_minutes"]
+        intervals = section("background_intervals")
+        boundary_minutes = intervals["wpc_boundary_minutes"]
         while True:
-            sleep_until_boundary(boundary_minutes)
+            sleep_until_boundary(boundary_minutes, intervals["boundary_wait_interval_seconds"])
 
             try:
                 run_wpc_ingest()
