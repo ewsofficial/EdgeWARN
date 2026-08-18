@@ -52,21 +52,13 @@ class FilterInternalsConfig:
 
 @dataclass(frozen=True)
 class ConfidenceConfig:
-    """Confidence decay shape and the display bands over the resulting score.
-
-    ``high_boundary``/``medium_boundary`` label a score for operators and are
-    deliberately separate keys from ``TrackingConfig.confidence_decay_factor``
-    and ``confidence_threshold`` even though they currently hold the same
-    numbers: one pair drives termination, the other only names a band.
-    """
+    """Confidence decay shape."""
 
     time_penalty_weight: float
     motion_factor_variance_denominator: float
     factor_floor: float
     position_decay_onset_std: float
     position_decay_scale: float
-    high_boundary: float
-    medium_boundary: float
 
     @classmethod
     def from_section(cls, data: Any) -> "ConfidenceConfig":
@@ -76,8 +68,6 @@ class ConfidenceConfig:
             factor_floor=data["factor_floor"],
             position_decay_onset_std=data["position_decay_onset_std"],
             position_decay_scale=data["position_decay_scale"],
-            high_boundary=data["high_boundary"],
-            medium_boundary=data["medium_boundary"],
         )
 
 
@@ -85,7 +75,6 @@ class ConfidenceConfig:
 class AssignmentCostsConfig:
     """Deadbands and caps applied to the individual assignment cost terms."""
 
-    default_dt_seconds: float
     predicted_speed_deadband_ms: float
     implied_speed_deadband_ms: float
     reflectivity_diff_cap: float
@@ -95,7 +84,6 @@ class AssignmentCostsConfig:
     @classmethod
     def from_section(cls, data: Any) -> "AssignmentCostsConfig":
         return cls(
-            default_dt_seconds=data["default_dt_seconds"],
             predicted_speed_deadband_ms=data["predicted_speed_deadband_ms"],
             implied_speed_deadband_ms=data["implied_speed_deadband_ms"],
             reflectivity_diff_cap=data["reflectivity_diff_cap"],

@@ -115,18 +115,9 @@ confidence:
   factor_floor: 0.8                     # motion and position factors
   position_decay_onset_std: 5.0         # avg_std > onset -> 1/(1+(avg-onset)/scale)
   position_decay_scale: 30.0
-  high_boundary: 0.7
-  medium_boundary: 0.4
 
 # src/EdgeWARN/process/detect/kalman/assignment.py
 assignment_costs:
-  # Cost-function fallback only, and unreachable in production: every live
-  # compute_cost() call site forwards a concrete dt. Deliberately kept separate
-  # from `detection.yaml detection.fallback_dt_seconds` -- that one is the
-  # tracker's fallback when elapsed time cannot be computed from timestamps, and
-  # lives in the subsystem that owns the timestamps. The two must agree, which
-  # tests/core/config/test_known_drift.py pins.
-  default_dt_seconds: 120.0
   predicted_speed_deadband_ms: 1.0
   implied_speed_deadband_ms: 0.5
   reflectivity_diff_cap: 1.0

@@ -75,23 +75,20 @@
     "confidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["time_penalty_weight", "motion_factor_variance_denominator", "factor_floor", "position_decay_onset_std", "position_decay_scale", "high_boundary", "medium_boundary"],
+      "required": ["time_penalty_weight", "motion_factor_variance_denominator", "factor_floor", "position_decay_onset_std", "position_decay_scale"],
       "properties": {
         "time_penalty_weight": { "type": "number", "minimum": 0 },
         "motion_factor_variance_denominator": { "type": "number", "exclusiveMinimum": 0 },
         "factor_floor": { "type": "number", "minimum": 0 },
         "position_decay_onset_std": { "type": "number", "minimum": 0 },
-        "position_decay_scale": { "type": "number", "exclusiveMinimum": 0 },
-        "high_boundary": { "type": "number", "minimum": 0, "maximum": 1 },
-        "medium_boundary": { "type": "number", "minimum": 0, "maximum": 1 }
+        "position_decay_scale": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
     "assignment_costs": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["default_dt_seconds", "predicted_speed_deadband_ms", "implied_speed_deadband_ms", "reflectivity_diff_cap", "size_ratio_log2_divisor", "size_cost_cap"],
+      "required": ["predicted_speed_deadband_ms", "implied_speed_deadband_ms", "reflectivity_diff_cap", "size_ratio_log2_divisor", "size_cost_cap"],
       "properties": {
-        "default_dt_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "predicted_speed_deadband_ms": { "type": "number", "minimum": 0 },
         "implied_speed_deadband_ms": { "type": "number", "minimum": 0 },
         "reflectivity_diff_cap": { "type": "number", "minimum": 0 },

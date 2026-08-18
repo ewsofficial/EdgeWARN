@@ -279,15 +279,6 @@ class TestConfidenceCalculator:
         assert should_term
         assert "limit" in reason.lower() or "exceeds" in reason.lower()
     
-    def test_confidence_level(self):
-        """Test confidence level classification."""
-        calc = ConfidenceCalculator()
-        
-        assert calc.get_confidence_level(0.9) == "high"
-        assert calc.get_confidence_level(0.5) == "medium"
-        assert calc.get_confidence_level(0.3) == "low"
-
-
 class TestPredictionState:
     """Tests for PredictionState class."""
     
