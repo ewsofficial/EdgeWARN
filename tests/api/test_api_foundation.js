@@ -94,6 +94,23 @@ describe('unified API configuration', () => {
     }
   });
 
+  it('sends the HSTS max age configured in api.yaml', async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'edgewarn-api-config-'));
+    const configDir = path.join(parent, 'config');
+    const baseDir = path.join(parent, 'runtime');
+    try {
+      await fs.cp(path.resolve('config'), configDir, { recursive: true });
+      const apiYaml = path.join(configDir, 'api.yaml');
+      await fs.writeFile(apiYaml, (await fs.readFile(apiYaml, 'utf8')).replace('hsts_max_age_seconds: 31536000', 'hsts_max_age_seconds: 120'));
+      await Promise.all(['data', 'gui', 'wpc'].map((directory) => fs.mkdir(path.join(baseDir, directory), { recursive: true })));
+      const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir }, argv: ['--config-dir', configDir] });
+      await request(app).get('/').expect(200).expect('Strict-Transport-Security', 'max-age=120; includeSubDomains');
+    } finally {
+      resetCache();
+      await fs.rm(parent, { recursive: true, force: true });
+    }
+  });
+
   it('rejects invalid YAML trust-proxy forms before API startup', async () => {
     const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'edgewarn-api-config-'));
     const configDir = path.join(parent, 'config');
