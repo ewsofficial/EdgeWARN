@@ -518,7 +518,9 @@ def test_trust_proxy_is_never_blanket_true(api):
     `minimum`/`maximum` only to numbers (loader.py, and loader.js:144 the same
     way). `enum` cannot help either, because it would have to enumerate every
     valid address list. The one distinguishing feature of the unsafe value is the
-    literal, so it can only be asserted here.
+    literal, so it can only be asserted here. The Node parser also rejects `true`
+    at runtime, because environment values and YAML booleans share that unsafe
+    semantic branch.
 
     Spoofable forwarding headers defeat both the rate limiter and any
     address-based decision made downstream of it.

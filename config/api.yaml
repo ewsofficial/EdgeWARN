@@ -64,12 +64,11 @@ security:
   # when 'true' (and that form THROWS under NODE_ENV=production, :48); otherwise
   # the comma-split list from TRUST_PROXY_IPS.
   #
-  # `true` is NOT rejectable here. The tri-shape means `type` must admit booleans,
-  # and both walkers apply minimum/maximum to numbers only, so no supported
-  # keyword separates the safe `false` from the unsafe `true`.
-  # test_catalog_invariants.py asserts `is not True` instead. What the schema does
-  # cover: the hop count is bounded, and a list entry must look like an address or
-  # one of Express's named presets rather than being any string at all.
+  # The schema cannot distinguish safe `false` from unsafe `true`: the tri-shape
+  # requires booleans, and numeric bounds do not apply to them. The parser rejects
+  # `true` in production (and treats it as one hop otherwise); the catalog test
+  # pins the shipped YAML value. The schema still bounds hop counts and requires a
+  # nonempty list of address/preset entries.
   trust_proxy: false
 
   # cors.js:10-13, all hardcoded. The schema pins each to what the code sets --

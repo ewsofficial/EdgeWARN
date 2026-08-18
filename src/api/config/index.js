@@ -50,14 +50,24 @@ function parseOrigins(value) {
   return Object.freeze([...new Set(origins)]);
 }
 
-function parseTrustProxy(value, env) {
-  if (value === false || value === undefined || value === '' || value === 'false') return false;
+export function parseTrustProxy(value, env = {}) {
+  if (value === false || value === undefined || value === '') return false;
   if (Number.isInteger(value) || Array.isArray(value)) return value;
-  if (value === 'true') {
-    if (env.NODE_ENV === 'production') throw new Error('TRUST_PROXY=true is unsafe in production; set TRUST_PROXY_IPS');
-    return 1;
+  if (value === true || typeof value === 'string') {
+    const normalized = typeof value === 'string' ? value.trim().toLowerCase() : 'true';
+    if (normalized === '' || normalized === 'false') return false;
+    if (normalized === 'true') {
+      if (env.NODE_ENV === 'production') throw new Error('TRUST_PROXY=true is unsafe in production; set TRUST_PROXY_IPS');
+      return 1;
+    }
+    if (/^\d+$/.test(normalized)) {
+      const hops = Number(normalized);
+      if (Number.isSafeInteger(hops) && hops >= 0 && hops <= 8) return hops;
+      throw new Error('Invalid TRUST_PROXY hop count');
+    }
+    return Object.freeze(value.split(',').map((entry) => entry.trim()).filter(Boolean));
   }
-  return Object.freeze(value.split(',').map((entry) => entry.trim()).filter(Boolean));
+  throw new Error('Invalid TRUST_PROXY');
 }
 
 function defaultEnvironment() {
@@ -108,7 +118,7 @@ export function createConfig({ env = defaultEnvironment(), argv = process.argv.s
     ...(env.RATE_LIMIT_MAX_SEC === undefined ? [] : ['RATE_LIMIT_MAX_SEC']),
     ...(env.RATE_LIMIT_MAX_MIN === undefined ? [] : ['RATE_LIMIT_MAX_MIN']),
     ...(env.ALLOWED_ORIGINS === undefined ? [] : ['ALLOWED_ORIGINS']),
-    ...(env.TRUST_PROXY_IPS === undefined && env.TRUST_PROXY === undefined ? [] : [env.TRUST_PROXY_IPS === undefined ? 'TRUST_PROXY' : 'TRUST_PROXY_IPS']),
+    ...(env.TRUST_PROXY_IPS ? ['TRUST_PROXY_IPS'] : env.TRUST_PROXY ? ['TRUST_PROXY'] : []),
   ];
   const diagnostics = Object.freeze({
     source: Object.freeze({
