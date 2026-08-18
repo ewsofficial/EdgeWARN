@@ -42,6 +42,9 @@ from .kalman.assignment import (
 )
 
 
+_KALMAN_INITIALIZED_IDS_SAMPLE_LIMIT = 8
+
+
 class StormCellTracker:
     """
     Tracks storm cells across scans with lineage event detection and Kalman filtering.
@@ -628,8 +631,14 @@ class StormCellTracker:
                 existing_count += 1
 
         if entries:
-            sample = ", ".join(str(track_id) for track_id in missing_ids[:8])
-            more = "" if len(missing_ids) <= 8 else f", ... (+{len(missing_ids) - 8} more)"
+            sample = ", ".join(
+                str(track_id) for track_id in missing_ids[:_KALMAN_INITIALIZED_IDS_SAMPLE_LIMIT]
+            )
+            more = (
+                ""
+                if len(missing_ids) <= _KALMAN_INITIALIZED_IDS_SAMPLE_LIMIT
+                else f", ... (+{len(missing_ids) - _KALMAN_INITIALIZED_IDS_SAMPLE_LIMIT} more)"
+            )
             missing_summary = "none" if not missing_ids else f"{sample}{more}"
             self.io_manager.write_debug(
                 f"_ensure_kalman_filters: total={len(entries)}, existing={existing_count}, "
