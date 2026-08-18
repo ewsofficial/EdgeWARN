@@ -94,10 +94,12 @@ def report_effective_config():
     Reports the winning layer per key rather than the value, so a key holding a
     credential cannot be disclosed by a diagnostic.
     """
-    root = config_loader.config_root(args.config_dir)
+    runtime_args = globals().get("args")
+    config_dir = getattr(runtime_args, "config_dir", None)
+    root = config_loader.config_root(config_dir)
     catalogs = ", ".join(
-        f"{name}@{config_loader.get_provenance(name, config_dir=args.config_dir)['schema_version']}"
-        for name in config_loader.loaded_config_names(config_dir=args.config_dir)
+        f"{name}@{config_loader.get_provenance(name, config_dir=config_dir)['schema_version']}"
+        for name in config_loader.loaded_config_names(config_dir=config_dir)
     )
     print(f"[Scheduler] Config root: {root}")
     print(f"[Scheduler] Catalogs loaded: {catalogs or 'none'}")
@@ -107,6 +109,27 @@ def report_effective_config():
     else:
         summary = "none; every resolved value came from YAML"
     print(f"[Scheduler] Active overrides: {summary}")
+    all_origins = overlay.origins()
+    provenance = ", ".join(f"{key} <- {layer}" for key, layer in sorted(all_origins.items())) or "none"
+    print(f"[Scheduler] Resolved-key provenance: {provenance}")
+    print("[Scheduler] Provenance limit: only values resolved with overlay.resolve(key=...) are key-level; direct catalog reads are covered by Catalogs loaded above.")
+
+    # Lazy imports keep diagnostics from making optional render dependencies eager
+    # at module import time.
+    from common.ingest.mrms.config import get_mrms_modifiers
+    from EWMRS.render.config import get_mrms_file_list, get_goes_file_list
+    from EdgeWARN.process.integrate.config import get_datasets_config
+    from EWMRS.rap.config import get_rap_uint16_layers
+    print(
+        "[Scheduler] Enabled products: "
+        f"MRMS ingest={len(get_mrms_modifiers())}, "
+        f"MRMS readiness={len(get_check_modifiers())}, "
+        f"EWMRS MRMS={len(get_mrms_file_list())}, "
+        f"GOES={len(get_goes_file_list())}, "
+        f"integration datasets={len(get_datasets_config())}, "
+        f"RAP layers={len(get_rap_uint16_layers())}"
+    )
+    print("[Scheduler] Configuration changes require a process restart to take effect.")
 
 
 def main():
