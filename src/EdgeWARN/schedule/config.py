@@ -16,16 +16,6 @@ def _scheduler():
     return load_config(_CONFIG_NAME)["scheduler"]
 
 
-def mrms_update_checker_max_entries() -> int:
-    """``MRMSUpdateChecker`` listing width, used only by ``has_update``.
-
-    Deliberately separate from :func:`modifier_lookup_max_entries`: the live
-    scheduler path does not read this, so widening it does not widen the real
-    check.
-    """
-    return _scheduler()["mrms_update_checker_max_entries"]
-
-
 def modifier_lookup_max_entries() -> int:
     """Listing width for ``_get_modifier_times``, the path the scheduler runs."""
     return _scheduler()["modifier_lookup_max_entries"]

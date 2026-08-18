@@ -9,9 +9,8 @@
     "scheduler": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mrms_update_checker_max_entries", "modifier_lookup_max_entries", "s3_lookback_hours", "slow_check_log_threshold_ms"],
+      "required": ["modifier_lookup_max_entries", "s3_lookback_hours", "slow_check_log_threshold_ms"],
       "properties": {
-        "mrms_update_checker_max_entries": { "type": "integer", "minimum": 1 },
         "modifier_lookup_max_entries": { "type": "integer", "minimum": 1 },
         "s3_lookback_hours": { "type": "number", "exclusiveMinimum": 0 },
         "slow_check_log_threshold_ms": { "type": "number", "minimum": 0 }

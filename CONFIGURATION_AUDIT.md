@@ -230,7 +230,6 @@ Legend for "Override" column:
 | Param | Value | File:Line |
 |---|---|---|
 | alert `severity` default | `"warning"` | alerts/schema.py |
-| `MRMSUpdateChecker(max_entries)` | `10` | schedule/scheduler.py |
 | `APIIndexManager(remove_old_cells)` | `True` | api_integration/index_manager.py |
 | index resync frequency | every `500` updates | index_manager.py |
 | `initialize_runtime(initialize_indexes)` | `True` realtime / `False` historical | EdgeWARN/pipeline.py |
@@ -465,7 +464,7 @@ Legend for "Override" column:
   - Overlay manifest bounds in EPSG:3857 (`EWMRS/render/tools.py:187-192`)
   - StormCast ellipse/cone chi² quantile maps (`uncertainty.py:44`, `core.py:227`)
 - GOES colormap `GOES_IR` threshold values in `colormaps.json` are data, not code.
-- `MRMSUpdateChecker(max_entries=10)`, `GOES_MAX_ENTRIES=96`, `max_entries=10` in multiple tasks are documented above.
+- `GOES_MAX_ENTRIES=96` and `max_entries=10` in multiple tasks are documented above.
 - NEXRAD wire-format/parsing constants are **not tunable config** and are excluded from the tables: record size `2432`, volume magics `b"AR2V"`/`b"ARCHIVE2"`, msg types `{2,3,5,13,15,18}`, `NEXRAD_FIELD_MAGIC`, msg-31 struct, raw block names, mask values, sweep label lookups, `MIN_SWEEP_ANGLE_DEG`, DUALPOL/DOPPLER block sets, and `UINT16_NODATA=65535`/`UINT16_VALID_MAX=65534` in the RAP uint16 encoding. Retained as config/calibration: `ALLOWED_VCPS`, `min sweep angle`, and `canonical elevation bins`.
 - All numeric values verified against current source at audit time.
 
