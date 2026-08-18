@@ -75,6 +75,7 @@ class ConfidenceConfig:
 class AssignmentCostsConfig:
     """Deadbands and caps applied to the individual assignment cost terms."""
 
+    default_dt_seconds: float
     predicted_speed_deadband_ms: float
     implied_speed_deadband_ms: float
     reflectivity_diff_cap: float
@@ -84,6 +85,7 @@ class AssignmentCostsConfig:
     @classmethod
     def from_section(cls, data: Any) -> "AssignmentCostsConfig":
         return cls(
+            default_dt_seconds=data["default_dt_seconds"],
             predicted_speed_deadband_ms=data["predicted_speed_deadband_ms"],
             implied_speed_deadband_ms=data["implied_speed_deadband_ms"],
             reflectivity_diff_cap=data["reflectivity_diff_cap"],

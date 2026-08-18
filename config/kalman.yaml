@@ -118,6 +118,9 @@ confidence:
 
 # src/EdgeWARN/process/detect/kalman/assignment.py
 assignment_costs:
+  # Public assignment helpers accept ``dt_seconds=None``; the realtime tracker
+  # always supplies a concrete interval, while direct callers use this fallback.
+  default_dt_seconds: 120.0
   predicted_speed_deadband_ms: 1.0
   implied_speed_deadband_ms: 0.5
   reflectivity_diff_cap: 1.0
