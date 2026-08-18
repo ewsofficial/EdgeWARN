@@ -90,17 +90,13 @@ Legend for "Override" column:
 | `NEXRAD_WORKER_POOL_SIZE` | `"4"` | `nexrad/pipeline/worker_pool.py:194` | NEXRAD worker process pool size |
 | `NEXRAD_WORKER_RECYCLE_INTERVAL` | `"24"` | `worker_pool.py:210` | Worker recycle interval (≤0 disables) |
 | `NEXRAD_WORKER_TIMEOUT_SECONDS` | `"40"` | `nexrad/service.py:164` | Ingest worker timeout |
-| `PORT` | `5000` (unified/EdgeWARN), `3003` (EWMRS) | all servers | Listen port |
-| `NODE_ENV` | — | all servers | Controls prod version exposure / CORS defaults |
+| `PORT` | `5000` (unified API) | `src/api/config/index.js` | Listen port |
+| `NODE_ENV` | — | `src/api/config/index.js` | Controls production version exposure |
 | `REQUEST_TIMEOUT_MS` | `30000` | `src/api/config/index.js:63` | Request timeout |
-| `RATE_LIMIT_MAX_SEC` | `40` | unified + EdgeWARN API | Per-second rate limit |
-| `RATE_LIMIT_MAX_MIN` | `2000` | unified + EdgeWARN API | Per-minute rate limit |
-| `RATE_LIMIT_WINDOW_MS_SEC` | `1000` | `src/EdgeWARN/api/server.js:55` | Per-sec window width |
-| `RATE_LIMIT_WINDOW_MS_MIN` | `60000` | EdgeWARN API :57 | Per-min window width |
-| `EWMRS_RATE_LIMIT_MAX_SEC` | `30` | `EWMRS/api/server.js:77` | EWMRS per-sec limit |
-| `EWMRS_RATE_LIMIT_MAX_MIN` | `1800` | `EWMRS/api/server.js:79` | EWMRS per-min limit |
-| `ALLOWED_ORIGINS` | `[]` (deny all in prod) | unified + EdgeWARN API | Comma-separated CORS allowlist |
-| `TRUST_PROXY` / `TRUST_PROXY_IPS` | `false` | unified + EdgeWARN API | Trust proxy configuration |
+| `RATE_LIMIT_MAX_SEC` | `40` | unified API | Per-second rate limit |
+| `RATE_LIMIT_MAX_MIN` | `2000` | unified API | Per-minute rate limit |
+| `ALLOWED_ORIGINS` | `[]` (deny all) | unified API | Comma-separated CORS allowlist |
+| `TRUST_PROXY` / `TRUST_PROXY_IPS` | `false` | unified API | Trust proxy configuration |
 | `PROJ_DATA` / `PROJ_LIB` / `GDAL_DATA` | auto-detected | `EWMRS/render/tools.py:38-41` | Set by code for child processes |
 
 ---
