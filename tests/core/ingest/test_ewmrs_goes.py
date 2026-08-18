@@ -9,6 +9,7 @@ import xarray as xr
 from EWMRS.render.goes_transform import (
     extract_goes_timestamp_iso,
     load_goes_abi_render_dataset,
+    load_reproject_goes_abi_render_array,
     reproject_goes_abi_to_web_mercator,
 )
 
@@ -172,6 +173,34 @@ def test_reproject_goes_abi_to_web_mercator_returns_target_shape(tmp_path):
 
     assert projected is not None
     assert projected["unknown"].shape == (10, 20)
+
+
+def test_load_reproject_goes_array_resolves_configured_resampling(monkeypatch, tmp_path):
+    """The production array path must not pass ``None`` to rasterio."""
+    from affine import Affine
+    from rasterio.enums import Resampling
+    from EWMRS.render import goes_transform
+
+    monkeypatch.setattr(
+        goes_transform,
+        "_load_goes_abi_render_payload",
+        lambda *_args, **_kwargs: {"data": np.zeros((2, 2)), "transform": Affine.identity(), "crs": "EPSG:4326"},
+    )
+    observed = []
+
+    def reproject_payload(*_args, **kwargs):
+        observed.append(kwargs["resampling"])
+        return {"data": np.zeros((2, 2)), "x": np.zeros(2), "y": np.zeros(2)}
+
+    monkeypatch.setattr(goes_transform, "_reproject_goes_payload_to_web_mercator", reproject_payload)
+    monkeypatch.setattr(goes_transform, "goes_transform_resampling", lambda: Resampling.lanczos)
+
+    result = load_reproject_goes_abi_render_array(
+        tmp_path / "goes.nc", {}, shape=(2, 2), transform=Affine.identity()
+    )
+
+    assert result is not None
+    assert observed == [Resampling.lanczos]
 
 
 def test_goes_config_wires_to_expected_paths_and_metadata():
