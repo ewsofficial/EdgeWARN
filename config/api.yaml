@@ -170,28 +170,3 @@ product_catalog:
   # would keep serving the stale count. An invariant test compares the two and
   # checks each entry's fields, since a count alone would pass for 31 empty objects.
   entries: 31
-
-env_overrides:
-  server.port: PORT
-  server.request_timeout_ms: REQUEST_TIMEOUT_MS
-  rate_limits.per_second.max: RATE_LIMIT_MAX_SEC
-  rate_limits.per_minute.max: RATE_LIMIT_MAX_MIN
-  security.allowed_origins: ALLOWED_ORIGINS
-  security.trust_proxy: ['TRUST_PROXY_IPS', 'TRUST_PROXY']
-  base_dir: ['EDGEWARN_BASE_DIR', 'BASE_DIR']
-  # config/index.js:105-107, --config-dir. The only row here with no counterpart
-  # key in this document, and necessarily so: it selects the directory these YAML
-  # files are read FROM, so it can never be set from inside one. Listed to
-  # document the variable, not to imply a settable key.
-  #
-  # On the Python side, io.py also *writes* this variable so that accessory
-  # processes -- spawned without argv -- inherit the parent's --config-dir
-  # choice instead of re-resolving to the repo-default config/.
-  config_dir: ['EDGEWARN_CONFIG_DIR']
-  # RATE_LIMIT_WINDOW_MS_SEC / RATE_LIMIT_WINDOW_MS_MIN are deliberately absent:
-  # they were read only by the legacy src/EdgeWARN/api/server.js, removed in
-  # a3d6cbb, so nothing in the tree reads either name now. Both windows are set
-  # from `rate_limits` above; exporting these variables does nothing.
-  #
-  # NODE_ENV drives isProduction; PROJ_DATA/PROJ_LIB/GDAL_DATA are set by
-  # EWMRS/render/tools.py for child processes and are not config keys.

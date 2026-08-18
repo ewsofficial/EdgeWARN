@@ -75,11 +75,3 @@ caches:
   # maxsize when the module loads. Changing either needs a restart.
   tile_index_entries: 512
   colormap_entries: 128
-
-env_overrides:
-  render.goes_cleanup_min_interval_seconds: EWMRS_GOES_CLEANUP_MIN_INTERVAL_SECONDS
-  # One variable covers both budget_mb entries; it applies after the goes/default
-  # selection, so it flattens the distinction rather than overriding one side.
-  workers.budget_mb: EWMRS_WORKER_BUDGET_MB
-  workers.reserve_mb: EWMRS_WORKER_RESERVE_MB
-  render_threads.max_tile_threads: EWMRS_TILE_THREADS

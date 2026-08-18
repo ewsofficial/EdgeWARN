@@ -23,10 +23,6 @@
         "type": "string",
         "pattern": "^<(base_dir|gui_dir|src_dir)>/[^/]"
       }
-    },
-    "env_overrides": {
-      "type": "object",
-      "additionalProperties": { "type": ["string", "array"], "items": { "type": "string" } }
     }
   }
 }
