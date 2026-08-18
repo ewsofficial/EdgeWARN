@@ -26,8 +26,7 @@ then `filesystem.yaml`. All catalog edits require a process restart.
 | `metar.yaml` | METAR source, parsing, and retention settings. |
 | `nws.yaml` | NWS alert and zone-sync sources, headers, and retry policy. |
 | `ewmrs_render.yaml` | MRMS/GOES render-layer inputs and render settings. |
-| `ewmrs_rap_uint16.yaml` | RAP Uint16 conversion layers and encoding metadata. |
-| `ewmrs_pipeline.yaml` | EWMRS processing, cleanup, and render scheduling. |
+| `ewmrs_pipeline.yaml` | EWMRS processing, cleanup, and render scheduling; the `rap_uint16` section holds RAP Uint16 conversion layers and encoding metadata. |
 | `api.yaml` | Unified API network, security, limits, artifact, and query policy. |
 | `kalman.yaml` | Kalman filter, assignment, and tracking parameters. |
 
