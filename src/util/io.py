@@ -86,7 +86,10 @@ class IOManager:
         parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
         parser.add_argument("--base_dir", "--base-dir", dest="base_dir", type=str, default=None)
         args, _ = parser.parse_known_args()
-        return args.base_dir
+        filesystem = config_loader.load_config(
+            "filesystem", config_dir=IOManager.get_config_dir_arg()
+        )
+        return str(overlay.resolve_base_dir(args.base_dir, filesystem))
 
     @staticmethod
     def get_config_dir_arg():
@@ -125,12 +128,18 @@ class IOManager:
     @staticmethod
     def _export_config_dir(args):
         """Publish the resolved config root so spawned children inherit it."""
-        config_loader.export_config_root(args.config_dir)
+        root = config_loader.export_config_root(args.config_dir)
+        # This gate deliberately precedes runtime/filesystem setup. A malformed
+        # selected tree must fail before workers, listeners, or output dirs can
+        # be created; individual accessors then reuse the immutable cache.
+        config_loader.validate_all_configs(config_dir=root)
 
     @staticmethod
     def _resolve_common_processing_args(args):
         # Both parsers share these four, so resolving here is what gives
         # process_historical.py the same YAML defaults run.py gets.
+        filesystem = config_loader.load_config("filesystem", config_dir=args.config_dir)
+        args.base_dir = str(overlay.resolve_base_dir(args.base_dir, filesystem))
         run_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
         args.profile = overlay.resolve(args.profile, yaml_value=run_cfg["profile"], key="run.profile")
         args.disable_ctam = overlay.resolve(args.disable_ctam, yaml_value=run_cfg["disable_ctam"], key="run.disable_ctam")

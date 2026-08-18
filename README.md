@@ -77,6 +77,12 @@ Runtime output defaults to:
 
 The unified API uses the same platform default when no override is supplied.
 
+`config/filesystem.yaml` owns these platform defaults. Resolution is CLI,
+`EDGEWARN_BASE_DIR`, legacy `BASE_DIR`, then YAML. Use `--config-dir` or
+`EDGEWARN_CONFIG_DIR` to select a complete alternate 19-file `config/` tree;
+run `npm run validate-config` before deployment. See
+`docs/core/configuration.md` for catalog ownership.
+
 Supported overrides:
 
 - Python CLI: `--base_dir` / `--base-dir`

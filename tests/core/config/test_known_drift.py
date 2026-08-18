@@ -1590,11 +1590,11 @@ def test_util_file_binds_paths_at_import_but_already_knows_base_dir():
     """
     source = (REPO_ROOT / "src/util/file.py").read_text(encoding="utf-8")
 
-    assert "Path(IOManager.get_base_dir_arg() or _platform_base_dir())" in source
-    # The platform default is now a return value, not a call site, so there is
-    # exactly one unconditional `_define_paths` at module scope.
+    assert "Path(IOManager.get_base_dir_arg())" in source
+    # The shared resolver now supplies both the platform default and environment
+    # compatibility overrides before the module-scope bind.
     tail = source.split("def initialize_filesystem")[1]
-    assert 'if platform.system() == "Windows":' not in tail
+    assert "_platform_base_dir" not in source
     assert tail.count("_define_paths(") == 2
 
 

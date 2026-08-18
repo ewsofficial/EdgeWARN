@@ -123,9 +123,9 @@ Examples:
 ```text
 <BASE_DIR>/gui/GOES_ABI_C13/
 ├── 20260423-124000/
-│   ├── tile_0_0.png
+│   ├── chunks/                       # float16 binary chunks
 │   ├── ...
-│   ├── tile_19_9.png
+│   └── metadata.json
 │   └── index.json
 └── index.json
 ```

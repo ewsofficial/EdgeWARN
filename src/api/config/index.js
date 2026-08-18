@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { configRoot, expandPath, getProvenance, loadConfig, repoRoot, srcRoot } from '../../config/loader.js';
+import { configRoot, expandPath, getProvenance, loadConfig, repoRoot, srcRoot, validateAllConfigs } from '../../config/loader.js';
 
 // package.json is the sole owner of the version. This was a literal default,
 // which agreed with the manifest only until one of the two was bumped.
@@ -87,13 +87,6 @@ function defaultEnvironment() {
 // Python and Node enforce one contract instead of two. What is left here is the
 // only part specific to this caller: which token is in scope, and which key to
 // name when the value is bad.
-function resolveRuntimeDirectory(baseDir, template, label) {
-  return expandPath(template, { base_dir: baseDir }, {
-    filename: 'api.yaml',
-    dottedPath: `base_dir.derived.${label}`,
-  });
-}
-
 function resolveSourcePath(template, label) {
   return expandPath(template, { src_dir: srcRoot() }, {
     filename: 'api.yaml',
@@ -105,7 +98,9 @@ export function createConfig({ env = defaultEnvironment(), argv = process.argv.s
   const configDirCli = oneValue(readFlag(argv, ['--config-dir']), '--config-dir');
   const configDirEnv = env.EDGEWARN_CONFIG_DIR;
   const selectedConfigDir = configDirCli || configDirEnv;
+  validateAllConfigs({ configDir: selectedConfigDir });
   const api = loadConfig('api', { configDir: selectedConfigDir });
+  const filesystem = loadConfig('filesystem', { configDir: selectedConfigDir });
   // The API serves WPC surface analyses out of a directory the ingest side names,
   // so it reads that file's naming keys rather than restating them here.
   const wpc = loadConfig('wpc', { configDir: selectedConfigDir }).wpc;
@@ -116,10 +111,10 @@ export function createConfig({ env = defaultEnvironment(), argv = process.argv.s
   const deprecatedCli = oneValue(readFlag(argv, ['--base_dir']), '--base_dir');
   const canonicalEnv = env.EDGEWARN_BASE_DIR;
   const deprecatedEnv = env.BASE_DIR;
-  const explicit = [canonicalCli, canonicalEnv, deprecatedCli, deprecatedEnv].filter(Boolean);
-  if (new Set(explicit.map((value) => path.resolve(value))).size > 1) throw new Error('Conflicting base directory settings');
-  const configuredBaseDir = process.platform === 'win32' ? api.base_dir.windows : api.base_dir.posix;
-  const baseDir = path.resolve(explicit[0] || configuredBaseDir.replace(/^~(?=$|[\\/])/, os.homedir()));
+  const baseCli = canonicalCli || deprecatedCli;
+  const baseEnv = canonicalEnv || deprecatedEnv;
+  const configuredBaseDir = process.platform === 'win32' ? filesystem.base_dir.windows : filesystem.base_dir.posix;
+  const baseDir = path.resolve((baseCli || baseEnv || configuredBaseDir).replace(/^~(?=$|[\\/])/, os.homedir()));
   const portSetting = parseIntegerOverride(env.PORT, api.server.port, 'PORT', { minimum: 1 });
   const requestTimeoutSetting = parseIntegerOverride(env.REQUEST_TIMEOUT_MS, api.server.request_timeout_ms, 'REQUEST_TIMEOUT_MS', { minimum: 1 });
   const rateLimitMaxSecSetting = parseIntegerOverride(env.RATE_LIMIT_MAX_SEC, api.rate_limits.per_second.max, 'RATE_LIMIT_MAX_SEC');
@@ -161,9 +156,9 @@ export function createConfig({ env = defaultEnvironment(), argv = process.argv.s
   });
   return Object.freeze({
     baseDir,
-    dataDir: resolveRuntimeDirectory(baseDir, api.base_dir.derived.data, 'data'),
-    guiDir: resolveRuntimeDirectory(baseDir, api.base_dir.derived.gui, 'gui'),
-    wpcDir: resolveRuntimeDirectory(baseDir, api.base_dir.derived.wpc, 'wpc'),
+    dataDir: path.join(baseDir, 'data'),
+    guiDir: path.join(baseDir, 'gui'),
+    wpcDir: path.join(baseDir, 'wpc'),
     configDir: resolvedConfigRoot,
     repoDir: repoRoot(selectedConfigDir),
     staticDir: resolveSourcePath(api.server.static_root, 'static_root'),

@@ -71,8 +71,8 @@ function typeMatches(value, typeName) {
     case 'array': return Array.isArray(value);
     case 'string': return typeof value === 'string';
     case 'boolean': return typeof value === 'boolean';
-    case 'integer': return typeof value === 'number' && Number.isInteger(value);
-    case 'number': return typeof value === 'number';
+    case 'integer': return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value);
+    case 'number': return typeof value === 'number' && Number.isFinite(value);
     case 'null': return value === null;
     default: throw new ConfigError('<schema>', null, `unsupported schema type ${JSON.stringify(typeName)}`);
   }
@@ -175,10 +175,18 @@ function findConfigRootByWalkingUp() {
 }
 
 export function configRoot(cliDir = null) {
-  if (cliDir) return path.resolve(cliDir);
+  if (cliDir) return resolveGivenRoot(cliDir, '--config-dir does not contain runtime.yaml');
   const envDir = process.env[ENV_CONFIG_DIR];
-  if (envDir) return path.resolve(envDir);
+  if (envDir) return resolveGivenRoot(envDir, `${ENV_CONFIG_DIR} does not contain runtime.yaml`);
   return findConfigRootByWalkingUp();
+}
+
+function resolveGivenRoot(raw, message) {
+  const resolved = path.resolve(raw);
+  if (!fs.existsSync(path.join(resolved, 'runtime.yaml'))) {
+    throw new ConfigError(resolved, null, message);
+  }
+  return resolved;
 }
 
 export function repoRoot(cliDir = null) {
@@ -239,8 +247,20 @@ export function expandPath(template, roots, { filename, dottedPath }) {
   if (!givenRoot || !path.isAbsolute(givenRoot)) {
     throw new ConfigError(filename, dottedPath, `<${token}> must be an absolute directory, got ${JSON.stringify(givenRoot)}`);
   }
-  const root = path.resolve(givenRoot);
-  const resolved = path.resolve(root, remainder);
+  const root = fs.realpathSync(givenRoot);
+  const candidate = path.resolve(root, remainder);
+  // realpath requires the final path to exist. Resolve the deepest existing
+  // ancestor, then append the as-yet-uncreated suffix so future artifact paths
+  // get the same symlink-containment protection as existing files.
+  let existing = candidate;
+  const suffix = [];
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) break;
+    suffix.unshift(path.basename(existing));
+    existing = parent;
+  }
+  const resolved = path.join(fs.realpathSync(existing), ...suffix);
   const relative = path.relative(root, resolved);
   if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new ConfigError(filename, dottedPath, `${JSON.stringify(template)} resolves outside <${token}>`);
@@ -298,6 +318,12 @@ function validateDocument(name, document, schemaPath) {
 export function resetCache() {
   configCache.clear();
   provenanceCache.clear();
+}
+
+export function validateAllConfigs({ configDir = null } = {}) {
+  const root = configRoot(configDir);
+  for (const name of CONFIG_NAMES) loadConfig(name, { configDir: root });
+  return Object.freeze(CONFIG_NAMES.map((name) => loadConfig(name, { configDir: root })));
 }
 
 export function loadConfig(name, { configDir = null } = {}) {

@@ -3,7 +3,7 @@
   "title": "api.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "server", "base_dir", "security", "logging", "rate_limits", "artifacts", "pagination", "cache_control_max_age", "query", "render_defaults", "validation", "product_catalog"],
+  "required": ["schema_version", "server", "security", "logging", "rate_limits", "artifacts", "pagination", "cache_control_max_age", "query", "render_defaults", "validation", "product_catalog"],
   "properties": {
     "schema_version": { "const": 1 },
     "server": {
@@ -19,25 +19,6 @@
         "openapi_spec": { "type": "string", "pattern": "^<(base_dir|gui_dir|src_dir)>/[^/]" },
         "production_version_label": { "type": "string" },
         "v3_api_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
-      }
-    },
-    "base_dir": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["windows", "posix", "derived"],
-      "properties": {
-        "windows": { "type": "string" },
-        "posix": { "type": "string" },
-        "derived": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["data", "gui", "wpc"],
-          "properties": {
-            "data": { "type": "string" },
-            "gui": { "type": "string" },
-            "wpc": { "type": "string" }
-          }
-        }
       }
     },
     "security": {

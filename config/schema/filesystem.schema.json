@@ -3,9 +3,19 @@
   "title": "filesystem.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "cleanup_defaults", "colormap_search_path"],
+  "required": ["schema_version", "base_dir", "cleanup_defaults", "colormap_search_path"],
   "properties": {
     "schema_version": { "const": 1 },
+    "base_dir": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["posix", "windows", "fallback"],
+      "properties": {
+        "posix": { "type": "string" },
+        "windows": { "type": "string" },
+        "fallback": { "type": "string" }
+      }
+    },
     "cleanup_defaults": {
       "type": "object",
       "additionalProperties": false,

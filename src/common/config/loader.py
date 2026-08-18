@@ -43,6 +43,7 @@ explicit token allowlist, never against the working directory.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from collections.abc import Mapping
@@ -333,7 +334,11 @@ def _type_matches(value: Any, type_name: str) -> bool:
     if type_name == "integer":
         return isinstance(value, int) and not isinstance(value, bool)
     if type_name == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+        )
     if type_name == "null":
         return value is None
     raise ConfigError("<schema>", None, f"unsupported schema type {type_name!r}")
@@ -428,6 +433,11 @@ def reset_cache() -> None:
     _config_cache.clear()
     _provenance_cache.clear()
     _root_cache.clear()
+
+
+def validate_all_configs(*, config_dir: str | os.PathLike[str] | None = None) -> tuple[Any, ...]:
+    """Validate and cache every catalog before application startup side effects."""
+    return tuple(load_config(name, config_dir=config_dir) for name in CONFIG_NAMES)
 
 
 def load_config(name: str, *, config_dir: str | os.PathLike[str] | None = None) -> Any:
