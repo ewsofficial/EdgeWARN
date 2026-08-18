@@ -111,24 +111,6 @@ class ConfidenceCalculator:
         
         return False, ""
     
-    def get_confidence_level(self, confidence: float) -> str:
-        """
-        Get confidence level as string.
-        
-        Args:
-            confidence: Confidence score
-        
-        Returns:
-            "high", "medium", or "low"
-        """
-        if confidence > self.config.confidence.high_boundary:
-            return "high"
-        elif confidence > self.config.confidence.medium_boundary:
-            return "medium"
-        else:
-            return "low"
-
-
 @dataclass
 class PredictionState:
     """

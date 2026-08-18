@@ -82,9 +82,6 @@ class AssignmentCostCalculator:
         Returns:
             Total assignment cost (lower is better)
         """
-        if dt_seconds is None:
-            dt_seconds = self.config.costs.default_dt_seconds
-
         # Get detection centroid
         det_centroid = detection.get('centroid', [0, 0])
         det_lat, det_lon = det_centroid[0], det_centroid[1]
