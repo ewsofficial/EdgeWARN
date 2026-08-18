@@ -49,8 +49,8 @@ mrms:
     # products use a hyphen, so its prefix cannot be extended the same way and it
     # needs an explicit StartAfter marker instead.
     probsevere_start_after: 'MRMS_PROBSEVERE_{YYYYMMDD}_{HH}'  # mrms_probsevere_start_after
-    # Applies to the two download call sites. The scheduler overrides it with its
-    # own window (mrms.s3_lookback_hours) and does not read this.
+    # Applies to the two download call sites. The scheduler uses its own
+    # `scheduler.s3_lookback_hours` window and does not read this.
     probsevere_start_after_lookback_hours: 1                    # mrms_probsevere_start_after
     # Minute precision, for the scheduler resuming after a known file: an
     # hour-precision marker would re-list what it already processed this hour.

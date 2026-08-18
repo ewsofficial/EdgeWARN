@@ -3,7 +3,7 @@
   "title": "integration.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "output", "azshear", "glm", "stats_datasets", "probsevere_field_map", "rap_products"],
+  "required": ["schema_version", "output", "glm", "stats_datasets", "probsevere_field_map", "rap_products"],
   "properties": {
     "schema_version": { "const": 1 },
     "output": {
@@ -12,20 +12,6 @@
       "required": ["decimals"],
       "properties": {
         "decimals": { "type": "integer", "minimum": 0 }
-      }
-    },
-    "azshear": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["enabled", "buffer_km", "low_threshold", "mid_threshold", "min_gate_count", "max_pair_separation_km", "history_window"],
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "buffer_km": { "type": "number" },
-        "low_threshold": { "type": "number" },
-        "mid_threshold": { "type": "number" },
-        "min_gate_count": { "type": "integer", "minimum": 0 },
-        "max_pair_separation_km": { "type": "number" },
-        "history_window": { "type": "integer", "minimum": 1 }
       }
     },
     "glm": {

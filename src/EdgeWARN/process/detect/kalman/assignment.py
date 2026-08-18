@@ -76,8 +76,8 @@ class AssignmentCostCalculator:
             track: Tracked storm cell dictionary
             detection: New detection dictionary
             kalman_filter: Kalman filter for the track
-            dt_seconds: Time since last update (for velocity computation);
-                falls back to the configured ``assignment_costs`` value
+            dt_seconds: Time since last update (for velocity computation). When
+                omitted, uses ``assignment_costs.default_dt_seconds``.
 
         Returns:
             Total assignment cost (lower is better)

@@ -110,7 +110,8 @@ class ConfidenceCalculator:
             return True, f"Prediction time {time_predicted_seconds/60:.1f} min exceeds limit {self.config.max_prediction_time_minutes} min"
         
         return False, ""
-    
+
+
 @dataclass
 class PredictionState:
     """

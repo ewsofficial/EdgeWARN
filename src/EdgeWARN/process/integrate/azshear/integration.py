@@ -9,10 +9,10 @@ from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 from util.grib_loader import load_grib_fast
 
-from ..config import section
 from ..geometry.cell_polygon import StormIntegrationUtils
 from .constants import (
     azshear_buffer_km,
+    azshear_history_window,
     azshear_low_threshold,
     azshear_mid_threshold,
 )
@@ -71,7 +71,7 @@ def _read_recent_history(cell_id, history_cache):
         with open(history_file, "r") as f:
             payload = json.load(f)
         if isinstance(payload, list):
-            history_cache[cell_id] = payload[-section("azshear")["history_window"]:]
+            history_cache[cell_id] = payload[-azshear_history_window():]
         else:
             history_cache[cell_id] = []
     except Exception:

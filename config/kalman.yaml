@@ -56,8 +56,8 @@ tracking:
 
 assignment:
   # Pre-filtering (Stage 1)
-  # Spatial pre-filter radius to reduce problem size before Hungarian algorithm
-  # Detections beyond this radius from a track are not considered
+  # Spatial pre-filter radius used by the hybrid assignment method. Detections
+  # beyond this radius from a track are not considered before matching.
   prefilter_radius_km: 16.0       # 10 miles
   
   # Gating parameters (Stage 2)
@@ -89,9 +89,9 @@ assignment:
     size_similarity: 0.5
   
   # Algorithm selection
-  # - hybrid: Pre-filter + Hungarian (recommended)
-  # - hungarian: Full Hungarian without pre-filtering
-  # - greedy: Nearest-neighbor fallback
+  # - hybrid: Pre-filter + global linear assignment
+  # - hungarian: Alias retained for compatibility; tracker routes it to hybrid
+  # - greedy: Nearest-neighbor assignment
   method: greedy
 
 # --- Sections below are top-level here but nested in the typed config. ---

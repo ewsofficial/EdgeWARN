@@ -2471,56 +2471,6 @@ def test_ncep_fuzzy_match_window_widens_and_narrows_with_the_catalog(tmp_path):
 # --- Integrate: --config-dir must reach every value ------------------------
 
 
-def test_config_dir_reaches_integrate_values_after_the_modules_are_imported():
-    """The two module-scope reads that made --config-dir unreachable are gone.
-
-    `EdgeWARN/pipeline.py` pulls `integrate.core.integrator` and, through it,
-    `azshear.constants` in from `src/run.py:14` -- 27 lines before `get_args()`
-    calls `export_config_root`. Both files used to read config at module scope,
-    so an operator's `--config-dir` was silently ignored. Worse, because
-    `integrate.config.section` is memoized, the frozen repo-default entry also
-    defeated the correctly-written per-call reads elsewhere in the package.
-
-    Import order here mirrors production deliberately: import first, export
-    second. A module-scope read reintroduced anywhere on that chain fails this.
-    """
-    import shutil
-    import tempfile
-
-    from common.config import loader
-    from EdgeWARN.process.integrate import config as integrate_config
-    from EdgeWARN.process.integrate.azshear import constants as azshear_constants
-
-    config_dir = Path(tempfile.mkdtemp(prefix="cfgdir-integrate-"))
-    shutil.copytree(REPO_ROOT / "config", config_dir, dirs_exist_ok=True)
-    catalog = config_dir / "integration.yaml"
-    catalog.write_text(
-        catalog.read_text(encoding="utf-8")
-            .replace("buffer_km: 1.5", "buffer_km: 9.9")
-            .replace("min_gate_count: 5", "min_gate_count: 77")
-            .replace("ProbSevere: ProbSevere", "ProbSevere: OVERRIDDEN"),
-        encoding="utf-8",
-    )
-
-    previous = os.environ.get("EDGEWARN_CONFIG_DIR")
-    try:
-        loader.export_config_root(config_dir)
-        loader.reset_cache()
-        integrate_config.reset_cache()
-        assert azshear_constants.azshear_buffer_km() == 9.9
-        assert azshear_constants.azshear_min_gate_count() == 77
-        assert integrate_config.probsevere_field_map()["ProbSevere"] == "OVERRIDDEN"
-    finally:
-        if previous is None:
-            os.environ.pop("EDGEWARN_CONFIG_DIR", None)
-        else:
-            os.environ["EDGEWARN_CONFIG_DIR"] = previous
-        loader.reset_cache()
-        integrate_config.reset_cache()
-
-    assert azshear_constants.azshear_buffer_km() != 9.9
-
-
 def test_probsevere_field_map_has_no_module_level_owner():
     """`integrator.py` must not rebind the mapping as a module constant.
 
@@ -3477,44 +3427,6 @@ def test_rap_uint16_force_defaults_to_none_so_false_stays_a_caller_choice(tmp_pa
             # An explicit False must not consult the catalog at all.
             uint16_pipeline.run_rap_uint16_pipeline(rap_path, layers=[], force=False)
             assert observed == [True]
-
-
-def test_the_rap_layer_catalog_mirrors_the_python_authority():
-    """`ewmrs_rap_uint16.yaml`'s `layers` block is documentation, and pinned.
-
-    DECISION MADE (Phase 5): `get_rap_uint16_layers()` stays the authority
-    because it encodes *rules* the flattened YAML cannot -- the colormap band per
-    pressure level, and `outdir` as a prefix strip with three exceptions. A
-    future layer needs those rules. So the block is a mirror, and this test is
-    what keeps "mirror" from decaying into "second, disagreeing authority".
-    """
-    import util.file as fs
-    from common.config import loader
-    from EWMRS.rap.config import get_rap_uint16_layers
-
-    catalog = loader.load_config("ewmrs_rap_uint16")
-    output_root = getattr(fs, catalog["output_root"])
-
-    def _as_python_layer(entry):
-        layer = {
-            "name": entry["name"],
-            "short_names": list(entry["short_names"]),
-            "filter": dict(entry["filter"]),
-            "units": entry["units"],
-            "scale": {
-                "min": float(entry["scale"]["min"]),
-                "max": float(entry["scale"]["max"]),
-            },
-            "outdir": output_root / entry["outdir"],
-            "description": entry["description"],
-        }
-        # `_with_colormap_key` drops the key rather than emitting None, so the
-        # YAML `null` must disappear here too or MSLP would not compare equal.
-        if entry["colormap_key"] is not None:
-            layer["colormap_key"] = entry["colormap_key"]
-        return layer
-
-    assert [_as_python_layer(e) for e in catalog["layers"]] == get_rap_uint16_layers()
 
 
 # --- EWMRS GOES reprojection: a key outvoted by three literals -------------

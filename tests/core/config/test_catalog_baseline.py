@@ -374,54 +374,6 @@ def test_catalog_modules_import_standalone(module_name, needs):
     assert importlib.import_module(module_name) is not None
 
 
-# --- AzShear scientific tunables -------------------------------------------
-
-# The accessor for each tunable, keyed by the module constant it replaced. The
-# baseline keys are deliberately unchanged so the recorded snapshot still proves
-# the values survived the move from module scope into the catalog.
-_AZSHEAR_ACCESSORS = {
-    "AZSHEAR_BUFFER_KM": "azshear_buffer_km",
-    "AZSHEAR_LOW_THRESHOLD": "azshear_low_threshold",
-    "AZSHEAR_MAX_PAIR_SEPARATION_KM": "azshear_max_pair_separation_km",
-    "AZSHEAR_MID_THRESHOLD": "azshear_mid_threshold",
-    "AZSHEAR_MIN_GATE_COUNT": "azshear_min_gate_count",
-}
-
-
-def test_azshear_constants_baseline():
-    """The five tunables driving AzShear feature integration.
-
-    Named in the plan's "scientific parameters" category but not previously
-    snapshotted anywhere in this suite.
-    """
-    from EdgeWARN.process.integrate.azshear import constants as azshear_constants
-
-    assert_baseline(
-        "azshear_constants",
-        {
-            name: getattr(azshear_constants, accessor)()
-            for name, accessor in sorted(_AZSHEAR_ACCESSORS.items())
-        },
-    )
-
-
-def test_azshear_tunables_are_read_per_call_not_at_import():
-    """No module-scope read may survive here.
-
-    ``EdgeWARN/pipeline.py`` pulls this module in transitively from
-    ``src/run.py:14``, which runs before ``get_args()`` exports
-    ``EDGEWARN_CONFIG_DIR``. A module-scope read freezes the repo-default config
-    directory, and because ``section()`` is memoized the poisoned entry also
-    defeats the correctly-written per-call reads elsewhere in the package.
-    """
-    from EdgeWARN.process.integrate.azshear import constants as azshear_constants
-
-    assert [name for name in vars(azshear_constants) if name.isupper()] == []
-    for name, accessor in _AZSHEAR_ACCESSORS.items():
-        assert not hasattr(azshear_constants, name), f"{name} is bound at import time"
-        assert callable(getattr(azshear_constants, accessor))
-
-
 # --- WPC surface-analysis styling ------------------------------------------
 
 def test_wpc_feature_types_baseline():

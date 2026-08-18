@@ -59,9 +59,7 @@ mrms_layers:
   - {name: MRMS_MESH,                         colormap_key: MESH,             filepath: MRMS_MESH_DIR,        outdir: GUI_MESH_DIR}
 
 # config.py get_goes_file_list(), 16 entries, one per ABI channel.
-# `mask_min`/`mask_max` are per-channel maps with a `default` fallback because
-# goes_transform.py looks the bound up by channel id and falls back to `default`
-# when the channel is absent.
+# `mask_min`/`mask_max` are keyed by the layer's channel id.
 goes_layers:
   # config.py:137, spread onto every layer at :144-146 by get_goes_file_list().
   common:
@@ -71,148 +69,132 @@ goes_layers:
   layers:
     - name: GOES_ABI_C01_Reflectance
       channel_id: C01
-      display_name: GOES ABI C01 Reflectance
       colormap_key: GOES_RGB_Raw
       value_transform: reflectance_from_rad
       filepath: GOES_ABI_VISIBLE_BLUE_DIR
       outdir: GUI_GOES_C01_DIR
-      mask_min: {C01: 0.0, default: 0.0}
-      mask_max: {C01: 1.2, default: 1.2}
+      mask_min: {C01: 0.0}
+      mask_max: {C01: 1.2}
     - name: GOES_ABI_C02_Reflectance
       channel_id: C02
-      display_name: GOES ABI C02 Reflectance
       colormap_key: GOES_RGB_Raw
       value_transform: reflectance_from_rad
       filepath: GOES_ABI_VISIBLE_RED_DIR
       outdir: GUI_GOES_C02_DIR
-      mask_min: {C02: 0.0, default: 0.0}
-      mask_max: {C02: 1.2, default: 1.2}
+      mask_min: {C02: 0.0}
+      mask_max: {C02: 1.2}
     - name: GOES_ABI_C03_Reflectance
       channel_id: C03
-      display_name: GOES ABI C03 Reflectance
       colormap_key: GOES_RGB_Raw
       value_transform: reflectance_from_rad
       filepath: GOES_ABI_VEGGIE_DIR
       outdir: GUI_GOES_C03_DIR
-      mask_min: {C03: 0.0, default: 0.0}
-      mask_max: {C03: 1.2, default: 1.2}
+      mask_min: {C03: 0.0}
+      mask_max: {C03: 1.2}
     - name: GOES_ABI_C04_Reflectance
       channel_id: C04
-      display_name: GOES ABI C04 Reflectance
       colormap_key: GOES_RGB_Raw
       value_transform: reflectance_from_rad
       filepath: GOES_ABI_CIRRUS_DIR
       outdir: GUI_GOES_C04_DIR
-      mask_min: {C04: 0.0, default: 0.0}
-      mask_max: {C04: 1.2, default: 1.2}
+      mask_min: {C04: 0.0}
+      mask_max: {C04: 1.2}
     - name: GOES_ABI_C05_Reflectance
       channel_id: C05
-      display_name: GOES ABI C05 Reflectance
       colormap_key: GOES_RGB_Raw
       value_transform: reflectance_from_rad
       filepath: GOES_ABI_SNOW_ICE_DIR
       outdir: GUI_GOES_C05_DIR
-      mask_min: {C05: 0.0, default: 0.0}
-      mask_max: {C05: 1.2, default: 1.2}
+      mask_min: {C05: 0.0}
+      mask_max: {C05: 1.2}
     - name: GOES_ABI_C06_Reflectance
       channel_id: C06
-      display_name: GOES ABI C06 Reflectance
       colormap_key: GOES_RGB_Raw
       value_transform: reflectance_from_rad
       filepath: GOES_ABI_PARTICLE_SIZE_DIR
       outdir: GUI_GOES_C06_DIR
-      mask_min: {C06: 0.0, default: 0.0}
-      mask_max: {C06: 1.2, default: 1.2}
+      mask_min: {C06: 0.0}
+      mask_max: {C06: 1.2}
     - name: GOES_ABI_C07_BrightnessTemp
       channel_id: C07
-      display_name: GOES ABI C07 Brightness Temperature
       colormap_key: GOES_ABI_C07_BrightnessTemp
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_SHORTWAVE_IR_DIR
       outdir: GUI_GOES_C07_DIR
-      mask_min: {C07: 180.0, default: 180.0}
-      mask_max: {C07: 330.0, default: 330.0}
+      mask_min: {C07: 180.0}
+      mask_max: {C07: 330.0}
     - name: GOES_ABI_C08_BrightnessTemp
       channel_id: C08
-      display_name: GOES ABI C08 Brightness Temperature
       colormap_key: GOES_ABI_C08_BrightnessTemp
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_UPPER_LEVEL_WV_DIR
       outdir: GUI_GOES_C08_DIR
-      mask_min: {C08: 180.0, default: 180.0}
-      mask_max: {C08: 300.0, default: 300.0}
+      mask_min: {C08: 180.0}
+      mask_max: {C08: 300.0}
     - name: GOES_ABI_C09_BrightnessTemp
       channel_id: C09
-      display_name: GOES ABI C09 Brightness Temperature
       colormap_key: GOES_ABI_C09_BrightnessTemp
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_MID_LEVEL_WV_DIR
       outdir: GUI_GOES_C09_DIR
-      mask_min: {C09: 180.0, default: 180.0}
-      mask_max: {C09: 310.0, default: 310.0}
+      mask_min: {C09: 180.0}
+      mask_max: {C09: 310.0}
     - name: GOES_ABI_C10_BrightnessTemp
       channel_id: C10
-      display_name: GOES ABI C10 Brightness Temperature
       colormap_key: GOES_ABI_C10_BrightnessTemp
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_LOWER_LEVEL_WV_DIR
       outdir: GUI_GOES_C10_DIR
-      mask_min: {C10: 185.0, default: 185.0}
-      mask_max: {C10: 320.0, default: 320.0}
+      mask_min: {C10: 185.0}
+      mask_max: {C10: 320.0}
     - name: GOES_ABI_C11_BrightnessTemp
       channel_id: C11
-      display_name: GOES ABI C11 Brightness Temperature
       colormap_key: GOES_ABI_C11_BrightnessTemp
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_CLD_TOP_PHASE_DIR
       outdir: GUI_GOES_C11_DIR
-      mask_min: {C11: 180.0, default: 180.0}
-      mask_max: {C11: 330.0, default: 330.0}
+      mask_min: {C11: 180.0}
+      mask_max: {C11: 330.0}
     - name: GOES_ABI_C12_BrightnessTemp
       channel_id: C12
-      display_name: GOES ABI C12 Brightness Temperature
       colormap_key: GOES_ABI_C12_BrightnessTemp
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_OZONE_DIR
       outdir: GUI_GOES_C12_DIR
-      mask_min: {C12: 180.0, default: 180.0}
-      mask_max: {C12: 330.0, default: 330.0}
+      mask_min: {C12: 180.0}
+      mask_max: {C12: 330.0}
     - name: GOES_ABI_C13_BrightnessTemp
       channel_id: C13
-      display_name: GOES ABI C13 Brightness Temperature
       colormap_key: GOES_IR
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_CLEAN_LWIR_DIR
       outdir: GUI_GOES_C13_DIR
-      mask_min: {C13: 180.0, default: 180.0}
-      mask_max: {C13: 330.0, default: 330.0}
+      mask_min: {C13: 180.0}
+      mask_max: {C13: 330.0}
     - name: GOES_ABI_C14_BrightnessTemp
       channel_id: C14
-      display_name: GOES ABI C14 Brightness Temperature
       colormap_key: GOES_IR
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_LONGWAVE_IR_DIR
       outdir: GUI_GOES_C14_DIR
-      mask_min: {C14: 180.0, default: 180.0}
-      mask_max: {C14: 330.0, default: 330.0}
+      mask_min: {C14: 180.0}
+      mask_max: {C14: 330.0}
     - name: GOES_ABI_C15_BrightnessTemp
       channel_id: C15
-      display_name: GOES ABI C15 Brightness Temperature
       colormap_key: GOES_IR
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_DIRTY_LWIR_DIR
       outdir: GUI_GOES_C15_DIR
-      mask_min: {C15: 180.0, default: 180.0}
-      mask_max: {C15: 330.0, default: 330.0}
+      mask_min: {C15: 180.0}
+      mask_max: {C15: 330.0}
     - name: GOES_ABI_C16_BrightnessTemp
       channel_id: C16
-      display_name: GOES ABI C16 Brightness Temperature
       colormap_key: GOES_ABI_C16_BrightnessTemp
       value_transform: brightness_temp_from_rad
       filepath: GOES_ABI_CO2_LWIR_DIR
       outdir: GUI_GOES_C16_DIR
-      mask_min: {C16: 180.0, default: 180.0}
-      mask_max: {C16: 330.0, default: 330.0}
+      mask_min: {C16: 180.0}
+      mask_max: {C16: 330.0}
 
 goes_transform:                         # render/goes_transform.py
   # Resolved to a rasterio.enums.Resampling member by render/config.py

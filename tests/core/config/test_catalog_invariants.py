@@ -50,11 +50,6 @@ def render():
 
 
 @pytest.fixture(scope="module")
-def rap_uint16():
-    return loader.load_config("ewmrs_rap_uint16")
-
-
-@pytest.fixture(scope="module")
 def integration():
     return loader.load_config("integration")
 
@@ -114,45 +109,6 @@ def test_waveform_names_are_distinct(nexrad):
     waveforms = nexrad["selection"]["waveforms"]
     names = [waveforms["surveillance"], waveforms["doppler"], *waveforms["single_elevation"]]
     assert duplicates(names) == {}
-
-
-def test_vcp_label_sets_match_the_allowed_vcps(nexrad):
-    """Labels for a rejected VCP are dead, and an allowed VCP with none renders bare.
-
-    The renderer keys this map by the `VCP-<n>` form that `_normalize_scan_name`
-    produces, and a miss returns None rather than raising, so neither direction
-    of drift announces itself.
-    """
-    labelled = set(nexrad["vcp_sweep_elevation_labels"])
-    expected = {f"VCP-{vcp}" for vcp in nexrad["selection"]["allowed_vcps"]}
-    assert labelled == expected
-
-
-def test_vcp_sweep_indices_are_non_negative_integers(nexrad):
-    """A string key would never match the integer `sweep_index` the renderer passes.
-
-    YAML makes `{0: '0.5'}` an int key and `{'0': '0.5'}` a string one, and the
-    schema cannot tell them apart, so the difference is invisible until a sweep
-    silently loses its label.
-    """
-    wrong = {
-        (vcp, index)
-        for vcp, labels in nexrad["vcp_sweep_elevation_labels"].items()
-        for index in labels
-        if not isinstance(index, int) or isinstance(index, bool) or index < 0
-    }
-    assert wrong == set()
-
-
-def test_vcp_labels_are_numeric_elevation_strings(nexrad):
-    """Labels become directory names, so a stray unit or space would reach the path."""
-    bad = {
-        (vcp, index, label)
-        for vcp, labels in nexrad["vcp_sweep_elevation_labels"].items()
-        for index, label in labels.items()
-        if not re.fullmatch(r"\d+\.\d+", label)
-    }
-    assert bad == set()
 
 
 # --- MRMS ingest and readiness --------------------------------------------
@@ -235,47 +191,6 @@ def test_goes_render_layers_name_ingested_channels(render, mrms_goes):
     assert [l["channel_id"] for l in layers if l["channel_id"] not in ingested] == []
 
 
-# --- RAP uint16 layers ----------------------------------------------------
-
-def test_rap_uint16_layers_are_unique(rap_uint16):
-    layers = rap_uint16["layers"]
-    assert len(layers) == 43
-    assert duplicates([layer["name"] for layer in layers]) == {}
-    assert duplicates([layer["outdir"] for layer in layers]) == {}
-
-
-def test_rap_uint16_outdirs_are_relative_not_filesystem_attributes(rap_uint16):
-    """These `outdir` values mean something different from every other catalog's.
-
-    Elsewhere `outdir` is a ``util.file`` attribute name. Here it is a directory
-    name under ``output_root`` -- ``rap/config.py:13`` builds
-    ``fs.GUI_RAP_DIR / name``. Asserting the distinction keeps a future reader
-    from "fixing" these into attribute names.
-    """
-    assert rap_uint16["output_root"] == "GUI_RAP_DIR"
-    assert hasattr(fs, rap_uint16["output_root"])
-    assert [l["outdir"] for l in rap_uint16["layers"] if hasattr(fs, l["outdir"])] == []
-
-
-def test_rap_uint16_outdir_cannot_be_derived_from_the_layer_name(rap_uint16):
-    """Three of the 43 entries hardcode an outdir that `_outdir()` would not produce.
-
-    ``rap/config.py:13`` is ``name.removeprefix("RAP_")``, but :228, :246 and
-    :255 bypass it and substitute a hyphen for an underscore. The catalog must
-    therefore keep `outdir` explicit rather than deriving it.
-    """
-    exceptions = {
-        layer["name"]: layer["outdir"]
-        for layer in rap_uint16["layers"]
-        if layer["outdir"] != layer["name"].removeprefix("RAP_")
-    }
-    assert exceptions == {
-        "RAP_CAPE_0_3km": "CAPE_0-3km",
-        "RAP_SRH_0-1km": "SRH-0-1km",
-        "RAP_LiftedIndex_Surface_500_1000mb": "LiftedIndex_Surface_500-1000mb",
-    }
-
-
 # --- Integration datasets -------------------------------------------------
 
 def test_integration_stats_dataset_names_and_keys_are_unique(integration):
@@ -350,7 +265,6 @@ def _attribute_names():
     for dataset in integration["stats_datasets"]:
         names.add(dataset["filepath"])
 
-    names.add(loader.load_config("ewmrs_rap_uint16")["output_root"])
     names.add(runtime["cycle"]["state_file"]["dir"])
     names.add(runtime["supervisor"]["health_file"]["dir"])
     names.add(runtime["supervisor"]["nexrad_heartbeat_file"]["dir"])

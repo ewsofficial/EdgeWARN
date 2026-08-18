@@ -10,15 +10,12 @@
       "Rad"
     ],
     "channel_id": "C01",
-    "display_name": "GOES ABI C01 Reflectance",
     "value_transform": "reflectance_from_rad",
     "mask_min": {
-      "C01": 0.0,
-      "default": 0.0
+      "C01": 0.0
     },
     "mask_max": {
-      "C01": 1.2,
-      "default": 1.2
+      "C01": 1.2
     }
   },
   {
@@ -32,15 +29,12 @@
       "Rad"
     ],
     "channel_id": "C02",
-    "display_name": "GOES ABI C02 Reflectance",
     "value_transform": "reflectance_from_rad",
     "mask_min": {
-      "C02": 0.0,
-      "default": 0.0
+      "C02": 0.0
     },
     "mask_max": {
-      "C02": 1.2,
-      "default": 1.2
+      "C02": 1.2
     }
   },
   {
@@ -54,15 +48,12 @@
       "Rad"
     ],
     "channel_id": "C03",
-    "display_name": "GOES ABI C03 Reflectance",
     "value_transform": "reflectance_from_rad",
     "mask_min": {
-      "C03": 0.0,
-      "default": 0.0
+      "C03": 0.0
     },
     "mask_max": {
-      "C03": 1.2,
-      "default": 1.2
+      "C03": 1.2
     }
   },
   {
@@ -76,15 +67,12 @@
       "Rad"
     ],
     "channel_id": "C04",
-    "display_name": "GOES ABI C04 Reflectance",
     "value_transform": "reflectance_from_rad",
     "mask_min": {
-      "C04": 0.0,
-      "default": 0.0
+      "C04": 0.0
     },
     "mask_max": {
-      "C04": 1.2,
-      "default": 1.2
+      "C04": 1.2
     }
   },
   {
@@ -98,15 +86,12 @@
       "Rad"
     ],
     "channel_id": "C05",
-    "display_name": "GOES ABI C05 Reflectance",
     "value_transform": "reflectance_from_rad",
     "mask_min": {
-      "C05": 0.0,
-      "default": 0.0
+      "C05": 0.0
     },
     "mask_max": {
-      "C05": 1.2,
-      "default": 1.2
+      "C05": 1.2
     }
   },
   {
@@ -120,15 +105,12 @@
       "Rad"
     ],
     "channel_id": "C06",
-    "display_name": "GOES ABI C06 Reflectance",
     "value_transform": "reflectance_from_rad",
     "mask_min": {
-      "C06": 0.0,
-      "default": 0.0
+      "C06": 0.0
     },
     "mask_max": {
-      "C06": 1.2,
-      "default": 1.2
+      "C06": 1.2
     }
   },
   {
@@ -142,15 +124,12 @@
       "Rad"
     ],
     "channel_id": "C07",
-    "display_name": "GOES ABI C07 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C07": 180.0,
-      "default": 180.0
+      "C07": 180.0
     },
     "mask_max": {
-      "C07": 330.0,
-      "default": 330.0
+      "C07": 330.0
     }
   },
   {
@@ -164,15 +143,12 @@
       "Rad"
     ],
     "channel_id": "C08",
-    "display_name": "GOES ABI C08 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C08": 180.0,
-      "default": 180.0
+      "C08": 180.0
     },
     "mask_max": {
-      "C08": 300.0,
-      "default": 300.0
+      "C08": 300.0
     }
   },
   {
@@ -186,15 +162,12 @@
       "Rad"
     ],
     "channel_id": "C09",
-    "display_name": "GOES ABI C09 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C09": 180.0,
-      "default": 180.0
+      "C09": 180.0
     },
     "mask_max": {
-      "C09": 310.0,
-      "default": 310.0
+      "C09": 310.0
     }
   },
   {
@@ -208,15 +181,12 @@
       "Rad"
     ],
     "channel_id": "C10",
-    "display_name": "GOES ABI C10 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C10": 185.0,
-      "default": 185.0
+      "C10": 185.0
     },
     "mask_max": {
-      "C10": 320.0,
-      "default": 320.0
+      "C10": 320.0
     }
   },
   {
@@ -230,15 +200,12 @@
       "Rad"
     ],
     "channel_id": "C11",
-    "display_name": "GOES ABI C11 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C11": 180.0,
-      "default": 180.0
+      "C11": 180.0
     },
     "mask_max": {
-      "C11": 330.0,
-      "default": 330.0
+      "C11": 330.0
     }
   },
   {
@@ -252,15 +219,12 @@
       "Rad"
     ],
     "channel_id": "C12",
-    "display_name": "GOES ABI C12 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C12": 180.0,
-      "default": 180.0
+      "C12": 180.0
     },
     "mask_max": {
-      "C12": 330.0,
-      "default": 330.0
+      "C12": 330.0
     }
   },
   {
@@ -274,15 +238,12 @@
       "Rad"
     ],
     "channel_id": "C13",
-    "display_name": "GOES ABI C13 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C13": 180.0,
-      "default": 180.0
+      "C13": 180.0
     },
     "mask_max": {
-      "C13": 330.0,
-      "default": 330.0
+      "C13": 330.0
     }
   },
   {
@@ -296,15 +257,12 @@
       "Rad"
     ],
     "channel_id": "C14",
-    "display_name": "GOES ABI C14 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C14": 180.0,
-      "default": 180.0
+      "C14": 180.0
     },
     "mask_max": {
-      "C14": 330.0,
-      "default": 330.0
+      "C14": 330.0
     }
   },
   {
@@ -318,15 +276,12 @@
       "Rad"
     ],
     "channel_id": "C15",
-    "display_name": "GOES ABI C15 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C15": 180.0,
-      "default": 180.0
+      "C15": 180.0
     },
     "mask_max": {
-      "C15": 330.0,
-      "default": 330.0
+      "C15": 330.0
     }
   },
   {
@@ -340,15 +295,12 @@
       "Rad"
     ],
     "channel_id": "C16",
-    "display_name": "GOES ABI C16 Brightness Temperature",
     "value_transform": "brightness_temp_from_rad",
     "mask_min": {
-      "C16": 180.0,
-      "default": 180.0
+      "C16": 180.0
     },
     "mask_max": {
-      "C16": 330.0,
-      "default": 330.0
+      "C16": 330.0
     }
   }
 ]

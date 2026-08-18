@@ -1,35 +1,41 @@
-from ..config import section
-
-# Read per call, never at module scope. EdgeWARN/pipeline.py imports this module
-# transitively from src/run.py:14, which is 27 lines before get_args() exports
-# EDGEWARN_CONFIG_DIR -- a module-scope read here freezes the repo-default
-# config directory, and because section() is memoized the poisoned cache entry
-# also defeats the correctly-written per-call reads elsewhere in this package.
+# This support module is not part of the production pipeline. Keep its fixed
+# experimental parameters local instead of exposing inert runtime settings.
+_BUFFER_KM = 1.5
+_LOW_THRESHOLD = 8.0
+_MID_THRESHOLD = 6.0
+_MIN_GATE_COUNT = 5
+_MAX_PAIR_SEPARATION_KM = 12.0
+_HISTORY_WINDOW = 5
 
 
 def azshear_buffer_km():
     """Radius the cell polygon is buffered by before azshear gates are gathered."""
-    return section("azshear")["buffer_km"]
+    return _BUFFER_KM
 
 
 def azshear_low_threshold():
     """Minimum azshear magnitude counted as a gate in the 0-2 km layer."""
-    return section("azshear")["low_threshold"]
+    return _LOW_THRESHOLD
 
 
 def azshear_mid_threshold():
     """Minimum azshear magnitude counted as a gate in the 3-6 km layer."""
-    return section("azshear")["mid_threshold"]
+    return _MID_THRESHOLD
 
 
 def azshear_min_gate_count():
     """Smallest connected component retained as a candidate core."""
-    return section("azshear")["min_gate_count"]
+    return _MIN_GATE_COUNT
 
 
 def azshear_max_pair_separation_km():
     """Largest centroid separation a low/mid component pair may have."""
-    return section("azshear")["max_pair_separation_km"]
+    return _MAX_PAIR_SEPARATION_KM
+
+
+def azshear_history_window():
+    """Number of history samples retained by the experimental support path."""
+    return _HISTORY_WINDOW
 
 
 def empty_level_output():

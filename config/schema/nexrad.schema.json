@@ -3,7 +3,7 @@
   "title": "nexrad.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "buckets", "stations", "selection", "timeouts", "concurrency", "realtime", "cli", "retention", "vcp_sweep_elevation_labels"],
+  "required": ["schema_version", "buckets", "stations", "selection", "timeouts", "concurrency", "realtime", "cli", "retention"],
   "properties": {
     "schema_version": { "const": 1 },
     "buckets": {
@@ -101,13 +101,6 @@
         "scan_dirs_to_keep": { "type": "integer", "minimum": 1 },
         "elevation_dirs_to_keep": { "type": "integer", "minimum": 1 },
         "stale_manifest_max_age_hours": { "type": "number", "exclusiveMinimum": 0 }
-      }
-    },
-    "vcp_sweep_elevation_labels": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": { "type": "string" }
       }
     }
   }

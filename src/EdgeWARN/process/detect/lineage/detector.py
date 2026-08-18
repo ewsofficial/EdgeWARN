@@ -55,9 +55,9 @@ class LineageDetector:
         Args:
             buffer: LineageBuffer for hysteresis (created if None)
             overlap_threshold: Minimum overlap ratio for merge/split detection.
-                None reads ``lineage.event_overlap_ratio``. StormCellTracker
-                always forwards its own value, so the YAML default applies only
-                to a detector built directly.
+                None uses the tracker overlap-ratio setting. StormCellTracker
+                always forwards its own value, so that setting applies only to
+                a detector built directly.
             io_manager: IO manager for logging (optional)
         """
         self.buffer = buffer or LineageBuffer()

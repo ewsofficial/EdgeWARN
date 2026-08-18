@@ -6,8 +6,8 @@
 # and `hail` are read by their owning modules through config.section().
 #
 # The three `detection` thresholds are the only CLI-overridable keys here
-# (--refl-threshold, --min-seed-percentage, --drop-offset); precedence is
-# CLI > env > this file.
+# (--refl-threshold, --min-seed-percentage, --drop-offset); CLI values override
+# this file. These flags have no environment-variable overlay.
 #
 # Phase 3 deliberately omitted the five `gatemapper` keys below, because at that
 # point they were terms of expressions hardcoded in gatemapper.py, and recording
