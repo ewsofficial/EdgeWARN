@@ -37,14 +37,6 @@ server:
   # `info.version` in openapi/v3.yaml, and unrelated to the package version above.
   v3_api_version: '3.0.0'
 
-base_dir:
-  windows: 'C:\EdgeWARN_input'
-  posix: ~/EdgeWARN_input
-  # config/index.js:115-120, inside createConfig. All four inputs are read and
-  # compared after path.resolve; two that disagree raise 'Conflicting base
-  # directory settings' rather than one silently winning.
-  derived: {data: <base_dir>/data, gui: <base_dir>/gui, wpc: <base_dir>/wpc}
-
 security:
   hsts_max_age_seconds: 31536000        # security.js:8; preserves Helmet 8's shipped max-age
   # DENY-ALL, in every environment. cors.js:6-9 answers `callback(null, false)`

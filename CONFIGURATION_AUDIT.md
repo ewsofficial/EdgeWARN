@@ -1,5 +1,11 @@
 # EdgeWARN-Core Configuration, Constants & Tunable Parameters Audit
 
+> Current operator reference: [`docs/core/configuration.md`](docs/core/configuration.md).
+> The complete 19-file `config/` tree is schema-validated before startup.
+> `filesystem.yaml` owns runtime base defaults; precedence is CLI,
+> `EDGEWARN_BASE_DIR`, legacy `BASE_DIR`, then YAML. EWMRS render artifacts are
+> float16 chunks plus JSON metadata; PNG routes are legacy compatibility only.
+
 Deep audit of every configuration variable, constant, and tunable parameter used in the EdgeWARN-Core codebase. Scientific/mathematical constants (physical constants, unit conversions, geodetic radii) are excluded by design.
 
 Legend for "Override" column:

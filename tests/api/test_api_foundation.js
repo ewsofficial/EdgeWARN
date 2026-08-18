@@ -15,11 +15,12 @@ const REPOSITORY_CACHE = { max_entries: 256, max_size_bytes: 32 * 1024 * 1024 };
 const REPOSITORY_LIST_LIMIT = 1000;
 
 describe('unified API configuration', () => {
-  it('uses one resolved base directory and accepts deprecated aliases only when equal', () => {
+  it('uses one resolved base directory with documented precedence', () => {
     const config = createConfig({ env: { EDGEWARN_BASE_DIR: '/tmp/edgewarn', BASE_DIR: '/tmp/edgewarn', PORT: '5001' }, argv: [] });
     expect(config.baseDir).toBe('/tmp/edgewarn');
     expect(config.port).toBe(5001);
-    expect(() => createConfig({ env: { EDGEWARN_BASE_DIR: '/tmp/a', BASE_DIR: '/tmp/b' }, argv: [] })).toThrow('Conflicting base directory settings');
+    expect(createConfig({ env: { EDGEWARN_BASE_DIR: '/tmp/a', BASE_DIR: '/tmp/b' }, argv: [] }).baseDir).toBe('/tmp/a');
+    expect(createConfig({ env: { EDGEWARN_BASE_DIR: '/tmp/a' }, argv: ['--base_dir', '/tmp/cli'] }).baseDir).toBe('/tmp/cli');
   });
 
   it('uses exact origins and rejects unsafe production proxy shorthand', () => {

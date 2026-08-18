@@ -56,7 +56,9 @@ graph TD
 
 Generated products are written under the configured base directory. For the Python pipelines and the EWMRS API, the default is `~/EdgeWARN_input` on Linux/macOS and `C:\EdgeWARN_input` on Windows.
 
-The EdgeWARN API has a broader Linux fallback chain when no override is provided: `~/EdgeWARN_input`, then `/home/EdgeWARN_input`, then `/workspaces/EdgeWARN_input`, then `./EdgeWARN_input`.
+`filesystem.yaml` is the sole authority for platform defaults. The selected
+base directory is CLI, then `EDGEWARN_BASE_DIR`, then legacy `BASE_DIR`, then
+YAML; `--config-dir` and `EDGEWARN_CONFIG_DIR` select the complete catalog tree.
 
 The active runtime layout is:
 
@@ -71,7 +73,7 @@ The active runtime layout is:
 │   ├── NEXRAD_Level2/               # staged Level II volume artifacts
 │   └── <MRMS/GOES product dirs>/     # MRMS, FLASH, GLM, ABI channel inputs
 ├── gui/
-│   ├── <MRMS/GOES product>/          # tile-first PNG products plus index.json files
+│   ├── <MRMS/GOES product>/          # float16 chunks plus index.json metadata
 │   ├── RAP/                         # Uint16 RAP layer folders
 │   └── NEXRAD/                      # gzip-compressed polar intermediate fields
 └── wpc/surface_analysis/            # WPC surface-analysis GeoJSON

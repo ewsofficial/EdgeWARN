@@ -14,8 +14,8 @@ Errors use `application/problem+json`.
 ## Runtime configuration
 
 - Canonical base directory: `--base-dir <path>` or `EDGEWARN_BASE_DIR`
-- Compatibility aliases for one migration release: `--base_dir <path>` and
-  `BASE_DIR`; conflicting settings fail startup
+- Compatibility aliases: `--base_dir <path>` and `BASE_DIR`. Precedence is CLI,
+  then `EDGEWARN_BASE_DIR`, then `BASE_DIR`, then `filesystem.yaml`.
 - `PORT` sets the service port; `npm run debug:api` uses debug port `3001`
 - `ALLOWED_ORIGINS` is a comma-separated exact browser-origin allowlist.
   Credentials are not enabled for this read-only API.

@@ -25,6 +25,8 @@ the bare ``invalid literal for int()`` that ``int(raw)`` used to raise.
 from __future__ import annotations
 
 import os
+import platform
+from pathlib import Path
 from typing import Any, Iterable
 
 _TRUE_STRINGS = {"1", "true", "yes", "on"}
@@ -166,3 +168,35 @@ def origins() -> dict[str, str]:
 def reset_origins() -> None:
     """Forget every recorded origin. Intended for tests."""
     _origins.clear()
+
+
+def resolve_base_dir(
+    cli_value: Any,
+    filesystem: Any,
+    *,
+    env_names: Iterable[str] = ("EDGEWARN_BASE_DIR", "BASE_DIR"),
+    system: str | None = None,
+) -> Path:
+    """Resolve the shared runtime base directory and record its provenance.
+
+    ``filesystem`` is the validated ``filesystem.yaml`` document (or its
+    ``base_dir`` section).  Keeping the platform defaults there prevents Python
+    and Node from quietly maintaining separate catalogs.
+    """
+    defaults = filesystem["base_dir"] if "base_dir" in filesystem else filesystem
+    platform_name = system or platform.system()
+    yaml_value = defaults["windows"] if platform_name == "Windows" else defaults["posix"]
+    selected = resolve(
+        cli_value,
+        env_names=env_names,
+        yaml_value=yaml_value,
+        key="filesystem.base_dir",
+    )
+    if platform_name != "Windows" and str(selected).startswith("~"):
+        try:
+            return Path(selected).expanduser()
+        except RuntimeError:
+            # Path.home()/expanduser can fail in stripped-down containers.
+            _origins["filesystem.base_dir"] = "yaml"
+            return Path(defaults["fallback"])
+    return Path(selected)

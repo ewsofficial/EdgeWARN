@@ -19,6 +19,13 @@
 
 schema_version: 1
 
+# This is the only catalog that owns runtime base-directory defaults. The
+# selected value is CLI > EDGEWARN_BASE_DIR > BASE_DIR > YAML.
+base_dir:
+  posix: ~/EdgeWARN_input
+  windows: 'C:\\EdgeWARN_input'
+  fallback: /workspaces/EdgeWARN_input
+
 # The fallback every cleaner in util/file.py resolves to when its caller passes
 # nothing. clean_files_by_age takes max_age_minutes only, so max_files reaches
 # clean_old_files alone.

@@ -4,7 +4,6 @@ from pathlib import Path
 import heapq
 import asyncio
 import os
-import platform
 import sys
 
 from util.file_config import cleanup_max_age_minutes, cleanup_max_files, colormap_search_path
@@ -204,18 +203,6 @@ def _define_paths(base_path, config_dir=None):
     )
 
 
-def _platform_base_dir() -> Path:
-    """Where input data lives when the operator names no directory."""
-    if platform.system() == "Windows":
-        return Path(r"C:\EdgeWARN_input")
-    try:
-        return Path.home() / "EdgeWARN_input"
-    except Exception:
-        # `Path.home()` raises when no home directory can be determined, which is
-        # the container case this fallback was added for.
-        return Path(r"/workspaces/EdgeWARN_input")
-
-
 def initialize_filesystem(base_dir=None):
     if base_dir:
         _define_paths(Path(base_dir))
@@ -236,7 +223,7 @@ def initialize_filesystem(base_dir=None):
 # published anything. `initialize_filesystem` does not pass it, because by then
 # the exported EDGEWARN_CONFIG_DIR is the more current answer.
 _define_paths(
-    Path(IOManager.get_base_dir_arg() or _platform_base_dir()),
+    Path(IOManager.get_base_dir_arg()),
     config_dir=IOManager.get_config_dir_arg(),
 )
 

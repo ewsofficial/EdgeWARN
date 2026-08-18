@@ -410,18 +410,7 @@ def test_node_reads_only_edgewarn_base_dir():
     assert names - {"NODE_ENV", "HOME"} == {"EDGEWARN_BASE_DIR"}
 
 
-def test_base_dir_alias_is_asymmetric_between_python_and_node():
-    """DECISION OWED: Python never reads `EDGEWARN_BASE_DIR`.
-
-    Node resolves its base directory from the environment or from `--base-dir`.
-    Python accepts the flag -- `util.file` peeks it out of `sys.argv` before its
-    module-scope bind -- and otherwise falls back to `platform.system()`; the
-    variable reaches it through neither channel. Nothing keeps the two in
-    agreement, which is why the check below is on the absence of any `environ`
-    read rather than on the two resolutions matching.
-    """
-    assert "EDGEWARN_BASE_DIR" not in _python_env_names()
-
-    source = (SRC / "util/file.py").read_text(encoding="utf-8")
-    assert "platform.system()" in source
-    assert "environ" not in source
+def test_base_dir_aliases_are_shared_by_python_and_node():
+    """Both runtimes use the resolver's CLI > env > YAML contract."""
+    source = (SRC / "common/config/overlay.py").read_text(encoding="utf-8")
+    assert '"EDGEWARN_BASE_DIR", "BASE_DIR"' in source

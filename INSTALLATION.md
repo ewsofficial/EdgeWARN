@@ -39,6 +39,25 @@ Defaults:
 
 The unified API resolves the same platform default when no override is set.
 
+`config/filesystem.yaml` is the sole authority for these defaults. Precedence
+is CLI (`--base-dir` or `--base_dir`), then `EDGEWARN_BASE_DIR`, then legacy
+`BASE_DIR`, then YAML. The legacy spellings remain supported for compatibility.
+
+## Configuration tree
+
+The application validates all 19 YAML documents and their schemas before
+starting workers or an HTTP listener. Select a deployed tree with `--config-dir
+/path/to/config` or `EDGEWARN_CONFIG_DIR=/path/to/config`; otherwise discovery
+walks up from the installed source tree. Copy the whole `config/` directory,
+including `config/schema/`, for deployment.
+
+```bash
+npm run validate-config
+PYTHONPATH=src python -m common.config.validate
+```
+
+See `docs/core/configuration.md` for the authoritative owner of each setting.
+
 Overrides:
 
 - Python CLIs (`run.py`, `process_historical.py`): `--base_dir` or `--base-dir`
