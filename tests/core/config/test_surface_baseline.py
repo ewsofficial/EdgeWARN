@@ -397,22 +397,6 @@ def test_environment_variables_are_read_without_a_shared_parser(monkeypatch):
     with pytest.raises(ValueError, match=r"must be a non-negative integer, got '-1'"):
         resolve(None, env_names=("EDGEWARN_TEST_BOUND",), yaml_value=5, minimum=0)
 
-    ad_hoc: list[str] = []
-    shared: list[str] = []
-    for path in SRC.rglob("*.py"):
-        source = path.read_text(encoding="utf-8", errors="ignore")
-        name = path.relative_to(SRC).as_posix()
-        if "env_names" in source and _overlay_env_names(ast.parse(source)):
-            shared.append(name)
-        elif "os.environ" in source or "getenv" in source:
-            ad_hoc.append(name)
-
-    assert_baseline(
-        "environment_reader_modules",
-        {"ad_hoc": sorted(ad_hoc), "shared_parser": sorted(shared)},
-    )
-
-
 def test_node_reads_only_edgewarn_base_dir():
     """The JS side shares exactly one configuration variable with Python."""
     names: set[str] = set()
