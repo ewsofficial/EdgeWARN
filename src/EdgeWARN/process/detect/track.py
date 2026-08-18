@@ -13,6 +13,7 @@ import copy
 import numpy as np
 
 from .config import section
+from .lineage.config import tracked_overlap_ratio
 from .lineage import (
     LineageEvent,
     LineageResult,
@@ -80,8 +81,7 @@ class StormCellTracker:
             io_manager: IO manager for logging
             lineage_buffer: Optional pre-loaded LineageBuffer
             overlap_threshold: Minimum overlap ratio for merge/split detection.
-                Defaults to ``detection.yaml`` ``tracker.lineage_overlap_ratio``,
-                which overrides the LineageDetector's own default.
+                Defaults to ``lineage.yaml`` ``lineage.tracked_overlap_ratio``.
             tracking_config: Configuration for Kalman tracking
             assignment_config: Configuration for assignment (mostly for hybrid params)
             kalman_config: Configuration for Kalman filter
@@ -90,7 +90,7 @@ class StormCellTracker:
         self.ps_new = ps_new
         self.io_manager = io_manager
         self.overlap_threshold = (
-            section("tracker")["lineage_overlap_ratio"]
+            tracked_overlap_ratio()
             if overlap_threshold is None
             else overlap_threshold
         )

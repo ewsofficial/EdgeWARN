@@ -32,9 +32,8 @@
     "tracker": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["lineage_overlap_ratio", "decay_max_refl_dbz", "decay_confidence_factor", "decay_confidence_floor"],
+      "required": ["decay_max_refl_dbz", "decay_confidence_factor", "decay_confidence_floor"],
       "properties": {
-        "lineage_overlap_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
         "decay_max_refl_dbz": { "type": "number" },
         "decay_confidence_factor": { "type": "number", "minimum": 0, "maximum": 1 },
         "decay_confidence_floor": { "type": "number", "minimum": 0, "maximum": 1 }

@@ -21,26 +21,19 @@
 schema_version: 1
 
 lineage:
-  # LineageDetector.overlap_threshold, applied to merge/split candidates.
-  #
-  # SHADOWED: StormCellTracker resolves its own overlap_threshold (0.10, from
-  # detection.yaml `tracker.lineage_overlap_ratio`) and forwards it into
-  # LineageDetector, so this value only takes effect when a detector is built
-  # directly or through the module-level detect_lineage_events wrapper. Editing
-  # this key alone will not change pipeline behavior.
+  # LineageDetector.overlap_threshold, applied to merge/split candidates when a
+  # detector is built directly or through detect_lineage_events.
   event_overlap_ratio: 0.15
 
-  # find_overlapping_cells overlap_threshold. A separate, weaker gate: the
-  # detector always passes its own threshold, so this applies only to direct
-  # spatial queries. Named apart from `event_overlap_ratio` because the two are
-  # different knobs that happened to share the name `overlap_threshold`.
-  spatial_query_overlap_ratio: 0.0
+  # StormCellTracker.overlap_threshold. The threshold the tracker applies to
+  # merge/split detection before forwarding it into LineageDetector.
+  tracked_overlap_ratio: 0.10
 
   # bounds_overlap buffer. Slack on the cheap bounding-box pre-filter that runs
-  # before any area overlap is computed. Unlike the two ratios above this one IS
-  # applied on the tracked path: _find_split_overlaps calls bounds_overlap with
-  # no buffer for every candidate, so this is what runs. Widening it only admits
-  # more candidates to the exact test; it cannot create an event.
+  # before any area overlap is computed. It is applied on the tracked path:
+  # _find_split_overlaps calls bounds_overlap with no buffer for every candidate.
+  # Widening it only admits more candidates to the exact test; it cannot create
+  # an event.
   bounds_prefilter_buffer_deg: 0.0
 
   # LineageBuffer constructor. Hysteresis: an event must be seen on this many

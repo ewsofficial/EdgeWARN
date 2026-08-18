@@ -9,10 +9,10 @@
     "lineage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["event_overlap_ratio", "spatial_query_overlap_ratio", "bounds_prefilter_buffer_deg", "buffer"],
+      "required": ["event_overlap_ratio", "tracked_overlap_ratio", "bounds_prefilter_buffer_deg", "buffer"],
       "properties": {
         "event_overlap_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
-        "spatial_query_overlap_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "tracked_overlap_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
         "bounds_prefilter_buffer_deg": { "type": "number", "minimum": 0 },
         "buffer": {
           "type": "object",
