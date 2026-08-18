@@ -436,15 +436,17 @@ def load_reproject_goes_abi_render_array(
 ) -> dict[str, np.ndarray] | None:
     """Load and reproject a GOES ABI channel to a shared array/x/y payload.
 
-    ``None`` is passed straight through to
-    :func:`reproject_goes_abi_to_web_mercator`, which owns the resolution, so the
-    catalog is read once per call rather than twice.
+    ``None`` resolves to ``goes_transform.resampling`` here.  Unlike the
+    dataset-oriented helper, this path calls the shared payload reprojection
+    routine directly, so forwarding ``None`` would reach rasterio unchanged.
     """
     channel_id = str(layer_config.get("channel_id", "unknown"))
     total_start_s = time.perf_counter()
     payload = _load_goes_abi_render_payload(path, layer_config)
     if payload is None:
         return None
+    if resampling is None:
+        resampling = goes_transform_resampling()
 
     projected = _reproject_goes_payload_to_web_mercator(
         payload,
