@@ -1,7 +1,6 @@
 import datetime
 import time
 import concurrent.futures
-from pathlib import Path
 from EdgeWARN.ingest.mrms.s3_sync import FileFinder
 from EdgeWARN.ingest.mrms.utils import extract_timestamp
 from EdgeWARN.ingest.mrms.parse import parse_mrms_bucket_path
@@ -15,7 +14,6 @@ from EdgeWARN.ingest.mrms.config import (
 from EdgeWARN.ingest.mrms.timestamp_utils import round_to_nearest_even_minute
 from EdgeWARN.schedule.config import (
     modifier_lookup_max_entries,
-    mrms_update_checker_max_entries,
     s3_lookback_hours,
     slow_check_log_threshold_ms,
 )
@@ -28,62 +26,13 @@ io_manager = IOManager("[DataIngestion]")
 class MRMSUpdateChecker:
     """Checks MRMS sources for new files and finds the latest common timestamps."""
 
-    def __init__(self, max_entries=None, verbose=False):
-        self.max_entries = (
-            mrms_update_checker_max_entries() if max_entries is None else max_entries
-        )
+    def __init__(self, verbose=False):
         self.verbose = verbose
         # Shared S3 client for all checks
         import boto3
         from botocore import UNSIGNED
         from botocore.client import Config
         self.s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
-
-    def has_update(self, modifier_tuple, reference_dt=None):
-        """Check if a specific MRMS modifier has a new file."""
-        region, modifier, outdir = modifier_tuple
-        if reference_dt is None:
-            reference_dt = datetime.datetime.now(datetime.timezone.utc)
-
-        # Pass shared client
-        finder = FileFinder(reference_dt, mrms_bucket(), self.max_entries, io_manager, client=self.s3_client)
-        try:
-            bucket_path = parse_mrms_bucket_path(reference_dt, region, modifier)
-            files_with_timestamps = finder.lookup_files(bucket_path, verbose=False)
-            if not files_with_timestamps:
-                if self.verbose:
-                    print(f"[{modifier}] No remote files found")
-                return False
-
-            _, latest_source_time = max(files_with_timestamps, key=lambda x: x[1])
-            local_files = list(Path(outdir).glob("*.gz")) + list(Path(outdir).glob("*.grib2"))
-
-            if not local_files:
-                if self.verbose:
-                    print(f"[{modifier}] No local files found")
-                return True
-
-            local_times = []
-            for f in local_files:
-                ts = extract_timestamp(f.name)
-                if ts:
-                    local_times.append(ts)
-
-            if not local_times:
-                if self.verbose:
-                    print(f"[{modifier}] Could not extract timestamps from local files")
-                return True
-
-            latest_local_time = max(local_times)
-            if self.verbose:
-                print(f"[{modifier}] Remote: {latest_source_time}, Local: {latest_local_time}")
-            return latest_source_time > latest_local_time
-
-        except Exception as e:
-            print(f"[MRMSUpdateChecker] Error checking {modifier}: {e}")
-            return False
-
-
 
     def _get_modifier_times(
         self,
@@ -165,18 +114,6 @@ class MRMSUpdateChecker:
             processed_timestamps.append(ts_rounded)
             
         return set(processed_timestamps)
-
-
-    def all_sources_available(self, modifiers):
-        """Check all MRMS modifiers for new data availability."""
-        all_new = True
-        for modifier_tuple in modifiers:
-            if self.has_update(modifier_tuple):
-                print(f"[{modifier_tuple[1]}] New file available")
-            else:
-                print(f"[{modifier_tuple[1]}] No new file")
-                all_new = False
-        return all_new
 
     def latest_common_minute_1h(self, modifiers, reference_dt=None, last_processed=None):
         """

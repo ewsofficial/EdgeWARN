@@ -10,18 +10,8 @@
 schema_version: 1
 
 scheduler:
-  # DEAD PATH. MRMSUpdateChecker.max_entries, read only inside has_update. Its
-  # only in-repo caller is all_sources_available, which itself has no callers
-  # anywhere -- production or tests. has_update is reached only when a test calls
-  # it directly, so this value is exercised by tests alone. Both production
-  # construction sites pass MRMSUpdateChecker(verbose=True) and use other methods.
-  # Kept, not deleted, for the same reason as integration.yaml's azshear block:
-  # the value is real and the code path exists, it simply is not reached today.
-  mrms_update_checker_max_entries: 10
-
   # The live lookup width. Resolved once per check in latest_common_minute_1h and
-  # passed down to _get_modifier_times, rather than taken from max_entries above
-  # -- which is why editing that key does not widen the real scheduler check.
+  # passed down to _get_modifier_times rather than read in each worker.
   modifier_lookup_max_entries: 20
 
   # Only the StartAfter fallback when last_processed is unknown; with a known
