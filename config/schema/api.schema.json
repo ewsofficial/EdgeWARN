@@ -3,7 +3,7 @@
   "title": "api.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "server", "base_dir", "security", "rate_limits", "artifacts", "pagination", "cache_control_max_age", "query", "render_defaults", "validation", "product_catalog"],
+  "required": ["schema_version", "server", "base_dir", "security", "logging", "rate_limits", "artifacts", "pagination", "cache_control_max_age", "query", "render_defaults", "validation", "product_catalog"],
   "properties": {
     "schema_version": { "const": 1 },
     "server": {
@@ -62,6 +62,12 @@
         "csp_default_src": { "type": "string", "const": "'self'" },
         "compression_skip_media": { "type": "string" }
       }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["access_log_enabled"],
+      "properties": { "access_log_enabled": { "type": "boolean" } }
     },
     "rate_limits": {
       "type": "object",

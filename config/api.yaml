@@ -2,7 +2,7 @@
 #
 # Source: src/api/config/index.js:45-68; server.js:7-8; app.js:22,26,29;
 #         middleware/cors.js:6-13; middleware/rateLimit.js:4-5;
-#         middleware/requestId.js:3; middleware/security.js:6,10,19;
+#         middleware/requestId.js:3; middleware/security.js:6,10,19; middleware/logging.js:6;
 #         repositories/artifactRepository.js:14-15,17-21,28,76;
 #         services/validation.js:1-4,15-16,18-19; services/ancillary.js RADAR_PRODUCTS;
 #         services/analysis.js:4; services/renders.js:5-7,16-17,47,50,60,62,85;
@@ -84,6 +84,9 @@ security:
 
   csp_default_src: "'self'"             # middleware/security.js:6
   compression_skip_media: image/*       # security.js:10
+
+logging:
+  access_log_enabled: true              # app.js mounts createAccessLog only when enabled
 
 rate_limits:
   # max = 0 disables the limiter outright (rateLimit.js:4 returns null and the
