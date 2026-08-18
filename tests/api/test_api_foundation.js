@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from '@jest/globals';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { createConfig } from '../../src/api/config/index.js';
+import { createConfig, parseTrustProxy } from '../../src/api/config/index.js';
+import { resetCache } from '../../src/config/loader.js';
 import { ArtifactRepository, ArtifactError } from '../../src/api/repositories/artifactRepository.js';
 
 describe('unified API configuration', () => {
@@ -19,6 +20,22 @@ describe('unified API configuration', () => {
     expect(() => createConfig({ env: { NODE_ENV: 'production', TRUST_PROXY: 'true' }, argv: [] })).toThrow('TRUST_PROXY=true');
   });
 
+  it('parses every trust-proxy input shape consistently', () => {
+    expect(parseTrustProxy(false)).toBe(false);
+    expect(parseTrustProxy(undefined)).toBe(false);
+    expect(parseTrustProxy('')).toBe(false);
+    expect(parseTrustProxy(2)).toBe(2);
+    expect(parseTrustProxy(['loopback'])).toEqual(['loopback']);
+    expect(parseTrustProxy(true)).toBe(1);
+    expect(parseTrustProxy(' True ')).toBe(1);
+    expect(parseTrustProxy('2')).toBe(2);
+    expect(parseTrustProxy('false')).toBe(false);
+    expect(parseTrustProxy('loopback, 10.0.0.1')).toEqual(['loopback', '10.0.0.1']);
+    expect(() => parseTrustProxy(true, { NODE_ENV: 'production' })).toThrow('TRUST_PROXY=true');
+    expect(() => parseTrustProxy('9')).toThrow('Invalid TRUST_PROXY hop count');
+    expect(createConfig({ env: { TRUST_PROXY_IPS: '' }, argv: [] }).diagnostics.overrides).not.toContain('TRUST_PROXY_IPS');
+  });
+
   it('uses api.yaml defaults from an explicitly selected config root', async () => {
     const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'edgewarn-api-config-'));
     const configDir = path.join(parent, 'config');
@@ -32,6 +49,26 @@ describe('unified API configuration', () => {
       expect(config.port).toBe(5100);
       expect(config.configDir).toBe(configDir);
       expect(config.api.server.port).toBe(5100);
+    } finally {
+      await fs.rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects invalid YAML trust-proxy forms before API startup', async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'edgewarn-api-config-'));
+    const configDir = path.join(parent, 'config');
+    try {
+      await fs.cp(path.resolve('config'), configDir, { recursive: true });
+      const apiYaml = path.join(configDir, 'api.yaml');
+      const yaml = await fs.readFile(apiYaml, 'utf8');
+
+      await fs.writeFile(apiYaml, yaml.replace('trust_proxy: false', 'trust_proxy: true'));
+      expect(createConfig({ env: {}, argv: ['--config-dir', configDir] }).trustProxy).toBe(1);
+      expect(() => createConfig({ env: { NODE_ENV: 'production' }, argv: ['--config-dir', configDir] })).toThrow('TRUST_PROXY=true');
+
+      await fs.writeFile(apiYaml, yaml.replace('trust_proxy: false', 'trust_proxy: []'));
+      resetCache();
+      expect(() => createConfig({ env: {}, argv: ['--config-dir', configDir] })).toThrow();
     } finally {
       await fs.rm(parent, { recursive: true, force: true });
     }
