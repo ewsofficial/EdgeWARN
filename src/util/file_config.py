@@ -4,10 +4,9 @@ Accessors rather than module constants so the catalog is read per call: a
 ``--config-dir`` may be resolved after this module is imported, and a
 module-level read would have frozen the repo default at import time.
 
-``base_dir`` is deliberately not exposed. ``util.file`` binds it at import, from
-a ``sys.argv`` peek at ``--base_dir`` or the platform default, so the catalog
-records those three paths for visibility without owning them; reconfiguration
-goes through ``initialize_filesystem(base_dir)``.
+``base_dir`` is deliberately not exposed here. ``util.file`` binds it at import
+through a ``sys.argv`` peek at ``--base_dir`` and the catalog-backed platform
+default; reconfiguration goes through ``initialize_filesystem(base_dir)``.
 
 The scan skip rules are also absent. See ``test_scan_skip_rules_stay_in_code``
 for why they are not operator tunables.

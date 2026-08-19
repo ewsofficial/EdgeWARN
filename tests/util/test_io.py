@@ -8,6 +8,7 @@ import sys
 import yaml
 from io import StringIO
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 from common.config import loader as config_loader
 from util.io import TimestampedOutput, QueueWriter, IOManager
@@ -138,16 +139,18 @@ class TestIOManager:
         captured = capsys.readouterr()
         assert "[Test] ERROR: Error message" in captured.out
 
-    def test_get_args_default_values(self):
+    def test_get_args_default_values(self, monkeypatch):
         """Test get_args with default values"""
         io = IOManager("[Test]")
+        monkeypatch.delenv("EDGEWARN_BASE_DIR", raising=False)
+        monkeypatch.delenv("BASE_DIR", raising=False)
         
         with patch.object(sys, 'argv', ['script']):
             args = io.get_args()
             
             assert args.lat_limits == [20, 55]
             assert args.lon_limits == [230, 300]
-            assert args.base_dir is None
+            assert args.base_dir == str(Path.home() / "EdgeWARN_input")
 
     def test_get_args_custom_lat_lon(self):
         """Test get_args with custom lat/lon limits"""
@@ -230,9 +233,11 @@ class TestIOManager:
             with pytest.raises(SystemExit):
                 io.get_args()
 
-    def test_get_historical_args_default_values(self):
+    def test_get_historical_args_default_values(self, monkeypatch):
         """Test historical args with default values."""
         io = IOManager("[Test]")
+        monkeypatch.delenv("EDGEWARN_BASE_DIR", raising=False)
+        monkeypatch.delenv("BASE_DIR", raising=False)
 
         with patch.object(sys, 'argv', ['script', '--start', '2024-01-01T00:00:00', '--end', '2024-01-01T01:00:00']):
             args = io.get_historical_args()
@@ -241,7 +246,7 @@ class TestIOManager:
             assert args.end == '2024-01-01T01:00:00'
             assert args.lat == [20, 55]
             assert args.lon == [-130, -60]
-            assert args.base_dir is None
+            assert args.base_dir == str(Path.home() / "EdgeWARN_input")
 
     def test_get_historical_args_common_flags(self):
         """Test historical args reuse shared processing flags."""
