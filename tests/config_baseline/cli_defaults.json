@@ -20,6 +20,18 @@
         "@repr": "<not a literal>"
       }
     },
+    "--ctam-module-dir": {
+      "default": null,
+      "action": null
+    },
+    "--list-ctam-modules": {
+      "default": false,
+      "action": "store_true"
+    },
+    "--check-ctam-modules": {
+      "default": false,
+      "action": "store_true"
+    },
     "--disable-tracking": {
       "default": null,
       "action": {

@@ -2,7 +2,9 @@
   "shadows_yaml": [],
   "can_be_unset": [
     "--base_dir",
+    "--check-ctam-modules",
     "--config-dir",
+    "--ctam-module-dir",
     "--disable-ctam",
     "--disable-ewmrs",
     "--disable-goes",
@@ -15,6 +17,7 @@
     "--end",
     "--lat",
     "--lat_limits",
+    "--list-ctam-modules",
     "--lon",
     "--lon_limits",
     "--min-seed-percentage",

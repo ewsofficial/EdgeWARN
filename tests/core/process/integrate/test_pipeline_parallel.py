@@ -123,7 +123,7 @@ def test_main_aborts_history_and_index_updates_when_save_fails(sample_cells):
     with patch.object(pipeline, "StatFileHandler") as MockHandler, \
          patch.object(pipeline, "StormCellIntegrator"), \
          patch.object(pipeline, "_run_parallel_enrichment", return_value=copy.deepcopy(sample_cells)), \
-         patch.object(pipeline, "_run_ctam_if_enabled", side_effect=lambda cells, *_args: cells), \
+         patch.object(pipeline, "_run_ctam_if_enabled", side_effect=lambda cells, *_args, **_kwargs: cells), \
          patch.object(pipeline, "_save_cells", side_effect=RuntimeError("disk full")), \
          patch.object(pipeline, "_update_history") as mock_history, \
          patch.object(pipeline, "_update_api_indexes") as mock_indexes:
