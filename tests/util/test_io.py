@@ -6,11 +6,13 @@ import pytest
 import shutil
 import sys
 import yaml
+import os
 from io import StringIO
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 from common.config import loader as config_loader
+from util.ctam_config import CTAM_MODULE_DIR_ENV
 from util.io import TimestampedOutput, QueueWriter, IOManager
 
 
@@ -322,3 +324,129 @@ class TestConfigDirPropagation:
         with patch.object(sys, 'argv', ['script', '--config-dir', str(empty)]):
             with pytest.raises(config_loader.ConfigError):
                 io.get_args()
+
+
+FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "ctam_modules"
+
+
+class TestCTAMCLIDiagnostics:
+    """``--ctam-module-dir`` / ``--list-ctam-modules`` / ``--check-ctam-modules``.
+
+    The three flags are shared processing flags, so both parsers expose them.
+    The two diagnostics must print their report and exit before any pipeline
+    setup: ``_run_ctam_diagnostics`` is called immediately after the config root
+    is exported and before lat/lon resolution, directory creation, or worker
+    launch, and it never executes module code.
+    """
+
+    @pytest.fixture(autouse=True)
+    def clear_ctam_env(self, monkeypatch):
+        monkeypatch.delenv(CTAM_MODULE_DIR_ENV, raising=False)
+
+    def test_ctam_module_dir_absolute_passthrough(self, tmp_path):
+        with patch.object(sys, 'argv', ['script', '--ctam-module-dir', str(tmp_path)]):
+            args = IOManager("[Test]").get_args()
+
+        assert args.ctam_module_dir == tmp_path
+
+    def test_ctam_module_dir_relative_resolves_against_repo_root(self):
+        with patch.object(sys, 'argv', ['script', '--ctam-module-dir', 'ctam_modules']):
+            args = IOManager("[Test]").get_args()
+
+        assert args.ctam_module_dir == config_loader.repo_root() / "ctam_modules"
+
+    def test_exported_root_is_reachable_by_a_manifest_scan(self, tmp_path):
+        """The resolved root is exported for spawned children, and a second
+        resolution with no flag lands on the same tree (CLI > env agreement)."""
+        with patch.object(sys, 'argv', ['script', '--ctam-module-dir', str(tmp_path)]):
+            args = IOManager("[Test]").get_args()
+
+        assert CTAM_MODULE_DIR_ENV in os.environ
+        assert os.environ[CTAM_MODULE_DIR_ENV] == str(args.ctam_module_dir)
+
+    def test_list_exits_zero_on_a_missing_root(self, capsys):
+        with patch.object(sys, 'argv', ['script', '--list-ctam-modules',
+                                        '--ctam-module-dir', '/nonexistent/ctam/root']):
+            with pytest.raises(SystemExit) as exc:
+                IOManager("[Test]").get_args()
+
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "0 CTAM module manifest(s) checked" in out
+
+    def test_check_exits_zero_on_an_empty_root(self, capsys, tmp_path):
+        empty = tmp_path / "modules"
+        empty.mkdir()
+
+        with patch.object(sys, 'argv', ['script', '--check-ctam-modules',
+                                        '--ctam-module-dir', str(empty)]):
+            with pytest.raises(SystemExit) as exc:
+                IOManager("[Test]").get_args()
+
+        assert exc.value.code == 0
+        assert "All 0 CTAM module manifest(s) passed validation" in capsys.readouterr().out
+
+    def test_list_reports_a_valid_module(self, capsys, tmp_path):
+        root = tmp_path / "modules"
+        shutil.copytree(FIXTURE_ROOT / "cellstats", root / "cellstats")
+
+        with patch.object(sys, 'argv', ['script', '--list-ctam-modules',
+                                        '--ctam-module-dir', str(root)]):
+            with pytest.raises(SystemExit) as exc:
+                IOManager("[Test]").get_args()
+
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "OK   cellstats" in out
+        assert "All 1 CTAM module manifest(s) passed validation" in out
+
+    def test_check_exits_one_on_an_invalid_manifest(self, capsys, tmp_path):
+        root = tmp_path / "modules"
+        shutil.copytree(FIXTURE_ROOT / "brokenmanifest", root / "brokenmanifest")
+
+        with patch.object(sys, 'argv', ['script', '--check-ctam-modules',
+                                        '--ctam-module-dir', str(root)]):
+            with pytest.raises(SystemExit) as exc:
+                IOManager("[Test]").get_args()
+
+        assert exc.value.code == 1
+        out = capsys.readouterr().out
+        assert "FAIL brokenmanifest" in out
+        assert "1/1 CTAM module manifest(s) failed validation" in out
+
+    def test_list_reports_an_invalid_manifest_without_failing(self, capsys, tmp_path):
+        """``--list`` is a report and succeeds whatever it found; ``--check`` is
+        the gate."""
+        root = tmp_path / "modules"
+        shutil.copytree(FIXTURE_ROOT / "brokenmanifest", root / "brokenmanifest")
+
+        with patch.object(sys, 'argv', ['script', '--list-ctam-modules',
+                                        '--ctam-module-dir', str(root)]):
+            with pytest.raises(SystemExit) as exc:
+                IOManager("[Test]").get_args()
+
+        assert exc.value.code == 0
+        assert "1/1 CTAM module manifest(s) failed validation" in capsys.readouterr().out
+
+    def test_diagnostics_exit_before_pipeline_setup(self, capsys, tmp_path):
+        """``--lat_limits 0 0`` would abort get_args' pipeline validation with
+        exit 1; a diagnostic that still exits 0 proves the report ran first and
+        stopped the process before any pipeline argument resolution."""
+        with patch.object(sys, 'argv', ['script', '--list-ctam-modules',
+                                        '--ctam-module-dir', str(tmp_path),
+                                        '--lat_limits', '0', '0']):
+            with pytest.raises(SystemExit) as exc:
+                IOManager("[Test]").get_args()
+
+        assert exc.value.code == 0
+
+    def test_historical_parser_serves_the_same_diagnostics(self, capsys):
+        with patch.object(sys, 'argv', ['script', '--start', '2024-01-01T00:00:00',
+                                        '--end', '2024-01-01T01:00:00',
+                                        '--list-ctam-modules',
+                                        '--ctam-module-dir', '/nonexistent/ctam/root']):
+            with pytest.raises(SystemExit) as exc:
+                IOManager("[Test]").get_historical_args()
+
+        assert exc.value.code == 0
+        assert "0 CTAM module manifest(s) checked" in capsys.readouterr().out
