@@ -91,8 +91,3 @@ def get_rap_products():
         "products": _thaw(rap["products"]),
         "derived": _thaw(rap["derived"]),
     }
-
-
-def rap_fallback_dataset_score_levels():
-    """Isobaric levels used to rank fallback RAP datasets."""
-    return list(section("rap_products")["fallback_dataset_score_levels_mb"])
