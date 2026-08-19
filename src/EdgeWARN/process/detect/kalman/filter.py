@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime
 
 from .state import StateVector, CovarianceMatrix, latlon_to_meters, meters_to_latlon, haversine_distance
-from .config import KalmanConfig, DEFAULT_KALMAN_CONFIG
+from .config import KalmanConfig, default_kalman_config
 
 
 @dataclass
@@ -40,7 +40,7 @@ class KalmanFilter:
     """
     
     # Configuration
-    config: KalmanConfig = field(default_factory=KalmanConfig)
+    config: KalmanConfig = field(default_factory=default_kalman_config)
     
     # State
     state: StateVector = field(default_factory=StateVector)
@@ -57,8 +57,10 @@ class KalmanFilter:
     _last_timestamp: Optional[datetime] = None
     
     # Process noise matrix (Q)
-    _Q: Optional[np.ndarray] = None
-    
+    # No _Q field: predict() builds Q per step from dt via
+    # _build_process_noise_matrix. A stored constant Q was assigned here and read
+    # by nothing, which made two now-deleted config keys look load-bearing.
+
     # Measurement matrix (H) - observes position only
     _H: np.ndarray = field(default_factory=lambda: np.array([
         [1, 0, 0, 0, 0, 0],
@@ -73,21 +75,13 @@ class KalmanFilter:
         self._initialize_noise_matrices()
     
     def _initialize_noise_matrices(self):
-        """Initialize process and measurement noise matrices."""
+        """Initialize the measurement noise matrix.
+
+        Process noise is not precomputed: it depends on dt, so predict() calls
+        _build_process_noise_matrix per step.
+        """
         cfg = self.config
-        
-        # Process noise matrix Q (6x6)
-        # For constant acceleration model with dt=1 (normalized)
-        # Q models the uncertainty in the state transition
-        self._Q = np.diag([
-            cfg.process_noise_position,
-            cfg.process_noise_position,
-            cfg.process_noise_velocity,
-            cfg.process_noise_velocity,
-            cfg.process_noise_acceleration,
-            cfg.process_noise_acceleration
-        ]).astype(np.float64)
-        
+
         # Measurement noise matrix R (2x2 for position-only observations)
         # Convert km to degrees (approximate)
         pos_noise_deg = cfg.measurement_noise_position / 111.0
@@ -96,23 +90,32 @@ class KalmanFilter:
             pos_noise_deg**2
         ]).astype(np.float64)
     
-    def initialize(self, lat: float, lon: float, 
+    def initialize(self, lat: float, lon: float,
                    u: float = 0.0, v: float = 0.0,
-                   position_std_km: float = 1.0,
+                   position_std_km: Optional[float] = None,
                    timestamp: Optional[datetime] = None) -> None:
         """
         Initialize the Kalman filter with an initial state.
-        
+
         Args:
             lat: Initial latitude in degrees
             lon: Initial longitude in degrees
             u: Initial eastward velocity in m/s (default 0)
             v: Initial northward velocity in m/s (default 0)
-            position_std_km: Initial position uncertainty in km
+            position_std_km: Initial position uncertainty in km; falls back to
+                the configured ``filter_internals`` value when not supplied
             timestamp: Initial timestamp
         """
+        internals = self.config.internals
+        if position_std_km is None:
+            position_std_km = internals.initial_position_uncertainty_km
+
         self.state = StateVector(lat=lat, lon=lon, u=u, v=v)
-        self.covariance = CovarianceMatrix.from_position_uncertainty(position_std_km)
+        self.covariance = CovarianceMatrix.from_position_uncertainty(
+            position_std_km,
+            velocity_variance=internals.initial_velocity_variance,
+            acceleration_variance=internals.initial_acceleration_variance,
+        )
         
         # Set reference point for coordinate conversion
         self.ref_lat = lat
@@ -388,7 +391,7 @@ class KalmanFilter:
         Returns:
             KalmanFilter instance
         """
-        kf = cls(config=config or KalmanConfig())
+        kf = cls(config=config or default_kalman_config())
         
         kf.state = StateVector(
             lat=state_dict.get('lat', 0.0),
@@ -406,24 +409,28 @@ class KalmanFilter:
         kf._initialized = True
         return kf
     
-    def get_innovation_covariance(self, regularization: float = 1e-6) -> np.ndarray:
+    def get_innovation_covariance(self, regularization: Optional[float] = None) -> np.ndarray:
         """
         Compute innovation covariance S = H * P * H^T + R.
-        
+
         The innovation covariance represents the uncertainty in the measurement
         prediction, combining state uncertainty (P) propagated through the
         observation model (H) with measurement noise (R).
-        
+
         Args:
-            regularization: Small value added to diagonal for numerical stability
-        
+            regularization: Small value added to diagonal for numerical stability;
+                falls back to the configured ``filter_internals`` value
+
         Returns:
             2x2 innovation covariance matrix
         """
+        if regularization is None:
+            regularization = self.config.internals.innovation_covariance_regularization
+
         if not self._initialized:
             # Return identity if not initialized
             return np.eye(2, dtype=np.float64)
-        
+
         P = self.covariance.to_array()
         S = self._H @ P @ self._H.T + self._R
         
@@ -476,7 +483,7 @@ class KalmanFilter:
         except np.linalg.LinAlgError:
             # Singular matrix - add more regularization and retry
             try:
-                S_regularized = S + np.eye(2) * 1e-4
+                S_regularized = S + np.eye(2) * self.config.internals.singular_retry_regularization
                 x = np.linalg.solve(S_regularized, y)
                 d_m_squared = y.T @ x
                 if d_m_squared < 0:
@@ -487,21 +494,25 @@ class KalmanFilter:
                 return float('inf')
     
     def is_within_gate(self, lat: float, lon: float,
-                       threshold: float = 6.0,
-                       min_radius_km: float = 2.0) -> bool:
+                       threshold: float,
+                       min_radius_km: float) -> bool:
         """
         Check if measurement is within validation gate.
-        
+
         Uses Mahalanobis distance for physics-aware gating that respects
         the covariance ellipse. Falls back to minimum radius for cases
         where the covariance has collapsed (very small uncertainty).
-        
+
+        Both limits are required rather than defaulted: they are the same
+        numbers as ``assignment.gating_threshold``/``min_gating_radius_km``,
+        and a default here would be a second copy of them.
+
         Args:
             lat: Measurement latitude in degrees
             lon: Measurement longitude in degrees
-            threshold: Mahalanobis distance threshold (default: 6.0, ~95% chi-squared)
+            threshold: Mahalanobis distance threshold (~95% chi-squared)
             min_radius_km: Minimum radius in km for collapsed covariance fallback
-        
+
         Returns:
             True if measurement is within the validation gate
         """

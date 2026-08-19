@@ -1,0 +1,164 @@
+[
+  {
+    "name": "Ref0",
+    "filepath": "fs:MRMS_REF_0C_DIR",
+    "key": "Ref0",
+    "method": "max"
+  },
+  {
+    "name": "Ref5",
+    "filepath": "fs:MRMS_REFM5C_DIR",
+    "key": "Ref5",
+    "method": "max"
+  },
+  {
+    "name": "Ref15",
+    "filepath": "fs:MRMS_REFM15C_DIR",
+    "key": "Ref15",
+    "method": "max"
+  },
+  {
+    "name": "NLDN",
+    "filepath": "fs:MRMS_NLDN_DIR",
+    "key": "maxCGFlashDensity",
+    "method": "max"
+  },
+  {
+    "name": "EchoTop18",
+    "filepath": "fs:MRMS_ECHOTOP18_DIR",
+    "key": "maxEchoTop18",
+    "method": "max"
+  },
+  {
+    "name": "EchoTop18 (95th)",
+    "filepath": "fs:MRMS_ECHOTOP18_DIR",
+    "key": "p95EchoTop18",
+    "method": "percentile",
+    "percentile": 95
+  },
+  {
+    "name": "EchoTop18 (90th)",
+    "filepath": "fs:MRMS_ECHOTOP18_DIR",
+    "key": "p90EchoTop18",
+    "method": "percentile",
+    "percentile": 90
+  },
+  {
+    "name": "EchoTop30",
+    "filepath": "fs:MRMS_ECHOTOP30_DIR",
+    "key": "maxEchoTop30",
+    "method": "max"
+  },
+  {
+    "name": "EchoTop30 (90th)",
+    "filepath": "fs:MRMS_ECHOTOP30_DIR",
+    "key": "p90EchoTop30",
+    "method": "percentile",
+    "percentile": 90
+  },
+  {
+    "name": "EchoTop50 (90th)",
+    "filepath": "fs:MRMS_ECHOTOP50_DIR",
+    "key": "p90EchoTop50",
+    "method": "percentile",
+    "percentile": 90
+  },
+  {
+    "name": "VIL",
+    "filepath": "fs:MRMS_VIL_DIR",
+    "key": "maxVIL",
+    "method": "max"
+  },
+  {
+    "name": "VIL (95th)",
+    "filepath": "fs:MRMS_VIL_DIR",
+    "key": "p95VIL",
+    "method": "percentile",
+    "percentile": 95
+  },
+  {
+    "name": "VIL (90th)",
+    "filepath": "fs:MRMS_VIL_DIR",
+    "key": "p90VIL",
+    "method": "percentile",
+    "percentile": 90
+  },
+  {
+    "name": "VIL (50th)",
+    "filepath": "fs:MRMS_VIL_DIR",
+    "key": "p50VIL",
+    "method": "percentile",
+    "percentile": 50
+  },
+  {
+    "name": "VIL Density",
+    "filepath": "fs:MRMS_DVIL_DIR",
+    "key": "maxVILDensity",
+    "method": "max"
+  },
+  {
+    "name": "VIL Density (95th)",
+    "filepath": "fs:MRMS_DVIL_DIR",
+    "key": "p95VILDensity",
+    "method": "percentile",
+    "percentile": 95
+  },
+  {
+    "name": "VIL Density (90th)",
+    "filepath": "fs:MRMS_DVIL_DIR",
+    "key": "p90VILDensity",
+    "method": "percentile",
+    "percentile": 90
+  },
+  {
+    "name": "VIL Density (50th)",
+    "filepath": "fs:MRMS_DVIL_DIR",
+    "key": "p50VILDensity",
+    "method": "percentile",
+    "percentile": 50
+  },
+  {
+    "name": "AzShear Low",
+    "filepath": "fs:MRMS_AZSHEARLOW_DIR",
+    "key": "maxAzShearLow",
+    "method": "max"
+  },
+  {
+    "name": "AzShear Low (95th)",
+    "filepath": "fs:MRMS_AZSHEARLOW_DIR",
+    "key": "p95AzShearLow",
+    "method": "percentile",
+    "percentile": 95
+  },
+  {
+    "name": "AzShear Mid",
+    "filepath": "fs:MRMS_AZSHEARMID_DIR",
+    "key": "maxAzShearMid",
+    "method": "max"
+  },
+  {
+    "name": "AzShear Mid (95th)",
+    "filepath": "fs:MRMS_AZSHEARMID_DIR",
+    "key": "p95AzShearMid",
+    "method": "percentile",
+    "percentile": 95
+  },
+  {
+    "name": "PrecipRate",
+    "filepath": "fs:MRMS_PRECIPRATE_DIR",
+    "key": "maxPrecipRate",
+    "method": "max"
+  },
+  {
+    "name": "Reflectivity at Lowest Altitude",
+    "filepath": "fs:MRMS_RALA_DIR",
+    "key": "maxRALA",
+    "method": "max"
+  },
+  {
+    "name": "VII",
+    "filepath": "fs:MRMS_VII_DIR",
+    "key": "maxVII",
+    "method": "max"
+  }
+]

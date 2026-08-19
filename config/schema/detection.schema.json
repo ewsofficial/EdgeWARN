@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "detection.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "detection", "tracker", "gatemapper", "morphology", "alert_matching", "save", "hail"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "detection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["refl_threshold", "min_seed_percentage", "drop_offset", "stormcell_cleanup_max_age_minutes", "fallback_dt_seconds", "tracking_disabled_defaults", "dataset_load_max_workers"],
+      "properties": {
+        "refl_threshold": { "type": "number" },
+        "min_seed_percentage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "drop_offset": { "type": "number", "minimum": 0 },
+        "stormcell_cleanup_max_age_minutes": { "type": "integer", "minimum": 1 },
+        "fallback_dt_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "tracking_disabled_defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tracking_mode", "prediction_count", "event_type"],
+          "properties": {
+            "tracking_mode": { "type": "string" },
+            "prediction_count": { "type": "integer", "minimum": 0 },
+            "event_type": { "type": "string" }
+          }
+        },
+        "dataset_load_max_workers": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "tracker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decay_max_refl_dbz", "decay_confidence_factor", "decay_confidence_floor"],
+      "properties": {
+        "decay_max_refl_dbz": { "type": "number" },
+        "decay_confidence_factor": { "type": "number", "minimum": 0, "maximum": 1 },
+        "decay_confidence_floor": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "gatemapper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_refl_floor", "dynamic_min_threshold", "max_refl_clamp", "crop_pad_px", "reject_clusters_at_or_below_gates", "contour_downsample", "contour_downsample_adaptive", "contour_level", "coordinate_decimals"],
+      "properties": {
+        "baseline_refl_floor": { "type": "number" },
+        "dynamic_min_threshold": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["switch_max_refl", "low", "high"],
+          "properties": {
+            "switch_max_refl": { "type": "number" },
+            "low": { "type": "number" },
+            "high": { "type": "number" }
+          }
+        },
+        "max_refl_clamp": { "type": "number" },
+        "crop_pad_px": { "type": "integer", "minimum": 0 },
+        "reject_clusters_at_or_below_gates": { "type": "integer", "minimum": 0 },
+        "contour_downsample": { "type": "integer", "minimum": 1 },
+        "contour_downsample_adaptive": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["keep_all_below_points", "coarse_below_points", "keep_all_step", "coarse_step"],
+          "properties": {
+            "keep_all_below_points": { "type": "integer", "minimum": 1 },
+            "coarse_below_points": { "type": "integer", "minimum": 1 },
+            "keep_all_step": { "type": "integer", "minimum": 1 },
+            "coarse_step": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "contour_level": { "type": "number" },
+        "coordinate_decimals": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "morphology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_pixels_full_analysis", "min_contour_points_for_defects"],
+      "properties": {
+        "min_pixels_full_analysis": { "type": "integer", "minimum": 0 },
+        "min_contour_points_for_defects": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "alert_matching": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events", "polygon_match_buffer_deg", "point_match_buffer_deg", "snapshot_cache_max_entries", "geometry_cache_max_entries"],
+      "properties": {
+        "events": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } },
+        "polygon_match_buffer_deg": { "type": "number", "minimum": 0 },
+        "point_match_buffer_deg": { "type": "number", "minimum": 0 },
+        "snapshot_cache_max_entries": { "type": "integer", "minimum": 1 },
+        "geometry_cache_max_entries": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "save": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["polygon_decimals", "centroid_decimals"],
+      "properties": {
+        "polygon_decimals": { "type": "integer", "minimum": 0 },
+        "centroid_decimals": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "hail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contour_sampling_step", "preciptype_class", "contour_level"],
+      "properties": {
+        "contour_sampling_step": { "type": "integer", "minimum": 1 },
+        "preciptype_class": { "type": "integer" },
+        "contour_level": { "type": "number" }
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
+from EdgeWARN.process.detect.config import DetectionConfig
 from EdgeWARN.process.detect.detect import detect_cells
 
 @pytest.fixture
@@ -34,7 +35,8 @@ def test_detect_cells_flow(mock_dependencies):
          
         entries = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
-            30, 40, -100, -90
+            30, 40, -100, -90,
+            detection_config=DetectionConfig.from_yaml(),
         )
         
     assert entries == []
@@ -62,7 +64,8 @@ def test_detect_cells_load_fail(mock_dependencies):
     with patch("EdgeWARN.process.detect.detect.DetectionDataHandler", return_value=handler):
          entries = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
-            30, 40, -100, -90
+            30, 40, -100, -90,
+            detection_config=DetectionConfig.from_yaml(),
         )
     
     assert entries == []
@@ -80,7 +83,8 @@ def test_detect_cells_preciptype_fail(mock_dependencies):
          
         entries = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
-            30, 40, -100, -90
+            30, 40, -100, -90,
+            detection_config=DetectionConfig.from_yaml(),
         )
         
     # Should still proceed to save, but warn
@@ -99,7 +103,9 @@ def test_detect_return_probsevere(mock_dependencies):
          
         entries, ps_ds = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
-            30, 40, -100, -90, return_probsevere=True
+            30, 40, -100, -90,
+            detection_config=DetectionConfig.from_yaml(),
+            return_probsevere=True,
         )
     
     assert ps_ds == ps_ds_mock
@@ -121,7 +127,9 @@ def test_detect_return_datasets(mock_dependencies):
 
         entries, dataset_context = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
-            30, 40, -100, -90, return_datasets=True
+            30, 40, -100, -90,
+            detection_config=DetectionConfig.from_yaml(),
+            return_datasets=True,
         )
 
     assert entries == []
@@ -139,7 +147,9 @@ def test_detect_cells_bypasses_gate_mapper_when_polygon_expansion_disabled(mock_
 
         entries = detect_cells(
             "radar.grib2", "ps.json", "pt.grib2", io_manager,
-            30, 40, -100, -90, disable_polygon_expansion=True
+            30, 40, -100, -90,
+            detection_config=DetectionConfig.from_yaml(),
+            disable_polygon_expansion=True,
         )
 
     assert entries == []

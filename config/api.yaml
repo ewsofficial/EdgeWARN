@@ -1,94 +1,164 @@
 # api.yaml — Audit §9 Node APIs
 #
-# Source: src/api/config/index.js; middleware/; repositories/artifactRepository.js:14-76; services/validation.js:18-19; services/renders.js:5; routes/v3/; src/EdgeWARN/api/server.js; src/EWMRS/api/server.js:17-18,77-79,145
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Source: src/api/config/index.js:48-78,104-186; server.js:22-23; app.js:22-36;
+#         middleware/cors.js:6-13; middleware/rateLimit.js:3-5;
+#         middleware/requestId.js:3; middleware/security.js:6-13,21-24;
+#         middleware/logging.js:5; repositories/artifactRepository.js:14,24-42,79,90;
+#         services/validation.js:1-3,18-19; services/ancillary.js:15;
+#         services/analysis.js:4; services/renders.js:5-7,15-16,27-29,48,51,61,63,86;
+#         config/productCatalog.js:3,10,13-14;
+#         routes/v3/index.js:6,9,11-16,34-37,39-40
+# Loaded and schema-validated by src/api/config/index.js before the unified API
+# starts. CLI and environment overlays retain their documented precedence.
+#
+# Two keys that were here are deleted, not moved: `server.json_body_limit` and
+# `server.cluster_max_workers`. Each existed only in the legacy
+# src/EdgeWARN/api/server.js, and that whole tree was removed in commit a3d6cbb --
+# so no line in the repository can be cited for either. The live service mounts no
+# JSON body parser and does not cluster. Recording them under `server` claimed the
+# live server honored them.
+
+schema_version: 1
 
 server:
-  host: 0.0.0.0
-  port: 5000
-  debug_port: 3001                      # --debug-server
-  request_timeout_ms: 30000             # responds 503 on timeout
-  json_body_limit: 16kb
-  cluster_max_workers: 4                # min(cpu_count, 4)
-  static_root: src/EWMRS
-  openapi_spec: openapi/v3.yaml
+  host: 0.0.0.0                         # server.js:23, the app.listen bind address
+  port: 5000                            # config/index.js:123, env PORT
+  debug_port: 3001                      # server.js:22, --debug-server
+  request_timeout_ms: 30000             # config/index.js:124; responds 503 (security.js:24)
+  # Both are resolved against the source tree by config/index.js:169-170 and reach
+  # app.js only as the already-validated absolute paths (:26 and :23).
+  static_root: <src_dir>/EWMRS
+  openapi_spec: <src_dir>/api/openapi/v3.yaml
+  # app.js:33. In production the real package version is withheld and this label
+  # is served instead.
   production_version_label: '2.x'
 
-base_dir:
-  windows: 'C:\EdgeWARN_input'
-  posix: ~/EdgeWARN_input
-  # conflicting --base-dir / --base_dir / EDGEWARN_BASE_DIR / BASE_DIR values are rejected
-  derived: {data: <base_dir>/data, gui: <base_dir>/gui, wpc: <base_dir>/wpc}
+  # routes/v3/index.js:40, self-reported at GET /api/v3. Duplicated as
+  # `info.version` in openapi/v3.yaml, and unrelated to the package version above.
+  v3_api_version: '3.0.0'
 
 security:
-  allowed_origins: []                   # deny-all in production
-  trust_proxy: false                    # TRUST_PROXY=true rejected in production
+  hsts_max_age_seconds: 31536000        # security.js:8; preserves Helmet 8's shipped max-age
+  # DENY-ALL, in every environment. cors.js:6-9 answers `callback(null, false)`
+  # for an origin absent from the set and for a missing Origin header; there is
+  # no allow-all branch. The permissive fallback existed only in the legacy
+  # src/EdgeWARN/api/server.js, removed in a3d6cbb, where a missing ALLOWED_ORIGINS
+  # became `origin: true` -- and even there only outside production, which already
+  # collapsed to []. Leaving this empty is the safe default; widen it
+  # deliberately, per deployment.
+  #
+  # The schema constrains each entry to a bare scheme://host[:port], which is what
+  # `parseOrigins` (config/index.js:48) already enforces at runtime by
+  # requiring `url.origin === origin`. It had been a plain string array, so the
+  # catalog accepted the `*` the code rejects -- documenting a weaker policy than
+  # the one that actually runs.
+  allowed_origins: []
+
+  # `parseTrustProxy`, config/index.js:60. Tri-shaped: false when unset/'false';
+  # the integer 1 when 'true' (and that form THROWS under NODE_ENV=production,
+  # :67); otherwise the comma-split list from TRUST_PROXY_IPS.
+  #
+  # The schema cannot distinguish safe `false` from unsafe `true`: the tri-shape
+  # requires booleans, and numeric bounds do not apply to them. The parser rejects
+  # `true` in production (and treats it as one hop otherwise); the catalog test
+  # pins the shipped YAML value. The schema still bounds hop counts and requires a
+  # nonempty list of address/preset entries.
+  trust_proxy: false
+
+  # Read at cors.js:10-13, which app.js:36 hands this whole block. The code holds
+  # no fallback for any of them, so this file is the only source.
+  #
+  # The schema narrows deliberately rather than describing the full range: the two
+  # lists take an item `enum` and `credentials` a `const false`, so a deployment
+  # may NARROW this policy but cannot broaden it by editing YAML. Broadening CORS
+  # is a reviewed schema change, which is the conservative validation the
+  # extraction plan requires of security settings. `max_age` is freely tunable
+  # within 0..86400.
   cors:
     methods: [GET, HEAD, OPTIONS]
     allowed_headers: [Content-Type, X-Request-Id]
     max_age: 600
     credentials: false
+
+  # `const "'self'"` in the schema for the same reason as cors.credentials above:
+  # read from here (security.js:7), but widening the policy is a reviewed change.
   csp_default_src: "'self'"
-  hsts_max_age_seconds: 31536000        # includeSubDomains
-  compression_skip_media: image/*
+  compression_skip_media: image/*       # security.js:13
+
+logging:
+  access_log_enabled: true              # app.js:35 mounts createAccessLog only when enabled
 
 rate_limits:
-  per_second: {max: 40, window_ms: 1000}
-  per_minute: {max: 2000, window_ms: 60000}
+  # max = 0 disables the limiter outright (rateLimit.js:4 returns null and the
+  # entry is filtered out), so 0 is not "unlimited by accident" -- it is the
+  # documented off switch.
+  #
+  # Both windows and both maxima are parameters of `createRateLimiters`
+  # (rateLimit.js:3), supplied from this file at config/index.js:180-181. Editing
+  # a window here takes effect on restart; no call-site change is needed.
+  per_second: {max: 40, window_ms: 1000}      # config/index.js:125, RATE_LIMIT_MAX_SEC
+  per_minute: {max: 2000, window_ms: 60000}   # config/index.js:126, RATE_LIMIT_MAX_MIN
   standard_headers: true
   legacy_headers: false
-  # max = 0 disables the limiter
 
 artifacts:
-  size_limits_bytes: {json: 8388608, binary: 134217728, image: 33554432}
-  json_cache: {max_entries: 256, max_size_bytes: 33554432}
-  list_limit: 1000
+  # All three are required constructor arguments with no defaults behind them:
+  # artifactRepository.js:29-34 rejects an incomplete map rather than filling it
+  # in, because a missing size limit would make the `stat.size >` guard at :79
+  # vacuously false and so read an unbounded artifact.
+  size_limits_bytes: {json: 8388608, binary: 134217728, image: 33554432}  # :79, per kind
+  json_cache: {max_entries: 256, max_size_bytes: 33554432}                # :38-40
+  list_limit: 1000                      # artifactRepository.js:90
+
+  # renders.js:86. A decoded chunk may exceed rows*cols*channels*bytes by up to
+  # this much before it is rejected as INVALID_ARTIFACT; it absorbs gzip framing
+  # rather than allowing a genuinely larger payload.
+  chunk_length_slack_bytes: 1024
 
 pagination:
-  default_limit: 100
-  max_limit: 1000
+  default_limit: 100                    # validation.js:18; :19 repeats it as the invalid-input fallback
+  max_limit: 1000                       # :19, Math.min(limit, maxLimit)
 
 cache_control_max_age:
-  collection: 5
-  resource: 60
-  asset: 31536000                       # immutable
+  collection: 5                         # routes/v3/index.js:34
+  resource: 60                          # :35-36, JSON and GeoJSON alike
+  asset: 31536000                       # :37, sent with `immutable`
 
 query:
-  allowed_params: [cursor, limit]       # plus `source` on alert endpoints
-  max_value_length: 256
-  limit_pattern: '^(?:[1-9][0-9]{0,2}|1000)$'
+  # routes/v3/index.js:12, and only on the collection paths enumerated at :6 and
+  # matched at :11. Every OTHER v3 path allows no query parameter at all -- the
+  # allowlist is literally empty there, so this is not a global permission.
+  # :13 adds `source` on the alert paths.
+  #
+  # validateQuery is mounted on the v3 router only (:39), so the /api/v2
+  # compatibility routes are not filtered by any of this.
+  allowed_params: [cursor, limit]
+  max_value_length: 256                 # :15
+  limit_pattern: '^(?:[1-9][0-9]{0,2}|1000)$'   # :9, compiled once per router
 
 render_defaults:
-  grid: {rows: 10, cols: 20, tile_size: 350}
+  grid: {rows: 10, cols: 20, tile_size: 350}    # renders.js:28
+
+  # renders.js:29, applied by the shared grid() guard (:5-7) to the `tile_grid` read
+  # from an artifact's index.json -- never to anything a caller supplies.
+  # Out-of-range is DISCARDED, not fatal: grid() returns null and the product and
+  # tile paths fall back to the defaults above (:48, :51, :61, :63). Only a chunk
+  # index rejects it outright (:15-16).
+  grid_maxima: {rows: 100, cols: 100, tile_size: 4096}
 
 validation:
-  timestamp_format: 'YYYYMMDD-HHMMSS'
-  alert_sources: [official, edgewarn]
-  radar_site_pattern: '^[A-Z0-9]{4}$'
-  radar_products_count: 7
+  # Read by services/ancillary.js:15, which builds its Set from this key inside
+  # createAncillaryServices and keeps no copy of its own. An allowlist -- a product
+  # absent from this set is rejected before any file lookup, so the recorded names
+  # matter, not just the count. CCORH is present here but absent from ewmrs_render.yaml
+  # `nexrad_gui.variable_colormaps`, which colors only the other six, so the API
+  # accepts one product the renderer never draws.
+  radar_products: [DBZH, VRADH, WRADH, PHIDP, CCORH, RHOHV, ZDR]
 
 product_catalog:
-  file: src/api/config/product-catalog.json
-  entries: 31                           # {id, legacyId, storageDirectory, legacyFilePrefix, representation, colormapId}
-
-legacy_ewmrs:
-  port: 3003
-  debug_port: 3004
-  rate_limits: {per_second: 30, per_minute: 1800, window_ms: [1000, 60000]}
-  list_files_limit: 50                  # excludes .idx
-
-env_overrides:
-  server.port: PORT
-  server.request_timeout_ms: REQUEST_TIMEOUT_MS
-  rate_limits.per_second.max: RATE_LIMIT_MAX_SEC
-  rate_limits.per_minute.max: RATE_LIMIT_MAX_MIN
-  rate_limits.per_second.window_ms: RATE_LIMIT_WINDOW_MS_SEC
-  rate_limits.per_minute.window_ms: RATE_LIMIT_WINDOW_MS_MIN
-  legacy_ewmrs.rate_limits.per_second: EWMRS_RATE_LIMIT_MAX_SEC
-  legacy_ewmrs.rate_limits.per_minute: EWMRS_RATE_LIMIT_MAX_MIN
-  security.allowed_origins: ALLOWED_ORIGINS
-  security.trust_proxy: TRUST_PROXY_IPS, TRUST_PROXY
-  base_dir: EDGEWARN_BASE_DIR, BASE_DIR
-  # NODE_ENV drives isProduction; PROJ_DATA/PROJ_LIB/GDAL_DATA are set by
-  # EWMRS/render/tools.py for child processes and are not config keys.
+  # A count of src/api/config/product-catalog.json, which the Node API imports
+  # directly. Nothing derives one from the other and this is the number reported as
+  # diagnostics.effective.renderProductCount, so a catalog that gained an entry
+  # would keep serving the stale count. An invariant test compares the two and
+  # checks each entry's fields, since a count alone would pass for 31 empty objects.
+  entries: 31

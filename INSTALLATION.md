@@ -39,6 +39,25 @@ Defaults:
 
 The unified API resolves the same platform default when no override is set.
 
+`config/filesystem.yaml` is the sole authority for these defaults. Precedence
+is CLI (`--base-dir` or `--base_dir`), then `EDGEWARN_BASE_DIR`, then legacy
+`BASE_DIR`, then YAML. The legacy spellings remain supported for compatibility.
+
+## Configuration tree
+
+The application validates all 18 YAML documents and their schemas before
+starting workers or an HTTP listener. Select a deployed tree with `--config-dir
+/path/to/config` or `EDGEWARN_CONFIG_DIR=/path/to/config`; otherwise discovery
+walks up from the installed source tree. Copy the whole `config/` directory,
+including `config/schema/`, for deployment.
+
+```bash
+npm run validate-config
+PYTHONPATH=src python -m common.config.validate
+```
+
+See `docs/core/configuration.md` for the authoritative owner of each setting.
+
 Overrides:
 
 - Python CLIs (`run.py`, `process_historical.py`): `--base_dir` or `--base-dir`
@@ -91,6 +110,7 @@ Common optional flags:
 - `--lat_limits <LAT_MIN> <LAT_MAX>` default `20 55`
 - `--lon_limits <LON_MIN> <LON_MAX>` default `230 300`
 - `--base_dir` / `--base-dir`
+- `--config-dir`
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
@@ -127,8 +147,8 @@ Common optional flags:
 - `--end <ISO8601>` required
 - `--lat <LAT_MIN> <LAT_MAX>` default `20 55`
 - `--lon <LON_MIN> <LON_MAX>` default `-130 -60`
-- `--output <path>` compatibility argument; currently does not redirect the final runtime stormcell output path
 - `--base_dir` / `--base-dir`
+- `--config-dir`
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
@@ -139,7 +159,7 @@ Common optional flags:
 
 Historical-processing note:
 
-- `process_historical.py` still writes its actual stormcell products to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json` through the normal detection and integration pipeline. `--output` is parsed and later checked for existence logging, but is not currently used to relocate the final persisted runtime artifact.
+- `process_historical.py` writes its stormcell products to `<BASE_DIR>/data/stormcells/stormcells_{timestamp}.json` through the normal detection and integration pipeline.
 
 ## Maintaining NWS Zone Assets
 
@@ -158,10 +178,16 @@ Flags:
 - `--timeout-seconds <int>` default `30`
 - `--max-retries <int>` default `3`
 - `--max-workers <int>` default `16`
-- `--pause-seconds <float>` default `0.0`
-- `--no-progress` disable progress output
+- `--pause-seconds <float>` default `0.05`
+- `--progress` / `--no-progress` progress output, default on
 - `--apply` write updates; without it the command is a dry run
 - `--report-path <path>` write the sync report JSON to a file
+- `--config-dir <path>` select the `config/` tree to read defaults from
+
+The listed defaults are owned by `config/nws.yaml` under `zone_sync`, not by the
+parser, so a deployed tree can change them. `--pause-seconds` is scaled by
+`--max-workers` to hold a whole-job rate: `0.05` is roughly 20 requests/second
+regardless of thread count. `--apply` and `--report-path` have no YAML keys.
 
 ## Tests
 

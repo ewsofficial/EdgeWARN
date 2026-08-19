@@ -169,11 +169,12 @@ The most important drift risks found in the baseline are:
 - `nws/zone_sync.py` `pause_seconds` is `0.0` in argparse but `0.05` in the
   constructor (`zone_sync.py:159`). `config/nws.yaml` recorded `0.0`, so
   transcription silently picked one side of a live disagreement.
-- Two different user-agent strings exist: `zone_sync.py:160`
-  `"(EdgeWARN/1.0, contact@edgewarn.com)"` versus `nexrad/config.py:9`
+- Two different user-agent strings existed: `zone_sync.py`
+  `"(EdgeWARN/1.0, contact@edgewarn.com)"` versus `nexrad/config.py`
   `"(EdgeWARN/2.7.0, ewsbackend@gmail.com)"` — different versions *and*
-  different contacts. Both must become one configured template interpolating
-  `package.json`.
+  different contacts. **Done.** Both are gone; `runtime.yaml identity` is the one
+  owner and `format_user_agent()` interpolates the `package.json` version, so
+  neither line can be cited any more.
 - `config/nexrad.yaml` `cli.sites: []` misreads the source sentinel.
   `nexrad/pipeline/__init__.py:74` distinguishes `None` from `[]`, so `[]` is
   not "all sites".
@@ -189,38 +190,48 @@ The most important drift risks found in the baseline are:
   Python, the EdgeWARN API, and the EWMRS API.
 - EdgeWARN API version strings and the NEXRAD weather API user agent copy the
   package version instead of reading `package.json`.
-- WPC cleanup searches `surface_analysis_*.geojson` while generated artifacts
-  are named `wpc_sfc_*`; migration tests must expose and resolve this existing
-  mismatch separately from value-preserving extraction.
+- ~~WPC cleanup searches `surface_analysis_*.geojson` while generated artifacts
+  are named `wpc_sfc_*`.~~ **Refuted in Phase 0**: `surface_analysis` is only a
+  directory name, and the sweep and the writer have always agreed on the
+  `wpc_sfc_` prefix. The glob and the output template are now both keys in
+  `wpc.yaml`, coupled by a round-trip test that also pins that the glob does not
+  match `latest_filename`.
 
 ## Target configuration tree
 
-The tree is the 18 flat per-subsystem files that already exist, plus one JSON
+The tree is the flat per-subsystem files that already exist, plus one JSON
 Schema per file. Use YAML for operator-edited settings and product catalogs,
 JSON for JSON Schema files. Add a maintained YAML parser to Node rather than
 introducing parallel JSON-only copies of shared settings.
 
 ```text
 config/
-├── alerts.yaml              ├── kalman.yaml
-├── api.yaml                 ├── lineage.yaml
+├── api.yaml                 ├── kalman.yaml
+├── api_index.yaml           ├── lineage.yaml
 ├── detection.yaml           ├── metar.yaml
 ├── ewmrs_pipeline.yaml      ├── mrms_goes.yaml
 ├── ewmrs_rap_uint16.yaml    ├── nexrad.yaml
 ├── ewmrs_render.yaml        ├── nws.yaml
 ├── filesystem.yaml          ├── runtime.yaml
-├── historical.yaml          ├── synoptic_rap.yaml
-├── integration.yaml         └── wpc.yaml
-└── schema/
-    └── <name>.schema.json   (one per file above, 18 total)
+├── historical.yaml          ├── scheduler.yaml
+├── integration.yaml         ├── synoptic_rap.yaml
+└── schema/                  └── wpc.yaml
+    └── <name>.schema.json   (one per file above, 19 total)
 ```
 
-No file is added and none is renamed. In particular there is no
-`config/paths.yaml`, no `config/products/`, no `config/ingest/`, no
-`config/render.yaml` and no `config/colormaps.json` — earlier drafts of this
-plan named those, and they do not exist. CTAM configuration and the
-`colormaps.json` relocation are out of scope here and become a separate
-follow-up.
+`alerts.yaml` is gone. It was never one subsystem: it held CTAM alert emission,
+the MRMS polling loop, the API index and a pipeline bootstrap flag, grouped only
+because the audit listed them together. The scheduler and index halves became
+`scheduler.yaml` and `api_index.yaml`; the CTAM half was dropped from the
+catalogs entirely, leaving `schema.py` and `manager.py` as the sole owners of
+those literals until CTAM is extracted on its own terms. Whatever file finally
+owns NWS alert *parsing* is `nws.yaml`, which already does.
+
+Otherwise no file is renamed. In particular there is no `config/paths.yaml`, no
+`config/products/`, no `config/ingest/`, no `config/render.yaml` and no
+`config/colormaps.json` — earlier drafts of this plan named those, and they do
+not exist. CTAM configuration and the `colormaps.json` relocation are out of
+scope here and become a separate follow-up.
 
 Do not create generated copies of these files under `src/`. Python and Node
 must resolve the repository configuration root through one loader contract.
@@ -250,7 +261,7 @@ than an idealized model.
 | `ewmrs_render.yaml` `mrms_layers` | `{name, colormap_key}`, plus `filepath` and `outdir` to be added | 15 |
 | `ewmrs_render.yaml` `goes_layers` | `common` / `reflectance` / `brightness_temp` groups | 16 |
 | `integration.yaml` `stats_datasets` | `{name, source, key, method, percentile?}` | 25 |
-| `ewmrs_rap_uint16.yaml` `layers` | `{name, short_names, filter, units, scale, colormap_key}` | 23 explicit + 20 generated from `pressure_levels_mb` |
+| `ewmrs_rap_uint16.yaml` | `{schema_version, max_timestamps, timestamp_format, force}` runtime policy | 4 keys; the 43-layer Uint16 display catalog remains code-owned in `src/EWMRS/rap/config.py` by the Phase 5 decision not to ship inert catalog keys |
 
 There are no stable lowercase product IDs and no `roles:` membership map. The
 readiness subset is a separate list of product strings, not a role flag, and
@@ -275,11 +286,22 @@ Add:
   validation, and domain accessors, with frozen dataclasses per file following
   the `from_yaml` pattern in `src/EdgeWARN/process/detect/kalman/config.py`.
   This is one module, not a `src/util/config/` loader plus a separate
-  `src/common/config/` model package. It must import only the standard library,
-  `yaml` and `jsonschema` — no `util.file`, no domain modules — so it can be
-  imported before the filesystem is initialized.
+  `src/common/config/` model package. It must import only the standard library
+  and `yaml` — no `util.file`, no domain modules — so it can be imported before
+  the filesystem is initialized.
+- **Schema validation is a hand-rolled walker, not `jsonschema`.** Earlier
+  drafts of this plan required `jsonschema` here and in Phase 1; that is
+  **corrected**. `src/config/loader.js` implements the same walker over the same
+  keyword set, and cross-language parity is an acceptance requirement — a full
+  validator on the Python side alone would accept `$ref`/`oneOf`/`format`
+  schemas that Node still rejects. The walker's unknown-keyword guard is also a
+  property `jsonschema` would remove rather than add, since it ignores keywords
+  it does not recognize and would let a misspelled `requred` enforce nothing.
+  And `environment.yml` is the only dependency manifest in the tree; it does not
+  list `jsonschema`. Revisit only if a schema needs composition keywords, at
+  which point both loaders take the dependency together.
 - `src/config/loader.js` for Node loading and the same schema validation.
-- **`schema_version: 1` in all 18 files.** None has one today. Note the
+- **`schema_version: 1` in all 19 files.** None has one today. Note the
   collision: `ewmrs_render.yaml:12` already uses `schema_version: 2` for the
   chunk *wire* format; rename that key to `chunk_format.wire_version` before
   adding the config-level one.
@@ -309,19 +331,83 @@ Three import-time behaviors will silently defeat a naive loader:
 - **`src/EWMRS/render/config.py:221` snapshots `file_list = get_file_list()` at
   import time**, capturing pre-`--base-dir` paths. Delete it or make it lazy.
 
+**Done, with one bullet deliberately unfinished.**
+
+`util/file.py` no longer binds a stale answer: `IOManager.get_base_dir_arg()` peeks
+`--base_dir` off `sys.argv` before the module-scope `_define_paths()` call, so the
+113 path globals are already correct at import. A sibling `get_config_dir_arg()`
+does the same for `--config-dir`, needed because that bind now reads
+`filesystem.yaml` for the colormap search path — earlier than `export_config_root`
+publishes `EDGEWARN_CONFIG_DIR`. `initialize_filesystem()` remains as phase two,
+for a spawned child (which has no argv) and for a programmatic caller.
+
+`render/config.py`'s `file_list` snapshot is deleted; `get_file_list()` is called
+per use, and `test_known_drift.py` asserts the attribute's absence on that module.
+`tests/integration/test_ewmrs_pipeline.py` had a `raising=False` setattr for
+`file_list` on `EWMRS.pipeline`, which was always a no-op — the snapshot was never
+there, and `pipeline.py` imports the accessors by name — so it is gone rather than
+retargeted, to avoid implying cleanup once read it.
+
+`src/run.py:41` still calls `get_args()` at module scope, outside the `__main__`
+guard. The hard requirement is met — the loader is memoized on
+`(resolved_root, name)` and idempotent, so `spawn` re-execution is cheap and a YAML
+error surfaces once per process — but the preference to move the work into `main()`
+is not. The module scope binds a large set of globals that the loop functions close
+over, so relocating it is a refactor of `run.py`'s structure rather than a
+configuration change, and it is out of scope here. The accessor-per-use pattern at
+`run.py:259` is the pattern to follow for any value added later.
+
 ### Token expansion
 
 Expand only an explicit allowlist of tokens in configured path values:
 `<base_dir>`, `<gui_dir>`, and a new `<src_dir>` needed by
-`filesystem.yaml:22`, because `src/util/file.py:184` resolves
+`filesystem.yaml`'s colormap search path, because `src/util/file.py` resolves
 `src/EWMRS/colormaps.json` relative to `__file__`, not the working directory.
 
-Leave `<SITE>`, `<scan_timestamp>` and `<volume_id>` in `ewmrs_render.yaml:86`
-alone — those are runtime format fields consumed by
-`src/EWMRS/render/nexrad.py`, not load-time tokens. Rewrite them to `{}` form so
-the two classes are visually distinct. Do not implement the allowlist by scanning
-for bare `<`/`>`: six comment lines and one expression value would
-false-positive.
+**Done.** `PATH_TOKENS` and `expand_path` in `src/common/config/loader.py`, mirrored
+by `PATH_TOKENS`/`expandPath` in `src/config/loader.js`. The token is mandatory and
+must lead, so a bare relative value is an error rather than something that quietly
+resolves against the working directory. `roots` carries only the tokens meaningful
+to the caller, which is what makes `<base_dir>` an error in a context that has no
+base directory instead of an empty expansion. `config/schema/filesystem.schema.json`
+repeats the allowlist as a `pattern` so a misspelled token is caught during
+validation, in both languages, before any expander runs; a test pins the two lists
+to each other.
+
+Traversal is rejected twice: textually (`..` segment, leading `/`, backslash
+separators) before any path is built, and by containment after resolving, which on
+the Python side is what catches a symlink inside the root pointing out of it.
+
+Two further rejections were added after a review pass found both loaders sharing the
+same two holes. A falsy or relative `roots` entry made `Path.resolve()` /
+`path.resolve` fall back to the working directory — the defect the mandatory leading
+token exists to prevent, arriving through the other argument, and silent because the
+result is still a plausible path. And a NUL byte was accepted, which on Windows
+renders as a space and so resolves to a real but different file. Neither is reachable
+from a schema-valid catalog today; both are two lines to reject, so they are rejected
+rather than documented as acceptable. The
+Node half of that check is the one `src/api/config/index.js` already had — that copy
+is gone, and `resolveRuntimeDirectory` now delegates to the shared expander, so the
+`<base_dir>` prefix rule has one implementation rather than two.
+
+`src/EWMRS/pipeline.py` assigned `fs.GUI_COLORMAP_JSON` from its own
+`__file__`-relative literal at module scope, which would have silently outranked the
+catalog for every EWMRS run. It resolved to the same file, so it was deleted rather
+than reconciled.
+
+Leave `<SITE>`, `<scan_timestamp>` and `<volume_id>` alone — none is a load-time
+token, and no rewrite is owed because none ever reached a catalog in either
+spelling. `SITE` and `scan_timestamp` are f-string parameters in
+`src/EWMRS/render/nexrad.py:70-77`, built per scan. `volume_id` is not a render
+field at all: it was a `cli.volume_id` key, deleted outright as an argument to one
+invocation rather than a deployment setting, and recorded as such at
+`config/nexrad.yaml:19-21`.
+
+The runtime fields that *are* in the catalogs already use `{}`
+(`mrms_goes.yaml:42-56`, `metar.yaml:13`, `integration.yaml:149-150`), so that class
+stays visually distinct from the `<token>/` the expander claims. Do not implement the allowlist by scanning for bare `<`/`>`: six
+comment lines and one expression value (`synoptic_rap.yaml`'s named capture groups)
+would false-positive.
 
 Both loaders must:
 
@@ -379,9 +465,22 @@ This affects the 16 flags in `src/util/io.py:83-109`, the historical flags at
 Help strings that read "(default: 37.5)" must stop naming a literal, since the
 default now comes from YAML.
 
-Use `src/common/ingest/synoptic/config.py:12-30` (`get_rap_max_age_minutes`) as
-the reference shape for an environment override: a named env-var constant, an
-`is None` unset test, and a `ValueError` that re-quotes the raw value.
+An environment override should keep the shape
+`src/common/ingest/synoptic/config.py`'s `get_rap_max_age_minutes` established: a
+named env-var constant, an unset test, and a `ValueError` that re-quotes the raw
+value. **That describes the semantics, not the location.** Earlier drafts read it
+as an endorsement of the bespoke `os.environ` read inside that function, which
+contradicted Phase 1 step 6 ("Implement CLI/environment overlay adapters without
+putting environment parsing inside domain modules") and the Phase 6 audit that
+flags new `os.environ` reads outside the overlay loaders. **Resolved in favour of
+the location rules.** The three properties now live in
+`common.config.overlay.resolve`: `value_type` for a key whose YAML value is
+`null` and therefore carries no type to infer, `minimum` for a bound that was
+previously enforced by hand, and an error message naming the variable instead of
+the bare `invalid literal for int()` that `int(raw)` produced. Domain modules
+pass `env_names=` and retain only the decision of whether a bad value is fatal —
+`EWMRS/render/render.py`'s `_resolve_tile_workers` still swallows one, because it
+alone has a working fallback in the CPU cap.
 
 Preserve existing aliases for one deprecation window:
 
@@ -408,7 +507,7 @@ uppercase constants.
 | `src/util/file.py` | Default base directories (Windows `C:\EdgeWARN_input`, POSIX `~/EdgeWARN_input`, workspace fallback), the cleanup age/count defaults, the `.idx`/`.gz` scan skip rules, and the colormap search path | `filesystem.yaml` |
 | `src/util/file.py` | The ~113 MRMS/GOES/RAP/METAR/NWS/stormcell/cell/alert/NEXRAD directory and manifest names | **Stays in code.** Derived from base dir; referenced by catalogs via attribute name |
 | `src/api/config/index.js` | Base-dir fallback and all API data/index directory mappings and required-directory list | `filesystem.yaml` plus `api.yaml` |
-| `src/EdgeWARN/api/config.js`, `src/EWMRS/api/server.js` | Legacy duplicates of the base-dir fallback, GUI root, and `GUI_SUBDIRS` | Legacy services; retire rather than wire. Flag if still deployed |
+| `src/EdgeWARN/api/`, `src/EWMRS/api/` | Legacy API services | Resolved: server source was deleted in `a3d6cbb`; only `src/api/` is active |
 | `src/EWMRS/api/routes/colormaps.js`, `src/EWMRS/api/routes/rap.js`, `src/EWMRS/pipeline.py` | Source-relative `colormaps.json` and `mappings.json` paths | Out of scope for this plan; see the follow-up note below |
 | `src/EWMRS/colormaps.json`, `src/EWMRS/mappings.json` | Colormap payload; RAP layer-to-colormap mapping | **Out of scope.** These stay where they are for now |
 
@@ -418,7 +517,7 @@ The loader joins derived names to the selected runtime base directory via
 
 Relocating `colormaps.json`, deleting `mappings.json` as an independent
 authority, and reconciling the `RAP_BestLiftedIndex_180_0mbAGL` drift noted above
-are a **separate follow-up**, not part of wiring the 18 files. They require a
+are a **separate follow-up**, not part of wiring the 19 files. They require a
 Node-side path change and an API response change, which is a different blast
 radius from reading YAML.
 
@@ -432,7 +531,7 @@ radius from reading YAML.
 | `src/EdgeWARN/process/integrate/core/integrator.py` | Complete ProbSevere source-field to output-field map | `integration.yaml` |
 | `src/EdgeWARN/process/integrate/integrate_rap.py` | Names chosen from the trusted transform registry; derived-field formula strings | `integration.yaml`; implementations stay in code. See the derived-formula note below |
 | `src/EWMRS/render/config.py` | Fifteen MRMS render layers and 16 GOES ABI layers, including source variables, fallbacks, ranges, colormaps, transforms, prefixes, and `fs.*` path attributes | `ewmrs_render.yaml` |
-| `src/EWMRS/rap/config.py` | Wind/thermodynamic pressure levels; full Uint16 RAP layer catalog; GRIB filters; variables/aliases; units; ranges; descriptions; output names; colormap keys | `ewmrs_rap_uint16.yaml` (colormap *matching* helpers stay in code) |
+| `src/EWMRS/rap/config.py` | 43-layer Uint16 display catalog, pressure levels, filters, scales, descriptions, output names, and colormap selection | Deliberately stays in this typed code registry. `ewmrs_rap_uint16.yaml` owns only retention/timestamp/force policy; extracting the display catalog would be a separate schema migration |
 | `src/common/ingest/nexrad/config.py`, `grouping.py` | Source buckets/API, allowed VCPs, elevation dedup/range policy, canonical elevation bins/readiness IDs, and supported waveform policy | `nexrad.yaml` |
 | `src/EWMRS/render/nexrad.py` | VCP-to-elevation labels and NEXRAD variable-to-colormap mapping | `nexrad.yaml` (selection policy) and `ewmrs_render.yaml` (colormaps) |
 | `src/api/routes/` NEXRAD validation | Duplicated allowed NEXRAD product set | Derived from `nexrad.yaml`; regexes remain code |
@@ -440,8 +539,8 @@ radius from reading YAML.
 | `src/EdgeWARN/process/detect/tools/alert_matcher.py` | Convective/flood event allowlist used for cell matching | `integration.yaml` |
 | `src/common/ingest/nws/main.py` | NWS dropped-event blocklist | `nws.yaml` |
 | `src/common/ingest/nws/zone_sync.py` | Zone-type catalog used by the maintenance sync | `nws.yaml` |
-| `src/common/ingest/wpc/config.py` | WPC feature types and display styles (`FEATURE_TYPES`, 7 front/pressure types with colors — undocumented in the audit) | `wpc.yaml` |
-| `src/common/ingest/wpc/converter.py` | Duplicated coded-front to GeoJSON feature-type mapping and output metadata labels | `wpc.yaml` |
+| ~~`src/common/ingest/wpc/config.py`~~ | **Done.** WPC feature types and display styles (`FEATURE_TYPES`, 7 front/pressure types with colors — undocumented in the audit). Snapshotted, because the converter's fallback makes a dropped entry render unnamed and black rather than fail | `wpc.yaml` |
+| ~~`src/common/ingest/wpc/converter.py`~~ | **Done.** The two duplicated feature-type lookups collapse into one `_style_for` helper. The output metadata labels (`source: WPC`, `product: Surface Analysis`) stayed in code: they identify the product itself, not a setting | `wpc.yaml` |
 
 There are no GOES RGB rows in this table. `src/EWMRS/render/goes_rgb.py`,
 `GOES_RGB_RECIPES`, the terminator angles, the solar cache, the gamma values and
@@ -480,14 +579,25 @@ tree but absent from the audit.
 | `src/common/ingest/mrms/timestamp_utils.py` | MRMS nominal two-minute cadence and midpoint rounding/selection policy | `mrms_goes.yaml` |
 | `src/common/pipeline/coordinator.py`, `goes_readiness.py` | Max entries, GOES lookback, candidate count, and 20-minute source offset | `runtime.yaml` |
 | `src/common/ingest/synoptic/config.py`, `downloader.py` | RAP bucket/path patterns, age/file limits, hourly lookback behavior, and environment alias | `synoptic_rap.yaml` |
-| `src/common/ingest/metar.py` | Station database URL (`https://aviationweather.gov/data/cache/stations.cache.json`, not the audit's `api.aviationweather.gov/v1/stations/`) and cycle URLs; request timeouts; user agent; station cache filename; CONUS bounds (lon `-125.0..-66.0`, not `-125..-67`); lookback; rounding; retention | `metar.yaml` |
+| ~~`src/common/ingest/metar.py`~~ | **Done.** Station database URL (`https://aviationweather.gov/data/cache/stations.cache.json`, not the audit's `api.aviationweather.gov/v1/stations/`) and cycle URLs; the two request timeouts; station cache filename; CONUS bounds (lon `-125.0..-66.0`, not `-125..-67`); lookback; rounding; retention. The user agent is not a `metar.yaml` key — it resolves from `runtime.yaml identity` | `metar.yaml` |
 | `src/common/ingest/nws/main.py`, `registry.py`, `geomapper.py` | Alerts URL; user agent/contact; request/chunk settings; two-hour registry TTL; property drop list; geometry rounding/simplification | `nws.yaml` |
 | `src/common/ingest/nws/zone_sync.py` | API URL templates, timeout, retries/backoff, worker count, pause, geometry precision, output path policy, and the `:160` user agent | `nws.yaml` `zone_sync` section |
-| `src/common/ingest/wpc/config.py`, `downloader.py`, `main.py` | Source URL, valid hours, source cadence, timeout, fallback-cycle count, file templates, and cleanup age | `wpc.yaml` |
-| `src/common/ingest/nexrad/config.py`, `s3_chunks.py`, `s3_async.py`, `main.py` | Buckets; station catalog URL (`https://api.weather.gov/radar/stations`, not the audit's `/api/stations`); user agent; timeout; cache TTL (`30`, not `0`); minimum volume chunks; chunk download semaphore (`max_chunk_downloads = 64`, not `8`); volume candidate count and volumes/site; heartbeat stale `240.0` and startup grace `60.0` (`:21-22`) | `nexrad.yaml`; shared concurrency in `runtime.yaml` |
+| ~~`src/common/ingest/wpc/config.py`, `downloader.py`, `main.py`~~ | **Done.** Source URL, valid hours, source cadence, timeout, backfill lookback, file templates, cleanup glob/age, and the `FEATURE_TYPES` styling table | `wpc.yaml` |
+| `src/common/ingest/nexrad/config.py`, `s3_chunks.py`, `s3_async.py`, `main.py` | Buckets; station catalog URL (`https://api.weather.gov/radar/stations`, not the audit's `/api/stations`); user agent; timeout; cache TTL (`30`, not `0`); minimum volume chunks; chunk download semaphore (`max_chunk_downloads = 64`, not `8`); volume candidate count and volumes/site; heartbeat stale `240.0` and startup grace `60.0` (now reached through the accessors at `:139-151`) | `nexrad.yaml`; shared concurrency in `runtime.yaml` |
 
-TLS verification policy currently disabled in METAR/WPC code must be an
-explicit boolean with a warning when false. Contact/user-agent values must not
+**Done.** TLS verification policy disabled in METAR code is now `metar.verify_tls`,
+still `false`, routed through `metar_config.ssl_context` and
+`metar_config.aiohttp_ssl` so the five independent downgrades became one decision
+that warns on every use while it is off. Flipping the key to `true` is verified to
+actually verify, so the remaining work is a run against the live hosts, not code.
+
+**WPC was wrongly named here**: both of its download paths already set
+`check_hostname` and `CERT_REQUIRED`, so `wpc.verify_tls` pins that behavior
+rather than offering to relax it — the schema fixes it to `true` and the
+downloader raises if it ever reads false. METAR was the only subsystem that
+needed the warn-when-false treatment.
+
+Contact/user-agent values must not
 contain a copied package version; the loader formats a configured template
 using `package.json`.
 
@@ -507,8 +617,8 @@ using `package.json`.
 | `process/detect/kalman/filter.py` | Initial position uncertainty, reference origin if operational, innovation regularization, and direct gate defaults still copied from assignment configuration | `kalman.yaml`; matrix equations and unit conversions stay in code |
 | `process/detect/kalman/assignment.py`, `state.py` | Near-stationary/implied-motion cutoffs, fallback interval, and reference origin if still operationally selectable | `kalman.yaml`; physical conversion constants stay in code |
 | `process/detect/main.py` | Stormcell cleanup age and tracking fallback interval | `runtime.yaml` |
-| `alerts/alert_manager.py`, `src/EdgeWARN/alerts/schema.py`, alert payload modules | Alert cleanup age, default severity, geometry precision | `alerts.yaml`; required schema fields stay code |
-| `api_integration/index_manager.py` | Resync update count and inactive-cell retention | `alerts.yaml` |
+| `alerts/manager.py`, `src/EdgeWARN/alerts/schema.py`, alert payload modules | Alert cleanup age, default severity, geometry precision | Deferred with the rest of CTAM; these literals stay their own sole owners for now |
+| `api_integration/index_manager.py`, `pipeline.py`, `process_historical.py` | Resync update count, inactive-cell retention, and the realtime/historical splits for cell expiry and index bootstrap | `api_index.yaml` |
 
 Do not flatten different overlap concepts into one setting. Use names such as
 `tracking.lineage_overlap_ratio`, `lineage.event_overlap_ratio`, and
@@ -594,18 +704,18 @@ because API clients depend on it, and is marked **non-tunable**. Its
 
 | Current source | Values to extract | Destination |
 | --- | --- | --- |
-| `src/run.py`, `src/util/runtime/cycle.py`, `goes.py` | GOES poll/wait intervals, optional ingest pause, cycle polling cadence (`run.py:333-334`, 30 × 0.5 s), cycle retry attempts/backoff, `goes.py:54,65` poll granularity `0.2` and floor `0.1`, and `cycle.py:589` `max_entries=10` | `runtime.yaml` |
-| `src/util/runtime/background.py` | METAR 5-minute boundary, NWS 120-second poll, WPC 15-minute boundary, GOES poll, NEXRAD restart backoff, and interruptible-sleep granularity where operational (`:223,239,257,265`) | `runtime.yaml` |
-| `src/util/runtime/processes.py` | Graceful join and forced-stop timeouts (`stop_process` `join_timeout=5`, `:10,24`) and the **supervisor restart policy** at `:72-75` (`max_restarts=5`, `restart_window_seconds=60.0`, `base_backoff_seconds=1.0`, `max_backoff_seconds=30.0`) — currently absent from `runtime.yaml` | `runtime.yaml` |
+| `src/run.py`, `src/util/runtime/cycle.py`, `goes.py` | GOES poll/wait intervals, optional ingest pause, cycle polling cadence, cycle retry attempts/backoff, render-wait poll granularity and interval floor, and the render-task entry cap. DONE — now read at `run.py:48-49,167,187-191,227,416`, `goes.py:54,57,71` (and the second waiter at `:87,90,107`), and `cycle.py:609` | `runtime.yaml` |
+| `src/util/runtime/background.py` | METAR 5-minute boundary, NWS 120-second poll, WPC 15-minute boundary, GOES poll, NEXRAD restart backoff, and interruptible-sleep granularity where operational. DONE — each loop reads its own section at `:77,204,255,270,284` | `runtime.yaml` |
+| `src/util/runtime/processes.py` | Graceful join and forced-stop timeouts and the **supervisor restart policy**. DONE — `stop_process` takes `join_timeout=None` and falls through to `supervisor.stop_join_timeout_seconds` / `stop_kill_join_timeout_seconds` (`:12,17-18,25,30`), and the four restart-policy fields are `field(default_factory=...)` reads at `:78-81` | `runtime.yaml` |
 | `src/process_historical.py` | One-minute step, one-second throttle, historical bounds/output defaults | `historical.yaml` plus CLI overrides |
-| `src/EdgeWARN/schedule/scheduler.py` | MRMS search entries/lookback, worker cap, poll cadence, and slow-operation logging threshold | `alerts.yaml` scheduler section |
+| `src/EdgeWARN/schedule/scheduler.py` | MRMS search entries/lookback and slow-operation logging threshold | `scheduler.yaml`. The two bare `ThreadPoolExecutor()` calls are **excluded**: they have no cap today, so adding one is a retune, not an extraction |
 | `src/EdgeWARN/pipeline.py` | Historical ingest directories retained per family | `runtime.yaml`, with directory names derived |
 | `src/util/file.py` | Generic cleanup age and count defaults | `filesystem.yaml` |
 | `src/util/performance.py` | Performance tracker enablement and future thresholds | `runtime.yaml` with existing env alias |
-| `src/common/ingest/nexrad/pipeline/__init__.py` | Scan/completion intervals and volume candidate defaults. Both intervals are re-clamped `max(1.0, ...)` at `:76-77`, and `coordinator.py:95` clamps `max(1, ...)` — schema needs `minimum: 1` | `nexrad.yaml` with CLI overrides |
+| `src/common/ingest/nexrad/pipeline/__init__.py` | Scan/completion intervals and volume candidate defaults. Both intervals are re-clamped `max(1.0, ...)` at `:101-102`, and `coordinator.py:100` clamps `max(1, ...)` — schema needs `minimum: 1` | `nexrad.yaml` with CLI overrides |
 | `src/common/ingest/nexrad/service.py`, `worker_pool.py` | Site/chunk concurrency, parse checkpoint, prefetch, pool size, recycle interval, timeout, and memory behavior | `nexrad.yaml` with existing env aliases |
 | `src/common/ingest/nexrad/writer.py` | Scan/elevation directories retained and stale-manifest age | `nexrad.yaml` |
-| `src/common/pipeline/coordinator.py` | `:125` `max_entries=10` | `runtime.yaml` |
+| `src/common/pipeline/coordinator.py` | The ingest entry cap. DONE — `max_entries` defaults to `None` (`:126`) and resolves to `cycle.ingest_max_entries` at `:145-146`, so the keyword no longer carries a second copy of the number | `runtime.yaml` |
 
 Hardware-derived defaults may use a named strategy such as
 `render.workers.strategy: adaptive_memory`. Its tunable caps, reserves, and
@@ -642,11 +752,10 @@ not.
 
 ### Node API service
 
-`src/api/` is the current service and the only one this plan wires.
-`src/EdgeWARN/api/` and `src/EWMRS/api/` both still exist in the tree but are
-**legacy**; they duplicate ports, CORS, base-dir fallbacks and `GUI_SUBDIRS`.
-Retire them rather than teaching them to read `api.yaml`, and confirm nothing
-deploys them before deleting.
+`src/api/` is the current service and the only one this plan wires. The legacy
+server source under `src/EdgeWARN/api/` and `src/EWMRS/api/` was retired in
+`a3d6cbb`; do not recreate legacy adapters solely to give them configuration
+ownership.
 
 | Current source | Values to extract | Destination |
 | --- | --- | --- |
@@ -666,7 +775,7 @@ proxy trust because a config key is missing.
 
 ## Corrections required before the files can be loaded
 
-The 18 files were produced by transcription, and the transcription has errors.
+The 19 files were produced by transcription, and the transcription has errors.
 **This table gates implementation** — the files cannot be wired as written. Each
 row was verified against the source at this baseline.
 
@@ -684,15 +793,15 @@ row was verified against the source at this baseline.
 | `integration.yaml` `output.decimals: 2` | config | `integrate_rap.py:135` and `:156` hardcode `round(..., 2)` | Must be parameterized or the key is inert |
 | `integration.yaml` `rap_products[].transform` | `kelvin_to_celsius` | Registry key with a silent identity fallback (`integrate_rap.py:87`) | Loader validates against `TRANSFORMS.keys()` |
 | `nexrad.yaml` `cli.sites: []` | `[]` = all sites | `pipeline/__init__.py:74` distinguishes `None` from `[]`; `[]` is not "all" | Use `null` |
-| `nexrad.yaml` `cli.scan_interval_seconds` / `completion_interval_seconds` | `20` / `10` | Re-clamped `max(1.0, ...)` at `pipeline/__init__.py:76-77`; `coordinator.py:95` clamps `max(1, ...)` | Schema `minimum: 1` |
-| `nexrad.yaml` `cli` | omits | `nexrad/main.py:178` also exposes `--max-candidate-volumes-per-site` | Add |
-| `nws.yaml` `zone_sync.pause_seconds` | `0.0` | argparse `0.0` versus constructor `0.05` (`zone_sync.py:159`) — real drift | Resolve; pick one and document why |
-| `nws.yaml` `zone_sync.assets_dir` | `assets/nws_zones` | `_resolve_assets_dir()` probes the filesystem (`zone_sync.py:21-27`) | Decide literal versus probe |
-| `nws.yaml` | omits | `zone_sync.py:160` `user_agent`, which differs from `nexrad.yaml` `stations.user_agent` in both version and contact | Add; interpolate the package version |
+| `nexrad.yaml` `cli.scan_interval_seconds` / `completion_interval_seconds` | `20` / `10` | Re-clamped `max(1.0, ...)` at `pipeline/__init__.py:101-102`; `coordinator.py:100` clamps `max(1, ...)` | Schema `minimum: 1`. Both keys also moved out of `cli` into `realtime`, since production reaches the pipeline through `background.py` and never through argparse |
+| `nexrad.yaml` `cli` | omitted it | `nexrad/main.py:183` also exposes `--max-candidate-volumes-per-site` | **Done.** Added as `realtime.max_candidate_volumes_per_site`, not under `cli`: the one-shot coordinator needs it too, so it is a pipeline setting a flag may override |
+| `nws.yaml` `zone_sync.pause_seconds` | `0.0` | argparse `0.0` versus constructor `0.05` — real drift | **Done.** Both defaults are now `None` (`zone_sync.py:169`); the value resolves from YAML at `:189` for the constructor and `:477` for argparse, so there is one owner and nothing to disagree with |
+| `nws.yaml` `zone_sync.assets_dir` | `assets/nws_zones` | `_resolve_assets_dir()` probed the filesystem | **Done.** Literal wins and the probe is gone. `zone_sync.py:471` joins the key onto `repo_root(args.config_dir)`, so the path follows `--config-dir` instead of whichever candidate happened to exist; the constructor takes it as a required `Path` (`:164`) with no fallback |
+| `nws.yaml` | omitted it | `zone_sync.py` `user_agent`, which differed from `nexrad.yaml` `stations.user_agent` in both version and contact | **Done.** Neither file owns a user agent now. The constructor parameter defaults to `None` (`zone_sync.py:170`) and `weather_api_headers` builds the header at `:194` from `runtime.yaml identity`, interpolating the `package.json` version |
 | `detection.yaml` `gatemapper.baseline_refl_floor`, `dynamic_min_threshold` | recorded as settings | `gatemapper.py:101` `min(37.5, self.refl_threshold)` is a **hard floor**, so raising `refl_threshold` above 37.5 has no effect on the baseline mask; `gatemapper.py:174` `np.where(valid_max_refl < 45.0, 37.5, 40.0)` is fully inline | Must be parameterized or these keys are inert and misleading |
-| `filesystem.yaml:22` colormap search path | `src/EWMRS/colormaps.json` | `file.py:184` resolves it relative to `__file__`, not cwd | Needs the `<src_dir>` token |
-| `runtime.yaml` | omits | supervisor restart policy (`processes.py:72-75`); `stop_process` `join_timeout=5` (`processes.py:10,24`); background loop cadences (`background.py:223,239,257,265`); `goes.py:54,65` poll granularity `0.2` and floor `0.1`; `cycle.py:589` and `coordinator.py:125` `max_entries=10`; NEXRAD heartbeat `240.0` / grace `60.0` (`nexrad/config.py:21-22`) | Add |
-| all 18 files | no `schema_version` | this plan requires one | Add `schema_version: 1` |
+| `filesystem.yaml` colormap search path | `src/EWMRS/colormaps.json` | `file.py` resolved it relative to `__file__`, not cwd | **Done.** `<src_dir>/EWMRS/colormaps.json` plus a `<gui_dir>` fallback; the `Path.cwd()` candidate that led the list is gone |
+| `runtime.yaml` | omitted them | supervisor restart policy; `stop_process` join timeouts; background loop cadences; render-wait poll granularity and interval floor; the two `max_entries=10` literals; NEXRAD heartbeat stale/startup-grace | **Done.** `runtime.yaml` now owns all of them, read at `processes.py:17-18,30,78-81`, `background.py:77,204,255,270,284`, `goes.py:54,57,71`, `cycle.py:609`, and `coordinator.py:145-146`. The NEXRAD pair stayed in `nexrad.yaml` (`timeouts`) rather than moving here, since it is a subsystem timeout and not a shared runtime one — reached via `nexrad/config.py:139-151` |
+| all 19 files | no `schema_version` | this plan requires one | Add `schema_version: 1` |
 
 Rows marked "must be parameterized or the key is inert" are the dangerous class:
 the YAML *looks* authoritative, so an operator can change the value and observe no
@@ -710,15 +819,25 @@ currently have several, and there is no module-level constant to point at.
   `process/detect/detect.py:24-26`, `process/detect/main.py:29-31`, `:100-102`,
   and `tools/gatemapper.py:12`. Plus the two inline literals at
   `gatemapper.py:101` and `:174` noted above.
-  `TandemCycleConfig` (`util/runtime/cycle.py:322-324`) declares these with **no**
-  defaults and is the correct seam — leave it alone.
-- **`max_candidate_volumes_per_site`** — 3 copies:
-  `nexrad/pipeline/__init__.py:61`, `nexrad/coordinator.py:26`,
-  `nexrad/pipeline/volume_discovery.py:66`.
-- **`max_volumes_per_site`** — 4 copies: `nexrad/main.py:106`, `:150`,
-  `nexrad/service.py:1276`, `:1304`.
-- **`zone_sync`** — 6 keys duplicated across argparse and `NWSZoneSync.__init__`
-  (`zone_sync.py:152-162`), one of which disagrees with its flag.
+  `TandemCycleConfig` (`util/runtime/cycle.py:323`, fields at `:330-332`) declares
+  these with **no** defaults and is the correct seam — leave it alone.
+- **`max_candidate_volumes_per_site`** — was 3 copies. **Done.** All three now
+  default to `None` and resolve through `nexrad_config` (`pipeline/__init__.py:57`,
+  `coordinator.py:27` resolving at `:29-30`, `pipeline/volume_discovery.py:67`
+  resolving at `:69-70`), so `realtime.max_candidate_volumes_per_site` is the sole
+  owner.
+- **`max_volumes_per_site`** — **no longer a catalog key.** The `nexrad.yaml` entry
+  was deleted rather than wired: the two functions that honour the parameter have
+  no callers outside `nexrad/__init__.py`'s re-export and tests, so threading it
+  through would have made a dead path configurable. Its four `=1` signature
+  defaults stay at `nexrad/main.py:110`, `:154` and `nexrad/service.py:1286`,
+  `:1314` — with no key claiming ownership they are ordinary library defaults, not
+  a second copy. A test pins them.
+- **`zone_sync`** — 6 keys were duplicated across argparse and
+  `NWSZoneSync.__init__`, one of which disagreed with its flag. **Done.** Every
+  optional parameter in that signature is now `None` (`zone_sync.py:162-171`) and
+  the docstring at `:173` records that unsupplied settings come from
+  `nws.yaml zone_sync`.
 - **`kalman.yaml`** — every `.get()` call in
   `process/detect/kalman/config.py` passes an inline literal fallback, and the
   dataclass field defaults repeat them a third time.
@@ -741,12 +860,14 @@ retuning.
 
 ### Phase 1: Build config loading and validation
 
-1. Add Python and Node dependencies for YAML and JSON Schema validation.
+1. Add Python and Node dependencies for YAML. JSON Schema validation is
+   hand-rolled in both loaders over a shared keyword set — see the loader
+   contract above for why no validator dependency is taken.
 2. Implement `src/common/config/loader.py` with config-root discovery, caching,
    memoization, immutability, provenance, schema versioning, and dotted-key
-   errors. Stdlib + `yaml` + `jsonschema` imports only.
+   errors. Stdlib + `yaml` imports only.
 3. Write the 18 `config/schema/<name>.schema.json` files and add
-   `schema_version: 1` to all 18 config files, renaming the
+   `schema_version: 1` to all 19 config files, renaming the
    `ewmrs_render.yaml` wire version first.
 4. Convert argparse to `None` sentinels across the five entrypoints listed
    above, so CLI-beats-YAML is expressible.
@@ -783,8 +904,10 @@ transcription already happened.
    implement `getattr` resolution with a load-time error on unknown names.
 4. Restore the per-channel dict shape for GOES `mask_min`/`mask_max`.
 5. Delete `scale_rule`, `radian_detection` and `crs_strategy`.
-6. Complete the RAP catalogs to their real 43-layer and `get_rap_products()`
-   contents, and validate `transform` names against `TRANSFORMS`.
+6. Keep the RAP integration catalog complete in `integration.yaml` and validate
+   `transform` names against `TRANSFORMS`. The 43-layer Uint16 *display* catalog
+   deliberately remains in `EWMRS/rap/config.py`; Phase 5 rejected unused YAML
+   catalog keys rather than adding a second owner.
 7. Fix the NEXRAD `sites` sentinel and add the missing CLI key.
 8. Add uniqueness and coverage tests for upstream modifier, output name,
    directory, API route key, and list membership.
@@ -822,6 +945,33 @@ behavior from the flat files without circular imports.
 4. Derive version strings from `package.json`.
 5. Add effective-config summaries to startup logs and health diagnostics.
 
+**Phase 5 completion note.** Runtime and API settings now use the 19 validated
+catalogs. HSTS, proxy parsing, source-root paths, diagnostics provenance,
+product counts, restart semantics, boundary-wait granularity, and access-log
+mode are all owned by configuration and covered by tests. The health-check
+limiter bypass remains deliberately absent: restoring it would retune the live
+service, not extract a setting.
+
+Enrichment concurrency is deliberately excluded, but not because a key would be
+inert — that reasoning was too strong. `integrate/pipeline.py:353` sizes the pool
+as `max_workers=len(future_order)`, and `future_order` holds exactly the tasks
+being scheduled: `["stats", "support"]`, plus `"azshear"` only when
+`_AZSHEAR_SUPPORT_ENABLED` is on, which it is not (`:20`). So the pool is two
+threads, and a cap key could reach only two values with any effect: `>= 2` is a
+no-op, and `1` serializes. Serializing two threads is a performance decision about
+a fixed two-item workload, not a deployment setting, so the key is excluded as
+out of scope rather than as inert. If the azshear path is ever enabled the task
+count becomes variable and this is worth revisiting.
+
+Two other Phase 5 candidates were resolved by deletion rather than wiring, on the
+same "do not ship a key that does nothing" rule as the discrepancy table above:
+`api_index.resync_every_updates` (a per-update counter cannot survive
+`cycle.py`'s fresh `multiprocessing.Process` per cycle, so no interval could ever
+be reached) and `nexrad.cli.max_volumes_per_site` (resolved onto `args` and then
+never read). NEXRAD `trim_buffer` stayed a code parameter for a different reason:
+it authorizes rewriting the caller's partial volume in place, which is a
+file-ownership invariant rather than a value.
+
 ### Phase 6: Remove fallbacks and enforce the boundary
 
 1. Delete obsolete source `config.py` catalogs or reduce them to typed adapter
@@ -849,7 +999,7 @@ behavior from the flat files without circular imports.
 - Missing files, unknown keys, wrong types, invalid enum values, duplicate
   entries, non-finite numbers, inverted ranges, negative intervals, and unsafe
   paths fail before service startup.
-- All 18 config files have `schema_version: 1`, and no file uses that key for
+- All 19 config files have `schema_version: 1`, and no file uses that key for
   anything else.
 - Precedence is tested per override in all four combinations: YAML only, env
   over YAML, CLI over YAML, and CLI over env over YAML. A `store_true` flag that
@@ -875,8 +1025,9 @@ behavior from the flat files without circular imports.
 - The Node `product-catalog.json` and the Python catalogs contain the same
   product names and directory names.
 - Catalog lengths are asserted explicitly: 28 and 12 MRMS, 16 ABI, 15 MRMS
-  render, 16 GOES render, 25 stats, 43 RAP, 31 Node product catalog. A silent
-  drop during transcription is the most likely regression.
+  render, 16 GOES render, 25 stats, 43 code-owned RAP Uint16 display layers,
+  and 31 Node product catalog. A silent drop during transcription is the most
+  likely regression.
 - List order is explicit where it affects readiness, output, or tests; no loader
   relies on unordered map iteration.
 
@@ -963,7 +1114,7 @@ but the schemas and checked-in config remain authoritative.
 
 - [ ] Every row of the corrections table is resolved, and no config key remains
   that an operator can change with no observable effect.
-- [ ] All 18 `config/*.yaml` files carry `schema_version: 1`, have a sibling
+- [ ] All 19 `config/*.yaml` files carry `schema_version: 1`, have a sibling
   schema in `config/schema/`, and pass both loaders.
 - [ ] No config file still carries the "Not yet consumed by code" header.
 - [ ] Argparse uses `None` sentinels, and precedence is demonstrably
@@ -972,12 +1123,13 @@ but the schemas and checked-in config remain authoritative.
   `mrms_goes.yaml`, and the source lists are deleted.
 - [ ] GOES ingest and render views read from `mrms_goes.yaml` and
   `ewmrs_render.yaml`, cross-checked by test.
-- [ ] RAP integration reads `integration.yaml`; RAP render reads
-  `ewmrs_rap_uint16.yaml`; both are complete at 43 layers and
-  `get_rap_products()` parity.
+- [ ] RAP integration reads `integration.yaml` with `get_rap_products()` parity;
+  RAP Uint16 retention/timestamp/force policy reads `ewmrs_rap_uint16.yaml`.
+  Its 43-layer display catalog remains code-owned by recorded decision and is
+  pinned by `tests/config_baseline/rap_uint16_layers.json`.
 - [ ] NEXRAD VCP/elevation/product/render/API policy reads `nexrad.yaml`.
 - [ ] Python and Node share base-directory and API settings without duplicated
-  defaults; the legacy API services are retired.
+  defaults; the legacy API server source is retired.
 - [ ] `kalman.yaml` is actually injected and has no source fallback copies.
 - [ ] All duplicate defaults listed above are reduced to one.
 - [ ] All detection and integration empirical parameters in this inventory are
@@ -1002,4 +1154,3 @@ but the schemas and checked-in config remain authoritative.
   `RAP_BestLiftedIndex_180_0mbAGL` drift.
 - Introducing stable product IDs and a `roles:` membership model in place of the
   parallel catalogs. This is a schema change, not a value-preserving extraction.
-- Deleting the legacy `src/EdgeWARN/api/` and `src/EWMRS/api/` services.

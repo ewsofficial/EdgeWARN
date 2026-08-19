@@ -44,10 +44,19 @@ class TestL1BufferScanInterval:
 class TestL2HardcodedLatitude:
     """L2: from_position_uncertainty should accept ref_lat."""
 
+    @staticmethod
+    def _covariance(position_std_km, **kwargs):
+        return CovarianceMatrix.from_position_uncertainty(
+            position_std_km,
+            velocity_variance=100.0,
+            acceleration_variance=1.0,
+            **kwargs,
+        )
+
     def test_from_position_uncertainty_uses_ref_lat(self):
         """Longitude variance should differ between lat=25° and lat=45°."""
-        cov_25 = CovarianceMatrix.from_position_uncertainty(5.0, ref_lat=25.0)
-        cov_45 = CovarianceMatrix.from_position_uncertainty(5.0, ref_lat=45.0)
+        cov_25 = self._covariance(5.0, ref_lat=25.0)
+        cov_45 = self._covariance(5.0, ref_lat=45.0)
 
         _, var_lon_25 = cov_25.get_position_variance()
         _, var_lon_45 = cov_45.get_position_variance()
@@ -58,8 +67,8 @@ class TestL2HardcodedLatitude:
 
     def test_from_position_uncertainty_backward_compat(self):
         """Calling without ref_lat should use 35° (backward compatible)."""
-        cov_default = CovarianceMatrix.from_position_uncertainty(5.0)
-        cov_35 = CovarianceMatrix.from_position_uncertainty(5.0, ref_lat=35.0)
+        cov_default = self._covariance(5.0)
+        cov_35 = self._covariance(5.0, ref_lat=35.0)
 
         _, var_lon_default = cov_default.get_position_variance()
         _, var_lon_35 = cov_35.get_position_variance()

@@ -1,0 +1,198 @@
+[
+  {
+    "@tuple": [
+      "CONUS",
+      "EchoTop_18_00.50",
+      "fs:MRMS_ECHOTOP18_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "EchoTop_30_00.50",
+      "fs:MRMS_ECHOTOP30_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "EchoTop_50_00.50",
+      "fs:MRMS_ECHOTOP50_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "FLASH_CREST_MAXUNITSTREAMFLOW_00.00",
+      "fs:MRMS_FLASH_CREST_MAXUNIT_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "FLASH_QPE_ARIMAX_00.00",
+      "fs:MRMS_FLASH_ARIMAX_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "FLASH_QPE_ARI30M_00.00",
+      "fs:MRMS_FLASH_ARI30M_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "FLASH_QPE_ARI01H_00.00",
+      "fs:MRMS_FLASH_ARI01H_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "FLASH_HP_MAXUNITSTREAMFLOW_00.00",
+      "fs:MRMS_FLASH_HP_MAXUNIT_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "FLASH_SAC_MAXSOILSAT_00.00",
+      "fs:MRMS_FLASH_SAC_MAXSOIL_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "FLASH_QPE_FFGMAX_00.00",
+      "fs:MRMS_FLASH_FFGMAX_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "RadarQualityIndex_00.00",
+      "fs:MRMS_RQI_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "MESH_00.50",
+      "fs:MRMS_MESH_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "NLDN_CG_005min_AvgDensity_00.00",
+      "fs:MRMS_NLDN_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "PrecipRate_00.00",
+      "fs:MRMS_PRECIPRATE_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "RadarOnly_QPE_01H_00.00",
+      "fs:MRMS_QPE_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "MergedAzShear_0-2kmAGL_00.50",
+      "fs:MRMS_AZSHEARLOW_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "MergedAzShear_3-6kmAGL_00.50",
+      "fs:MRMS_AZSHEARMID_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "VIL_Density_00.50",
+      "fs:MRMS_DVIL_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "ProbSevere",
+      null,
+      "fs:MRMS_PROBSEVERE_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "MergedRhoHV_00.50",
+      "fs:MRMS_RHOHV_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "PrecipFlag_00.00",
+      "fs:MRMS_PRECIPTYP_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "MergedReflectivityAtLowestAltitude_00.50",
+      "fs:MRMS_RALA_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "MergedReflectivityQCComposite_00.50",
+      "fs:MRMS_COMPOSITE_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "VII_00.50",
+      "fs:MRMS_VII_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "VIL_00.50",
+      "fs:MRMS_VIL_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "Reflectivity_0C_00.50",
+      "fs:MRMS_REF_0C_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "Reflectivity_-5C_00.50",
+      "fs:MRMS_REFM5C_DIR"
+    ]
+  },
+  {
+    "@tuple": [
+      "CONUS",
+      "Reflectivity_-15C_00.50",
+      "fs:MRMS_REFM15C_DIR"
+    ]
+  }
+]

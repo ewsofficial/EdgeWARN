@@ -3,6 +3,7 @@ import rasterio.features
 from skimage import measure
 from shapely.geometry import MultiPolygon, Polygon, mapping, shape
 
+from EdgeWARN.process.detect.config import section
 from util.release import get_release_version
 
 class CellDataSaver:
@@ -33,7 +34,9 @@ class CellDataSaver:
         }
 
     @staticmethod
-    def __round_polygon_points(points, decimals=3):
+    def __round_polygon_points(points, decimals=None):
+        if decimals is None:
+            decimals = section("save")["polygon_decimals"]
         return [
             [round(float(lat), decimals), round(float(lon) % 360, decimals)]
             for lat, lon in points
@@ -145,11 +148,10 @@ class CellDataSaver:
         return [(lat, lon % 360) for lon, lat in coords]
 
 
-    def __create_hailcore_polygon(self, poly_id, slice_obj, step=5):
+    def __create_hailcore_polygon(self, poly_id, slice_obj):
         """
-        Creates a hail core polygon by tracing the exterior of hail-classified 
-        cells (preciptype == 7) within a ProbSevere polygon, using a slice to 
-        avoid full-grid scans.
+        Creates a hail core polygon by tracing the exterior of hail-classified
+        cells within a ProbSevere polygon, using a slice to avoid full-grid scans.
         """
         if self.preciptype_ds is None:
             return []
@@ -157,29 +159,30 @@ class CellDataSaver:
         if self._hail_present is False:
             return []
 
+        hail_cfg = section("hail")
+
         # Slices are passed from create_entry
         poly_subgrid = self.expanded_ds['PolygonID'].values[slice_obj]
         precip_subgrid = self.preciptype_ds['unknown'].values[slice_obj]
-        
+
         # Create mask on subgrid
         poly_mask = poly_subgrid == poly_id
         if not np.any(poly_mask):
             return []
 
-        hail_mask = (precip_subgrid == 6) & poly_mask
+        hail_mask = (precip_subgrid == hail_cfg["preciptype_class"]) & poly_mask
         if not np.any(hail_mask):
             return []
 
         # Find contours on the hail mask (local coordinates)
-        contours = measure.find_contours(hail_mask.astype(float), 0.5)
+        contours = measure.find_contours(hail_mask.astype(float), hail_cfg["contour_level"])
         if not contours:
             return []
 
         # Take the largest contour
         contour = max(contours, key=lambda c: c.shape[0])
 
-        # Sample every 'step' points
-        sampled = contour[::step]
+        sampled = contour[::hail_cfg["contour_sampling_step"]]
 
         # Get global lat/lon grids (can be optimized to only extract subgrid if needed, 
         # but indexing is fast enough if we have the full array in memory)
@@ -227,12 +230,14 @@ class CellDataSaver:
 
         return polygon_points
 
-    def __create_direct_hailcore_polygon(self, mask, step=5, slice_offset=None):
+    def __create_direct_hailcore_polygon(self, mask, slice_offset=None):
         if self.preciptype_ds is None:
             return []
 
         if self._hail_present is False:
             return []
+
+        hail_cfg = section("hail")
 
         rows, cols = np.nonzero(mask)
         if rows.size == 0:
@@ -249,16 +254,16 @@ class CellDataSaver:
 
         local_mask_slice = mask[rmin:rmax, cmin:cmax]
         precip_slice = self.preciptype_ds['unknown'].values[sl]
-        hail_mask = (precip_slice == 6) & local_mask_slice
+        hail_mask = (precip_slice == hail_cfg["preciptype_class"]) & local_mask_slice
         if not np.any(hail_mask):
             return []
 
-        contours = measure.find_contours(hail_mask.astype(float), 0.5)
+        contours = measure.find_contours(hail_mask.astype(float), hail_cfg["contour_level"])
         if not contours:
             return []
 
         contour = max(contours, key=lambda c: c.shape[0])
-        sampled = contour[::step]
+        sampled = contour[::hail_cfg["contour_sampling_step"]]
 
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
@@ -276,6 +281,8 @@ class CellDataSaver:
         count = np.count_nonzero(mask)
         if count == 0:
             return None
+
+        _centroid_decimals = section("save")["centroid_decimals"]
 
         rows, cols = np.nonzero(mask)
         rmin, rmax = rows.min(), rows.max() + 1
@@ -306,7 +313,10 @@ class CellDataSaver:
             if sum_weights > 0:
                 lat_centroid = float(np.sum(lat_vals * weights) / sum_weights)
                 lon_centroid = float(np.sum(lon_vals * weights) / sum_weights) % 360
-                centroid = (round(lat_centroid, 3), round(lon_centroid, 3))
+                centroid = (
+                    round(lat_centroid, _centroid_decimals),
+                    round(lon_centroid, _centroid_decimals),
+                )
             else:
                 centroid = (np.nan, np.nan)
         else:
@@ -330,6 +340,7 @@ class CellDataSaver:
         }
 
     def __create_entries_from_probsevere_geometry(self, morphology_engine):
+        _centroid_decimals = section("save")["centroid_decimals"]
         refl_grid = self.radar_ds['unknown'].values
         lats = self.radar_ds['latitude'].values
         lons = self.radar_ds['longitude'].values
@@ -380,7 +391,10 @@ class CellDataSaver:
                 if sum_weights > 0:
                     lat_centroid = float(np.sum(lat_vals * weights) / sum_weights)
                     lon_centroid = float(np.sum(lon_vals * weights) / sum_weights) % 360
-                    centroid = (round(lat_centroid, 3), round(lon_centroid, 3))
+                    centroid = (
+                        round(lat_centroid, _centroid_decimals),
+                        round(lon_centroid, _centroid_decimals),
+                    )
                 else:
                     centroid = (np.nan, np.nan)
             else:
@@ -416,11 +430,13 @@ class CellDataSaver:
         """
         from EdgeWARN.process.detect.tools.morphology import MorphologyEngine
 
+        _centroid_decimals = section("save")["centroid_decimals"]
+
         if self.radar_ds is None:
             return []
 
         if self.preciptype_ds is not None and self._hail_present is None:
-            self._hail_present = bool(np.any(self.preciptype_ds['unknown'].values == 6))
+            self._hail_present = bool(np.any(self.preciptype_ds['unknown'].values == section('hail')['preciptype_class']))
 
         if self.use_probsevere_geometry:
             return self.__create_entries_from_probsevere_geometry(MorphologyEngine)
@@ -506,7 +522,10 @@ class CellDataSaver:
                     lat_centroid = float(np.sum(lat_vals * weights) / sum_weights)
                     lon_centroid = float(np.sum(lon_vals * weights) / sum_weights)
                     lon_centroid = lon_centroid % 360
-                    centroid = (round(lat_centroid, 3), round(lon_centroid, 3))
+                    centroid = (
+                        round(lat_centroid, _centroid_decimals),
+                        round(lon_centroid, _centroid_decimals),
+                    )
                 else:
                     centroid = (np.nan, np.nan)
             else:

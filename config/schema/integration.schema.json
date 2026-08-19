@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "integration.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "output", "glm", "stats_datasets", "probsevere_field_map", "rap_products"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decimals"],
+      "properties": {
+        "decimals": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "glm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bin_size_degrees"],
+      "properties": {
+        "bin_size_degrees": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "stats_datasets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "filepath", "key", "method"],
+        "properties": {
+          "name": { "type": "string" },
+          "filepath": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+          "key": { "type": "string" },
+          "method": { "type": "string", "enum": ["max", "percentile"] },
+          "percentile": { "type": "number", "minimum": 0, "maximum": 100 }
+        }
+      }
+    },
+    "probsevere_field_map": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "rap_products": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["isobaric_levels_mb", "products", "derived"],
+      "properties": {
+        "isobaric_levels_mb": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "exclusiveMinimum": 0 } },
+        "products": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["var", "filter"],
+            "properties": {
+              "var": { "type": "string" },
+              "var_aliases": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "levels": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "exclusiveMinimum": 0 } },
+              "filter": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["typeOfLevel"],
+                "properties": {
+                  "typeOfLevel": { "type": "string" },
+                  "level": { "type": "integer" }
+                }
+              },
+              "key": { "type": "string" },
+              "key_template": { "type": "string" },
+              "transform": { "type": "string" }
+            }
+          }
+        },
+        "derived": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "formula"],
+            "properties": {
+              "key": { "type": "string" },
+              "formula": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

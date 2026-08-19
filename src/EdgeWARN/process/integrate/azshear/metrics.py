@@ -3,7 +3,7 @@ import math
 import numpy as np
 from scipy import ndimage
 
-from .constants import AZSHEAR_MAX_PAIR_SEPARATION_KM, AZSHEAR_MIN_GATE_COUNT
+from .constants import azshear_max_pair_separation_km, azshear_min_gate_count
 from .geometry import (
     build_component_geometry,
     distance_km,
@@ -247,11 +247,12 @@ def find_best_cross_layer_pair(low_candidates, mid_candidates):
     if not low_candidates or not mid_candidates:
         return _dominant_component(low_candidates), _dominant_component(mid_candidates), 0
 
+    max_pair_separation_km = azshear_max_pair_separation_km()
     valid_pairs = []
     for low_component in low_candidates:
         for mid_component in mid_candidates:
             centroid_distance, overlap_area, overlap_ratio = _build_overlap_metrics(low_component, mid_component)
-            if centroid_distance > AZSHEAR_MAX_PAIR_SEPARATION_KM:
+            if centroid_distance > max_pair_separation_km:
                 continue
 
             combined_area = float(low_component.get("area_km2", 0.0)) + float(mid_component.get("area_km2", 0.0))
@@ -357,6 +358,7 @@ def extract_azshear_candidates(masked_values, lat_grid, lon_grid, threshold, pix
         return []
 
     labels, count = ndimage.label(binary)
+    min_gate_count = azshear_min_gate_count()
     candidates = []
     for label_idx in range(1, count + 1):
         component_mask = labels == label_idx
@@ -371,7 +373,7 @@ def extract_azshear_candidates(masked_values, lat_grid, lon_grid, threshold, pix
         )
         if metrics is None:
             continue
-        if metrics["pixel_count"] < AZSHEAR_MIN_GATE_COUNT:
+        if metrics["pixel_count"] < min_gate_count:
             continue
         metrics["component_id"] = int(label_idx)
         candidates.append(metrics)
@@ -449,7 +451,7 @@ def summarize_cross_layer_metrics(
         centroid_alignment = 0.0
     else:
         centroid_distance, overlap_area, overlap_ratio = _build_overlap_metrics(low_component, mid_component)
-        centroid_alignment = max(0.0, 1.0 - (centroid_distance / AZSHEAR_MAX_PAIR_SEPARATION_KM))
+        centroid_alignment = max(0.0, 1.0 - (centroid_distance / azshear_max_pair_separation_km()))
 
     low_dom = float(low_level_summary.get("dominance", {}).get("dominance_ratio", 0.0))
     mid_dom = float(mid_level_summary.get("dominance", {}).get("dominance_ratio", 0.0))

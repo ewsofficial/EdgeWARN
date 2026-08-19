@@ -1,26 +1,57 @@
 # nexrad.yaml — Audit §1 NEXRAD CLIs, §7 NEXRAD
 #
-# Source: src/common/ingest/nexrad/config.py; s3_chunks.py:21; coordinator.py:25; service.py:164,237-238; worker_pool.py:194,210; writer.py:15-18; pipeline/__init__.py:387-391; main.py:174-178
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Read through the accessors in src/common/ingest/nexrad/config.py. That module
+# holds no constants: run.py imports it before get_args() exports
+# EDGEWARN_CONFIG_DIR, so a module-level read there would freeze the repo default
+# even in the parent process and --config-dir could never reach NEXRAD.
+#
+# Every key below is now read from here and nowhere else. The constants that
+# used to shadow them -- in parser.py, grouping.py, s3_chunks.py, writer.py and
+# src/EWMRS/render/nexrad.py -- are deleted rather than left as aliases, since an
+# alias is a second owner that happens to agree today.
+#
+# The API's radar-moment allowlist used to be duplicated here as well. Its only
+# consumer is src/api/services/ancillary.js, so api.yaml owns it alone; two
+# catalogs holding one list is the drift this project exists to remove.
+#
+# Two keys are read by nothing at all, here or in code -- they are not shadowed,
+# they are unused, and they are marked below rather than deleted so the decision
+# to drop them is made deliberately. A third, `cli.volume_id`, was deleted
+# outright: a fixed volume identifier is an argument to one invocation, not a
+# setting a deployment carries.
+
+schema_version: 1
 
 buckets:
   chunks: unidata-nexrad-level2-chunks
-  archive: unidata-nexrad-level2
-
 stations:
   catalog_url: https://api.weather.gov/radar/stations
-  user_agent: '(EdgeWARN/2.7.0, ewsbackend@gmail.com)'
+  # The User-Agent is NOT here. Its template is hardcoded in
+  # `util/release.py format_user_agent()` with the `identity.contact` half from
+  # `runtime.yaml identity`, applied at nexrad/weather_api.py:101. This subsystem
+  # used to hardcode the release number into its copy, so the advertised version
+  # could not track package.json.
   api_timeout_seconds: 15
   api_cache_ttl_seconds: 30
 
 selection:
   allowed_vcps: [12, 212, 215]
-  angle_dedup_tolerance_deg: 0.1
   high_max_angle_deg: 4.0
   min_sweep_angle_deg: 0.4
+  # Bin IDENTITIES, not range boundaries. grouping.py snaps a sweep to its
+  # NEAREST bin with no tolerance, so a real VCP-12 sweep at 1.2305 degrees
+  # lands on 1.3 (distance 0.07) and nothing is mis-binned.
+  #
   canonical_elevation_bins: [0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0]
   min_required_volume_chunks: 25
+  # A surveillance sweep is only complete once the matching doppler sweep
+  # arrives; the single-elevation waveforms stand alone. A volume whose sweeps
+  # name none of these is grouped by raw elevation instead, so this set also
+  # selects between the two grouping strategies.
+  waveforms:
+    surveillance: contiguous_surveillance
+    doppler: contiguous_doppler
+    single_elevation: [staggered_pulse_pair, batch]
 
 timeouts:
   volume_discovery_seconds: 20.0
@@ -36,23 +67,66 @@ concurrency:
   max_chunk_downloads: 64
   worker_pool_size: 4
   worker_recycle_interval: 24           # <= 0 disables recycling
-  worker_timeout_seconds: 40
+  # Float, matching the float() the env read used to apply. The old code clamped
+  # with max(1.0, ...); the schema's minimum: 1 now rejects a smaller value at
+  # startup instead of silently correcting it.
+  worker_timeout_seconds: 40.0
+  parse_checkpoint_chunk_interval: 8    # re-parse the accumulated volume every N chunks
+  in_volume_prefetch: 4                 # effective value is min(this, pending chunks)
 
-cli:
-  sites: []                             # --site, repeatable; empty = all
-  base_dir: null
+  # Buffer trimming is NOT a key here. worker.py's `trim_buffer` rewrites the
+  # partial .ar2v in place to drop already-exported sweeps, so it is safe only for
+  # a caller that owns that file. service.py's streaming path does and passes
+  # True; the parameter defaults to False so that any other caller cannot mutate
+  # an input it merely borrowed. That is a file-ownership invariant, which this
+  # project keeps in code -- an operator toggling it off would not save memory,
+  # it would change which module is allowed to write to whose file.
+
+# Settings the realtime pipeline needs whether or not anyone typed a command.
+# These three used to live under `cli` below, which is precisely how they came to
+# be ignored: production reaches the pipeline through background.py, never
+# through argparse, so the `cli` values were resolved only on a path production
+# does not execute and the constructor's keyword defaults won every real run.
+# They are pipeline settings that a CLI may override, not CLI settings.
+realtime:
   scan_interval_seconds: 20
   completion_interval_seconds: 10
+  # Shared with the one-shot coordinator, which is the other reason this is not
+  # a `cli` key: two entry points need it.
   max_candidate_volumes_per_site: 3
-  max_volumes_per_site: 1               # one-shot ingest only
-  volume_id: null                       # one-shot ingest only
 
+# Defaults for the argv-bearing entry points. Each is overridden by its flag and
+# is read only where the corresponding flag exists, which is why the one-shot
+# volume id is absent: a fixed volume identifier is an argument, not a setting.
+cli:
+  # --site, repeatable, and read by the realtime pipeline only -- nexrad/main.py
+  # takes a single site rather than a list. `null` means "every allowed station":
+  # None survives to station_filter.py:19, which then applies no site filter. An
+  # empty list is NOT the same thing -- it would filter every site away.
+  sites: null
+  base_dir: null                        # --base-dir; null means util.file's default
+
+  # `max_volumes_per_site` was here, described as "one-shot ingest only". It was
+  # inert, and so was --max-volumes-per-site: main() resolved it onto args and
+  # then never read it. The one-shot branch calls ingest_allowed_vcp_volume_async,
+  # which takes a single volume id and has no such parameter, and the default
+  # branch calls NexradScanCoordinator.ingest_latest_station_scans_async, which
+  # has none either.
+  #
+  # The two functions that do honour it -- ingest_latest_allowed_vcp_scans and its
+  # async twin -- have no callers in the tree beyond the public re-export in
+  # nexrad/__init__.py and tests. Threading the key through to them would have
+  # made a dead code path configurable, which is worse than either wiring or
+  # deleting: an operator would edit a key, see no effect, and be right to.
+  #
+  # Their `max_volumes_per_site=1` signature defaults stay. With no catalog key
+  # claiming ownership they are ordinary library defaults, not a second copy.
+
+# Now that these are read from here, the schema floors are 1 and not 0. Zero is
+# not "retain nothing older": the keep-set is built by slicing the newest N, so
+# `scan_dirs_to_keep: 0` keeps nothing at all and prunes the scan being written.
+# A zero staleness window makes every manifest stale the moment it lands.
 retention:
   scan_dirs_to_keep: 3
-  elevation_dirs_to_keep: 2
+  elevation_dirs_to_keep: 2                # counted per file type, .nc and .ar2v
   stale_manifest_max_age_hours: 12
-
-env_overrides:
-  concurrency.worker_pool_size: NEXRAD_WORKER_POOL_SIZE
-  concurrency.worker_recycle_interval: NEXRAD_WORKER_RECYCLE_INTERVAL
-  concurrency.worker_timeout_seconds: NEXRAD_WORKER_TIMEOUT_SECONDS

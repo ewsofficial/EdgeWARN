@@ -1,5 +1,5 @@
 import util.file as fs
-from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
+from common.ingest.nexrad.grouping import ingest_readiness_elevation_ids
 from common.ingest.nexrad.models import ChunkKey
 from common.ingest.nexrad.pipeline.volume_discovery import is_newer_volume_stamp, local_volume_complete
 from common.ingest.nexrad.writer import elevation_manifest_path, elevation_netcdf_path, volume_output_path
@@ -35,7 +35,7 @@ def test_local_volume_complete_accepts_volume_or_grouped_elevation_outputs(tmp_p
     assert local_volume_complete("KTLH", "999", chunks) is True
 
     volume_path.unlink()
-    for index, elev in enumerate(INGEST_READINESS_ELEVATION_IDS):
+    for index, elev in enumerate(ingest_readiness_elevation_ids()):
         timestamp = f"20260507-1500{index:02d}"
         nc_path = elevation_netcdf_path("KTLH", elev, timestamp)
         nc_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ def test_local_volume_complete_requires_all_grouped_elevation_outputs(tmp_path):
     fs.initialize_filesystem(tmp_path)
     chunks = _chunks()
 
-    for elev in INGEST_READINESS_ELEVATION_IDS[:2]:
+    for elev in ingest_readiness_elevation_ids()[:2]:
         nc_path = elevation_netcdf_path("KTLH", elev, "20260507-150000")
         nc_path.parent.mkdir(parents=True, exist_ok=True)
         nc_path.write_bytes(b"elevation")
@@ -82,7 +82,7 @@ def test_local_volume_complete_accepts_expanded_elevation_sidecar_payload(tmp_pa
     fs.initialize_filesystem(tmp_path)
     chunks = _chunks()
 
-    for index, elev in enumerate(INGEST_READINESS_ELEVATION_IDS):
+    for index, elev in enumerate(ingest_readiness_elevation_ids()):
         timestamp = f"20260507-1500{index:02d}"
         nc_path = elevation_netcdf_path("KTLH", elev, timestamp)
         nc_path.parent.mkdir(parents=True, exist_ok=True)

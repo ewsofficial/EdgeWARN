@@ -5,32 +5,26 @@ from typing import Dict, Any, List, Optional, Sequence, cast
 from shapely.geometry import Polygon, MultiPolygon, shape
 from shapely.ops import unary_union
 
-def _resolve_assets_dir() -> Path:
-    current_file = Path(__file__).resolve()
-
-    for parent in current_file.parents:
-        candidate = parent / "assets" / "nws_zones"
-        if candidate.exists():
-            return candidate
-
-    return current_file.parents[4] / "assets" / "nws_zones"
+from common.config.loader import load_config, repo_root
+from .config import geometry_precision, junk_keys, simplify_tolerance
 
 
-_ASSETS_DIR = _resolve_assets_dir()
+def _assets_dir() -> Path:
+    """Where zone polygons are read from: ``nws.yaml zone_sync.assets_dir``.
 
-# Keys to remove from properties (from GeoMapper)
-JUNK_KEYS = [
-    "references",
-    "sender", 
-    "parameters",
-    "instruction",
-    "response",
-    "scope",
-    "code",
-    "language",
-    "web",
-    "eventCode",
-]
+    The same key, resolved the same way, that zone_sync.py writes them to. This
+    used to walk up from ``__file__`` for any existing ``assets/nws_zones`` and
+    ignore the catalog, which agreed with the writer only for an unrelocated
+    tree -- under ``--config-dir``, ``EDGEWARN_CONFIG_DIR``, ``--assets-dir``, or
+    an edited catalog value, the sync populated one directory and lookups read
+    another, and a miss here is silent: alerts lose their polygons.
+
+    Resolved per call, not at import, because the config root is exported into
+    the environment after this module is imported.
+    """
+    zone_sync_cfg = load_config("nws")["zone_sync"]
+    return repo_root() / zone_sync_cfg["assets_dir"]
+
 
 class ZoneLookup:
     """Lazy-loading lookup for NWS zone polygons."""
@@ -53,7 +47,7 @@ class ZoneLookup:
     @classmethod
     def _load_state(cls, state_code: str) -> None:
         """Load zone data for a state into cache."""
-        state_file = _ASSETS_DIR / state_code / "zones.json"
+        state_file = _assets_dir() / state_code / "zones.json"
         
         if not state_file.exists():
             cls._cache[state_code] = {}
@@ -71,13 +65,24 @@ class ZoneLookup:
         except Exception:
             cls._cache[state_code] = {}
 
-def round_coords(coords: Sequence[Any], precision: int = 4) -> List[List[float]]:
-    """Round coordinates to a specified precision."""
+def round_coords(coords: Sequence[Any], precision: Optional[int] = None) -> List[List[float]]:
+    """Round coordinates to a specified precision.
+
+    ``precision`` defaults to ``nws.yaml geomapper.geometry_precision``. It is a
+    parameter rather than a plain read so a caller already holding the value can
+    pass it down instead of re-resolving it per ring; ``None`` must not become a
+    literal here, because this was one of four signatures that each restated the
+    same default and had to be edited together.
+    """
+    if precision is None:
+        precision = geometry_precision()
     return [[round(float(c[0]), precision), round(float(c[1]), precision)] for c in coords]
 
 
-def _normalize_ring(coords: Sequence[Any], precision: int = 4) -> List[List[float]]:
+def _normalize_ring(coords: Sequence[Any], precision: Optional[int] = None) -> List[List[float]]:
     """Normalize one linear ring: round, filter bad points, and close ring."""
+    if precision is None:
+        precision = geometry_precision()
     normalized: List[List[float]] = []
     for point in coords:
         if not isinstance(point, (list, tuple)) or len(point) < 2:
@@ -101,10 +106,13 @@ def _normalize_ring(coords: Sequence[Any], precision: int = 4) -> List[List[floa
     return normalized
 
 
-def _geometry_to_polygon_rings(geometry: Dict[str, Any], precision: int = 4) -> List[List[List[float]]]:
+def _geometry_to_polygon_rings(geometry: Dict[str, Any], precision: Optional[int] = None) -> List[List[List[float]]]:
     """Extract exterior polygon rings from Polygon/MultiPolygon GeoJSON geometry."""
     if not geometry or not isinstance(geometry, dict):
         return []
+
+    if precision is None:
+        precision = geometry_precision()
 
     gtype = geometry.get("type")
     coords = geometry.get("coordinates")
@@ -132,14 +140,28 @@ def _geometry_to_polygon_rings(geometry: Dict[str, Any], precision: int = 4) -> 
 
     return []
 
-def extract_exterior_polygon(polygons: List[List], tolerance: float = 0.01) -> List:
+def extract_exterior_polygon(
+    polygons: List[List],
+    tolerance: Optional[float] = None,
+    precision: Optional[int] = None,
+) -> List:
     """
-    Compute the union of multiple polygons, simplify geometry, 
+    Compute the union of multiple polygons, simplify geometry,
     and return only exterior coordinates with rounded precision.
+
+    ``tolerance`` defaults to ``nws.yaml geomapper.simplify_tolerance`` and
+    ``precision`` to ``geomapper.geometry_precision``. Both are resolved once
+    here and the precision is passed down, so a MultiPolygon does not re-read
+    the catalog per part.
     """
     if not polygons:
         return []
-    
+
+    if tolerance is None:
+        tolerance = simplify_tolerance()
+    if precision is None:
+        precision = geometry_precision()
+
     shapely_polys = []
     
     for poly_coords in polygons:
@@ -165,20 +187,23 @@ def extract_exterior_polygon(polygons: List[List], tolerance: float = 0.01) -> L
         
         if unified.geom_type == 'Polygon':
             polygon = cast(Polygon, unified)
-            return [round_coords(list(polygon.exterior.coords))]
+            return [round_coords(list(polygon.exterior.coords), precision)]
         elif unified.geom_type == 'MultiPolygon':
             multipolygon = cast(MultiPolygon, unified)
-            return [round_coords(list(p.exterior.coords)) for p in multipolygon.geoms]
+            return [round_coords(list(p.exterior.coords), precision) for p in multipolygon.geoms]
         else:
             return []
     except Exception:
         return []
 
-def round_geojson_coords(geometry: Dict[str, Any], precision: int = 4) -> Dict[str, Any]:
+def round_geojson_coords(geometry: Dict[str, Any], precision: Optional[int] = None) -> Dict[str, Any]:
     """Round coordinates in a GeoJSON geometry object."""
     if not geometry or 'coordinates' not in geometry:
         return geometry
-    
+
+    if precision is None:
+        precision = geometry_precision()
+
     def _round_recursive(coords):
         if isinstance(coords, (int, float)):
             return round(float(coords), precision)
@@ -309,7 +334,7 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
     if has_geometry_to_skip:
         props.pop("geocode", None)
         props.pop("affectedZones", None)
-        for key in JUNK_KEYS:
+        for key in junk_keys():
             props.pop(key, None)
         return feature
 
@@ -359,7 +384,7 @@ def process_warning(feature: Dict[str, Any]) -> Dict[str, Any]:
         props.pop("affectedZones", None)
     
     # Remove junk keys from properties
-    for key in JUNK_KEYS:
+    for key in junk_keys():
         props.pop(key, None)
     
     return feature

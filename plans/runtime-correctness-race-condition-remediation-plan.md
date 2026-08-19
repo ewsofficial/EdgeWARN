@@ -89,7 +89,7 @@ Those suites do not currently exercise the confirmed failure branches.
 | --- | --- | --- | --- |
 | M1 | WPC fallback returns content without the actual fallback analysis time. | During WPC publication lag, previous-cycle content is stored and labeled as the requested/current analysis. | `src/common/ingest/wpc/downloader.py:63-133`; `src/common/ingest/wpc/main.py:37-74` |
 | M2 | RAP Uint16 conversion returns success for `0/N` converted layers. | Missing GRIB messages or per-layer failures do not set `ewmrs_rap_uint16`; monitoring reports a completed conversion with no usable products. | `src/common/pipeline/coordinator.py:84-97` |
-| M3 | WPC timestamped-file retention is unused and matches the wrong filename prefix. | `wpc_sfc_*.geojson` accumulates indefinitely. | `src/common/ingest/wpc/main.py:95-134`; `src/util/runtime/background.py:213-223` |
+| ~~M3~~ | ~~WPC timestamped-file retention is unused and matches the wrong filename prefix.~~ **Neither half holds.** `wpc_loop` calls `run_wpc_ingest`, which calls `clean_old_files` on every cycle, and the sweep glob has always matched the writer's `wpc_sfc_` prefix. Both strings are now keys in `wpc.yaml` coupled by a round-trip test that additionally pins that the glob does not match `latest_filename`. | — | `src/common/ingest/wpc/main.py`; `src/util/runtime/background.py:281-288` |
 | M4 | Detection cleanup starts concurrently with download and is not awaited before worker release. | An existing/cached target with old mtime, or one removed by the max-file cap, can be reported staged and then deleted before the worker opens it. | `src/common/ingest/mrms/pipeline.py:39-70`; `src/common/ingest/mrms/main.py:61-83`; `src/util/file.py:290-345` |
 | M5 | `multiprocessing.Queue.empty()` controls blocking reads and cycle termination. | Feeder timing can make the parent block in `get()`, terminate before delayed records arrive, or keep a cycle alive on stale queue state. | `src/util/runtime/logging.py:5-7`; `src/util/runtime/cycle.py:266-277` |
 | M6 | HTTPS fuzzy timestamp matching subtracts a timezone-aware request from a naive filename datetime and swallows the exception. | Exact-minute misses cannot use the intended ±2 minute fallback during normal aware-UTC runtime. | `src/common/ingest/mrms/https_client.py:197-238` |
@@ -103,7 +103,7 @@ Those suites do not currently exercise the confirmed failure branches.
 | L1 | NWS temporary files are removed only on the success path. | Repeated download, parse, reconciliation, or registry-save failures leak files in the system temporary directory. | `src/common/ingest/nws/main.py:112-133,177-212` |
 | L2 | EdgeWARN uses process-local default rate-limit stores in a four-worker cluster. | A client can receive approximately four times the configured service-wide rate, depending on cluster distribution. | `src/EdgeWARN/api/server.js:130-168,259-284` |
 | L3 | EWMRS tile coordinates use permissive `parseInt`. | Inputs such as `0junk` are accepted as tile coordinate `0`, violating the documented integer contract. | `src/EWMRS/api/routes/renders.js:346-362` |
-| L4 | WPC disables TLS certificate and hostname validation. | A network attacker or compromised proxy can alter operational WPC input without detection. | `src/common/ingest/wpc/downloader.py:77-82,124-129` |
+| ~~L4~~ | ~~WPC disables TLS certificate and hostname validation.~~ **Not a finding — WPC has always verified.** Both download paths set `check_hostname = True` and `verify_mode = ssl.CERT_REQUIRED`; the two blocks were byte-identical, which is likely how the claim arose. They are now one helper, and `wpc.verify_tls` pins verification on: the schema fixes it to `true` and the helper raises if it ever reads false. METAR is the subsystem that actually skips verification. | — | `src/common/ingest/wpc/downloader.py`; `config/schema/wpc.schema.json` |
 
 ## Remediation principles
 
@@ -138,8 +138,10 @@ Those suites do not currently exercise the confirmed failure branches.
   gzip decompression; assert no final filename remains.
 - [ ] Add historical tests for a pipeline returning no artifact, a thrown
   exception, and an alert target before the oldest retained snapshot.
-- [ ] Add WPC tests for custom base directory, fallback analysis timestamp,
-  cleanup naming/invocation, and certificate verification.
+- [ ] Add WPC tests for custom base directory and fallback analysis timestamp.
+  Cleanup naming and certificate verification are already covered by
+  `tests/core/config/test_known_drift.py`; the two remaining cases are about
+  runtime behavior, not configuration, so they belong in a WPC ingest test.
 - [ ] Add concurrent NEXRAD pool create/submit/recycle/shutdown tests.
 - [ ] Add atomic-publication tests with a reader loop for mutable JSON and
   binary artifacts.
@@ -315,15 +317,24 @@ Acceptance:
 
 #### WPC
 
-- [ ] Replace imported path constants with runtime lookups through
-  `import util.file as fs`.
-- [ ] Return `(content, actual_analysis_time)` from the WPC downloader and use
-  the actual time for GeoJSON metadata and timestamped filenames.
-- [ ] Restore normal TLS certificate and hostname validation.
-- [ ] Call retention from `wpc_loop` after successful publication.
-- [ ] Match the actual `wpc_sfc_*.geojson` naming scheme and retain
-  `latest.geojson`.
-- [ ] Publish `latest.geojson` and timestamped files atomically.
+This section is closed. Every item was either already true or has since been
+done; the two that were never broken are struck above as L4 and M3.
+
+- [x] Replace imported path constants with runtime lookups through
+  `import util.file as fs`. All three call sites read `fs.WPC_SFC_DIR` inside the
+  function, so `--base-dir` is honored.
+- [x] Return `(content, actual_analysis_time)` from the WPC downloader and use
+  the actual time for GeoJSON metadata and timestamped filenames. The fallback
+  path computes its own time from the hour it actually fetched.
+- [x] ~~Restore normal TLS certificate and hostname validation.~~ Never
+  disabled; `wpc.verify_tls` now pins it on and raises if made false.
+- [x] Call retention from `wpc_loop` after successful publication.
+  `run_wpc_ingest` calls `clean_old_files` on every cycle.
+- [x] ~~Match the actual `wpc_sfc_*.geojson` naming scheme and retain
+  `latest.geojson`.~~ Already matched. The glob, the output template, and
+  `latest_filename` are now three `wpc.yaml` keys coupled by a round-trip test.
+- [x] Publish `latest.geojson` and timestamped files atomically, via
+  `util.atomic.atomic_write_json`.
 
 Acceptance:
 
@@ -406,7 +417,8 @@ Add:
 3. H3 pinned input manifest.
 4. H4/H5/H6 transactional ingest/publication.
 5. H1/H2/H8/H10 detection and historical corrections.
-6. H9 NEXRAD lifecycle and H7/M1/M3/L4 WPC corrections.
+6. H9 NEXRAD lifecycle. The WPC corrections are done: H7 and M1 were fixed, and
+   M3 and L4 turned out not to be defects.
 7. Remaining medium/low operational hardening.
 
 Do not implement early scheduler retry without transactional publication and
@@ -422,7 +434,8 @@ failure-path tests before changing production behavior.
 - [ ] Every cycle consumes one pinned, timestamp-validated input manifest.
 - [ ] No final artifact path is visible before validation and atomic commit.
 - [ ] Single-frame and historical outputs represent their requested times.
-- [ ] WPC honors the configured base directory and real fallback timestamp.
+- [x] WPC honors the configured base directory and real fallback timestamp.
+  Both hold in the tree; a regression test is still owed (see Phase 0 tests).
 - [ ] NEXRAD pool and GUI publication are concurrency-safe.
 - [ ] Accessory process failures are detected and recovered or surfaced.
 - [ ] Full Python and Node suites pass.

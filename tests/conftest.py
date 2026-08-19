@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 import pytest
@@ -40,3 +41,11 @@ def mock_fs(tmp_path):
 def mock_env_vars(monkeypatch):
     """Set mock environment variables for testing."""
     monkeypatch.setenv("EDGEWARN_ENV", "test")
+    # io.py's arg parsers export the resolved config root. Registering the key
+    # here means a test that parses --config-dir cannot leak that root into
+    # every test that runs after it.
+    from common.config import loader as config_loader
+    monkeypatch.setenv(
+        "EDGEWARN_CONFIG_DIR",
+        os.environ.get("EDGEWARN_CONFIG_DIR") or str(config_loader.config_root()),
+    )

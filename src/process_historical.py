@@ -6,6 +6,12 @@ import time
 
 import common.ingest.mrms.config as mrms_config
 from EdgeWARN import historical_pipeline, initialize_runtime, parse_utc_time
+from EdgeWARN.api_integration.config import initialize_at_startup_historical
+from EdgeWARN.historical_config import (
+    historical_step_minutes,
+    historical_throttle_seconds,
+)
+from EdgeWARN.process.detect.config import DetectionConfig
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
 
@@ -35,7 +41,11 @@ def main():
     args = io_manager.get_historical_args()
 
     # Initialize custom filesystem if provided
-    initialize_runtime(base_dir=args.base_dir, io_manager=io_manager, initialize_indexes=False)
+    initialize_runtime(
+        base_dir=args.base_dir,
+        io_manager=io_manager,
+        initialize_indexes=initialize_at_startup_historical(),
+    )
 
     try:
         start_time = parse_utc_time(args.start)
@@ -46,8 +56,7 @@ def main():
 
     lat_limits = tuple(args.lat)
     lon_limits = tuple(args.lon)
-    json_output = Path(args.output)
-    
+
     # Initialize scheduler
     checker = MRMSUpdateChecker(verbose=True)
     
@@ -69,6 +78,16 @@ def main():
         f"drop_offset={args.drop_offset}"
     )
 
+    detection_config = DetectionConfig.from_yaml(
+        config_dir=args.config_dir,
+        refl_threshold=args.refl_threshold,
+        min_seed_percentage=args.min_seed_percentage,
+        drop_offset=args.drop_offset,
+    )
+
+    step = timedelta(minutes=historical_step_minutes())
+    throttle_seconds = historical_throttle_seconds()
+
     while current_time <= end_time:
         io_manager.write_info(f"\n{'='*60}")
         io_manager.write_info(f"Checking for data near: {current_time.isoformat()}")
@@ -81,13 +100,13 @@ def main():
         
         if latest_common is None:
             io_manager.write_warning(f"No common timestamp found near {current_time}")
-            current_time += timedelta(minutes=1)
+            current_time += step
             continue
         
         # Check if this is the same timestamp we already processed
         if latest_common == last_processed_timestamp:
             io_manager.write_info(f"Timestamp {latest_common} already processed, skipping")
-            current_time += timedelta(minutes=1)
+            current_time += step
             continue
         
         io_manager.write_info(f"Processing timestamp: {latest_common.isoformat()}")
@@ -98,15 +117,12 @@ def main():
                 latest_common,
                 lat_limits,
                 lon_limits,
-                json_output,
                 profile=args.profile,
                 io_manager=io_manager,
                 disable_ctam=args.disable_ctam,
                 disable_tracking=args.disable_tracking,
                 disable_polygon_expansion=args.disable_polygon_expansion,
-                refl_threshold=args.refl_threshold,
-                min_seed_percentage=args.min_seed_percentage,
-                drop_offset=args.drop_offset,
+                detection_config=detection_config,
             )
 
             generated_file = result[0] if isinstance(result, tuple) else result
@@ -127,11 +143,11 @@ def main():
                 f"Timestamp {latest_common} remains unprocessed and may be retried"
             )
 
-        # Increment search time by 1 minute
-        current_time += timedelta(minutes=1)
-        
-        # Small delay between iterations
-        time.sleep(1)
+        current_time += step
+
+        # Only iterations that reached the pipeline are throttled; the two early
+        # `continue` branches above skip this.
+        time.sleep(throttle_seconds)
     
     io_manager.write_info(f"\n{'='*60}")
     io_manager.write_info("Historical processing complete.")

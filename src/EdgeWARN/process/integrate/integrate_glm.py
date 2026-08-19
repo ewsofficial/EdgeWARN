@@ -1,10 +1,8 @@
 import xarray as xr
 import numpy as np
 import shapely.vectorized as sv
+from .config import section
 from .utils import StormIntegrationUtils, io_manager
-
-
-_GLM_BIN_SIZE_DEGREES = 1.0
 
 
 def _build_flash_spatial_index(flash_lats, flash_lons, bin_size):
@@ -59,6 +57,8 @@ def integrate_glm(storm_cells, glm_file_path=None):
         io_manager.write_error("GLM file path not provided to integrate_glm")
         return storm_cells
 
+    bin_size = section("glm")["bin_size_degrees"]
+
     # Load dataset
     ds = None
     try:
@@ -93,7 +93,7 @@ def integrate_glm(storm_cells, glm_file_path=None):
         flash_spatial_index = _build_flash_spatial_index(
             flash_lats,
             flash_lons,
-            _GLM_BIN_SIZE_DEGREES,
+            bin_size,
         )
 
         io_manager.write_info(f"Integrating GLM data for {len(active_cells)} cells")
@@ -115,7 +115,7 @@ def integrate_glm(storm_cells, glm_file_path=None):
                 candidate_idx = _candidate_indices_from_bounds(
                     poly.bounds,
                     flash_spatial_index,
-                    _GLM_BIN_SIZE_DEGREES,
+                    bin_size,
                 )
 
                 if candidate_idx is None or candidate_idx.size == 0:

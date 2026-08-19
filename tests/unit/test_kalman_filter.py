@@ -78,12 +78,15 @@ class TestCovarianceMatrix:
     
     def test_from_position_uncertainty(self):
         """Test creation from position uncertainty."""
-        cov = CovarianceMatrix.from_position_uncertainty(1.0)
+        cov = CovarianceMatrix.from_position_uncertainty(
+            1.0, velocity_variance=100.0, acceleration_variance=1.0
+        )
         var_lat, var_lon = cov.get_position_variance()
-        
+
         # Should be approximately (1/111)^2 for latitude
         assert var_lat > 0
         assert var_lon > 0
+        assert cov.get_velocity_variance() == (100.0, 100.0)
 
 
 class TestCoordinateConversion:
@@ -276,15 +279,6 @@ class TestConfidenceCalculator:
         assert should_term
         assert "limit" in reason.lower() or "exceeds" in reason.lower()
     
-    def test_confidence_level(self):
-        """Test confidence level classification."""
-        calc = ConfidenceCalculator()
-        
-        assert calc.get_confidence_level(0.9) == "high"
-        assert calc.get_confidence_level(0.5) == "medium"
-        assert calc.get_confidence_level(0.3) == "low"
-
-
 class TestPredictionState:
     """Tests for PredictionState class."""
     

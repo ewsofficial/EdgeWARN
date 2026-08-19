@@ -1,0 +1,31 @@
+# scheduler.yaml — Audit §6
+#
+# Consumed through src/EdgeWARN/schedule/config.py, which reads this file per call
+# so a --config-dir resolved after import still applies. Every key below is the
+# single owner of its default; no literal in scheduler.py competes with it.
+#
+# Split out of alerts.yaml, which held these values only because the audit grouped
+# them there. Nothing here concerns alerts: this is the MRMS S3 polling loop.
+
+schema_version: 1
+
+scheduler:
+  # The live lookup width. Resolved once per check in latest_common_minute_1h and
+  # passed down to _get_modifier_times rather than read in each worker.
+  modifier_lookup_max_entries: 20
+
+  # Only the StartAfter fallback when last_processed is unknown; with a known
+  # cursor the key is built from it instead and this is unused.
+  s3_lookback_hours: 2
+
+  # Elapsed time above which a modifier check emits a [PERF] line.
+  slow_check_log_threshold_ms: 2000
+
+  # NO check_max_workers KEY, deliberately. The two bare ThreadPoolExecutor()
+  # calls in scheduler.py (the primary S3 check and the HTTPS fallback) are
+  # excluded by plans/source-configuration-extraction-plan.md:622: they have no
+  # cap today, so adding one is a retune, not an extraction. A key was added here
+  # once and reverted -- if a ceiling is genuinely wanted, note that the two pools
+  # are independent (check_https_fallback has its own production caller in
+  # src/run.py, so both can run in the same tick) and give each its own key rather
+  # than coupling them under one.

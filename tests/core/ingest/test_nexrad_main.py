@@ -452,6 +452,7 @@ def test_main_uses_latest_scan_coordinator_for_default_path():
         base_dir=None,
         max_volumes_per_site=1,
         max_candidate_volumes_per_site=4,
+        config_dir=None,
     )
     parsed_sites = []
 

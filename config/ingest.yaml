@@ -1,0 +1,211 @@
+# ingest.yaml — Audit §7 MRMS & GOES
+#
+# Source: src/common/ingest/mrms/{config,parse,downloader,https_client,main}.py
+# Values verified against the working tree at commit e426fb2.
+# Every key here is consumed through config.py accessors. Citations name functions
+# rather than line numbers where the value has a single call site, because the
+# numbers rot on the next edit to the module and a stale one is worse than none.
+
+schema_version: 1
+
+mrms:
+  # Read per call via config.py mrms_bucket(). It used to be a module-scope
+  # constant, and src/run.py:9 imports this module while get_args() does not
+  # export EDGEWARN_CONFIG_DIR until src/run.py:41 -- so --config-dir could not
+  # reach it and an operator override was silently ignored in favour of the value
+  # below.
+  bucket: noaa-mrms-pds
+  # config.py mrms_decompress_chunk_size_bytes(), applied as the copyfileobj
+  # length in s3_sync.py and s3_async.py. Distinct from
+  # `ncep_https.download_chunk_size_bytes` below: that one sizes network reads,
+  # this one sizes a local gzip expansion.
+  decompress_chunk_size_bytes: 1048576    # 1 MiB
+
+  # The S3 listing depth for MRMS ingest is NOT here. It is owned by
+  # runtime.yaml `cycle.ingest_max_entries`, which the coordinator resolves for
+  # the callers that pass one and main.py resolves for the callers that do not.
+  # A copy here would be a second owner that disagreed the moment an operator
+  # raised one of them; there used to be one, and it did.
+
+  # Both read per call by main.py's four async entry points, which pass None
+  # through to mean "the caller expressed no preference".
+  remove_old_files: true
+  cleanup_max_age_minutes: 60
+  # S3 key grammars, read per call through the mrms/config.py accessor named
+  # against each key below. The modifier segment is omitted entirely -- not
+  # substituted empty -- when a product has no modifier (ProbSevere), because an
+  # empty substitution would double the slash and S3 treats that as a different
+  # prefix, which would silently match nothing.
+  #
+  # Placeholders are filled by one shared formatter, so {YYYYMMDD}, {HH} and
+  # {HHMM} mean the same thing here as in goes.bucket_path_pattern.
+  path_patterns:
+    s3_prefix: '{region}/{modifier}/{YYYYMMDD}/'          # mrms_s3_prefix
+    s3_prefix_no_modifier: '{region}/{YYYYMMDD}/'         # mrms_s3_prefix
+    # Appended to the day prefix so S3 itself excludes every other hour. Stops at
+    # the hour on purpose: it narrows a listing rather than resuming one.
+    filename_prefix: 'MRMS_{modifier}_{YYYYMMDD}-{HH}'    # mrms_filename_prefix
+    # ProbSevere separates date and hour with an underscore where the standard
+    # products use a hyphen, so its prefix cannot be extended the same way and it
+    # needs an explicit StartAfter marker instead.
+    probsevere_start_after: 'MRMS_PROBSEVERE_{YYYYMMDD}_{HH}'  # mrms_probsevere_start_after
+    # Applies to the two download call sites. The scheduler uses its own
+    # `scheduler.s3_lookback_hours` window and does not read this.
+    probsevere_start_after_lookback_hours: 1                    # mrms_probsevere_start_after
+    # Minute precision, for the scheduler resuming after a known file: an
+    # hour-precision marker would re-list what it already processed this hour.
+    filename_start_after_minute: 'MRMS_{modifier}_{YYYYMMDD}-{HHMM}'   # mrms_filename_start_after
+    probsevere_start_after_minute: 'MRMS_PROBSEVERE_{YYYYMMDD}_{HHMM}' # mrms_probsevere_start_after_minute
+
+  # HTTPS fallback against the NCEP 2D index, used when S3 lookup yields nothing.
+  # Every key below is read per call by an https_client.py call site via a config.py
+  # ncep_* accessor. The client used to hold its own copy of all seven, so editing
+  # this block to follow an NCEP reorganization did nothing at all.
+  ncep_https:
+    base_url: https://mrms.ncep.noaa.gov/data/2D              # construct_url
+    # A sibling of /data/2D rather than a directory inside it, so it is its own key
+    # and NOT base_url with a suffix appended.
+    probsevere_url: https://mrms.ncep.noaa.gov/data/ProbSevere  # construct_url
+    # find_files_sync only. Both aiohttp paths -- the async scrape and the async
+    # download -- construct a bare ClientSession and so rely on aiohttp's own
+    # timeout; this key does not reach them, and naming it `sync_` says so.
+    sync_timeout_seconds: 10
+    # How far off the requested minute a filename may sit. Reached only after an
+    # exact-minute match fails, so it has no effect on an on-the-minute hit.
+    match_window_seconds: 120
+    # Sizes reads off the network in download_matching. mrms.decompress_chunk_size_bytes
+    # is the local gzip expansion -- different resource, different owner.
+    download_chunk_size_bytes: 8192
+    # Fallback when a product is absent from directory_map: split on this token
+    # and keep the leading segment.
+    directory_split_token: '_00.'
+    # S3 modifier -> NCEP directory name, for the products whose directory does not
+    # derive by dropping the level suffix.
+    #
+    # VIL, VIL_Density and LVL3_HighResVIL are distinct NCEP directories; do not
+    # collapse them onto one entry.
+    directory_map:
+      EchoTop_18_00.50: EchoTop_18
+      EchoTop_30_00.50: EchoTop_30
+      MESH_00.50: MESH
+      NLDN_CG_005min_AvgDensity_00.00: NLDN_CG_005min_AvgDensity
+      PrecipRate_00.00: PrecipRate
+      RadarOnly_QPE_01H_00.00: RadarOnly_QPE_01H
+      MergedAzShear_0-2kmAGL_00.50: MergedAzShear_0-2kmAGL
+      MergedAzShear_3-6kmAGL_00.50: MergedAzShear_3-6kmAGL
+      VIL_Density_00.50: VIL_Density
+      VIL_00.50: VIL
+      MergedRhoHV_00.50: MergedRhoHV
+      PrecipFlag_00.00: PrecipFlag
+      MergedReflectivityAtLowestAltitude_00.50: MergedReflectivityAtLowestAltitude
+      MergedReflectivityQCComposite_00.50: MergedReflectivityQCComposite
+      VII_00.50: VII
+
+  products:                             # get_mrms_modifiers(), 28 entries {region, product, outdir}
+    - {region: CONUS, product: EchoTop_18_00.50,                     outdir: MRMS_ECHOTOP18_DIR}
+    - {region: CONUS, product: EchoTop_30_00.50,                     outdir: MRMS_ECHOTOP30_DIR}
+    - {region: CONUS, product: EchoTop_50_00.50,                     outdir: MRMS_ECHOTOP50_DIR}
+    - {region: CONUS, product: FLASH_CREST_MAXUNITSTREAMFLOW_00.00,  outdir: MRMS_FLASH_CREST_MAXUNIT_DIR}
+    - {region: CONUS, product: FLASH_QPE_ARIMAX_00.00,               outdir: MRMS_FLASH_ARIMAX_DIR}
+    - {region: CONUS, product: FLASH_QPE_ARI30M_00.00,               outdir: MRMS_FLASH_ARI30M_DIR}
+    - {region: CONUS, product: FLASH_QPE_ARI01H_00.00,               outdir: MRMS_FLASH_ARI01H_DIR}
+    - {region: CONUS, product: FLASH_HP_MAXUNITSTREAMFLOW_00.00,     outdir: MRMS_FLASH_HP_MAXUNIT_DIR}
+    - {region: CONUS, product: FLASH_SAC_MAXSOILSAT_00.00,           outdir: MRMS_FLASH_SAC_MAXSOIL_DIR}
+    - {region: CONUS, product: FLASH_QPE_FFGMAX_00.00,               outdir: MRMS_FLASH_FFGMAX_DIR}
+    - {region: CONUS, product: RadarQualityIndex_00.00,              outdir: MRMS_RQI_DIR}
+    - {region: CONUS, product: MESH_00.50,                           outdir: MRMS_MESH_DIR}
+    - {region: CONUS, product: NLDN_CG_005min_AvgDensity_00.00,      outdir: MRMS_NLDN_DIR}
+    - {region: CONUS, product: PrecipRate_00.00,                     outdir: MRMS_PRECIPRATE_DIR}
+    - {region: CONUS, product: RadarOnly_QPE_01H_00.00,              outdir: MRMS_QPE_DIR}
+    - {region: CONUS, product: MergedAzShear_0-2kmAGL_00.50,         outdir: MRMS_AZSHEARLOW_DIR}
+    - {region: CONUS, product: MergedAzShear_3-6kmAGL_00.50,         outdir: MRMS_AZSHEARMID_DIR}
+    - {region: CONUS, product: VIL_Density_00.50,                    outdir: MRMS_DVIL_DIR}
+    - {region: ProbSevere, product: null,                            outdir: MRMS_PROBSEVERE_DIR}
+    - {region: CONUS, product: MergedRhoHV_00.50,                    outdir: MRMS_RHOHV_DIR}
+    - {region: CONUS, product: PrecipFlag_00.00,                     outdir: MRMS_PRECIPTYP_DIR}
+    - {region: CONUS, product: MergedReflectivityAtLowestAltitude_00.50, outdir: MRMS_RALA_DIR}
+    - {region: CONUS, product: MergedReflectivityQCComposite_00.50,  outdir: MRMS_COMPOSITE_DIR}
+    - {region: CONUS, product: VII_00.50,                            outdir: MRMS_VII_DIR}
+    - {region: CONUS, product: VIL_00.50,                            outdir: MRMS_VIL_DIR}
+    - {region: CONUS, product: Reflectivity_0C_00.50,                outdir: MRMS_REF_0C_DIR}
+    - {region: CONUS, product: Reflectivity_-5C_00.50,               outdir: MRMS_REFM5C_DIR}
+    - {region: CONUS, product: Reflectivity_-15C_00.50,              outdir: MRMS_REFM15C_DIR}
+
+  # get_check_modifiers(), a 12-entry subset of `products`. Same triple shape --
+  # the readiness checker needs the outdir, not just the product name.
+  check_products:
+    - {region: CONUS, product: EchoTop_18_00.50,                     outdir: MRMS_ECHOTOP18_DIR}
+    - {region: CONUS, product: EchoTop_30_00.50,                     outdir: MRMS_ECHOTOP30_DIR}
+    - {region: CONUS, product: EchoTop_50_00.50,                     outdir: MRMS_ECHOTOP50_DIR}
+    - {region: CONUS, product: PrecipRate_00.00,                     outdir: MRMS_PRECIPRATE_DIR}
+    - {region: CONUS, product: MergedAzShear_0-2kmAGL_00.50,         outdir: MRMS_AZSHEARLOW_DIR}
+    - {region: CONUS, product: MergedAzShear_3-6kmAGL_00.50,         outdir: MRMS_AZSHEARMID_DIR}
+    - {region: CONUS, product: VIL_Density_00.50,                    outdir: MRMS_DVIL_DIR}
+    - {region: ProbSevere, product: null,                            outdir: MRMS_PROBSEVERE_DIR}
+    - {region: CONUS, product: PrecipFlag_00.00,                     outdir: MRMS_PRECIPTYP_DIR}
+    - {region: CONUS, product: MergedReflectivityAtLowestAltitude_00.50, outdir: MRMS_RALA_DIR}
+    - {region: CONUS, product: MergedReflectivityQCComposite_00.50,  outdir: MRMS_COMPOSITE_DIR}
+    - {region: CONUS, product: VII_00.50,                            outdir: MRMS_VII_DIR}
+
+  # Only the detection list is a literal, read by main.py get_detection_modifiers().
+  # The integration, ewmrs and ewmrs_support lists are derived from it plus
+  # `products` and the render layer set -- get_integration_modifiers(),
+  # get_ewmrs_modifiers() and get_ewmrs_support_modifiers() -- and must stay
+  # derived so they cannot drift.
+  membership_lists:
+    detection: [MergedReflectivityQCComposite_00.50, PrecipFlag_00.00, null]
+
+goes:
+  # These four are read per call, via config.py goes_bucket(), abi_radc_product()
+  # and _abi_channel_definitions(). See the note on `mrms.bucket` for why binding
+  # them at module scope put them out of reach of --config-dir.
+  bucket: noaa-goes19
+  abi_product: ABI-L1b-RadC
+  glm_product: GLM-L2-LCFA               # config.py get_goes_modifiers()
+  glm_outdir: GOES_GLM_DIR               # config.py get_goes_modifiers()
+  # The retained-file count cap per GOES spec, resolved in
+  # GoesIngestSpec.__post_init__ rather than as a field default -- a dataclass
+  # default is evaluated once, at class-definition time. A caller may still pass
+  # max_files explicitly, including None, which means "no cap" to
+  # util.file.clean_old_files.
+  max_files_per_spec: 2
+  # downloader.py _goes_search_max_entries(). The listing depth for every GOES
+  # lookup, and the only one -- no GOES entry point takes a per-call count.
+  # GLM publishes roughly 180 objects an hour, so the MRMS depth in
+  # runtime.yaml (`cycle.ingest_max_entries`, 10) would never list back to the
+  # requested scan.
+  max_entries: 96
+  # downloader.py _get_goes_bucket_paths(), the one place hour_lookback is
+  # consumed and therefore the one place it is resolved. The five GOES entry
+  # points default the parameter to None and pass it straight through, so a
+  # caller may still narrow the window per call without owning the default.
+  hour_lookback: 3
+
+  # config.py goes_cleanup_max_age_minutes(), applied by downloader.py's GOES
+  # pre-download cleanup. Deliberately separate from mrms.cleanup_max_age_minutes
+  # despite matching it today: GOES cleanup also enforces `max_files_per_spec`,
+  # so the two bound different retention policies.
+  cleanup_max_age_minutes: 60
+  # config.py goes_bucket_path(); parse.py parse_goes_bucket_path() only wraps it.
+  bucket_path_pattern: '{product}/{YYYY}/{DDD}/{HH}/'
+  filename_matcher_template: '(?:_|-)M\d{channel_id}_' # config.py get_abi_radc_channel_specs()
+  # 16 channels. `get_abi_radc_channel_specs(channel_ids=None)` selects all of
+  # them; passing an explicit list narrows the selection. The catalog order is the
+  # spec order.
+  abi_channels:
+    - {id: C01, name: visible_blue,     outdir: GOES_ABI_VISIBLE_BLUE_DIR}
+    - {id: C02, name: visible_red,      outdir: GOES_ABI_VISIBLE_RED_DIR}
+    - {id: C03, name: veggie,           outdir: GOES_ABI_VEGGIE_DIR}
+    - {id: C04, name: cirrus,           outdir: GOES_ABI_CIRRUS_DIR}
+    - {id: C05, name: snow_ice,         outdir: GOES_ABI_SNOW_ICE_DIR}
+    - {id: C06, name: particle_size,    outdir: GOES_ABI_PARTICLE_SIZE_DIR}
+    - {id: C07, name: shortwave_ir,     outdir: GOES_ABI_SHORTWAVE_IR_DIR}
+    - {id: C08, name: upper_level_wv,   outdir: GOES_ABI_UPPER_LEVEL_WV_DIR}
+    - {id: C09, name: mid_level_wv,     outdir: GOES_ABI_MID_LEVEL_WV_DIR}
+    - {id: C10, name: lower_level_wv,   outdir: GOES_ABI_LOWER_LEVEL_WV_DIR}
+    - {id: C11, name: cld_top_phase,    outdir: GOES_ABI_CLD_TOP_PHASE_DIR}
+    - {id: C12, name: ozone,            outdir: GOES_ABI_OZONE_DIR}
+    - {id: C13, name: clean_lwir,       outdir: GOES_ABI_CLEAN_LWIR_DIR}
+    - {id: C14, name: longwave_ir,      outdir: GOES_ABI_LONGWAVE_IR_DIR}
+    - {id: C15, name: dirty_lwir,       outdir: GOES_ABI_DIRTY_LWIR_DIR}
+    - {id: C16, name: co2_lwir,         outdir: GOES_ABI_CO2_LWIR_DIR}

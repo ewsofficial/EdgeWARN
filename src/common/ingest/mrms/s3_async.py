@@ -9,7 +9,8 @@ import aiofiles
 import aiofiles.os
 from datetime import timedelta
 from util.handler import extract_timestamp
-from common.ingest.mrms.s3_common import DECOMPRESS_CHUNK_SIZE, select_target_file
+from common.ingest.mrms.config import mrms_decompress_chunk_size_bytes
+from common.ingest.mrms.s3_common import select_target_file
 
 class AsyncFileFinder:
     """Async version of FileFinder using aioboto3 for non-blocking S3 operations"""
@@ -270,7 +271,7 @@ class AsyncFileDownloader:
                     with gzip.open(gz_path, "rb") as f_in, open(part_path, "wb") as f_out:
                         # Reading through EOF verifies gzip integrity before the
                         # final filename can become observable.
-                        shutil.copyfileobj(f_in, f_out, length=DECOMPRESS_CHUNK_SIZE)
+                        shutil.copyfileobj(f_in, f_out, length=mrms_decompress_chunk_size_bytes())
                         f_out.flush()
                         os.fsync(f_out.fileno())
                     if part_path.stat().st_size == 0:

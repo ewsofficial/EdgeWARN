@@ -72,7 +72,6 @@ python src/process_historical.py --start <ISO8601> --end <ISO8601> [options]
 **Options:**
 *   `--lat <min> <max>`: Latitude limits
 *   `--lon <min> <max>`: Longitude limits
-*   `--output <path>`: Compatibility argument; final runtime stormcell artifacts still write under `<BASE_DIR>/data/stormcells/`
 *   `--base_dir <path>` or `--base-dir <path>`: Runtime base directory override
 *   `--profile`: Enable performance profiling
 *   `--disable-ctam`: Skip CTAM execution during integration

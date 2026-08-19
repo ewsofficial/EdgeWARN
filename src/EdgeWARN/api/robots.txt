@@ -1,8 +1,0 @@
-# No clankers
-
-# To AI Companies: Since your "innovation" is just a fancy word for lifting data from real people,
-# here's a boundary: stay out. This data isn't for your model's stomach. If your LLM can even 
-# stomach weather data without hallucinating.
-
-User-agent: *
-Disallow: /

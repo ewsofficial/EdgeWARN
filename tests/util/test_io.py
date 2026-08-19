@@ -3,10 +3,14 @@ Tests for IO utility module
 """
 
 import pytest
+import shutil
 import sys
+import yaml
 from io import StringIO
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
+from common.config import loader as config_loader
 from util.io import TimestampedOutput, QueueWriter, IOManager
 
 
@@ -135,16 +139,18 @@ class TestIOManager:
         captured = capsys.readouterr()
         assert "[Test] ERROR: Error message" in captured.out
 
-    def test_get_args_default_values(self):
+    def test_get_args_default_values(self, monkeypatch):
         """Test get_args with default values"""
         io = IOManager("[Test]")
+        monkeypatch.delenv("EDGEWARN_BASE_DIR", raising=False)
+        monkeypatch.delenv("BASE_DIR", raising=False)
         
         with patch.object(sys, 'argv', ['script']):
             args = io.get_args()
             
             assert args.lat_limits == [20, 55]
             assert args.lon_limits == [230, 300]
-            assert args.base_dir is None
+            assert args.base_dir == str(Path.home() / "EdgeWARN_input")
 
     def test_get_args_custom_lat_lon(self):
         """Test get_args with custom lat/lon limits"""
@@ -227,9 +233,11 @@ class TestIOManager:
             with pytest.raises(SystemExit):
                 io.get_args()
 
-    def test_get_historical_args_default_values(self):
+    def test_get_historical_args_default_values(self, monkeypatch):
         """Test historical args with default values."""
         io = IOManager("[Test]")
+        monkeypatch.delenv("EDGEWARN_BASE_DIR", raising=False)
+        monkeypatch.delenv("BASE_DIR", raising=False)
 
         with patch.object(sys, 'argv', ['script', '--start', '2024-01-01T00:00:00', '--end', '2024-01-01T01:00:00']):
             args = io.get_historical_args()
@@ -238,8 +246,7 @@ class TestIOManager:
             assert args.end == '2024-01-01T01:00:00'
             assert args.lat == [20, 55]
             assert args.lon == [-130, -60]
-            assert args.output == 'stormcell_test.json'
-            assert args.base_dir is None
+            assert args.base_dir == str(Path.home() / "EdgeWARN_input")
 
     def test_get_historical_args_common_flags(self):
         """Test historical args reuse shared processing flags."""
@@ -266,3 +273,52 @@ class TestIOManager:
             assert args.refl_threshold == 40.0
             assert args.min_seed_percentage == 0.01
             assert args.drop_offset == 12.0
+
+
+@pytest.fixture
+def alternate_config_dir(tmp_path):
+    """A full copy of ``config/`` with distinguishable values, outside the repo."""
+    destination = tmp_path / "alt_config"
+    shutil.copytree(config_loader.config_root(), destination)
+
+    runtime_path = destination / "runtime.yaml"
+    document = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
+    document["run"]["lat_limits"] = [21, 54]
+    runtime_path.write_text(yaml.safe_dump(document), encoding="utf-8")
+    return destination
+
+
+class TestConfigDirPropagation:
+    """``--config-dir`` must reach children that are spawned without argv."""
+
+    def test_get_args_exports_resolved_config_root(self, alternate_config_dir):
+        io = IOManager("[Test]")
+
+        with patch.object(sys, 'argv', ['script', '--config-dir', str(alternate_config_dir)]):
+            args = io.get_args()
+
+        assert args.lat_limits == [21, 54]
+        # A child resolving with no CLI argument now lands on the same root.
+        assert config_loader.config_root() == alternate_config_dir
+
+    def test_get_historical_args_exports_resolved_config_root(self, alternate_config_dir):
+        io = IOManager("[Test]")
+
+        with patch.object(sys, 'argv', [
+            'script',
+            '--start', '2024-01-01T00:00:00',
+            '--end', '2024-01-01T01:00:00',
+            '--config-dir', str(alternate_config_dir),
+        ]):
+            io.get_historical_args()
+
+        assert config_loader.config_root() == alternate_config_dir
+
+    def test_config_dir_without_runtime_yaml_fails_at_parse_time(self, tmp_path):
+        io = IOManager("[Test]")
+        empty = tmp_path / "empty"
+        empty.mkdir()
+
+        with patch.object(sys, 'argv', ['script', '--config-dir', str(empty)]):
+            with pytest.raises(config_loader.ConfigError):
+                io.get_args()

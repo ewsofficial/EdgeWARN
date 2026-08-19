@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gzip
 import json
-import re
 import struct
 from pathlib import Path
 
@@ -10,54 +9,11 @@ import numpy as np
 from util.atomic import atomic_output_path, atomic_write_json
 
 import util.file as fs
+from EWMRS.render.config import nexrad_variable_colormaps
 from common.ingest.nexrad.parser import MSG_31_BLOCK_POINTERS, MSG_HEADER_LEN, MSG_31_PREFIX_LEN, iter_sweep_records, parse_grouped_ar2v_file_mmap
 
 
-VCP_SWEEP_ELEVATION_LABELS = {
-    "VCP-212": {
-        0: "0.5",
-        1: "0.5",
-        2: "0.9",
-        3: "0.9",
-        4: "1.3",
-        5: "1.3",
-        6: "1.8",
-        7: "2.4",
-        8: "3.1",
-    },
-    "VCP-215": {
-        0: "0.5",
-        1: "0.5",
-        2: "0.9",
-        3: "0.9",
-        4: "1.2",
-        5: "1.2",
-        8: "1.8",
-        9: "2.4",
-        10: "3.1",
-    },
-    "VCP-12": {
-        0: "0.5",
-        1: "0.5",
-        2: "0.9",
-        3: "0.9",
-        4: "1.2",
-        5: "1.2",
-        6: "1.8",
-        7: "2.4",
-        8: "3.1",
-    },
-}
-
 NEXRAD_FIELD_MAGIC = b"EWFFv1S0"
-NEXRAD_VARIABLE_COLORMAP_KEYS = {
-    "DBZH": "NWS_Reflectivity",
-    "VRADH": "VRADH",
-    "WRADH": "WRADH",
-    "PHIDP": "PHIDP",
-    "RHOHV": "RHOHV",
-    "ZDR": "ZDR",
-}
 RAW_NEXRAD_BLOCK_VARIABLE_NAMES = {
     "DREF": "DBZH",
     "DVEL": "VRADH",
@@ -82,28 +38,6 @@ def nexrad_render_manifest_dir(site: str) -> Path:
     return nexrad_render_site_dir(site) / "render"
 
 
-def _normalize_scan_name(scan_name: str | None) -> str | None:
-    if scan_name is None:
-        return None
-    text = str(scan_name).strip().upper()
-    if not text:
-        return None
-
-    match = re.search(r"VCP[-_ ]?(\d+)", text)
-    if match:
-        return f"VCP-{int(match.group(1))}"
-
-    if text.isdigit():
-        return f"VCP-{int(text)}"
-
-    return text
-
-
-def _canonical_elevation_label(scan_name: str | None, sweep_index: int) -> str | None:
-    normalized_scan_name = _normalize_scan_name(scan_name)
-    if normalized_scan_name is None:
-        return None
-    return VCP_SWEEP_ELEVATION_LABELS.get(normalized_scan_name, {}).get(sweep_index)
 def nexrad_render_elevation_dir(site: str, elevation_label: str) -> Path:
     return nexrad_render_site_dir(site) / str(elevation_label)
 
@@ -284,6 +218,7 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
     requested_groups = sorted(sweeps_by_group)
 
     manifest_layers = []
+    colormap_keys = nexrad_variable_colormaps()
     elevation_label = artifact.elevation
     elevation_dir = nexrad_render_elevation_dir(site, elevation_label)
     elevation_dir.mkdir(parents=True, exist_ok=True)
@@ -317,7 +252,7 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
                     "canonical_elevation": elevation_label,
                     "bin_path": str(bin_path),
                     "variable_name": variable_name,
-                    "colormap_key": NEXRAD_VARIABLE_COLORMAP_KEYS.get(variable_name),
+                    "colormap_key": colormap_keys.get(variable_name),
                     "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
                     "azimuth_count": int(ordered_azimuths.shape[0]),
                     "range_count": int(ranges.shape[0]),
@@ -325,81 +260,6 @@ def _serialize_direct_grouped_ar2v_artifact(site: str, volume_id: str, artifact,
             )
 
     return manifest_layers
-
-
-def serialize_nexrad_render_intermediate(
-    site: str,
-    volume_id: str,
-    scan_timestamp: str,
-    volume_path: Path,
-    parsed_volume,
-) -> Path:
-    render_dir = nexrad_render_manifest_dir(site)
-    render_dir.mkdir(parents=True, exist_ok=True)
-
-    manifest_layers = []
-    datatree = getattr(parsed_volume, "datatree", None)
-    scan_name = getattr(parsed_volume, "scan_name", None)
-    if datatree is not None:
-        for sweep_index, sweep in enumerate(parsed_volume.sweeps):
-            canonical_elevation = _canonical_elevation_label(scan_name, sweep_index)
-            if canonical_elevation is None:
-                continue
-            node = datatree[sweep.group_name]
-            dataset = node.ds if hasattr(node, "ds") else node.to_dataset()
-            if "azimuth" not in dataset.coords or "range" not in dataset.coords:
-                continue
-
-            azimuths = np.asarray(dataset["azimuth"].values, dtype=np.float32)
-            ranges = np.asarray(dataset["range"].values, dtype=np.float32)
-            for variable_name in dataset.data_vars:
-                if not _should_serialize_variable(sweep, variable_name):
-                    continue
-                data_array = dataset[variable_name]
-                if tuple(data_array.dims)[:2] != ("azimuth", "range"):
-                    continue
-
-                values = np.asarray(data_array.values, dtype=np.float32)
-                dense_data = values.T.astype(np.float16, copy=False)
-                dense_data, azimuths = _normalize_azimuth_axis(dense_data, azimuths)
-
-                layer_name = f"NEXRAD_{variable_name}_SWEEP_{sweep_index:02d}"
-                elevation_dir = nexrad_render_elevation_dir(site, canonical_elevation)
-                elevation_dir.mkdir(parents=True, exist_ok=True)
-                bin_path = nexrad_render_variable_bin_path(site, scan_timestamp, canonical_elevation, variable_name)
-                _write_nexrad_variable_bin(bin_path, dense_data, azimuths, ranges)
-
-                manifest_layers.append(
-                    {
-                        "name": layer_name,
-                        "site": str(site).upper(),
-                        "volume_id": str(volume_id),
-                        "scan_timestamp": scan_timestamp,
-                        "sweep_index": sweep_index,
-                        "sweep_group": sweep.group_name,
-                        "fixed_angle": float(sweep.fixed_angle),
-                        "canonical_elevation": canonical_elevation,
-                        "bin_path": str(bin_path),
-                        "variable_name": variable_name,
-                        "colormap_key": NEXRAD_VARIABLE_COLORMAP_KEYS.get(variable_name),
-                        "data_shape": [int(dense_data.shape[0]), int(dense_data.shape[1])],
-                        "azimuth_count": int(azimuths.shape[0]),
-                        "range_count": int(ranges.shape[0]),
-                    }
-                )
-
-    manifest_path = render_dir / f"{str(site).upper()}_{scan_timestamp}_{volume_id}.json"
-    manifest_payload = {
-        "site": str(site).upper(),
-        "volume_id": str(volume_id),
-        "scan_timestamp": scan_timestamp,
-        "volume_path": str(volume_path),
-        "scan_name": parsed_volume.scan_name,
-        "dynamic_scan_type": parsed_volume.dynamic_scan_type,
-        "layers": manifest_layers,
-    }
-    atomic_write_json(manifest_path, manifest_payload, indent=2)
-    return manifest_path
 
 
 def serialize_nexrad_elevation_artifacts(

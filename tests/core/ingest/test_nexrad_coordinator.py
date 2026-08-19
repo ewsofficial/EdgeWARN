@@ -4,7 +4,7 @@ import pytest
 
 import util.file as fs
 from common.ingest.nexrad.coordinator import NexradScanCoordinator
-from common.ingest.nexrad.grouping import INGEST_READINESS_ELEVATION_IDS
+from common.ingest.nexrad.grouping import ingest_readiness_elevation_ids
 from common.ingest.nexrad.writer import elevation_manifest_path, volume_output_path, elevation_netcdf_path
 from common.ingest.nexrad.models import ChunkKey, NexradIngestResult, RadarStationVcp
 
@@ -266,7 +266,7 @@ async def test_coordinator_skips_when_latest_scan_is_already_downloaded(tmp_path
 async def test_coordinator_skips_when_elevation_artifacts_exist(tmp_path):
     fs.initialize_filesystem(tmp_path)
     remote_chunks = _chunks()
-    for index, elev in enumerate(INGEST_READINESS_ELEVATION_IDS):
+    for index, elev in enumerate(ingest_readiness_elevation_ids()):
         timestamp = f"20260507-1500{index:02d}"
         nc_path = elevation_netcdf_path("KTLH", elev, timestamp)
         nc_path.parent.mkdir(parents=True, exist_ok=True)

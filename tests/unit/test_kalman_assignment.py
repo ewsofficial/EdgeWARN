@@ -9,6 +9,8 @@ Tests the measurement assignment functionality including:
 - Hungarian algorithm assignment
 """
 
+import dataclasses
+
 import pytest
 import numpy as np
 from datetime import datetime
@@ -17,7 +19,7 @@ from EdgeWARN.process.detect.kalman import (
     KalmanFilter,
     KalmanObservation,
     AssignmentConfig,
-    DEFAULT_ASSIGNMENT_CONFIG,
+    default_assignment_config,
     haversine_distance,
 )
 
@@ -86,13 +88,17 @@ class TestMahalanobisDistance:
     def test_is_within_gate_accept(self, initialized_filter):
         """Test that close point is accepted."""
         # At predicted position should be accepted
-        is_valid = initialized_filter.is_within_gate(35.0, -97.0, threshold=6.0)
+        is_valid = initialized_filter.is_within_gate(
+            35.0, -97.0, threshold=6.0, min_radius_km=2.0
+        )
         assert is_valid is True
     
     def test_is_within_gate_reject(self, initialized_filter):
         """Test that far point is rejected."""
         # Very far point should be rejected
-        is_valid = initialized_filter.is_within_gate(40.0, -90.0, threshold=6.0)
+        is_valid = initialized_filter.is_within_gate(
+            40.0, -90.0, threshold=6.0, min_radius_km=2.0
+        )
         assert is_valid is False
     
     def test_is_within_gate_fallback(self, initialized_filter):
@@ -113,19 +119,33 @@ class TestMahalanobisDistance:
 class TestAssignmentConfig:
     """Tests for AssignmentConfig dataclass."""
 
-    def test_custom_config_overrides_defaults(self):
-        """Test custom configuration values override defaults."""
-        config = AssignmentConfig(
+    def test_yaml_supplies_every_value(self):
+        """The dataclass declares no defaults, so all values come from YAML."""
+        config = default_assignment_config()
+
+        assert config.prefilter_radius_km == 16.0
+        assert config.gating_threshold == 6.0
+        assert config.min_gating_radius_km == 2.0
+        assert config.method == "greedy"
+        assert config.weight_position == 1.0
+
+    def test_replace_overrides_a_single_value(self):
+        """Callers override by deriving from the loaded config, not by rebuilding."""
+        config = dataclasses.replace(
+            default_assignment_config(),
             prefilter_radius_km=20.0,
             gating_threshold=5.0,
-            method="greedy"
         )
-        
+
         assert config.prefilter_radius_km == 20.0
         assert config.gating_threshold == 5.0
-        assert config.method == "greedy"
+        # Untouched fields keep the YAML values.
         assert config.min_gating_radius_km == 2.0
         assert config.weight_position == 1.0
+
+    def test_cannot_be_constructed_without_all_fields(self):
+        with pytest.raises(TypeError):
+            AssignmentConfig(prefilter_radius_km=20.0)
 
 
 class TestAssignmentCostCalculator:

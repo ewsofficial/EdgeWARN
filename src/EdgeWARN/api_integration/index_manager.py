@@ -4,20 +4,25 @@ from datetime import datetime, timezone, timedelta
 from util.io import IOManager
 import util.file as fs
 from util.atomic import atomic_write_json
+from EdgeWARN.api_integration.config import (
+    inactive_cell_max_age_minutes,
+    remove_old_cells_realtime,
+)
 
 
 class APIIndexManager:
     """Manages index files for the API to track available resources."""
-    
-    def __init__(self, io_manager: IOManager, remove_old_cells=True):
+
+    def __init__(self, io_manager: IOManager, remove_old_cells=None):
         self.io_manager = io_manager
         self.stormcell_index_path = fs.STORMCELL_DIR / "stormcell_index.json"
         self.cell_index_path = fs.CELL_DIR / "cell_index.json"
-        self.remove_old_cells = remove_old_cells
+        # The realtime value is the default; historical callers pass their own.
+        self.remove_old_cells = (
+            remove_old_cells_realtime() if remove_old_cells is None else remove_old_cells
+        )
         self.cell_timestamps = {}
         self.stormcell_timestamps = set()
-        self.stormcell_updates_since_resync = 0
-        self.stormcell_resync_interval = 500
         self._initial_scan_done = False
         self._stormcell_initial_scan_done = False
         
@@ -54,7 +59,6 @@ class APIIndexManager:
                 timestamps.append(timestamp)
 
         self.stormcell_timestamps = set(timestamps)
-        self.stormcell_updates_since_resync = 0
         self._stormcell_initial_scan_done = True
         
         # Create index
@@ -112,26 +116,27 @@ class APIIndexManager:
             
     def update_stormcell_index(self, timestamp: str):
         """
-        Update stormcell_index.json incrementally for new timestamps.
-        Falls back to full directory resync periodically to reconcile deletions.
-        
+        Update stormcell_index.json incrementally, or resync if no timestamp.
+
+        No periodic resync counter, and no config key for one. An interval only
+        means something if the counter outlives a single update, and it cannot:
+        the only path here is detection, and src/util/runtime/cycle.py starts
+        edgewarn_tandem_worker in a fresh multiprocessing.Process per cycle, so
+        any per-instance counter is zeroed before every update regardless of the
+        scope the manager is hoisted into. Adding an interval requires first
+        moving the index commit somewhere that survives a cycle -- the long-lived
+        loop in src/run.py, or a counter persisted into stormcell_index.json.
+
         Args:
             timestamp: Timestamp of the latest stormcell output.
         """
         if not self._stormcell_initial_scan_done:
             self._initialize_stormcell_index()
 
-        self.stormcell_updates_since_resync += 1
-
-        should_resync = (
-            self.stormcell_updates_since_resync >= self.stormcell_resync_interval
-            or not timestamp
-        )
-
         timestamp_str = str(timestamp) if timestamp is not None else ""
         stormcell_file = fs.STORMCELL_DIR / f"stormcells_{timestamp_str}.json"
 
-        if not should_resync and stormcell_file.exists():
+        if timestamp and stormcell_file.exists():
             self.stormcell_timestamps.add(timestamp_str)
             index_data = {
                 "timestamps": sorted(self.stormcell_timestamps),
@@ -161,15 +166,15 @@ class APIIndexManager:
     
     def cleanup_inactive_cells(self):
         """
-        Remove files older than 2 hours using our tracked state, then update index.
+        Expire cells past their age budget using our tracked state, then update index.
         Doesn't glob the directory.
         """
         if not self._initial_scan_done:
             self._initial_scan_cell_index()
-            
+
         if self.remove_old_cells:
             current_time = datetime.now(timezone.utc).timestamp()
-            cutoff_time = current_time - (120 * 60) # 120 minutes ago
+            cutoff_time = current_time - (inactive_cell_max_age_minutes() * 60)
             
             expired_cells = []
             for cell_id, timestamp in self.cell_timestamps.items():

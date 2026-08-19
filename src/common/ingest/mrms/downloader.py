@@ -5,10 +5,15 @@ from statistics import fmean
 
 from common.ingest.manifest import StagedInput, staged_input_from_path
 from common.ingest.mrms.config import (
-    bucket,
+    get_goes_max_entries,
     get_goes_modifiers,
     get_mrms_modifiers,
     goes_bucket,
+    goes_cleanup_max_age_minutes,
+    goes_hour_lookback,
+    mrms_bucket,
+    mrms_filename_prefix,
+    mrms_probsevere_start_after,
     normalize_goes_modifier,
 )
 from common.ingest.mrms.s3_sync import FileFinder, FileDownloader
@@ -30,7 +35,26 @@ import uuid
 
 io_manager = IOManager("[Ingest]")
 
-GOES_MAX_ENTRIES = 96
+
+def _narrow_mrms_lookup(dt, region, modifier):
+    """Return the ``(prefix, start_after)`` pair that narrows one MRMS listing.
+
+    Two mutually exclusive ways to avoid listing a whole day:
+
+    * A modifier means the filename carries the hour, so appending
+      :func:`mrms_filename_prefix` to the day prefix makes S3 itself exclude every
+      other hour, and no ``StartAfter`` marker is needed.
+    * ProbSevere has no modifier and separates its date and hour with an
+      underscore, so the prefix cannot be extended that way; it gets an explicit
+      marker one lookback behind the target instead.
+
+    The sync and async download paths shared neither the code nor a comment
+    explaining the asymmetry, and each carried its own copy of both grammars.
+    """
+    prefix = parse_mrms_bucket_path(dt, region, modifier)
+    if modifier is not None:
+        return f"{prefix}{mrms_filename_prefix(dt, modifier)}", None
+    return prefix, f"{prefix}{mrms_probsevere_start_after(dt)}"
 
 
 @dataclass(frozen=True)
@@ -134,12 +158,30 @@ def _get_goes_spec_label(goes_spec):
     return goes_spec.label if goes_spec.channel_id else goes_spec.product
 
 
-def _get_goes_search_max_entries(goes_spec, max_entries):
-    _ = (goes_spec, max_entries)
-    return GOES_MAX_ENTRIES
+def _goes_search_max_entries():
+    """The GOES listing depth, deliberately independent of the MRMS depth.
+
+    GLM publishes roughly 180 objects an hour, so the MRMS depth of 10 would
+    never list back far enough to reach the requested scan. Every GOES caller
+    reads this value rather than supplying one per call.
+
+    Read per call, not at import, so a `--config-dir` that a spawned accessory
+    resolves after this module is imported is still honored.
+    """
+    return get_goes_max_entries()
 
 
-def _get_goes_bucket_paths(dt, product, hour_lookback):
+def _get_goes_bucket_paths(dt, product, hour_lookback=None):
+    """The hourly bucket prefixes one GOES lookup walks, newest hour first.
+
+    The single resolution site for ``hour_lookback``. Every GOES entry point
+    passes its parameter straight through, so ``None`` there means "no caller
+    narrowed the window" and the catalog value applies here -- one owner, and
+    still overridable per call.
+    """
+    if hour_lookback is None:
+        hour_lookback = goes_hour_lookback()
+
     return [
         parse_goes_bucket_path(dt, product, hour_offset=hour_offset)
         for hour_offset in range(hour_lookback)
@@ -166,8 +208,11 @@ def _filter_goes_files_for_spec(file_list, goes_spec, trace_id=None):
     return filtered_files
 
 
-def _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=60):
+def _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=None):
     """Run pre-download cleanup for a GOES product output directory (sync path)."""
+    if max_age_minutes is None:
+        max_age_minutes = goes_cleanup_max_age_minutes()
+
     try:
         outdir = goes_spec.outdir
         fs.clean_old_files(outdir, max_age_minutes=max_age_minutes, max_files=goes_spec.max_files)
@@ -176,8 +221,11 @@ def _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=60):
         io_manager.write_warning(f"[GOES:{label}] Pre-download cleanup failed for {outdir}: {e}")
 
 
-async def _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=60):
+async def _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=None):
     """Run pre-download cleanup for a GOES product output directory (async path)."""
+    if max_age_minutes is None:
+        max_age_minutes = goes_cleanup_max_age_minutes()
+
     try:
         outdir = goes_spec.outdir
         await fs.async_clean_old_files(outdir, max_age_minutes=max_age_minutes, max_files=goes_spec.max_files)
@@ -188,14 +236,14 @@ async def _cleanup_goes_outdir_async(goes_spec, trace_id, max_age_minutes=60):
         )
 
 
-def _cleanup_goes_specs_sync(goes_specs, max_age_minutes=60):
+def _cleanup_goes_specs_sync(goes_specs, max_age_minutes=None):
     for goes_spec in goes_specs:
         _cleanup_goes_outdir_sync(goes_spec, max_age_minutes=max_age_minutes)
     if goes_specs:
         io_manager.write_info(f"GOES pre-download cleanup completed for {len(goes_specs)} products")
 
 
-async def _cleanup_goes_specs_async(goes_specs, trace_id, max_age_minutes=60):
+async def _cleanup_goes_specs_async(goes_specs, trace_id, max_age_minutes=None):
     if not goes_specs:
         return
     await asyncio.gather(
@@ -257,54 +305,14 @@ async def download_modifier_async(region, modifier, outdir, dt, max_entries, s3_
     trace_id = parent_trace_id or f"MOD-{uuid.uuid4().hex[:8]}"
     modifier_name = _mrms_modifier_label(modifier)
 
-    finder = AsyncFileFinder(dt, bucket, max_entries, io_manager, s3_client=s3_client)
-    downloader = AsyncFileDownloader(dt, bucket, io_manager, s3_client=s3_client)
+    s3_bucket = mrms_bucket()
+    finder = AsyncFileFinder(dt, s3_bucket, max_entries, io_manager, s3_client=s3_client)
+    downloader = AsyncFileDownloader(dt, s3_bucket, io_manager, s3_client=s3_client)
 
     perf_tracker.start(f"Ingest - MRMS - {modifier_name}")
     try:
-        bucket_path = parse_mrms_bucket_path(dt, region, modifier)
-        
-        # Optimization: Append filename prefix to search only this hour
-        # Also limit search with S3 StartAfter to skip previous hours
-        start_after = None
-        from datetime import timedelta
-        
-        if modifier is not None:
-            # Standard MRMS: MRMS_{modifier}_{YYYYMMDD}-{HHMMSS}
-            filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
-            bucket_path = f"{bucket_path}{filename_prefix}"
-            
-            # StartAfter: Previous hour to rely on safe margin (though filename_prefix in bucket_path already filters stricter?)
-            # Wait, if we append filename_prefix to bucket_path passed to lookup_files,
-            # lookup_files uses that as Prefix.
-            # If Prefix is .../MRMS_Modifier_20260208-14, then we ONLY get files from hour 14.
-            # S3 Prefix filtering is very efficient.
-            # So StartAfter is NOT NEEDED if we include hour in Prefix!
-            # The current code ALREADY ADDS filename_prefix (including hour) to bucket_path!
-            # Check lines 59-61:
-            # filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
-            # bucket_path = f"{bucket_path}{filename_prefix}"
-            
-            # So for non-ProbSevere, we effectively filter by hour already!!!
-            pass
+        bucket_path, start_after = _narrow_mrms_lookup(dt, region, modifier)
 
-        else:
-            # ProbSevere (modifier is None)
-            # Prefix is ProbSevere/YYYYMMDD/
-            # We assume we can't easily append prefix because filename format "MRMS_PROBSEVERE_..." 
-            # might not match "ProbSevere" folder name exactly (Case sensitivity).
-            # Folder: ProbSevere/
-            # File: MRMS_PROBSEVERE_...
-            # If we try to add prefix "MRMS_PROBSEVERE_..." to "ProbSevere/YYYYMMDD/"
-            # "ProbSevere/YYYYMMDD/MRMS_PROBSEVERE_..." matches!
-            # But the existing code `filename_prefix` logic was inside `if modifier is not None`.
-            # So ProbSevere was NOT getting the hour prefix optimization.
-            
-            # Let's add StartAfter optimization for ProbSevere!
-            # Filename: MRMS_PROBSEVERE_YYYYMMDD_HHMMSS
-            start_after_dt = dt - timedelta(hours=1)
-            start_after = f"{bucket_path}MRMS_PROBSEVERE_{start_after_dt.strftime('%Y%m%d_%H')}"
-        
         # Async file lookup (S3)
         lookup_started_at = asyncio.get_running_loop().time()
         perf_tracker.start(f"Ingest - MRMS - {modifier_name} - Lookup")
@@ -427,24 +435,13 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
     # Enforce minute-precision dt
     dt = dt.replace(second=0, microsecond=0)
 
-    finder = FileFinder(dt, bucket, max_entries, io_manager)
-    downloader = FileDownloader(dt, bucket, io_manager)
+    s3_bucket = mrms_bucket()
+    finder = FileFinder(dt, s3_bucket, max_entries, io_manager)
+    downloader = FileDownloader(dt, s3_bucket, io_manager)
     modifier_name = _mrms_modifier_label(modifier)
 
     try:
-        bucket_path = parse_mrms_bucket_path(dt, region, modifier)
-        
-        # Optimization: Append filename prefix to search only this hour
-        start_after = None
-        from datetime import timedelta
-
-        if modifier is not None:
-            filename_prefix = f"MRMS_{modifier}_{dt.strftime('%Y%m%d-%H')}"
-            bucket_path = f"{bucket_path}{filename_prefix}"
-        else:
-            # ProbSevere optimization
-            start_after_dt = dt - timedelta(hours=1)
-            start_after = f"{bucket_path}MRMS_PROBSEVERE_{start_after_dt.strftime('%Y%m%d_%H')}"
+        bucket_path, start_after = _narrow_mrms_lookup(dt, region, modifier)
 
         file_list = finder.lookup_files(bucket_path, start_after=start_after)
 
@@ -476,31 +473,29 @@ def download_modifier_sync(region, modifier, outdir, dt, max_entries):
 
 # ==================== GOES-19 Download Functions ====================
 
-def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3, preloaded_files=None):
+def download_goes_product(goes_spec, dt, hour_lookback=None, preloaded_files=None):
     """
     Download a specific GOES-19 product.
-    
+
     Args:
         goes_spec: GOES ingest specification or legacy ``(product, outdir)`` tuple
         dt (datetime): Target datetime (UTC, timezone-aware)
-        max_entries (int): Maximum number of file entries to retrieve (default: 10)
-        hour_lookback (int): Number of hours to look back (default: 3).
-    
+        hour_lookback (int): Hours to look back; None uses goes.hour_lookback.
+
     Returns:
         Path: Path to downloaded file, or None if failed
     """
     # Enforce minute-precision dt
     # dt = dt.replace(second=0, microsecond=0) # Allow seconds for sliding window
-    
-    # Increase max_entries to ensure we find files in the past (GLM has ~180 files/hour)
+
     goes_spec = normalize_goes_modifier(goes_spec)
     product = goes_spec.product
     outdir = goes_spec.outdir
     label = _get_goes_spec_label(goes_spec)
 
-    search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
-    finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
-    downloader = FileDownloader(dt, goes_bucket, io_manager)
+    s3_bucket = goes_bucket()
+    finder = FileFinder(dt, s3_bucket, _goes_search_max_entries(), io_manager)
+    downloader = FileDownloader(dt, s3_bucket, io_manager)
     
     try:
         all_files = preloaded_files
@@ -598,7 +593,6 @@ def download_goes_product(goes_spec, dt, max_entries=10, hour_lookback=3, preloa
 async def _download_goes_product_async(
     goes_spec,
     dt,
-    max_entries,
     hour_lookback,
     s3_client,
     parent_trace_id=None,
@@ -607,7 +601,7 @@ async def _download_goes_product_async(
 ):
     """
     Async version of download_goes_product.
-    
+
     Internal async function for downloading a single GOES product using aioboto3.
     """
     goes_spec = normalize_goes_modifier(goes_spec)
@@ -616,10 +610,11 @@ async def _download_goes_product_async(
     label = _get_goes_spec_label(goes_spec)
     trace_id = parent_trace_id or f"GOES-{uuid.uuid4().hex[:8]}"
 
-    # Increase max_entries to ensure we find files in the past
-    search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
-    finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3_client)
-    downloader = AsyncFileDownloader(dt, goes_bucket, io_manager, s3_client=s3_client)
+    s3_bucket = goes_bucket()
+    finder = AsyncFileFinder(
+        dt, s3_bucket, _goes_search_max_entries(), io_manager, s3_client=s3_client
+    )
+    downloader = AsyncFileDownloader(dt, s3_bucket, io_manager, s3_client=s3_client)
     
     perf_tracker.start(f"Ingest - GOES - {label}")
     try:
@@ -744,24 +739,25 @@ async def _download_goes_product_async(
     perf_tracker.stop(f"Ingest - GOES - {label}")
 
 
-def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
+def download_goes_specs(goes_specs, dt, hour_lookback=None):
     """Download a specific list of GOES-19 products."""
     goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
     if not goes_modifiers_list:
         return DownloadBatchResult(attempted=(), downloaded=(), failed=())
 
     io_manager.write_info("Starting GOES-19 downloads...")
-    _cleanup_goes_specs_sync(goes_modifiers_list, max_age_minutes=60)
+    _cleanup_goes_specs_sync(goes_modifiers_list)
 
     # Use ThreadPoolExecutor for concurrent downloads
     shared_channel_files_by_product = {}
+    s3_bucket = goes_bucket()
+    search_max_entries = _goes_search_max_entries()
 
     for goes_spec in goes_modifiers_list:
         if not goes_spec.channel_id or goes_spec.product in shared_channel_files_by_product:
             continue
 
-        search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
-        finder = FileFinder(dt, goes_bucket, search_max_entries, io_manager)
+        finder = FileFinder(dt, s3_bucket, search_max_entries, io_manager)
         bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
         shared_channel_files_by_product[goes_spec.product] = finder.lookup_files(bucket_paths)
 
@@ -773,7 +769,6 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
                 download_goes_product,
                 goes_spec,
                 dt,
-                max_entries,
                 hour_lookback,
                 shared_channel_files_by_product.get(goes_spec.product)
                 if goes_spec.channel_id
@@ -814,24 +809,22 @@ def download_goes_specs(goes_specs, dt, max_entries=10, hour_lookback=3):
     )
 
 
-def download_all_goes_files(dt, max_entries=10, hour_lookback=3):
+def download_all_goes_files(dt, hour_lookback=None):
     """
     Download all configured GOES-19 products.
-    
+
     Args:
         dt (datetime): Target datetime (UTC, timezone-aware)
-        max_entries (int): Maximum number of file entries per product (default: 10)
-        hour_lookback (int): Number of hours to look back (default: 3)
+        hour_lookback (int): Hours to look back; None uses goes.hour_lookback.
     """
     return download_goes_specs(
         get_goes_modifiers(),
         dt,
-        max_entries=max_entries,
         hour_lookback=hour_lookback,
     )
 
 
-async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookback=3):
+async def download_goes_specs_async(goes_specs, dt, hour_lookback=None):
     """Async version: Download a specific list of GOES-19 products concurrently."""
     trace_id = f"GOES_ALL-{uuid.uuid4().hex[:8]}"
     goes_modifiers_list = [normalize_goes_modifier(spec) for spec in goes_specs]
@@ -842,15 +835,18 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
     async with aioboto3.Session().client("s3", config=Config(signature_version=UNSIGNED)) as s3:
         io_manager.write_info(f"[{trace_id}] Starting async GOES-19 downloads...")
         perf_maps = {"lookup_ms": {}, "download_ms": {}, "decompress_ms": {}}
-        await _cleanup_goes_specs_async(goes_modifiers_list, trace_id, max_age_minutes=60)
+        await _cleanup_goes_specs_async(goes_modifiers_list, trace_id)
         shared_channel_files_by_product = {}
+        s3_bucket = goes_bucket()
+        search_max_entries = _goes_search_max_entries()
 
         for goes_spec in goes_modifiers_list:
             if not goes_spec.channel_id or goes_spec.product in shared_channel_files_by_product:
                 continue
 
-            search_max_entries = _get_goes_search_max_entries(goes_spec, max_entries)
-            finder = AsyncFileFinder(dt, goes_bucket, search_max_entries, io_manager, s3_client=s3)
+            finder = AsyncFileFinder(
+                dt, s3_bucket, search_max_entries, io_manager, s3_client=s3
+            )
             bucket_paths = _get_goes_bucket_paths(dt, goes_spec.product, hour_lookback)
             lookup_started_at = asyncio.get_running_loop().time()
             shared_channel_files_by_product[goes_spec.product] = await finder.async_lookup_files(bucket_paths)
@@ -865,7 +861,6 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
             _download_goes_product_async(
                 goes_spec,
                 dt,
-                max_entries,
                 hour_lookback,
                 s3,
                 trace_id,
@@ -917,18 +912,16 @@ async def download_goes_specs_async(goes_specs, dt, max_entries=10, hour_lookbac
         )
 
 
-async def download_all_goes_files_async(dt, max_entries=10, hour_lookback=3):
+async def download_all_goes_files_async(dt, hour_lookback=None):
     """
     Async version: Download all configured GOES-19 products concurrently.
-    
+
     Args:
         dt (datetime): Target datetime (UTC, timezone-aware)
-        max_entries (int): Maximum number of file entries per product (default: 10)
-        hour_lookback (int): Number of hours to look back (default: 3)
+        hour_lookback (int): Hours to look back; None uses goes.hour_lookback.
     """
     return await download_goes_specs_async(
         get_goes_modifiers(),
         dt,
-        max_entries=max_entries,
         hour_lookback=hour_lookback,
     )

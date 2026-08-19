@@ -37,11 +37,16 @@ Realtime execution also starts background loops for METAR, NWS, WPC, GOES ABI, G
 
 Key entry points:
 
-- `download_all_files_async(dt, max_entries=10, remove_old_files=True)`
+- `download_all_files_async(dt, max_entries=None, remove_old_files=None)`
 - `download_detection_files_async(dt, ...)`
 - `download_integration_files_async(dt, ...)`
 - `download_ewmrs_files_async(dt, ...)`
 - `download_all_files(dt, ...)` (async wrapper with sync fallback)
+
+`max_entries` and `remove_old_files` default to `None` on every entry point so
+the catalogs stay the single owner. They resolve to
+`runtime.yaml` `cycle.ingest_max_entries` and `ingest.yaml`
+`mrms.remove_old_files` respectively; a caller-supplied value still wins.
 
 Notes:
 
@@ -65,9 +70,10 @@ The NWS asset maintenance utility `src/common/ingest/nws/zone_sync.py` can also 
 - `--max-retries`
 - `--max-workers`
 - `--pause-seconds`
-- `--no-progress`
+- `--progress` / `--no-progress`
 - `--apply`
 - `--report-path`
+- `--config-dir`
 
 Key behavior:
 
@@ -109,16 +115,33 @@ RAP cache cleanup uses the same encoded analysis timestamps and staleness
 policy. It retains at most the newest three eligible analyses under
 `<BASE_DIR>/data/RAP`.
 
-RAP Uint16Array conversion is configured in `src/EWMRS/rap/config.py` and writes one raw little-endian `data.u16` file per configured data layer:
+RAP Uint16Array conversion is configured by the `rap_uint16` section of
+`config/ewmrs_pipeline.yaml`, read through the accessors in
+`src/EWMRS/rap/config.py`. It writes one raw little-endian `data.u16` file per
+configured data layer:
 
 ```text
-<BASE_DIR>/gui/RAP/<LayerName>/<YYYYMMDD-HHMM00>/data.u16
-<BASE_DIR>/gui/RAP/<LayerName>/<YYYYMMDD-HHMM00>/metadata.json
+<BASE_DIR>/gui/RAP/<outdir>/<YYYYMMDD-HHMM00>/data.u16
+<BASE_DIR>/gui/RAP/<outdir>/<YYYYMMDD-HHMM00>/metadata.json
 ```
 
-Each `data.u16` contains the full `Ni * Nj` grid from one matched RAP GRIB message. Each `metadata.json` records the array shape, grid point count, scale, missing-value sentinel, byte order, units, source GRIB keys, and `colormap_key` needed to reconstruct and render values from a browser `Uint16Array`.
+The path segment is the layer's `outdir`, which is deliberately distinct from
+its `name`: the layer named `RAP_Temperature_2m` writes to `Temperature_2m`.
+`outdir` is relative to `<BASE_DIR>/gui/RAP`.
 
-RAP `colormap_key` values are stable and discoverable through `GET /colormaps`, where RAP entries are keyed by the RAP layer name. Colormap definitions follow NOAA/SPC/GEMPAK lineage where practical machine-readable standards are available and use documented project fallbacks for remaining variables.
+Each `data.u16` contains the full `Ni * Nj` grid from one matched RAP GRIB
+message. Each `metadata.json` records the layer name, timestamp, source file,
+array shape, grid, dtype, byte order, scale, missing-value sentinel, units, and
+the matched GRIB keys needed to reconstruct and render values from a browser
+`Uint16Array`. `colormap_key` and `description` are written only when the layer
+declares them, so consumers must treat both as optional.
+
+RAP `colormap_key` values are stable and discoverable through `GET /colormaps`.
+They are *not* layer names: several layers share one key, so `RAP_Temperature_2m`
+resolves to `RAP_Temperature_LL` and both 10 m wind components resolve to
+`RAP_Wind_LL`. Colormap definitions follow NOAA/SPC/GEMPAK lineage where
+practical machine-readable standards are available and use documented project
+fallbacks for remaining variables.
 
 ## METAR
 

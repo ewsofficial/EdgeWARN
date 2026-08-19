@@ -16,9 +16,15 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from math import sqrt, atan2, pi
 
-from .config import AssignmentConfig, DEFAULT_ASSIGNMENT_CONFIG
+from .config import AssignmentConfig, default_assignment_config
 from .filter import KalmanFilter
 from .state import haversine_distance
+
+
+# Theoretical maximum of the directional term ``1 - cos(angle_diff)``, reached at
+# a 180° reversal. Derived from the cost formula rather than configurable: a knob
+# here would let the assignment budget disagree with what the term can produce.
+MAX_DIRECTIONAL_COST = 2.0
 
 
 @dataclass
@@ -50,30 +56,35 @@ class AssignmentCostCalculator:
     Cost = w1 * d_position + w2 * d_velocity + w3 * d_shape
     """
     
-    def __init__(self, config: AssignmentConfig = DEFAULT_ASSIGNMENT_CONFIG):
+    def __init__(self, config: Optional[AssignmentConfig] = None):
         """
         Initialize cost calculator.
-        
+
         Args:
-            config: Assignment configuration parameters
+            config: Assignment configuration parameters; loaded from
+                ``config/kalman.yaml`` when not supplied
         """
-        self.config = config
-    
+        self.config = config if config is not None else default_assignment_config()
+
     def compute_cost(self, track: Dict[str, Any], detection: Dict[str, Any],
                      kalman_filter: KalmanFilter,
-                     dt_seconds: float = 120.0) -> float:
+                     dt_seconds: Optional[float] = None) -> float:
         """
         Compute total assignment cost for a track-detection pair.
-        
+
         Args:
             track: Tracked storm cell dictionary
             detection: New detection dictionary
             kalman_filter: Kalman filter for the track
-            dt_seconds: Time since last update (for velocity computation)
-        
+            dt_seconds: Time since last update (for velocity computation). When
+                omitted, uses ``assignment_costs.default_dt_seconds``.
+
         Returns:
             Total assignment cost (lower is better)
         """
+        if dt_seconds is None:
+            dt_seconds = self.config.costs.default_dt_seconds
+
         # Get detection centroid
         det_centroid = detection.get('centroid', [0, 0])
         det_lat, det_lon = det_centroid[0], det_centroid[1]
@@ -224,7 +235,7 @@ class AssignmentCostCalculator:
         pred_u, pred_v = kalman_filter.state.get_velocity()
         pred_speed = sqrt(pred_u**2 + pred_v**2)
         
-        if pred_speed < 1.0:  # Nearly stationary
+        if pred_speed < self.config.costs.predicted_speed_deadband_ms:  # Nearly stationary
             return 0.0
         
         # Compute implied velocity from position change
@@ -247,7 +258,7 @@ class AssignmentCostCalculator:
         implied_v = dy / dt_seconds
         implied_speed = sqrt(implied_u**2 + implied_v**2)
         
-        if implied_speed < 0.5:  # Very small implied motion
+        if implied_speed < self.config.costs.implied_speed_deadband_ms:  # Very small implied motion
             return 0.0
         
         # Compute angular deviation
@@ -282,36 +293,37 @@ class AssignmentCostCalculator:
         Returns:
             Shape cost (0 = identical, higher = more different)
         """
+        costs = self.config.costs
         cost = 0.0
-        
+
         # Max reflectivity comparison (log scale)
         track_refl = track.get('max_refl', 0)
         det_refl = detection.get('max_refl', 0)
-        
+
         if track_refl > 0 and det_refl > 0:
             # Log-scale difference
             refl_diff = abs(np.log10(det_refl) - np.log10(track_refl))
-            cost += min(refl_diff, 1.0)  # Cap at 1.0
-        
+            cost += min(refl_diff, costs.reflectivity_diff_cap)
+
         # Size comparison (number of gates)
         track_gates = track.get('num_gates', 0)
         det_gates = detection.get('num_gates', 0)
-        
+
         if track_gates > 0 and det_gates > 0:
             # Relative size difference
             size_ratio = max(track_gates, det_gates) / min(track_gates, det_gates)
             # Normalize: ratio of 2 gives cost of ~0.3, ratio of 4 gives ~0.6
-            size_cost = np.log2(size_ratio) / 2.0
-            cost += min(size_cost, 1.0)  # Cap at 1.0
-        
+            size_cost = np.log2(size_ratio) / costs.size_ratio_log2_divisor
+            cost += min(size_cost, costs.size_cost_cap)
+
         return cost
 
 
 def build_cost_matrix(tracks: List[Dict[str, Any]],
                       detections: List[Dict[str, Any]],
                       kalman_filters: Dict[int, KalmanFilter],
-                      config: AssignmentConfig = DEFAULT_ASSIGNMENT_CONFIG,
-                      dt_seconds: float = 120.0) -> Tuple[np.ndarray, Dict[int, int], Dict[int, int]]:
+                      config: Optional[AssignmentConfig] = None,
+                      dt_seconds: Optional[float] = None) -> Tuple[np.ndarray, Dict[int, int], Dict[int, int]]:
     """
     Build full cost matrix for all track-detection pairs.
     
@@ -365,8 +377,8 @@ def build_cost_matrix(tracks: List[Dict[str, Any]],
 def build_filtered_cost_matrix(tracks: List[Dict[str, Any]],
                                track_candidates: Dict[int, List[Dict[str, Any]]],
                                kalman_filters: Dict[int, KalmanFilter],
-                               config: AssignmentConfig = DEFAULT_ASSIGNMENT_CONFIG,
-                               dt_seconds: float = 120.0) -> Tuple[np.ndarray, Dict[int, int], Dict[int, int], List[Tuple[int, int]], Dict[Tuple[int, int], float]]:
+                               config: Optional[AssignmentConfig] = None,
+                               dt_seconds: Optional[float] = None) -> Tuple[np.ndarray, Dict[int, int], Dict[int, int], List[Tuple[int, int]], Dict[Tuple[int, int], float]]:
     """
     Build reduced cost matrix for pre-filtered candidates.
 
@@ -397,6 +409,8 @@ def build_filtered_cost_matrix(tracks: List[Dict[str, Any]],
     all_candidate_detections = set()
 
     calculator = AssignmentCostCalculator(config)
+    config = calculator.config
+    max_shape_cost = config.costs.reflectivity_diff_cap + config.costs.size_cost_cap
 
     for track in tracks:
         track_id = int(track['id'])
@@ -412,8 +426,8 @@ def build_filtered_cost_matrix(tracks: List[Dict[str, Any]],
                         track, candidates[0], kf, dt_seconds
                     )
                     max_cost = (config.weight_position * config.gating_threshold
-                                + config.weight_velocity * 2.0
-                                + config.weight_shape * 2.0)
+                                + config.weight_velocity * MAX_DIRECTIONAL_COST
+                                + config.weight_shape * max_shape_cost)
                     if cost <= max_cost:
                         det_id = int(candidates[0]['id'])
                         single_assignments.append((track_id, det_id))
@@ -516,8 +530,8 @@ def solve_assignment(cost_matrix: np.ndarray,
 def run_hybrid_assignment(tracks: List[Dict[str, Any]],
                           detections: List[Dict[str, Any]],
                           kalman_filters: Dict[int, KalmanFilter],
-                          config: AssignmentConfig = DEFAULT_ASSIGNMENT_CONFIG,
-                          dt_seconds: float = 120.0) -> AssignmentResult:
+                          config: Optional[AssignmentConfig] = None,
+                          dt_seconds: Optional[float] = None) -> AssignmentResult:
     """
     Run the full hybrid assignment algorithm.
     
@@ -602,8 +616,8 @@ def run_hybrid_assignment(tracks: List[Dict[str, Any]],
 def run_greedy_assignment(tracks: List[Dict[str, Any]],
                           detections: List[Dict[str, Any]],
                           kalman_filters: Dict[int, KalmanFilter],
-                          config: AssignmentConfig = DEFAULT_ASSIGNMENT_CONFIG,
-                          dt_seconds: float = 120.0) -> AssignmentResult:
+                          config: Optional[AssignmentConfig] = None,
+                          dt_seconds: Optional[float] = None) -> AssignmentResult:
     """
     Run greedy nearest-neighbor assignment (fallback method).
     

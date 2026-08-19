@@ -3,14 +3,27 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from common.ingest.synoptic.config import get_rap_max_age_minutes
+
 
 _MRMS_TIMESTAMP_RE = re.compile(r"(\d{8})[-_](\d{6})")
 _GOES_TIMESTAMP_RE = re.compile(r"s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})(\d)")
+
+
+def _default_rap_max_age_seconds() -> float:
+    """The staging window and the validation ceiling are one setting.
+
+    `downloader.py:248` walks back through analysis hours until this budget is
+    exhausted, so a raised budget stages an older file on purpose. A ceiling
+    pinned here independently would then reject that file as out of range,
+    turning a widened budget into a cycle failure.
+    """
+    return get_rap_max_age_minutes() * 60.0
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -132,7 +145,7 @@ class CycleInputManifest:
     # strict per-scan selection without rejecting a normal operational lag.
     mrms_tolerance_seconds: float = 180.0
     goes_tolerance_seconds: float = 1200.0
-    rap_max_age_seconds: float = 10800.0
+    rap_max_age_seconds: float = field(default_factory=_default_rap_max_age_seconds)
 
     def __post_init__(self):
         object.__setattr__(self, "cycle_time", _as_utc(self.cycle_time))
@@ -258,6 +271,8 @@ class CycleInputManifest:
             mrms_tolerance_seconds=float(tolerances.get("mrms_seconds", 180.0)),
             goes_tolerance_seconds=float(tolerances.get("goes_seconds", 1200.0)),
             rap_max_age_seconds=float(
-                tolerances.get("rap_max_age_seconds", 10800.0)
+                tolerances.get(
+                    "rap_max_age_seconds", _default_rap_max_age_seconds()
+                )
             ),
         )
