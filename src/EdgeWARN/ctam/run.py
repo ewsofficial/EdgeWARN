@@ -10,6 +10,7 @@ Supports both:
 """
 
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from collections import Counter
@@ -17,6 +18,8 @@ from .registry import CellModuleRegistry, GridModuleRegistry, ModuleRegistry
 from .engine import initialize_modules
 from EdgeWARN.alerts import AlertManager
 from .util.history_cache import CellHistoryCache
+from . import discovery, readiness
+from common.ingest.manifest import CycleInputManifest
 
 # Import modules to trigger auto-registration
 from . import modules  # noqa: F401
@@ -25,25 +28,87 @@ from . import modules  # noqa: F401
 import util.file as fs
 
 
-def run_ctam(cells: List[Dict[str, Any]], timestamp: Optional[str] = None) -> List[Dict[str, Any]]:
+def _run_phase1_discovery_dry_run(
+    cells: List[Dict[str, Any]],
+    timestamp: str,
+    json_path: Optional[str],
+    input_manifest: Optional[CycleInputManifest],
+) -> None:
+    """Discover external modules and record per-cycle readiness. Launches nothing.
+
+    Phase 1 of plans/modular-ctam-internal-api-plan.md adds discovery and
+    readiness without execution -- the legacy registry-based modules below are
+    untouched. This dry run must never block them, so every failure here is
+    caught and logged rather than raised.
+    """
+    try:
+        started_at = datetime.now(timezone.utc)
+        catalog = readiness.build_catalog(
+            cells=cells,
+            timestamp=timestamp,
+            stormcell_path=json_path,
+            input_manifest=input_manifest,
+        )
+        discovery_result = discovery.discover_modules()
+
+        evaluations = {}
+        for module in discovery_result.modules:
+            if module.manifest is None:
+                continue
+            evaluations[module.module_id] = readiness.evaluate_requirements(
+                module.manifest, catalog
+            )
+
+        status = readiness.cycle_status(
+            catalog=catalog,
+            discovery=discovery_result,
+            evaluations=evaluations,
+            state=readiness.CYCLE_STATE_REQUIREMENTS_EVALUATED,
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+        )
+        readiness.write_cycle_status(status)
+        print(
+            f"[CTAM] Phase 1 discovery: root={discovery_result.root} "
+            f"root_present={discovery_result.root_present} "
+            f"runnable={len(discovery_result.runnable)}/{len(discovery_result.modules)}"
+        )
+    except Exception as e:
+        print(f"[CTAM] Phase 1 discovery/readiness dry run failed: {e}")
+
+
+def run_ctam(
+    cells: List[Dict[str, Any]],
+    timestamp: Optional[str] = None,
+    *,
+    json_path: Optional[str] = None,
+    input_manifest: Optional[CycleInputManifest] = None,
+) -> List[Dict[str, Any]]:
     """
     Run all registered CTAM modules on the provided storm cells.
-    
+
     First runs cell-based modules, then runs grid-based modules.
     Grid results are attached to the first cell for output.
-    
+
     This is the single entry point for CTAM processing in the pipeline.
     Modules are automatically discovered from the registry.
-    
+
     Args:
         cells: List of storm cell dictionaries, each with 'properties' key.
         timestamp: Optional scan timestamp (e.g. YYYYMMDD-HHMMSS) to save as an alert snapshot.
-        
+        json_path: Optional path to this cycle's stormcell snapshot, used only to
+            report its readiness in the Phase 1 discovery dry run below.
+        input_manifest: Optional pinned CycleInputManifest, used only to build the
+            Phase 1 read-only file catalog. Never executes module code.
+
     Returns:
         The same list of cells with 'modules' populated by each registered module.
     """
     start_time = time.time()
-    
+
+    if timestamp:
+        _run_phase1_discovery_dry_run(cells, timestamp, json_path, input_manifest)
+
     # Clean up expired alerts before running modules
     # This prevents expired alerts from piling up on disk
     try:
