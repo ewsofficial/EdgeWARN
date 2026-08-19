@@ -53,6 +53,22 @@ BOOKEND_VORTEX_LINEARITY_THRESHOLD = 0.6
 BOOKEND_MAX_BRANCHING = 2
 ```
 
+### Environmental Calibration
+```python
+FL_MEAN = 4.0             # reference freezing level (km), standard mid-latitude
+FL_SIGMA = 1.5            # transition width (km)
+FL_MAX_CORRECTION = 1.0   # max VIL-density mean reduction at high FL (g/m^3)
+
+DD_MEAN = 12.0            # dewpoint depression (C) where P(correction) = 0.5
+DD_SIGMA = 5.0            # transition width (C)
+DD_MAX_CORRECTION = 1.0   # max VIL-density mean reduction in very dry air (g/m^3)
+```
+
+These do not score directly. Each produces a Gaussian CDF multiplier that
+*lowers* the effective `MB_VIL_DENSITY_MEAN`, so a high freezing level or a dry
+sub-cloud layer makes the same observed VIL density score as riskier. Both
+corrections replaced an older set of hard thresholds, which no longer exist.
+
 ## Algorithm
 
 ### Feature Extraction
@@ -85,8 +101,23 @@ def _gaussian_score(self, value, mean, sigma, invert=False):
 
 ```python
 qlcs_risk = (score_solidity + score_aspect + score_shear + (notch_score * 1.5)) / 4.5
+qlcs_risk = min(1.0, qlcs_risk + bookend_bonus)
+
 mb_risk = ((score_vil_density + score_et) / 2.0) * 0.7 + (collapse_score * 0.3)
+if collapse_score > 0.8:
+    mb_risk = max(mb_risk, 0.9)
 ```
+
+Two adjustments follow the weighted sums and both matter:
+
+- A detected bookend vortex adds a flat `bookend_bonus` of `0.5` to
+  `qlcs_risk`, clamped to `1.0`. That bonus alone clears the `0.5`
+  classification threshold, so a confirmed bookend vortex is sufficient to
+  classify a cell as QLCS regardless of its morphology scores.
+- `collapse_score` accumulates `0.5` for a VIL collapse and `0.5` for an echo-top
+  collapse, so it is `1.0` only when both trigger. In that case the
+  `collapse_score > 0.8` branch floors `mb_risk` at `0.9` — a dual collapse
+  cannot be scored down by weak VIL-density or echo-top terms.
 
 ## Usage
 
@@ -122,11 +153,19 @@ storm_entry["modules"]["MorphoWind"]
 
 ## Risk Classification
 
-| Risk Type | Threshold | Description |
+| Risk Type | Condition | Description |
 |-----------|-----------|-------------|
-| None | <= 0.5 | No significant wind threat |
-| QLCS | > 0.5 | Quasi-Linear Convective System (bow echo) |
-| Microburst | > 0.5 | Downburst/microburst potential |
+| QLCS | `qlcs_risk > 0.5` and `qlcs_risk >= mb_risk` | Quasi-Linear Convective System (bow echo) |
+| Microburst | otherwise, `mb_risk > 0.5` | Downburst/microburst potential |
+| None | neither score exceeds `0.5` | No significant wind threat |
+
+The two are mutually exclusive — a cell gets one `risk_type`, never both — and
+QLCS wins an exact tie because its test uses `>=`. `confidence` is the winning
+score.
+
+`severity_index` is `max(qlcs_risk, mb_risk)` and is always populated, so a cell
+classified `None` still reports a non-zero severity when a score sits just under
+`0.5`. Read `risk_type` rather than thresholding `severity_index` yourself.
 
 ## Key Features
 

@@ -9,42 +9,33 @@ These legacy EWMRS routes are compatibility adapters mounted by the unified
 - Base URL: `/`
 - Response format: JSON for metadata/list routes, PNG for render downloads/tiles, raw binary for RAP Uint16 arrays
 
-Runtime configuration:
+There is no separate EWMRS process, port, or configuration surface. These routes
+share the unified service's runtime settings, documented in
+`docs/api/api_implementation.md`:
 
-- Base directory resolution order: `--base_dir`, then `BASE_DIR`, then platform default
-- Debug mode flags: `--debug-server` and `--debug_server`
-- Default port: `3003`
-- Debug port: `3004` unless `PORT` is set
+- Default port `5000`; debug port `3001` via `--debug-server`
+- Base directory: `--base-dir` (or `--base_dir`), then `EDGEWARN_BASE_DIR`, then
+  `BASE_DIR`, then `config/filesystem.yaml`
+- Rate limits are the unified ones — `40` requests per second and `2000` per
+  minute from `config/api.yaml`, overridable with `RATE_LIMIT_MAX_SEC` and
+  `RATE_LIMIT_MAX_MIN`, where `0` disables a window. There are no
+  `--ewmrs-rate-limit-*` flags and no `EWMRS_`-prefixed environment variables.
+
+Every route below sets `Deprecation: true` and
+`Link: </api/v3/openapi.json>; rel="deprecation"`. None of them sets
+`Cache-Control`; the tuned cache lifetimes apply to `/api/v3` only. Error
+responses use the shared `application/problem+json` handler with the status
+mapping in `docs/api/api_endpoints.md`, except where a route builds its own body
+as noted.
 
 ## Root Endpoints
 
 ### GET /
 
-Returns EWMRS API metadata.
-
-Response:
-
-```json
-{
-  "service": "EWMRS API",
-  "base_dir": "...",
-  "gui_dir": "...",
-  "endpoints": [
-    "/renders/get-items",
-    "/renders/fetch",
-    "/renders/download",
-    "/nexrad",
-    "/rap/layers",
-    "/rap/fetch",
-    "/rap/metadata",
-    "/rap/data",
-    "/healthz",
-    "/colormaps"
-  ]
-}
-```
-
-The `endpoints` array advertised at `/` is a curated subset and does not enumerate every mounted route. The server also mounts `/renders/tile`, `/renders/tile-info`, `/rap/mappings`, and the `/wpc` router; those are documented in their own sections below.
+There is no EWMRS-specific root document. `GET /` is the unified service banner
+described in `docs/api/api_endpoints.md`; it advertises `/api/v3` and the OpenAPI
+document, and deliberately does not disclose the resolved base or GUI
+directories.
 
 ### GET /healthz
 
@@ -56,12 +47,8 @@ Response:
 }
 ```
 
-Rate limiting:
-
-- Default global limits are `30` requests per second and `1800` requests per minute
-- CLI overrides: `--ewmrs-rate-limit-1s <count>` and `--ewmrs-rate-limit-1m <count>`
-- A value of `0` disables that rate-limit window
-- Environment overrides: `EWMRS_RATE_LIMIT_MAX_SEC` and `EWMRS_RATE_LIMIT_MAX_MIN`
+A fixed body that inspects nothing. Use `/health/ready` for an actual readiness
+signal.
 
 ## Render Endpoints
 
@@ -95,10 +82,10 @@ Behavior:
 Responses:
 
 - `200`: `string[]`
-- `400`: missing product parameter
-- `404`: invalid path-like product or unknown product
 - `200`: `[]` when the mapped product has no `index.json` yet
-- `500`: read/server failure
+- `404`: missing, unknown, or path-like `product` — this route answers `404`
+  rather than `400` for an absent parameter, because the lookup is by legacy ID
+  and an empty value simply fails to resolve
 
 ### GET /renders/download?product={product}&timestamp={YYYYMMDD-HHMMSS}
 
@@ -109,16 +96,15 @@ Resolves a rendered PNG in the legacy non-tiled naming format when that file exi
 This legacy route remains PNG-only. Current GOES and MRMS renderers publish
 binary float16 value chunks through the unified v3 `/api/v3/render-products/.../chunks`
 resources; a missing compatibility PNG returns `404` rather than binary bytes
-under the PNG contract. PNG compatibility responses include `Deprecation: true`,
-a `Sunset: Thu, 31 Dec 2026 23:59:59 GMT` header, and a successor-version link.
-
-Transparent tiles are skipped at write time. A timestamp may therefore have fewer tile PNGs than the declared `tile_grid`, or even zero tile PNGs for a fully transparent render.
+under the PNG contract. In practice no current renderer writes these flat PNGs,
+so this route is `404` for freshly rendered products. Responses carry
+`Deprecation: true` and the successor-version `Link`; no `Sunset` header is sent.
 
 Responses:
 
 - `200`: PNG image
-- `400`: missing/invalid parameters
-- `404`: unknown product or file not found
+- `400`: missing `product` or `timestamp`, unknown product, or invalid timestamp
+- `404`: file not found
 
 ### GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}[&x={int}&y={int}]
 
@@ -141,9 +127,17 @@ Current renderer-written GOES and MRMS products persist:
 
 If product-level `index.json` is missing, the route falls back to defaults `rows=10`, `cols=20`, `tile_size=350` for coordinate validation.
 
-Listing mode reads `<GUI_DIR>/<product>/<timestamp>/index.json`, filters invalid or out-of-bounds coordinates, sorts by `y` then `x`, and returns the valid tile coordinates as `[x, y]` pairs. It does not dynamically scan the timestamp directory for tile filenames.
+Listing mode reads `<GUI_DIR>/<product>/<timestamp>/index.json` and filters
+out-of-bounds coordinates. It does not scan the timestamp directory for tile
+filenames.
 
-Timestamp-level tile index format:
+The key it reads is `tiles`, which is the legacy shape below. Schema-version-2
+indexes written by the current renderers publish `chunks` instead, so a freshly
+rendered product returns a valid `tile_grid` with an empty `tiles` array rather
+than an error — there are no PNG tiles to list. Use the v3 `/chunks` resource for
+those products.
+
+Legacy timestamp-level tile index format:
 
 ```json
 {
@@ -174,8 +168,9 @@ Listing response:
 Responses:
 
 - `200`: PNG image in image mode, JSON tile listing in listing mode
-- `400`: missing/invalid/out-of-bounds parameters, or only one of `x`/`y` supplied
-- `404`: unknown product, missing tile, missing timestamp directory, missing timestamp tile index in listing mode, or timestamp absent from product-level `index.json`
+- `400`: missing `product` or `timestamp`, unknown product, invalid timestamp,
+  out-of-bounds coordinates, or only one of `x`/`y` supplied
+- `404`: missing tile file, or missing timestamp `index.json`
 
 ### GET /renders/tile-info?product={product}
 
@@ -195,10 +190,13 @@ Responses:
 }
 ```
 
-- `400`: invalid product parameter
-- `404`: unknown product
 - `200`: default tile-grid metadata with `timestamps: []` when the mapped product has no `index.json` yet
-- `500`: read/server failure
+- `404`: missing or unknown `product`
+
+The `rows`, `cols`, and `tile_size` values come from the product-level
+`index.json` `tile_grid` when it is present and within
+`api.yaml` `render_defaults.grid_maxima`; an out-of-range grid is discarded in
+favor of the `render_defaults.grid` values rather than raising.
 
 ## NEXRAD Endpoints
 
@@ -220,11 +218,20 @@ Allowed products:
 - `RHOHV`
 - `ZDR`
 
+This list is `config/api.yaml` `validation.radar_products`, an allowlist checked
+before any file lookup. `CCORH` is servable but deliberately uncolored: it has no
+entry in `config/ewmrs_render.yaml` `nexrad_gui.variable_colormaps`, which colors
+only the other six. Clients requesting `CCORH` get valid data with no published
+palette.
+
 Security and validation rules:
 
 - Site identifiers are normalized to uppercase and must be exactly 4 alphanumeric characters.
 - Timestamps must use `YYYYMMDD-HHMMSS` and pass calendar/time validation.
-- Elevations must match the regex `^\d{1,3}(?:\.\d{1,2})?$` — common operational labels include `0.5`, `0.9`, `1.2`, `1.3`, `1.8`, `2.4`, and `3.1`.
+- Elevations must match the regex `^\d{1,3}(?:\.\d{1,2})?$`. The regex is
+  deliberately wider than what is produced: the labels actually written are the
+  canonical bins in `config/nexrad.yaml` `selection.canonical_elevation_bins`,
+  currently `0.5`, `0.9`, `1.3`, `1.8`, `2.4`, `3.1`, and `4.0`.
 - Product names must match the exact allowlist above.
 - Path traversal attempts and malformed parameters are rejected.
 - Unsafe on-disk directory names are ignored during listing.
@@ -239,11 +246,18 @@ Runtime layout:
 <BASE_DIR>/gui/NEXRAD/<SITE>/<ELEVATION>/<SITE>_<PRODUCT>_<ELEVATION>_<YYYYMMDD-HHMMSS>.bin.gz
 ```
 
-EWMRS populates these files by polling local ingest outputs under `<BASE_DIR>/data/NEXRAD_Level2` every 30 seconds. If a same-timestamp GUI file already exists for an elevation artifact, that artifact is skipped instead of being re-rendered.
+EWMRS populates these files by polling local ingest outputs under
+`<BASE_DIR>/data/NEXRAD_Level2` every `config/ewmrs_pipeline.yaml`
+`nexrad_gui.poll_interval_seconds` (`30`), considering only artifacts newer than
+`nexrad_gui.retention_minutes` (`120`). If a same-timestamp GUI file already
+exists for an elevation artifact, that artifact is skipped instead of being
+re-rendered. Nothing is deleted on that timer — it is an input-freshness bound,
+not a retention sweep.
 
 Responses:
 
-- `200`: `string[]` with `Cache-Control: public, max-age=5`
+- `200`: `string[]`
+- `200`: `[]` when `<BASE_DIR>/gui/NEXRAD` does not exist
 
 Example:
 
@@ -257,7 +271,8 @@ Returns valid elevations for one radar site mapped to their available timestamps
 
 Responses:
 
-- `200`: object mapping elevation labels to timestamp arrays, `Cache-Control: public, max-age=5`
+- `200`: object mapping elevation labels to timestamp arrays, newest first. An
+  elevation directory with no recognizable field files is omitted entirely.
 - `400`: invalid site parameter
 - `404`: site not found
 
@@ -285,7 +300,12 @@ Response headers include:
 
 - `Content-Type: application/gzip`
 - `Content-Disposition: attachment; filename="<SITE>_<TIMESTAMP>_<ELEVATION>_<PRODUCT>.bin.gz"`
-- `Cache-Control: public, max-age=60`
+
+Note that the attachment filename orders the parts as
+`SITE_TIMESTAMP_ELEVATION_PRODUCT`, while the on-disk name is
+`SITE_PRODUCT_ELEVATION_TIMESTAMP`. The v3 equivalent,
+`/api/v3/radar-sites/{siteId}/scans/{timestamp}/elevations/{elevation}/products/{productId}`,
+sends no `Content-Disposition` but does send an `ETag` and `Cache-Control`.
 
 ## RAP Uint16 Endpoints
 
@@ -295,13 +315,18 @@ Runtime layout:
 
 ```text
 <BASE_DIR>/gui/RAP/<LayerFolder>/index.json
-<BASE_DIR>/gui/RAP/<LayerFolder>/<YYYYMMDD-HHMMSS>/data.u16
-<BASE_DIR>/gui/RAP/<LayerFolder>/<YYYYMMDD-HHMMSS>/metadata.json
+<BASE_DIR>/gui/RAP/<LayerFolder>/<YYYYMMDD-HHMM00>/data.u16
+<BASE_DIR>/gui/RAP/<LayerFolder>/<YYYYMMDD-HHMM00>/metadata.json
 ```
 
-`data.u16` contains raw little-endian `uint16` values. The reserved missing/no-data value is `65535`. Clients must fetch `metadata.json` to decode the array shape, scale, units, GRIB metadata, and `colormap_key`.
+`data.u16` contains raw little-endian `uint16` values. The reserved missing/no-data value is `65535`. Clients must fetch `metadata.json` to decode the array shape, scale, units, and GRIB metadata. `colormap_key` and `description` are present only when the layer declares them, so treat both as optional — `MSLP_Surface`, for instance, has no `colormap_key`.
 
-Layer names are on-disk folder names, for example `Temperature_2m`, `CAPE_0-3km`, `UWind_925mb`, `SRH-0_1km`, or `BestLiftedIndex_180-0mbAGL`. They are not derived from Python `RAP_` layer identifiers.
+Layer names are the on-disk folder names, for example `Temperature_2m`,
+`CAPE_0-3km`, `UWind_925mb`, `SRH-0-1km`, or
+`LiftedIndex_Surface_500-1000mb`. Each is the layer's `outdir` from
+`config/ewmrs_pipeline.yaml` `rap_uint16`, which is deliberately distinct from
+its `name`: the layer named `RAP_Temperature_2m` publishes under
+`Temperature_2m`.
 
 ### GET /rap/layers
 
@@ -334,17 +359,17 @@ Returns available RAP timestamps for a layer from `<BASE_DIR>/gui/RAP/<layer>/in
 
 RAP timestamp folders are minute-aligned in the form `YYYYMMDD-HHMM00`.
 
-Accepted index formats:
-
-- `string[]`
-- `{ "timestamps": string[] }`
+The converter writes `{ "timestamps": string[], "format": "uint16",
+"byte_order": "little_endian", "missing_value": 65535 }`, newest first and capped
+at the configured retained-timestamp count. A bare `string[]` index is also
+accepted for compatibility. Only the `timestamps` member is returned.
 
 Responses:
 
-- `200`: `string[]`; returns `[]` when the layer folder exists but `index.json` has not been written yet
+- `200`: `string[]`; also `[]` when the layer folder or its `index.json` is
+  absent, so a missing layer is not distinguishable from an empty one here
 - `400`: missing or invalid `layer`
-- `404`: layer folder not found
-- `500`: JSON parse/read/server failure
+- `503`: `index.json` present but unparseable
 
 ### GET /rap/metadata?layer={layer}&timestamp={YYYYMMDD-HHMM00}
 
@@ -370,7 +395,7 @@ Example metadata:
   },
   "missing_value": 65535,
   "units": "K",
-  "colormap_key": "RAP_Temperature_2m",
+  "colormap_key": "RAP_Temperature_LL",
   "grib": {
     "shortName": "2t",
     "typeOfLevel": "heightAboveGround",
@@ -384,36 +409,46 @@ Responses:
 - `200`: metadata JSON payload
 - `400`: missing/invalid `layer` or `timestamp`
 - `404`: layer folder, timestamp folder, or `metadata.json` not found
-- `500`: JSON parse/read/server failure
+- `503`: `metadata.json` present but unparseable
 
-`colormap_key` matches the RAP layer identifier configured in the converter and maps directly to a same-named entry from `GET /colormaps`. RAP colormaps use NOAA/SPC/GEMPAK lineage palettes where practical source tables exist, with documented project fallbacks for variables without a usable standard reference.
+`colormap_key` resolves to a same-named entry from `GET /colormaps`, but it is
+**not** the layer name and not the folder name. Several layers share one key:
+`Temperature_2m` and `Temperature_Surface` both resolve to
+`RAP_Temperature_LL`, and both 10 m wind components resolve to `RAP_Wind_LL`.
+Look the key up from the metadata rather than constructing it from the layer
+name. RAP colormaps use NOAA/SPC/GEMPAK lineage palettes where practical source
+tables exist, with documented project fallbacks for variables without a usable
+standard reference.
 
 ### GET /rap/data?layer={layer}&timestamp={YYYYMMDD-HHMM00}
 
 Streams the raw `<BASE_DIR>/gui/RAP/<layer>/<timestamp>/data.u16` bytes exactly as written by the RAP Uint16 converter.
 
-Response headers include:
+Response headers always include:
 
 - `Content-Type: application/octet-stream`
-- `Content-Disposition: inline; filename="{layer}_{timestamp}.u16"`
 - `X-Data-Type: uint16`
 - `X-Byte-Order: little_endian`
 - `X-Missing-Value: 65535`
 
-When `metadata.json` is present, decode headers are also included when available:
+No `Content-Disposition` is sent; the payload is streamed inline.
 
-- `X-Grid-Ni`
-- `X-Grid-Nj`
-- `X-Scale-Min`
-- `X-Scale-Max`
+When the sibling `metadata.json` is readable, these decode headers are added,
+each only if its value is present and passes a range or character check:
+
+- `X-Grid-Ni`, `X-Grid-Nj` — from `grid.ni`/`grid.nj`, falling back to `shape`
+- `X-Scale-Min`, `X-Scale-Max`
 - `X-Units`
+
+A missing `metadata.json` is not an error here — the data is still served, just
+without the decode headers. Any other failure reading it does fail the request.
 
 Responses:
 
 - `200`: raw binary `data.u16` payload
 - `400`: missing/invalid `layer` or `timestamp`
 - `404`: layer folder, timestamp folder, or `data.u16` not found
-- `500`: read/server failure
+- `503`: `data.u16` exceeds the configured binary size limit
 
 Decode formula:
 
@@ -440,15 +475,28 @@ Each `.bin.gz` payload decompresses to:
 
 Stored `data` values remain range-major with shape `[range_count, azimuth_count]`.
 
-Operational mapping writes paired sweeps into canonical elevation folders. Per-VCP mappings (from `src/EWMRS/render/nexrad.py`):
+Elevation folder names are not a per-VCP sweep-index table. Ingest groups the
+sweeps of a volume and then snaps each group's angle onto the nearest entry of
+`config/nexrad.yaml` `selection.canonical_elevation_bins`, currently:
 
-| VCP | Sweep indices → elevation label |
-| --- | --- |
-| `VCP-212` | `0/1 → 0.5`, `2/3 → 0.9`, `4/5 → 1.3`, `6 → 1.8`, `7 → 2.4`, `8 → 3.1` |
-| `VCP-215` | `0/1 → 0.5`, `2/3 → 0.9`, `4/5 → 1.2`, `8 → 1.8`, `9 → 2.4`, `10 → 3.1` |
-| `VCP-12`  | `0/1 → 0.5`, `2/3 → 0.9`, `4/5 → 1.2`, `6 → 1.8`, `7 → 2.4`, `8 → 3.1` |
+```text
+0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0
+```
 
-For paired low sweeps, `DBZH` is persisted only from `contiguous_surveillance` and skipped for `contiguous_doppler`.
+These are bin *identities* with no tolerance window, so a real VCP-12 sweep at
+`1.2305` degrees lands on `1.3` at a distance of `0.07` and nothing is
+mis-binned. The label written into the path is that bin's value, which is why
+`1.2` never appears on disk. Only the VCPs in `selection.allowed_vcps` — `12`,
+`212`, and `215` — are ingested at all, and sweeps below
+`selection.min_sweep_angle_deg` are dropped.
+
+Grouping pairs a `contiguous_surveillance` sweep with its matching
+`contiguous_doppler` sweep; single-elevation waveforms
+(`staggered_pulse_pair`, `batch`) stand alone, and a volume naming none of these
+waveforms is grouped by raw elevation instead. For a paired low elevation,
+`DBZH` is persisted only from the surveillance sweep and skipped for the doppler
+sweep (`src/EWMRS/render/nexrad.py`), so an elevation folder holds exactly one
+`DBZH` file rather than two.
 
 ## WPC Surface Analysis Endpoints
 
@@ -462,7 +510,10 @@ The current API supports only the surface-analysis type `sfc`.
 
 ### GET /wpc/fetch?type=sfc
 
-Lists available timestamped WPC surface-analysis GeoJSON artifacts. The route scans files matching `wpc_sfc_YYYYMMDD-HHMMSS.geojson`, ignores `latest.geojson`, and returns timestamps newest first. The ingest side only ever writes hour-aligned names (`HH0000`), so that is all you will see in practice, but the reader accepts any valid time.
+Lists available timestamped WPC surface-analysis GeoJSON artifacts. The route scans files matching `wpc_sfc_YYYYMMDD-HHMMSS.geojson`, ignores `latest.geojson`, and returns timestamps newest first. The ingest side only ever writes hour-aligned names (`HH0000`) —
+`config/wpc.yaml` `output_filename_pattern` hardcodes the `0000` minutes and
+seconds — and `update_interval_hours` is `3`, so in practice you see one file
+per 3-hour analysis time. The reader itself accepts any valid time.
 
 Responses:
 

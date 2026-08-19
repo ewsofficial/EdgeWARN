@@ -123,18 +123,36 @@ Examples:
 ```text
 <BASE_DIR>/gui/GOES_ABI_C13/
 ├── 20260423-124000/
-│   ├── chunks/                       # float16 binary chunks
-│   ├── ...
-│   └── metadata.json
-│   └── index.json
-└── index.json
+│   ├── chunks/                       # gzip-compressed float16 value chunks
+│   └── index.json                    # timestamp-level index
+└── index.json                        # product-level index
 ```
+
+The tiled render path writes only `chunks/` and the two `index.json` levels. It
+does not write `metadata.json` — that file belongs to the RAP Uint16 pipeline
+alone (see `docs/core/ingestion.md`).
 
 Current product-level `index.json` format for rendered products is:
 
 ```json
 {
+  "schema_version": 2,
   "timestamps": ["20260423-124000"],
+  "representation": "binary_chunks",
+  "chunk_format": {
+    "version": 2,
+    "encoding": "float16",
+    "file_suffix": ".f16.gz",
+    "compression": "gzip",
+    "data_type": "float16",
+    "channels": 1,
+    "value_kind": "scalar",
+    "no_data": "nan",
+    "bytes_per_component": 2,
+    "pixel_row_order": "top_to_bottom",
+    "grid_origin": "bottom_left",
+    "media_type": "application/octet-stream"
+  },
   "tile_grid": {
     "rows": 10,
     "cols": 20,
@@ -147,14 +165,35 @@ Current timestamp-level `index.json` format is:
 
 ```json
 {
-  "tiles": [[0, 0], [1, 3], [2, 6]],
+  "schema_version": 2,
+  "timestamp": "20260423-124000",
+  "representation": "binary_chunks",
+  "chunk_format": {
+    "version": 2,
+    "encoding": "float16",
+    "file_suffix": ".f16.gz",
+    "compression": "gzip",
+    "data_type": "float16",
+    "channels": 1,
+    "value_kind": "scalar",
+    "no_data": "nan",
+    "bytes_per_component": 2,
+    "pixel_row_order": "top_to_bottom",
+    "grid_origin": "bottom_left"
+  },
   "tile_grid": {
     "rows": 10,
     "cols": 20,
     "tile_size": 350
-  }
+  },
+  "chunks": [[0, 0], [1, 3], [2, 6]]
 }
 ```
+
+The available-coordinate array is named `chunks`, not `tiles`. `chunk_format` is
+a wire-format invariant sourced from `ewmrs_render.yaml`, not an operator knob;
+`media_type` appears at the product level only. `no_data` is the literal string
+`"nan"`.
 
 ## API Exposure
 

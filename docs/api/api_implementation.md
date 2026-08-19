@@ -1,212 +1,218 @@
 # EdgeWARN Unified API Technical Implementation
 
-The live Express implementation is `src/api/`, started with `npm run api`
-(or `npm run debug:api`). It serves `/api/v3` and retains selected `/api/v2`,
-`/renders`, `/rap`, `/wpc`, and `/colormaps` endpoints as compatibility adapters.
-The v2-specific implementation details below are historical route context;
-`src/EdgeWARN/api` is not a live service tree.
+The live Express implementation is `src/api/`, started with `npm run api` (or
+`npm run debug:api`). It serves `/api/v3` as its primary contract and retains
+the `/api/v2`, `/renders`, `/nexrad`, `/rap`, `/wpc`, `/colormaps`, `/health`,
+and `/healthz` paths as compatibility adapters in the same process.
 
-## Server Architecture
+There is no `src/EdgeWARN/api` or `src/EWMRS/api` tree; both were removed in
+commit `a3d6cbb`. Route-level contracts live in `docs/api/api_endpoints.md` and
+`docs/api/ewmrs_api_endpoints.md`.
 
-The unified API is an Express.js service with file-backed responses, centralized
-validation, and safe file reads. The following tree documents the retired v2
-implementation for compatibility-reference purposes only.
-
-### File Structure
+## File Structure
 
 ```text
-src/EdgeWARN/api/
-├── server.js
-├── config.js
-├── robots.txt
-├── routes/
-│   ├── health.js
-│   └── v2/
-│       ├── index.js
-│       ├── features/
-│       │   ├── cells.js
-│       │   ├── timestamps.js
-│       │   └── alerts.js
-│       └── data/
-│           └── metar.js
-└── utils/
-    ├── fileReader.js
-    └── validation.js
+src/api/
+├── server.js                   # listen, port selection, effective-config report
+├── app.js                      # composition root: config, repository, services, routes
+├── config/
+│   ├── index.js                # catalog load + CLI/env overlay resolution
+│   ├── productCatalog.js       # catalog invariants and lookup maps
+│   └── product-catalog.json    # 31 render products
+├── openapi/v3.yaml             # JSON despite the extension; served verbatim at /api/v3/openapi.json
+├── middleware/
+│   ├── requestId.js
+│   ├── logging.js
+│   ├── security.js             # helmet, compression, request timeout
+│   ├── cors.js
+│   ├── rateLimit.js
+│   └── errors.js               # notFound + problem+json handler
+├── repositories/
+│   └── artifactRepository.js   # rooted, symlink-refusing file reads
+├── services/
+│   ├── analysis.js             # cells, storm snapshots, alerts, METAR
+│   ├── renders.js              # products, snapshots, PNG tiles, float16 chunks
+│   ├── ancillary.js            # NEXRAD, RAP, WPC, colormaps
+│   └── validation.js           # identifier validators and pagination
+└── routes/
+    ├── v3/index.js
+    └── compatibility/index.js
 ```
+
+## Startup
+
+`server.js` calls `createApp()` and then `app.listen()`.
+
+- Bind address is `api.yaml` `server.host` (`0.0.0.0`)
+- Port is `api.yaml` `server.debug_port` (`3001`) when `--debug-server` is
+  passed, otherwise `PORT` if set, otherwise `api.yaml` `server.port` (`5000`)
+- `--compat=edgewarn` and `--compat=ewmrs` are accepted, print a deprecation
+  warning, and start the same unified service
+
+On successful listen the process logs the effective configuration: the config
+root, each loaded catalog with its schema version, the list of active override
+*layers*, the enabled product counts, and the port and base directory. It
+reports which layer won for each override rather than the value, matching
+`report_effective_config` in `src/run.py`, so a diagnostic never discloses a
+configured secret. Configuration is read once; changes require a restart.
+
+There is no `dotenv` load, no `cluster` fork, and no JSON body parser — the
+service answers `GET` and `HEAD` only. Runtime directories are not created at
+startup; `/health/ready` reports missing ones instead.
 
 ## Request Lifecycle
 
-1. `server.js` loads environment variables via `dotenv`
-2. Primary process forks up to 4 workers (`cluster`)
-3. Worker middleware stack is applied:
-   - `helmet`
-   - `compression`
-   - `cors`
-   - per-second and per-minute `express-rate-limit`
-   - `express.json({ limit: "16kb" })`
-4. Routes are mounted:
-   - `/`
-   - `/health`
-   - `/api/v2`
-   - legacy guards for `/features/*`, `/data/*`, and `/api/v1*` returning `410`
-5. Routes read file-backed JSON using guarded readers in `utils/fileReader.js`
+`app.js` mounts, in order:
 
-## Configuration (`config.js`)
+1. `requestId` — echoes an inbound `X-Request-Id` matching
+   `^[A-Za-z0-9_-]{8,128}$`, otherwise generates a UUID, and always sets the
+   response header
+2. the access log, only when `api.yaml` `logging.access_log_enabled` is true
+3. `helmet` and `compression`
+4. `cors`
+5. the per-second and per-minute rate limiters
+6. `requestTimeout`
 
-`BASE_DIR` resolution order:
+then the routes:
 
-1. CLI arg: `--base-dir` or `--base-dir=...`
+- `GET /` — service banner with links to `/api/v3` and the OpenAPI document
+- `GET /robots.txt`
+- `GET /health/live` — always `200`, includes the config diagnostics block
+- `GET /health/ready` — `200` or `503` after stat-ing the `data`, `gui`, and
+  `wpc` roots
+- the `/api/v3` router
+- the compatibility router
+- `notFound`, then the error handler
+
+### Access log
+
+One JSON line per finished response, at event `api_access`, carrying
+`requestId`, `method`, `route`, `status`, `bytes`, and `durationMs`. `route` is
+the matching OpenAPI **path template** rather than the concrete URL, so
+high-cardinality identifiers do not enter log aggregation; an unrecognized path
+logs `unmatched`.
+
+## Configuration (`config/index.js`)
+
+`validateAllConfigs()` runs before anything else, so an invalid catalog tree
+fails startup rather than a later request. `api.yaml`, `filesystem.yaml`, and
+`wpc.yaml` are then loaded through the shared `src/config/loader.js`, the same
+loader the Python side uses.
+
+Config-tree selection: `--config-dir`, then `EDGEWARN_CONFIG_DIR`, then
+discovery from the installed source tree.
+
+Base-directory resolution:
+
+1. `--base-dir` (or the compatibility alias `--base_dir`)
 2. `EDGEWARN_BASE_DIR`
-3. Linux fallback chain: `~/EdgeWARN_input`, then `/home/EdgeWARN_input`, then `/workspaces/EdgeWARN_input`, then `./EdgeWARN_input`
-4. Windows fallback: `C:\EdgeWARN_input`
+3. `BASE_DIR`
+4. `filesystem.yaml` `base_dir.windows` or `base_dir.posix` by platform
 
-EdgeWARN rate-limit CLI overrides:
+A leading `~` is expanded, and the result is resolved to an absolute path.
+Supplying the same flag twice with different values throws rather than silently
+picking one. Derived roots are `<BASE_DIR>/data`, `<BASE_DIR>/gui`, and
+`<BASE_DIR>/wpc`; the `static` root is `src/EWMRS`, which is where
+`mappings.json` and `colormaps.json` are served from.
 
-- `--edgewarn-rate-limit-1s`
-- `--edgewarn-rate-limit-1m`
-- `0` disables the respective limiter window
+Integer environment overrides are validated, not coerced: `PORT`,
+`REQUEST_TIMEOUT_MS`, `RATE_LIMIT_MAX_SEC`, and `RATE_LIMIT_MAX_MIN` must be
+non-negative integer strings, and a malformed value throws at startup.
 
-Data directories are derived from `BASE_DIR/data/...`, including `cells`, `stormcells`, `METAR`, and alert directories.
+## Artifact Repository
 
-At startup, required directories are created if missing.
+Every file read goes through `ArtifactRepository`, which owns the path safety
+rules rather than leaving them to individual routes:
 
-Debug mode:
+- path segments must match `^[A-Za-z0-9_.-]+$` and cannot be `.` or `..`
+- each root is `realpath`-resolved once and must be a real directory
+- every intermediate segment is `lstat`-checked; symbolic links and
+  non-directory components are refused
+- files are opened with `O_NOFOLLOW` and must be regular files
+- size is capped per kind from `api.yaml` `artifacts.size_limits_bytes`
+  (`json`, `binary`, `image`); the constructor rejects an incomplete limit map
+  rather than defaulting, since a missing entry would make the size guard
+  vacuously false
+- directory listings drop symlinked entries and are truncated to
+  `artifacts.list_limit`
+- ETags are weak and derived from size, mtime, and inode
 
-- Enabled with `--debug_server`
-- Default port `5000`
-- Debug port `3001`
-- The current debug command is `npm run debug:api`.
+Parsed JSON is memoized in an LRU cache bounded by both `max_entries` and
+`max_size_bytes`, keyed by root and path, and only reused when the stored ETag
+still matches — so a rewritten artifact is never served from cache.
 
-## Routing
+## Validation and Pagination (`services/validation.js`)
 
-### `routes/v2/index.js`
+- timestamps: `^\d{8}-\d{6}$` **and** a real UTC calendar instant, returned as
+  an ISO string
+- cell IDs: `^[1-9][0-9]*$`
+- alert IDs: `^[A-Za-z0-9_.:-]{1,200}$`, excluding `__proto__`, `constructor`,
+  and `prototype`
+- RAP layer IDs: `^[A-Za-z0-9_.-]{1,128}$` and must not contain `..`
 
-Mounts:
+Collections are cursor-paginated. The cursor is the `id` of the last item in the
+previous page, `limit` defaults to `api.yaml` `pagination.default_limit` (100)
+and is clamped to `max_limit` (1000), and `meta.nextCursor` is `null` on the
+final page.
 
-- `/features/cells`
-- `/features/timestamps`
-- `/features/alerts`
-- `/data/metar`
+## v3 Router Behavior
 
-Also serves `GET /api/v2` endpoint metadata.
-
-### `routes/v2/features/cells.js`
-
-- `GET /api/v2/features/cells`
-- Optional query: `id`
-- List mode reads `cell_index.json`
-- ID mode reads `{id}.json`
-- Validates positive integer IDs
-
-### `routes/v2/features/timestamps.js`
-
-- `GET /api/v2/features/timestamps`
-- Optional query: `timestamp` (`YYYYMMDD-HHMMSS`)
-- List mode reads `stormcell_index.json`
-- Timestamp mode reads `stormcells_{timestamp}.json`
-
-### `routes/v2/features/alerts.js`
-
-- `GET /api/v2/features/alerts/official`
-- `GET /api/v2/features/alerts/edgewarn`
-- Supports mutually exclusive query params: `id` or `timestamp`
-- ID mode resolves filename-safe IDs in `ids/`
-- Timestamp mode reads `{timestamp}.json` in `timestamps/` and returns `alerts` array
-- Timestamp mode returns `[]` when the snapshot file is absent
-- List mode scans timestamp files and returns sorted timestamp keys
-
-### `routes/v2/data/metar.js`
-
-- `GET /api/v2/data/metar`
-- Optional query: `timestamp`
-- List mode scans hourly files `METAR_YYYYMMDD-HHz.json`
-- Timestamp mode maps to hourly file and wraps response as `{ type, timestamp, data }`
-
-### `routes/health.js`
-
-- `GET /health` returns `{ status: "OK", timestamp }`
-
-## Utilities
-
-### `utils/fileReader.js`
-
-Provides:
-
-- `isSafeFilename(name)`
-- `readJsonFileSafe(dir, name, options)` with traversal protection
-- `readIndexFile(indexPath)`
-
-Caching (`lru-cache`):
-
-- max entries: `500`
-- default TTL: `60s`
-- max cache size per worker: `40MB`
-- index-file TTL override: `5s`
-
-### `utils/validation.js`
-
-Provides validators for:
-
-- timestamps (`YYYYMMDD-HHMMSS`)
-- mutually exclusive query params
-- cell IDs
-- alert IDs
-
-## Middleware and Security
-
-### Helmet
-
-- Enabled globally
-- Includes HSTS and default CSP behavior from server config
-
-### CORS
-
-- Uses `ALLOWED_ORIGINS` when set
-- Without `ALLOWED_ORIGINS`:
-  - non-production: allows all origins
-  - production: blocks cross-origin requests
-
-### Rate Limiting
-
-Two global limiters are applied before JSON body parsing so abusive request bodies can be rejected before parsing work is performed:
-
-- per-second limiter (defaults: `windowMs=1000`, `max=40`)
-- per-minute limiter (defaults: `windowMs=60000`, `max=2000`)
-
-Special behavior:
-
-- `/health` can be skipped when header `x-internal-check: true` is present
-- Key generation supports proxy and non-proxy deployment modes
+- Query parameters are allowlisted per path. Only the collection paths accept
+  `cursor` and `limit`; the alert paths additionally accept `source`; every
+  other v3 path accepts none. Repeated parameters, non-string values, and values
+  over `query.max_value_length` (256) are rejected.
+- Cache lifetimes come from `api.yaml` `cache_control_max_age`: `5` seconds for
+  collections, `60` for single resources and GeoJSON, and one year plus
+  `immutable` for binary assets.
+- Binary and image responses carry an `ETag`, honor `If-None-Match` with a `304`,
+  and support `HEAD`.
+- Any path that matches an OpenAPI template but arrives with another method gets
+  `405` and an `Allow: GET, HEAD` header. The route table is derived from the
+  spec, so it cannot drift from it.
 
 ## Error Handling
 
-- Route handlers return `400`, `404`, or `500` as appropriate
-- Global error middleware hides stack/detail in production (`Internal server error`)
-- Legacy v1-style routes return `410 Gone`
+One handler answers `application/problem+json` with `Cache-Control: no-store`
+and a `requestId` member, and logs an `api_error` JSON line. Status comes from
+the `ArtifactError` code — `NOT_FOUND` is `404`, `INVALID_ARTIFACT` and
+`IN_PROGRESS` are `503`, and everything else is `400`. Detail text for `5xx`
+responses is replaced with a fixed string so internal paths and parser messages
+are not disclosed.
+
+Two responses deliberately do not use problem+json: the rate limiter's
+`{ "error": "Too many requests, please try again later" }` and the request
+timeout's `{ "error": "Request timed out" }` at `503`.
 
 ## Environment Variables
 
+- `EDGEWARN_CONFIG_DIR`
+- `EDGEWARN_BASE_DIR`, and the compatibility alias `BASE_DIR`
 - `PORT`
-- `NODE_ENV`
-- `ALLOWED_ORIGINS`
-- `RATE_LIMIT_WINDOW_MS_SEC`
-- `RATE_LIMIT_MAX_SEC`
-- `RATE_LIMIT_WINDOW_MS_MIN`
-- `RATE_LIMIT_MAX_MIN`
-- `TRUST_PROXY` — `false` explicitly disables Express trust-proxy. Other values (including `true`) only take effect when `TRUST_PROXY_IPS` is also set; the `TRUST_PROXY=true` value alone is consumed by the rate-limiter `keyGenerator` (so `req.ip` is used for rate-limit keys) but does not call `app.set('trust proxy', true)`.
-- `TRUST_PROXY_IPS` — comma-separated allowlist; when present, sets Express `trust proxy` to that array. Only configure trust when a stripping reverse proxy removes client-supplied `X-Forwarded-For`/`X-Forwarded-Proto` headers before forwarding; on a directly exposed host, enabling trust lets clients spoof forwarded headers and bypass per-client rate limits.
-- `EDGEWARN_BASE_DIR`
+- `REQUEST_TIMEOUT_MS`
+- `RATE_LIMIT_MAX_SEC`, `RATE_LIMIT_MAX_MIN` — `0` disables that window
+- `ALLOWED_ORIGINS` — comma-separated exact origins; CORS is deny-all when unset
+- `TRUST_PROXY_IPS` — comma-separated allowlist, or a hop count of `0` to `8`
+- `TRUST_PROXY` — accepted, but the bare `true` form throws under
+  `NODE_ENV=production` and counts as one hop otherwise
+- `NODE_ENV` — `production` withholds the package version behind
+  `api.yaml` `server.production_version_label`
 
-EWMRS-specific environment variables are documented in `docs/api/ewmrs_api_endpoints.md`.
+Rate-limit *windows* have no environment override; they are YAML-only.
+
+Only set proxy trust when a stripping reverse proxy removes client-supplied
+`X-Forwarded-For` and `X-Forwarded-Proto` headers before forwarding. On a
+directly exposed host, enabling trust lets clients spoof those headers and
+bypass per-client rate limiting.
 
 ## Runtime Modes
 
-- Unified API server: `npm run api` (default port `5000`)
-- Unified debug API server: `npm run debug:api` (default port `3001`)
-- EWMRS compatibility routes are served by that same process.
+- `npm run api` — default port `5000`
+- `npm run debug:api` — `--debug-server`, port `3001`
+- EdgeWARN and EWMRS compatibility routes are served by that same process
 
 See also:
 
-- `docs/api/api_endpoints.md` (unified API and compatibility routes)
-- `docs/api/ewmrs_api_endpoints.md` (EWMRS compatibility route mapping)
-- `docs/core/goes_pipeline.md` (GOES ingest, readiness, rendering, and GUI output flow)
+- `docs/api/unified_v3.md` (v3 contract and the binary chunk format)
+- `docs/api/api_endpoints.md` (v2 compatibility routes)
+- `docs/api/ewmrs_api_endpoints.md` (EWMRS compatibility routes)
+- `docs/core/configuration.md` (which catalog owns which setting)

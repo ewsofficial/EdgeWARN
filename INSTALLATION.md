@@ -45,7 +45,7 @@ is CLI (`--base-dir` or `--base_dir`), then `EDGEWARN_BASE_DIR`, then legacy
 
 ## Configuration tree
 
-The application validates all 19 YAML documents and their schemas before
+The application validates all 18 YAML documents and their schemas before
 starting workers or an HTTP listener. Select a deployed tree with `--config-dir
 /path/to/config` or `EDGEWARN_CONFIG_DIR=/path/to/config`; otherwise discovery
 walks up from the installed source tree. Copy the whole `config/` directory,
@@ -110,6 +110,7 @@ Common optional flags:
 - `--lat_limits <LAT_MIN> <LAT_MAX>` default `20 55`
 - `--lon_limits <LON_MIN> <LON_MAX>` default `230 300`
 - `--base_dir` / `--base-dir`
+- `--config-dir`
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
@@ -147,6 +148,7 @@ Common optional flags:
 - `--lat <LAT_MIN> <LAT_MAX>` default `20 55`
 - `--lon <LON_MIN> <LON_MAX>` default `-130 -60`
 - `--base_dir` / `--base-dir`
+- `--config-dir`
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
@@ -176,10 +178,16 @@ Flags:
 - `--timeout-seconds <int>` default `30`
 - `--max-retries <int>` default `3`
 - `--max-workers <int>` default `16`
-- `--pause-seconds <float>` default `0.0`
-- `--no-progress` disable progress output
+- `--pause-seconds <float>` default `0.05`
+- `--progress` / `--no-progress` progress output, default on
 - `--apply` write updates; without it the command is a dry run
 - `--report-path <path>` write the sync report JSON to a file
+- `--config-dir <path>` select the `config/` tree to read defaults from
+
+The listed defaults are owned by `config/nws.yaml` under `zone_sync`, not by the
+parser, so a deployed tree can change them. `--pause-seconds` is scaled by
+`--max-workers` to hold a whole-job rate: `0.05` is roughly 20 requests/second
+regardless of thread count. `--apply` and `--report-path` have no YAML keys.
 
 ## Tests
 
