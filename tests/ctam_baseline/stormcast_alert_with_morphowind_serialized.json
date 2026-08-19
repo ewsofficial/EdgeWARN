@@ -1,0 +1,44 @@
+{
+  "alert_type": "TSTM",
+  "source": "StormCast",
+  "id": "id:TSTM:StormCast:146904:2026.08.05.12.00.00",
+  "cell_id": 146904,
+  "geometry": [
+    {
+      "@tuple": [
+        35.442,
+        -96.912
+      ]
+    },
+    {
+      "@tuple": [
+        35.12,
+        -96.87
+      ]
+    },
+    {
+      "@tuple": [
+        35.074,
+        -97.397
+      ]
+    },
+    {
+      "@tuple": [
+        35.397,
+        -97.438
+      ]
+    },
+    {
+      "@tuple": [
+        35.442,
+        -96.912
+      ]
+    }
+  ],
+  "effective": "2026-08-05T12:00:00+00:00",
+  "expires": "2026-08-05T12:30:00+00:00",
+  "severity": "warning",
+  "threats": {
+    "tstm_wind": "true"
+  }
+}
