@@ -5,6 +5,7 @@ import time
 
 from common.config import loader as config_loader
 from common.config import overlay
+from util.ctam_config import export_ctam_module_dir, resolve_ctam_module_dir
 
 
 class TimestampedOutput:
@@ -119,6 +120,12 @@ class IOManager:
         parser.add_argument("--config-dir", type=str, default=None, help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)")
         parser.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None, help="Enable performance profiling (default: from runtime.yaml; --no-profile disables)")
         parser.add_argument("--disable-ctam", action=argparse.BooleanOptionalAction, default=None, help="Skip CTAM module execution during integration (default: from runtime.yaml; --no-disable-ctam re-enables)")
+        # default=None, not the catalog value: `overlay.resolve` distinguishes
+        # "not given" from "given" by `is None`, and a real default here would
+        # make run.ctam_module_dir unreachable.
+        parser.add_argument("--ctam-module-dir", type=str, default=None, help="Override the directory installed CTAM module manifests are discovered from, relative to the repo root unless absolute (default: from runtime.yaml)")
+        parser.add_argument("--list-ctam-modules", action="store_true", help="List the CTAM modules discovered in the module root and exit without running the pipeline")
+        parser.add_argument("--check-ctam-modules", action="store_true", help="Validate the installed CTAM module manifests, exit nonzero if any is invalid, and run no pipeline work")
         parser.add_argument("--disable-tracking", action=argparse.BooleanOptionalAction, default=None, help="Skip lineage detection and Kalman tracking in storm cell detection (default: from runtime.yaml; --no-disable-tracking re-enables)")
         parser.add_argument("--disable-polygon-expansion", action=argparse.BooleanOptionalAction, default=None, help="Use original ProbSevere polygons directly and skip radar gate mapping plus watershed expansion (default: from runtime.yaml; --no-disable-polygon-expansion re-enables)")
         parser.add_argument("--refl-threshold", type=float, default=None, help="Override the baseline reflectivity threshold used by storm cell detection (default: from detection.yaml)")
@@ -135,6 +142,60 @@ class IOManager:
         config_loader.validate_all_configs(config_dir=root)
 
     @staticmethod
+    def _run_ctam_diagnostics(args):
+        """Serve ``--list-ctam-modules``/``--check-ctam-modules``, then exit.
+
+        Called immediately after the config root is published and before any
+        pipeline setup, so a diagnostic never creates an output directory, starts
+        a worker, or opens a listener. It also never executes module code: it
+        goes through ``discovery``, which parses ``module.toml`` and touches
+        nothing else, so a broken or hostile module cannot influence the report
+        on itself.
+
+        ``EdgeWARN.ctam.discovery`` is imported here rather than at module scope
+        for two reasons. ``EdgeWARN/__init__.py`` imports ``EdgeWARN.pipeline``,
+        which imports this module, so a module-scope import would be a cycle; and
+        ``EdgeWARN/ctam/__init__.py`` pulls in ``.interface`` and ``.engine``,
+        which every CLI startup would then pay for to serve two rarely-used flags.
+        """
+        if not (args.list_ctam_modules or args.check_ctam_modules):
+            return
+
+        from EdgeWARN.ctam import discovery
+
+        root = resolve_ctam_module_dir(args.ctam_module_dir, config_dir=args.config_dir)
+        result = discovery.discover_modules(root)
+
+        print(f"CTAM module root: {result.root}")
+        if args.check_ctam_modules:
+            # Said outright rather than implied: readiness is decided per cycle
+            # against that cycle's input catalog, which does not exist outside a
+            # running cycle, so this cannot and does not check it.
+            print("Checking installed manifests only; module readiness is evaluated per cycle.")
+
+        if not result.root_present:
+            print("OK   no module root; an operator who installs no modules is a supported configuration")
+            print("0 CTAM module manifest(s) checked")
+            sys.exit(0)
+
+        failures = 0
+        for module in result.modules:
+            if module.state == discovery.STATE_INVALID:
+                failures += 1
+                print(f"FAIL {module.module_id} ({module.state}) -> {module.reason}")
+            else:
+                print(f"OK   {module.module_id} ({module.state}) -> {module.reason or 'manifest is valid'}")
+
+        total = len(result.modules)
+        if failures:
+            print(f"{failures}/{total} CTAM module manifest(s) failed validation")
+        else:
+            print(f"All {total} CTAM module manifest(s) passed validation")
+
+        # --list is a report and succeeds whatever it found; --check is the gate.
+        sys.exit(1 if failures and args.check_ctam_modules else 0)
+
+    @staticmethod
     def _resolve_common_processing_args(args):
         # Both parsers share these four, so resolving here is what gives
         # process_historical.py the same YAML defaults run.py gets.
@@ -145,6 +206,11 @@ class IOManager:
         args.disable_ctam = overlay.resolve(args.disable_ctam, yaml_value=run_cfg["disable_ctam"], key="run.disable_ctam")
         args.disable_tracking = overlay.resolve(args.disable_tracking, yaml_value=run_cfg["disable_tracking"], key="run.disable_tracking")
         args.disable_polygon_expansion = overlay.resolve(args.disable_polygon_expansion, yaml_value=run_cfg["disable_polygon_expansion"], key="run.disable_polygon_expansion")
+        # Resolved through util.ctam_config so the repo-root anchoring for a
+        # relative value happens once, and exported so an accessory child -- which
+        # is spawned with no argv -- discovers modules from the same root.
+        args.ctam_module_dir = resolve_ctam_module_dir(args.ctam_module_dir, config_dir=args.config_dir)
+        export_ctam_module_dir(args.ctam_module_dir)
 
         detection_cfg = config_loader.load_config("detection", config_dir=args.config_dir)["detection"]
         args.refl_threshold = overlay.resolve(args.refl_threshold, yaml_value=detection_cfg["refl_threshold"], key="detection.refl_threshold")
@@ -173,6 +239,7 @@ class IOManager:
         )
         args = parser.parse_args()
         self._export_config_dir(args)
+        self._run_ctam_diagnostics(args)
 
         runtime_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
         args.lat_limits = overlay.resolve(args.lat_limits, yaml_value=list(runtime_cfg["lat_limits"]), key="run.lat_limits")
@@ -205,6 +272,7 @@ class IOManager:
         self._add_common_processing_args(parser)
         args = parser.parse_args()
         self._export_config_dir(args)
+        self._run_ctam_diagnostics(args)
 
         historical_cfg = config_loader.load_config("historical", config_dir=args.config_dir)["historical"]
         args.lat = overlay.resolve(args.lat, yaml_value=list(historical_cfg["lat"]), key="historical.lat")

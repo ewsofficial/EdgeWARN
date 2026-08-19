@@ -375,7 +375,7 @@ def _run_parallel_enrichment(
     return _run_step("Integration - Merge", _merge_all)
 
 
-def _run_ctam_if_enabled(cells, timestamp, disable_ctam):
+def _run_ctam_if_enabled(cells, timestamp, disable_ctam, json_path=None, input_manifest=None):
     if disable_ctam:
         io_manager.write_info("CTAM module execution disabled via command-line flag")
         return cells
@@ -384,7 +384,15 @@ def _run_ctam_if_enabled(cells, timestamp, disable_ctam):
         from EdgeWARN.ctam.run import run_ctam
 
         io_manager.write_info(f"Running CTAM modules for {len(cells)} cells")
-        cells = _run_step("Integration - CTAM", lambda: run_ctam(cells, timestamp=timestamp))
+        cells = _run_step(
+            "Integration - CTAM",
+            lambda: run_ctam(
+                cells,
+                timestamp=timestamp,
+                json_path=json_path,
+                input_manifest=input_manifest,
+            ),
+        )
         io_manager.write_debug("CTAM module execution completed successfully")
     except Exception as e:
         io_manager.write_error(f"Failed to run CTAM modules: {e}")
@@ -447,7 +455,13 @@ def main(
         include_rap=not mrms_core_only,
         input_manifest=input_manifest,
     )
-    result_cells = _run_ctam_if_enabled(result_cells, timestamp, disable_ctam)
+    result_cells = _run_ctam_if_enabled(
+        result_cells,
+        timestamp,
+        disable_ctam,
+        json_path=json_path,
+        input_manifest=input_manifest,
+    )
 
     try:
         _run_step("Integration - Save", lambda: _save_cells(handler, timestamp, result_cells, json_path))
