@@ -6,89 +6,8 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
 from EdgeWARN.process.integrate.utils import (
-    RAPFileHandler,
     StormIntegrationUtils
 )
-
-
-class TestRAPFileHandler:
-    """Tests for RAPFileHandler class"""
-
-    @pytest.fixture
-    def mock_io(self):
-        """Create a mock IOManager"""
-        return MagicMock()
-
-    def test_initialization(self, mock_io):
-        """Test handler initialization"""
-        handler = RAPFileHandler(mock_io)
-        
-        assert handler.io_manager == mock_io
-
-    def test_get_isobaric_dataset_success(self, mock_io):
-        """Test successful dataset retrieval"""
-        handler = RAPFileHandler(mock_io)
-        
-        # Mock cfgrib.open_datasets
-        mock_ds = MagicMock()
-        mock_ds.data_vars = {'u': MagicMock(), 'v': MagicMock()}
-        mock_ds.coords = {'isobaricInhPa': MagicMock()}
-        mock_ds.isobaricInhPa.values = np.array([850, 700, 500, 250])
-        
-        with patch('cfgrib.open_datasets', return_value=[mock_ds]):
-            result = handler.get_isobaric_dataset("dummy_path")
-            
-            assert result == mock_ds
-
-    def test_get_isobaric_dataset_no_u_v(self, mock_io):
-        """Test handling when u/v not found"""
-        handler = RAPFileHandler(mock_io)
-        
-        # Mock dataset without u/v
-        mock_ds = MagicMock()
-        mock_ds.data_vars = {'other_var': MagicMock()}
-        mock_ds.coords = {'isobaricInhPa': MagicMock()}
-        
-        with patch('cfgrib.open_datasets', return_value=[mock_ds]):
-            result = handler.get_isobaric_dataset("dummy_path")
-            
-            assert result is None
-            mock_io.write_error.assert_called()
-
-    def test_get_isobaric_dataset_no_levels(self, mock_io):
-        """Test handling when isobaricInhPa not found"""
-        handler = RAPFileHandler(mock_io)
-        
-        # Mock dataset without isobaricInhPa
-        mock_ds = MagicMock()
-        mock_ds.data_vars = {'u': MagicMock(), 'v': MagicMock()}
-        mock_ds.coords = {'other_coord': MagicMock()}
-        
-        with patch('cfgrib.open_datasets', return_value=[mock_ds]):
-            result = handler.get_isobaric_dataset("dummy_path")
-            
-            assert result is None
-            mock_io.write_error.assert_called()
-
-    def test_get_isobaric_dataset_fallback(self, mock_io):
-        """Test fallback to general approach"""
-        handler = RAPFileHandler(mock_io)
-        
-        # Mock filtered approach failure
-        mock_ds_filtered = MagicMock()
-        mock_ds_filtered.data_vars = {'other': MagicMock()}
-        mock_ds_filtered.coords = {'isobaricInhPa': MagicMock()}
-        
-        # Mock general approach success
-        mock_ds_general = MagicMock()
-        mock_ds_general.data_vars = {'u': MagicMock(), 'v': MagicMock()}
-        mock_ds_general.coords = {'isobaricInhPa': MagicMock()}
-        mock_ds_general.isobaricInhPa.values = np.array([850, 700, 500, 250])
-        
-        with patch('cfgrib.open_datasets', return_value=[mock_ds_filtered, mock_ds_general]):
-            result = handler.get_isobaric_dataset("dummy_path")
-            
-            assert result == mock_ds_general
 
 
 class TestStormIntegrationUtils:

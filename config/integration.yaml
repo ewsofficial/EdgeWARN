@@ -120,7 +120,6 @@ rap_products:                           # config.py:83-93 get_rap_products()
      725, 700, 675, 650, 625, 600, 575, 550, 525, 500, 475,
       450, 425, 400, 375, 350, 325, 300, 275, 250, 225, 200,
       175, 150, 125, 100]
-  fallback_dataset_score_levels_mb: [850, 700, 500, 250]
 
   # `var_aliases` is the key src/util/grib_loader.py:54 reads. Spelled from the
   # repo root, not shortened: every other path in this file resolves inside the
