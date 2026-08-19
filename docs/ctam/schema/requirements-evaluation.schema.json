@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CTAM per-module requirement evaluation",
+  "description": "The 'data' payload of GET /requirements and POST /requirements/check. Every declared selector appears, satisfied or not, so a missing optional file can never masquerade as a ready one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["module_id", "evaluated_at", "satisfied", "requirements"],
+  "properties": {
+    "module_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}\\Z"
+    },
+    "evaluated_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})\\Z"
+    },
+    "satisfied": {
+      "description": "True when every entry with required=true is satisfied. Unsatisfied optional entries do not change this.",
+      "type": "boolean"
+    },
+    "requirements": {
+      "description": "One entry per [[requires]] block in the caller's manifest, in manifest order.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["selector", "required", "satisfied", "reason"],
+        "properties": {
+          "selector": {
+            "description": "Verbatim from the manifest. Drawn from the documented selector registry; an unknown selector fails manifest validation at discovery rather than appearing here as unsatisfied.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:*-]{0,191}\\Z"
+          },
+          "required": { "type": "boolean" },
+          "satisfied": { "type": "boolean" },
+          "reason": {
+            "description": "Null when satisfied. Otherwise names the failing condition, such as an age or history-count shortfall.",
+            "type": ["string", "null"],
+            "pattern": "\\S"
+          },
+          "file_ids": {
+            "description": "Catalog entries this selector resolved to. Empty when nothing matched.",
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\\Z"
+            }
+          },
+          "unmet_condition": {
+            "description": "Which declared constraint failed, when the artifact exists but does not qualify.",
+            "enum": [
+              "missing",
+              "not_validated",
+              "max_age_seconds",
+              "min_history_entries",
+              "role_mismatch",
+              "analysis_time_mismatch",
+              null
+            ]
+          },
+          "observed": {
+            "description": "The measured value for the failing condition, such as the actual age in seconds or the actual history length. Unit is implied by unmet_condition.",
+            "type": ["number", "null"]
+          },
+          "threshold": {
+            "description": "The declared value the observation was compared against.",
+            "type": ["number", "null"]
+          }
+        }
+      }
+    }
+  }
+}
