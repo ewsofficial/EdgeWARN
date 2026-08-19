@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CTAM cycle status record",
+  "description": "Persisted with atomic replacement at data/ctam/cycles/<cycle-id>/status.json for observability. Contains module versions, durations, requirement outcomes, patch counts, commit IDs, and redacted errors. It must never contain a bearer token, and it is not an input to any module.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "cycle_id",
+    "analysis_time",
+    "api_version",
+    "state",
+    "started_at",
+    "finished_at",
+    "modules"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "cycle_id": { "type": "string", "pattern": "^[0-9]{8}-[0-9]{6}\\Z" },
+    "analysis_time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})\\Z"
+    },
+    "api_version": { "const": "1" },
+    "state": {
+      "enum": [
+        "catalog_building",
+        "requirements_evaluated",
+        "not_ready",
+        "stormcast_running",
+        "external_modules_running",
+        "committing",
+        "completed",
+        "failed"
+      ]
+    },
+    "started_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})\\Z"
+    },
+    "finished_at": {
+      "description": "Null while the cycle is still running, so a partially written record is distinguishable from a completed one.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})\\Z"
+    },
+    "historical": { "type": "boolean" },
+    "cell_count": { "type": "integer", "minimum": 0 },
+    "ctam_ready": { "type": "boolean" },
+    "modules": {
+      "description": "One entry per discovered module, including invalid and disabled ones, keyed by module id. An invalid optional module appears here rather than being omitted, so a silent non-run is impossible to mistake for a clean cycle.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state", "version", "api_version", "duration_ms", "requirements_satisfied"],
+        "properties": {
+          "state": {
+            "enum": [
+              "discovered",
+              "invalid",
+              "waiting",
+              "ready",
+              "running",
+              "committing",
+              "completed",
+              "skipped_disabled",
+              "skipped_missing_requirements",
+              "timed_out",
+              "failed"
+            ]
+          },
+          "version": {
+            "description": "Module version from its manifest. Null when the manifest could not be parsed.",
+            "type": ["string", "null"],
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\Z"
+          },
+          "api_version": {
+            "description": "The API version the module declared. Null when unparsable. A value the host does not support yields state 'invalid'.",
+            "type": ["string", "null"],
+            "pattern": "^[0-9]+\\Z"
+          },
+          "duration_ms": {
+            "description": "Wall-clock time the module process was alive. Null when it was never launched.",
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "requirements_satisfied": { "type": ["boolean", "null"] },
+          "unmet_requirements": {
+            "description": "Selectors that blocked the module, so an operator can act without re-running the cycle.",
+            "type": "array",
+            "items": { "type": "string", "pattern": "\\S" }
+          },
+          "reserved": {
+            "description": "True for the built-in StormCast module, whose ID cannot be shadowed by an external installation.",
+            "type": "boolean"
+          },
+          "patch_counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stormcell_operations": { "type": "integer", "minimum": 0 },
+              "history_operations": { "type": "integer", "minimum": 0 },
+              "alerts": { "type": "integer", "minimum": 0 },
+              "rejected_operations": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "commit_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9_-]{8,64}\\Z" },
+          "exit_code": { "type": ["integer", "null"] },
+          "error": {
+            "description": "Redacted. No token, no absolute host path, no raw module stdout.",
+            "type": ["string", "null"],
+            "pattern": "\\S"
+          }
+        }
+      }
+    },
+    "publication": {
+      "description": "Outcome of the host's single publication step. Indexes are published after payloads, so index_published false with payloads_published true is the interrupted case the journal recovers.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "journal_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9_-]{8,64}\\Z" },
+        "payloads_published": { "type": "boolean" },
+        "index_published": { "type": "boolean" },
+        "recovered": { "type": "boolean" },
+        "quarantined": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "\\S" }
+        }
+      }
+    }
+  }
+}

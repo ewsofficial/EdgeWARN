@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CTAM module transaction",
+  "description": "The 'data' payload of GET /transaction, POST /transaction/validate, and POST /transaction/commit. One transaction per module per cycle. Staged work is invisible to other modules and to the filesystem until the host commits it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["transaction_id", "module_id", "state", "staged", "conflicts"],
+  "properties": {
+    "transaction_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}\\Z"
+    },
+    "module_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}\\Z"
+    },
+    "state": {
+      "description": "'open' accepts more operations. 'validated' passed a dry run but is not published. 'sealed' is committed and rejects further operations. 'abandoned' followed an explicit DELETE or a module exit without commit.",
+      "enum": ["open", "validated", "sealed", "abandoned", "rejected"]
+    },
+    "staged": {
+      "description": "Counts of pending operations by resource. Zero staged operations is a legal commit and publishes nothing.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stormcell_operations", "history_operations", "alerts"],
+      "properties": {
+        "stormcell_operations": { "type": "integer", "minimum": 0 },
+        "history_operations": { "type": "integer", "minimum": 0 },
+        "alerts": { "type": "integer", "minimum": 0 },
+        "cells_touched": {
+          "description": "Distinct cell IDs the transaction addresses.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "bytes": {
+          "description": "Serialized size of all staged values, measured against the request and patch size limits.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "conflicts": {
+      "description": "Empty when the transaction can commit. A non-empty list with state 'rejected' means nothing was published.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "resource", "pointer", "message"],
+        "properties": {
+          "code": {
+            "enum": [
+              "stale_revision",
+              "forbidden_path",
+              "invalid_patch",
+              "conflict",
+              "request_too_large",
+              "not_found"
+            ]
+          },
+          "resource": { "type": "string", "pattern": "\\S" },
+          "pointer": { "type": ["string", "null"] },
+          "message": { "type": "string", "pattern": "\\S" },
+          "expected_revision": { "type": ["integer", "null"], "minimum": 0 },
+          "observed_revision": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      }
+    },
+    "commit_id": {
+      "description": "Null until state is 'sealed'. Recorded in the cycle status record and in the publication journal.",
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9_-]{8,64}\\Z"
+    },
+    "idempotency_key": {
+      "description": "The key the commit was accepted under. Replaying it returns this same record rather than committing again.",
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9_-]{8,64}\\Z"
+    },
+    "revisions": {
+      "description": "Resource name to the revision this transaction observed. Used to detect a predecessor write between read and commit.",
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    }
+  }
+}
