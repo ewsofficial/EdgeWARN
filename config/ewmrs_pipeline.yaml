@@ -1,38 +1,191 @@
 # ewmrs_pipeline.yaml — Audit §8 EWMRS pipeline
 #
-# Source: src/EWMRS/pipeline.py:44-65,120-140,551-585,707-794
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# This file owns every value below. They are read through the accessors in
+# src/EWMRS/pipeline_config.py (the render/cleanup/worker/thread settings) and
+# src/EWMRS/rap/config.py (the `rap_uint16` section), which pipeline.py,
+# render/render.py, and rap/uint16_pipeline.py call per use -- no module
+# constants remain. The MRMS/GOES layer catalogs live in ewmrs_render.yaml;
+# the RAP Uint16 product catalog lives in the `rap_uint16` section below.
+#
+# GOES_WEB_MERCATOR_BOUNDS is deliberately absent: pipeline.py derives the grid
+# shape and affine transform from it, so a YAML copy would be a second editable
+# source that can silently disagree with the projection code.
+#
+# `render.max_entries` is also absent, and that is not an oversight. The five
+# `max_entries` parameters threaded through pipeline.py reach no consumer --
+# layer selection comes from the catalogs, not a count. The parameter survives
+# only because it rides in the GOES render task tuple, whose single owner is
+# `runtime.yaml goes_coordination.render_task_max_entries`. A copy here would be
+# a second owner of a value nothing reads.
 
-extents:
-  goes_web_mercator_bounds: [-13914936.349159198, 2814454.7323097703,
-                             -7402746.137752692, 6360130.74092142]
+schema_version: 1
 
 render:
-  max_entries: 10
-  cleanup_after: true
+  # Only the generic phase label. "MRMS" and "GOES" stay literals in code: they
+  # name which caller is running, and workers.budget_mb below dispatches on the
+  # "GOES" prefix, so renaming that phase would silently change its memory
+  # budget.
   phase_name: EWMRS
-  goes_cleanup_max_age_minutes: 120
-  goes_cleanup_min_interval_seconds: 300
+  cleanup_after: true
+
+  # Output retention for the rendered GUI tree. Equal to
+  # nexrad_gui.retention_minutes today but a different thing: that one is input
+  # freshness, this one is output age.
   gui_cleanup_max_age_minutes: 120
+  # The GOES phase sweeps on its own rate-limited schedule rather than inline
+  # with the render, so its age is separate and the two can be retuned apart.
+  goes_cleanup_max_age_minutes: 120
+  # Minimum spacing between GOES sweeps; 0 disables the rate limit. The accessor
+  # floors it at zero so a negative override cannot invert the elapsed-time
+  # comparison into "never sweep".
+  goes_cleanup_min_interval_seconds: 300
 
 nexrad_gui:
+  # How stale a NEXRAD artifact may be and still be worth rendering. Not a
+  # retention sweep -- nothing is deleted on this timer.
   retention_minutes: 120
   poll_interval_seconds: 30.0
+  # Floor applied to whatever a caller passes, so no caller can spin the loop.
+  poll_interval_min_seconds: 1.0
+  # Ceiling; the effective pool is min(this, pending artifact count).
   max_workers: 8
 
 workers:
   budget_mb:
-    goes: 1200.0                        # phase name starting with "GOES"
-    default: 768.0                      # MRMS and everything else
+    # GOES workers hold a full-disk ABI array through reprojection.
+    goes: 1200.0
+    default: 768.0                        # MRMS and everything else
   reserve_mb: 1024.0
-  numeric_thread_caps:                  # os.environ.setdefault
-    OMP_NUM_THREADS: 1
-    MKL_NUM_THREADS: 1
-    OPENBLAS_NUM_THREADS: 1
-    NUMEXPR_NUM_THREADS: 1
+  # Worker ceiling when psutil is missing and free memory is unknown.
+  psutil_fallback_max: 2
+  # One shared value across a fixed variable list. The code sets them in a single
+  # loop, so this cannot express per-variable caps -- do not split it into a map.
+  # 1 so the process pool, not the math libraries, owns the parallelism.
+  numeric_thread_caps:
+    value: 1
+    variables: [OMP_NUM_THREADS, MKL_NUM_THREADS, OPENBLAS_NUM_THREADS, NUMEXPR_NUM_THREADS]
 
-env_overrides:
-  render.goes_cleanup_min_interval_seconds: EWMRS_GOES_CLEANUP_MIN_INTERVAL_SECONDS
-  workers.budget_mb: EWMRS_WORKER_BUDGET_MB
-  workers.reserve_mb: EWMRS_WORKER_RESERVE_MB
+render_threads:
+  # Combined with the CPU count: min(tile_count, this, cpu_count). The
+  # EWMRS_TILE_THREADS override below deliberately bypasses the CPU cap instead,
+  # because setting it is how an operator overrides what the machine looks like.
+  max_tile_threads: 8
+
+caches:
+  # lru_cache sizes. These two are the only keys in this file read once at import
+  # rather than per call, because they are decorator arguments -- Python evaluates
+  # maxsize when the module loads. Changing either needs a restart.
+  tile_index_entries: 512
+  colormap_entries: 128
+
+rap_uint16:
+  # RAP Uint16 conversion policy and product catalog. Read through the accessors
+  # in src/EWMRS/rap/config.py.
+  max_timestamps: 3
+  timestamp_format: '%Y%m%d-%H%M00'
+  force: false
+
+  uint16:
+    nodata: 65535
+    valid_max: 65534
+
+  # ``outdir`` is relative to <base_dir>/gui/RAP. Template fields use Python
+  # ``str.format`` syntax and are expanded by EWMRS.rap.config.
+  layers:
+    - {name: RAP_Temperature_2m, short_names: [2t, t, t2m], filter: {typeOfLevel: heightAboveGround, level: 2},
+       units: K, scale: {min: 180.0, max: 330.0},
+       outdir: Temperature_2m, description: RAP 2 meter temperature, colormap_key: RAP_Temperature_LL}
+    - {name: RAP_Dewpoint_2m, short_names: [2d, d2m, dpt], filter: {typeOfLevel: heightAboveGround, level: 2},
+       units: K, scale: {min: 180.0, max: 330.0},
+       outdir: Dewpoint_2m, description: RAP 2 meter dewpoint temperature, colormap_key: RAP_Dewpoint_2m}
+    - {name: RAP_UWind_10m, short_names: [10u, u10, u], filter: {typeOfLevel: heightAboveGround, level: 10},
+       units: m s-1, scale: {min: -80.0, max: 80.0},
+       outdir: UWind_10m, description: RAP 10 meter u-component wind, colormap_key: RAP_Wind_LL}
+    - {name: RAP_VWind_10m, short_names: [10v, v10, v], filter: {typeOfLevel: heightAboveGround, level: 10},
+       units: m s-1, scale: {min: -80.0, max: 80.0},
+       outdir: VWind_10m, description: RAP 10 meter v-component wind, colormap_key: RAP_Wind_LL}
+    - {name: RAP_Temperature_Surface, short_names: [t], filter: {typeOfLevel: surface, level: 0},
+       units: K, scale: {min: 180.0, max: 330.0},
+       outdir: Temperature_Surface, description: RAP surface temperature, colormap_key: RAP_Temperature_LL}
+    - {name: RAP_RelativeHumidity_2m, short_names: [2r, r], filter: {typeOfLevel: heightAboveGround, level: 2},
+       units: '%', scale: {min: 0.0, max: 100.0},
+       outdir: RelativeHumidity_2m, description: RAP 2 meter relative humidity, colormap_key: RAP_RelativeHumidity}
+    - {name: RAP_ThetaE_Surface, short_names: [papt], filter: {typeOfLevel: surface, level: 0},
+       units: K, scale: {min: 250.0, max: 390.0},
+       outdir: ThetaE_Surface, description: RAP surface pseudo-adiabatic potential temperature, colormap_key: RAP_ThetaE_Surface}
+    - {name: RAP_MSLP_Surface, short_names: [prmsl], filter: {typeOfLevel: surface, level: 0},
+       units: Pa, scale: {min: 95000.0, max: 105000.0},
+       outdir: MSLP_Surface, description: RAP surface mean sea level pressure}
+    - {name: RAP_SnowWaterEquivalent_Surface, short_names: [sdwe], filter: {typeOfLevel: surface, level: 0},
+       units: kg m-2, scale: {min: 0.0, max: 200.0},
+       outdir: SnowWaterEquivalent_Surface, description: RAP snow water equivalent, colormap_key: RAP_SnowWaterEquivalent_Surface}
+    - {name: RAP_SnowDepth_Surface, short_names: [sde], filter: {typeOfLevel: surface, level: 0},
+       units: m, scale: {min: 0.0, max: 5.0},
+       outdir: SnowDepth_Surface, description: RAP snow depth, colormap_key: RAP_SnowDepth_Surface}
+    - {name: RAP_WetBulbZeroHeight, short_names: [gh], filter: {typeOfLevel: lowestLevelWetBulb0, level: 0},
+       units: gpm, scale: {min: 0.0, max: 6000.0},
+       outdir: WetBulbZeroHeight, description: RAP wet bulb zero height, colormap_key: RAP_WetBulbZeroHeight}
+    - {name: RAP_FreezingLevelHeight, short_names: [gh], filter: {typeOfLevel: isothermZero, level: 0},
+       units: gpm, scale: {min: 0.0, max: 6000.0},
+       outdir: FreezingLevelHeight, description: RAP 0C isotherm height, colormap_key: RAP_FreezingLevelHeight}
+    - {name: RAP_CAPE_Surface, short_names: [cape], filter: {typeOfLevel: surface, level: 0},
+       units: J kg-1, scale: {min: 0.0, max: 6000.0},
+       outdir: CAPE_Surface, description: RAP surface convective available potential energy, colormap_key: RAP_CAPE}
+    - {name: RAP_CIN_Surface, short_names: [cin], filter: {typeOfLevel: surface, level: 0},
+       units: J kg-1, scale: {min: -1000.0, max: 0.0},
+       outdir: CIN_Surface, description: RAP surface convective inhibition, colormap_key: RAP_CIN_Surface}
+    - {name: RAP_MLCAPE, short_names: [cape], filter: {typeOfLevel: pressureFromGroundLayer, level: 9000},
+       units: J kg-1, scale: {min: 0.0, max: 6000.0},
+       outdir: MLCAPE, description: RAP mixed-layer CAPE from the 90-0 mb above ground layer, colormap_key: RAP_CAPE}
+    - {name: RAP_MLCIN, short_names: [cin], filter: {typeOfLevel: pressureFromGroundLayer, level: 9000},
+       units: J kg-1, scale: {min: -1000.0, max: 0.0},
+       outdir: MLCIN, description: RAP mixed-layer CIN from the 90-0 mb above ground layer, colormap_key: RAP_MLCIN}
+    - {name: RAP_MUCAPE, short_names: [cape], filter: {typeOfLevel: pressureFromGroundLayer, level: 25500},
+       units: J kg-1, scale: {min: 0.0, max: 6000.0},
+       outdir: MUCAPE, description: RAP most-unstable CAPE from the 255-0 mb above ground layer, colormap_key: RAP_CAPE}
+    - {name: RAP_MUCIN, short_names: [cin], filter: {typeOfLevel: pressureFromGroundLayer, level: 25500},
+       units: J kg-1, scale: {min: -1000.0, max: 0.0},
+       outdir: MUCIN, description: RAP most-unstable CIN from the 255-0 mb above ground layer, colormap_key: RAP_MUCIN}
+    - {name: RAP_CAPE_0_3km, short_names: [cape], filter: {typeOfLevel: heightAboveGroundLayer, level: 0},
+       units: J kg-1, scale: {min: 0.0, max: 6000.0},
+       outdir: CAPE_0-3km, description: RAP 0-3 km CAPE, colormap_key: RAP_CAPE}
+    - {name: RAP_SRH_0-3km, short_names: [hlcy], filter: {typeOfLevel: heightAboveGroundLayer, level: 3000},
+       units: m2 s-2, scale: {min: -500.0, max: 1000.0},
+       outdir: SRH_0-3km, description: RAP 0-3 km storm-relative helicity, colormap_key: RAP_SRH}
+    - {name: RAP_SRH_0-1km, short_names: [hlcy], filter: {typeOfLevel: heightAboveGroundLayer, level: 1000},
+       units: m2 s-2, scale: {min: -500.0, max: 1000.0},
+       outdir: SRH-0-1km, description: RAP 0-1 km storm-relative helicity, colormap_key: RAP_SRH}
+    - {name: RAP_LiftedIndex_Surface_500_1000mb, short_names: [lftx], filter: {typeOfLevel: isobaricLayer, level: 500},
+       units: K, scale: {min: -15.0, max: 15.0},
+       outdir: LiftedIndex_Surface_500-1000mb, description: RAP surface lifted index over the 500-1000 mb layer, colormap_key: RAP_LiftedIndex_Surface_500_1000mb}
+    - {name: RAP_AbsoluteVorticity_500mb, short_names: [absv], filter: {typeOfLevel: isobaricInhPa, level: 500},
+       units: s-1, scale: {min: -0.0002, max: 0.0002},
+       outdir: AbsoluteVorticity_500mb, description: RAP 500 mb absolute vorticity, colormap_key: RAP_AbsoluteVorticity_500mb}
+
+  templates:
+    - values:
+        - {level: 925, temperature_colormap: RAP_Temperature_LL, wind_colormap: RAP_Wind_LL}
+        - {level: 850, temperature_colormap: RAP_Temperature_LL, wind_colormap: RAP_Wind_LL}
+        - {level: 700, temperature_colormap: RAP_Temperature_LL, wind_colormap: RAP_Wind_ML}
+        - {level: 500, temperature_colormap: RAP_Temperature_HL, wind_colormap: RAP_Wind_ML}
+        - {level: 250, temperature_colormap: RAP_Temperature_HL, wind_colormap: RAP_Wind_HL}
+      layers:
+        - {name: 'RAP_Temperature_{level}mb', short_names: [t], filter: {typeOfLevel: isobaricInhPa, level: '{level}'},
+           units: K, scale: {min: 180.0, max: 330.0},
+           outdir: 'Temperature_{level}mb', description: 'RAP {level} mb temperature', colormap_key: '{temperature_colormap}'}
+        - {name: 'RAP_RelativeHumidity_{level}mb', short_names: [r], filter: {typeOfLevel: isobaricInhPa, level: '{level}'},
+           units: '%', scale: {min: 0.0, max: 100.0},
+           outdir: 'RelativeHumidity_{level}mb', description: 'RAP {level} mb relative humidity', colormap_key: RAP_RelativeHumidity}
+    - values:
+        - {level: 925, wind_colormap: RAP_Wind_LL}
+        - {level: 850, wind_colormap: RAP_Wind_LL}
+        - {level: 700, wind_colormap: RAP_Wind_ML}
+        - {level: 500, wind_colormap: RAP_Wind_ML}
+        - {level: 250, wind_colormap: RAP_Wind_HL}
+      layers:
+        - {name: 'RAP_UWind_{level}mb', short_names: [u], filter: {typeOfLevel: isobaricInhPa, level: '{level}'},
+           units: m s-1, scale: {min: -80.0, max: 80.0},
+           outdir: 'UWind_{level}mb', description: 'RAP {level} mb u-component wind', colormap_key: '{wind_colormap}'}
+        - {name: 'RAP_VWind_{level}mb', short_names: [v], filter: {typeOfLevel: isobaricInhPa, level: '{level}'},
+           units: m s-1, scale: {min: -80.0, max: 80.0},
+           outdir: 'VWind_{level}mb', description: 'RAP {level} mb v-component wind', colormap_key: '{wind_colormap}'}

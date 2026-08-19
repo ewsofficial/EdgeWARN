@@ -5,10 +5,12 @@ import time
 import multiprocessing
 
 import util.file as fs
+from common.config import loader as config_loader, overlay
 from common.ingest.mrms.config import get_check_modifiers
 from EdgeWARN import initialize_runtime
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
+from util.runtime.config import resolve_file, section
 from util.runtime import (
     AccessorySupervisor,
     CycleRetryPolicy,
@@ -28,8 +30,8 @@ from util.runtime import (
 )
 from util.release import get_release_version
 from common.ingest.nexrad.config import (
-    NEXRAD_HEARTBEAT_STALE_SECONDS,
-    NEXRAD_HEARTBEAT_STARTUP_GRACE_SECONDS,
+    heartbeat_stale_seconds,
+    heartbeat_startup_grace_seconds,
 )
 
 sys.stdout = TimestampedOutput(sys.stdout)
@@ -43,17 +45,18 @@ lon_limits = tuple(args.lon_limits)
 
 initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
 
-GOES_POLL_SECONDS = 60
-GOES_RENDER_WAIT_SECONDS = 30
-GOES_RENDER_WAIT_INTERVAL_SECONDS = 1.0
+GOES_COORDINATION = section("goes_coordination")
+GOES_POLL_SECONDS = GOES_COORDINATION["poll_seconds"]
+GOES_RENDER_WAIT_SECONDS = GOES_COORDINATION["render_wait_seconds"]
+GOES_RENDER_WAIT_INTERVAL_SECONDS = GOES_COORDINATION["render_wait_interval_seconds"]
 GOES_CYCLE_ACTIVE = multiprocessing.Event()
 GOES_RENDER_ACTIVE = multiprocessing.Event()
-GOES_PAUSE_INGEST_DURING_RENDER = os.environ.get("EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER", "0").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
+GOES_PAUSE_INGEST_DURING_RENDER = overlay.resolve(
+    None,
+    env_names=["EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER"],
+    yaml_value=GOES_COORDINATION["pause_ingest_during_render"],
+    key="goes_coordination.pause_ingest_during_render",
+)
 MRMS_CORE_ONLY = args.mrms_core_only
 EWMRS_ENABLED = not args.disable_ewmrs and not MRMS_CORE_ONLY
 NWS_ENABLED = not args.disable_nws and not MRMS_CORE_ONLY
@@ -71,6 +74,7 @@ cycle_config = TandemCycleConfig(
     refl_threshold=args.refl_threshold,
     min_seed_percentage=args.min_seed_percentage,
     drop_offset=args.drop_offset,
+    config_dir=args.config_dir,
     ewmrs_enabled=EWMRS_ENABLED,
     goes_enabled=GOES_ENABLED,
     mrms_core_only=MRMS_CORE_ONLY,
@@ -78,6 +82,54 @@ cycle_config = TandemCycleConfig(
     goes_render_wait_interval_seconds=GOES_RENDER_WAIT_INTERVAL_SECONDS,
 )
 
+
+
+def report_effective_config():
+    """Where this process's configuration actually came from.
+
+    Names only the catalogs already read, not all of ``CONFIG_NAMES``:
+    ``get_provenance`` loads on a miss, so naming every catalog would parse and
+    schema-validate 19 files purely to describe them.
+
+    Reports the winning layer per key rather than the value, so a key holding a
+    credential cannot be disclosed by a diagnostic.
+    """
+    runtime_args = globals().get("args")
+    config_dir = getattr(runtime_args, "config_dir", None)
+    root = config_loader.config_root(config_dir)
+    catalogs = ", ".join(
+        f"{name}@{config_loader.get_provenance(name, config_dir=config_dir)['schema_version']}"
+        for name in config_loader.loaded_config_names(config_dir=config_dir)
+    )
+    print(f"[Scheduler] Config root: {root}")
+    print(f"[Scheduler] Catalogs loaded: {catalogs or 'none'}")
+    active = overlay.overrides()
+    if active:
+        summary = ", ".join(f"{key} <- {layer}" for key, layer in sorted(active.items()))
+    else:
+        summary = "none; every resolved value came from YAML"
+    print(f"[Scheduler] Active overrides: {summary}")
+    all_origins = overlay.origins()
+    provenance = ", ".join(f"{key} <- {layer}" for key, layer in sorted(all_origins.items())) or "none"
+    print(f"[Scheduler] Resolved-key provenance: {provenance}")
+    print("[Scheduler] Provenance limit: only values resolved with overlay.resolve(key=...) are key-level; direct catalog reads are covered by Catalogs loaded above.")
+
+    # Lazy imports keep diagnostics from making optional render dependencies eager
+    # at module import time.
+    from common.ingest.mrms.config import get_mrms_modifiers
+    from EWMRS.render.config import get_mrms_file_list, get_goes_file_list
+    from EdgeWARN.process.integrate.config import get_datasets_config
+    from EWMRS.rap.config import get_rap_uint16_layers
+    print(
+        "[Scheduler] Enabled products: "
+        f"MRMS ingest={len(get_mrms_modifiers())}, "
+        f"MRMS readiness={len(get_check_modifiers())}, "
+        f"EWMRS MRMS={len(get_mrms_file_list())}, "
+        f"GOES={len(get_goes_file_list())}, "
+        f"integration datasets={len(get_datasets_config())}, "
+        f"RAP layers={len(get_rap_uint16_layers())}"
+    )
+    print("[Scheduler] Configuration changes require a process restart to take effect.")
 
 
 def main():
@@ -112,7 +164,10 @@ def main():
     checker = MRMSUpdateChecker(verbose=True)
     stormcell_last_successful, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
-    cycle_state_store = CycleStateStore(fs.DATA_DIR / "runtime" / "cycle_state.json")
+    cycle_settings = section("cycle")
+    cycle_state_store = CycleStateStore(
+        resolve_file(cycle_settings["state_file"], "cycle.state_file")
+    )
     persisted_cycle_state = cycle_state_store.load()
     if stormcell_last_successful is not None:
         persisted_cycle_state = cycle_state_store.seed_last_successful(
@@ -127,17 +182,31 @@ def main():
         persisted_cycle_state.attempt_count if pending_timestamp is not None else 0
     )
     retry_not_before = 0.0
+    retry_settings = cycle_settings["retry"]
     retry_policy = CycleRetryPolicy(
-        max_attempts=max(1, int(os.environ.get("EDGEWARN_CYCLE_MAX_ATTEMPTS", "3"))),
-        initial_backoff_seconds=max(
-            0.0,
-            float(os.environ.get("EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS", "5")),
-        ),
-        max_backoff_seconds=max(
-            0.0,
-            float(os.environ.get("EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS", "30")),
-        ),
+        max_attempts=max(1, int(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_CYCLE_MAX_ATTEMPTS"],
+            yaml_value=retry_settings["max_attempts"],
+            key="cycle.retry.max_attempts",
+        ))),
+        initial_backoff_seconds=max(0.0, float(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS"],
+            yaml_value=retry_settings["initial_backoff_seconds"],
+            key="cycle.retry.initial_backoff_seconds",
+        ))),
+        max_backoff_seconds=max(0.0, float(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS"],
+            yaml_value=retry_settings["max_backoff_seconds"],
+            key="cycle.retry.max_backoff_seconds",
+        ))),
     )
+    # After the retry policy, not at module scope: the three EDGEWARN_CYCLE_*
+    # variables above resolve here, and module scope re-executes in every child
+    # spawned by the supervisor, which would repeat the block per process.
+    report_effective_config()
     print(
         "[Scheduler] Cycle progress: "
         f"last_successful={last_successful}, "
@@ -155,8 +224,18 @@ def main():
     goes_render_log_queue = multiprocessing.Queue()
     nexrad_log_queue = multiprocessing.Queue()
 
+    supervisor_settings = section("supervisor")
+    nexrad_heartbeat_path = str(resolve_file(
+        supervisor_settings["nexrad_heartbeat_file"], "supervisor.nexrad_heartbeat_file"
+    ))
     supervisor = AccessorySupervisor(
-        health_path=str(fs.DATA_DIR / "runtime" / "accessory_health.json"),
+        max_restarts=supervisor_settings["max_restarts"],
+        restart_window_seconds=supervisor_settings["restart_window_seconds"],
+        base_backoff_seconds=supervisor_settings["base_backoff_seconds"],
+        max_backoff_seconds=supervisor_settings["max_backoff_seconds"],
+        health_path=str(resolve_file(
+            supervisor_settings["health_file"], "supervisor.health_file"
+        )),
     )
     supervisor.add(
         "METAR", metar_loop,
@@ -196,11 +275,14 @@ def main():
     supervisor.add(
         "NEXRAD Ingest", nexrad_ingest_loop,
         enabled=bool(EWMRS_ENABLED and NEXRAD_ENABLED),
-        args=(nexrad_log_queue, args.base_dir, str(fs.DATA_DIR / "runtime" / "nexrad_ingest_heartbeat.json")),
+        args=(nexrad_log_queue, args.base_dir, nexrad_heartbeat_path),
         daemon=False,
-        heartbeat_path=str(fs.DATA_DIR / "runtime" / "nexrad_ingest_heartbeat.json"),
-        heartbeat_stale_seconds=NEXRAD_HEARTBEAT_STALE_SECONDS,
-        heartbeat_startup_grace_seconds=NEXRAD_HEARTBEAT_STARTUP_GRACE_SECONDS,
+        heartbeat_path=nexrad_heartbeat_path,
+        # Called here rather than bound at import: this module is imported
+        # before get_args() exports EDGEWARN_CONFIG_DIR, so an import-time read
+        # would freeze the repo default even in the parent process.
+        heartbeat_stale_seconds=heartbeat_stale_seconds(),
+        heartbeat_startup_grace_seconds=heartbeat_startup_grace_seconds(),
     )
     supervisor.start_all()
 
@@ -329,9 +411,9 @@ def main():
                          f"selection cursor {selection_cursor}. Waiting..."
                      )
 
-            # Wait/Check loop (15 seconds) — also monitor accessory processes
-            for _ in range(30):
-                time.sleep(0.5)
+            # Wait/Check loop — also monitor accessory processes
+            for _ in range(supervisor_settings["check_ticks"]):
+                time.sleep(supervisor_settings["tick_seconds"])
                 supervisor.check()
 
     except KeyboardInterrupt:
@@ -349,3 +431,10 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")
         sys.exit(0)
+    except config_loader.ConfigError:
+        # This catches configuration failures reached after module initialization
+        # (for example a malformed filesystem attribute in cycle.state_file).
+        # Import-time ConfigError instances cannot be caught here; CI's
+        # validate-config gate is responsible for rejecting those before startup.
+        report_effective_config()
+        raise

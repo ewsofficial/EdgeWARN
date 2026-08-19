@@ -6,10 +6,29 @@ Source file inspected:
 
 This inventory was derived from the actual RAP GRIB2 file, not from the repository's configured extraction list.
 
+That file is not in this repository and the path above is not reachable from a
+normal checkout, so this page is a point-in-time snapshot that cannot be
+regenerated or checked during ordinary development. Treat it as a reference for
+what RAP *carried on that cycle*, not as a contract. `config/integration.yaml`
+`products` is the authoritative statement of what EdgeWARN actually extracts.
+
+> **Known gap.** The listing below is incomplete: the V-component wind series is
+> absent throughout — `v` on `isobaricInhPa`, `10v`, and the `vstm`/`vvcsh`
+> entries — while the matching U-component series are all present. RAP does
+> carry those fields, and the extraction pipeline depends on them:
+> `config/integration.yaml:137` extracts `v` across the same 37 isobaric levels
+> as `u`, and the comment at `:133` counts `74` `wind_field.*` values, which is
+> `37` U plus `37` V. Extraction would raise rather than silently skip them.
+> The counts below are therefore understated by an unverified amount. Do not
+> conclude from this page that a field is missing from RAP.
+
 ## Counts
 
 - Total GRIB messages: `306`
 - Unique layer definitions: `302`
+
+Both counts are as-reported by the tool that generated this page and are
+understated — see the known gap above.
 
 Unique layer definitions here are grouped when the same raw variable appears across many levels.
 

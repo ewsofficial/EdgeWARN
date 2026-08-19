@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate config files
+        run: npm run validate-config
+
       - name: Run Node.js tests
         run: npm test
 
@@ -41,6 +44,10 @@ jobs:
           activate-environment: EdgeWARN-dev
           environment-file: environment.yml
           python-version: '3.13'
+
+      - name: Validate config files
+        shell: bash -el {0}
+        run: PYTHONPATH=src python -m common.config.validate
 
       - name: Run Python tests
         shell: bash -el {0}

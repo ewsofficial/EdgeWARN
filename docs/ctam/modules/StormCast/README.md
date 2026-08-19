@@ -53,10 +53,12 @@ Container for forecast output:
 
 ## Configuration
 
-Key configuration from `core/config.py`:
+Key configuration from `core/config.py`. Every grouped parameter set is a
+`@dataclass(frozen=True)` *instance*, not a dict — access is by attribute
+(`KALMAN_PARAMS.alpha`), and assignment raises.
 
 ```python
-PRESSURE_LEVELS = tuple(range(1000, 75, -25))  # 1000mb through 100mb
+PRESSURE_LEVELS = tuple(range(1000, 75, -25))  # 1000mb through 100mb, 25mb steps
 
 DEFAULT_BLENDING_WEIGHTS = BlendingWeights(
     w_obs=0.6,
@@ -68,26 +70,46 @@ SHALLOW_STORM_WEIGHTS = BlendingWeights(w_obs=0.3, w_mean=0.3, w_bunkers=0.4)
 MATURE_STORM_WEIGHTS = BlendingWeights(w_obs=0.6, w_mean=0.15, w_bunkers=0.25)
 MOTION_SMOOTHING_WINDOW = 10
 
-KALMAN_PARAMS = {
-    "alpha": 0.97,
-    "dt_default": 300.0,
-    "sigma_pos": 800.0,
-    "sigma_vel": 12.0,
-    "q_pos": 500.0,
-    "q_vel": 7.2,
-}
+BUNKERS_DEVIATION = BunkersParams(
+    d_shallow=3.0,   # m/s, reduced deviation for shallow convection
+    d_deep=7.5,      # m/s, canonical supercell deviation
+    h_shallow=6.0,   # km, below this use the reduced deviation
+    h_deep=10.0,     # km, above this use the full deviation
+)
 
-UNCERTAINTY_PARAMS = {
-    "sigma_min": 1.2,
-    "sigma_range": 2.5,
-    "alpha_decay": 0.5,
-    "sigma_obs": 4.0,
-    "sigma_env": 2.0,
-    "jitter_multiplier": 0.1,
-}
+KALMAN_PARAMS = KalmanParams(
+    alpha=0.97,
+    dt_default=300.0,
+    sigma_pos=800.0,
+    sigma_vel=12.0,
+    q_pos=500.0,
+    q_vel=7.2,
+)
+
+UNCERTAINTY_PARAMS = UncertaintyParams(
+    sigma_min=1.2,
+    sigma_range=2.5,
+    alpha_decay=0.5,
+    sigma_obs=4.0,
+    sigma_env=2.0,
+    jitter_multiplier=0.1,
+)
 
 DEFAULT_LEAD_TIMES = (900.0, 1800.0, 2700.0, 3600.0)
+MAX_RELIABLE_LEAD_TIME = 3600.0        # skill degrades sharply past 60 min
+MIN_VELOCITY_THRESHOLD = 2.0           # m/s, filters stationary cells
+MAX_VELOCITY_THRESHOLD = 50.0          # m/s, filters unrealistic motion
 ```
+
+`LEVEL_HEIGHTS` and `GAUSSIAN_WEIGHT_PARAMS` are derived per pressure level
+rather than written out: heights come from the standard-atmosphere relation
+`44.3308 * (1 - (p/1013.25)**0.190263)`, and each level's Gaussian weight is
+centered on its own height with a fixed `sigma` of `2.0` km.
+
+The scalar Bunkers constants `BUNKERS_DEVIATION_FULL`,
+`BUNKERS_DEVIATION_SHALLOW`, `BUNKERS_HEIGHT_SHALLOW`, and
+`BUNKERS_HEIGHT_DEEP` also exist and carry the same four values as
+`BUNKERS_DEVIATION`. Prefer the dataclass; the loose scalars are duplicates.
 
 ## Algorithm
 

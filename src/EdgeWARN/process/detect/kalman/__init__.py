@@ -31,16 +31,24 @@ Usage:
     
     # Check Mahalanobis distance for gating
     d_m = kf.get_mahalanobis_distance(lat=33.6, lon=-97.3)
-    is_valid = kf.is_within_gate(lat=33.6, lon=-97.3, threshold=6.0)
+    cfg = default_assignment_config()
+    is_valid = kf.is_within_gate(
+        lat=33.6, lon=-97.3,
+        threshold=cfg.gating_threshold,
+        min_radius_km=cfg.min_gating_radius_km,
+    )
 """
 
 from .config import (
     KalmanConfig,
     TrackingConfig,
     AssignmentConfig,
-    DEFAULT_KALMAN_CONFIG,
-    DEFAULT_TRACKING_CONFIG,
-    DEFAULT_ASSIGNMENT_CONFIG,
+    FilterInternalsConfig,
+    ConfidenceConfig,
+    AssignmentCostsConfig,
+    default_kalman_config,
+    default_tracking_config,
+    default_assignment_config,
 )
 
 from .state import (
@@ -76,10 +84,13 @@ __all__ = [
     'KalmanConfig',
     'TrackingConfig',
     'AssignmentConfig',
-    'DEFAULT_KALMAN_CONFIG',
-    'DEFAULT_TRACKING_CONFIG',
-    'DEFAULT_ASSIGNMENT_CONFIG',
-    
+    'FilterInternalsConfig',
+    'ConfidenceConfig',
+    'AssignmentCostsConfig',
+    'default_kalman_config',
+    'default_tracking_config',
+    'default_assignment_config',
+
     # State
     'StateVector',
     'CovarianceMatrix',

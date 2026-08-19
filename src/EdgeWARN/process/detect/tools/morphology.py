@@ -7,11 +7,10 @@ import math
 from scipy.ndimage import convolve
 from skimage.morphology import skeletonize
 
+from EdgeWARN.process.detect.config import section
+
 # Pre-allocated kernel for skeleton analysis (module-level, created once)
 _SKELETON_KERNEL = np.array([[1, 1, 1], [1, 10, 1], [1, 1, 1]], dtype=np.uint8)
-
-# Minimum cell size for full analysis (pixels)
-_MIN_PIXELS_FULL_ANALYSIS = 25
 
 
 class MorphologyEngine:
@@ -26,11 +25,12 @@ class MorphologyEngine:
         pixel_count = np.count_nonzero(mask_slice)
         if pixel_count == 0:
             return {}
-        
+
+        config = section("morphology")
         metrics = {}
-        
+
         # === Early bailout for tiny cells ===
-        if pixel_count < _MIN_PIXELS_FULL_ANALYSIS:
+        if pixel_count < config["min_pixels_full_analysis"]:
             # Return defaults for small cells (not enough data for meaningful analysis)
             return {
                 'linearity': 0.0,
@@ -94,7 +94,7 @@ class MorphologyEngine:
             metrics['aspect_ratio'] = round(ar, 2)
         
         # Convexity Defects (only for larger cells with complex hulls)
-        if len(cnt) < 10:  # Skip defect analysis for simple shapes
+        if len(cnt) < config["min_contour_points_for_defects"]:  # Skip defect analysis for simple shapes
             return metrics
             
         hull_indices = cv2.convexHull(cnt, returnPoints=False)

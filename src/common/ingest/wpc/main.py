@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Optional, Dict
 
 import util.file as fs
+from common.ingest.wpc.config import (
+    cleanup_glob,
+    cleanup_max_age_minutes,
+    previous_analysis_lookback_hours,
+)
 from common.ingest.wpc.parser import parse_coded_surface
 from common.ingest.wpc.converter import parsed_to_geojson, save_geojson
 from common.ingest.wpc.downloader import (
@@ -70,7 +75,7 @@ def run_wpc_ingest(log_queue=None):
         dt_now = datetime.now(timezone.utc)
         result = fetch_surface_analysis(dt_now, save_timestamped=True)
 
-        dt_prev = dt_now - timedelta(hours=3)
+        dt_prev = dt_now - timedelta(hours=previous_analysis_lookback_hours())
         fetch_surface_analysis(dt_prev, save_timestamped=True)
 
         clean_old_files()
@@ -83,7 +88,7 @@ def run_wpc_ingest(log_queue=None):
         io_manager.write_error(f"WPC ingest error: {e}")
 
 
-def clean_old_files(max_age_minutes: int = 360):
+def clean_old_files(max_age_minutes: Optional[int] = None):
     import time
     import os
 
@@ -91,11 +96,14 @@ def clean_old_files(max_age_minutes: int = 360):
     if not sfc_dir.exists():
         return
 
+    if max_age_minutes is None:
+        max_age_minutes = cleanup_max_age_minutes()
+
     now = time.time()
     max_age_seconds = max_age_minutes * 60
     removed = 0
 
-    for f in sfc_dir.glob("wpc_sfc_*.geojson"):
+    for f in sfc_dir.glob(cleanup_glob()):
         try:
             age = now - f.stat().st_mtime
             if age > max_age_seconds:

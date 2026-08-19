@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "runtime.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "identity", "run", "goes_coordination", "supervisor", "background_intervals", "cycle", "profiling"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contact", "weather_api_accept"],
+      "properties": {
+        "contact": { "type": "string", "pattern": "^[^\\s{}@]+@[^\\s{}@]+\\.[^\\s{}@]+$" },
+        "weather_api_accept": { "type": "string", "pattern": "^[^\\s{}\\r\\n]+/[^\\s{}\\r\\n]+$" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lat_limits", "lon_limits", "profile", "disable_ctam", "disable_tracking", "disable_polygon_expansion", "disable_ewmrs", "disable_nws", "disable_metar", "disable_goes", "disable_nexrad", "mrms_core_only"],
+      "properties": {
+        "lat_limits": { "type": "array", "items": { "type": "number", "minimum": -90, "maximum": 90 }, "minItems": 2, "maxItems": 2 },
+        "lon_limits": { "type": "array", "items": { "type": "number", "minimum": -180, "maximum": 360 }, "minItems": 2, "maxItems": 2 },
+        "profile": { "type": "boolean" },
+        "disable_ctam": { "type": "boolean" },
+        "disable_tracking": { "type": "boolean" },
+        "disable_polygon_expansion": { "type": "boolean" },
+        "disable_ewmrs": { "type": "boolean" },
+        "disable_nws": { "type": "boolean" },
+        "disable_metar": { "type": "boolean" },
+        "disable_goes": { "type": "boolean" },
+        "disable_nexrad": { "type": "boolean" },
+        "mrms_core_only": { "type": "boolean" }
+      }
+    },
+    "goes_coordination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["poll_seconds", "render_wait_seconds", "render_wait_interval_seconds", "render_max_offset_minutes", "pause_ingest_during_render", "render_pause_poll_seconds", "render_pause_poll_interval_seconds", "poll_interval_seconds", "render_wait_interval_floor_seconds", "render_wait_poll_granularity_seconds", "render_task_max_entries"],
+      "properties": {
+        "poll_seconds": { "type": "number", "minimum": 0 },
+        "render_wait_seconds": { "type": "number", "minimum": 0 },
+        "render_wait_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "render_max_offset_minutes": { "type": "number", "minimum": 0 },
+        "pause_ingest_during_render": { "type": "boolean" },
+        "render_pause_poll_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "render_pause_poll_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "poll_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "render_wait_interval_floor_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "render_wait_poll_granularity_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "render_task_max_entries": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "supervisor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_ticks", "tick_seconds", "max_restarts", "restart_window_seconds", "base_backoff_seconds", "max_backoff_seconds", "stop_join_timeout_seconds", "stop_kill_join_timeout_seconds", "health_file", "nexrad_heartbeat_file"],
+      "properties": {
+        "check_ticks": { "type": "integer", "minimum": 1 },
+        "tick_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "max_restarts": { "type": "integer", "minimum": 0 },
+        "restart_window_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "base_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "max_backoff_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "stop_join_timeout_seconds": { "type": "number", "minimum": 0 },
+        "stop_kill_join_timeout_seconds": { "type": "number", "minimum": 0 },
+        "health_file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dir", "name"],
+          "properties": {
+            "dir": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "name": { "type": "string" }
+          }
+        },
+        "nexrad_heartbeat_file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dir", "name"],
+          "properties": {
+            "dir": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "name": { "type": "string" }
+          }
+        }
+      }
+    },
+    "background_intervals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metar_boundary_minutes", "boundary_wait_interval_seconds", "nws_seconds", "nws_interval_seconds", "wpc_boundary_minutes", "nexrad_seconds", "nexrad_interval_seconds"],
+      "properties": {
+        "metar_boundary_minutes": { "type": "integer", "exclusiveMinimum": 0 },
+        "boundary_wait_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "nws_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "nws_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "wpc_boundary_minutes": { "type": "integer", "exclusiveMinimum": 0 },
+        "nexrad_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "nexrad_interval_seconds": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "cycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state_file", "retry", "ingest_max_entries", "log_drain_poll_seconds"],
+      "properties": {
+        "state_file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dir", "name"],
+          "properties": {
+            "dir": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "name": { "type": "string" }
+          }
+        },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_attempts", "initial_backoff_seconds", "max_backoff_seconds"],
+          "properties": {
+            "max_attempts": { "type": "integer", "minimum": 1 },
+            "initial_backoff_seconds": { "type": "number", "minimum": 0 },
+            "max_backoff_seconds": { "type": "number", "minimum": 0 }
+          }
+        },
+        "ingest_max_entries": { "type": "integer", "minimum": 1 },
+        "log_drain_poll_seconds": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "profiling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["perf_tracker"],
+      "properties": {
+        "perf_tracker": { "type": ["boolean", "null"] }
+      }
+    }
+  }
+}

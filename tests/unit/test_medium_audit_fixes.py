@@ -5,6 +5,8 @@ Tests the fixes for all six medium-priority issues from the
 storm cell tracking code audit.
 """
 
+import dataclasses
+
 import pytest
 import copy
 import numpy as np
@@ -13,10 +15,12 @@ from unittest.mock import MagicMock
 from EdgeWARN.process.detect.kalman import (
     KalmanFilter,
     KalmanConfig,
+    default_assignment_config,
 )
 from EdgeWARN.process.detect.kalman.assignment import (
     AssignmentCostCalculator,
     AssignmentConfig,
+    MAX_DIRECTIONAL_COST,
     build_filtered_cost_matrix,
     run_hybrid_assignment,
 )
@@ -222,7 +226,7 @@ class TestM5SingleCandidateCost:
 
     def test_single_candidate_accepted(self):
         """A single candidate with reasonable cost should be accepted."""
-        config = AssignmentConfig()
+        config = default_assignment_config()
         track = self._make_track(1, 35.0, -97.0)
         detection = self._make_detection(10, 35.01, -97.01)  # Close
 
@@ -239,7 +243,8 @@ class TestM5SingleCandidateCost:
 
     def test_single_candidate_rejected_extreme_cost(self):
         """A single candidate within gate but with extreme shape mismatch should be rejected."""
-        config = AssignmentConfig(
+        config = dataclasses.replace(
+            default_assignment_config(),
             prefilter_radius_km=50.0,  # Large filter so detection isn't prefiltered out
             gating_threshold=20.0,     # Large gate so detection passes gating
             min_gating_radius_km=50.0, # Large fallback
@@ -256,9 +261,12 @@ class TestM5SingleCandidateCost:
         # Compute the cost manually to verify it exceeds threshold
         calculator = AssignmentCostCalculator(config)
         cost = calculator.compute_cost(track, detection, kf, 120.0)
-        max_cost = (config.weight_position * config.gating_threshold
-                    + config.weight_velocity * 2.0
-                    + config.weight_shape * 2.0)
+        max_cost = (
+            config.weight_position * config.gating_threshold
+            + config.weight_velocity * MAX_DIRECTIONAL_COST
+            + config.weight_shape
+            * (config.costs.reflectivity_diff_cap + config.costs.size_cost_cap)
+        )
 
         # This test only asserts rejection if cost actually exceeds threshold;
         # if the shape mismatch isn't extreme enough, skip assertion

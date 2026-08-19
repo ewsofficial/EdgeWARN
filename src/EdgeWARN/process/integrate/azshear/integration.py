@@ -11,9 +11,10 @@ from util.grib_loader import load_grib_fast
 
 from ..geometry.cell_polygon import StormIntegrationUtils
 from .constants import (
-    AZSHEAR_BUFFER_KM,
-    AZSHEAR_LOW_THRESHOLD,
-    AZSHEAR_MID_THRESHOLD,
+    azshear_buffer_km,
+    azshear_history_window,
+    azshear_low_threshold,
+    azshear_mid_threshold,
 )
 from .geometry import (
     buffer_polygon_km,
@@ -70,7 +71,7 @@ def _read_recent_history(cell_id, history_cache):
         with open(history_file, "r") as f:
             payload = json.load(f)
         if isinstance(payload, list):
-            history_cache[cell_id] = payload[-5:]
+            history_cache[cell_id] = payload[-azshear_history_window():]
         else:
             history_cache[cell_id] = []
     except Exception:
@@ -161,7 +162,8 @@ def _normalize_search_polygon(raw_poly, geom):
 
 
 def _build_search_polygons(raw_polys):
-    buffered_polys = [buffer_polygon_km(raw_poly, AZSHEAR_BUFFER_KM) for raw_poly in raw_polys]
+    buffer_km = azshear_buffer_km()
+    buffered_polys = [buffer_polygon_km(raw_poly, buffer_km) for raw_poly in raw_polys]
     search_polys = []
 
     for index, raw_poly in enumerate(raw_polys):
@@ -517,6 +519,9 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
     if not storm_cells or not low_dataset_path or not mid_dataset_path:
         return storm_cells
     history_cache = {}
+    buffer_km = azshear_buffer_km()
+    low_threshold = azshear_low_threshold()
+    mid_threshold = azshear_mid_threshold()
 
     try:
         low_ds, low_is_grib = _open_azshear_dataset(integrator, low_dataset_path)
@@ -583,7 +588,7 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
             cell_contexts[cell_index].update(
                 {
                     "search_poly": search_poly,
-                    "buffer_km": AZSHEAR_BUFFER_KM,
+                    "buffer_km": buffer_km,
                     "buffered_area_km2": max(polygon_area_km2(search_poly), 1e-6),
                 }
             )
@@ -602,7 +607,7 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
                     low_lat_vals,
                     low_lon_vals,
                     search_poly,
-                    AZSHEAR_LOW_THRESHOLD,
+                    low_threshold,
                     low_pixel_area_km2,
                     low_lat_spacing_km,
                     low_lon_spacing_km,
@@ -618,7 +623,7 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
                     mid_lat_vals,
                     mid_lon_vals,
                     search_poly,
-                    AZSHEAR_MID_THRESHOLD,
+                    mid_threshold,
                     mid_pixel_area_km2,
                     mid_lat_spacing_km,
                     mid_lon_spacing_km,
@@ -658,12 +663,12 @@ def integrate_azshear_features(integrator, low_dataset_path, mid_dataset_path, s
                 low_summary["persistence"] = _compute_level_persistence(
                     history_entries,
                     "low",
-                    AZSHEAR_LOW_THRESHOLD,
+                    low_threshold,
                 )
                 mid_summary["persistence"] = _compute_level_persistence(
                     history_entries,
                     "mid",
-                    AZSHEAR_MID_THRESHOLD,
+                    mid_threshold,
                 )
                 simultaneous_persistence = _compute_simultaneous_persistence(history_entries)
 

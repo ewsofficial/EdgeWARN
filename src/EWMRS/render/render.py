@@ -10,6 +10,12 @@ import threading
 import numpy as np
 from .tools import TransformUtils
 from .tiler import save_float16_chunk
+from common.config.overlay import resolve
+from EWMRS.pipeline_config import (
+    TILE_THREADS_ENV,
+    colormap_cache_entries,
+    max_tile_threads,
+)
 import util.file as fs
 from util.atomic import atomic_write_json
 from xarray import Dataset
@@ -20,7 +26,7 @@ io_manager = IOManager("[Transform]")
 _CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16\.gz$")
 
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=colormap_cache_entries())
 def _get_cached_cmap(colormap_key: str):
     """Cache parsed colormap arrays. lru_cache provides thread-safe
     insertion via the GIL and replaces the previous double-checked-lock
@@ -96,16 +102,38 @@ def _resolve_tile_workers(tile_count: int) -> int:
     if tile_count <= 1:
         return 1
 
-    env_value = os.environ.get("EWMRS_TILE_THREADS")
-    if env_value:
-        try:
-            configured_cap = max(1, int(env_value))
-            return min(tile_count, configured_cap)
-        except ValueError:
-            pass
+    # An explicit env cap bypasses the CPU cap; the catalog value does not. That
+    # asymmetry is deliberate and predates the extraction -- setting the variable
+    # is how an operator overrides what the machine looks like. `yaml_value=None`
+    # is what expresses it: a non-None answer can only have come from the
+    # environment, since the catalog value is applied by the fallback below.
+    try:
+        env_cap = resolve(
+            None,
+            env_names=(TILE_THREADS_ENV,),
+            yaml_value=None,
+            value_type=int,
+            key="ewmrs_pipeline.render_threads.max_tile_threads",
+        )
+    except ValueError as exc:
+        # The only overlay site that swallows a malformed override, because it is
+        # the only one with a working fallback -- the CPU cap below still yields a
+        # usable pool. Failing the render over a typo in a thread hint would be a
+        # worse trade. `minimum=1` is likewise not passed: the clamp below has
+        # always accepted "0" as 1 rather than rejecting it.
+        #
+        # Warned rather than dropped silently: `resolve` records an origin only
+        # after coercing, so a rejected override leaves this key absent from
+        # `overlay.overrides()` entirely. Without this line an operator who
+        # mistyped the variable would see neither the effect they wanted nor any
+        # indication of why.
+        io_manager.write_warning(f"Ignoring {TILE_THREADS_ENV}: {exc}")
+        env_cap = None
+    if env_cap is not None:
+        return min(tile_count, max(1, env_cap))
 
     cpu_cap = max(1, os.cpu_count() or 1)
-    return min(tile_count, 8, cpu_cap)
+    return min(tile_count, max_tile_threads(), cpu_cap)
 
 
 def _normalize_tile_grid(tile_grid: dict | None) -> dict | None:
@@ -134,7 +162,7 @@ class GUIValueWriter:
         *,
         timing_context: dict | None = None,
     ) -> Tuple[List[Path], str]:
-        from .config import TILE_SIZE
+        from .config import tile_size
 
         render_start_s = time.perf_counter()
         dt = self._coerce_timestamp(self.timestamp)
@@ -142,16 +170,17 @@ class GUIValueWriter:
         self.outdir.mkdir(parents=True, exist_ok=True)
 
         if tile_output:
+            chunk_size = tile_size()
             values = np.asarray(values, dtype=np.float32)
             if values.ndim != 2:
                 raise ValueError("Rendered values must be scalar [height,width]")
-            if values.shape[0] % TILE_SIZE or values.shape[1] % TILE_SIZE:
+            if values.shape[0] % chunk_size or values.shape[1] % chunk_size:
                 raise ValueError(
-                    f"Rendered value dimensions {values.shape[:2]} are not divisible by chunk size {TILE_SIZE}"
+                    f"Rendered value dimensions {values.shape[:2]} are not divisible by chunk size {chunk_size}"
                 )
-            rows = values.shape[0] // TILE_SIZE
-            cols = values.shape[1] // TILE_SIZE
-            tile_grid = {"rows": rows, "cols": cols, "tile_size": TILE_SIZE}
+            rows = values.shape[0] // chunk_size
+            cols = values.shape[1] // chunk_size
+            tile_grid = {"rows": rows, "cols": cols, "tile_size": chunk_size}
             artifact_paths = self._save_chunks_from_array(
                 values,
                 timestamp,
@@ -269,7 +298,7 @@ class GUIValueWriter:
         return [tile_path for _, tile_path in tile_specs]
 
     def _write_timestamp_index(self, timestamp_dir: Path, tile_specs: list[tuple[np.ndarray, Path]], tile_grid: dict) -> None:
-        from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
+        from .config import chunk_format_descriptor, chunk_schema_version
         normalized_tile_grid = _normalize_tile_grid(tile_grid)
         chunks: list[list[int]] = []
         for _, tile_path in tile_specs:
@@ -280,7 +309,7 @@ class GUIValueWriter:
 
         chunks.sort(key=lambda item: (item[1], item[0]))
         output_data = {
-            "schema_version": CHUNK_SCHEMA_VERSION,
+            "schema_version": chunk_schema_version(),
             "timestamp": timestamp_dir.name,
             "representation": "binary_chunks",
             "chunk_format": chunk_format_descriptor(),
@@ -295,7 +324,7 @@ class GUIValueWriter:
             io_manager.write_error(f"Failed to update index.json in {timestamp_dir}: {e}")
 
     def _update_index(self, new_timestamp, tile_grid=None):
-        from .config import CHUNK_SCHEMA_VERSION, chunk_format_descriptor
+        from .config import chunk_format_descriptor, chunk_schema_version
         index_file = self.outdir / "index.json"
         timestamps = []
         existing_tile_grid = None
@@ -319,7 +348,7 @@ class GUIValueWriter:
 
             try:
                 output_data = {
-                    "schema_version": CHUNK_SCHEMA_VERSION,
+                    "schema_version": chunk_schema_version(),
                     "timestamps": timestamps,
                     "representation": "binary_chunks",
                     "chunk_format": chunk_format_descriptor(include_media_type=True),

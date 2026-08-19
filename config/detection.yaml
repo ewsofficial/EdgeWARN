@@ -1,40 +1,159 @@
 # detection.yaml — Audit §4
 #
-# Source: src/EdgeWARN/process/detect/main.py:29-31,100-105,338-368; tools/gatemapper.py:101-176,244,287,368-374; tools/morphology.py:14; tools/save.py:148-182
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# Consumed by src/EdgeWARN/process/detect/config.py. `detection` and `gatemapper`
+# are threaded as a typed DetectionConfig from src/run.py and
+# src/process_historical.py; `tracker`, `morphology`, `save`, `alert_matching`
+# and `hail` are read by their owning modules through config.section().
+#
+# The three `detection` thresholds are the only CLI-overridable keys here
+# (--refl-threshold, --min-seed-percentage, --drop-offset); CLI values override
+# this file. These flags have no environment-variable overlay.
+#
+# Phase 3 deliberately omitted the five `gatemapper` keys below, because at that
+# point they were terms of expressions hardcoded in gatemapper.py, and recording
+# them would have implied an editability the code did not have. Phase 4 reads
+# every term, so they are settings now -- but they remain *coupled* terms of one
+# per-cell threshold curve,
+#   max(where(m < switch_max_refl, low, high), min(m, max_refl_clamp) - drop_offset)
+# so changing any one of them shifts the whole curve. `baseline_refl_floor` is
+# likewise a floor applied as `min(baseline_refl_floor, refl_threshold)`: raising
+# refl_threshold above it still cannot raise the baseline mask.
+
+schema_version: 1
 
 detection:
-  refl_threshold: 37.5
-  min_seed_percentage: 0.001
-  drop_offset: 10.0
-  stormcell_cleanup_max_age_minutes: 120
+  # All five are read in config.py, not main.py: the CLI overrides are folded in
+  # while DetectionConfig is built (:121-131), so main.py only ever sees the
+  # already-resolved dataclass field.
+  refl_threshold: 37.5                  # config.py:92,121-123
+  min_seed_percentage: 0.001            # config.py:93,124-128; applied gatemapper.py:151
+  drop_offset: 10.0                     # config.py:94,129-131
+  stormcell_cleanup_max_age_minutes: 120  # config.py:132, applied main.py:109
+  # config.py:133, read at main.py:361. Used when the previous scan's timestamp is
+  # missing or yields a non-positive delta.
   fallback_dt_seconds: 120.0
-  single_frame_defaults:
+
+  # config.py:119,134-136, stamped at main.py:336-341 and only when
+  # --disable-tracking is passed. Named for that flag, not for frame count:
+  # single-frame mode (main.py:226-266) also skips tracking, but returns before
+  # these defaults are stamped, so its cells carry no tracking fields at all
+  # rather than these values.
+  tracking_disabled_defaults:
     tracking_mode: active
     prediction_count: 0
     event_type: active
 
+  # config.py:100,137; detect.py:51 loads radar, ProbSevere and PrecipType
+  # concurrently. Three because
+  # there are exactly three datasets, so raising it buys nothing; it is a knob
+  # only so an operator can lower it to serialize the loads when diagnosing I/O
+  # contention.
+  dataset_load_max_workers: 3
+
+tracker:
+  # track.py:657-663. A cell whose observed max reflectivity falls below
+  # `decay_max_refl_dbz` is marked decaying and has its confidence multiplied by
+  # `decay_confidence_factor` each scan, but never driven below
+  # `decay_confidence_floor`. Recovering above the threshold resets confidence
+  # to 1.0 outright, so the floor bounds how far a persistently weak cell decays
+  # rather than where it is dropped -- that cutoff is
+  # kalman.yaml tracking.confidence_threshold.
+  decay_max_refl_dbz: 30.0
+  decay_confidence_factor: 0.85
+  decay_confidence_floor: 0.3
+
 gatemapper:
-  baseline_refl_floor: 37.5             # applied as min(this, refl_threshold)
-  crop_pad_bottom_px: 2
-  crop_pad_right_px: 3
+  # gatemapper.py:103, applied as `min(baseline_refl_floor, refl_threshold)`.
+  baseline_refl_floor: 37.5
+
+  # gatemapper.py:179-181, `np.where(valid_max_refl < switch_max_refl, low, high)`.
   dynamic_min_threshold:
-    switch_max_refl: 45.0               # max_refl < 45 -> low, else high
+    switch_max_refl: 45.0
     low: 37.5
     high: 40.0
-  max_refl_clamp: 52.0                  # per-cell thresh = max(min_thresh, capped_max - drop_offset)
-  reject_clusters_at_or_below_gates: 5
-  contour_downsample: 8
-  contour_downsample_adaptive: [1, 4, 8]  # n_pts <8 / <24 / else
-  coordinate_decimals: 3
+
+  # gatemapper.py:183, `np.minimum(valid_max_refl, max_refl_clamp)`.
+  max_refl_clamp: 52.0
+
+  # gatemapper.py:122, applied at :123-126. Symmetric 2-pixel pad around the
+  # reflectivity bounding box; the `+ pad + 1` on the high edges is this 2 plus
+  # one for the exclusive slice end, not a different pad.
+  crop_pad_px: 2
+
+  reject_clusters_at_or_below_gates: 5  # gatemapper.py:254, after watershed
+  contour_downsample: 8                 # gatemapper.py:346, inside draw_bbox (:288)
+
+  # gatemapper.py:341-346. Short contours are downsampled less so small cells
+  # keep their shape; anything longer falls through to `contour_downsample`.
+  contour_downsample_adaptive:
+    keep_all_below_points: 8            # n_points < 8  -> step 1
+    coarse_below_points: 24             # n_points < 24 -> step 4
+    keep_all_step: 1
+    coarse_step: 4
+
+  # gatemapper.py:332 measure.find_contours level. Not under `morphology`:
+  # morphology.py does trace contours, but with cv2.findContours (:66), which
+  # takes no level argument. The hail masks use the same 0.5 through a separate
+  # literal; see `hail.contour_level`.
+  contour_level: 0.5
+  coordinate_decimals: 3                # gatemapper.py:366
 
 morphology:
+  # morphology.py:33. The `_MIN_PIXELS_FULL_ANALYSIS` constant this key replaced is
+  # deleted, not aliased -- the config read is the only owner now.
   min_pixels_full_analysis: 25
-  contour_level: 0.5
+
+  # morphology.py:97. A second, independent size gate: cells past the pixel test
+  # above still skip convexity-defect analysis if their contour has fewer than
+  # this many points.
+  min_contour_points_for_defects: 10
+
+# tools/alert_matcher.py, reached only from main.py:254,394.
+alert_matching:
+  # Read by convective_flood_events() (alert_matcher.py:44-55), which replaced a
+  # CONVECTIVE_FLOOD_EVENTS constant. An allowlist: an NWS event name absent from
+  # this set is never attached to a cell, so adding a product upstream is not
+  # enough to make it appear.
+  events:
+    - Tornado Warning
+    - Severe Thunderstorm Warning
+    - Tornado Watch
+    - Severe Thunderstorm Watch
+    - Special Weather Statement
+    - Severe Weather Statement
+    - Flash Flood Warning
+
+  # alert_matcher.py:461,491 and :463,492. Degrees of slack added to a cell
+  # before testing intersection, to absorb edge rounding. Polygons get less
+  # slack than point cells because a point has no footprint of its own.
+  polygon_match_buffer_deg: 0.005
+  point_match_buffer_deg: 0.01
+
+  # Bounds on the two module-level caches in alert_matcher.py, read at :144 and
+  # :194 and enforced by _store_bounded (:32). Both are keyed by
+  # (registry_dir, snapshot) and were unbounded, so a long-lived process -- and
+  # especially a historical replay, which walks every retained snapshot -- grew
+  # them without limit for the process lifetime. Oldest-first eviction: the
+  # matcher only ever revisits the current scan's snapshot.
+  snapshot_cache_max_entries: 8
+  geometry_cache_max_entries: 512
+
+# tools/save.py geometry serialization. Both default to 3 today but are written
+# to separate keys because they round different things: `polygon_decimals`
+# applies to bbox and hail-core rings (save.py:39), `centroid_decimals` to the
+# reflectivity-weighted centroid (save.py:285,343,433).
+save:
+  polygon_decimals: 3
+  centroid_decimals: 3
 
 hail:
-  contour_sampling_step: 5
+  contour_sampling_step: 5              # save.py:185,266
+  # save.py:173,257,439 all compare preciptype to this class. The docstring that
+  # disagreed and said 7 is gone, so there is no longer a code/comment split to
+  # warn about -- the three comparisons are the only statement of the class.
   preciptype_class: 6
 
-env_overrides: {}                       # CLI only: --refl-threshold, --min-seed-percentage, --drop-offset
+  # save.py:178,261 measure.find_contours level on the hail mask. Same number as
+  # `gatemapper.contour_level` but a separate literal with a separate owner, so
+  # changing one must not silently change the other.
+  contour_level: 0.5

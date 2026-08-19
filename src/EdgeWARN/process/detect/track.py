@@ -12,6 +12,8 @@ from datetime import datetime
 import copy
 import numpy as np
 
+from .config import section
+from .lineage.config import tracked_overlap_ratio
 from .lineage import (
     LineageEvent,
     LineageResult,
@@ -28,6 +30,9 @@ from .kalman import (
     TrackingConfig,
     AssignmentConfig,
     KalmanConfig,
+    default_tracking_config,
+    default_assignment_config,
+    default_kalman_config,
     haversine_distance,
 )
 from .kalman.assignment import (
@@ -35,6 +40,9 @@ from .kalman.assignment import (
     run_greedy_assignment,
     AssignmentResult
 )
+
+
+_KALMAN_INITIALIZED_IDS_SAMPLE_LIMIT = 8
 
 
 class StormCellTracker:
@@ -62,7 +70,7 @@ class StormCellTracker:
         ps_new: Any,
         io_manager: Any,
         lineage_buffer: Optional[LineageBuffer] = None,
-        overlap_threshold: float = 0.10,
+        overlap_threshold: Optional[float] = None,
         tracking_config: Optional[TrackingConfig] = None,
         assignment_config: Optional[AssignmentConfig] = None,
         kalman_config: Optional[KalmanConfig] = None
@@ -75,7 +83,8 @@ class StormCellTracker:
             ps_new: Current scan ProbSevere data
             io_manager: IO manager for logging
             lineage_buffer: Optional pre-loaded LineageBuffer
-            overlap_threshold: Minimum overlap ratio for merge/split detection
+            overlap_threshold: Minimum overlap ratio for merge/split detection.
+                Defaults to ``lineage.yaml`` ``lineage.tracked_overlap_ratio``.
             tracking_config: Configuration for Kalman tracking
             assignment_config: Configuration for assignment (mostly for hybrid params)
             kalman_config: Configuration for Kalman filter
@@ -83,15 +92,19 @@ class StormCellTracker:
         self.ps_old = ps_old
         self.ps_new = ps_new
         self.io_manager = io_manager
-        self.overlap_threshold = overlap_threshold
+        self.overlap_threshold = (
+            tracked_overlap_ratio()
+            if overlap_threshold is None
+            else overlap_threshold
+        )
         
         # Lineage buffer
         self._lineage_buffer = lineage_buffer
         
         # Kalman Configuration
-        self.tracking_config = tracking_config or TrackingConfig()
-        self.assignment_config = assignment_config or AssignmentConfig()
-        self.kalman_config = kalman_config or KalmanConfig()
+        self.tracking_config = tracking_config or default_tracking_config()
+        self.assignment_config = assignment_config or default_assignment_config()
+        self.kalman_config = kalman_config or default_kalman_config()
         self.confidence_calc = ConfidenceCalculator(config=self.tracking_config)
         
         # Cache for Kalman filters (cell_id -> KalmanFilter)
@@ -201,7 +214,7 @@ class StormCellTracker:
         entries: List[Dict[str, Any]],
         updated_data: List[Dict[str, Any]],
         timestamp: Optional[str] = None,
-        dt_seconds: float = 120.0,
+        dt_seconds: Optional[float] = None,
         lineage: Optional[LineageResult] = None,
     ) -> List[Dict[str, Any]]:
         """
@@ -211,12 +224,17 @@ class StormCellTracker:
             entries: List of cell dicts from previous scan
             updated_data: List of dicts with updated data
             timestamp: Current scan timestamp
-            dt_seconds: Time since last scan in seconds
+            dt_seconds: Time since last scan in seconds. Defaults to
+                ``detection.yaml`` ``detection.fallback_dt_seconds``; the
+                production caller always computes and passes it explicitly.
             lineage: Optional pre-calculated lineage result
-            
+
         Returns:
             Updated list of cell entries
         """
+        if dt_seconds is None:
+            dt_seconds = section("detection")["fallback_dt_seconds"]
+
         # Filter out entries without 'id' field to prevent KeyError
         valid_entries = [cell for cell in entries if 'id' in cell]
         if len(valid_entries) < len(entries):
@@ -613,8 +631,14 @@ class StormCellTracker:
                 existing_count += 1
 
         if entries:
-            sample = ", ".join(str(track_id) for track_id in missing_ids[:8])
-            more = "" if len(missing_ids) <= 8 else f", ... (+{len(missing_ids) - 8} more)"
+            sample = ", ".join(
+                str(track_id) for track_id in missing_ids[:_KALMAN_INITIALIZED_IDS_SAMPLE_LIMIT]
+            )
+            more = (
+                ""
+                if len(missing_ids) <= _KALMAN_INITIALIZED_IDS_SAMPLE_LIMIT
+                else f", ... (+{len(missing_ids) - _KALMAN_INITIALIZED_IDS_SAMPLE_LIMIT} more)"
+            )
             missing_summary = "none" if not missing_ids else f"{sample}{more}"
             self.io_manager.write_debug(
                 f"_ensure_kalman_filters: total={len(entries)}, existing={existing_count}, "
@@ -637,11 +661,15 @@ class StormCellTracker:
             cell['bbox'] = updated['bbox']
         
         # M3 Fix: Monitor reflectivity for decay state
+        tracker_cfg = section("tracker")
         max_refl = updated.get('max_refl', cell.get('max_refl', 0))
-        if max_refl < 30:
+        if max_refl < tracker_cfg["decay_max_refl_dbz"]:
             cell['tracking_mode'] = 'decaying'
             cell['decay_scan_count'] = cell.get('decay_scan_count', 0) + 1
-            cell['confidence'] = max(cell.get('confidence', 1.0) * 0.85, 0.3)
+            cell['confidence'] = max(
+                cell.get('confidence', 1.0) * tracker_cfg["decay_confidence_factor"],
+                tracker_cfg["decay_confidence_floor"],
+            )
         else:
             cell['tracking_mode'] = 'active'
             cell['decay_scan_count'] = 0

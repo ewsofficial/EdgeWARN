@@ -14,17 +14,11 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 import requests
 from shapely.geometry import Polygon, MultiPolygon, shape
 
+from common.config import loader as config_loader
+from common.config import overlay
+from util.release import weather_api_headers
 
-ZONE_TYPES: Tuple[str, ...] = ("forecast", "fire", "public", "county", "marine")
-
-
-def _resolve_assets_dir() -> Path:
-    current_file = Path(__file__).resolve()
-    for parent in current_file.parents:
-        candidate = parent / "assets" / "nws_zones"
-        if candidate.exists():
-            return candidate
-    return current_file.parents[4] / "assets" / "nws_zones"
+from .config import zone_geometry_precision, zone_sync_settings
 
 
 def _normalize_ring(coords: Sequence[Any], precision: int) -> List[List[float]]:
@@ -60,10 +54,26 @@ def _rings_valid(rings: Sequence[Sequence[Sequence[float]]]) -> bool:
     return True
 
 
-def geometry_to_rings(geometry: Dict[str, Any], precision: int = 5) -> List[List[List[float]]]:
-    """Convert GeoJSON Polygon/MultiPolygon to asset ring format."""
+def geometry_to_rings(
+    geometry: Dict[str, Any],
+    precision: Optional[int] = None,
+    precision_max: Optional[int] = None,
+) -> List[List[List[float]]]:
+    """Convert GeoJSON Polygon/MultiPolygon to asset ring format.
+
+    ``precision`` is a floor, not a fixed precision: a ring that degenerates at
+    it is retried at each higher precision below ``precision_max``. Both default
+    to ``nws.yaml zone_sync.geometry_precision``/``_max`` -- the ceiling used to
+    be a literal ``8``, which left half the escalation window in source while
+    the floor was configurable.
+    """
     if not geometry or not isinstance(geometry, dict):
         return []
+
+    if precision is None or precision_max is None:
+        catalog_precision, catalog_max = zone_geometry_precision()
+        precision = catalog_precision if precision is None else precision
+        precision_max = catalog_max if precision_max is None else precision_max
 
     try:
         geom_obj = shape(geometry)
@@ -91,7 +101,7 @@ def geometry_to_rings(geometry: Dict[str, Any], precision: int = 5) -> List[List
         assert isinstance(multipolygon, MultiPolygon)
         geometries = list(multipolygon.geoms)
 
-    for active_precision in range(precision, 8):
+    for active_precision in range(precision, precision_max):
         rings: List[List[List[float]]] = []
         for polygon in geometries:
             ring = _normalize_ring(list(polygon.exterior.coords), precision=active_precision)
@@ -152,25 +162,36 @@ class NWSZoneSync:
     def __init__(
         self,
         assets_dir: Path,
-        zone_types: Sequence[str] = ZONE_TYPES,
-        timeout_seconds: int = 30,
-        max_retries: int = 3,
-        max_workers: int = 16,
-        pause_seconds: float = 0.05,
-        user_agent: str = "(EdgeWARN/1.0, contact@edgewarn.com)",
-        show_progress: bool = True,
+        zone_types: Optional[Sequence[str]] = None,
+        timeout_seconds: Optional[int] = None,
+        max_retries: Optional[int] = None,
+        max_workers: Optional[int] = None,
+        pause_seconds: Optional[float] = None,
+        user_agent: str | None = None,
+        show_progress: Optional[bool] = None,
     ) -> None:
+        """Unsupplied settings come from ``nws.yaml zone_sync``.
+
+        Every one of these used to restate its catalog value as a signature
+        default, so the two agreed only as long as nobody edited one of them, and
+        an instance built without arguments -- as the tests do -- ran on the
+        source copy rather than the operator's. `main()` passes all of them
+        explicitly, having already overlaid the CLI on the catalog, so the
+        defaults below are what a non-CLI caller gets.
+        """
+        settings = zone_sync_settings()
+
         self.assets_dir = Path(assets_dir)
-        self.zone_types = tuple(zone_types)
-        self.timeout_seconds = timeout_seconds
-        self.max_retries = max_retries
-        self.max_workers = max_workers
-        self.pause_seconds = pause_seconds
-        self.show_progress = show_progress
-        self.headers = {
-            "User-Agent": user_agent,
-            "Accept": "application/geo+json",
-        }
+        self.zone_types = tuple(settings["zone_types"] if zone_types is None else zone_types)
+        self.timeout_seconds = settings["timeout_seconds"] if timeout_seconds is None else timeout_seconds
+        self.max_retries = settings["max_retries"] if max_retries is None else max_retries
+        self.max_workers = settings["max_workers"] if max_workers is None else max_workers
+        self.pause_seconds = settings["pause_seconds"] if pause_seconds is None else pause_seconds
+        self.show_progress = settings["progress"] if show_progress is None else show_progress
+        self.retry_backoff_seconds = settings["retry_backoff_seconds"]
+        self.zone_catalog_url_pattern = settings["zone_catalog_url_pattern"]
+        self.zone_detail_url_pattern = settings["zone_detail_url_pattern"]
+        self.headers = weather_api_headers(user_agent=user_agent)
         self._thread_local = threading.local()
 
     def _get_thread_session(self) -> requests.Session:
@@ -191,7 +212,9 @@ class NWSZoneSync:
             except Exception as exc:
                 last_error = exc
                 if attempt < self.max_retries:
-                    time.sleep(0.25 * attempt)
+                    # Linear in the 1-based attempt number, not exponential, and
+                    # with no ceiling.
+                    time.sleep(self.retry_backoff_seconds * attempt)
         if last_error is None:
             raise RuntimeError(f"Failed to fetch {url}")
         raise last_error
@@ -233,7 +256,7 @@ class NWSZoneSync:
         """Return catalog map of code -> preferred zone type."""
         catalog: Dict[str, str] = {}
         for zone_type in self.zone_types:
-            data = self._request_json(f"https://api.weather.gov/zones/{zone_type}")
+            data = self._request_json(self.zone_catalog_url_pattern.format(zone_type=zone_type))
             for feature in data.get("features", []):
                 props = feature.get("properties") or {}
                 code = props.get("id")
@@ -242,11 +265,23 @@ class NWSZoneSync:
         return catalog
 
     def fetch_zone_geometry(self, zone_type: str, code: str) -> List[List[List[float]]]:
-        detail = self._request_json(f"https://api.weather.gov/zones/{zone_type}/{code}")
+        detail = self._request_json(
+            self.zone_detail_url_pattern.format(zone_type=zone_type, code=code)
+        )
         geometry = detail.get("geometry")
         return geometry_to_rings(geometry)
 
     def _fetch_missing_zone(self, code: str, zone_type: str) -> Tuple[str, Optional[Dict[str, Any]], str]:
+        # Paced here, in the worker, so it throttles api.weather.gov. Pausing in
+        # the collection loop instead only delays bookkeeping after every future
+        # has already been submitted.
+        #
+        # Scaled by the worker count so `pause_seconds` keeps its single-threaded
+        # meaning: N workers each waiting `pause * N` yields 1/pause requests per
+        # second in aggregate, not N/pause.
+        if self.pause_seconds > 0:
+            time.sleep(self.pause_seconds * max(1, self.max_workers))
+
         try:
             rings = self.fetch_zone_geometry(zone_type, code)
         except Exception:
@@ -327,9 +362,6 @@ class NWSZoneSync:
                         fetch_errors += 1
                         unresolved_codes.append(code)
 
-                    if self.pause_seconds > 0:
-                        time.sleep(self.pause_seconds)
-
                     if self.show_progress:
                         self._print_progress(done, total_missing, fetched_with_geometry, fetched_missing_geometry, fetch_errors, started_at)
 
@@ -369,43 +401,44 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--assets-dir",
         type=Path,
-        default=_resolve_assets_dir(),
-        help="Path to assets/nws_zones directory",
+        default=None,
+        help="Path to assets/nws_zones directory (default: from nws.yaml)",
     )
     parser.add_argument(
         "--zone-types",
         nargs="+",
-        default=list(ZONE_TYPES),
-        help="Zone types to query (forecast fire public county marine)",
+        default=None,
+        help="Zone types to query (default: from nws.yaml)",
     )
     parser.add_argument(
         "--timeout-seconds",
         type=int,
-        default=30,
-        help="HTTP timeout in seconds",
+        default=None,
+        help="HTTP timeout in seconds (default: from nws.yaml)",
     )
     parser.add_argument(
         "--max-retries",
         type=int,
-        default=3,
-        help="HTTP retry attempts",
+        default=None,
+        help="HTTP retry attempts (default: from nws.yaml)",
     )
     parser.add_argument(
         "--max-workers",
         type=int,
-        default=16,
-        help="Concurrent workers for zone detail fetches",
+        default=None,
+        help="Concurrent workers for zone detail fetches (default: from nws.yaml)",
     )
     parser.add_argument(
         "--pause-seconds",
         type=float,
-        default=0.0,
-        help="Pause between zone-detail requests",
+        default=None,
+        help="Pause between zone-detail requests (default: from nws.yaml)",
     )
     parser.add_argument(
-        "--no-progress",
-        action="store_true",
-        help="Disable progress updates",
+        "--progress",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Show progress updates (default: from nws.yaml; --no-progress disables)",
     )
     parser.add_argument(
         "--apply",
@@ -417,11 +450,37 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         help="Optional path to write sync report JSON",
     )
+    parser.add_argument(
+        "--config-dir",
+        type=str,
+        default=None,
+        help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)",
+    )
     return parser.parse_args()
 
 
+def _resolve_zone_sync_args(args: argparse.Namespace) -> argparse.Namespace:
+    # Publish the root before reading anything from it. Every value below names
+    # `args.config_dir` explicitly, but the constructor's headers come from
+    # weather_api_headers(), which resolves `runtime.yaml` on its own -- so without
+    # the export, `--config-dir X` gave this run X's zone settings and the repo
+    # default's outbound identity.
+    config_loader.export_config_root(args.config_dir)
+    zone_sync_cfg = config_loader.load_config("nws", config_dir=args.config_dir)["zone_sync"]
+
+    assets_dir_yaml = config_loader.repo_root(args.config_dir) / zone_sync_cfg["assets_dir"]
+    args.assets_dir = overlay.resolve(args.assets_dir, yaml_value=assets_dir_yaml, key="nws.zone_sync.assets_dir")
+    args.zone_types = overlay.resolve(args.zone_types, yaml_value=list(zone_sync_cfg["zone_types"]), key="nws.zone_sync.zone_types")
+    args.timeout_seconds = overlay.resolve(args.timeout_seconds, yaml_value=zone_sync_cfg["timeout_seconds"], key="nws.zone_sync.timeout_seconds")
+    args.max_retries = overlay.resolve(args.max_retries, yaml_value=zone_sync_cfg["max_retries"], key="nws.zone_sync.max_retries")
+    args.max_workers = overlay.resolve(args.max_workers, yaml_value=zone_sync_cfg["max_workers"], key="nws.zone_sync.max_workers")
+    args.pause_seconds = overlay.resolve(args.pause_seconds, yaml_value=zone_sync_cfg["pause_seconds"], key="nws.zone_sync.pause_seconds")
+    args.progress = overlay.resolve(args.progress, yaml_value=zone_sync_cfg["progress"], key="nws.zone_sync.progress")
+    return args
+
+
 def main() -> int:
-    args = _parse_args()
+    args = _resolve_zone_sync_args(_parse_args())
     syncer = NWSZoneSync(
         assets_dir=args.assets_dir,
         zone_types=args.zone_types,
@@ -429,7 +488,7 @@ def main() -> int:
         max_retries=args.max_retries,
         max_workers=args.max_workers,
         pause_seconds=args.pause_seconds,
-        show_progress=not args.no_progress,
+        show_progress=args.progress,
     )
     report = syncer.sync(dry_run=not args.apply)
     report_json = json.dumps(report.to_dict(), indent=2)

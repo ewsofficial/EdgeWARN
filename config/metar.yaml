@@ -1,13 +1,66 @@
 # metar.yaml — Audit §7 METAR
 #
-# Source: src/common/ingest/metar.py:19,306
-# Values verified against the working tree at commit e12d407.
-# Not yet consumed by code; see plans/yaml-configurations.md.
+# This file owns every value below. They are read through the accessors in
+# src/common/ingest/metar_config.py, which src/common/ingest/metar.py calls per
+# use -- no module constants remain.
+
+schema_version: 1
 
 metar:
   station_db_url: https://aviationweather.gov/data/cache/stations.cache.json
-  station_cache_file: stations_cache.json
-  request_timeout_seconds: 60
+  station_cache_file: stations_cache.json   # relative to fs.DATA_DIR
+  # The server publishes one file per UTC hour named HHZ.TXT.
+  observation_url_pattern: 'https://tgftp.nws.noaa.gov/data/observations/metar/cycles/{hour}Z.TXT'
+
+  # Two distinct timeouts, not one: the station database is a single large JSON
+  # document, while each observation fetch is one small hourly text file.
+  station_timeout_seconds: 60
+  observation_timeout_seconds: 30
+
+  # The User-Agent is NOT here. Its template is hardcoded in
+  # `util/release.py format_user_agent()` with the `identity.contact` half from
+  # `runtime.yaml identity`. This subsystem used to carry a third distinct string
+  # with no contact address at all -- and only on the sync station-database
+  # fallback, so in production METAR actually sent aiohttp's default agent. All
+  # five request paths now identify themselves: the two station-database fetches,
+  # the sync observation fetch, and both async observation sessions (the shared
+  # one and the no-session fallback).
+  #
+  # This header reaches only the two station-database fetches, not all five.
+  # urllib does not decompress for us, and the sync station fetch is the one
+  # urllib site that inspects Content-Encoding and inflates by hand; the three
+  # observation paths read their body straight to text, so asking for gzip there
+  # would hand `.decode('utf-8')` raw compressed bytes. Do not "fix" the
+  # inconsistency by copying it onto them.
+  #
+  # 'br' is dropped deliberately: brotli responses failed to decode, so the
+  # header is narrowed rather than left at the client default.
+  accept_encoding: 'gzip, deflate'
+
+  # SECURITY: true. Before extraction five call sites disabled verification
+  # independently (three aiohttp `ssl=False`, two `ssl.CERT_NONE`); they now
+  # share `metar_config.ssl_context` and `metar_config.aiohttp_ssl`, so this one
+  # key reaches all five. It stayed false only until a run confirmed the
+  # certificates validate; aviationweather.gov and tgftp.nws.noaa.gov both
+  # present chains that verify against the default trust store.
+  #
+  # Unlike `wpc.verify_tls` the schema does not pin this, so it remains a real
+  # switch: behind a TLS-intercepting proxy an operator can set it false and get
+  # the warning `_warn_if_unverified` emits on every use, rather than having to
+  # edit the schema.
+  verify_tls: true
+
+  # How many hourly cycles each run ingests, counting the current hour.
+  lookback_hours: 3
+  # Equal to filesystem.yaml's generic default today, but declared separately so
+  # retuning the generic sweep does not silently retune METAR. The file count cap
+  # is not restated here: METAR takes the generic one.
+  cleanup_max_age_minutes: 60
+  coordinate_decimals: 4
+  # Applied after the AXXXX altimeter encoding is divided by 100; the /100 is the
+  # encoding itself and stays in code.
+  pressure_decimals: 2
+
   conus_bounds:
     lat_min: 24.0
     lat_max: 50.0

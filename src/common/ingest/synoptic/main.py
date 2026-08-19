@@ -1,16 +1,27 @@
 import asyncio
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 import re
 
 from common.ingest.synoptic.downloader import download_rap as _download_rap
-from common.ingest.synoptic.config import RAP_MAX_FILES, get_rap_max_age_minutes
+from common.ingest.synoptic.config import (
+    get_rap_max_age_minutes,
+    rap_date_format,
+    rap_filename_regex,
+    rap_max_files,
+)
 import util.file as fs
 
 
-RAP_FILENAME_RE = re.compile(
-    r"^RAP\.(?P<date>\d{8})-(?P<hour>\d{2})z\.awp130pgrbf00\.grib2$"
-)
+@lru_cache(maxsize=None)
+def _rap_filename_re() -> re.Pattern[str]:
+    """Compiled lazily, and memoized because cleanup parses every cached file.
+
+    Compiling at import would read the catalog before a ``--config-dir`` could
+    be resolved.
+    """
+    return re.compile(rap_filename_regex())
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -20,12 +31,13 @@ def _as_utc(dt: datetime) -> datetime:
 
 
 def parse_rap_analysis_time(path: Path) -> datetime | None:
-    match = RAP_FILENAME_RE.match(path.name)
+    match = _rap_filename_re().match(path.name)
     if match is None:
         return None
     try:
+        # "%H" pairs with the 2-digit `hour` capture group in `filename_regex`.
         return datetime.strptime(
-            f"{match.group('date')}{match.group('hour')}", "%Y%m%d%H"
+            f"{match.group('date')}{match.group('hour')}", rap_date_format() + "%H"
         ).replace(tzinfo=timezone.utc)
     except ValueError:
         return None
@@ -112,7 +124,7 @@ async def download_rap_async(dt: datetime):
         await _async_clean_rap_cache(
             dt,
             max_age_minutes=max_age_minutes,
-            max_files=RAP_MAX_FILES,
+            max_files=rap_max_files(),
         )
     return result
 
@@ -139,7 +151,7 @@ def download_rap(dt: datetime):
             clean_rap_cache(
                 dt,
                 max_age_minutes=max_age_minutes,
-                max_files=RAP_MAX_FILES,
+                max_files=rap_max_files(),
             )
         return result
     else:

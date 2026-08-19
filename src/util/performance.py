@@ -1,8 +1,24 @@
 
-import os
 import time
 import threading
 from collections import OrderedDict
+from functools import lru_cache
+
+from common.config.loader import load_config
+from common.config.overlay import resolve
+
+PERF_TRACKER_ENV = "EDGEWARN_PERF_TRACKER"
+
+
+@lru_cache(maxsize=1)
+def _yaml_enabled() -> bool | None:
+    """``runtime.yaml``'s ``profiling.perf_tracker``, itself tri-state.
+
+    ``null`` there means "no opinion, defer to the environment variable", which
+    is what keeps EDGEWARN_PERF_TRACKER live for an operator who has not pinned
+    the setting.
+    """
+    return load_config("runtime")["profiling"]["perf_tracker"]
 
 
 def _resolve_enabled() -> bool:
@@ -11,9 +27,20 @@ def _resolve_enabled() -> bool:
     truthy value ("1", "true", "yes", "on" — case-insensitive). When
     disabled, start/stop become no-ops to avoid the global RLock acquired
     on every call inside per-cell, per-modifier, per-render hot paths.
+
+    ``value_type=bool`` is required rather than inferred: the catalog value is
+    tri-state and reads ``null`` by default, which would otherwise leave the
+    environment string uncoerced and make every non-empty value truthy.
     """
-    raw = os.environ.get("EDGEWARN_PERF_TRACKER", "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    return bool(
+        resolve(
+            None,
+            env_names=(PERF_TRACKER_ENV,),
+            yaml_value=_yaml_enabled(),
+            key="runtime.profiling.perf_tracker",
+            value_type=bool,
+        )
+    )
 
 
 # Module-level flag with three states:

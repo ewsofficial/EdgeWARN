@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "scheduler.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scheduler"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "scheduler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modifier_lookup_max_entries", "s3_lookback_hours", "slow_check_log_threshold_ms"],
+      "properties": {
+        "modifier_lookup_max_entries": { "type": "integer", "minimum": 1 },
+        "s3_lookback_hours": { "type": "number", "exclusiveMinimum": 0 },
+        "slow_check_log_threshold_ms": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "max_restarts": 5,
+  "restart_window_seconds": 60.0,
+  "base_backoff_seconds": 1.0,
+  "max_backoff_seconds": 30.0,
+  "health_path": null
+}

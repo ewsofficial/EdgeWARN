@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "synoptic_rap.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "rap"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "rap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket", "file_pattern", "dir_pattern", "local_file_pattern", "date_format", "filename_regex", "max_age_minutes", "lookback_step_hours", "max_files"],
+      "properties": {
+        "bucket": { "type": "string" },
+        "file_pattern": { "type": "string" },
+        "dir_pattern": { "type": "string" },
+        "local_file_pattern": { "type": "string" },
+        "date_format": { "type": "string" },
+        "filename_regex": { "type": "string" },
+        "max_age_minutes": { "type": "integer", "minimum": 0 },
+        "lookback_step_hours": { "type": "integer", "minimum": 1 },
+        "max_files": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

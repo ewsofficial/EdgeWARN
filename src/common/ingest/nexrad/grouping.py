@@ -1,21 +1,30 @@
 """Elevation grouping for NEXRAD sweeps."""
 
+from common.ingest.nexrad import config as nexrad_config
 from common.ingest.nexrad.models import ElevationGroup, SweepRecord
 
-MAX_ELEVATION_DEG = 4.0
-CANONICAL_ELEVATION_BINS = (0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0)
-CANONICAL_ELEVATION_IDS = tuple(str(angle) for angle in CANONICAL_ELEVATION_BINS)
-INGEST_READINESS_ELEVATION_IDS = CANONICAL_ELEVATION_IDS
-SURVEILLANCE_WAVEFORM = "contiguous_surveillance"
-DOPPLER_WAVEFORM = "contiguous_doppler"
-SINGLE_ELEVATION_WAVEFORMS = {"staggered_pulse_pair", "batch"}
-RECOGNIZED_WAVEFORMS = SINGLE_ELEVATION_WAVEFORMS | {SURVEILLANCE_WAVEFORM, DOPPLER_WAVEFORM}
+
+def canonical_elevation_ids() -> tuple[str, ...]:
+    """The canonical bins as the string labels that reach grouped output."""
+    return tuple(str(angle) for angle in nexrad_config.canonical_elevation_bins())
+
+
+def ingest_readiness_elevation_ids() -> tuple[str, ...]:
+    """Elevations a volume must carry before readiness is satisfied.
+
+    The same tuple as :func:`canonical_elevation_ids` today. It keeps its own
+    name because readiness and output labelling are separate contracts that
+    happen to coincide, and a caller reading one should not be made to reason
+    about the other.
+    """
+    return canonical_elevation_ids()
 
 
 def _canonical_angle(fixed_angle: float) -> float:
     """Return the elevation angle used for the grouped output label."""
     angle = float(fixed_angle)
-    return min(CANONICAL_ELEVATION_BINS, key=lambda candidate: (abs(candidate - angle), candidate))
+    bins = nexrad_config.canonical_elevation_bins()
+    return min(bins, key=lambda candidate: (abs(candidate - angle), candidate))
 
 
 def _waveform_key(waveform: str | None) -> str:
@@ -32,8 +41,9 @@ def _first_non_null_timestamp(members: list[SweepRecord]) -> str | None:
 
 def _group_representative_angle(group: ElevationGroup) -> float:
     """Prefer the doppler angle when present, otherwise the first member angle."""
+    doppler = nexrad_config.doppler_waveform()
     for member in group.members:
-        if _waveform_key(member.waveform) == DOPPLER_WAVEFORM:
+        if _waveform_key(member.waveform) == doppler:
             return float(member.fixed_angle)
     return float(group.members[0].fixed_angle)
 
@@ -41,8 +51,8 @@ def _group_representative_angle(group: ElevationGroup) -> float:
 def _group_has_required_waveforms(group: ElevationGroup) -> bool:
     """Only export surveillance groups once their doppler mate is present."""
     waveforms_present = {_waveform_key(member.waveform) for member in group.members}
-    if SURVEILLANCE_WAVEFORM in waveforms_present:
-        return DOPPLER_WAVEFORM in waveforms_present
+    if nexrad_config.surveillance_waveform() in waveforms_present:
+        return nexrad_config.doppler_waveform() in waveforms_present
     return len(group.members) > 0
 
 
@@ -52,7 +62,7 @@ def _finalize_group(group: ElevationGroup | None, result: list[ElevationGroup]) 
     if not _group_has_required_waveforms(group):
         return
     representative_angle = _group_representative_angle(group)
-    if representative_angle > MAX_ELEVATION_DEG:
+    if representative_angle > nexrad_config.max_elevation_deg():
         return
     canonical_angle = _canonical_angle(representative_angle)
     group.elevation_id = str(canonical_angle)
@@ -78,15 +88,21 @@ def _group_by_waveform(valid: list[SweepRecord]) -> list[ElevationGroup]:
     result: list[ElevationGroup] = []
     current_group: ElevationGroup | None = None
 
+    # Resolved before the loop, not inside it: every accessor re-resolves the
+    # config root, which costs a stat call, and this loop runs once per sweep.
+    surveillance = nexrad_config.surveillance_waveform()
+    doppler = nexrad_config.doppler_waveform()
+    single_elevation = nexrad_config.single_elevation_waveforms()
+
     for sweep in valid:
         waveform = _waveform_key(sweep.waveform)
 
-        if waveform == SURVEILLANCE_WAVEFORM:
+        if waveform == surveillance:
             _finalize_group(current_group, result)
             current_group = _start_group(sweep, waveform)
             continue
 
-        if waveform == DOPPLER_WAVEFORM:
+        if waveform == doppler:
             if current_group is None:
                 continue
             current_group.members.append(sweep)
@@ -94,7 +110,7 @@ def _group_by_waveform(valid: list[SweepRecord]) -> list[ElevationGroup]:
             current_group.last_sweep_index = sweep.index
             continue
 
-        if waveform in SINGLE_ELEVATION_WAVEFORMS:
+        if waveform in single_elevation:
             _finalize_group(current_group, result)
             current_group = None
             single_group = _start_group(sweep, waveform)
@@ -146,17 +162,21 @@ def group_sweeps_by_elevation(
     Rules:
     - Sort sweeps by sweep index
     - Ignore incomplete sweeps (azimuth_count <= 0)
-    - Force grouped elevations into the fixed levels 0.5, 0.9, 1.3, 1.8, 2.4, 3.1, 4.0
+    - Snap grouped elevations onto `selection.canonical_elevation_bins`
     - Continue parsing the full volume, including any low-level revisits after higher sweeps
-    - Do not export grouped elevations whose representative angle exceeds 4.0 degrees
-    - A grouped elevation starts with `contiguous_surveillance`
-    - Following contiguous `contiguous_doppler` sweeps join that elevation
-    - `staggered_pulse_pair` and `batch` each become single-sweep elevations
-    - `contiguous_doppler` sweeps without a leading surveillance sweep are ignored
+    - Do not export grouped elevations above `selection.high_max_angle_deg`
+    - A grouped elevation starts with the surveillance waveform
+    - Following contiguous doppler sweeps join that elevation
+    - Each single-elevation waveform becomes a one-sweep elevation of its own
+    - Doppler sweeps without a leading surveillance sweep are ignored
+
+    The waveform names are `selection.waveforms` in nexrad.yaml; they are not
+    restated here so that this list cannot drift from the catalog.
     """
     valid = [s for s in sweeps if s.azimuth_count > 0]
     valid.sort(key=lambda s: s.index)
-    has_recognized_waveforms = any(_waveform_key(sweep.waveform) in RECOGNIZED_WAVEFORMS for sweep in valid)
+    recognized = nexrad_config.recognized_waveforms()
+    has_recognized_waveforms = any(_waveform_key(sweep.waveform) in recognized for sweep in valid)
     if has_recognized_waveforms:
         return _group_by_waveform(valid)
     return _group_without_waveforms(valid)

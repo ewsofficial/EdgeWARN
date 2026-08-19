@@ -1,3 +1,4 @@
+from EdgeWARN.process.detect.config import DetectionConfig
 from EdgeWARN.process.detect.tools.utils import DetectionDataHandler
 from EdgeWARN.process.detect.tools.gatemapper import GateMapper
 from EdgeWARN.process.detect.tools.save import CellDataSaver
@@ -21,9 +22,7 @@ def detect_cells(
     return_probsevere=False,
     return_datasets=False,
     disable_polygon_expansion=False,
-    refl_threshold=37.5,
-    min_seed_percentage=0.001,
-    drop_offset=10.0,
+    detection_config,
     radar_obj=None,
     ps_obj=None,
     preciptype_obj=None,
@@ -49,7 +48,7 @@ def detect_cells(
         finally:
             perf_tracker.stop(timer_name)
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=detection_config.dataset_load_max_workers) as executor:
         radar_future = executor.submit(_load_with_timing, "Detection - Load Radar", handler.load_subset)
         ps_future = executor.submit(_load_with_timing, "Detection - Load ProbSevere", handler.load_probsevere)
         preciptype_future = executor.submit(_load_with_timing, "Detection - Load PrecipType", handler.load_preciptype)
@@ -99,15 +98,9 @@ def detect_cells(
 
         return entries
 
-    mapper = GateMapper(
-        radar_ds,
-        ps_ds,
-        io_manager,
-        refl_threshold=refl_threshold,
-        min_seed_percentage=min_seed_percentage,
-        drop_offset=drop_offset,
-    )
-    
+    mapper = GateMapper(radar_ds, ps_ds, io_manager, detection_config)
+
+
     perf_tracker.start("Detection - Map Gates")
     mapped_ds = mapper.map_gates_to_polygons()
     perf_tracker.stop("Detection - Map Gates")
@@ -117,7 +110,7 @@ def detect_cells(
     perf_tracker.stop("Detection - Expand Gates")
 
     perf_tracker.start("Detection - BBox")
-    bboxes = mapper.draw_bbox(expanded_ds, step=8)
+    bboxes = mapper.draw_bbox(expanded_ds)
     perf_tracker.stop("Detection - BBox")
 
     saver = CellDataSaver(
@@ -155,4 +148,14 @@ if __name__ == "__main__":
     lat_min, lat_max = 35.0, 38.0
     lon_min, lon_max = 283.0, 285.0
 
-    detect_cells(radar_path, ps_path, pt_path, io_manager, lat_min, lat_max, lon_min, lon_max)
+    detect_cells(
+        radar_path,
+        ps_path,
+        pt_path,
+        io_manager,
+        lat_min,
+        lat_max,
+        lon_min,
+        lon_max,
+        detection_config=DetectionConfig.from_yaml(),
+    )

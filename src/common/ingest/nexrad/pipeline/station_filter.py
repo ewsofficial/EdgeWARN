@@ -1,6 +1,6 @@
 import asyncio
 
-from common.ingest.nexrad.config import ALLOWED_VCPS
+from common.ingest.nexrad.config import allowed_vcps
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from util.io import IOManager
 
@@ -13,6 +13,9 @@ class NexradStationFilter:
 
     async def fetch_allowed_stations(self, *, sites=None, weather_session=None):
         stations = await asyncio.to_thread(self.station_fetcher, session=weather_session)
+        # Resolved once so the accept loop and the skipped_missing arithmetic
+        # below cannot disagree about which VCPs were allowed.
+        permitted_vcps = allowed_vcps()
         requested_sites = None if sites is None else {str(site).upper() for site in sites}
         allowed = []
         skipped_missing = 0
@@ -26,7 +29,7 @@ class NexradStationFilter:
             if not site.startswith("K"):
                 skipped_non_us += 1
                 continue
-            if station.vcp not in ALLOWED_VCPS:
+            if station.vcp not in permitted_vcps:
                 skipped_vcp += 1
                 continue
             allowed.append((site, station))
@@ -38,7 +41,7 @@ class NexradStationFilter:
             } - {
                 site
                 for site in requested_sites
-                if site in stations and stations[site].vcp not in ALLOWED_VCPS
+                if site in stations and stations[site].vcp not in permitted_vcps
             })
 
         io_manager.write_info(

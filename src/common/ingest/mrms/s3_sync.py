@@ -11,7 +11,8 @@ from botocore import UNSIGNED
 from botocore.client import Config
 
 from util.handler import extract_timestamp
-from common.ingest.mrms.s3_common import DECOMPRESS_CHUNK_SIZE, select_target_file
+from common.ingest.mrms.config import mrms_decompress_chunk_size_bytes
+from common.ingest.mrms.s3_common import select_target_file
 
 
 @lru_cache(maxsize=1)
@@ -278,7 +279,7 @@ class FileDownloader:
             try:
                 # Reading through EOF validates the gzip stream before commit.
                 with gzip.open(gz_path, "rb") as f_in, open(part_path, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out, length=DECOMPRESS_CHUNK_SIZE)
+                    shutil.copyfileobj(f_in, f_out, length=mrms_decompress_chunk_size_bytes())
                     f_out.flush()
                     os.fsync(f_out.fileno())
                 if part_path.stat().st_size == 0:

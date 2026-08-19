@@ -14,8 +14,8 @@ Errors use `application/problem+json`.
 ## Runtime configuration
 
 - Canonical base directory: `--base-dir <path>` or `EDGEWARN_BASE_DIR`
-- Compatibility aliases for one migration release: `--base_dir <path>` and
-  `BASE_DIR`; conflicting settings fail startup
+- Compatibility aliases: `--base_dir <path>` and `BASE_DIR`. Precedence is CLI,
+  then `EDGEWARN_BASE_DIR`, then `BASE_DIR`, then `filesystem.yaml`.
 - `PORT` sets the service port; `npm run debug:api` uses debug port `3001`
 - `ALLOWED_ORIGINS` is a comma-separated exact browser-origin allowlist.
   Credentials are not enabled for this read-only API.
@@ -28,8 +28,11 @@ Errors use `application/problem+json`.
 ## Primary resources
 
 - Analysis: `/api/v3/cells`, `/storm-snapshots`, `/alert-snapshots`,
-  `/alerts`, `/observations/metar`
-- Renders: `/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
+  `/alerts/{alertId}`, `/observations/metar`. `/alerts` is addressable by ID
+  only; there is no `/alerts` collection. `/alert-snapshots` and `/alerts/{id}`
+  additionally accept the `source` query parameter (`official` or `edgewarn`).
+- Renders: `/api/v3/render-products`, and
+  `/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
   lists sparse float16 value chunks; `/chunks/{x}/{y}` returns the binary payload.
   The historical `/image` and `/tiles` resources remain PNG-only compatibility
   endpoints and never relabel a binary chunk as an image.
@@ -56,19 +59,24 @@ retain top-to-bottom row order and a bottom-left chunk-grid origin.
 Fetch the `/chunks` listing first. It provides the grid, format descriptor,
 and the authoritative sparse coordinate list—missing coordinates are fully
 transparent chunks, not a request to synthesize pixels. The payload endpoint
-sets `X-EWMRS-Format-Version`, `X-Data-Type`, `X-Pixel-Format`, chunk width and
-height, grid origin, and pixel-row-order headers. Verify that the response
-length equals `width * height * channels * 2` before creating a `Uint16Array`
-or `Float16Array`; responses
-are immutable and support ETag conditional GET and HEAD.
+sets `X-EWMRS-Format-Version`, `X-Data-Type`, `X-Value-Kind`, `X-Channel-Count`,
+`X-No-Data`, `X-Chunk-Width`, `X-Chunk-Height`, `X-Grid-Origin`, and
+`X-Pixel-Row-Order`. Verify that the decoded byte length equals
+`width * height * channels * 2` before creating a `Uint16Array` or
+`Float16Array`; responses are immutable and support ETag conditional GET and
+HEAD.
 
 ```js
 const listing = await (await fetch(chunkListUrl)).json();
 const response = await fetch(chunkUrl);
 const bytes = new Uint16Array(await response.arrayBuffer());
-if (bytes.byteLength !== 350 * 350) throw new Error('invalid float16 scalar chunk');
+if (bytes.byteLength !== 350 * 350 * 2) throw new Error('invalid float16 scalar chunk');
 // Interpret as float16 (or upload as half-float); grid y=0 is the bottom row.
 ```
+
+One float16 component is two bytes, so a `350 x 350` single-channel chunk is
+`245000` bytes and `bytes.length` is `122500`. Compare `byteLength`, not
+element count, against `width * height * channels * 2`.
 
 These float16 value chunks are distinct from RAP `data.u16` scalar arrays and NEXRAD
 `.bin.gz` products, which have their own metadata and decoders.

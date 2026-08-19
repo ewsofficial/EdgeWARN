@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 import xarray as xr
 
+from EdgeWARN.process.detect.config import DetectionConfig
+
 
 class TestIngestToDetectWorkflow:
     """Tests for ingest to detection workflow"""
@@ -93,7 +95,8 @@ class TestIngestToDetectWorkflow:
             from EdgeWARN.process.detect.detect import detect_cells
             result = detect_cells(
                 str(radar_file), str(ps_file), None, mock_io,
-                30, 40, 260, 270
+                30, 40, 260, 270,
+                detection_config=DetectionConfig.from_yaml(),
             )
             
             # Verify detection found the storm cell
@@ -154,7 +157,8 @@ class TestIngestToDetectWorkflow:
             from EdgeWARN.process.detect.detect import detect_cells
             result = detect_cells(
                 str(radar_file), str(nws_file), None, mock_io,
-                30, 40, 260, 270
+                30, 40, 260, 270,
+                detection_config=DetectionConfig.from_yaml(),
             )
             
             # Verify detection found the storm cell

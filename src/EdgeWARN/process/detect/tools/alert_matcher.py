@@ -20,6 +20,7 @@ from shapely.strtree import STRtree
 import numpy as np
 import json
 
+from EdgeWARN.process.detect.config import section
 from util.io import IOManager
 
 io_manager = IOManager("[AlertMatcher]")
@@ -27,18 +28,31 @@ io_manager = IOManager("[AlertMatcher]")
 _ALERT_SNAPSHOT_CACHE: Dict[tuple, List[Dict[str, Any]]] = {}
 _ALERT_GEOMETRY_CACHE: Dict[tuple, tuple] = {}
 
-# Convective and flood-related alert events to include
-CONVECTIVE_FLOOD_EVENTS = {
-    # Convective events
-    "Tornado Warning",
-    "Severe Thunderstorm Warning",
-    "Tornado Watch",
-    "Severe Thunderstorm Watch",
-    "Special Weather Statement",
-    "Severe Weather Statement",
-    # Flood events
-    "Flash Flood Warning",
-}
+
+def _store_bounded(cache: dict, key: tuple, value: Any, max_entries: int) -> None:
+    """Insert into a FIFO-bounded cache, evicting oldest keys past the bound.
+
+    Insertion order is eviction order because a run only ever revisits the
+    snapshot for the scan it is currently processing; older keys belong to scans
+    that will not be asked for again.
+    """
+    cache[key] = value
+    while len(cache) > max_entries:
+        del cache[next(iter(cache))]
+
+
+def convective_flood_events() -> frozenset:
+    """Allowlist of NWS event names eligible for attachment to a cell.
+
+    An event absent from ``alert_matching.events`` is never attached, so adding a
+    product upstream is not by itself enough to make it appear on a cell.
+
+    Deliberately not memoized. ``section()`` already is, so the only extra work
+    is building a 7-element frozenset, and the sole caller hoists this above its
+    loop. A second cache here would not be cleared by ``config.reset_cache()``
+    and would survive a config-directory switch.
+    """
+    return frozenset(section("alert_matching")["events"])
 
 
 def load_active_alerts(registry_dir: Path, target_timestamp: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -123,7 +137,12 @@ def _load_active_alerts_with_cache(
                 except Exception:
                     continue
 
-        _ALERT_SNAPSHOT_CACHE[cache_key] = features
+        _store_bounded(
+            _ALERT_SNAPSHOT_CACHE,
+            cache_key,
+            features,
+            section("alert_matching")["snapshot_cache_max_entries"],
+        )
         return [dict(feature) for feature in features], cache_key
         
     except Exception as e:
@@ -172,9 +191,11 @@ def _prepare_alert_geometries(
             alert_polys.append(alert_poly)
             alert_prepared.append(prep(alert_poly))
 
+    geometry_cache_max_entries = section("alert_matching")["geometry_cache_max_entries"]
+
     if not alert_polys:
         prepared = ([], [], [], None, {}, [])
-        _ALERT_GEOMETRY_CACHE[geometry_cache_key] = prepared
+        _store_bounded(_ALERT_GEOMETRY_CACHE, geometry_cache_key, prepared, geometry_cache_max_entries)
         return prepared
 
     try:
@@ -188,7 +209,7 @@ def _prepare_alert_geometries(
         fallback_alerts = []
 
     prepared = (alert_ids, alert_polys, alert_prepared, spatial_index, geom_id_to_index, fallback_alerts)
-    _ALERT_GEOMETRY_CACHE[geometry_cache_key] = prepared
+    _store_bounded(_ALERT_GEOMETRY_CACHE, geometry_cache_key, prepared, geometry_cache_max_entries)
     return prepared
 
 
@@ -202,11 +223,12 @@ def filter_convective_flood_alerts(alerts: List[Dict[str, Any]]) -> List[Dict[st
     Returns:
         Filtered list containing only convective/flood alerts
     """
+    allowed = convective_flood_events()
     filtered = []
     for alert in alerts:
         props = alert.get("properties", {})
         event = props.get("event", "")
-        if event in CONVECTIVE_FLOOD_EVENTS:
+        if event in allowed:
             filtered.append(alert)
     return filtered
 
@@ -431,14 +453,14 @@ def match_alerts_to_cell(cell: Dict[str, Any], prepped_alerts: List[tuple]) -> L
     if cell_geom is None:
         return matching_ids
     
-    # Add a tiny buffer (approx 500m) to account for edge precision/rounding
+    # Slack added before testing intersection, to absorb edge rounding. Polygons
+    # get less than point cells because a point has no footprint of its own.
+    matching = section("alert_matching")
     try:
         if isinstance(cell_geom, Polygon):
-            # Using a slightly larger buffer for polygons to ensure overlap detection
-            match_geom = cell_geom.buffer(0.005) 
+            match_geom = cell_geom.buffer(matching["polygon_match_buffer_deg"])
         else:
-            # For points, use a smaller buffer
-            match_geom = cell_geom.buffer(0.01)
+            match_geom = cell_geom.buffer(matching["point_match_buffer_deg"])
     except Exception:
         match_geom = cell_geom
     
@@ -463,10 +485,11 @@ def _build_match_geometry(cell: Dict[str, Any]):
     if cell_geom is None:
         return None
 
+    matching = section("alert_matching")
     try:
         if isinstance(cell_geom, Polygon):
-            return cell_geom.buffer(0.005)
-        return cell_geom.buffer(0.01)
+            return cell_geom.buffer(matching["polygon_match_buffer_deg"])
+        return cell_geom.buffer(matching["point_match_buffer_deg"])
     except Exception:
         return cell_geom
 

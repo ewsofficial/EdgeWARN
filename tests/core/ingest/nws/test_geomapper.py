@@ -4,13 +4,45 @@ Tests for NWS GeoMapper module
 
 import pytest
 import json
+import shutil
 from pathlib import Path
 from unittest.mock import patch, mock_open
 from EdgeWARN.ingest.nws.geomapper import (
     ZoneLookup,
+    _assets_dir,
     extract_exterior_polygon,
     process_warning
 )
+import common.config.loader as config_loader
+
+
+class TestAssetsDirOwnership:
+    """The zone directory has one owner, shared by the writer and the reader."""
+
+    def test_assets_dir_follows_the_relocated_catalog(self, tmp_path, monkeypatch):
+        """A relocated config root must move lookups, not just the sync.
+
+        This reader resolved the directory by walking up from its own __file__,
+        which agreed with zone_sync.py only for an unrelocated tree. When it
+        disagreed, every polygon lookup missed silently.
+        """
+        alt_repo = tmp_path / "alt_repo"
+        alt_config = alt_repo / "config"
+        shutil.copytree(Path(__file__).resolve().parents[4] / "config", alt_config)
+        catalog = alt_config / "nws.yaml"
+        text = catalog.read_text(encoding="utf-8")
+        assert "  assets_dir: assets/nws_zones" in text
+        catalog.write_text(
+            text.replace("  assets_dir: assets/nws_zones", "  assets_dir: relocated_zones"),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("EDGEWARN_CONFIG_DIR", str(alt_config))
+        config_loader.reset_cache()
+        try:
+            assert _assets_dir() == alt_repo / "relocated_zones"
+        finally:
+            config_loader.reset_cache()
 
 
 class TestZoneLookup:
@@ -33,7 +65,7 @@ class TestZoneLookup:
         zone_file.write_text(json.dumps(zone_data))
         
         with patch.object(ZoneLookup, '_cache', {}):
-            with patch('EdgeWARN.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+            with patch('EdgeWARN.ingest.nws.geomapper._assets_dir', return_value=assets_dir):
                 polygon = ZoneLookup.get_polygon("TXC121")
                 
                 assert polygon is not None
@@ -50,7 +82,7 @@ class TestZoneLookup:
         zone_file.write_text(json.dumps([]))
         
         with patch.object(ZoneLookup, '_cache', {}):
-            with patch('EdgeWARN.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+            with patch('EdgeWARN.ingest.nws.geomapper._assets_dir', return_value=assets_dir):
                 polygon = ZoneLookup.get_polygon("INVALID")
                 assert polygon is None
 
@@ -71,7 +103,7 @@ class TestZoneLookup:
         zone_file = tx_dir / "zones.json"
         zone_file.write_text(json.dumps(zone_data))
         
-        with patch('EdgeWARN.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+        with patch('EdgeWARN.ingest.nws.geomapper._assets_dir', return_value=assets_dir):
             # Clear cache
             ZoneLookup._cache.clear()
             
@@ -88,7 +120,7 @@ class TestZoneLookup:
         assets_dir = tmp_path / "assets" / "nws_zones"
         
         with patch.object(ZoneLookup, '_cache', {}):
-            with patch('EdgeWARN.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+            with patch('EdgeWARN.ingest.nws.geomapper._assets_dir', return_value=assets_dir):
                 polygon = ZoneLookup.get_polygon("XXC001")
                 assert polygon is None
 
@@ -207,7 +239,7 @@ class TestProcessWarning:
         }
         
         with patch.object(ZoneLookup, '_cache', {}):
-            with patch('EdgeWARN.ingest.nws.geomapper._ASSETS_DIR', assets_dir):
+            with patch('EdgeWARN.ingest.nws.geomapper._assets_dir', return_value=assets_dir):
                 result = process_warning(feature)
                 
                 assert "properties" in result

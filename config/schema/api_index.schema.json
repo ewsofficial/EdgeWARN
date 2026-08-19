@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "api_index.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "api_index"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "api_index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["remove_old_cells", "initialize_at_startup", "inactive_cell_max_age_minutes"],
+      "properties": {
+        "remove_old_cells": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["realtime", "historical"],
+          "properties": {
+            "realtime": { "type": "boolean" },
+            "historical": { "type": "boolean" }
+          }
+        },
+        "initialize_at_startup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["realtime", "historical"],
+          "properties": {
+            "realtime": { "type": "boolean" },
+            "historical": { "type": "boolean" }
+          }
+        },
+        "inactive_cell_max_age_minutes": { "type": "integer", "exclusiveMinimum": 0 }
+      }
+    }
+  }
+}

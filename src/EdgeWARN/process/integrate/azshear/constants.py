@@ -1,8 +1,41 @@
-AZSHEAR_BUFFER_KM = 1.5
-AZSHEAR_LOW_THRESHOLD = 8.0
-AZSHEAR_MID_THRESHOLD = 6.0
-AZSHEAR_MIN_GATE_COUNT = 5
-AZSHEAR_MAX_PAIR_SEPARATION_KM = 12.0
+# This support module is not part of the production pipeline. Keep its fixed
+# experimental parameters local instead of exposing inert runtime settings.
+_BUFFER_KM = 1.5
+_LOW_THRESHOLD = 8.0
+_MID_THRESHOLD = 6.0
+_MIN_GATE_COUNT = 5
+_MAX_PAIR_SEPARATION_KM = 12.0
+_HISTORY_WINDOW = 5
+
+
+def azshear_buffer_km():
+    """Radius the cell polygon is buffered by before azshear gates are gathered."""
+    return _BUFFER_KM
+
+
+def azshear_low_threshold():
+    """Minimum azshear magnitude counted as a gate in the 0-2 km layer."""
+    return _LOW_THRESHOLD
+
+
+def azshear_mid_threshold():
+    """Minimum azshear magnitude counted as a gate in the 3-6 km layer."""
+    return _MID_THRESHOLD
+
+
+def azshear_min_gate_count():
+    """Smallest connected component retained as a candidate core."""
+    return _MIN_GATE_COUNT
+
+
+def azshear_max_pair_separation_km():
+    """Largest centroid separation a low/mid component pair may have."""
+    return _MAX_PAIR_SEPARATION_KM
+
+
+def azshear_history_window():
+    """Number of history samples retained by the experimental support path."""
+    return _HISTORY_WINDOW
 
 
 def empty_level_output():
@@ -52,7 +85,7 @@ def empty_cross_layer_output():
 
 def empty_azshear_output():
     return {
-        "buffer_km": AZSHEAR_BUFFER_KM,
+        "buffer_km": azshear_buffer_km(),
         "low": empty_level_output(),
         "mid": empty_level_output(),
         "cross_layer": empty_cross_layer_output(),

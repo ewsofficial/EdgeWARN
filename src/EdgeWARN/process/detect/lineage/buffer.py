@@ -15,6 +15,8 @@ from typing import Dict, List, Any, Optional, Set, Tuple
 from dataclasses import dataclass, field
 import time
 
+from . import config as lineage_config
+
 
 @dataclass
 class PendingMerge:
@@ -139,25 +141,40 @@ class LineageBuffer:
     
     def __init__(
         self,
-        min_confirmations: int = 2,
-        max_pending: int = 100,
-        prune_after_scans: int = 5,
-        scan_interval_seconds: float = 120.0
+        min_confirmations: Optional[int] = None,
+        max_pending: Optional[int] = None,
+        prune_after_scans: Optional[int] = None,
+        scan_interval_seconds: Optional[float] = None
     ):
         """
         Initialize the lineage buffer.
-        
+
         Args:
             min_confirmations: Minimum consecutive detections to confirm event
             max_pending: Maximum pending events to track (memory limit)
             prune_after_scans: Prune entries inactive for this many scan intervals
             scan_interval_seconds: Expected time between scans (for pruning)
+
+        A ``None`` argument is filled from ``lineage.yaml`` ``lineage.buffer``.
         """
-        self.min_confirmations = min_confirmations
-        self.max_pending = max_pending
-        self.prune_after_scans = prune_after_scans
-        self.scan_interval_seconds = scan_interval_seconds
-        
+        settings = lineage_config.buffer_settings()
+
+        self.min_confirmations = (
+            settings['min_confirmations'] if min_confirmations is None
+            else min_confirmations
+        )
+        self.max_pending = (
+            settings['max_pending'] if max_pending is None else max_pending
+        )
+        self.prune_after_scans = (
+            settings['prune_after_scans'] if prune_after_scans is None
+            else prune_after_scans
+        )
+        self.scan_interval_seconds = (
+            settings['scan_interval_seconds'] if scan_interval_seconds is None
+            else scan_interval_seconds
+        )
+
         self.pending_merges: Dict[int, PendingMerge] = {}
         self.pending_splits: Dict[int, PendingSplit] = {}
         
@@ -203,18 +220,16 @@ class LineageBuffer:
                 split = PendingSplit.from_dict(split_data)
                 buffer.pending_splits[split.parent_id] = split
             
-            # Load configuration if present
+            # Only the scan counter is restored. The sibling `config` entries are
+            # written for diagnostics and deliberately not read back: they would
+            # outrank the constructor, so a buffer file left over from an earlier
+            # run would pin the old thresholds and make an edit to lineage.yaml
+            # appear to do nothing until the file was deleted.
             if 'config' in data:
-                buffer.min_confirmations = data['config'].get(
-                    'min_confirmations', buffer.min_confirmations
-                )
-                buffer.max_pending = data['config'].get(
-                    'max_pending', buffer.max_pending
-                )
                 buffer._scan_number = data['config'].get(
                     'scan_number', 0
                 )
-                
+
         except (json.JSONDecodeError, KeyError, IOError):
             # Return empty buffer on error
             pass

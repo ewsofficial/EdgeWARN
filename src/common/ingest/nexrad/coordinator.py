@@ -2,7 +2,8 @@ import asyncio
 import time
 
 import util.file as fs
-from common.ingest.nexrad.config import ALLOWED_VCPS, format_perf_ms
+from common.ingest.nexrad import config as nexrad_config
+from common.ingest.nexrad.config import allowed_vcps, format_perf_ms
 from common.ingest.nexrad.models import NexradCoordinatorResult, NexradCoordinatorRunResults
 from common.ingest.nexrad.pipeline.volume_discovery import NexradVolumeDiscovery
 from common.ingest.nexrad.service import NexradIngestService
@@ -22,9 +23,13 @@ class NexradScanCoordinator:
         async_volume_lister=None,
         async_chunk_lister=None,
         async_ingest_trigger=None,
-        max_site_tasks=24,
-        max_candidate_volumes_per_site=3,
+        max_site_tasks=None,
+        max_candidate_volumes_per_site=None,
     ):
+        if max_site_tasks is None:
+            max_site_tasks = nexrad_config.max_site_tasks()
+        if max_candidate_volumes_per_site is None:
+            max_candidate_volumes_per_site = nexrad_config.max_candidate_volumes_per_site()
         self.station_fetcher = station_fetcher or fetch_radar_station_vcps
         self.async_volume_lister = async_volume_lister or async_list_recent_volume_ids
         self.async_chunk_lister = async_chunk_lister or async_list_volume_chunks
@@ -42,7 +47,7 @@ class NexradScanCoordinator:
         if not str(site).upper().startswith("K"):
             return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=None, vcp=station.vcp, volume_id=None, action="skipped_non_us_site")
 
-        if station.vcp not in ALLOWED_VCPS:
+        if station.vcp not in allowed_vcps():
             return NexradCoordinatorResult(site=str(site).upper(), latest_scan_time=station.level_two_last_received_time, vcp=station.vcp, volume_id=None, action="skipped_invalid_vcp")
 
         discovery = await self.volume_discovery.discover_latest(site, station, s3_client=s3_client)

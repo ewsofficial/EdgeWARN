@@ -3,21 +3,20 @@ import { page, timestamp } from '../../services/validation.js';
 import { productCatalog } from '../../config/productCatalog.js';
 
 const listOptions = (req) => ({ cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined, limit: req.query.limit ? Number(req.query.limit) : undefined });
-const collection = (req, res, items) => { const result = page(items, listOptions(req)); res.set('Cache-Control', 'public, max-age=5').json({ data: result.data, meta: { nextCursor: result.nextCursor } }); };
-const resource = (req, res, data) => res.set('Cache-Control', 'public, max-age=60').json({ data, meta: {} });
-const geojson = (req, res, data) => res.set('Cache-Control', 'public, max-age=60').type('application/geo+json').json(data);
-const send = (req, res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).set({ 'Cache-Control': 'public, max-age=31536000, immutable', ETag: opened.etag }).type(type); if (req.fresh) { opened.handle.close(); return res.status(304).end(); } res.set('Content-Length', String(opened.size)); if (req.method === 'HEAD') { opened.handle.close(); return res.end(); } opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
 const COLLECTION_PATHS = new Set(['/cells', '/storm-snapshots', '/alert-snapshots', '/observations/metar', '/render-products', '/radar-sites', '/models/rap/layers', '/analyses/wpc/surface']);
 
-function validateQuery(req, res, next) {
+function validateQuery(apiConfig) {
+  const limitPattern = new RegExp(apiConfig.query.limit_pattern);
+  return (req, res, next) => {
   const isCollection = COLLECTION_PATHS.has(req.path) || /\/render-products\/[^/]+\/snapshots$/.test(req.path) || /\/models\/rap\/layers\/[^/]+\/snapshots$/.test(req.path);
-  const allowed = new Set(isCollection ? ['cursor', 'limit'] : []);
+  const allowed = new Set(isCollection ? apiConfig.query.allowed_params : []);
   if (req.path === '/alert-snapshots' || /^\/alert-snapshots\/[^/]+$/.test(req.path) || /^\/alerts\/[^/]+$/.test(req.path)) allowed.add('source');
   for (const [key, value] of Object.entries(req.query)) {
-    if (!allowed.has(key) || Array.isArray(value) || typeof value !== 'string' || value.length > 256) return res.status(400).type('application/problem+json').json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: `Invalid query parameter: ${key}`, instance: req.originalUrl, requestId: req.requestId });
-    if (key === 'limit' && !/^(?:[1-9][0-9]{0,2}|1000)$/.test(value)) return res.status(400).type('application/problem+json').json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid query parameter: limit', instance: req.originalUrl, requestId: req.requestId });
+    if (!allowed.has(key) || Array.isArray(value) || typeof value !== 'string' || value.length > apiConfig.query.max_value_length) return res.status(400).type('application/problem+json').json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: `Invalid query parameter: ${key}`, instance: req.originalUrl, requestId: req.requestId });
+    if (key === 'limit' && !limitPattern.test(value)) return res.status(400).type('application/problem+json').json({ type: 'about:blank', title: 'Bad Request', status: 400, detail: 'Invalid query parameter: limit', instance: req.originalUrl, requestId: req.requestId });
   }
   next();
+  };
 }
 
 function methodNotAllowed(openApi) {
@@ -31,10 +30,14 @@ function methodNotAllowed(openApi) {
   };
 }
 
-export function createV3Router({ analysis, renders, ancillary, openApi }) {
+export function createV3Router({ analysis, renders, ancillary, openApi, apiConfig }) {
+  const collection = (req, res, items) => { const result = page(items, listOptions(req), apiConfig.pagination); res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.collection}`).json({ data: result.data, meta: { nextCursor: result.nextCursor } }); };
+  const resource = (req, res, data) => res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.resource}`).json({ data, meta: {} });
+  const geojson = (req, res, data) => res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.resource}`).type('application/geo+json').json(data);
+  const send = (req, res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).set({ 'Cache-Control': `public, max-age=${apiConfig.cache_control_max_age.asset}, immutable`, ETag: opened.etag }).type(type); if (req.fresh) { opened.handle.close(); return res.status(304).end(); } res.set('Content-Length', String(opened.size)); if (req.method === 'HEAD') { opened.handle.close(); return res.end(); } opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
   const router = express.Router();
-  router.use(validateQuery);
-  router.get('/', (req, res) => resource(req, res, { version: '3.0.0', links: { openapi: '/api/v3/openapi.json', cells: '/api/v3/cells', renderProducts: '/api/v3/render-products' } }));
+  router.use(validateQuery(apiConfig));
+  router.get('/', (req, res) => resource(req, res, { version: apiConfig.server.v3_api_version, links: { openapi: '/api/v3/openapi.json', cells: '/api/v3/cells', renderProducts: '/api/v3/render-products' } }));
   router.get('/openapi.json', (req, res) => res.type('application/json').send(openApi));
   router.get('/cells', async (req, res, next) => { try { collection(req, res, await analysis.listCells()); } catch (error) { next(error); } });
   router.get('/cells/:cellId', async (req, res, next) => { try { resource(req, res, await analysis.getCell(req.params.cellId)); } catch (error) { next(error); } });

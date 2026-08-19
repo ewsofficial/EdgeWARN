@@ -11,6 +11,7 @@
     "debug:edgewarn": "node src/api/server.js --debug-server --compat=edgewarn",
     "api:ewmrs": "node src/api/server.js --compat=ewmrs",
     "debug:ewmrs": "node src/api/server.js --debug-server --compat=ewmrs",
+    "validate-config": "node scripts/validate-config.js",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "sbom:prod": "npm sbom --sbom-format cyclonedx --omit=dev --package-lock-only",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
@@ -27,6 +28,7 @@
     "express": "^4.18.2",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
+    "js-yaml": "^4.1.0",
     "lru-cache": "^11.2.4",
     "morgan": "^1.10.1"
   },

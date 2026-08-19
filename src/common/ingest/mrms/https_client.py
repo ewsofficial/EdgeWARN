@@ -21,7 +21,20 @@ except ImportError:
     io_manager.write_warning = io_manager.warning
     io_manager.write_debug = io_manager.debug
 
-NCEP_BASE_URL = "https://mrms.ncep.noaa.gov/data/2D"
+from common.ingest.mrms.config import (
+    ncep_base_url,
+    ncep_directory_map,
+    ncep_directory_split_token,
+    ncep_download_chunk_size_bytes,
+    ncep_match_window_seconds,
+    ncep_probsevere_url,
+    ncep_sync_timeout_seconds,
+)
+
+# No NCEP_BASE_URL constant: run.py imports this package before get_args() exports
+# EDGEWARN_CONFIG_DIR, so a module-scope binding would freeze the repo-default
+# catalog and --config-dir could never reach it. construct_url resolves per call.
+
 
 class HttpsFileFinder:
     def __init__(self, dt, io_manager_instance=None):
@@ -32,82 +45,44 @@ class HttpsFileFinder:
     def _get_product_url_name(self, modifier):
         """
         Maps S3 modifier keywords to NCEP URL directory names.
-        This is necessary because the S3 modifiers might slightly differ or 
+        This is necessary because the S3 modifiers might slightly differ or
         we just need to extract the base product name.
-        
-        Example: 
+
+        Example:
         S3: "EchoTop_18_00.50" -> NCEP: "EchoTop_18"
         S3: "ProbSevere" -> NCEP: "ProbSevere" (handled separately usually)
+
+        The map and the split-token fallback both come from
+        `mrms.ncep_https` in ingest.yaml, so a directory rename upstream is an
+        operator edit rather than a code change. Most names derive by dropping the
+        level suffix; the map exists for the ones that do not, and the NCEP index
+        keeps VIL/, VIL_Density/ and LVL3_HighResVIL/ as distinct directories, so
+        those products must not be collapsed onto one another.
         """
-        # Dictionary mapping for known discrepancies
-        # Based on config.py and visual inspection of https://mrms.ncep.noaa.gov/data/2D/
-        
         if modifier is None: # ProbSevere
             return "ProbSevere" # The actual URL is /data/ProbSevere, handled in construct_url
-        
-        # Heuristic: Most NCEP folders are the first part of the S3 modifier
-        # e.g. "EchoTop_18_00.50" -> "EchoTop_18"
-        # "MergedReflectivityQCComposite_00.50" -> "MergedReflectivityQCComposite"
-        
-        # However, some might be exact matches.
-        # Let's try to match the directory structure we saw.
-        
-        # Simple split by first underscore if it looks like versions?
-        # unique cases from config.py:
-        # EchoTop_18_00.50 -> EchoTop_18 (Yes)
-        # EchoTop_30_00.50 -> EchoTop_30 (Yes)
-        # FLASH_QPE_FFG01H_00.00 -> FLASH (Maybe? Checking index...) -> FLASH seems to exist
-        # MESH_00.50 -> MESH
-        # NLDN_CG_005min_AvgDensity_00.00 -> NLDN_CG_005min_AvgDensity (Check)
-        # PrecipRate_00.00 -> PrecipRate
-        # RadarOnly_QPE_01H_00.00 -> RadarOnly_QPE_01H
-        # MergedAzShear_0-2kmAGL_00.50 -> MergedAzShear_0-2kmAGL
-        # VIL_Density_00.50 -> VIL_Density
-        # VIL_00.50 -> VIL
-        # The MRMS HTTPS index contains distinct VIL/, VIL_Density/, and
-        # LVL3_HighResVIL/ directories, so keep these products separate.
-        
-        # Let's map explicitly based on standard MRMS naming conventions
-        # Usage instructions: add to this map if NCEP structure changes
-        
-        mapping = {
-            "EchoTop_18_00.50": "EchoTop_18",
-            "EchoTop_30_00.50": "EchoTop_30",
-            "FLASH_QPE_FFG01H_00.00": "FLASH",
-            "MESH_00.50": "MESH",
-            "NLDN_CG_005min_AvgDensity_00.00": "NLDN_CG_005min_AvgDensity",
-            "PrecipRate_00.00": "PrecipRate",
-            "RadarOnly_QPE_01H_00.00": "RadarOnly_QPE_01H",
-            "MergedAzShear_0-2kmAGL_00.50": "MergedAzShear_0-2kmAGL",
-            "MergedAzShear_3-6kmAGL_00.50": "MergedAzShear_3-6kmAGL",
-            "VIL_Density_00.50": "VIL_Density",
-            "VIL_00.50": "VIL",
-            "MergedRhoHV_00.50": "MergedRhoHV",
-            "PrecipFlag_00.00": "PrecipFlag",
-            "MergedReflectivityAtLowestAltitude_00.50": "MergedReflectivityAtLowestAltitude",
-            "MergedReflectivityQCComposite_00.50": "MergedReflectivityQCComposite",
-            "VII_00.50": "VII" # Verify
-        }
-        
+
+        mapping = ncep_directory_map()
         if modifier in mapping:
             return mapping[modifier]
-        
+
         # Fallback default behaviors if not mapped
-        parts = modifier.split("_00.")
+        parts = modifier.split(ncep_directory_split_token())
         if len(parts) > 1:
             return parts[0]
-            
+
         return modifier
 
     def construct_url(self, region, modifier):
         """Constructs the NCEP URL. Note: MRMS 2D data on NCEP is flat, not organized by date folders like S3."""
         prod_name = self._get_product_url_name(modifier)
-        
+
         if modifier is None: # ProbSevere
-            return "https://mrms.ncep.noaa.gov/data/ProbSevere"
-            
+            # A sibling of /data/2D, not a directory inside it, hence its own key.
+            return ncep_probsevere_url()
+
         # Standard 2D products
-        return f"{NCEP_BASE_URL}/{prod_name}"
+        return f"{ncep_base_url()}/{prod_name}"
 
     async def find_files(self, region, modifier):
         """
@@ -165,7 +140,7 @@ class HttpsFileFinder:
         self.io_manager.write_debug(f"Scanning (Sync) {url} for {target_ts_str}...")
         
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=ncep_sync_timeout_seconds())
             if response.status_code != 200:
                 self.io_manager.write_warning(f"Failed to access {url}: HTTP {response.status_code}")
                 return []
@@ -216,6 +191,7 @@ class HttpsFileDownloader:
              # Regex to extract timestamp
              # ..._YYYYMMDD-HHMMSS.grib2.gz
              matches = []
+             match_window = ncep_match_window_seconds()
              for url in file_urls:
                  ts_match = re.search(r'(\d{8}-\d{6})', url)
                  if ts_match:
@@ -225,7 +201,7 @@ class HttpsFileDownloader:
                          # Calculate difference
                          target_dt = self.dt if self.dt.tzinfo else self.dt.replace(tzinfo=timezone.utc)
                          diff = abs((file_dt - target_dt).total_seconds())
-                         if diff < 120: # Within 2 minutes
+                         if diff < match_window:
                             matches.append((diff, url))
                      except:
                          pass
@@ -254,11 +230,12 @@ class HttpsFileDownloader:
                 async with session.get(match) as response:
                     if response.status == 200:
                         part_path = out_path.with_name(f".{out_path.name}.part")
+                        chunk_size = ncep_download_chunk_size_bytes()
                         written = 0
                         try:
                             with open(part_path, 'wb') as f:
                                 while True:
-                                    chunk = await response.content.read(8192)
+                                    chunk = await response.content.read(chunk_size)
                                     if not chunk:
                                         break
                                     written += len(chunk)

@@ -8,10 +8,13 @@ from util.io import IOManager
 import util.file as fs
 from common.ingest.aws_async_compat import ensure_aiobotocore_endpoint_compat
 from common.ingest.synoptic.config import (
-    RAP_BUCKET,
-    RAP_DIR_PATTERN,
-    RAP_FILE_PATTERN,
     get_rap_max_age_minutes,
+    rap_bucket,
+    rap_date_format,
+    rap_dir_pattern,
+    rap_file_pattern,
+    rap_local_file_pattern,
+    rap_lookback_step_hours,
 )
 from common.ingest.synoptic.s3_sync import SynopticFileDownloader
 from common.ingest.synoptic.s3_async import AsyncSynopticFileDownloader
@@ -59,12 +62,14 @@ def _as_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
-def _eligible_analysis_times(dt: datetime, max_age_minutes: int):
+def _eligible_analysis_times(dt: datetime, max_age_minutes: int, step_hours=None):
+    if step_hours is None:
+        step_hours = rap_lookback_step_hours()
     requested_time = _as_utc(dt)
     candidate = requested_time.replace(minute=0, second=0, microsecond=0)
     while (requested_time - candidate).total_seconds() / 60 <= max_age_minutes:
         yield candidate
-        candidate -= timedelta(hours=1)
+        candidate -= timedelta(hours=step_hours)
 
 
 def _is_valid_local_file(path: Path) -> bool:
@@ -92,7 +97,9 @@ def _log_selected(dataset_name, requested_time, analysis_time, path, source):
     )
 
 
-def _build_synoptic_s3_params(dt, file_pattern, dir_pattern, out_dir):
+def _build_synoptic_s3_params(
+    dt, file_pattern, dir_pattern, out_dir, date_format=None, local_file_pattern=None
+):
     """
     Build the S3 key and local file path for a synoptic download.
 
@@ -103,19 +110,28 @@ def _build_synoptic_s3_params(dt, file_pattern, dir_pattern, out_dir):
         dir_pattern (str): ``str.format``-compatible pattern for the S3 directory
             (receives ``date=<str>``).
         out_dir (Path): Local output directory.
+        date_format (str): ``strftime`` format for ``date``. None reads
+            ``synoptic_rap.yaml`` ``rap.date_format``.
+        local_file_pattern (str): Local name, receiving ``date`` and ``hour``.
+            None reads ``rap.local_file_pattern``. It is not derivable from
+            ``file_pattern``: the local name is uppercased and carries the date.
 
     Returns:
         tuple[str, Path]: ``(s3_key, local_path)``
     """
-    date_str = dt.strftime("%Y%m%d")
+    if date_format is None:
+        date_format = rap_date_format()
+    if local_file_pattern is None:
+        local_file_pattern = rap_local_file_pattern()
+
+    date_str = dt.strftime(date_format)
     hour = dt.hour
 
     dir_name = dir_pattern.format(date=date_str)
     file_name = file_pattern.format(hour=hour)
     s3_key = f"{dir_name}/{file_name}"
 
-    local_filename = f"RAP.{date_str}-{hour:02d}z.awp130pgrbf00.grib2"
-    local_path = out_dir / local_filename
+    local_path = out_dir / local_file_pattern.format(date=date_str, hour=hour)
 
     return s3_key, local_path
 
@@ -149,13 +165,22 @@ async def download_synoptic(
     out_dir,
     dataset_name="Synoptic",
     *,
-    max_age_minutes=60,
+    max_age_minutes,
 ):
     """
     Select the newest acceptable local or remote synoptic analysis.
 
     Definitive S3 404 responses advance to the next analysis hour. Other async
     failures receive one synchronous attempt for the same candidate.
+
+    ``max_age_minutes`` is required rather than defaulted. It used to default to
+    60 while the RAP catalog said 180; only ``download_rap`` calls this and it
+    passes the catalog value, so the 60 was unreachable -- but a second synoptic
+    dataset added without the argument would have silently run a budget its
+    operator never chose. Defaulting to the RAP key instead would be the same
+    fault wearing the other number: this helper is dataset-generic, and the same
+    budget also bounds manifest freshness and cache retention for whichever
+    dataset it serves.
     """
     requested_time = _as_utc(dt)
     attempts = []
@@ -240,9 +265,9 @@ async def download_rap(dt):
     """
     return await download_synoptic(
         dt,
-        RAP_BUCKET,
-        RAP_FILE_PATTERN,
-        RAP_DIR_PATTERN,
+        rap_bucket(),
+        rap_file_pattern(),
+        rap_dir_pattern(),
         fs.RAP_DIR,
         dataset_name="RAP",
         max_age_minutes=get_rap_max_age_minutes(),

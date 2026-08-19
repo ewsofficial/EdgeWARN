@@ -1,21 +1,95 @@
 import util.file as fs
+from common.config.loader import ConfigError, load_config
 
-# Tile configuration constants
-TILE_SIZE = 350  # pixels
-TILE_GRID_ROWS = 10  # 3500 / 350
-TILE_GRID_COLS = 20  # 7000 / 350
+_CONFIG_NAME = "ewmrs_render"
 
-# EWMRS value-chunk wire-format invariants. Keep these values together: they
-# are written to both index levels and consumed by API clients.
-CHUNK_SCHEMA_VERSION = 2
-CHUNK_FORMAT_VERSION = 2
-CHUNK_ENCODING = "float16"
-CHUNK_MEDIA_TYPE = "application/octet-stream"
-CHUNK_FILE_SUFFIX = ".f16.gz"
-CHUNK_COMPRESSION = "gzip"
-CHUNK_BYTES_PER_COMPONENT = 2
-CHUNK_PIXEL_ROW_ORDER = "top_to_bottom"
-CHUNK_GRID_ORIGIN = "bottom_left"
+
+def _render_config():
+    return load_config(_CONFIG_NAME)
+
+
+def _resolve_dir(attribute_name):
+    """Map a catalog directory attribute name onto the live ``util.file`` path.
+
+    Resolved per call so ``initialize_filesystem`` rebinds are picked up, and
+    raised as ``ConfigError`` so a typo in the catalog names the offending key.
+    """
+    try:
+        return getattr(fs, attribute_name)
+    except AttributeError:
+        raise ConfigError(
+            f"{_CONFIG_NAME}.yaml",
+            f"outdir/filepath: {attribute_name}",
+            "not an attribute of util.file",
+        ) from None
+
+
+def goes_transform_resampling():
+    """The ``rasterio`` resampling method for the GOES ABI reprojection.
+
+    Returns the enum member rather than its name so no caller has to repeat the
+    lookup, and read per call so ``--config-dir`` can reach it -- ``run.py``
+    imports the render package before ``get_args()`` exports
+    ``EDGEWARN_CONFIG_DIR``.
+
+    Owns the GOES ABI path only. ``EWMRS/pipeline.py`` reprojects the non-GOES
+    layers with ``nearest`` on purpose, to keep radar edges crisp; that is a
+    different policy and deliberately not this key.
+    """
+    from rasterio.enums import Resampling
+    from rasterio.warp import SUPPORTED_RESAMPLING
+
+    name = _render_config()["goes_transform"]["resampling"]
+    try:
+        method = Resampling[name]
+    except KeyError:
+        raise ConfigError(
+            f"{_CONFIG_NAME}.yaml",
+            f"goes_transform.resampling: {name}",
+            "not a rasterio.enums.Resampling member",
+        ) from None
+
+    # The schema enum already excludes `gauss`, but rasterio decides what warp
+    # accepts and the two lists are maintained by different projects.
+    if method not in SUPPORTED_RESAMPLING:
+        raise ConfigError(
+            f"{_CONFIG_NAME}.yaml",
+            f"goes_transform.resampling: {name}",
+            "not supported for reprojection by this rasterio build",
+        )
+    return method
+
+
+def tile_size() -> int:
+    """Chunk edge length, resolved after entry points select a config root."""
+    return _render_config()["tiles"]["tile_size"]
+
+
+def chunk_schema_version() -> int:
+    """Schema version written into both EWMRS chunk index levels."""
+    return _render_config()["chunk_format"]["wire_version"]
+
+
+def __getattr__(name):
+    """Resolve legacy constant imports only when the attribute is requested."""
+    if name == "TILE_SIZE":
+        return tile_size()
+    if name == "CHUNK_SCHEMA_VERSION":
+        return chunk_schema_version()
+    chunk_keys = {
+        "CHUNK_FORMAT_VERSION": "format_version",
+        "CHUNK_ENCODING": "encoding",
+        "CHUNK_MEDIA_TYPE": "media_type",
+        "CHUNK_FILE_SUFFIX": "file_suffix",
+        "CHUNK_COMPRESSION": "compression",
+        "CHUNK_BYTES_PER_COMPONENT": "bytes_per_component",
+        "CHUNK_PIXEL_ROW_ORDER": "pixel_row_order",
+        "CHUNK_GRID_ORIGIN": "grid_origin",
+    }
+    try:
+        return _render_config()["chunk_format"][chunk_keys[name]]
+    except KeyError:
+        raise AttributeError(name) from None
 
 
 def chunk_format_descriptor(*, include_media_type: bool = False) -> dict:
@@ -24,198 +98,77 @@ def chunk_format_descriptor(*, include_media_type: bool = False) -> dict:
     EWMRS serves raw single-channel science values; derived color products
     (for example GOES RGB composites) are a client-side concern.
     """
+    chunk = _render_config()["chunk_format"]
     value = {
-        "version": CHUNK_FORMAT_VERSION,
-        "encoding": CHUNK_ENCODING,
-        "file_suffix": CHUNK_FILE_SUFFIX,
-        "compression": CHUNK_COMPRESSION,
-        "data_type": "float16",
-        "channels": 1,
-        "value_kind": "scalar",
-        "no_data": "nan",
-        "bytes_per_component": CHUNK_BYTES_PER_COMPONENT,
-        "pixel_row_order": CHUNK_PIXEL_ROW_ORDER,
-        "grid_origin": CHUNK_GRID_ORIGIN,
+        "version": chunk["format_version"],
+        "encoding": chunk["encoding"],
+        "file_suffix": chunk["file_suffix"],
+        "compression": chunk["compression"],
+        "data_type": chunk["data_type"],
+        "channels": chunk["channels"],
+        "value_kind": chunk["value_kind"],
+        "no_data": chunk["no_data"],
+        "bytes_per_component": chunk["bytes_per_component"],
+        "pixel_row_order": chunk["pixel_row_order"],
+        "grid_origin": chunk["grid_origin"],
     }
     if include_media_type:
-        value["media_type"] = CHUNK_MEDIA_TYPE
+        value["media_type"] = chunk["media_type"]
     return value
+
+def nexrad_variable_colormaps() -> dict:
+    """Map each served radar moment to the colormap the GUI draws it with.
+
+    Resolved per call rather than bound at module scope: this package is imported
+    before ``get_args()`` exports ``EDGEWARN_CONFIG_DIR``, so an import-time read
+    would freeze the repo-default config directory and ``--config-dir`` could
+    never reach it.
+
+    Hoist the result out of per-sweep and per-moment loops. ``load_config`` stats
+    the catalog on every call, cache hit included, so calling this once per
+    rendered moment is a measurable cost rather than a style question.
+
+    A moment absent from this mapping is still served by the API; it simply has no
+    colormap, so the GUI does not draw it. ``CCORH`` is exactly that case.
+    """
+    return dict(_render_config()["nexrad_gui"]["variable_colormaps"])
+
 
 def get_mrms_file_list():
     """Return the MRMS-backed render configuration list."""
     return [
         {
-            "name": "MRMS_MergedReflectivityQC",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_COMPOSITE_DIR,
-            "outdir": fs.GUI_COMPOSITE_DIR
-        },
-        {
-            "name": "MRMS_EchoTop18",
-            "colormap_key": "EnhancedEchoTop",
-            "filepath": fs.MRMS_ECHOTOP18_DIR,
-            "outdir": fs.GUI_ECHOTOP18_DIR
-        },
-        {
-            "name": "MRMS_EchoTop30",
-            "colormap_key": "EnhancedEchoTop",
-            "filepath": fs.MRMS_ECHOTOP30_DIR,
-            "outdir": fs.GUI_ECHOTOP30_DIR
-        },
-        {
-            "name": "MRMS_ReflectivityAtLowestAltitude",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_RALA_DIR,
-            "outdir": fs.GUI_RALA_DIR
-        },
-        {
-            "name": "MRMS_ReflectivityAt0C",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_REF_0C_DIR,
-            "outdir": fs.GUI_REF_0C_DIR
-        },
-        {
-            "name": "MRMS_ReflectivityAtM5C",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_REFM5C_DIR,
-            "outdir": fs.GUI_REFM5C_DIR
-        },
-        {
-            "name": "MRMS_ReflectivityAtM15C",
-            "colormap_key": "NWS_Reflectivity",
-            "filepath": fs.MRMS_REFM15C_DIR,
-            "outdir": fs.GUI_REFM15C_DIR
-        },
-        {
-            "name": "MRMS_PrecipRate",
-            "colormap_key": "PrecipRate",
-            "filepath": fs.MRMS_PRECIPRATE_DIR,
-            "outdir": fs.GUI_PRECIPRATE_DIR
-        },
-        {
-            "name": "MRMS_VILDensity",
-            "colormap_key": "VILDensity",
-            "filepath": fs.MRMS_DVIL_DIR,
-            "outdir": fs.GUI_VILD_DIR
-        },
-        {
-            "name": "MRMS_QPE",
-            "colormap_key": "QPE_01H",
-            "filepath": fs.MRMS_QPE_DIR,
-            "outdir": fs.GUI_QPE_DIR
-        },
-        {
-            "name": "MRMS_VIL",
-            "colormap_key": "VIL",
-            "filepath": fs.MRMS_VIL_DIR,
-            "outdir": fs.GUI_VIL_DIR
-        },
-        {
-            "name": "MRMS_VII",
-            "colormap_key": "VIL",
-            "filepath": fs.MRMS_VII_DIR,
-            "outdir": fs.GUI_VII_DIR
-        },
-        {
-            "name": "MRMS_MergedAzShear_0-2kmAGL",
-            "colormap_key": "AzShear",
-            "filepath": fs.MRMS_AZSHEARLOW_DIR,
-            "outdir": fs.GUI_AZSHEARLOW_DIR
-        },
-        {
-            "name": "MRMS_MergedAzShear_3-6kmAGL",
-            "colormap_key": "AzShear",
-            "filepath": fs.MRMS_AZSHEARMID_DIR,
-            "outdir": fs.GUI_AZSHEARMID_DIR
-        },
-        {
-            "name": "MRMS_MESH",
-            "colormap_key": "MESH",
-            "filepath": fs.MRMS_MESH_DIR,
-            "outdir": fs.GUI_MESH_DIR
+            "name": layer["name"],
+            "colormap_key": layer["colormap_key"],
+            "filepath": _resolve_dir(layer["filepath"]),
+            "outdir": _resolve_dir(layer["outdir"]),
         }
+        for layer in _render_config()["mrms_layers"]
     ]
 
 
 def get_goes_file_list():
     """Return the GOES-backed render configuration list."""
-    reflectance_specs = [
-        ("C01", fs.GOES_ABI_VISIBLE_BLUE_DIR, fs.GUI_GOES_C01_DIR),
-        ("C02", fs.GOES_ABI_VISIBLE_RED_DIR, fs.GUI_GOES_C02_DIR),
-        ("C03", fs.GOES_ABI_VEGGIE_DIR, fs.GUI_GOES_C03_DIR),
-        ("C04", fs.GOES_ABI_CIRRUS_DIR, fs.GUI_GOES_C04_DIR),
-        ("C05", fs.GOES_ABI_SNOW_ICE_DIR, fs.GUI_GOES_C05_DIR),
-        ("C06", fs.GOES_ABI_PARTICLE_SIZE_DIR, fs.GUI_GOES_C06_DIR),
+    goes = _render_config()["goes_layers"]
+    common = goes["common"]
+    return [
+        {
+            "name": layer["name"],
+            "colormap_key": layer["colormap_key"],
+            "filepath": _resolve_dir(layer["filepath"]),
+            "outdir": _resolve_dir(layer["outdir"]),
+            "source_type": common["source_type"],
+            "variable_name": common["variable_name"],
+            "fallback_variable_names": list(common["fallback_variable_names"]),
+            "channel_id": layer["channel_id"],
+            "value_transform": layer["value_transform"],
+            "mask_min": dict(layer["mask_min"]),
+            "mask_max": dict(layer["mask_max"]),
+        }
+        for layer in goes["layers"]
     ]
-    brightness_temp_specs = [
-        ("C07", fs.GOES_ABI_SHORTWAVE_IR_DIR, fs.GUI_GOES_C07_DIR, "GOES_ABI_C07_BrightnessTemp", 180.0, 330.0),
-        ("C08", fs.GOES_ABI_UPPER_LEVEL_WV_DIR, fs.GUI_GOES_C08_DIR, "GOES_ABI_C08_BrightnessTemp", 180.0, 300.0),
-        ("C09", fs.GOES_ABI_MID_LEVEL_WV_DIR, fs.GUI_GOES_C09_DIR, "GOES_ABI_C09_BrightnessTemp", 180.0, 310.0),
-        ("C10", fs.GOES_ABI_LOWER_LEVEL_WV_DIR, fs.GUI_GOES_C10_DIR, "GOES_ABI_C10_BrightnessTemp", 185.0, 320.0),
-        ("C11", fs.GOES_ABI_CLD_TOP_PHASE_DIR, fs.GUI_GOES_C11_DIR, "GOES_ABI_C11_BrightnessTemp", 180.0, 330.0),
-        ("C12", fs.GOES_ABI_OZONE_DIR, fs.GUI_GOES_C12_DIR, "GOES_ABI_C12_BrightnessTemp", 180.0, 330.0),
-        ("C13", fs.GOES_ABI_CLEAN_LWIR_DIR, fs.GUI_GOES_C13_DIR, "GOES_IR", 180.0, 330.0),
-        ("C14", fs.GOES_ABI_LONGWAVE_IR_DIR, fs.GUI_GOES_C14_DIR, "GOES_IR", 180.0, 330.0),
-        ("C15", fs.GOES_ABI_DIRTY_LWIR_DIR, fs.GUI_GOES_C15_DIR, "GOES_IR", 180.0, 330.0),
-        ("C16", fs.GOES_ABI_CO2_LWIR_DIR, fs.GUI_GOES_C16_DIR, "GOES_ABI_C16_BrightnessTemp", 180.0, 330.0),
-    ]
-
-    layers = []
-    for channel_id, filepath, outdir in reflectance_specs:
-        colormap_key = "GOES_RGB_Raw" if channel_id in {"C01", "C02", "C03", "C04", "C05", "C06"} else f"GOES_ABI_{channel_id}_Reflectance"
-        layers.append(
-            {
-                "name": f"GOES_ABI_{channel_id}_Reflectance",
-                "colormap_key": colormap_key,
-                "filepath": filepath,
-                "outdir": outdir,
-                "source_type": "goes_abi",
-                "variable_name": "CMI",
-                "fallback_variable_names": ["Rad"],
-                "channel_id": channel_id,
-                "display_name": f"GOES ABI {channel_id} Reflectance",
-                "value_transform": "reflectance_from_rad",
-                "mask_min": {
-                    channel_id: 0.0,
-                    "default": 0.0,
-                },
-                "mask_max": {
-                    channel_id: 1.2,
-                    "default": 1.2,
-                },
-            }
-        )
-
-    for channel_id, filepath, outdir, colormap_key, min_temp, max_temp in brightness_temp_specs:
-        layers.append(
-            {
-                "name": f"GOES_ABI_{channel_id}_BrightnessTemp",
-                "colormap_key": colormap_key,
-                "filepath": filepath,
-                "outdir": outdir,
-                "source_type": "goes_abi",
-                "variable_name": "CMI",
-                "fallback_variable_names": ["Rad"],
-                "channel_id": channel_id,
-                "display_name": f"GOES ABI {channel_id} Brightness Temperature",
-                "value_transform": "brightness_temp_from_rad",
-                "mask_min": {
-                    channel_id: min_temp,
-                    "default": min_temp,
-                },
-                "mask_max": {
-                    channel_id: max_temp,
-                    "default": max_temp,
-                },
-            }
-        )
-
-    return layers
 
 
 def get_file_list():
     """Return the combined render configuration list."""
     return get_mrms_file_list() + get_goes_file_list()
-
-# For backward compatibility - returns list at import time (use get_file_list() for dynamic paths)
-file_list = get_file_list()

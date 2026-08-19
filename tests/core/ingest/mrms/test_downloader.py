@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from datetime import datetime, timezone
 
 import common.ingest.mrms.downloader as ingest_downloader
@@ -94,14 +95,13 @@ def test_download_all_goes_files_async_iterates_glm_and_abi_specs(monkeypatch, t
     async def fake_download(
         goes_spec,
         dt_arg,
-        max_entries,
         hour_lookback,
         s3_client,
         parent_trace_id=None,
         perf_maps=None,
         preloaded_files=None,
     ):
-        seen.append((goes_spec.product, goes_spec.channel_id, dt_arg, max_entries, hour_lookback))
+        seen.append((goes_spec.product, goes_spec.channel_id, dt_arg, hour_lookback))
         return []
 
     monkeypatch.setattr(ingest_downloader, "get_goes_modifiers", lambda: specs)
@@ -109,11 +109,11 @@ def test_download_all_goes_files_async_iterates_glm_and_abi_specs(monkeypatch, t
     monkeypatch.setattr(ingest_downloader, "AsyncFileFinder", DummyAsyncFinder)
     monkeypatch.setattr(ingest_downloader, "_download_goes_product_async", fake_download)
 
-    asyncio.run(ingest_downloader.download_all_goes_files_async(dt, max_entries=7, hour_lookback=2))
+    asyncio.run(ingest_downloader.download_all_goes_files_async(dt, hour_lookback=2))
 
     assert seen == [
-        ("GLM-L2-LCFA", None, dt, 7, 2),
-        ("ABI-L1b-RadC", "C01", dt, 7, 2),
+        ("GLM-L2-LCFA", None, dt, 2),
+        ("ABI-L1b-RadC", "C01", dt, 2),
     ]
 
 
@@ -157,7 +157,6 @@ def test_download_all_goes_files_async_uses_shared_abi_lookup(monkeypatch, tmp_p
     async def fake_download(
         goes_spec,
         dt_arg,
-        max_entries,
         hour_lookback,
         s3_client,
         parent_trace_id=None,
@@ -172,7 +171,7 @@ def test_download_all_goes_files_async_uses_shared_abi_lookup(monkeypatch, tmp_p
     monkeypatch.setattr(ingest_downloader, "AsyncFileFinder", DummyAsyncFinder)
     monkeypatch.setattr(ingest_downloader, "_download_goes_product_async", fake_download)
 
-    asyncio.run(ingest_downloader.download_all_goes_files_async(dt, max_entries=7, hour_lookback=2))
+    asyncio.run(ingest_downloader.download_all_goes_files_async(dt, hour_lookback=2))
 
     assert lookup_calls == [
         ("init", 96),
@@ -208,7 +207,7 @@ def test_download_all_goes_files_sync_uses_shared_abi_lookup(monkeypatch, tmp_pa
             lookup_calls.append(("lookup", tuple(prefixes)))
             return shared_lookup_result
 
-    def fake_download(goes_spec, dt_arg, max_entries, hour_lookback, preloaded_files=None):
+    def fake_download(goes_spec, dt_arg, hour_lookback, preloaded_files=None):
         seen_preloaded.append((goes_spec.channel_id, preloaded_files))
         return []
 
@@ -216,7 +215,7 @@ def test_download_all_goes_files_sync_uses_shared_abi_lookup(monkeypatch, tmp_pa
     monkeypatch.setattr(ingest_downloader, "FileFinder", DummyFinder)
     monkeypatch.setattr(ingest_downloader, "download_goes_product", fake_download)
 
-    ingest_downloader.download_all_goes_files(dt, max_entries=7, hour_lookback=2)
+    ingest_downloader.download_all_goes_files(dt, hour_lookback=2)
 
     assert lookup_calls == [
         ("init", 96),
@@ -228,16 +227,23 @@ def test_download_all_goes_files_sync_uses_shared_abi_lookup(monkeypatch, tmp_pa
     ]
 
 
-def test_goes_search_max_entries_fixed_to_96(tmp_path):
-    abi_spec = GoesIngestSpec(
-        product="ABI-L1b-RadC",
-        outdir=tmp_path / "VisibleBlue",
-        channel_id="C01",
-        channel_name="visible_blue",
-        filename_matcher=r"(?:_|-)M\dC01_",
-    )
-    glm_spec = GoesIngestSpec("GLM-L2-LCFA", tmp_path / "GLM")
+def test_goes_search_depth_is_fixed_and_not_a_caller_knob():
+    """No GOES entry point may advertise a max_entries it would discard.
 
-    assert ingest_downloader._get_goes_search_max_entries(abi_spec, 10) == 96
-    assert ingest_downloader._get_goes_search_max_entries(abi_spec, 1000) == 96
-    assert ingest_downloader._get_goes_search_max_entries(glm_spec, 10) == 96
+    The depth is fixed at 96 because GLM publishes roughly 180 objects an hour,
+    so the MRMS depth of 10 would never list back to the requested scan. These
+    functions used to take a max_entries the GOES paths silently ignored, which
+    read as a working knob at every call site.
+    """
+    assert ingest_downloader._goes_search_max_entries() == 96
+
+    goes_entry_points = (
+        ingest_downloader.download_goes_product,
+        ingest_downloader._download_goes_product_async,
+        ingest_downloader.download_goes_specs,
+        ingest_downloader.download_goes_specs_async,
+        ingest_downloader.download_all_goes_files,
+        ingest_downloader.download_all_goes_files_async,
+    )
+    for func in goes_entry_points:
+        assert "max_entries" not in inspect.signature(func).parameters, func.__name__

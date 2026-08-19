@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import time
 
-from common.ingest.nexrad.config import ALLOWED_VCPS, format_perf_ms
+from common.ingest.nexrad.config import format_perf_ms
 from common.ingest.nexrad.coordinator import NexradScanCoordinator
 from common.ingest.nexrad.service import NexradIngestService as _BaseNexradIngestService
 from common.ingest.nexrad.s3_async import (
@@ -24,6 +24,8 @@ from common.ingest.nexrad.s3_chunks import (
 from common.ingest.nexrad.vcp_probe import probe_volume_vcp
 from common.ingest.nexrad.weather_api import fetch_radar_station_vcps
 from common.ingest.nexrad.writer import chunk_output_dir, local_volume_file_complete, prune_station_scan_dirs
+from common.config import loader as config_loader
+from common.config import overlay
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]")
@@ -54,9 +56,11 @@ class NexradIngestService(_BaseNexradIngestService):
         async_chunk_lister=None,
         async_chunk_fetcher=None,
         async_volume_lister=None,
-        max_site_tasks=24,
-        max_chunk_downloads=64,
+        max_site_tasks=None,
+        max_chunk_downloads=None,
     ):
+        # Passed through as None so the base service resolves them from the
+        # catalog once, rather than this subclass restating the same two numbers.
         defaults = _service_defaults()
         super().__init__(
             chunk_lister=chunk_lister or defaults["chunk_lister"],
@@ -174,14 +178,37 @@ def _build_parser():
     parser.add_argument("--site")
     parser.add_argument("--volume-id")
     parser.add_argument("--base-dir")
-    parser.add_argument("--max-volumes-per-site", type=int, default=1)
-    parser.add_argument("--max-candidate-volumes-per-site", type=int, default=3)
+    # No --max-volumes-per-site: neither branch of main() takes a volume count.
+    # It used to be accepted and resolved onto args, then never read.
+    parser.add_argument("--max-candidate-volumes-per-site", type=int, default=None, help="default: from nexrad.yaml")
+    parser.add_argument("--config-dir", type=str, default=None, help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)")
     return parser
+
+
+def _resolve_cli_args(args):
+    # Exported first: volume ingest spawns parse workers that receive no config
+    # in their payload, so this variable is the only channel by which
+    # --config-dir reaches them. See loader.export_config_root.
+    config_loader.export_config_root(args.config_dir)
+
+    document = config_loader.load_config("nexrad", config_dir=args.config_dir)
+    # `max_candidate_volumes_per_site` lives under `realtime` rather than `cli`
+    # because the realtime pipeline reads it too; this entry point is the second
+    # consumer, not the owner.
+    args.max_candidate_volumes_per_site = overlay.resolve(
+        args.max_candidate_volumes_per_site,
+        yaml_value=document["realtime"]["max_candidate_volumes_per_site"],
+        key="nexrad.realtime.max_candidate_volumes_per_site",
+    )
+    # `cli.sites` is deliberately not overlaid here: --site is a single station
+    # for this entry point, so a list default cannot apply to it.
+    args.base_dir = overlay.resolve(args.base_dir, yaml_value=document["cli"]["base_dir"], key="nexrad.cli.base_dir")
+    return args
 
 
 def main():
     service = _new_service()
-    args = _build_parser().parse_args()
+    args = _resolve_cli_args(_build_parser().parse_args())
     if args.volume_id and not args.site:
         raise SystemExit("--site is required when --volume-id is provided")
 

@@ -1,0 +1,11 @@
+{
+  "shadows_yaml": [],
+  "can_be_unset": [
+    "--base-dir",
+    "--completion-interval-seconds",
+    "--config-dir",
+    "--max-candidate-volumes-per-site",
+    "--scan-interval-seconds",
+    "--site"
+  ]
+}

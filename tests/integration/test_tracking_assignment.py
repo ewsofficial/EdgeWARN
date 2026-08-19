@@ -10,6 +10,8 @@ for various storm tracking scenarios including:
 - Re-acquisition
 """
 
+import dataclasses
+
 import pytest
 import numpy as np
 from datetime import datetime
@@ -17,11 +19,16 @@ from unittest.mock import Mock, MagicMock
 
 from EdgeWARN.process.detect.track import StormCellTracker
 from EdgeWARN.process.detect.kalman import (
-    TrackingConfig,
-    AssignmentConfig,
     KalmanFilter,
+    default_tracking_config,
+    default_assignment_config,
     haversine_distance,
 )
+
+
+def _assignment_config(method):
+    """Loaded assignment config with only the algorithm swapped."""
+    return dataclasses.replace(default_assignment_config(), method=method)
 
 
 class MockIOManager:
@@ -61,8 +68,8 @@ class TestHybridAssignmentIntegration:
             ps_old=None,
             ps_new=None,
             io_manager=io_manager,
-            tracking_config=TrackingConfig(),
-            assignment_config=AssignmentConfig(method='hybrid')
+            tracking_config=default_tracking_config(),
+            assignment_config=_assignment_config('hybrid')
         )
     
     @pytest.fixture
@@ -72,8 +79,8 @@ class TestHybridAssignmentIntegration:
             ps_old=None,
             ps_new=None,
             io_manager=io_manager,
-            tracking_config=TrackingConfig(),
-            assignment_config=AssignmentConfig(method='greedy')
+            tracking_config=default_tracking_config(),
+            assignment_config=_assignment_config('greedy')
         )
     
     @pytest.fixture
@@ -230,8 +237,8 @@ class TestCrossedPathsScenario:
             ps_old=None,
             ps_new=None,
             io_manager=io_manager,
-            tracking_config=TrackingConfig(),
-            assignment_config=AssignmentConfig(method='hybrid')
+            tracking_config=default_tracking_config(),
+            assignment_config=_assignment_config('hybrid')
         )
     
     @pytest.fixture
@@ -241,8 +248,8 @@ class TestCrossedPathsScenario:
             ps_old=None,
             ps_new=None,
             io_manager=io_manager,
-            tracking_config=TrackingConfig(),
-            assignment_config=AssignmentConfig(method='greedy')
+            tracking_config=default_tracking_config(),
+            assignment_config=_assignment_config('greedy')
         )
     
     def test_crossed_paths_hybrid(self, hybrid_tracker):
@@ -325,8 +332,8 @@ class TestStormSplitScenario:
             ps_old=None,
             ps_new=None,
             io_manager=io_manager,
-            tracking_config=TrackingConfig(),
-            assignment_config=AssignmentConfig(method='hybrid')
+            tracking_config=default_tracking_config(),
+            assignment_config=_assignment_config('hybrid')
         )
     
     def test_storm_split(self, hybrid_tracker):
@@ -391,8 +398,8 @@ class TestStormMergeScenario:
             ps_old=None,
             ps_new=None,
             io_manager=io_manager,
-            tracking_config=TrackingConfig(),
-            assignment_config=AssignmentConfig(method='hybrid')
+            tracking_config=default_tracking_config(),
+            assignment_config=_assignment_config('hybrid')
         )
     
     def test_storm_merge(self, hybrid_tracker):
@@ -464,12 +471,11 @@ class TestTrackingContinuity:
             ps_old=None,
             ps_new=None,
             io_manager=io_manager,
-            tracking_config=TrackingConfig(
+            tracking_config=dataclasses.replace(
+                default_tracking_config(),
                 max_prediction_time_minutes=10.0,
-                confidence_threshold=0.4,
-                confidence_decay_factor=0.7
             ),
-            assignment_config=AssignmentConfig(method='hybrid')
+            assignment_config=_assignment_config('hybrid')
         )
     
     def test_tracking_continuity_through_drop(self, tracker):
@@ -587,8 +593,8 @@ class TestMethodComparison:
             ps_old=None,
             ps_new=None,
             io_manager=io_manager,
-            tracking_config=TrackingConfig(),
-            assignment_config=AssignmentConfig(method='hybrid')
+            tracking_config=default_tracking_config(),
+            assignment_config=_assignment_config('hybrid')
         )
     
     @pytest.fixture
@@ -597,8 +603,8 @@ class TestMethodComparison:
             ps_old=None,
             ps_new=None,
             io_manager=io_manager,
-            tracking_config=TrackingConfig(),
-            assignment_config=AssignmentConfig(method='greedy')
+            tracking_config=default_tracking_config(),
+            assignment_config=_assignment_config('greedy')
         )
     
     def test_both_methods_produce_results(self, hybrid_tracker, greedy_tracker):

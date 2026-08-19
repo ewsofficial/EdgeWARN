@@ -1,11 +1,26 @@
 import { pathToFileURL } from 'url';
 import { createApp } from './app.js';
 
+/** The same five elements /health/live serves, so a crash before the first request still records them.
+ *
+ * Reports the winning layer per override rather than the value, matching
+ * report_effective_config in src/run.py: a key holding a credential must not be
+ * disclosed by a diagnostic.
+ */
+function reportEffectiveConfig(config, port) {
+  const { source, overrides, effective } = config.diagnostics;
+  console.log(`[API] Config root: ${source.root}`);
+  console.log(`[API] Catalogs loaded: api@${source.schemaVersion} (${source.file}), wpc@${source.wpc.schemaVersion} (${source.wpc.file})`);
+  console.log(`[API] Active overrides: ${overrides.length ? overrides.join(', ') : 'none; every resolved value came from YAML'}`);
+  console.log(`[API] Enabled products: render=${effective.renderProductCount}, radar=${effective.radarProductCount}, allowed origins=${effective.allowedOriginCount}`);
+  console.log(`[API] Listening on port ${port}, base dir ${effective.baseDir}. Configuration changes require a restart to take effect.`);
+}
+
 export async function startServer(options = {}) {
   const { app, config } = await createApp(options);
   const debug = (options.argv || process.argv.slice(2)).includes('--debug-server');
-  const port = options.port || (debug ? 3001 : config.port);
-  const server = app.listen(port, options.host || '0.0.0.0', () => console.log(`Unified EdgeWARN API listening on port ${port}`));
+  const port = options.port || (debug ? config.api.server.debug_port : config.port);
+  const server = app.listen(port, options.host || config.api.server.host, () => reportEffectiveConfig(config, port));
   return { app, server, port, config };
 }
 

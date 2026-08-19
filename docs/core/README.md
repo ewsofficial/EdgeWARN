@@ -8,6 +8,8 @@ This document summarizes the current runtime architecture implemented under `src
 src/
 ├── run.py                           # Real-time tandem scheduler entry point
 ├── process_historical.py            # Historical reprocessing entry point
+├── api/                             # Unified Node.js HTTP API (app, routes, middleware, services)
+├── config/                          # Node YAML catalog loader used by the API
 ├── util/                            # Shared filesystem, I/O, GRIB, performance, release helpers
 ├── common/
 │   ├── ingest/                      # Shared ingest implementations (MRMS/NWS/Synoptic/METAR/WPC/NEXRAD)
@@ -18,6 +20,7 @@ src/
 │   │   ├── wpc/                     # WPC surface analysis ingest
 │   │   ├── metar.py                 # METAR ingest
 │   │   └── aws_async_compat.py      # AWS async/sync compatibility shim
+│   ├── config/                      # YAML catalog loader, overlay precedence, validation
 │   └── pipeline/                    # Tandem coordination (coordinator.py, goes_readiness.py)
 ├── EdgeWARN/
 │   ├── pipeline.py                  # Top-level EdgeWARN orchestration
@@ -26,15 +29,14 @@ src/
 │   ├── ctam/                        # CTAM framework + modules
 │   ├── alerts/                      # EdgeWARN alert schema + manager
 │   ├── api_integration/             # API index management for generated files
-│   ├── api/                         # EdgeWARN HTTP API service
 │   ├── ingest/                      # Compatibility re-exports of shared ingest code
 │   ├── schedule/                    # Update-checking and scheduling helpers
 │   └── ui/                          # Reserved path; currently only contains repo metadata
 └── EWMRS/
     ├── pipeline.py                  # Render pipeline orchestration
+    ├── pipeline_config.py           # Accessors for config/ewmrs_pipeline.yaml
     ├── render/                      # Layer rendering and tile generation
-    ├── rap/                         # RAP Uint16 conversion pipeline + config
-    ├── api/                         # EWMRS HTTP API service
+    ├── rap/                         # RAP Uint16 conversion pipeline + catalog accessors
     ├── colormaps.json               # Colormap source blocks served by /colormaps
     └── mappings.json                # RAP layer/colormap mapping served by /rap/mappings
 ```
@@ -56,7 +58,9 @@ graph TD
 
 Generated products are written under the configured base directory. For the Python pipelines and the EWMRS API, the default is `~/EdgeWARN_input` on Linux/macOS and `C:\EdgeWARN_input` on Windows.
 
-The EdgeWARN API has a broader Linux fallback chain when no override is provided: `~/EdgeWARN_input`, then `/home/EdgeWARN_input`, then `/workspaces/EdgeWARN_input`, then `./EdgeWARN_input`.
+`filesystem.yaml` is the sole authority for platform defaults. The selected
+base directory is CLI, then `EDGEWARN_BASE_DIR`, then legacy `BASE_DIR`, then
+YAML; `--config-dir` and `EDGEWARN_CONFIG_DIR` select the complete catalog tree.
 
 The active runtime layout is:
 
@@ -71,7 +75,7 @@ The active runtime layout is:
 │   ├── NEXRAD_Level2/               # staged Level II volume artifacts
 │   └── <MRMS/GOES product dirs>/     # MRMS, FLASH, GLM, ABI channel inputs
 ├── gui/
-│   ├── <MRMS/GOES product>/          # tile-first PNG products plus index.json files
+│   ├── <MRMS/GOES product>/          # float16 chunks plus index.json metadata
 │   ├── RAP/                         # Uint16 RAP layer folders
 │   └── NEXRAD/                      # gzip-compressed polar intermediate fields
 └── wpc/surface_analysis/            # WPC surface-analysis GeoJSON
@@ -97,9 +101,15 @@ The GOES render path renders each single-channel layer through the shared EWMRS 
 
 Current CLI coverage:
 
-- `run.py`: `--lat_limits`, `--lon_limits`, `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
-- `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--output` (compatibility arg; final runtime artifacts still land under `<BASE_DIR>/data/stormcells`), `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
-- `common/ingest/nws/zone_sync.py`: `--assets-dir`, `--zone-types`, `--timeout-seconds`, `--max-retries`, `--max-workers`, `--pause-seconds`, `--no-progress`, `--apply`, `--report-path`
+- `run.py`: `--lat_limits`, `--lon_limits`, `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `common/ingest/nws/zone_sync.py`: `--assets-dir`, `--zone-types`, `--timeout-seconds`, `--max-retries`, `--max-workers`, `--pause-seconds`, `--progress` / `--no-progress`, `--apply`, `--report-path`, `--config-dir`
+- `common/ingest/nexrad/main.py`: `--site`, `--volume-id`, `--base-dir`, `--max-candidate-volumes-per-site`, `--config-dir`
+- `common/ingest/nexrad/pipeline/` (via `python -m`): `--site` (repeatable), `--base-dir`, `--scan-interval-seconds`, `--completion-interval-seconds`, `--max-candidate-volumes-per-site`, `--config-dir`
+
+The `--profile`, `--disable-*`, and `--progress` switches use
+`argparse.BooleanOptionalAction`, so each also accepts its `--no-` form and
+falls back to the YAML catalogs when omitted rather than to a literal default.
 
 ## Additional References
 

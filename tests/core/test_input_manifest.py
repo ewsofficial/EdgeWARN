@@ -90,6 +90,34 @@ def test_cycle_input_manifest_allows_normal_mrms_publication_lag(tmp_path):
     )
 
 
+def test_rap_validation_ceiling_follows_the_configured_staging_budget(
+    tmp_path, monkeypatch
+):
+    """Widening the RAP age budget must not turn into a validation failure.
+
+    The downloader walks back through analysis hours until the budget is spent,
+    so a raised budget stages an older analysis deliberately. If the manifest
+    kept its own ceiling, that file would be staged and then rejected.
+    """
+    cycle_time = datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc)
+    record = _record(
+        tmp_path,
+        "RAP",
+        cycle_time - timedelta(minutes=200),
+        family="rap",
+    )
+
+    assert CycleInputManifest(
+        cycle_time=cycle_time, inputs=(record,)
+    ).validate_alignment() != ()
+
+    monkeypatch.setenv("EDGEWARN_RAP_MAX_AGE_MINUTES", "240")
+
+    assert CycleInputManifest(
+        cycle_time=cycle_time, inputs=(record,)
+    ).validate_alignment() == ()
+
+
 def test_detection_uses_pinned_frames_after_newer_file_arrives(tmp_path):
     cycle_time = datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc)
     products = (

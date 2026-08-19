@@ -5,8 +5,13 @@ from EdgeWARN.process.detect.tools.save import CellDataSaver
 from EdgeWARN.process.detect.tools.vecmath import StormVectorCalculator
 from EdgeWARN.process.detect.tools.alert_matcher import match_alerts_to_cells
 from EdgeWARN.process.detect.track import StormCellTracker
-from EdgeWARN.process.detect.kalman.config import TrackingConfig, AssignmentConfig
+from EdgeWARN.process.detect.kalman.config import (
+    TrackingConfig,
+    AssignmentConfig,
+    KalmanConfig,
+)
 from EdgeWARN.process.detect.detect import detect_cells
+from EdgeWARN.process.detect.config import DetectionConfig
 from util.io import IOManager
 import util.file as fs
 import json as js
@@ -25,10 +30,8 @@ def _detect_with_optional_probsevere(
     lon_min,
     lon_max,
     need_probsevere,
+    detection_config,
     disable_polygon_expansion=False,
-    refl_threshold=37.5,
-    min_seed_percentage=0.001,
-    drop_offset=10.0,
     radar_obj=None,
     ps_obj=None,
     pt_obj=None,
@@ -46,9 +49,7 @@ def _detect_with_optional_probsevere(
             lon_max,
             return_probsevere=True,
             disable_polygon_expansion=disable_polygon_expansion,
-            refl_threshold=refl_threshold,
-            min_seed_percentage=min_seed_percentage,
-            drop_offset=drop_offset,
+            detection_config=detection_config,
             radar_obj=radar_obj,
             ps_obj=ps_obj,
             preciptype_obj=pt_obj,
@@ -65,9 +66,7 @@ def _detect_with_optional_probsevere(
         lon_min,
         lon_max,
         disable_polygon_expansion=disable_polygon_expansion,
-        refl_threshold=refl_threshold,
-        min_seed_percentage=min_seed_percentage,
-        drop_offset=drop_offset,
+        detection_config=detection_config,
         radar_obj=radar_obj,
         ps_obj=ps_obj,
         preciptype_obj=pt_obj,
@@ -90,19 +89,25 @@ def main(
     pt_new,
     lat_bounds: tuple,
     lon_bounds: tuple,
-    json_output,
+    detection_config: DetectionConfig | None = None,
     radar_old_obj=None,
     ps_old_obj=None,
     pt_old_obj=None,
     disable_tracking=False,
     disable_polygon_expansion=False,
     cleanup_stormcells=True,
-    refl_threshold=37.5,
-    min_seed_percentage=0.001,
-    drop_offset=10.0,
 ):
+    # Pipeline entry points pass their already-resolved config so CLI overrides
+    # keep their precedence.  Keep direct callers compatible by loading the
+    # same YAML-backed config when none was supplied.
+    if detection_config is None:
+        detection_config = DetectionConfig.from_yaml()
+
     if cleanup_stormcells:
-        fs.clean_files_by_age(fs.STORMCELL_DIR, max_age_minutes=120)
+        fs.clean_files_by_age(
+            fs.STORMCELL_DIR,
+            max_age_minutes=detection_config.stormcell_cleanup_max_age_minutes,
+        )
     lat_min, lat_max = lat_bounds
     lon_min, lon_max = lon_bounds
 
@@ -208,10 +213,8 @@ def main(
             lon_min,
             lon_max,
             need_probsevere=not single_frame,
+            detection_config=detection_config,
             disable_polygon_expansion=disable_polygon_expansion,
-            refl_threshold=refl_threshold,
-            min_seed_percentage=min_seed_percentage,
-            drop_offset=drop_offset,
             radar_obj=radar_old_obj, # Pass cached object
             ps_obj=ps_old_obj,
             pt_obj=pt_old_obj,
@@ -233,10 +236,8 @@ def main(
             lon_min,
             lon_max,
             need_probsevere=False,
+            detection_config=detection_config,
             disable_polygon_expansion=disable_polygon_expansion,
-            refl_threshold=refl_threshold,
-            min_seed_percentage=min_seed_percentage,
-            drop_offset=drop_offset,
             radar_obj=radar_old_obj if radar_new is None else None,
             ps_obj=ps_old_obj if radar_new is None else None,
             pt_obj=pt_old_obj if radar_new is None else None,
@@ -290,10 +291,8 @@ def main(
         lon_min,
         lon_max,
         need_probsevere=True,
+        detection_config=detection_config,
         disable_polygon_expansion=disable_polygon_expansion,
-        refl_threshold=refl_threshold,
-        min_seed_percentage=min_seed_percentage,
-        drop_offset=drop_offset,
         radar_obj=radar_new_obj,
         ps_obj=ps_new_obj,
         pt_obj=pt_new_obj,
@@ -335,37 +334,42 @@ def main(
         entries = entries_new
         for cell in entries:
             cell["timestamp"] = json_ts
-            cell.setdefault("tracking_mode", "active")
-            cell.setdefault("prediction_count", 0)
-            cell.setdefault("event_type", "active")
+            cell.setdefault("tracking_mode", detection_config.tracking_disabled_mode)
+            cell.setdefault(
+                "prediction_count", detection_config.tracking_disabled_prediction_count
+            )
+            cell.setdefault("event_type", detection_config.tracking_disabled_event_type)
     else:
         # Load Kalman configurations
         tracking_config = TrackingConfig.from_yaml()
         assignment_config = AssignmentConfig.from_yaml()
+        kalman_config = KalmanConfig.from_yaml()
 
         tracker = StormCellTracker(
             ps_old_data,
             ps_new_data,
             io_manager,
             tracking_config=tracking_config,
-            assignment_config=assignment_config
+            assignment_config=assignment_config,
+            kalman_config=kalman_config
         )
 
         # Lineage detection (merge/split events)
         lineage = tracker.detect_lineage_events(entries_old, entries_new, stormcell_dir)
 
         # Calculate dt for Kalman filter
-        dt_seconds = 120.0 # Default
+        fallback_dt = detection_config.fallback_dt_seconds
+        dt_seconds = fallback_dt
         if old_ts_str:
             try:
                 old_dt = datetime.fromisoformat(old_ts_str)
                 current_dt = datetime.fromisoformat(json_ts)
                 dt_seconds = (current_dt - old_dt).total_seconds()
                 if dt_seconds <= 0:
-                    io_manager.write_warning(f"Calculated dt={dt_seconds}s is non-positive. Defaulting to 120s.")
-                    dt_seconds = 120.0
+                    io_manager.write_warning(f"Calculated dt={dt_seconds}s is non-positive. Defaulting to {fallback_dt}s.")
+                    dt_seconds = fallback_dt
             except Exception as e:
-                io_manager.write_warning(f"Failed to calculate dt from timestamps: {e}. Defaulting to 120s.")
+                io_manager.write_warning(f"Failed to calculate dt from timestamps: {e}. Defaulting to {fallback_dt}s.")
 
         # Pass timestamp, dt, and lineage to tracker
         entries = tracker.update_cells(

@@ -134,6 +134,10 @@ def parse_and_export(
         volume_id: Volume identifier.
         scan_timestamp: Scan-level timestamp for manifest tracking.
         seen_elevation_keys: Already-exported group keys or group-key timestamp metadata.
+        trim_buffer: Rewrite ``volume_path`` in place, dropping already-exported
+            sweeps. Defaults to off because it mutates the caller's file: only a
+            caller that owns the partial volume may ask for it. Not a config key
+            for that reason -- see config/nexrad.yaml's ``concurrency`` note.
 
     Returns:
         WorkerParseResult with metadata about newly exported artifacts.
