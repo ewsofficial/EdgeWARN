@@ -72,9 +72,9 @@ The implementation is complete when all of the following are true:
   mtime while processing an older cycle.
 - Existing StormCast forecasts, alerts, diagnostics, and downstream tracking
   consumption remain covered by regression tests.
-- MorphoWind is no longer imported or shipped as a built-in CTAM module. Its
-  extraction has a documented install/migration path before the tracked copy
-  is removed.
+- MorphoWind is deleted from the repository. No base package code imports it,
+  registers it, or depends on its output namespace, and the StormCast threat
+  field that previously read that namespace has an explicitly decided behavior.
 - CTAM documentation contains the manifest schema, API schema, module SDK
   usage, install/update/remove workflow, compatibility policy, and a complete
   example module outside the ignored production directory.
@@ -87,17 +87,26 @@ The current implementation is modular only at the Python class level:
   `GridAnalysisModule`. Implementations receive mutable dictionaries or locate
   raw data themselves.
 - `src/EdgeWARN/ctam/modules/__init__.py` imports StormCast and MorphoWind by
-  name and registers instantiated classes. Every new module therefore requires
-  a base-repository code change.
+  name and registers instantiated classes at import time. Every new module
+  therefore requires a base-repository code change.
 - `src/EdgeWARN/ctam/registry.py` stores process-global module instances, and
   duplicate names silently overwrite earlier registrations.
 - `src/EdgeWARN/ctam/run.py` executes registered modules in-process. A module
   receives the full mutable cell, can import any EdgeWARN implementation, and
   has no declared input, write ownership, protocol version, timeout, or
   lifecycle contract.
-- StormCast and MorphoWind read `data/cells/<id>.json` or shared history helpers
-  directly. StormCast also reads alerts directly. This makes filesystem access
-  part of undocumented module behavior.
+- StormCast reads `data/cells/<id>.json` through shared history helpers and reads
+  alerts directly. This makes filesystem access part of undocumented module
+  behavior.
+- `src/EdgeWARN/ctam/modules/StormCast/__init__.py` derives its published
+  `tstm_wind` threat from `modules.MorphoWind.severity_index`, defaulting to
+  `0.0` when absent. A built-in module therefore depends on another module's
+  output namespace with no declared requirement, no ordering guarantee, and no
+  distinction between "no wind risk" and "the producing module did not run".
+- `properties.morphology` in `src/EdgeWARN/process/detect/tools/save.py` is
+  produced by the detection-stage `MorphologyEngine`, not by the CTAM MorphoWind
+  module, despite the comment there naming MorphoWind. It is a detection input
+  and is unaffected by CTAM module changes.
 - Grid results have a separate return convention and may be attached to the
   first storm cell under `_grid_outputs`, which is not an explicit artifact
   contract.
@@ -196,7 +205,7 @@ silently change the existing flag's meaning.
 ```text
 EdgeWARN-Core/
 ├── ctam_modules/                         # ignored, operator-installed modules
-│   └── morphowind/
+│   └── <module-id>/
 │       ├── module.toml
 │       ├── main.py
 │       ├── requirements.lock             # module-owned, optional
@@ -249,8 +258,8 @@ do not need executable registration code. The first schema should support:
 
 ```toml
 schema_version = 1
-id = "morphowind"
-name = "MorphoWind"
+id = "cellstats"
+name = "CellStats"
 version = "1.0.0"
 api_version = "1"
 enabled = true
@@ -276,11 +285,11 @@ max_age_seconds = 180
 
 [[writes]]
 resource = "stormcells.current"
-json_pointer = "/features/*/modules/MorphoWind"
+json_pointer = "/features/*/modules/CellStats"
 
 [[writes]]
 resource = "cells.history"
-json_pointer = "/*/modules/MorphoWind"
+json_pointer = "/*/modules/CellStats"
 ```
 
 Manifest validation rules:
@@ -493,26 +502,53 @@ is published once. Do not let `run_ctam()` write files and then let
 coordinator becomes the single owner of current snapshot, current history
 entry, module-requested historical patches, alerts, and index ordering.
 
-## MorphoWind extraction and compatibility
+## MorphoWind removal
 
-MorphoWind demonstrates why the current interface is coupled: it subclasses
-the base class, imports base history helpers, and expects mutable cell objects.
-Migrate it as the first external module and use it to prove the contract:
+MorphoWind is deleted rather than migrated. It is the only optional built-in
+module, and keeping it would require either a second bundled production
+analytics module inside the base package or an external distribution channel
+this project does not have. The base package ships StormCast plus a synthetic
+example, and nothing else.
 
-1. Build a standalone MorphoWind package with `module.toml` and an API client.
-2. Declare stormcells, at least two history entries, and its actual input
-   properties as requirements.
-3. Write only `modules.MorphoWind` in current and selected history entries.
-4. Compare its outputs against frozen fixtures from the current implementation.
-5. Provide an installation command or release archive that places the package
-   below `ctam_modules/morphowind/`.
-6. Only after that artifact and migration guide exist, remove the tracked
-   `src/EdgeWARN/ctam/modules/MorphoWind/` implementation and hard-coded import.
+Delete, in one reviewed change:
 
-Do not commit MorphoWind source beneath ignored `ctam_modules/` and assume it
-will ship; ignored tracked files and untracked local copies are not a release
-mechanism. The tracked `examples/ctam_module/` must be a small synthetic module,
-not a second bundled production analytics module.
+- `src/EdgeWARN/ctam/modules/MorphoWind/` (`__init__.py`, `morphowind.py`,
+  `config.py`, `AGENTS.md`)
+- its import, instantiation, registration, and `__all__` entry in
+  `src/EdgeWARN/ctam/modules/__init__.py`
+- `docs/ctam/modules/MorphoWind/README.md` and its references from
+  `docs/ctam/README.md`, `docs/core/integration.md`, `AGENTS.md`, and `GEMINI.md`
+- `tests/core/ctam/test_morphowind_physics.py`
+- `test_morphowind_module` in `tests/benchmarks/test_performance.py`
+- the `"MorphoWind" in cell_module_names` assertion in
+  `tests/core/ctam/test_registry.py`
+
+Do not delete `properties.morphology` or the detection-stage `MorphologyEngine`.
+Those are unrelated detection outputs; only the misleading MorphoWind comment in
+`src/EdgeWARN/process/detect/tools/save.py` should be corrected.
+
+### The StormCast `tstm_wind` coupling must be decided, not dropped
+
+StormCast currently sets `tstm_wind` from `modules.MorphoWind.severity_index`
+with a `0.0` default. Deleting MorphoWind makes that threat unconditionally
+`"false"`, which is a silent alert-content regression rather than a refactor.
+Choose one option explicitly and record it in a release note:
+
+- **Remove the threat field.** StormCast stops publishing `tstm_wind` because it
+  has no wind-risk input of its own. Alert consumers and the alert schema are
+  updated accordingly.
+- **Keep it as a declared optional input.** StormCast reads a documented
+  `severity_index` from a named optional module namespace through the host
+  service, publishes `tstm_wind` only when that namespace is present, and
+  distinguishes absent from `"false"`.
+
+Do not leave the current code shape in place after deletion, where a permanently
+missing namespace is indistinguishable from a measured absence of wind risk. The
+StormCast tests that inject a `MorphoWind` namespace
+(`tests/core/ctam/modules/stormcast/test_module.py`) must be rewritten to match
+whichever option is chosen.
+
+## Legacy framework compatibility
 
 During one deprecation window, keep import shims for documented StormCast core
 imports. Do not preserve import-time external registration as a hidden fallback.
@@ -524,8 +560,11 @@ a manifest and use API v1. Remove `interface.py`, `registry.py`, and the generic
 
 ### Phase 0 — Freeze behavior and schemas
 
-- [ ] Add golden fixtures for StormCast and MorphoWind current-cell outputs,
-  history reads, alerts, skipped states, and error states.
+- [ ] Add golden fixtures for StormCast current-cell outputs, history reads,
+  alerts, skipped states, and error states.
+- [ ] Record the current StormCast alert payload with and without a populated
+  `modules.MorphoWind.severity_index`, so the `tstm_wind` decision is made
+  against measured output rather than assumption.
 - [ ] Record the current stormcell and cell-history JSON shapes, including
   inactive cells and duplicate-timestamp replacement behavior.
 - [ ] Define JSON Schemas for catalog descriptors, readiness, patch requests,
@@ -694,25 +733,28 @@ Acceptance:
 - A two-cycle integration test proves cycle N StormCast output is consumed by
   tracking in cycle N+1.
 
-### Phase 6 — Extract MorphoWind and remove the legacy framework
+### Phase 6 — Delete MorphoWind and remove the legacy framework
 
 Files:
 
-- `src/EdgeWARN/ctam/modules/MorphoWind/` (remove after distribution gate)
+- `src/EdgeWARN/ctam/modules/MorphoWind/` (delete)
 - `src/EdgeWARN/ctam/modules/__init__.py`
+- `src/EdgeWARN/ctam/modules/StormCast/__init__.py`
 - `src/EdgeWARN/ctam/interface.py`
 - `src/EdgeWARN/ctam/registry.py`
 - `src/EdgeWARN/ctam/engine.py`
+- `src/EdgeWARN/process/detect/tools/save.py` (comment correction only)
 - `docs/ctam/`
 - affected tests
 
 Tasks:
 
-- [ ] Package MorphoWind externally and validate it against API v1 and golden
-  outputs.
-- [ ] Publish an install/update/remove and rollback path before deleting the
-  built-in tracked copy.
-- [ ] Remove hard-coded MorphoWind imports and import-time registration.
+- [ ] Decide the `tstm_wind` question, implement it in StormCast, and write the
+  release note before deleting MorphoWind.
+- [ ] Delete the MorphoWind package, its import-time registration, its docs, and
+  its tests as listed in the MorphoWind removal section.
+- [ ] Correct the MorphoWind comment in `save.py` without changing
+  `properties.morphology` behavior.
 - [ ] Migrate grid-module behavior to the cycle-scoped API or explicitly
   deprecate unsupported legacy behavior with a release note.
 - [ ] Replace repository tests that assert registry internals with discovery,
@@ -722,11 +764,17 @@ Tasks:
 
 Acceptance:
 
-- `rg` finds no production auto-registration or hard-coded external module
+- `rg -i morphowind` finds no production code, test, or documentation reference
+  except an intentional release note or changelog entry.
+- `rg` finds no production auto-registration or hard-coded optional module
   import.
-- A clean checkout plus documented MorphoWind installation reproduces its
-  baseline output, while a clean checkout without it runs StormCast normally.
-- No production external module source lives inside the base CTAM package.
+- A clean checkout runs StormCast normally with an absent or empty
+  `ctam_modules/`, and detection-stage `properties.morphology` is byte-identical
+  to the Phase 0 baseline.
+- StormCast alert payloads match the decided `tstm_wind` behavior, and no test
+  fixture injects a `MorphoWind` namespace to obtain a passing assertion.
+- No optional production analytics module source lives inside the base CTAM
+  package.
 
 ### Phase 7 — Documentation, operations, and performance gate
 
@@ -812,7 +860,12 @@ Update:
 - `docs/core/integration.md`
 - `docs/core/README.md`
 - `INSTALLATION.md`
+- `AGENTS.md` and `GEMINI.md` module inventories
 - CLI help generated from `src/util/io.py`
+
+Remove:
+
+- `docs/ctam/modules/MorphoWind/README.md`
 
 Add:
 
@@ -834,7 +887,8 @@ directory remains the source of truth for generated artifacts.
 3. Land transactions/publication and execute a shadow module whose patches are
    validated but discarded; compare proposed output with current output.
 4. Move StormCast to the host service boundary and verify two-cycle tracking.
-5. Publish and validate external MorphoWind before removing its tracked copy.
+5. Ship the decided StormCast `tstm_wind` behavior and its release note, then
+   delete MorphoWind in a separate reviewed change.
 6. Enable external modules by default when present; an absent folder remains a
    valid StormCast-only installation.
 7. Remove the legacy registry after one release of warnings and passing
@@ -861,8 +915,8 @@ work from the new publisher can be resolved safely after a downgrade.
 - [ ] Exact cycle inputs are pinned in real-time and historical processing.
 - [ ] File publication is atomic per target, journal-recoverable across
   targets, and indexed last.
-- [ ] MorphoWind has a real external distribution/install path before its
-  built-in source is removed.
+- [ ] MorphoWind is fully deleted from code, tests, and docs, and the StormCast
+  `tstm_wind` behavior change is deliberate and released.
 - [ ] Legacy registry execution is gone rather than retained as a competing
   production path.
 - [ ] Docs, schemas, fixtures, tests, and performance evidence cover the full
