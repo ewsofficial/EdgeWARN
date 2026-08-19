@@ -62,7 +62,11 @@ python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:
 
 Key realtime flags include `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
-Historical processing supports `--base_dir` / `--base-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
+Historical processing supports `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
+
+Both entry points also accept `--config-dir` to select the catalog tree. The
+`--disable-*` and `--profile` switches take their defaults from `runtime.yaml`
+when omitted, and each accepts a `--no-` form to re-enable.
 
 `run.py` normalizes `--lon_limits` into the `0-360` domain internally.
 
@@ -79,7 +83,7 @@ The unified API uses the same platform default when no override is supplied.
 
 `config/filesystem.yaml` owns these platform defaults. Resolution is CLI,
 `EDGEWARN_BASE_DIR`, legacy `BASE_DIR`, then YAML. Use `--config-dir` or
-`EDGEWARN_CONFIG_DIR` to select a complete alternate 19-file `config/` tree;
+`EDGEWARN_CONFIG_DIR` to select a complete alternate 18-file `config/` tree;
 run `npm run validate-config` before deployment. See
 `docs/core/configuration.md` for catalog ownership.
 
