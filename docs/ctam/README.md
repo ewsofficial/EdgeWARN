@@ -4,6 +4,39 @@ CTAM (Convective Threat Analysis Module) is the modular analytics framework used
 
 It supports both cell-based and grid-based modules, publishes alert payloads, and writes timestamped alert snapshots.
 
+## External Modules (Phase 1)
+
+Since Phase 1, optional analysis modules are installed operator-side, below a
+gitignored module root, and discovered from declarative `module.toml` manifests
+rather than registered in the base package. Discovery never executes module
+code: it parses and validates manifests one level deep and reports every
+candidate with a state and a reason. See `module-manifest.md` for the field
+reference, the requirement selectors, the write-ownership contract, and the
+discovery state model.
+
+The discovery root is configurable:
+
+- `--ctam-module-dir` (CLI)
+- `EDGEWARN_CTAM_MODULE_DIR` (environment)
+- `run.ctam_module_dir` in `config/runtime.yaml` (default `ctam_modules`, the
+  repository-root `ctam_modules/` directory)
+
+CLI takes precedence, and a relative value resolves against the repository
+root. A missing root is an empty external module set; StormCast remains
+available regardless.
+
+Two diagnostics exit before any pipeline setup, so an operator can inspect or
+gate an installation without running it:
+
+- `--list-ctam-modules` prints every discovered manifest and their states.
+- `--check-ctam-modules` exits nonzero if any manifest is invalid.
+
+Readiness — whether a cycle's inputs satisfy a manifest's requirements — is
+evaluated per cycle against that cycle's input catalog, not at startup.
+
+The long-term plan is the modular CTAM internal API; see
+`plans/modular-ctam-internal-api-plan.md`.
+
 ## Framework Layout
 
 ```text
