@@ -56,8 +56,11 @@ The implementation is complete when all of the following are true:
 - A module can read its admitted inputs and transactionally add output beneath
   its owned namespace in the current stormcell snapshot and selected entries
   in `data/cells/<cell-id>.json`.
-- Core identity, geometry, timestamps, tracking fields, and another module's
-  namespace cannot be changed unless an explicit reviewed write grant exists.
+- Module writes are confined by a positive allowlist to the `modules` and
+  `properties` containers of a cell entry, scoped to the caller's own key within
+  them. Core identity, geometry, timestamps, tracking fields, another module's
+  namespace, and the containers themselves are unreachable by any patch, and no
+  manifest or operator grant can widen a module past those two containers.
 - Missing optional inputs produce an observable skip/degraded result rather
   than a crash or a false ready state. Missing required modules or inputs
   follow explicit manifest policy.
@@ -290,6 +293,12 @@ json_pointer = "/features/*/modules/CellStats"
 [[writes]]
 resource = "cells.history"
 json_pointer = "/*/modules/CellStats"
+
+# Optional flat scalars for API/index consumers. Must live under `properties`
+# and must be prefixed with the module id.
+[[writes]]
+resource = "stormcells.current"
+json_pointer = "/features/*/properties/cellstats_severity"
 ```
 
 Manifest validation rules:
@@ -305,11 +314,16 @@ Manifest validation rules:
 - Requirement selectors are drawn from a documented registry. Unknown product,
   family, role, or resource selectors fail manifest validation rather than
   becoming perpetually unavailable.
-- Default write ownership is exactly the module's namespace. A manifest cannot
-  grant itself access to `/id`, `/geometry`, `/centroid`, `/timestamp`, tracking
-  state, another module's namespace, indexes, or internal CTAM metadata.
-- Broader write grants require base configuration controlled by the operator;
-  they cannot be acquired solely by editing the module manifest.
+- Every `[[writes]]` pointer must resolve inside the `modules` or `properties`
+  container of a cell entry, and must name the module's own key within it. A
+  pointer that targets any other part of the document fails manifest validation
+  at discovery time, before the module is ever launched.
+- No write grant, at any level, can widen beyond those two containers. Operator
+  base configuration can only broaden ownership *within* `modules`/`properties`
+  (for example, permitting one module to update a second declared key). It
+  cannot unlock `/id`, `/geometry`, `/centroid`, `/bbox`, `/max_refl`,
+  `/event_type`, `/parent_ids`, `/split_from`, timestamps, tracking or Kalman
+  state, the `features` array itself, indexes, or internal CTAM metadata.
 - Timeouts have bounded minimum and maximum values. Output and request body
   sizes are bounded.
 - `required = true` means failure affects the CTAM stage outcome; it does not
@@ -416,9 +430,9 @@ Publish and validate an OpenAPI document for
 | `POST /requirements/check` | Re-evaluate only dynamic conditions before work starts. |
 | `GET /stormcells` | Current working snapshot after committed predecessor modules. |
 | `GET /stormcells/{cell_id}` | One current cell by stable ID. |
-| `PATCH /stormcells/{cell_id}` | Stage allowlisted operations against the current snapshot. |
+| `PATCH /stormcells/{cell_id}` | Stage operations confined to the cell's `modules`/`properties` containers. |
 | `GET /cells/{cell_id}` | Read admitted history with timestamp/limit query controls. |
-| `PATCH /cells/{cell_id}/entries/{timestamp}` | Stage allowlisted history-entry operations. |
+| `PATCH /cells/{cell_id}/entries/{timestamp}` | Stage history-entry operations confined to the same two containers. |
 | `POST /alerts` | Stage schema-valid alert payloads owned by the caller. |
 | `GET /transaction` | Staged operation count, validation state, and conflict details. |
 | `POST /transaction/validate` | Validate without publication. |
@@ -438,15 +452,63 @@ base. A retry with the same idempotency key returns the original result.
 
 ### Patch and ownership rules
 
+A patch never addresses the document root. Both PATCH endpoints accept
+operations against a single resolved cell entry, and every operation path is
+validated against a positive allowlist. There is no grant, flag, or
+configuration that exposes the full JSON structure.
+
+**Two containers, and nothing else.** An operation path must begin with
+`/modules/` or `/properties/`. Anything else is rejected with a forbidden-path
+error before evaluation:
+
+| Path form | Result |
+| --- | --- |
+| `/modules/<OwnKey>` and below | Allowed |
+| `/properties/<own-prefixed-key>` | Allowed |
+| `/modules` or `/properties` (the container itself) | Rejected — cannot replace or clear a container |
+| `/modules/<OtherModule>`, `/modules/_grid_outputs` | Rejected — not the caller's key |
+| `/id`, `/centroid`, `/bbox`, `/hail_core`, `/max_refl`, `/num_gates`, `/event_type`, `/parent_ids`, `/split_from`, `/geometry`, timestamps, tracking and Kalman fields | Rejected — core identity, geometry, and tracking state |
+| `/features/...`, `/`, any array index, any pointer escaping the entry | Rejected — not addressable by a module |
+
+**Key ownership inside the containers.** Container membership is necessary but
+not sufficient; the leaf key must also belong to the caller.
+
+- Under `modules`, the caller owns exactly `modules.<display-name>` from its
+  manifest. Reserved keys, including `StormCast` for non-StormCast callers and
+  the legacy `_grid_outputs`, are never grantable.
+- Under `properties`, the caller owns only keys declared in its manifest and
+  prefixed with its module id. This matters because `properties` is *shared,
+  pre-populated* state: detection and integration write `morphology`, `p95VIL`,
+  `p95EchoTop18`, `p95AzShearLow`, and similar enrichment values there, and
+  modules and downstream physics read them. Reject any `properties` write whose
+  key already exists in the frozen entry and was not written by the same module,
+  so a module cannot overwrite a detection input that another module then
+  consumes as if it were measured data.
+- Prefer `modules` for structured output. `properties` exists for flat scalars
+  that API and index consumers need, and its narrower rules reflect the higher
+  blast radius of writing into a shared namespace.
+
+Remaining rules:
+
 - Support `add`, `replace`, and `test` initially. Reject `remove`, `move`, and
   `copy` until their provenance and ownership semantics are defined.
 - Resolve `cell_id` through an internal index; never interpolate it into a path
   before validating its canonical form and containment.
+- Validate the pointer by parsing it into RFC 6901 segments, unescaping `~0`
+  and `~1` once, and comparing the decoded segments against the allowlist. Do
+  not validate by string prefix and do not pass the pointer through any path
+  normalizer: JSON Pointer has no traversal semantics, so a segment such as `..`
+  is a literal key name, and treating it as a filesystem path is what turns
+  `/modules/Foo/../id` into a write to `/id`. Reject malformed pointers, double
+  unescaping, and pointers with a trailing empty segment.
 - The common case writes one object below `modules.<display-name>`. Require
   JSON-serializable finite values and enforce depth, field-count, and payload
   size limits.
 - A module may update its own previously written namespace in a history entry,
   but cannot rewrite a different module's historical result.
+- The host creates a missing `modules` or `properties` container itself when
+  first needed. A module cannot create one by patching the container path, so
+  container creation can never be used to supply sibling keys.
 - Unknown cells and timestamps fail explicitly. Creating a new storm cell,
   inventing a history timestamp, or deleting history is not a v1 operation.
 - Grid/cycle modules remain possible through a cycle-scoped output namespace.
@@ -654,6 +716,9 @@ Tasks:
 
 - [ ] Implement revisioned staging, validation, ownership enforcement,
   idempotent commit, and conflict errors.
+- [ ] Implement the `modules`/`properties` pointer allowlist as segment-wise
+  validation in one place, shared by the HTTP handlers and the StormCast
+  in-process adapter, so neither path can drift into broader access.
 - [ ] Stage alerts in the same semantic module transaction.
 - [ ] Consolidate stormcell, current history, historical patch, alert, and
   index publication beneath one coordinator.
@@ -666,6 +731,11 @@ Tasks:
 Acceptance:
 
 - Unauthorized paths and invalid JSON values never alter the working set.
+- A patch targeting anything outside `modules`/`properties` is rejected, and a
+  cell's core identity, geometry, and tracking fields are byte-identical before
+  and after a cycle in which every module wrote successfully.
+- A module cannot reach a sibling key by patching a container path, by traversal
+  segments, or by encoded separators.
 - A module crash before commit leaves all payloads unchanged.
 - Repeating a commit request is idempotent.
 - Fault injection before and after every file replacement produces a tested,
@@ -813,6 +883,14 @@ Acceptance:
   bounds, error envelopes, redaction, and server shutdown.
 - Patch operations, namespace ownership, immutable paths, revisions,
   conflicts, idempotency, finite JSON values, and payload limits.
+- Pointer allowlist enforcement as a dedicated table-driven test: accepted
+  `/modules/<OwnKey>` and `/properties/<own-prefixed-key>` paths; rejected
+  container paths, other modules' keys, reserved keys, every core identity and
+  geometry field, `/features` and root paths, array indices, traversal segments,
+  encoded separators, and malformed pointers. The same table runs against both
+  the HTTP handlers and the StormCast in-process adapter.
+- Rejection of a `properties` write whose key already exists in the frozen entry
+  and belongs to detection or another module.
 - Journal transitions, hashes, recovery, quarantine, and index-last ordering.
 
 ### Process-contract tests
@@ -836,6 +914,9 @@ Acceptance:
 - Inactive-cell history mtime and contents remain unchanged.
 - API indexes expose only committed artifacts.
 - Two modules cannot overwrite each other or a core field.
+- A module cannot corrupt a detection enrichment value that later physics reads:
+  a fixture attempting to write `properties.p95VIL` is rejected, and the value
+  StormCast reads is unchanged.
 - StormCast output parity, alert parity, and next-cycle tracking use.
 - `--disable-ctam` and `--disable-ctam-modules` behavior.
 - Windows and Linux loopback launch, token propagation, termination, and path
@@ -910,6 +991,9 @@ work from the new publisher can be resolved safely after a downgrade.
 - [ ] External modules read admitted artifacts only through the supported API.
 - [ ] Stormcell and cell-history modifications are namespaced, revisioned,
   validated, transactional, and host-published.
+- [ ] Patches can only reach the `modules` and `properties` containers of a cell
+  entry and only the caller's own key inside them. No path, grant, or
+  configuration exposes the wider JSON structure.
 - [ ] Missing inputs, module failures, timeouts, and commit failures are
   isolated and observable.
 - [ ] Exact cycle inputs are pinned in real-time and historical processing.
