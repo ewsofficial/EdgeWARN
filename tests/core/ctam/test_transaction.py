@@ -82,3 +82,6 @@ def test_abandon_discards_staged_work_without_changing_the_working_set(tmp_path)
     assert transactions.abandon("cellstats")["state"] == "abandoned"
     assert transactions.transaction("cellstats")["staged"]["stormcell_operations"] == 0
     assert "modules" not in transactions.cells["7"]
+    with pytest.raises(APIError) as error:
+        transactions.stage_cell("cellstats", "7", revision=0, operations=[{"op": "add", "path": "/modules/CellStats", "value": {}}])
+    assert error.value.code == "transaction_sealed"

@@ -140,9 +140,14 @@ class CTAMTransactionService:
             raise APIError("authentication_failed", "module is not admitted for this cycle", 401)
         return self.transactions[module_id]
 
+    @staticmethod
+    def _require_open(tx: ModuleTransaction) -> None:
+        if tx.sealed or tx.abandoned:
+            raise APIError("transaction_sealed", "transaction is already sealed or abandoned", 409)
+
     def stage_cell(self, module_id: str, cell_id: str, *, revision: int, operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         tx = self._transaction(module_id)
-        if tx.sealed: raise APIError("transaction_sealed", "transaction is already sealed", 409)
+        self._require_open(tx)
         if cell_id not in self.cells: raise APIError("not_found", "storm cell was not found", 404)
         observed = self.cell_revisions[cell_id]
         if revision != observed: raise APIError("stale_revision", "storm cell revision is stale", 409, expected_revision=revision, observed_revision=observed)
@@ -151,7 +156,7 @@ class CTAMTransactionService:
 
     def stage_history(self, module_id: str, cell_id: str, timestamp: str, *, revision: int, operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         tx = self._transaction(module_id)
-        if tx.sealed: raise APIError("transaction_sealed", "transaction is already sealed", 409)
+        self._require_open(tx)
         history = self.histories.get(cell_id)
         if history is None: raise APIError("not_found", "cell history was not found", 404)
         observed = self.history_revisions[cell_id]
@@ -180,7 +185,7 @@ class CTAMTransactionService:
 
     def stage_alert(self, module_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         tx = self._transaction(module_id)
-        if tx.sealed: raise APIError("transaction_sealed", "transaction is already sealed", 409)
+        self._require_open(tx)
         if not isinstance(payload, Mapping) or payload.get("source") != self.manifests[module_id].name:
             raise APIError("invalid_patch", "alert source must be the caller's display name", 400)
         if str(payload.get("cell_id")) not in self.cells or not payload.get("id") or not payload.get("geometry"):
