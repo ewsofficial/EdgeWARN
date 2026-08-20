@@ -8,12 +8,8 @@ from typing import Callable, Dict, Any, Optional, List
 import dataclasses
 from ...interface import AnalysisModule
 from EdgeWARN.alerts import AlertManager
-from EdgeWARN.alerts import AlertManager
 from EdgeWARN.alerts.schema import AlertPayload
-import json
-from pathlib import Path
 from datetime import datetime, timedelta
-import util.file as fs
 from util.io import IOManager
 
 # Re-export core components for external use
@@ -140,8 +136,9 @@ class StormCastModule(AnalysisModule):
             # Current position: at origin (0, 0) since reference is the centroid
             engine.add_observation(0.0, 0.0, dt_seconds=dt, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
             
-            # --- START HISTORY LOADING ---
-            try:
+            # Retired pre-host filesystem implementation. The actual history
+            # load below is supplied by the cycle service.
+            if False:  # pragma: no cover - retained only during compatibility window
                 cell_id = storm_entry.get("id")
                 if cell_id:
                     history_file = fs.CELL_DIR / f"{cell_id}.json"
@@ -221,8 +218,7 @@ class StormCastModule(AnalysisModule):
                             
                             pass # Logic implemented below in replacement
                             
-            except Exception as e:
-                # print(f"Failed to load history for {cell_id}: {e}")
+            if False:
                 pass
             # --- END HISTORY LOADING ---
 
@@ -245,12 +241,8 @@ class StormCastModule(AnalysisModule):
                         hist_data = history_cache.get(cell_id)
                         hist_data = list(reversed(hist_data))
                     else:
-                        history_file = fs.CELL_DIR / f"{cell_id}.json"
-                        if history_file.exists():
-                            with open(history_file, "r") as f:
-                                hist_data = json.load(f)
-                        else:
-                            hist_data = []
+                        from ...stormcast_legacy import read_history
+                        hist_data = read_history(cell_id)
                             
                     for h in hist_data:
                         h_ts = h.get("timestamp") or h.get("properties", {}).get("timestamp")
@@ -472,7 +464,8 @@ class StormCastModule(AnalysisModule):
         # Compatibility shim for direct callers of the legacy public import.
         # The built-in adapter always supplies this host-owned value.
         if previous_alert is None:
-            previous_alert = AlertManager.load(self.name, cell_id)
+            from ...stormcast_legacy import previous_alert as load_previous_alert
+            previous_alert = load_previous_alert(cell_id)
 
         # Parse timestamp for effective / expiry calculation
         ts_str = storm_entry.get("timestamp")
