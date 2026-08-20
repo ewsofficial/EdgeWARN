@@ -96,7 +96,7 @@ def test_patch_commit_uses_the_same_ownership_gate_and_is_idempotent(api):
     revision = client.stormcell(7)["revision"]
     staged = client.patch_stormcell(7, revision=revision, operations=[{"op": "add", "path": "/modules/Reader", "value": {"score": 2}}])
     assert staged["staged_operations"] == 1
-    assert client.validate_transaction()["valid"] is True
+    assert client.validate_transaction()["state"] == "open"
     committed = client.commit_transaction(idempotency_key="one")
     assert client.commit_transaction(idempotency_key="one") == committed
     assert client.stormcell(7)["cell"]["modules"]["Reader"] == {"score": 2}
@@ -109,4 +109,4 @@ def test_alerts_are_staged_with_the_module_transaction(api):
     server, _ = api
     client = CTAMClient(server.url, "test-token")
     assert client.stage_alert({"id": "reader-7", "source": "Reader", "cell_id": 7, "geometry": [[1, 2]]})["staged_alerts"] == 1
-    assert client.transaction()["staged_alerts"] == 1
+    assert client.transaction()["staged"]["alerts"] == 1
