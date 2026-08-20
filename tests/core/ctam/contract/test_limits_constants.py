@@ -175,6 +175,12 @@ def test_supported_api_versions_contains_only_versions_the_schema_admits():
     assert set(SUPPORTED_API_VERSIONS) == {declared}
 
 
+def test_initial_protocol_has_no_previous_supported_version():
+    """A v2 rollout must extend this contract to cover its retained v1 path."""
+    assert API_VERSION == "1"
+    assert SUPPORTED_API_VERSIONS == (API_VERSION,)
+
+
 def test_status_schema_version_matches_the_status_record_schema_const():
     """The writer's version stamp and the schema's own const are one number.
 
