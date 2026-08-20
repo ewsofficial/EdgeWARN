@@ -66,7 +66,7 @@ def main():
     io_manager.write_info(f"Starting historical processing from {start_time} to {end_time}")
     if args.disable_ctam:
         io_manager.write_info("CTAM execution disabled via --disable-ctam")
-    elif args.disable_ctam_modules:
+    elif getattr(args, "disable_ctam_modules", False):
         io_manager.write_info("External CTAM modules disabled; built-in StormCast remains enabled")
     if args.disable_tracking:
         io_manager.write_info("Tracking disabled via --disable-tracking")
@@ -122,7 +122,7 @@ def main():
                 profile=args.profile,
                 io_manager=io_manager,
                 disable_ctam=args.disable_ctam,
-                disable_ctam_modules=args.disable_ctam_modules,
+                disable_ctam_modules=getattr(args, "disable_ctam_modules", False),
                 disable_tracking=args.disable_tracking,
                 disable_polygon_expansion=args.disable_polygon_expansion,
                 detection_config=detection_config,
