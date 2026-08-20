@@ -103,3 +103,10 @@ def test_patch_commit_uses_the_same_ownership_gate_and_is_idempotent(api):
     with pytest.raises(CTAMAPIError) as excinfo:
         client.patch_stormcell(7, revision=1, operations=[{"op": "add", "path": "/id", "value": "changed"}])
     assert excinfo.value.status == 409  # sealed transaction wins over a later patch
+
+
+def test_alerts_are_staged_with_the_module_transaction(api):
+    server, _ = api
+    client = CTAMClient(server.url, "test-token")
+    assert client.stage_alert({"id": "reader-7", "source": "Reader", "cell_id": 7, "geometry": [[1, 2]]})["staged_alerts"] == 1
+    assert client.transaction()["staged_alerts"] == 1

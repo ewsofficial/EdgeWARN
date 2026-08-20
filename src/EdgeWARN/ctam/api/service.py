@@ -154,6 +154,10 @@ class CTAMReadService:
         if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
         return self.transactions.commit(module_id, idempotency_key=idempotency_key)
 
+    def stage_alert(self, module_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
+        return self.transactions.stage_alert(module_id, payload)
+
     def history(self, module_id: str, cell_id: str, *, limit: int = DEFAULT_HISTORY_WINDOW, since: str | None = None) -> dict[str, Any]:
         if limit < 1:
             raise APIError("invalid_patch", "history limit must be positive", 400, "cells.history")
