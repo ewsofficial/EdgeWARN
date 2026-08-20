@@ -1,12 +1,13 @@
 """Out-of-process execution for discovered external CTAM modules."""
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from typing import Mapping, Sequence
+
+from common.config.overlay import inherited_process_path
 
 from .api import CTAMReadService, LoopbackCTAMServer
 from .manifest import ModuleManifest
@@ -52,7 +53,7 @@ class ExternalModuleRunner:
                 if not evaluation["satisfied"]:
                     results.append(ModuleRunResult(module_id, "skipped_missing_requirements", 0, None, "", "", "declared requirements are not satisfied")); continue
                 started = time.monotonic()
-                env = {"PATH": os.environ.get("PATH", ""), "CTAM_API_URL": server.url, "CTAM_API_TOKEN": server.token_for(module_id), "CTAM_CYCLE_ID": self.catalog.cycle_id, "CTAM_MODULE_ID": module_id}
+                env = {"PATH": inherited_process_path(), "CTAM_API_URL": server.url, "CTAM_API_TOKEN": server.token_for(module_id), "CTAM_CYCLE_ID": self.catalog.cycle_id, "CTAM_MODULE_ID": module_id}
                 try:
                     process = subprocess.Popen(self._argv(manifest), cwd=manifest.directory, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     try:
