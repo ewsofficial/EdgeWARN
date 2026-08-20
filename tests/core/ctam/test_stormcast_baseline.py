@@ -6,13 +6,8 @@ and the alert it emits, across the success, skipped, and error paths. Phase 5 of
 boundary; these snapshots are what distinguishes that migration from a change in
 forecast or alert content.
 
-The alert tests carry a second purpose. The plan's Phase 0 requires recording the
-alert payload with and without a populated ``modules.MorphoWind.severity_index``,
-because Phase 6 deletes MorphoWind and thereby fixes ``tstm_wind`` at ``"false"``
-forever. Today no test asserts on ``threats`` at all -- the existing
-``test_module.py`` injects ``severity_index: 0.7`` but only checks ``cell_id`` and
-``alert_outcome`` -- so the regression would be silent. See
-``test_tstm_wind_*`` below.
+The alert tests also lock the Phase 6 compatibility decision: without the
+removed MorphoWind assessment, StormCast publishes ``tstm_wind: "false"``.
 """
 
 from __future__ import annotations
@@ -325,8 +320,8 @@ def seed_prior_alert(ids_dir, alert):
     (ids_dir / safe_id).write_text(json.dumps(alert.to_dict()), encoding="utf-8")
 
 
-def test_alert_payload_without_morphowind():
-    """The post-Phase-6 world: no MorphoWind namespace present."""
+def test_alert_payload_uses_post_morphowind_baseline():
+    """StormCast's alert payload no longer depends on another module."""
     cell = make_cell()
     alerts = emit_alert(cell)
 
@@ -337,44 +332,10 @@ def test_alert_payload_without_morphowind():
     assert_baseline("stormcast_alert_without_morphowind_serialized", alert.to_dict())
 
 
-def test_alert_payload_with_morphowind():
-    """Today's world: a populated severity index above the threshold."""
-    cell = make_cell()
-    cell["modules"]["MorphoWind"] = {"severity_index": 0.7}
-    alerts = emit_alert(cell)
-
-    assert alerts is not None and len(alerts) == 1
-    assert_baseline("stormcast_alert_with_morphowind", alerts[0])
-    assert_baseline("stormcast_alert_with_morphowind_serialized", alerts[0].to_dict())
-
-
-@pytest.mark.parametrize(
-    ("severity", "expected"),
-    [
-        pytest.param(None, "false", id="namespace_absent"),
-        pytest.param(0.0, "false", id="zero"),
-        pytest.param(0.6, "false", id="at_threshold_exclusive"),
-        pytest.param(0.6000001, "true", id="just_above_threshold"),
-        pytest.param(0.7, "true", id="above_threshold"),
-        pytest.param(1.0, "true", id="max"),
-    ],
-)
-def test_tstm_wind_mapping(severity, expected):
-    """``tstm_wind`` is a *string*, gated on a strict ``> 0.6``.
-
-    This is the behavior Phase 6 changes and that nothing currently covers. The
-    ``namespace_absent`` case is what StormCast will do forever once MorphoWind
-    is deleted, and it is indistinguishable from a measured absence of wind risk.
-    """
-    cell = make_cell()
-    if severity is not None:
-        cell["modules"]["MorphoWind"] = {"severity_index": severity}
-
-    alerts = emit_alert(cell)
-
+def test_tstm_wind_is_false_without_morphowind_assessment():
+    alerts = emit_alert(make_cell())
     assert alerts is not None
-    assert alerts[0].threats == {"tstm_wind": expected}
-    assert isinstance(alerts[0].threats["tstm_wind"], str)
+    assert alerts[0].threats == {"tstm_wind": "false"}
 
 
 def test_tstm_wind_is_the_only_threat():

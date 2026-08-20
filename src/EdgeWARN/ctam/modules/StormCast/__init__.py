@@ -487,10 +487,6 @@ class StormCastModule(AnalysisModule):
 
         expiry = effective + timedelta(minutes=30)
 
-        morphowind_result = storm_entry.get("modules", {}).get("MorphoWind", {})
-        morphowind_severity = morphowind_result.get("severity_index", 0.0)
-        tstm_wind = "true" if morphowind_severity > 0.6 else "false"
-
         result["alert_outcome"] = "published"
         return [
             AlertPayload(
@@ -501,7 +497,10 @@ class StormCastModule(AnalysisModule):
                 effective_time=effective,
                 expiry_time=expiry,
                 threats={
-                    "tstm_wind": tstm_wind,
+                    # MorphoWind was the only source for this threat bit. Its
+                    # removal deliberately preserves the prior absence fallback
+                    # instead of treating an unavailable assessment as risk.
+                    "tstm_wind": "false",
                 },
             )
         ]
