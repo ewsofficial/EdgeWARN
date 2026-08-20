@@ -29,10 +29,13 @@ def test_ctam_runner_skips_non_attachable_grid_output():
 def test_ctam_runner_emits_stormcast_alert_summaries(capsys):
     from EdgeWARN.ctam.run import run_ctam
 
-    class DummyStormCastModule:
+    class DummyStormCastAdapter:
         name = "StormCast"
 
-        def run(self, cell, environment=None, history_cache=None):
+        def __init__(self, service):
+            self.service = service
+
+        def run(self, cell):
             cell.setdefault("modules", {})
             cell["modules"]["StormCast"] = {
                 "status": "success",
@@ -41,14 +44,15 @@ def test_ctam_runner_emits_stormcast_alert_summaries(capsys):
                 "alert_outcome": "not_eligible",
             }
 
-        def alerts(self, cell):
-            return None
+        def alerts(self, cell): return []
+        def publish_alerts(self, alerts): return 0
 
     with patch("EdgeWARN.ctam.run.AlertManager.cleanup_expired", return_value=0):
-        with patch("EdgeWARN.ctam.run.CellModuleRegistry.get_all", return_value={"StormCast": DummyStormCastModule()}):
-            with patch("EdgeWARN.ctam.run.GridModuleRegistry.get_all", return_value={}):
-                cells = [{"id": 1, "modules": {}, "properties": {}}]
-                run_ctam(cells)
+        with patch("EdgeWARN.ctam.builtins.BuiltinStormCastAdapter", DummyStormCastAdapter):
+            with patch("EdgeWARN.ctam.run.CellModuleRegistry.get_all", return_value={}):
+                with patch("EdgeWARN.ctam.run.GridModuleRegistry.get_all", return_value={}):
+                    cells = [{"id": 1, "modules": {}, "properties": {}}]
+                    run_ctam(cells)
 
     captured = capsys.readouterr().out
     assert "StormCast summary: status[success=1] can_generate_alerts[true=0, false=1, none=0]" in captured
