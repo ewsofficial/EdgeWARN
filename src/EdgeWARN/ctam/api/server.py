@@ -50,6 +50,12 @@ class LoopbackCTAMServer:
                 import json
                 encoded = json.dumps(payload, allow_nan=False, separators=(",", ":")).encode()
                 self.send_response(status); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(encoded))); self.end_headers(); self.wfile.write(encoded)
+            def _body(self):
+                import json
+                raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                if not raw: return {}
+                try: return json.loads(raw)
+                except json.JSONDecodeError as exc: raise APIError("invalid_patch", "request body must be JSON", 400) from exc
             def _auth(self, request_id):
                 header = self.headers.get("Authorization", "")
                 if not header.startswith("Bearer "):
@@ -81,8 +87,13 @@ class LoopbackCTAMServer:
                     elif self.command == "GET" and route == "/requirements": data = outer.service.requirements(module_id)
                     elif self.command == "POST" and route == "/requirements/check": data = outer.service.requirements(module_id)
                     elif self.command == "GET" and route == "/stormcells": data = outer.service.stormcells(module_id)
+                    elif self.command == "PATCH" and route.startswith("/stormcells/"):
+                        body = self._body(); data = outer.service.stage_stormcell(module_id, unquote(route.rsplit("/", 1)[1]), revision=body.get("revision"), operations=body.get("operations"))
                     elif self.command == "GET" and route.startswith("/stormcells/"):
                         data = outer.service.stormcell(module_id, unquote(route.rsplit("/", 1)[1]))
+                    elif self.command == "GET" and route == "/transaction": data = outer.service.transaction(module_id)
+                    elif self.command == "POST" and route == "/transaction/validate": data = outer.service.validate_transaction(module_id)
+                    elif self.command == "POST" and route == "/transaction/commit": data = outer.service.commit_transaction(module_id, idempotency_key=self.headers.get("Idempotency-Key"))
                     elif self.command == "GET" and route.startswith("/cells/"):
                         data = outer.service.history(module_id, unquote(route.rsplit("/", 1)[1]), limit=int(query.get("limit", ["5"])[0]), since=query.get("since", [None])[0])
                     elif self.command == "GET" and route.startswith("/files/") and route.endswith("/content"):
@@ -135,6 +146,7 @@ class LoopbackCTAMServer:
                 return int(status)
             do_GET = _handle
             do_POST = _handle
+            do_PATCH = _handle
 
         self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self._thread = threading.Thread(target=self._httpd.serve_forever, name="ctam-api", daemon=True); self._thread.start()
