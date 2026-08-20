@@ -246,11 +246,11 @@ def test_modules_container_is_created_even_with_a_grid_only_registry():
     result = run_with_grid_only([{"id": 1}], grid_module())
 
     assert "modules" in result[0]
-    assert list(result[0]["modules"]) == ["_grid_outputs"]
+    assert list(result[0]["modules"]) == ["StormCast", "_grid_outputs"]
 
 
-def test_no_modules_registered_returns_cells_untouched():
-    """With both registries empty, cells are returned without a container."""
+def test_empty_legacy_registries_still_run_reserved_stormcast():
+    """StormCast is host-owned and cannot disappear with legacy registries."""
     requires("xarray", "shapely")
     from EdgeWARN.ctam.run import run_ctam
 
@@ -258,4 +258,5 @@ def test_no_modules_registered_returns_cells_untouched():
         with patch("EdgeWARN.ctam.run.GridModuleRegistry.get_all", return_value={}):
             result = run_ctam([{"id": 1}])
 
-    assert result == [{"id": 1}]
+    assert result[0]["id"] == 1
+    assert result[0]["modules"]["StormCast"]["status"] == "skipped"
