@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import uuid
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
@@ -115,10 +116,12 @@ def _resolve_parent(cell: dict[str, Any], segments: tuple[str, ...], *, create: 
 @dataclass
 class ModuleTransaction:
     module_id: str
+    transaction_id: str = field(default_factory=lambda: f"txn_{uuid.uuid4().hex}")
     staged_cells: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     staged_history: dict[tuple[str, str], list[dict[str, Any]]] = field(default_factory=dict)
     alerts: list[dict[str, Any]] = field(default_factory=list)
     sealed: bool = False
+    abandoned: bool = False
     commit_result: dict[str, Any] | None = None
 
 
@@ -187,14 +190,17 @@ class CTAMTransactionService:
 
     def transaction(self, module_id: str) -> dict[str, Any]:
         tx = self._transaction(module_id)
-        return {"sealed": tx.sealed, "staged_cell_operations": sum(map(len, tx.staged_cells.values())), "staged_history_operations": sum(map(len, tx.staged_history.values())), "staged_alerts": len(tx.alerts), "commit": deepcopy(tx.commit_result)}
+        cell_ops = sum(map(len, tx.staged_cells.values()))
+        history_ops = sum(map(len, tx.staged_history.values()))
+        state = "sealed" if tx.sealed else "abandoned" if tx.abandoned else "open"
+        return {"transaction_id": tx.transaction_id, "module_id": module_id, "state": state, "staged": {"stormcell_operations": cell_ops, "history_operations": history_ops, "alerts": len(tx.alerts), "cells_touched": sorted({int(key) if key.isdigit() else key for key in (*tx.staged_cells, *(key for key, _ in tx.staged_history))}, key=str), "bytes": len(json.dumps([*tx.staged_cells.values(), *tx.staged_history.values(), tx.alerts], allow_nan=False, default=str).encode())}, "conflicts": [], "commit_id": tx.commit_result.get("commit_id") if tx.commit_result else None, "idempotency_key": tx.commit_result.get("idempotency_key") if tx.commit_result else None, "revisions": {"stormcells.current": max(self.cell_revisions.values(), default=0), "cells.history": max(self.history_revisions.values(), default=0)}}
 
     def abandon(self, module_id: str) -> dict[str, Any]:
         tx = self._transaction(module_id)
-        if tx.sealed:
+        if tx.sealed or tx.abandoned:
             raise APIError("transaction_sealed", "transaction is already sealed", 409)
-        tx.staged_cells.clear(); tx.staged_history.clear(); tx.alerts.clear()
-        return {"abandoned": True}
+        tx.staged_cells.clear(); tx.staged_history.clear(); tx.alerts.clear(); tx.abandoned = True
+        return self.transaction(module_id)
 
     def validate(self, module_id: str) -> dict[str, Any]:
         tx = self._transaction(module_id)
@@ -202,11 +208,11 @@ class CTAMTransactionService:
         for (cell_id, timestamp), operations in tx.staged_history.items():
             entry = next(item for item in self.histories[cell_id] if str(item.get("timestamp")) == timestamp)
             self._apply(entry, operations)
-        return {"valid": True, **self.transaction(module_id)}
+        return self.transaction(module_id)
 
     def commit(self, module_id: str, *, idempotency_key: str | None = None) -> dict[str, Any]:
         tx = self._transaction(module_id)
-        if tx.sealed: return deepcopy(tx.commit_result)
+        if tx.sealed: return self.transaction(module_id)
         self.validate(module_id)
         for cell_id, operations in tx.staged_cells.items():
             self.cells[cell_id] = self._apply(self.cells[cell_id], operations); self.cell_revisions[cell_id] += 1
@@ -215,8 +221,8 @@ class CTAMTransactionService:
             index = next(index for index, item in enumerate(history) if str(item.get("timestamp")) == timestamp)
             history[index] = self._apply(history[index], operations); self.history_revisions[cell_id] += 1
         tx.sealed = True
-        tx.commit_result = {"committed": True, "idempotency_key": idempotency_key, "cell_revisions": {cell_id: self.cell_revisions[cell_id] for cell_id in tx.staged_cells}, "history_revisions": {cell_id: self.history_revisions[cell_id] for cell_id, _timestamp in tx.staged_history}}
-        return deepcopy(tx.commit_result)
+        tx.commit_result = {"commit_id": f"commit_{uuid.uuid4().hex}", "idempotency_key": idempotency_key}
+        return self.transaction(module_id)
 
     @staticmethod
     def _apply(cell: dict[str, Any], operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
