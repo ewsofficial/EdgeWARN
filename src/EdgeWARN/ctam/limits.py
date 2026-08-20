@@ -62,6 +62,11 @@ MAX_HISTORY_WINDOW = 120
 # Row "Maximum streamed file size".
 MAX_STREAMED_FILE_BYTES = 268435456
 
+# Runtime request and stream bounds.  See the identically named rows in
+# docs/ctam/internal-api-limits.md.
+MAX_REQUEST_BODY_BYTES = 1048576
+STREAM_CHUNK_BYTES = 1048576
+
 # --- Reserved names ---------------------------------------------------------
 # `stormcast` is the built-in adapter's id. An external installation must not be
 # able to shadow it, because a shadowing module would silently replace the
