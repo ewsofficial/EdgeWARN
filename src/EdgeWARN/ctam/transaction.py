@@ -175,6 +175,16 @@ class CTAMTransactionService:
                 raise APIError("forbidden_path", "modules cannot overwrite host-owned properties", 403, pointer=operation.get("path"))
             destination.append(deepcopy(dict(operation)))
 
+    def stage_alert(self, module_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        tx = self._transaction(module_id)
+        if tx.sealed: raise APIError("transaction_sealed", "transaction is already sealed", 409)
+        if not isinstance(payload, Mapping) or payload.get("source") != self.manifests[module_id].name:
+            raise APIError("invalid_patch", "alert source must be the caller's display name", 400)
+        if str(payload.get("cell_id")) not in self.cells or not payload.get("id") or not payload.get("geometry"):
+            raise APIError("invalid_patch", "alert must identify an active cell, id, and geometry", 400)
+        _json_safe(dict(payload)); tx.alerts.append(deepcopy(dict(payload)))
+        return {"staged_alerts": len(tx.alerts)}
+
     def transaction(self, module_id: str) -> dict[str, Any]:
         tx = self._transaction(module_id)
         return {"sealed": tx.sealed, "staged_cell_operations": sum(map(len, tx.staged_cells.values())), "staged_history_operations": sum(map(len, tx.staged_history.values())), "staged_alerts": len(tx.alerts), "commit": deepcopy(tx.commit_result)}

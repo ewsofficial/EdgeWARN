@@ -63,3 +63,4 @@ class CTAMClient:
     def commit_transaction(self, *, idempotency_key=None):
         headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
         return self._request("/transaction/commit", method="POST", payload={}, headers=headers)
+    def stage_alert(self, payload): return self._request("/alerts", method="POST", payload=payload)
