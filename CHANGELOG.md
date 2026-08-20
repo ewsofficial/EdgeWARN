@@ -6,6 +6,8 @@
 - Removed the bundled MorphoWind CTAM assessment. StormCast now always emits
   `tstm_wind: "false"`, preserving the previous behavior when no MorphoWind
   assessment was available rather than inferring a wind threat from absence.
+- Removed the legacy in-process registry and grid-module execution path. Grid
+  analytics must use the cycle-scoped external module API.
 
 ## [2.7.0] 2026-07-11
 

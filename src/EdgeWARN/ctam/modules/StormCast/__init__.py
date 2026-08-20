@@ -6,7 +6,6 @@ Adapter for integrating StormCast core into the CTAM framework.
 
 from typing import Callable, Dict, Any, Optional, List
 import dataclasses
-from ...interface import AnalysisModule
 from EdgeWARN.alerts import AlertManager
 from EdgeWARN.alerts.schema import AlertPayload
 from datetime import datetime, timedelta
@@ -27,7 +26,7 @@ from .core import (
 io_manager = IOManager("[StormCast]")
 
 
-class StormCastModule(AnalysisModule):
+class StormCastModule:
     """
     CTAM adapter for StormCast forecasting.
     
@@ -497,9 +496,8 @@ class StormCastModule(AnalysisModule):
                 effective_time=effective,
                 expiry_time=expiry,
                 threats={
-                    # MorphoWind was the only source for this threat bit. Its
-                    # removal deliberately preserves the prior absence fallback
-                    # instead of treating an unavailable assessment as risk.
+                    # The retired assessment was the only source for this bit.
+                    # Preserve its absence fallback rather than infer risk.
                     "tstm_wind": "false",
                 },
             )
