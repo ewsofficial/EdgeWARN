@@ -17,3 +17,8 @@ returning an in-memory `_grid_outputs` object.
 See [module-manifest.md](module-manifest.md) for discovery and declaration,
 [internal-api.md](internal-api.md) for the private loopback contract, and the
 checked-in OpenAPI/schema documents for request and response validation.
+
+Module authors should follow [module-development.md](module-development.md);
+operators should use [module-operations.md](module-operations.md). The protocol
+support policy is in [compatibility.md](compatibility.md), and the measured
+regression budget is in [performance-baseline.md](performance-baseline.md).
