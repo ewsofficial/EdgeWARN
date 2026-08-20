@@ -95,6 +95,9 @@ class LoopbackCTAMServer:
                     elif self.command == "POST" and route == "/transaction/validate": data = outer.service.validate_transaction(module_id)
                     elif self.command == "POST" and route == "/transaction/commit": data = outer.service.commit_transaction(module_id, idempotency_key=self.headers.get("Idempotency-Key"))
                     elif self.command == "POST" and route == "/alerts": data = outer.service.stage_alert(module_id, self._body())
+                    elif self.command == "PATCH" and route.startswith("/cells/") and "/entries/" in route:
+                        cell_part, timestamp = route[len("/cells/"):].split("/entries/", 1)
+                        body = self._body(); data = outer.service.stage_history(module_id, unquote(cell_part), unquote(timestamp), revision=body.get("revision"), operations=body.get("operations"))
                     elif self.command == "GET" and route.startswith("/cells/"):
                         data = outer.service.history(module_id, unquote(route.rsplit("/", 1)[1]), limit=int(query.get("limit", ["5"])[0]), since=query.get("since", [None])[0])
                     elif self.command == "GET" and route.startswith("/files/") and route.endswith("/content"):

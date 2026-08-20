@@ -142,6 +142,10 @@ class CTAMReadService:
         if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
         return self.transactions.stage_cell(module_id, str(cell_id), revision=revision, operations=operations)
 
+    def stage_history(self, module_id: str, cell_id: str, timestamp: str, *, revision: int, operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
+        return self.transactions.stage_history(module_id, str(cell_id), timestamp, revision=revision, operations=operations)
+
     def transaction(self, module_id: str) -> dict[str, Any]:
         if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
         return self.transactions.transaction(module_id)

@@ -58,6 +58,9 @@ class CTAMClient:
     def patch_stormcell(self, cell_id, *, revision, operations):
         from urllib.parse import quote
         return self._request("/stormcells/" + quote(str(cell_id), safe=""), method="PATCH", payload={"revision": revision, "operations": operations})
+    def patch_history(self, cell_id, timestamp, *, revision, operations):
+        from urllib.parse import quote
+        return self._request("/cells/" + quote(str(cell_id), safe="") + "/entries/" + quote(str(timestamp), safe=""), method="PATCH", payload={"revision": revision, "operations": operations})
     def transaction(self): return self._request("/transaction")
     def validate_transaction(self): return self._request("/transaction/validate", method="POST", payload={})
     def commit_transaction(self, *, idempotency_key=None):
