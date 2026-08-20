@@ -40,3 +40,11 @@ urlopen(Request(base+"/transaction/commit",data=b"{}",method="POST",headers=head
     runner = ExternalModuleRunner(catalog=_catalog(), cells=[{"id": "7"}], manifests={"ok": manifest})
     assert runner.run()[0].state == "completed"
     assert runner.transactions.cells["7"]["modules"]["Runnerok"] == {"ran": True}
+
+
+def test_runner_drains_and_bounds_noisy_child_output(tmp_path):
+    manifest = _manifest(tmp_path, "noisy", "print('x' * 200000)")
+    result = ExternalModuleRunner(catalog=_catalog(), cells=[{"id": "7"}], manifests={"noisy": manifest}).run()[0]
+    assert result.state == "failed"
+    assert result.stdout.endswith("[output truncated]")
+    assert len(result.stdout.encode()) <= 65_536 + len("\n[output truncated]")
