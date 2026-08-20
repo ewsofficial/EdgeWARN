@@ -4,9 +4,10 @@ StormCast CTAM Module
 Adapter for integrating StormCast core into the CTAM framework.
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Callable, Dict, Any, Optional, List
 import dataclasses
 from ...interface import AnalysisModule
+from EdgeWARN.alerts import AlertManager
 from EdgeWARN.alerts import AlertManager
 from EdgeWARN.alerts.schema import AlertPayload
 import json
@@ -43,7 +44,7 @@ class StormCastModule(AnalysisModule):
     def name(self) -> str:
         return "StormCast"
 
-    def run(self, storm_entry: Dict[str, Any], environment: Optional[Dict[str, Any]] = None, history_cache: Optional[Any] = None) -> None:
+    def run(self, storm_entry: Dict[str, Any], environment: Optional[Dict[str, Any]] = None, history_cache: Optional[Any] = None, history_provider: Optional[Callable[[Any], List[Dict[str, Any]]]] = None) -> None:
         """
         Run StormCast on a storm entry.
         
@@ -237,7 +238,9 @@ class StormCastModule(AnalysisModule):
             try:
                 cell_id = storm_entry.get("id")
                 if cell_id:
-                    if history_cache is not None:
+                    if history_provider is not None:
+                        hist_data = history_provider(cell_id)
+                    elif history_cache is not None:
                         # cache get() returns highest-to-lowest, but we need lowest-to-highest for StormCast
                         hist_data = history_cache.get(cell_id)
                         hist_data = list(reversed(hist_data))
@@ -442,7 +445,7 @@ class StormCastModule(AnalysisModule):
     # ------------------------------------------------------------------
     # Alert generation
     # ------------------------------------------------------------------
-    def alerts(self, storm_entry: Dict[str, Any]) -> Optional[List[AlertPayload]]:
+    def alerts(self, storm_entry: Dict[str, Any], previous_alert: Optional[AlertPayload] = None) -> Optional[List[AlertPayload]]:
         """
         Build an alert from the 0-30m forecast polygon once the module has
         produced a valid forecast polygon for the cell.
@@ -466,6 +469,11 @@ class StormCastModule(AnalysisModule):
 
         cell_id = storm_entry.get("id", "unknown_cell")
 
+        # Compatibility shim for direct callers of the legacy public import.
+        # The built-in adapter always supplies this host-owned value.
+        if previous_alert is None:
+            previous_alert = AlertManager.load(self.name, cell_id)
+
         # Parse timestamp for effective / expiry calculation
         ts_str = storm_entry.get("timestamp")
         if ts_str:
@@ -476,7 +484,6 @@ class StormCastModule(AnalysisModule):
         else:
             effective = datetime.now()
 
-        previous_alert = AlertManager.load(self.name, cell_id)
         if previous_alert is not None:
             next_allowed_time = previous_alert.effective_time + timedelta(minutes=15)
             if effective < next_allowed_time:

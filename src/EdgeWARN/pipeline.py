@@ -184,6 +184,7 @@ def run_edgewarn_integration_phase(
     generated_file,
     remove_old_cells=None,
     disable_ctam=False,
+    disable_ctam_modules=False,
     mrms_core_only=False,
     input_manifest: CycleInputManifest | None = None,
 ):
@@ -196,6 +197,7 @@ def run_edgewarn_integration_phase(
         generated_file,
         remove_old_cells=remove_old_cells,
         disable_ctam=disable_ctam,
+        disable_ctam_modules=disable_ctam_modules,
         mrms_core_only=mrms_core_only,
         input_manifest=input_manifest,
     )
@@ -213,6 +215,7 @@ def edgewarn_tandem_worker(
     detection_config,
     profile=False,
     disable_ctam=False,
+    disable_ctam_modules=False,
     disable_tracking=False,
     disable_polygon_expansion=False,
     mrms_core_only=False,
@@ -304,6 +307,7 @@ def edgewarn_tandem_worker(
             log,
             shared_state.get("edgewarn_generated_file") or None,
             disable_ctam=disable_ctam,
+            disable_ctam_modules=disable_ctam_modules,
             mrms_core_only=mrms_core_only,
             input_manifest=input_manifest,
         )
@@ -370,6 +374,7 @@ def historical_pipeline(
     cached_objs=(None, None, None),
     io_manager=None,
     disable_ctam=False,
+    disable_ctam_modules=False,
     disable_tracking=False,
     disable_polygon_expansion=False,
 ):
@@ -445,6 +450,7 @@ def historical_pipeline(
                 generated_file,
                 remove_old_cells=remove_old_cells_historical(),
                 disable_ctam=disable_ctam,
+                disable_ctam_modules=disable_ctam_modules,
                 input_manifest=input_manifest,
             )
             perf_tracker.stop("Integration")

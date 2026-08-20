@@ -120,6 +120,7 @@ class IOManager:
         parser.add_argument("--config-dir", type=str, default=None, help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)")
         parser.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None, help="Enable performance profiling (default: from runtime.yaml; --no-profile disables)")
         parser.add_argument("--disable-ctam", action=argparse.BooleanOptionalAction, default=None, help="Skip CTAM module execution during integration (default: from runtime.yaml; --no-disable-ctam re-enables)")
+        parser.add_argument("--disable-ctam-modules", action=argparse.BooleanOptionalAction, default=False, help="Skip discovered external CTAM modules but retain built-in StormCast")
         # default=None, not the catalog value: `overlay.resolve` distinguishes
         # "not given" from "given" by `is None`, and a real default here would
         # make run.ctam_module_dir unreachable.
