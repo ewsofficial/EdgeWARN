@@ -17,6 +17,16 @@ def test_publication_replaces_all_payloads_before_indexes(tmp_path):
     assert json.loads(path.read_text())["state"] == "committed"
 
 
+def test_publication_runs_alerts_after_payloads_and_before_indexes(tmp_path):
+    target = tmp_path / "stormcells.json"; journal = tmp_path / "journals"; events = []
+    CTAMPublicationCoordinator(journal).publish(
+        {target: {"ready": True}},
+        publish_alerts=lambda: events.append(("alerts", json.loads(target.read_text()))),
+        publish_indexes=lambda: events.append(("indexes", json.loads(target.read_text()))),
+    )
+    assert events == [("alerts", {"ready": True}), ("indexes", {"ready": True})]
+
+
 def test_recovery_rolls_forward_after_fault_between_replacements(tmp_path):
     first, second, journal = tmp_path / "first.json", tmp_path / "second.json", tmp_path / "journals"
     calls = 0
