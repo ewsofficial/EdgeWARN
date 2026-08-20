@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Removed the bundled MorphoWind CTAM assessment. StormCast now always emits
+  `tstm_wind: "false"`, preserving the previous behavior when no MorphoWind
+  assessment was available rather than inferring a wind threat from absence.
+
 ## [2.7.0] 2026-07-11
 
 ### Added
@@ -17,4 +24,3 @@
 
 ### Testing
 - Added regression coverage for logging remediation across MRMS ingest, synoptic downloader, scheduler, RAP pipeline, IO utilities, and runtime background workers
-
