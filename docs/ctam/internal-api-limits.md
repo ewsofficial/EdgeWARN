@@ -89,13 +89,9 @@ seconds still leaves 90 seconds of the cadence for the other eight integration
 stages plus detection and ingest. With StormCast's existing 2 seconds reserved,
 28 seconds remain for external modules.
 
-Read the 2-second figure with care. Two of the three CTAM benchmarks cannot run
-as written: `tests/benchmarks/test_performance.py:411` imports
-`EdgeWARN.ctam.modules.stormcast` and `:431` imports
-`EdgeWARN.ctam.modules.morphowind`, but the packages are `StormCast` and
-`MorphoWind` (`src/EdgeWARN/ctam/modules/__init__.py:7-8`), and both call
-`module.process(cell)` where the interface method is `run`
-(`docs/ctam/README.md:31-33`). The stage-level benchmark reads
+Read the 2-second figure with care. The former in-package registry did not
+provide a stable module API, so StormCast is now the only bundled built-in and
+all optional modules use manifests. The stage-level benchmark reads
 `data.get("cells", [])` at `tests/benchmarks/test_performance.py:381`, but the
 snapshot envelope key is `features`
 (`src/EdgeWARN/process/detect/tools/save.py:33`), so the fixture always returns
@@ -119,9 +115,7 @@ inside the stage ceiling. At the 10-second default timeout only two modules fit,
 which is intentional: the count cap bounds discovery and status work, and the
 deadline bounds wall-clock cost.
 
-For reference, the current registry holds 2 cell modules
-(`src/EdgeWARN/ctam/modules/__init__.py:15-16`), and after Phase 6 the base
-package ships 1.
+For reference, the base package ships one reserved built-in, StormCast.
 
 ### Timeout bounds
 

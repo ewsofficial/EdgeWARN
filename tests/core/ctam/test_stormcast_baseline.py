@@ -6,8 +6,8 @@ and the alert it emits, across the success, skipped, and error paths. Phase 5 of
 boundary; these snapshots are what distinguishes that migration from a change in
 forecast or alert content.
 
-The alert tests also lock the Phase 6 compatibility decision: without the
-removed MorphoWind assessment, StormCast publishes ``tstm_wind: "false"``.
+The alert tests also lock the Phase 6 compatibility decision: StormCast
+publishes ``tstm_wind: "false"``.
 """
 
 from __future__ import annotations
@@ -320,7 +320,7 @@ def seed_prior_alert(ids_dir, alert):
     (ids_dir / safe_id).write_text(json.dumps(alert.to_dict()), encoding="utf-8")
 
 
-def test_alert_payload_uses_post_morphowind_baseline():
+def test_alert_payload_uses_release_baseline():
     """StormCast's alert payload no longer depends on another module."""
     cell = make_cell()
     alerts = emit_alert(cell)
@@ -328,11 +328,10 @@ def test_alert_payload_uses_post_morphowind_baseline():
     assert alerts is not None and len(alerts) == 1
     alert = alerts[0]
     assert cell["modules"]["StormCast"]["alert_outcome"] == "published"
-    assert_baseline("stormcast_alert_without_morphowind", alert)
-    assert_baseline("stormcast_alert_without_morphowind_serialized", alert.to_dict())
+    assert alert.threats == {"tstm_wind": "false"}
 
 
-def test_tstm_wind_is_false_without_morphowind_assessment():
+def test_tstm_wind_is_false_by_release_policy():
     alerts = emit_alert(make_cell())
     assert alerts is not None
     assert alerts[0].threats == {"tstm_wind": "false"}

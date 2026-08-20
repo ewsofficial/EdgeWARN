@@ -11,21 +11,13 @@ Supports both:
 
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import List, Dict, Any, Optional
 from collections import Counter
-from .registry import CellModuleRegistry, GridModuleRegistry, ModuleRegistry
-from .engine import initialize_modules
 from EdgeWARN.alerts import AlertManager
 from .util.history_cache import CellHistoryCache
 from . import discovery, readiness
 from common.ingest.manifest import CycleInputManifest
 
-# Import modules to trigger auto-registration
-from . import modules  # noqa: F401
-
-# File system utilities
-import util.file as fs
 
 
 def _run_phase1_discovery_dry_run(
@@ -179,23 +171,8 @@ def run_ctam(
     except Exception as e:
         print(f"[CTAM] Failed to clean up expired alerts: {e}")
     
-    # GeoMapper is now integrated into NWS Ingest, so we don't need to run it here.
-    # Data in fs.MRMS_NWS_DIR is already processed with polygons.
-
     print("[CTAM] Starting CTAM pipeline...")
-    
-    # Get registered modules
-    # StormCast is the reserved built-in and runs through the host service
-    # boundary below. Remaining legacy registry entries stay temporarily for
-    # Phase 6 removal, but cannot control StormCast ordering or availability.
-    cell_modules = {
-        name: module for name, module in CellModuleRegistry.get_all().items()
-        if name.casefold() != "stormcast"
-    }
-    grid_modules = GridModuleRegistry.get_all()
-    
-    print(f"[CTAM] Cell modules: ['StormCast', *{list(cell_modules.keys())}]")
-    print(f"[CTAM] Grid modules: {list(grid_modules.keys())}")
+    print("[CTAM] Built-in modules: ['StormCast']")
     print(f"[CTAM] Processing {len(cells)} storm cell(s)...")
     
     # Step 1: Run cell-based modules
@@ -207,40 +184,6 @@ def run_ctam(
     
     cell_success_count, cell_error_count, builtin_alert_count = _run_builtin_stormcast(cells, hist_cache)
     
-    for cell_idx, cell in enumerate(cells):
-        # StormCast already populated its reserved namespace through the host
-        # service. Initialize only the temporary legacy module namespaces.
-        module_names = list(cell_modules.keys())
-        initialize_modules(cell, module_names)
-        pending_cell_alerts = []
-        
-        # Run each cell-based module
-        for module in cell_modules.values():
-            try:
-                module_start = time.time()
-                module.run(cell, environment=None, history_cache=hist_cache)
-                module_elapsed = time.time() - module_start
-                cell_success_count += 1
-            except Exception as e:
-                # Store error in modules dict
-                cell["modules"][module.name] = {
-                    "status": "error",
-                    "error": str(e)
-                }
-                print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: Module '{module.name}' FAILED: {e}")
-                cell_error_count += 1
-
-            # Collect and publish alerts from cell module
-            try:
-                module_alerts = module.alerts(cell)
-                if module_alerts:
-                    pending_cell_alerts.extend(module_alerts)
-            except Exception as e:
-                print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: Alerts from '{module.name}' FAILED: {e}")
-
-        if pending_cell_alerts:
-            AlertManager.publish_many(pending_cell_alerts)
-
     stormcast_status_counts = {}
     stormcast_alert_eligibility_counts = {
         True: 0,
@@ -297,46 +240,8 @@ def run_ctam(
             )
             print(f"[CTAM] StormCast alert blockers: {blocker_summary}")
     
-    # Step 2: Run grid-based modules
-    grid_results = {}
-    attachable_grid_results = {}
-    grid_success_count = 0
-    grid_error_count = 0
-    grid_alert_count = builtin_alert_count
-    
-    for module in grid_modules.values():
-        try:
-            module_start = time.time()
-            result = module.run()
-            module_elapsed = time.time() - module_start
-            grid_results[module.name] = result
-            if result.get("attach_to_stormcells", True):
-                attachable_grid_results[module.name] = result
-            grid_success_count += 1
-            print(f"[CTAM]   Grid module '{module.name}' completed in {module_elapsed:.3f}s")
-            
-            # Generate alerts from grid results
-            if result.get("features") and result["features"].get("features"):
-                features = result["features"]["features"]
-                alerts = module.alerts(features)
-                if alerts:
-                    grid_alert_count += AlertManager.publish_many(alerts)
-                    
-        except Exception as e:
-            grid_results[module.name] = {"status": "error", "error": str(e)}
-            print(f"[CTAM]   Grid module '{module.name}' FAILED: {e}")
-            grid_error_count += 1
-    
-    # Attach grid results to first cell (or create placeholder)
-    if attachable_grid_results:
-        if cells:
-            cells[0]["modules"]["_grid_outputs"] = attachable_grid_results
-        else:
-            # No cells, but attachable grid modules ran - store results separately
-            cells = [{"modules": {"_grid_outputs": attachable_grid_results}}]
-    
     total_elapsed = time.time() - start_time
-    print(f"[CTAM] Pipeline complete: {cell_success_count} cell success, {cell_error_count} cell error(s), {grid_success_count} grid success, {grid_error_count} grid error(s), {grid_alert_count} grid alert(s) in {total_elapsed:.3f}s")
+    print(f"[CTAM] Pipeline complete: {cell_success_count} built-in success, {cell_error_count} built-in error(s), {builtin_alert_count} alert(s) in {total_elapsed:.3f}s")
     
     # Generate timestamp snapshot of active alerts if provided
     cells = _run_external_modules(

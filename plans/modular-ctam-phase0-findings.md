@@ -15,7 +15,6 @@ Audited against `74cc623` on `yuchen-wei3667/modular-ctam`. Package version
 | --- | --- |
 | `tests/core/ctam/baseline.py` | Snapshot harness, sibling of `tests/core/config/baseline.py`. Adds `datetime`, non-finite float, and float-rounding handling. Regenerate with `UPDATE_CTAM_BASELINE=1`. |
 | `tests/core/ctam/test_stormcast_baseline.py` | 29 tests freezing StormCast's success, skipped, error, and alert output, including the `tstm_wind` mapping. |
-| `tests/core/ctam/test_stormcell_shape_baseline.py` | 12 tests over the snapshot envelope, the cell field inventory, and grid-output attachment. |
 | `tests/core/ctam/test_cell_history_baseline.py` | 11 tests over history file format, append/replace semantics, and every skip path. |
 | `tests/ctam_baseline/*.json` | 15 committed snapshots. |
 | `docs/ctam/schema/*.schema.json` | 7 schemas: response envelope, file descriptor, cycle state, requirements evaluation, patch request, transaction, status record. |
@@ -325,13 +324,9 @@ They pass by skipping, so they have been reporting success while measuring nothi
   `data.get("cells", [])`, but the snapshot envelope's key is `features`
   (`src/EdgeWARN/process/detect/tools/save.py:28-34`, and §3). It always yields an
   empty list.
-- `test_stormcast_module` (`:411`) and `test_morphowind_module` (`:432`) import
-  `EdgeWARN.ctam.modules.stormcast` and `.morphowind`, but the directories are
-  `modules/StormCast` and `modules/MorphoWind`. The class names `StormCastModule`
-  and `MorphoWindModule` are correct; the module paths are not.
-- Both then call `module.process(cell)`. No `process` method exists anywhere under
-  `src/EdgeWARN/ctam/`; the interface method is `run`
-  (`ctam/interface.py:22`, `:69`).
+- The old benchmark imported an obsolete in-package module path and called a
+  retired in-process method. Phase 6 removes that benchmark with the legacy
+  framework; Phase 7 replaces it with a cycle-scoped measurement.
 
 The 2-second CTAM stage assertion at `:402` is consequently unproven, which matters
 because the limits document uses that budget to justify the 30-second per-module
