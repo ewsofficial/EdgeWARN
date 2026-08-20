@@ -58,3 +58,29 @@ def test_ctam_runner_emits_stormcast_alert_summaries(capsys):
     assert "StormCast summary: status[success=1] can_generate_alerts[true=0, false=1, none=0]" in captured
     assert "StormCast alert outcomes: not_eligible=1" in captured
     assert "StormCast alert blockers: forecast_polygon_unavailable=1, missing_current_polygon=1" in captured
+
+
+def test_disable_ctam_modules_keeps_builtin_stormcast_and_skips_external_runner():
+    from EdgeWARN.ctam.run import run_ctam
+
+    class DummyStormCastAdapter:
+        name = "StormCast"
+
+        def __init__(self, service): pass
+        def run(self, cell):
+            cell.setdefault("modules", {})["StormCast"] = {"status": "success"}
+        def alerts(self, cell): return []
+        def publish_alerts(self, alerts): return 0
+
+    with patch("EdgeWARN.ctam.builtins.BuiltinStormCastAdapter", DummyStormCastAdapter):
+        with patch("EdgeWARN.ctam.run._run_external_modules", side_effect=lambda cells, *_args, **_kwargs: cells) as external:
+            with patch("EdgeWARN.ctam.run.CellModuleRegistry.get_all", return_value={}):
+                with patch("EdgeWARN.ctam.run.GridModuleRegistry.get_all", return_value={}):
+                    result = run_ctam(
+                        [{"id": 1, "properties": {}}],
+                        timestamp="20260101-000000",
+                        disable_ctam_modules=True,
+                    )
+
+    assert result[0]["modules"]["StormCast"]["status"] == "success"
+    assert external.call_args.kwargs["disabled"] is True
