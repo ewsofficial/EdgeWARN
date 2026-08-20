@@ -69,6 +69,7 @@ cycle_config = TandemCycleConfig(
     lon_limits=lon_limits,
     profile=args.profile,
     disable_ctam=args.disable_ctam,
+    disable_ctam_modules=args.disable_ctam_modules,
     disable_tracking=args.disable_tracking,
     disable_polygon_expansion=args.disable_polygon_expansion,
     refl_threshold=args.refl_threshold,
@@ -145,6 +146,8 @@ def main():
     )
     if args.disable_ctam:
         print("[Scheduler] CTAM execution disabled via --disable-ctam")
+    elif args.disable_ctam_modules:
+        print("[Scheduler] External CTAM modules disabled; built-in StormCast remains enabled")
     if args.disable_tracking:
         print("[Scheduler] Tracking disabled via --disable-tracking")
     if args.disable_polygon_expansion:

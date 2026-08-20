@@ -375,7 +375,7 @@ def _run_parallel_enrichment(
     return _run_step("Integration - Merge", _merge_all)
 
 
-def _run_ctam_if_enabled(cells, timestamp, disable_ctam, json_path=None, input_manifest=None):
+def _run_ctam_if_enabled(cells, timestamp, disable_ctam, json_path=None, input_manifest=None, disable_ctam_modules=False):
     if disable_ctam:
         io_manager.write_info("CTAM module execution disabled via command-line flag")
         return cells
@@ -391,6 +391,7 @@ def _run_ctam_if_enabled(cells, timestamp, disable_ctam, json_path=None, input_m
                 timestamp=timestamp,
                 json_path=json_path,
                 input_manifest=input_manifest,
+                disable_ctam_modules=disable_ctam_modules,
             ),
         )
         io_manager.write_debug("CTAM module execution completed successfully")
@@ -449,6 +450,7 @@ def main(
     json_path=None,
     remove_old_cells=None,
     disable_ctam=False,
+    disable_ctam_modules=False,
     mrms_core_only=False,
     input_manifest: CycleInputManifest | None = None,
 ):
@@ -474,6 +476,7 @@ def main(
         disable_ctam,
         json_path=json_path,
         input_manifest=input_manifest,
+        disable_ctam_modules=disable_ctam_modules,
     )
 
     try:

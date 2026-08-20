@@ -77,9 +77,9 @@ def _run_phase1_discovery_dry_run(
         print(f"[CTAM] Phase 1 discovery/readiness dry run failed: {e}")
 
 
-def _run_external_modules(cells, timestamp, json_path, input_manifest):
+def _run_external_modules(cells, timestamp, json_path, input_manifest, *, disabled=False):
     """Execute only already-discovered manifests; legacy built-ins stay separate."""
-    if not timestamp:
+    if not timestamp or disabled:
         return cells
     try:
         from .runner import ExternalModuleRunner
@@ -111,12 +111,41 @@ def _run_external_modules(cells, timestamp, json_path, input_manifest):
         return cells
 
 
+def _run_builtin_stormcast(cells, history_cache):
+    """Run the reserved built-in before any discovered external module.
+
+    StormCast is deliberately not obtained from the import-time registry here:
+    an operator-installed manifest cannot shadow it and every data dependency
+    crosses the same narrow host-service boundary.
+    """
+    from .builtins import BuiltinStormCastAdapter, StormCastCycleService
+
+    adapter = BuiltinStormCastAdapter(StormCastCycleService(history_cache))
+    success_count = error_count = alert_count = 0
+    for cell_idx, cell in enumerate(cells):
+        cell.setdefault("modules", {})
+        try:
+            adapter.run(cell)
+            success_count += 1
+        except Exception as exc:
+            cell["modules"][adapter.name] = {"status": "error", "error": str(exc)}
+            print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: built-in StormCast FAILED: {exc}")
+            error_count += 1
+            continue
+        try:
+            alert_count += adapter.publish_alerts(adapter.alerts(cell))
+        except Exception as exc:
+            print(f"[CTAM]   Cell {cell_idx + 1}/{len(cells)}: StormCast alerts FAILED: {exc}")
+    return success_count, error_count, alert_count
+
+
 def run_ctam(
     cells: List[Dict[str, Any]],
     timestamp: Optional[str] = None,
     *,
     json_path: Optional[str] = None,
     input_manifest: Optional[CycleInputManifest] = None,
+    disable_ctam_modules: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Run all registered CTAM modules on the provided storm cells.
@@ -156,14 +185,16 @@ def run_ctam(
     print("[CTAM] Starting CTAM pipeline...")
     
     # Get registered modules
-    cell_modules = CellModuleRegistry.get_all()
+    # StormCast is the reserved built-in and runs through the host service
+    # boundary below. Remaining legacy registry entries stay temporarily for
+    # Phase 6 removal, but cannot control StormCast ordering or availability.
+    cell_modules = {
+        name: module for name, module in CellModuleRegistry.get_all().items()
+        if name.casefold() != "stormcast"
+    }
     grid_modules = GridModuleRegistry.get_all()
     
-    if not cell_modules and not grid_modules:
-        print("[CTAM] No modules registered. Skipping processing.")
-        return cells
-    
-    print(f"[CTAM] Cell modules: {list(cell_modules.keys())}")
+    print(f"[CTAM] Cell modules: ['StormCast', *{list(cell_modules.keys())}]")
     print(f"[CTAM] Grid modules: {list(grid_modules.keys())}")
     print(f"[CTAM] Processing {len(cells)} storm cell(s)...")
     
@@ -174,11 +205,11 @@ def run_ctam(
     active_cell_ids = [c["id"] for c in cells if "id" in c]
     hist_cache.preload_active(active_cells=active_cell_ids)
     
-    cell_success_count = 0
-    cell_error_count = 0
+    cell_success_count, cell_error_count, builtin_alert_count = _run_builtin_stormcast(cells, hist_cache)
     
     for cell_idx, cell in enumerate(cells):
-        # Initialize modules dict
+        # StormCast already populated its reserved namespace through the host
+        # service. Initialize only the temporary legacy module namespaces.
         module_names = list(cell_modules.keys())
         initialize_modules(cell, module_names)
         pending_cell_alerts = []
@@ -271,7 +302,7 @@ def run_ctam(
     attachable_grid_results = {}
     grid_success_count = 0
     grid_error_count = 0
-    grid_alert_count = 0
+    grid_alert_count = builtin_alert_count
     
     for module in grid_modules.values():
         try:
@@ -308,7 +339,13 @@ def run_ctam(
     print(f"[CTAM] Pipeline complete: {cell_success_count} cell success, {cell_error_count} cell error(s), {grid_success_count} grid success, {grid_error_count} grid error(s), {grid_alert_count} grid alert(s) in {total_elapsed:.3f}s")
     
     # Generate timestamp snapshot of active alerts if provided
-    cells = _run_external_modules(cells, timestamp, json_path, input_manifest)
+    cells = _run_external_modules(
+        cells,
+        timestamp,
+        json_path,
+        input_manifest,
+        disabled=disable_ctam_modules,
+    )
 
     if timestamp:
         try:
