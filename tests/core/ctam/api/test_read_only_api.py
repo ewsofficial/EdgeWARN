@@ -11,9 +11,10 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from EdgeWARN.ctam.api import CTAMReadService, LoopbackCTAMServer
-from EdgeWARN.ctam.manifest import ModuleManifest, ModuleRequirement, Selector
+from EdgeWARN.ctam.manifest import ModuleManifest, ModuleRequirement, ModuleWrite, Selector
 from EdgeWARN.ctam.readiness import CatalogFile, CTAMCycleCatalog, READY
 from EdgeWARN.ctam.sdk import CTAMAPIError, CTAMClient
+from EdgeWARN.ctam.transaction import CTAMTransactionService
 
 
 @pytest.fixture
@@ -32,8 +33,9 @@ def api(tmp_path: Path):
         ModuleRequirement(Selector("input:MRMS:VIL_00.50:current", "input", "mrms", "VIL_00.50", "current"), True, None, None),
         ModuleRequirement(Selector("stormcells.current", "stormcells", None, None, "current"), True, None, None),
         ModuleRequirement(Selector("cells.history", "cell_history", None, None, "history"), False, None, None),
-    ), (), tmp_path, tmp_path / "module.toml")
-    service = CTAMReadService(catalog=catalog, cells=[{"id": 7, "properties": {"morphology": "cluster"}}], manifests={"reader": manifest})
+    ), (ModuleWrite("stormcells.current", "/features/*/modules/Reader"),), tmp_path, tmp_path / "module.toml")
+    cells = [{"id": 7, "properties": {"morphology": "cluster"}}]
+    service = CTAMReadService(catalog=catalog, cells=cells, manifests={"reader": manifest}, transactions=CTAMTransactionService(cells=cells, manifests={"reader": manifest}))
     with LoopbackCTAMServer(service, tokens={"reader": "test-token"}) as server:
         yield server, source
 
@@ -86,3 +88,18 @@ def test_server_rejects_unsupported_protocol_version(api):
     with pytest.raises(HTTPError) as excinfo:
         urlopen(request)
     assert excinfo.value.code == 426
+
+
+def test_patch_commit_uses_the_same_ownership_gate_and_is_idempotent(api):
+    server, _ = api
+    client = CTAMClient(server.url, "test-token")
+    revision = client.stormcell(7)["revision"]
+    staged = client.patch_stormcell(7, revision=revision, operations=[{"op": "add", "path": "/modules/Reader", "value": {"score": 2}}])
+    assert staged["staged_operations"] == 1
+    assert client.validate_transaction()["valid"] is True
+    committed = client.commit_transaction(idempotency_key="one")
+    assert client.commit_transaction(idempotency_key="one") == committed
+    assert client.stormcell(7)["cell"]["modules"]["Reader"] == {"score": 2}
+    with pytest.raises(CTAMAPIError) as excinfo:
+        client.patch_stormcell(7, revision=1, operations=[{"op": "add", "path": "/id", "value": "changed"}])
+    assert excinfo.value.status == 409  # sealed transaction wins over a later patch

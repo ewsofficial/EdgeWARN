@@ -21,8 +21,9 @@ class CTAMClient:
     def from_environment(cls):
         import os
         return cls(os.environ["CTAM_API_URL"], os.environ["CTAM_API_TOKEN"])
-    def _request(self, path: str, *, headers=None, raw=False):
-        request = Request(self.url + path, headers={"Authorization": f"Bearer {self.token}", "X-CTAM-API-Version": "1", **(headers or {})})
+    def _request(self, path: str, *, headers=None, raw=False, method=None, payload=None):
+        data = json.dumps(payload, allow_nan=False, separators=(",", ":")).encode() if payload is not None else None
+        request = Request(self.url + path, data=data, method=method, headers={"Authorization": f"Bearer {self.token}", "X-CTAM-API-Version": "1", **({"Content-Type": "application/json"} if data else {}), **(headers or {})})
         try:
             with urlopen(request, timeout=30) as response:
                 return response.read() if raw else json.loads(response.read())['data']
@@ -54,3 +55,11 @@ class CTAMClient:
         target = target_dir / "artifact"
         target.write_bytes(self.content(file_id))
         return target
+    def patch_stormcell(self, cell_id, *, revision, operations):
+        from urllib.parse import quote
+        return self._request("/stormcells/" + quote(str(cell_id), safe=""), method="PATCH", payload={"revision": revision, "operations": operations})
+    def transaction(self): return self._request("/transaction")
+    def validate_transaction(self): return self._request("/transaction/validate", method="POST", payload={})
+    def commit_transaction(self, *, idempotency_key=None):
+        headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
+        return self._request("/transaction/commit", method="POST", payload={}, headers=headers)

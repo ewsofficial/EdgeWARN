@@ -12,6 +12,7 @@ from ..limits import API_VERSION, DEFAULT_HISTORY_WINDOW, MAX_HISTORY_WINDOW, MA
 from ..manifest import ModuleManifest
 from ..readiness import CTAMCycleCatalog, READY, evaluate_requirements
 from .models import APIError
+from ..transaction import CTAMTransactionService
 
 
 def _timestamp(value: Any) -> str:
@@ -36,8 +37,10 @@ class CTAMReadService:
         state: str = "external_modules_running",
         ctam_ready: bool = True,
         deadline: datetime | None = None,
+        transactions: CTAMTransactionService | None = None,
     ) -> None:
         self.catalog = catalog
+        self.transactions = transactions
         self._cells = tuple(deepcopy(dict(cell)) for cell in cells)
         self._cell_index = {str(cell.get("id")): cell for cell in self._cells if cell.get("id") is not None}
         self._manifests = dict(manifests)
@@ -123,14 +126,33 @@ class CTAMReadService:
 
     def stormcells(self, module_id: str) -> dict[str, Any]:
         self._require_admitted(module_id, "stormcells:current")
-        return {"revision": 0, "latest_timestamp": self.catalog.cycle_id, "cells": deepcopy(list(self._cells))}
+        cells = self.transactions.cells if self.transactions else {str(cell.get("id")): cell for cell in self._cells}
+        revision = max(self.transactions.cell_revisions.values(), default=0) if self.transactions else 0
+        return {"revision": revision, "latest_timestamp": self.catalog.cycle_id, "cells": deepcopy(list(cells.values()))}
 
     def stormcell(self, module_id: str, cell_id: str) -> dict[str, Any]:
         self._require_admitted(module_id, "stormcells:current")
-        cell = self._cell_index.get(str(cell_id))
+        cell = self.transactions.cells.get(str(cell_id)) if self.transactions else self._cell_index.get(str(cell_id))
         if cell is None:
             raise APIError("not_found", "storm cell was not found", 404, "stormcells.current")
-        return {"revision": 0, "cell": deepcopy(cell)}
+        revision = self.transactions.cell_revisions.get(str(cell_id), 0) if self.transactions else 0
+        return {"revision": revision, "cell": deepcopy(cell)}
+
+    def stage_stormcell(self, module_id: str, cell_id: str, *, revision: int, operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
+        return self.transactions.stage_cell(module_id, str(cell_id), revision=revision, operations=operations)
+
+    def transaction(self, module_id: str) -> dict[str, Any]:
+        if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
+        return self.transactions.transaction(module_id)
+
+    def validate_transaction(self, module_id: str) -> dict[str, Any]:
+        if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
+        return self.transactions.validate(module_id)
+
+    def commit_transaction(self, module_id: str, *, idempotency_key: str | None) -> dict[str, Any]:
+        if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
+        return self.transactions.commit(module_id, idempotency_key=idempotency_key)
 
     def history(self, module_id: str, cell_id: str, *, limit: int = DEFAULT_HISTORY_WINDOW, since: str | None = None) -> dict[str, Any]:
         if limit < 1:

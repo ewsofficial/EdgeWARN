@@ -146,6 +146,19 @@ class CTAMTransactionService:
         self._stage(self.manifests[module_id], tx.staged_cells.setdefault(cell_id, []), operations, resource="stormcells.current", existing=self.cells[cell_id])
         return {"revision": observed, "staged_operations": len(tx.staged_cells[cell_id])}
 
+    def stage_history(self, module_id: str, cell_id: str, timestamp: str, *, revision: int, operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        tx = self._transaction(module_id)
+        if tx.sealed: raise APIError("transaction_sealed", "transaction is already sealed", 409)
+        history = self.histories.get(cell_id)
+        if history is None: raise APIError("not_found", "cell history was not found", 404)
+        observed = self.history_revisions[cell_id]
+        if revision != observed: raise APIError("stale_revision", "cell history revision is stale", 409, expected_revision=revision, observed_revision=observed)
+        entry = next((item for item in history if str(item.get("timestamp")) == timestamp), None)
+        if entry is None: raise APIError("not_found", "history timestamp was not found", 404)
+        key = (cell_id, timestamp)
+        self._stage(self.manifests[module_id], tx.staged_history.setdefault(key, []), operations, resource="cells.history", existing=entry)
+        return {"revision": observed, "staged_operations": len(tx.staged_history[key])}
+
     def _stage(self, manifest, destination, operations, *, resource, existing):
         if not isinstance(operations, Sequence) or isinstance(operations, (str, bytes)) or not operations:
             raise APIError("invalid_patch", "operations must be a non-empty array", 400)
@@ -169,6 +182,9 @@ class CTAMTransactionService:
     def validate(self, module_id: str) -> dict[str, Any]:
         tx = self._transaction(module_id)
         for cell_id, operations in tx.staged_cells.items(): self._apply(self.cells[cell_id], operations)
+        for (cell_id, timestamp), operations in tx.staged_history.items():
+            entry = next(item for item in self.histories[cell_id] if str(item.get("timestamp")) == timestamp)
+            self._apply(entry, operations)
         return {"valid": True, **self.transaction(module_id)}
 
     def commit(self, module_id: str, *, idempotency_key: str | None = None) -> dict[str, Any]:
@@ -177,8 +193,12 @@ class CTAMTransactionService:
         self.validate(module_id)
         for cell_id, operations in tx.staged_cells.items():
             self.cells[cell_id] = self._apply(self.cells[cell_id], operations); self.cell_revisions[cell_id] += 1
+        for (cell_id, timestamp), operations in tx.staged_history.items():
+            history = self.histories[cell_id]
+            index = next(index for index, item in enumerate(history) if str(item.get("timestamp")) == timestamp)
+            history[index] = self._apply(history[index], operations); self.history_revisions[cell_id] += 1
         tx.sealed = True
-        tx.commit_result = {"committed": True, "idempotency_key": idempotency_key, "cell_revisions": {cell_id: self.cell_revisions[cell_id] for cell_id in tx.staged_cells}}
+        tx.commit_result = {"committed": True, "idempotency_key": idempotency_key, "cell_revisions": {cell_id: self.cell_revisions[cell_id] for cell_id in tx.staged_cells}, "history_revisions": {cell_id: self.history_revisions[cell_id] for cell_id, _timestamp in tx.staged_history}}
         return deepcopy(tx.commit_result)
 
     @staticmethod
