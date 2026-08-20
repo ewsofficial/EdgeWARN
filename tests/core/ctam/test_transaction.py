@@ -64,3 +64,13 @@ def test_stale_revision_is_rejected_before_staging(tmp_path):
     with pytest.raises(APIError) as error:
         second.stage_cell("cellstats", "7", revision=0, operations=[{"op": "add", "path": "/modules/CellStats/x", "value": 1}])
     assert error.value.code == "stale_revision"
+
+
+def test_history_patch_is_limited_to_existing_timestamp_and_own_namespace(tmp_path):
+    item = {"id": "7", "timestamp": "2026-08-05T12:00:00+00:00", "properties": {}}
+    transactions = CTAMTransactionService(cells=[{"id": "7"}], histories={"7": [item]}, manifests={"cellstats": manifest(tmp_path)})
+    transactions.stage_history("cellstats", "7", item["timestamp"], revision=0, operations=[{"op": "add", "path": "/modules/CellStats", "value": {"historical": True}}])
+    transactions.commit("cellstats")
+    assert transactions.histories["7"][0]["modules"]["CellStats"]["historical"] is True
+    with pytest.raises(APIError):
+        transactions.stage_history("cellstats", "7", "not-a-real-entry", revision=1, operations=[{"op": "add", "path": "/modules/CellStats", "value": {}}])
