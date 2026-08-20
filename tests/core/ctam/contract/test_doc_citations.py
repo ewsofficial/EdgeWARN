@@ -38,9 +38,7 @@ CITATION = re.compile(
 
 # Paths a later phase creates. Listed with the phase that owns them so an entry
 # cannot sit here forever pretending to be a citation.
-FORWARD_REFERENCES = {
-    "docs/ctam/module-development.md": "a later phase writes the module author guide",
-}
+FORWARD_REFERENCES = {}
 
 EXPECTED_DOCS = (
     DOC_DIR / "README.md",
