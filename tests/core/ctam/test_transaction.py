@@ -85,3 +85,11 @@ def test_abandon_discards_staged_work_without_changing_the_working_set(tmp_path)
     with pytest.raises(APIError) as error:
         transactions.stage_cell("cellstats", "7", revision=0, operations=[{"op": "add", "path": "/modules/CellStats", "value": {}}])
     assert error.value.code == "transaction_sealed"
+
+
+def test_only_sealed_transactions_expose_alerts_for_host_publication(tmp_path):
+    transactions = service(tmp_path)
+    transactions.stage_alert("cellstats", {"id": "a", "source": "CellStats", "cell_id": "7", "geometry": [[1, 2]]})
+    assert transactions.committed_alerts() == []
+    transactions.commit("cellstats")
+    assert transactions.committed_alerts()[0]["id"] == "a"

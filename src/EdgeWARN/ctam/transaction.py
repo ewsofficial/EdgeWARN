@@ -229,6 +229,10 @@ class CTAMTransactionService:
         tx.commit_result = {"commit_id": f"commit_{uuid.uuid4().hex}", "idempotency_key": idempotency_key}
         return self.transaction(module_id)
 
+    def committed_alerts(self) -> list[dict[str, Any]]:
+        """Alerts eligible for host publication; unsealed work stays private."""
+        return [deepcopy(alert) for tx in self.transactions.values() if tx.sealed for alert in tx.alerts]
+
     @staticmethod
     def _apply(cell: dict[str, Any], operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         candidate = deepcopy(cell)

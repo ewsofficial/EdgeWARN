@@ -55,7 +55,7 @@ class CTAMPublicationCoordinator:
                 self.replace(str(journal_path), str(quarantine / journal_path.name))
         return recovered
 
-    def publish(self, payloads: Mapping[Path | str, Any], *, publish_indexes: Callable[[], None] | None = None, transaction_id: str | None = None) -> Path:
+    def publish(self, payloads: Mapping[Path | str, Any], *, publish_alerts: Callable[[], None] | None = None, publish_indexes: Callable[[], None] | None = None, transaction_id: str | None = None) -> Path:
         if not payloads: raise PublicationError("publication requires at least one payload")
         self.journal_dir.mkdir(parents=True, exist_ok=True)
         transaction_id = transaction_id or uuid.uuid4().hex
@@ -75,6 +75,10 @@ class CTAMPublicationCoordinator:
                 self.replace(item["temporary"], item["target"]); item["replaced"] = True
                 atomic_write_json(journal_path, journal)
                 if _hash(Path(item["target"]).read_bytes()) != item["post_hash"]: raise PublicationError("replacement did not preserve serialized payload")
+            # Alerts are host-owned payload publication, not a side effect of a
+            # module process.  They happen only after every JSON target has
+            # validated and before indexes make the cycle discoverable.
+            if publish_alerts: publish_alerts()
             if publish_indexes: publish_indexes()
             journal["state"] = "committed"; atomic_write_json(journal_path, journal)
             return journal_path
