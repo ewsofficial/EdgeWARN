@@ -74,3 +74,11 @@ def test_history_patch_is_limited_to_existing_timestamp_and_own_namespace(tmp_pa
     assert transactions.histories["7"][0]["modules"]["CellStats"]["historical"] is True
     with pytest.raises(APIError):
         transactions.stage_history("cellstats", "7", "not-a-real-entry", revision=1, operations=[{"op": "add", "path": "/modules/CellStats", "value": {}}])
+
+
+def test_abandon_discards_staged_work_without_changing_the_working_set(tmp_path):
+    transactions = service(tmp_path)
+    transactions.stage_cell("cellstats", "7", revision=0, operations=[{"op": "add", "path": "/modules/CellStats", "value": {"discard": True}}])
+    assert transactions.abandon("cellstats") == {"abandoned": True}
+    assert transactions.transaction("cellstats")["staged_cell_operations"] == 0
+    assert "modules" not in transactions.cells["7"]
