@@ -36,7 +36,7 @@ def test_commit_is_revisioned_idempotent_and_preserves_core_fields(tmp_path):
     result = transactions.stage_cell("cellstats", "7", revision=0, operations=[{"op": "add", "path": "/modules/CellStats", "value": {"score": 4}}])
     assert result["staged_operations"] == 1
     committed = transactions.commit("cellstats", idempotency_key="same-request")
-    assert committed["cell_revisions"] == {"7": 1}
+    assert committed["state"] == "sealed"
     assert transactions.commit("cellstats", idempotency_key="same-request") == committed
     assert transactions.cells["7"]["modules"]["CellStats"] == {"score": 4}
     assert transactions.cells["7"]["geometry"] == [1]
@@ -79,6 +79,6 @@ def test_history_patch_is_limited_to_existing_timestamp_and_own_namespace(tmp_pa
 def test_abandon_discards_staged_work_without_changing_the_working_set(tmp_path):
     transactions = service(tmp_path)
     transactions.stage_cell("cellstats", "7", revision=0, operations=[{"op": "add", "path": "/modules/CellStats", "value": {"discard": True}}])
-    assert transactions.abandon("cellstats") == {"abandoned": True}
-    assert transactions.transaction("cellstats")["staged_cell_operations"] == 0
+    assert transactions.abandon("cellstats")["state"] == "abandoned"
+    assert transactions.transaction("cellstats")["staged"]["stormcell_operations"] == 0
     assert "modules" not in transactions.cells["7"]
