@@ -37,6 +37,10 @@ evaluated per cycle against that cycle's input catalog, not at startup.
 The long-term plan is the modular CTAM internal API; see
 `plans/modular-ctam-internal-api-plan.md`.
 
+Phase 2 provides the private, read-only loopback API and dependency-light
+Python SDK described in [internal-api.md](internal-api.md). It is not exposed
+through the EdgeWARN or EWMRS public services.
+
 ## Framework Layout
 
 ```text
