@@ -77,6 +77,31 @@ def _run_phase1_discovery_dry_run(
         print(f"[CTAM] Phase 1 discovery/readiness dry run failed: {e}")
 
 
+def _run_external_modules(cells, timestamp, json_path, input_manifest):
+    """Execute only already-discovered manifests; legacy built-ins stay separate."""
+    if not timestamp:
+        return cells
+    try:
+        from .runner import ExternalModuleRunner
+        catalog = readiness.build_catalog(cells=cells, timestamp=timestamp, stormcell_path=json_path, input_manifest=input_manifest)
+        discovered = discovery.discover_modules()
+        manifests = {item.module_id: item.manifest for item in discovered.runnable if item.manifest is not None}
+        if not manifests:
+            return cells
+        runner = ExternalModuleRunner(catalog=catalog, cells=cells, manifests=manifests)
+        results = runner.run()
+        for result in results:
+            print(f"[CTAM] External module {result.module_id!r}: {result.state} ({result.duration_seconds:.3f}s)")
+            if result.state != "completed" and manifests[result.module_id].required:
+                raise RuntimeError(f"required external CTAM module {result.module_id!r} {result.state}: {result.reason}")
+        # Only sealed transactions have made it into the runner's working set.
+        by_id = runner.transactions.cells
+        return [by_id.get(str(cell.get("id")), cell) for cell in cells]
+    except Exception as exc:
+        print(f"[CTAM] External module execution failed: {exc}")
+        return cells
+
+
 def run_ctam(
     cells: List[Dict[str, Any]],
     timestamp: Optional[str] = None,
@@ -274,6 +299,8 @@ def run_ctam(
     print(f"[CTAM] Pipeline complete: {cell_success_count} cell success, {cell_error_count} cell error(s), {grid_success_count} grid success, {grid_error_count} grid error(s), {grid_alert_count} grid alert(s) in {total_elapsed:.3f}s")
     
     # Generate timestamp snapshot of active alerts if provided
+    cells = _run_external_modules(cells, timestamp, json_path, input_manifest)
+
     if timestamp:
         try:
             AlertManager.create_snapshot(timestamp)

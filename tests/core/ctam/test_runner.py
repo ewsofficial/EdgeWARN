@@ -25,3 +25,18 @@ def test_runner_isolates_noncommitting_crashing_and_timed_out_modules(tmp_path):
     results = ExternalModuleRunner(catalog=_catalog(), cells=[{"id": "7"}], manifests=manifests).run()
     assert [item.state for item in results] == ["failed", "failed", "timed_out"]
     assert results[0].reason == "module exited without committing"
+
+
+def test_runner_exposes_predecessor_working_revision_to_committing_module(tmp_path):
+    program = '''import json, os
+from urllib.request import Request, urlopen
+base=os.environ["CTAM_API_URL"]; headers={"Authorization":"Bearer "+os.environ["CTAM_API_TOKEN"],"X-CTAM-API-Version":"1","Content-Type":"application/json"}
+cell=json.loads(urlopen(Request(base+"/stormcells/7",headers=headers)).read())["data"]
+body=json.dumps({"revision":cell["revision"],"operations":[{"op":"add","path":"/modules/Runnerok","value":{"ran":True}}]}).encode()
+urlopen(Request(base+"/stormcells/7",data=body,method="PATCH",headers=headers))
+urlopen(Request(base+"/transaction/commit",data=b"{}",method="POST",headers=headers))
+'''
+    manifest = _manifest(tmp_path, "ok", program)
+    runner = ExternalModuleRunner(catalog=_catalog(), cells=[{"id": "7"}], manifests={"ok": manifest})
+    assert runner.run()[0].state == "completed"
+    assert runner.transactions.cells["7"]["modules"]["Runnerok"] == {"ran": True}
