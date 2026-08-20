@@ -1,6 +1,6 @@
 # CTAM internal API v1
 
-This is a private, read-only HTTP API for an external CTAM module during one
+This is a private HTTP API for an external CTAM module during one
 pipeline cycle. It is not part of EdgeWARN's public API: the host binds it to
 `127.0.0.1` on an ephemeral port, starts it only while CTAM is active, and
 shuts it down with the cycle.
@@ -16,8 +16,13 @@ The checked-in [OpenAPI v1 document](openapi/ctam-internal-v1.json) is the
 wire contract. Phase 2 implements the read endpoints: `/health`, `/cycle`,
 `/files`, `/files/{file_id}`, `/files/{file_id}/content`, `/requirements`,
 `/requirements/check`, `/stormcells`, `/stormcells/{cell_id}`, and
-`/cells/{cell_id}`. Mutation and transaction routes are specified for a later
-phase and are not enabled by this server.
+`/cells/{cell_id}`. Phase 3 also enables cycle-local mutation:
+`PATCH /stormcells/{cell_id}` and
+`PATCH /cells/{cell_id}/entries/{timestamp}` stage only manifest-owned
+`modules`/`properties` paths; `POST /alerts` stages caller-owned alerts; and
+the `/transaction` endpoints validate, seal idempotently, or abandon the
+module's private transaction. Staged work is never visible through the API or
+filesystem until the host validates and publishes the completed cycle.
 
 `GET /files` deliberately exposes metadata for every frozen catalog entry,
 including unavailable files and their reason. File bytes are narrower: a
