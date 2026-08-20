@@ -15,15 +15,18 @@ class APIError(Exception):
     status: int = 400
     resource: str | None = None
     limit: int | None = None
+    pointer: str | None = None
+    expected_revision: int | None = None
+    observed_revision: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "code": self.code,
             "message": self.message,
             "resource": self.resource,
-            "pointer": None,
-            "expected_revision": None,
-            "observed_revision": None,
+            "pointer": self.pointer,
+            "expected_revision": self.expected_revision,
+            "observed_revision": self.observed_revision,
             "limit": self.limit,
             "retryable": False,
         }
