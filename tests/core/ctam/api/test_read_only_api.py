@@ -90,6 +90,19 @@ def test_server_rejects_unsupported_protocol_version(api):
     assert excinfo.value.code == 426
 
 
+@pytest.mark.parametrize("version", [None, "1"])
+def test_server_accepts_every_currently_supported_protocol_version(api, version):
+    """v1 is the first release, so it has no preceding version to retain yet."""
+    server, _ = api
+    headers = {"Authorization": "Bearer test-token"}
+    if version is not None:
+        headers["X-CTAM-API-Version"] = version
+    with urlopen(Request(server.url + "/health", headers=headers)) as response:
+        payload = json.loads(response.read())
+    assert payload["api_version"] == "1"
+    assert payload["data"]["supported_api_versions"] == ["1"]
+
+
 def test_patch_commit_uses_the_same_ownership_gate_and_is_idempotent(api):
     server, _ = api
     client = CTAMClient(server.url, "test-token")
