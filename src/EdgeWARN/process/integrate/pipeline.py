@@ -405,6 +405,19 @@ def _save_cells(handler, timestamp, cells, json_path):
     handler.write_json(data, json_path)
 
 
+def _publish_cycle(handler, timestamp, cells, json_path, remove_old_cells):
+    """Publish snapshot and active histories first, then make indexes visible."""
+    from EdgeWARN.ctam.publication import CTAMPublicationCoordinator
+    from .history import CellHistoryManager
+
+    snapshot = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, cells)
+    histories = CellHistoryManager(io_manager).prepare_cell_history_updates(cells)
+    payloads = {json_path: snapshot, **histories}
+    coordinator = CTAMPublicationCoordinator(fs.DATA_DIR / "ctam" / "transactions")
+    coordinator.recover()
+    coordinator.publish(payloads, publish_indexes=lambda: _update_api_indexes(cells, remove_old_cells), transaction_id=str(timestamp).replace(":", "-"))
+
+
 def _update_history(cells, timestamp):
     try:
         from .history import CellHistoryManager
@@ -464,10 +477,7 @@ def main(
     )
 
     try:
-        _run_step("Integration - Save", lambda: _save_cells(handler, timestamp, result_cells, json_path))
+        _run_step("Integration - Publication", lambda: _publish_cycle(handler, timestamp, result_cells, json_path, remove_old_cells))
     except Exception as exc:
         io_manager.write_error(f"Failed to save integrated stormcells to {json_path}: {exc}")
         raise
-
-    _update_history(result_cells, timestamp)
-    _update_api_indexes(result_cells, remove_old_cells)
