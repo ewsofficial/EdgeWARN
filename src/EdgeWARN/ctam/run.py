@@ -90,6 +90,15 @@ def _run_external_modules(cells, timestamp, json_path, input_manifest):
             return cells
         runner = ExternalModuleRunner(catalog=catalog, cells=cells, manifests=manifests)
         results = runner.run()
+        result_states = {result.module_id: result.state for result in results}
+        evaluations = {module_id: readiness.evaluate_requirements(manifest, catalog) for module_id, manifest in manifests.items()}
+        required_failed = any(manifests[result.module_id].required and result.state not in {"completed", "skipped_missing_requirements"} for result in results)
+        readiness.write_cycle_status(readiness.cycle_status(
+            catalog=catalog, discovery=discovered, evaluations=evaluations,
+            state=readiness.CYCLE_STATE_FAILED if required_failed else readiness.CYCLE_STATE_COMPLETED,
+            started_at=datetime.now(timezone.utc), finished_at=datetime.now(timezone.utc),
+            module_states=result_states,
+        ))
         for result in results:
             print(f"[CTAM] External module {result.module_id!r}: {result.state} ({result.duration_seconds:.3f}s)")
             if result.state != "completed" and manifests[result.module_id].required:
