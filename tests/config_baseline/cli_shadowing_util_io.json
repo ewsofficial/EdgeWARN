@@ -1,5 +1,7 @@
 {
-  "shadows_yaml": [],
+  "shadows_yaml": [
+    "--disable-ctam-modules"
+  ],
   "can_be_unset": [
     "--base_dir",
     "--check-ctam-modules",
