@@ -90,7 +90,7 @@ class CTAMReadService:
             "ctam_ready": self.ctam_ready,
             "module_state": "running",
             "requirements_satisfied": evaluation["satisfied"],
-            "allowed_operations": ["read_files", "read_stormcells", "read_history"],
+            "allowed_operations": (["read_files", "read_stormcells", "read_history", "patch_stormcells", "patch_history", "stage_alerts", "commit"] if self.transactions else ["read_files", "read_stormcells", "read_history"]),
             "historical": self.catalog.historical,
             "cell_count": self.catalog.cell_count,
             "deadline": self.deadline.astimezone(timezone.utc).isoformat() if self.deadline else None,
@@ -153,6 +153,10 @@ class CTAMReadService:
     def validate_transaction(self, module_id: str) -> dict[str, Any]:
         if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
         return self.transactions.validate(module_id)
+
+    def abandon_transaction(self, module_id: str) -> dict[str, Any]:
+        if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)
+        return self.transactions.abandon(module_id)
 
     def commit_transaction(self, module_id: str, *, idempotency_key: str | None) -> dict[str, Any]:
         if self.transactions is None: raise APIError("unavailable", "mutations are not enabled for this cycle", 409)

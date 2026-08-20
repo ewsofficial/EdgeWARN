@@ -189,6 +189,13 @@ class CTAMTransactionService:
         tx = self._transaction(module_id)
         return {"sealed": tx.sealed, "staged_cell_operations": sum(map(len, tx.staged_cells.values())), "staged_history_operations": sum(map(len, tx.staged_history.values())), "staged_alerts": len(tx.alerts), "commit": deepcopy(tx.commit_result)}
 
+    def abandon(self, module_id: str) -> dict[str, Any]:
+        tx = self._transaction(module_id)
+        if tx.sealed:
+            raise APIError("transaction_sealed", "transaction is already sealed", 409)
+        tx.staged_cells.clear(); tx.staged_history.clear(); tx.alerts.clear()
+        return {"abandoned": True}
+
     def validate(self, module_id: str) -> dict[str, Any]:
         tx = self._transaction(module_id)
         for cell_id, operations in tx.staged_cells.items(): self._apply(self.cells[cell_id], operations)

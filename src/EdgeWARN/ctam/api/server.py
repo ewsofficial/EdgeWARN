@@ -94,6 +94,7 @@ class LoopbackCTAMServer:
                     elif self.command == "GET" and route == "/transaction": data = outer.service.transaction(module_id)
                     elif self.command == "POST" and route == "/transaction/validate": data = outer.service.validate_transaction(module_id)
                     elif self.command == "POST" and route == "/transaction/commit": data = outer.service.commit_transaction(module_id, idempotency_key=self.headers.get("Idempotency-Key"))
+                    elif self.command == "DELETE" and route == "/transaction": data = outer.service.abandon_transaction(module_id)
                     elif self.command == "POST" and route == "/alerts": data = outer.service.stage_alert(module_id, self._body())
                     elif self.command == "PATCH" and route.startswith("/cells/") and "/entries/" in route:
                         cell_part, timestamp = route[len("/cells/"):].split("/entries/", 1)
@@ -151,6 +152,7 @@ class LoopbackCTAMServer:
             do_GET = _handle
             do_POST = _handle
             do_PATCH = _handle
+            do_DELETE = _handle
 
         self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self._thread = threading.Thread(target=self._httpd.serve_forever, name="ctam-api", daemon=True); self._thread.start()

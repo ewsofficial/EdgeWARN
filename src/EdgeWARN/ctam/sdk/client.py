@@ -62,6 +62,7 @@ class CTAMClient:
         from urllib.parse import quote
         return self._request("/cells/" + quote(str(cell_id), safe="") + "/entries/" + quote(str(timestamp), safe=""), method="PATCH", payload={"revision": revision, "operations": operations})
     def transaction(self): return self._request("/transaction")
+    def abandon_transaction(self): return self._request("/transaction", method="DELETE")
     def validate_transaction(self): return self._request("/transaction/validate", method="POST", payload={})
     def commit_transaction(self, *, idempotency_key=None):
         headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
