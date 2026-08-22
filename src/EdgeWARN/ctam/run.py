@@ -1,12 +1,12 @@
 """
 CTAM Pipeline Entry Point
 
-Provides a single entry point for running all registered CTAM modules
-on storm cell data.
+Provides a single entry point for CTAM processing on storm cell data:
 
-Supports both:
-- Cell-based modules: Operate on storm cells and modify them in-place
-- Grid-based modules: Operate on raster data (GRIB/NetCDF) and produce GeoJSON
+- The reserved built-in StormCast module runs in-process through the host
+  service boundary and always runs first.
+- External modules are discovered from manifests below ``ctam_modules/`` and
+  executed out of process in dependency order through the internal API v1.
 """
 
 import time
@@ -28,10 +28,8 @@ def _run_phase1_discovery_dry_run(
 ) -> None:
     """Discover external modules and record per-cycle readiness. Launches nothing.
 
-    Phase 1 of plans/modular-ctam-internal-api-plan.md adds discovery and
-    readiness without execution -- the legacy registry-based modules below are
-    untouched. This dry run must never block them, so every failure here is
-    caught and logged rather than raised.
+    This pre-execution pass must never block the pipeline, so every failure
+    here is caught and logged rather than raised.
     """
     try:
         started_at = datetime.now(timezone.utc)
@@ -61,12 +59,12 @@ def _run_phase1_discovery_dry_run(
         )
         readiness.write_cycle_status(status)
         print(
-            f"[CTAM] Phase 1 discovery: root={discovery_result.root} "
+            f"[CTAM] Discovery: root={discovery_result.root} "
             f"root_present={discovery_result.root_present} "
             f"runnable={len(discovery_result.runnable)}/{len(discovery_result.modules)}"
         )
     except Exception as e:
-        print(f"[CTAM] Phase 1 discovery/readiness dry run failed: {e}")
+        print(f"[CTAM] Discovery/readiness pass failed: {e}")
 
 
 def _run_external_modules(cells, timestamp, json_path, input_manifest, *, disabled=False):
@@ -140,24 +138,22 @@ def run_ctam(
     disable_ctam_modules: bool = False,
 ) -> List[Dict[str, Any]]:
     """
-    Run all registered CTAM modules on the provided storm cells.
+    Run CTAM on the provided storm cells.
 
-    First runs cell-based modules, then runs grid-based modules.
-    Grid results are attached to the first cell for output.
-
-    This is the single entry point for CTAM processing in the pipeline.
-    Modules are automatically discovered from the registry.
+    The reserved built-in StormCast module runs first, in-process. Discovered
+    external modules then execute out of process in dependency order through
+    the internal API; only their sealed transactions reach the working set.
 
     Args:
         cells: List of storm cell dictionaries, each with 'properties' key.
         timestamp: Optional scan timestamp (e.g. YYYYMMDD-HHMMSS) to save as an alert snapshot.
-        json_path: Optional path to this cycle's stormcell snapshot, used only to
-            report its readiness in the Phase 1 discovery dry run below.
-        input_manifest: Optional pinned CycleInputManifest, used only to build the
-            Phase 1 read-only file catalog. Never executes module code.
+        json_path: Optional path to this cycle's stormcell snapshot, used to pin
+            the cycle file catalog.
+        input_manifest: Optional pinned CycleInputManifest used to build the
+            cycle file catalog.
 
     Returns:
-        The same list of cells with 'modules' populated by each registered module.
+        The list of cells with 'modules' populated by each completed module.
     """
     start_time = time.time()
 
