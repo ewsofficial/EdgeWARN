@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 import uuid
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -128,6 +129,12 @@ class ModuleTransaction:
 class CTAMTransactionService:
     """Revisioned in-memory working set for exactly one CTAM cycle."""
     def __init__(self, *, cells: Sequence[Mapping[str, Any]], histories: Mapping[str, Sequence[Mapping[str, Any]]] | None = None, manifests: Mapping[str, ModuleManifest]) -> None:
+        # The loopback server is a ThreadingHTTPServer, so two modules writing
+        # at the same time can interleave inside any service call. Every
+        # working-set mutation therefore runs under this lock: without it,
+        # commit()'s validate -> deepcopy -> assign sequence can drop a
+        # concurrent module's committed namespace entirely.
+        self._lock = threading.RLock()
         self.cells = {str(c["id"]): deepcopy(dict(c)) for c in cells if c.get("id") is not None}
         self.histories = {str(key): deepcopy(list(value)) for key, value in (histories or {}).items()}
         self.manifests = dict(manifests)
@@ -146,26 +153,28 @@ class CTAMTransactionService:
             raise APIError("transaction_sealed", "transaction is already sealed or abandoned", 409)
 
     def stage_cell(self, module_id: str, cell_id: str, *, revision: int, operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-        tx = self._transaction(module_id)
-        self._require_open(tx)
-        if cell_id not in self.cells: raise APIError("not_found", "storm cell was not found", 404)
-        observed = self.cell_revisions[cell_id]
-        if revision != observed: raise APIError("stale_revision", "storm cell revision is stale", 409, expected_revision=revision, observed_revision=observed)
-        self._stage(self.manifests[module_id], tx.staged_cells.setdefault(cell_id, []), operations, resource="stormcells.current", existing=self.cells[cell_id])
-        return {"revision": observed, "staged_operations": len(tx.staged_cells[cell_id])}
+        with self._lock:
+            tx = self._transaction(module_id)
+            self._require_open(tx)
+            if cell_id not in self.cells: raise APIError("not_found", "storm cell was not found", 404)
+            observed = self.cell_revisions[cell_id]
+            if revision != observed: raise APIError("stale_revision", "storm cell revision is stale", 409, expected_revision=revision, observed_revision=observed)
+            self._stage(self.manifests[module_id], tx.staged_cells.setdefault(cell_id, []), operations, resource="stormcells.current", existing=self.cells[cell_id])
+            return {"revision": observed, "staged_operations": len(tx.staged_cells[cell_id])}
 
     def stage_history(self, module_id: str, cell_id: str, timestamp: str, *, revision: int, operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-        tx = self._transaction(module_id)
-        self._require_open(tx)
-        history = self.histories.get(cell_id)
-        if history is None: raise APIError("not_found", "cell history was not found", 404)
-        observed = self.history_revisions[cell_id]
-        if revision != observed: raise APIError("stale_revision", "cell history revision is stale", 409, expected_revision=revision, observed_revision=observed)
-        entry = next((item for item in history if str(item.get("timestamp")) == timestamp), None)
-        if entry is None: raise APIError("not_found", "history timestamp was not found", 404)
-        key = (cell_id, timestamp)
-        self._stage(self.manifests[module_id], tx.staged_history.setdefault(key, []), operations, resource="cells.history", existing=entry)
-        return {"revision": observed, "staged_operations": len(tx.staged_history[key])}
+        with self._lock:
+            tx = self._transaction(module_id)
+            self._require_open(tx)
+            history = self.histories.get(cell_id)
+            if history is None: raise APIError("not_found", "cell history was not found", 404)
+            observed = self.history_revisions[cell_id]
+            if revision != observed: raise APIError("stale_revision", "cell history revision is stale", 409, expected_revision=revision, observed_revision=observed)
+            entry = next((item for item in history if str(item.get("timestamp")) == timestamp), None)
+            if entry is None: raise APIError("not_found", "history timestamp was not found", 404)
+            key = (cell_id, timestamp)
+            self._stage(self.manifests[module_id], tx.staged_history.setdefault(key, []), operations, resource="cells.history", existing=entry)
+            return {"revision": observed, "staged_operations": len(tx.staged_history[key])}
 
     def _stage(self, manifest, destination, operations, *, resource, existing):
         if not isinstance(operations, Sequence) or isinstance(operations, (str, bytes)) or not operations:
@@ -184,16 +193,21 @@ class CTAMTransactionService:
             destination.append(deepcopy(dict(operation)))
 
     def stage_alert(self, module_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-        tx = self._transaction(module_id)
-        self._require_open(tx)
-        if not isinstance(payload, Mapping) or payload.get("source") != self.manifests[module_id].name:
-            raise APIError("invalid_patch", "alert source must be the caller's display name", 400)
-        if str(payload.get("cell_id")) not in self.cells or not payload.get("id") or not payload.get("geometry"):
-            raise APIError("invalid_patch", "alert must identify an active cell, id, and geometry", 400)
-        _json_safe(dict(payload)); tx.alerts.append(deepcopy(dict(payload)))
-        return {"staged_alerts": len(tx.alerts)}
+        with self._lock:
+            tx = self._transaction(module_id)
+            self._require_open(tx)
+            if not isinstance(payload, Mapping) or payload.get("source") != self.manifests[module_id].name:
+                raise APIError("invalid_patch", "alert source must be the caller's display name", 400)
+            if str(payload.get("cell_id")) not in self.cells or not payload.get("id") or not payload.get("geometry"):
+                raise APIError("invalid_patch", "alert must identify an active cell, id, and geometry", 400)
+            _json_safe(dict(payload)); tx.alerts.append(deepcopy(dict(payload)))
+            return {"staged_alerts": len(tx.alerts)}
 
     def transaction(self, module_id: str) -> dict[str, Any]:
+        with self._lock:
+            return self._transaction_snapshot(module_id)
+
+    def _transaction_snapshot(self, module_id: str) -> dict[str, Any]:
         tx = self._transaction(module_id)
         cell_ops = sum(map(len, tx.staged_cells.values()))
         history_ops = sum(map(len, tx.staged_history.values()))
@@ -201,37 +215,41 @@ class CTAMTransactionService:
         return {"transaction_id": tx.transaction_id, "module_id": module_id, "state": state, "staged": {"stormcell_operations": cell_ops, "history_operations": history_ops, "alerts": len(tx.alerts), "cells_touched": sorted({int(key) if key.isdigit() else key for key in (*tx.staged_cells, *(key for key, _ in tx.staged_history))}, key=str), "bytes": len(json.dumps([*tx.staged_cells.values(), *tx.staged_history.values(), tx.alerts], allow_nan=False, default=str).encode())}, "conflicts": [], "commit_id": tx.commit_result.get("commit_id") if tx.commit_result else None, "idempotency_key": tx.commit_result.get("idempotency_key") if tx.commit_result else None, "revisions": {"stormcells.current": max(self.cell_revisions.values(), default=0), "cells.history": max(self.history_revisions.values(), default=0)}}
 
     def abandon(self, module_id: str) -> dict[str, Any]:
-        tx = self._transaction(module_id)
-        if tx.sealed or tx.abandoned:
-            raise APIError("transaction_sealed", "transaction is already sealed", 409)
-        tx.staged_cells.clear(); tx.staged_history.clear(); tx.alerts.clear(); tx.abandoned = True
-        return self.transaction(module_id)
+        with self._lock:
+            tx = self._transaction(module_id)
+            if tx.sealed or tx.abandoned:
+                raise APIError("transaction_sealed", "transaction is already sealed", 409)
+            tx.staged_cells.clear(); tx.staged_history.clear(); tx.alerts.clear(); tx.abandoned = True
+            return self._transaction_snapshot(module_id)
 
     def validate(self, module_id: str) -> dict[str, Any]:
-        tx = self._transaction(module_id)
-        for cell_id, operations in tx.staged_cells.items(): self._apply(self.cells[cell_id], operations)
-        for (cell_id, timestamp), operations in tx.staged_history.items():
-            entry = next(item for item in self.histories[cell_id] if str(item.get("timestamp")) == timestamp)
-            self._apply(entry, operations)
-        return self.transaction(module_id)
+        with self._lock:
+            tx = self._transaction(module_id)
+            for cell_id, operations in tx.staged_cells.items(): self._apply(self.cells[cell_id], operations)
+            for (cell_id, timestamp), operations in tx.staged_history.items():
+                entry = next(item for item in self.histories[cell_id] if str(item.get("timestamp")) == timestamp)
+                self._apply(entry, operations)
+            return self._transaction_snapshot(module_id)
 
     def commit(self, module_id: str, *, idempotency_key: str | None = None) -> dict[str, Any]:
-        tx = self._transaction(module_id)
-        if tx.sealed: return self.transaction(module_id)
-        self.validate(module_id)
-        for cell_id, operations in tx.staged_cells.items():
-            self.cells[cell_id] = self._apply(self.cells[cell_id], operations); self.cell_revisions[cell_id] += 1
-        for (cell_id, timestamp), operations in tx.staged_history.items():
-            history = self.histories[cell_id]
-            index = next(index for index, item in enumerate(history) if str(item.get("timestamp")) == timestamp)
-            history[index] = self._apply(history[index], operations); self.history_revisions[cell_id] += 1
-        tx.sealed = True
-        tx.commit_result = {"commit_id": f"commit_{uuid.uuid4().hex}", "idempotency_key": idempotency_key}
-        return self.transaction(module_id)
+        with self._lock:
+            tx = self._transaction(module_id)
+            if tx.sealed: return self._transaction_snapshot(module_id)
+            self.validate(module_id)
+            for cell_id, operations in tx.staged_cells.items():
+                self.cells[cell_id] = self._apply(self.cells[cell_id], operations); self.cell_revisions[cell_id] += 1
+            for (cell_id, timestamp), operations in tx.staged_history.items():
+                history = self.histories[cell_id]
+                index = next(index for index, item in enumerate(history) if str(item.get("timestamp")) == timestamp)
+                history[index] = self._apply(history[index], operations); self.history_revisions[cell_id] += 1
+            tx.sealed = True
+            tx.commit_result = {"commit_id": f"commit_{uuid.uuid4().hex}", "idempotency_key": idempotency_key}
+            return self._transaction_snapshot(module_id)
 
     def committed_alerts(self) -> list[dict[str, Any]]:
         """Alerts eligible for host publication; unsealed work stays private."""
-        return [deepcopy(alert) for tx in self.transactions.values() if tx.sealed for alert in tx.alerts]
+        with self._lock:
+            return [deepcopy(alert) for tx in self.transactions.values() if tx.sealed for alert in tx.alerts]
 
     @staticmethod
     def _apply(cell: dict[str, Any], operations: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
