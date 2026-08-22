@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CTAM stormcell and history patch request",
+  "description": "Request body for PATCH /stormcells/{cell_id} and PATCH /cells/{cell_id}/entries/{timestamp}. Operations address a single already-resolved cell entry, never the document root. The path pattern here is a coarse first gate only: it enforces the two-container prefix and rejects malformed shapes, but it cannot decide key ownership. Ownership is decided by parsing the pointer into RFC 6901 segments and comparing decoded segments against the allowlist, which is the only correct way and is what the host must implement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "revision", "operations"],
+  "properties": {
+    "api_version": { "const": "1" },
+    "revision": {
+      "description": "The cycle-local revision the caller observed when reading this resource. A mismatch is a stale_revision error; the host never applies a patch to an unexpected base.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "idempotency_key": {
+      "description": "Optional on a patch, required on commit. Replaying the same key returns the original result rather than applying twice.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}\\Z"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["op", "path"],
+        "properties": {
+          "op": {
+            "description": "remove, move, and copy are deliberately absent until their provenance and ownership semantics are defined.",
+            "enum": ["add", "replace", "test"]
+          },
+          "path": {
+            "description": "RFC 6901 pointer relative to the cell entry. Must name at least one segment below /modules or /properties, so the bare container path is unreachable and a container cannot be replaced or cleared. A trailing empty segment is rejected. Control characters are excluded. Note that a segment such as '..' is a literal key name with no traversal meaning; it is accepted here and must never be passed through a filesystem path normalizer.",
+            "type": "string",
+            "pattern": "^/(modules|properties)(/[^/\\x00-\\x1f]+)+\\Z"
+          },
+          "value": {
+            "description": "Required for add and replace, and carries the expected value for test. Absent for no other reason. Contents are arbitrary JSON, so this schema intentionally stops here: depth, field count, payload size, and the finiteness of nested numbers cannot be expressed in the supported keyword set and must be enforced in host code. Note that Python's json.loads accepts the non-standard NaN and Infinity literals unless parse_constant rejects them.",
+            "type": ["object", "array", "string", "number", "boolean", "null"]
+          }
+        }
+      }
+    }
+  }
+}

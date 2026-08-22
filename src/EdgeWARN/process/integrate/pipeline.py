@@ -375,7 +375,7 @@ def _run_parallel_enrichment(
     return _run_step("Integration - Merge", _merge_all)
 
 
-def _run_ctam_if_enabled(cells, timestamp, disable_ctam):
+def _run_ctam_if_enabled(cells, timestamp, disable_ctam, json_path=None, input_manifest=None, disable_ctam_modules=False):
     if disable_ctam:
         io_manager.write_info("CTAM module execution disabled via command-line flag")
         return cells
@@ -384,7 +384,16 @@ def _run_ctam_if_enabled(cells, timestamp, disable_ctam):
         from EdgeWARN.ctam.run import run_ctam
 
         io_manager.write_info(f"Running CTAM modules for {len(cells)} cells")
-        cells = _run_step("Integration - CTAM", lambda: run_ctam(cells, timestamp=timestamp))
+        cells = _run_step(
+            "Integration - CTAM",
+            lambda: run_ctam(
+                cells,
+                timestamp=timestamp,
+                json_path=json_path,
+                input_manifest=input_manifest,
+                disable_ctam_modules=disable_ctam_modules,
+            ),
+        )
         io_manager.write_debug("CTAM module execution completed successfully")
     except Exception as e:
         io_manager.write_error(f"Failed to run CTAM modules: {e}")
@@ -395,6 +404,19 @@ def _run_ctam_if_enabled(cells, timestamp, disable_ctam):
 def _save_cells(handler, timestamp, cells, json_path):
     data = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, cells)
     handler.write_json(data, json_path)
+
+
+def _publish_cycle(handler, timestamp, cells, json_path, remove_old_cells):
+    """Publish snapshot and active histories first, then make indexes visible."""
+    from EdgeWARN.ctam.publication import CTAMPublicationCoordinator
+    from .history import CellHistoryManager
+
+    snapshot = CellDataSaver(None, None, None, None, None, None).create_json_structure(timestamp, cells)
+    histories = CellHistoryManager(io_manager).prepare_cell_history_updates(cells)
+    payloads = {json_path: snapshot, **histories}
+    coordinator = CTAMPublicationCoordinator(fs.DATA_DIR / "ctam" / "transactions")
+    coordinator.recover()
+    coordinator.publish(payloads, publish_indexes=lambda: _update_api_indexes(cells, remove_old_cells), transaction_id=str(timestamp).replace(":", "-"))
 
 
 def _update_history(cells, timestamp):
@@ -428,6 +450,7 @@ def main(
     json_path=None,
     remove_old_cells=None,
     disable_ctam=False,
+    disable_ctam_modules=False,
     mrms_core_only=False,
     input_manifest: CycleInputManifest | None = None,
 ):
@@ -447,13 +470,17 @@ def main(
         include_rap=not mrms_core_only,
         input_manifest=input_manifest,
     )
-    result_cells = _run_ctam_if_enabled(result_cells, timestamp, disable_ctam)
+    result_cells = _run_ctam_if_enabled(
+        result_cells,
+        timestamp,
+        disable_ctam,
+        json_path=json_path,
+        input_manifest=input_manifest,
+        disable_ctam_modules=disable_ctam_modules,
+    )
 
     try:
-        _run_step("Integration - Save", lambda: _save_cells(handler, timestamp, result_cells, json_path))
+        _run_step("Integration - Publication", lambda: _publish_cycle(handler, timestamp, result_cells, json_path, remove_old_cells))
     except Exception as exc:
         io_manager.write_error(f"Failed to save integrated stormcells to {json_path}: {exc}")
         raise
-
-    _update_history(result_cells, timestamp)
-    _update_api_indexes(result_cells, remove_old_cells)

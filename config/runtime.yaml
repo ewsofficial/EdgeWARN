@@ -94,6 +94,20 @@ run:
   disable_tracking: false
   disable_polygon_expansion: false
 
+  # util/ctam_config.py resolve_ctam_module_dir, overridable by
+  # --ctam-module-dir or EDGEWARN_CTAM_MODULE_DIR. The operator-owned install
+  # root for external CTAM modules: EdgeWARN/ctam/discovery.py scans it one level
+  # deep and reads a `module.toml` from each subdirectory that has one. Nothing
+  # under it is imported or executed by discovery, so a broken module is reported
+  # rather than run.
+  #
+  # Relative to the *repository* root unless absolute -- not to the working
+  # directory, which a supervisor child does not control -- and .gitignore
+  # excludes the default location, because its contents are the operator's and
+  # not ours to commit. A missing directory means "no external modules", which is
+  # a supported configuration and not a startup error.
+  ctam_module_dir: ctam_modules
+
   # io.py:150-164, resolved at :171-176 in get_args. run.py only;
   # process_historical.py declares no such flags, so these keys are not read on
   # the historical path.

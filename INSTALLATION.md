@@ -113,6 +113,9 @@ Common optional flags:
 - `--config-dir`
 - `--profile`
 - `--disable-ctam`
+- `--ctam-module-dir`
+- `--list-ctam-modules`
+- `--check-ctam-modules`
 - `--disable-tracking`
 - `--disable-polygon-expansion`
 - `--disable-ewmrs`
@@ -151,6 +154,9 @@ Common optional flags:
 - `--config-dir`
 - `--profile`
 - `--disable-ctam`
+- `--ctam-module-dir`
+- `--list-ctam-modules`
+- `--check-ctam-modules`
 - `--disable-tracking`
 - `--disable-polygon-expansion`
 - `--refl-threshold`

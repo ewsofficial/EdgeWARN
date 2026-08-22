@@ -1,0 +1,18 @@
+schema_version = 1
+id = "example_stats"
+name = "ExampleStats"
+version = "1.0.0"
+api_version = "1"
+enabled = true
+required = false
+scope = "stormcells"
+entrypoint = ["{python}", "main.py"]
+timeout_seconds = 10
+
+[[requires]]
+selector = "stormcells.current"
+required = true
+
+[[writes]]
+resource = "stormcells.current"
+json_pointer = "/features/*/modules/ExampleStats"

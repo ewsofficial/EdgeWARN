@@ -56,8 +56,11 @@ The implementation is complete when all of the following are true:
 - A module can read its admitted inputs and transactionally add output beneath
   its owned namespace in the current stormcell snapshot and selected entries
   in `data/cells/<cell-id>.json`.
-- Core identity, geometry, timestamps, tracking fields, and another module's
-  namespace cannot be changed unless an explicit reviewed write grant exists.
+- Module writes are confined by a positive allowlist to the `modules` and
+  `properties` containers of a cell entry, scoped to the caller's own key within
+  them. Core identity, geometry, timestamps, tracking fields, another module's
+  namespace, and the containers themselves are unreachable by any patch, and no
+  manifest or operator grant can widen a module past those two containers.
 - Missing optional inputs produce an observable skip/degraded result rather
   than a crash or a false ready state. Missing required modules or inputs
   follow explicit manifest policy.
@@ -72,9 +75,9 @@ The implementation is complete when all of the following are true:
   mtime while processing an older cycle.
 - Existing StormCast forecasts, alerts, diagnostics, and downstream tracking
   consumption remain covered by regression tests.
-- MorphoWind is no longer imported or shipped as a built-in CTAM module. Its
-  extraction has a documented install/migration path before the tracked copy
-  is removed.
+- MorphoWind is deleted from the repository. No base package code imports it,
+  registers it, or depends on its output namespace, and the StormCast threat
+  field that previously read that namespace has an explicitly decided behavior.
 - CTAM documentation contains the manifest schema, API schema, module SDK
   usage, install/update/remove workflow, compatibility policy, and a complete
   example module outside the ignored production directory.
@@ -87,17 +90,26 @@ The current implementation is modular only at the Python class level:
   `GridAnalysisModule`. Implementations receive mutable dictionaries or locate
   raw data themselves.
 - `src/EdgeWARN/ctam/modules/__init__.py` imports StormCast and MorphoWind by
-  name and registers instantiated classes. Every new module therefore requires
-  a base-repository code change.
+  name and registers instantiated classes at import time. Every new module
+  therefore requires a base-repository code change.
 - `src/EdgeWARN/ctam/registry.py` stores process-global module instances, and
   duplicate names silently overwrite earlier registrations.
 - `src/EdgeWARN/ctam/run.py` executes registered modules in-process. A module
   receives the full mutable cell, can import any EdgeWARN implementation, and
   has no declared input, write ownership, protocol version, timeout, or
   lifecycle contract.
-- StormCast and MorphoWind read `data/cells/<id>.json` or shared history helpers
-  directly. StormCast also reads alerts directly. This makes filesystem access
-  part of undocumented module behavior.
+- StormCast reads `data/cells/<id>.json` through shared history helpers and reads
+  alerts directly. This makes filesystem access part of undocumented module
+  behavior.
+- `src/EdgeWARN/ctam/modules/StormCast/__init__.py` derives its published
+  `tstm_wind` threat from `modules.MorphoWind.severity_index`, defaulting to
+  `0.0` when absent. A built-in module therefore depends on another module's
+  output namespace with no declared requirement, no ordering guarantee, and no
+  distinction between "no wind risk" and "the producing module did not run".
+- `properties.morphology` in `src/EdgeWARN/process/detect/tools/save.py` is
+  produced by the detection-stage `MorphologyEngine`, not by the CTAM MorphoWind
+  module, despite the comment there naming MorphoWind. It is a detection input
+  and is unaffected by CTAM module changes.
 - Grid results have a separate return convention and may be attached to the
   first storm cell under `_grid_outputs`, which is not an explicit artifact
   contract.
@@ -196,7 +208,7 @@ silently change the existing flag's meaning.
 ```text
 EdgeWARN-Core/
 ├── ctam_modules/                         # ignored, operator-installed modules
-│   └── morphowind/
+│   └── <module-id>/
 │       ├── module.toml
 │       ├── main.py
 │       ├── requirements.lock             # module-owned, optional
@@ -249,8 +261,8 @@ do not need executable registration code. The first schema should support:
 
 ```toml
 schema_version = 1
-id = "morphowind"
-name = "MorphoWind"
+id = "cellstats"
+name = "CellStats"
 version = "1.0.0"
 api_version = "1"
 enabled = true
@@ -276,11 +288,17 @@ max_age_seconds = 180
 
 [[writes]]
 resource = "stormcells.current"
-json_pointer = "/features/*/modules/MorphoWind"
+json_pointer = "/features/*/modules/CellStats"
 
 [[writes]]
 resource = "cells.history"
-json_pointer = "/*/modules/MorphoWind"
+json_pointer = "/*/modules/CellStats"
+
+# Optional flat scalars for API/index consumers. Must live under `properties`
+# and must be prefixed with the module id.
+[[writes]]
+resource = "stormcells.current"
+json_pointer = "/features/*/properties/cellstats_severity"
 ```
 
 Manifest validation rules:
@@ -296,11 +314,16 @@ Manifest validation rules:
 - Requirement selectors are drawn from a documented registry. Unknown product,
   family, role, or resource selectors fail manifest validation rather than
   becoming perpetually unavailable.
-- Default write ownership is exactly the module's namespace. A manifest cannot
-  grant itself access to `/id`, `/geometry`, `/centroid`, `/timestamp`, tracking
-  state, another module's namespace, indexes, or internal CTAM metadata.
-- Broader write grants require base configuration controlled by the operator;
-  they cannot be acquired solely by editing the module manifest.
+- Every `[[writes]]` pointer must resolve inside the `modules` or `properties`
+  container of a cell entry, and must name the module's own key within it. A
+  pointer that targets any other part of the document fails manifest validation
+  at discovery time, before the module is ever launched.
+- No write grant, at any level, can widen beyond those two containers. Operator
+  base configuration can only broaden ownership *within* `modules`/`properties`
+  (for example, permitting one module to update a second declared key). It
+  cannot unlock `/id`, `/geometry`, `/centroid`, `/bbox`, `/max_refl`,
+  `/event_type`, `/parent_ids`, `/split_from`, timestamps, tracking or Kalman
+  state, the `features` array itself, indexes, or internal CTAM metadata.
 - Timeouts have bounded minimum and maximum values. Output and request body
   sizes are bounded.
 - `required = true` means failure affects the CTAM stage outcome; it does not
@@ -407,9 +430,9 @@ Publish and validate an OpenAPI document for
 | `POST /requirements/check` | Re-evaluate only dynamic conditions before work starts. |
 | `GET /stormcells` | Current working snapshot after committed predecessor modules. |
 | `GET /stormcells/{cell_id}` | One current cell by stable ID. |
-| `PATCH /stormcells/{cell_id}` | Stage allowlisted operations against the current snapshot. |
+| `PATCH /stormcells/{cell_id}` | Stage operations confined to the cell's `modules`/`properties` containers. |
 | `GET /cells/{cell_id}` | Read admitted history with timestamp/limit query controls. |
-| `PATCH /cells/{cell_id}/entries/{timestamp}` | Stage allowlisted history-entry operations. |
+| `PATCH /cells/{cell_id}/entries/{timestamp}` | Stage history-entry operations confined to the same two containers. |
 | `POST /alerts` | Stage schema-valid alert payloads owned by the caller. |
 | `GET /transaction` | Staged operation count, validation state, and conflict details. |
 | `POST /transaction/validate` | Validate without publication. |
@@ -429,15 +452,63 @@ base. A retry with the same idempotency key returns the original result.
 
 ### Patch and ownership rules
 
+A patch never addresses the document root. Both PATCH endpoints accept
+operations against a single resolved cell entry, and every operation path is
+validated against a positive allowlist. There is no grant, flag, or
+configuration that exposes the full JSON structure.
+
+**Two containers, and nothing else.** An operation path must begin with
+`/modules/` or `/properties/`. Anything else is rejected with a forbidden-path
+error before evaluation:
+
+| Path form | Result |
+| --- | --- |
+| `/modules/<OwnKey>` and below | Allowed |
+| `/properties/<own-prefixed-key>` | Allowed |
+| `/modules` or `/properties` (the container itself) | Rejected — cannot replace or clear a container |
+| `/modules/<OtherModule>`, `/modules/_grid_outputs` | Rejected — not the caller's key |
+| `/id`, `/centroid`, `/bbox`, `/hail_core`, `/max_refl`, `/num_gates`, `/event_type`, `/parent_ids`, `/split_from`, `/geometry`, timestamps, tracking and Kalman fields | Rejected — core identity, geometry, and tracking state |
+| `/features/...`, `/`, any array index, any pointer escaping the entry | Rejected — not addressable by a module |
+
+**Key ownership inside the containers.** Container membership is necessary but
+not sufficient; the leaf key must also belong to the caller.
+
+- Under `modules`, the caller owns exactly `modules.<display-name>` from its
+  manifest. Reserved keys, including `StormCast` for non-StormCast callers and
+  the legacy `_grid_outputs`, are never grantable.
+- Under `properties`, the caller owns only keys declared in its manifest and
+  prefixed with its module id. This matters because `properties` is *shared,
+  pre-populated* state: detection and integration write `morphology`, `p95VIL`,
+  `p95EchoTop18`, `p95AzShearLow`, and similar enrichment values there, and
+  modules and downstream physics read them. Reject any `properties` write whose
+  key already exists in the frozen entry and was not written by the same module,
+  so a module cannot overwrite a detection input that another module then
+  consumes as if it were measured data.
+- Prefer `modules` for structured output. `properties` exists for flat scalars
+  that API and index consumers need, and its narrower rules reflect the higher
+  blast radius of writing into a shared namespace.
+
+Remaining rules:
+
 - Support `add`, `replace`, and `test` initially. Reject `remove`, `move`, and
   `copy` until their provenance and ownership semantics are defined.
 - Resolve `cell_id` through an internal index; never interpolate it into a path
   before validating its canonical form and containment.
+- Validate the pointer by parsing it into RFC 6901 segments, unescaping `~0`
+  and `~1` once, and comparing the decoded segments against the allowlist. Do
+  not validate by string prefix and do not pass the pointer through any path
+  normalizer: JSON Pointer has no traversal semantics, so a segment such as `..`
+  is a literal key name, and treating it as a filesystem path is what turns
+  `/modules/Foo/../id` into a write to `/id`. Reject malformed pointers, double
+  unescaping, and pointers with a trailing empty segment.
 - The common case writes one object below `modules.<display-name>`. Require
   JSON-serializable finite values and enforce depth, field-count, and payload
   size limits.
 - A module may update its own previously written namespace in a history entry,
   but cannot rewrite a different module's historical result.
+- The host creates a missing `modules` or `properties` container itself when
+  first needed. A module cannot create one by patching the container path, so
+  container creation can never be used to supply sibling keys.
 - Unknown cells and timestamps fail explicitly. Creating a new storm cell,
   inventing a history timestamp, or deleting history is not a v1 operation.
 - Grid/cycle modules remain possible through a cycle-scoped output namespace.
@@ -493,26 +564,53 @@ is published once. Do not let `run_ctam()` write files and then let
 coordinator becomes the single owner of current snapshot, current history
 entry, module-requested historical patches, alerts, and index ordering.
 
-## MorphoWind extraction and compatibility
+## MorphoWind removal
 
-MorphoWind demonstrates why the current interface is coupled: it subclasses
-the base class, imports base history helpers, and expects mutable cell objects.
-Migrate it as the first external module and use it to prove the contract:
+MorphoWind is deleted rather than migrated. It is the only optional built-in
+module, and keeping it would require either a second bundled production
+analytics module inside the base package or an external distribution channel
+this project does not have. The base package ships StormCast plus a synthetic
+example, and nothing else.
 
-1. Build a standalone MorphoWind package with `module.toml` and an API client.
-2. Declare stormcells, at least two history entries, and its actual input
-   properties as requirements.
-3. Write only `modules.MorphoWind` in current and selected history entries.
-4. Compare its outputs against frozen fixtures from the current implementation.
-5. Provide an installation command or release archive that places the package
-   below `ctam_modules/morphowind/`.
-6. Only after that artifact and migration guide exist, remove the tracked
-   `src/EdgeWARN/ctam/modules/MorphoWind/` implementation and hard-coded import.
+Delete, in one reviewed change:
 
-Do not commit MorphoWind source beneath ignored `ctam_modules/` and assume it
-will ship; ignored tracked files and untracked local copies are not a release
-mechanism. The tracked `examples/ctam_module/` must be a small synthetic module,
-not a second bundled production analytics module.
+- `src/EdgeWARN/ctam/modules/MorphoWind/` (`__init__.py`, `morphowind.py`,
+  `config.py`, `AGENTS.md`)
+- its import, instantiation, registration, and `__all__` entry in
+  `src/EdgeWARN/ctam/modules/__init__.py`
+- `docs/ctam/modules/MorphoWind/README.md` and its references from
+  `docs/ctam/README.md`, `docs/core/integration.md`, `AGENTS.md`, and `GEMINI.md`
+- `tests/core/ctam/test_morphowind_physics.py`
+- `test_morphowind_module` in `tests/benchmarks/test_performance.py`
+- the `"MorphoWind" in cell_module_names` assertion in
+  `tests/core/ctam/test_registry.py`
+
+Do not delete `properties.morphology` or the detection-stage `MorphologyEngine`.
+Those are unrelated detection outputs; only the misleading MorphoWind comment in
+`src/EdgeWARN/process/detect/tools/save.py` should be corrected.
+
+### The StormCast `tstm_wind` coupling must be decided, not dropped
+
+StormCast currently sets `tstm_wind` from `modules.MorphoWind.severity_index`
+with a `0.0` default. Deleting MorphoWind makes that threat unconditionally
+`"false"`, which is a silent alert-content regression rather than a refactor.
+Choose one option explicitly and record it in a release note:
+
+- **Remove the threat field.** StormCast stops publishing `tstm_wind` because it
+  has no wind-risk input of its own. Alert consumers and the alert schema are
+  updated accordingly.
+- **Keep it as a declared optional input.** StormCast reads a documented
+  `severity_index` from a named optional module namespace through the host
+  service, publishes `tstm_wind` only when that namespace is present, and
+  distinguishes absent from `"false"`.
+
+Do not leave the current code shape in place after deletion, where a permanently
+missing namespace is indistinguishable from a measured absence of wind risk. The
+StormCast tests that inject a `MorphoWind` namespace
+(`tests/core/ctam/modules/stormcast/test_module.py`) must be rewritten to match
+whichever option is chosen.
+
+## Legacy framework compatibility
 
 During one deprecation window, keep import shims for documented StormCast core
 imports. Do not preserve import-time external registration as a hidden fallback.
@@ -524,8 +622,11 @@ a manifest and use API v1. Remove `interface.py`, `registry.py`, and the generic
 
 ### Phase 0 — Freeze behavior and schemas
 
-- [ ] Add golden fixtures for StormCast and MorphoWind current-cell outputs,
-  history reads, alerts, skipped states, and error states.
+- [ ] Add golden fixtures for StormCast current-cell outputs, history reads,
+  alerts, skipped states, and error states.
+- [ ] Record the current StormCast alert payload with and without a populated
+  `modules.MorphoWind.severity_index`, so the `tstm_wind` decision is made
+  against measured output rather than assumption.
 - [ ] Record the current stormcell and cell-history JSON shapes, including
   inactive cells and duplicate-timestamp replacement behavior.
 - [ ] Define JSON Schemas for catalog descriptors, readiness, patch requests,
@@ -615,6 +716,9 @@ Tasks:
 
 - [ ] Implement revisioned staging, validation, ownership enforcement,
   idempotent commit, and conflict errors.
+- [ ] Implement the `modules`/`properties` pointer allowlist as segment-wise
+  validation in one place, shared by the HTTP handlers and the StormCast
+  in-process adapter, so neither path can drift into broader access.
 - [ ] Stage alerts in the same semantic module transaction.
 - [ ] Consolidate stormcell, current history, historical patch, alert, and
   index publication beneath one coordinator.
@@ -627,6 +731,11 @@ Tasks:
 Acceptance:
 
 - Unauthorized paths and invalid JSON values never alter the working set.
+- A patch targeting anything outside `modules`/`properties` is rejected, and a
+  cell's core identity, geometry, and tracking fields are byte-identical before
+  and after a cycle in which every module wrote successfully.
+- A module cannot reach a sibling key by patching a container path, by traversal
+  segments, or by encoded separators.
 - A module crash before commit leaves all payloads unchanged.
 - Repeating a commit request is idempotent.
 - Fault injection before and after every file replacement produces a tested,
@@ -694,25 +803,28 @@ Acceptance:
 - A two-cycle integration test proves cycle N StormCast output is consumed by
   tracking in cycle N+1.
 
-### Phase 6 — Extract MorphoWind and remove the legacy framework
+### Phase 6 — Delete MorphoWind and remove the legacy framework
 
 Files:
 
-- `src/EdgeWARN/ctam/modules/MorphoWind/` (remove after distribution gate)
+- `src/EdgeWARN/ctam/modules/MorphoWind/` (delete)
 - `src/EdgeWARN/ctam/modules/__init__.py`
+- `src/EdgeWARN/ctam/modules/StormCast/__init__.py`
 - `src/EdgeWARN/ctam/interface.py`
 - `src/EdgeWARN/ctam/registry.py`
 - `src/EdgeWARN/ctam/engine.py`
+- `src/EdgeWARN/process/detect/tools/save.py` (comment correction only)
 - `docs/ctam/`
 - affected tests
 
 Tasks:
 
-- [ ] Package MorphoWind externally and validate it against API v1 and golden
-  outputs.
-- [ ] Publish an install/update/remove and rollback path before deleting the
-  built-in tracked copy.
-- [ ] Remove hard-coded MorphoWind imports and import-time registration.
+- [ ] Decide the `tstm_wind` question, implement it in StormCast, and write the
+  release note before deleting MorphoWind.
+- [ ] Delete the MorphoWind package, its import-time registration, its docs, and
+  its tests as listed in the MorphoWind removal section.
+- [ ] Correct the MorphoWind comment in `save.py` without changing
+  `properties.morphology` behavior.
 - [ ] Migrate grid-module behavior to the cycle-scoped API or explicitly
   deprecate unsupported legacy behavior with a release note.
 - [ ] Replace repository tests that assert registry internals with discovery,
@@ -722,11 +834,17 @@ Tasks:
 
 Acceptance:
 
-- `rg` finds no production auto-registration or hard-coded external module
+- `rg -i morphowind` finds no production code, test, or documentation reference
+  except an intentional release note or changelog entry.
+- `rg` finds no production auto-registration or hard-coded optional module
   import.
-- A clean checkout plus documented MorphoWind installation reproduces its
-  baseline output, while a clean checkout without it runs StormCast normally.
-- No production external module source lives inside the base CTAM package.
+- A clean checkout runs StormCast normally with an absent or empty
+  `ctam_modules/`, and detection-stage `properties.morphology` is byte-identical
+  to the Phase 0 baseline.
+- StormCast alert payloads match the decided `tstm_wind` behavior, and no test
+  fixture injects a `MorphoWind` namespace to obtain a passing assertion.
+- No optional production analytics module source lives inside the base CTAM
+  package.
 
 ### Phase 7 — Documentation, operations, and performance gate
 
@@ -765,6 +883,14 @@ Acceptance:
   bounds, error envelopes, redaction, and server shutdown.
 - Patch operations, namespace ownership, immutable paths, revisions,
   conflicts, idempotency, finite JSON values, and payload limits.
+- Pointer allowlist enforcement as a dedicated table-driven test: accepted
+  `/modules/<OwnKey>` and `/properties/<own-prefixed-key>` paths; rejected
+  container paths, other modules' keys, reserved keys, every core identity and
+  geometry field, `/features` and root paths, array indices, traversal segments,
+  encoded separators, and malformed pointers. The same table runs against both
+  the HTTP handlers and the StormCast in-process adapter.
+- Rejection of a `properties` write whose key already exists in the frozen entry
+  and belongs to detection or another module.
 - Journal transitions, hashes, recovery, quarantine, and index-last ordering.
 
 ### Process-contract tests
@@ -788,6 +914,9 @@ Acceptance:
 - Inactive-cell history mtime and contents remain unchanged.
 - API indexes expose only committed artifacts.
 - Two modules cannot overwrite each other or a core field.
+- A module cannot corrupt a detection enrichment value that later physics reads:
+  a fixture attempting to write `properties.p95VIL` is rejected, and the value
+  StormCast reads is unchanged.
 - StormCast output parity, alert parity, and next-cycle tracking use.
 - `--disable-ctam` and `--disable-ctam-modules` behavior.
 - Windows and Linux loopback launch, token propagation, termination, and path
@@ -812,7 +941,12 @@ Update:
 - `docs/core/integration.md`
 - `docs/core/README.md`
 - `INSTALLATION.md`
+- `AGENTS.md` and `GEMINI.md` module inventories
 - CLI help generated from `src/util/io.py`
+
+Remove:
+
+- `docs/ctam/modules/MorphoWind/README.md`
 
 Add:
 
@@ -834,7 +968,8 @@ directory remains the source of truth for generated artifacts.
 3. Land transactions/publication and execute a shadow module whose patches are
    validated but discarded; compare proposed output with current output.
 4. Move StormCast to the host service boundary and verify two-cycle tracking.
-5. Publish and validate external MorphoWind before removing its tracked copy.
+5. Ship the decided StormCast `tstm_wind` behavior and its release note, then
+   delete MorphoWind in a separate reviewed change.
 6. Enable external modules by default when present; an absent folder remains a
    valid StormCast-only installation.
 7. Remove the legacy registry after one release of warnings and passing
@@ -856,13 +991,16 @@ work from the new publisher can be resolved safely after a downgrade.
 - [ ] External modules read admitted artifacts only through the supported API.
 - [ ] Stormcell and cell-history modifications are namespaced, revisioned,
   validated, transactional, and host-published.
+- [ ] Patches can only reach the `modules` and `properties` containers of a cell
+  entry and only the caller's own key inside them. No path, grant, or
+  configuration exposes the wider JSON structure.
 - [ ] Missing inputs, module failures, timeouts, and commit failures are
   isolated and observable.
 - [ ] Exact cycle inputs are pinned in real-time and historical processing.
 - [ ] File publication is atomic per target, journal-recoverable across
   targets, and indexed last.
-- [ ] MorphoWind has a real external distribution/install path before its
-  built-in source is removed.
+- [ ] MorphoWind is fully deleted from code, tests, and docs, and the StormCast
+  `tstm_wind` behavior change is deliberate and released.
 - [ ] Legacy registry execution is gone rather than retained as a competing
   production path.
 - [ ] Docs, schemas, fixtures, tests, and performance evidence cover the full

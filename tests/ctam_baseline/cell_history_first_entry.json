@@ -1,0 +1,19 @@
+[
+  {
+    "id": 146904,
+    "timestamp": "2026-08-05T12:00:00+00:00",
+    "centroid": [
+      35.25,
+      262.75
+    ],
+    "max_refl": 58.5,
+    "properties": {
+      "p100EchoTop30": 11.5
+    },
+    "modules": {
+      "StormCast": {
+        "status": "success"
+      }
+    }
+  }
+]

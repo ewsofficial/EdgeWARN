@@ -9,6 +9,12 @@ Discovery is `--config-dir`, then `EDGEWARN_CONFIG_DIR`, then the repository's
 `--base-dir` / `--base_dir`, then `EDGEWARN_BASE_DIR`, then legacy `BASE_DIR`,
 then `filesystem.yaml`. All catalog edits require a process restart.
 
+The CTAM external-module discovery root (`run.ctam_module_dir` in
+`runtime.yaml`, default `ctam_modules`, resolved against the repository root) is
+independently overridable as `--ctam-module-dir`, then
+`EDGEWARN_CTAM_MODULE_DIR`, then the YAML value. See
+`docs/ctam/module-manifest.md`.
+
 | File | Owner and operator-facing scope |
 | --- | --- |
 | `runtime.yaml` | Realtime run bounds, feature switches, retry and supervisor timing. |

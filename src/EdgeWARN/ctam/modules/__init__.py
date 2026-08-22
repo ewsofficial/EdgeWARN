@@ -1,28 +1,7 @@
+"""Compatibility namespace for the bundled StormCast forecasting core.
+
+CTAM modules are discovered from manifests or run through an explicit built-in
+adapter. Importing this package has no execution or registration side effects.
 """
-CTAM Modules Package
 
-Automatically registers all available analysis modules on import.
-"""
-
-from ..registry import ModuleRegistry, GridModuleRegistry
-from .StormCast import StormCastModule
-from .MorphoWind import MorphoWindModule
-
-# Register all modules in execution order
-# 1. Base Tracking Features (e.g. History if needed)
-
-# 2. Main Analysis Modules (Cell-based)
-ModuleRegistry.register(StormCastModule())
-ModuleRegistry.register(MorphoWindModule())
-
-# 3. Grid-based Modules
-
-# 4. Post-Analysis Modules
-
-# GeoMapper is a file processor, not a per-entry module, so we don't register it
-# It's accessed directly via: from EdgeWARN.ingest.nws.geomapper import process_warning
-
-__all__ = [
-    "StormCastModule",
-    "MorphoWindModule",
-]
+__all__: list[str] = []

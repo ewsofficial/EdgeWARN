@@ -1,4 +1,3 @@
-from .interface import AnalysisModule
-from .engine import initialize_modules, run_modules
+"""Cycle-scoped CTAM host and module-discovery package."""
 
-__all__ = ["AnalysisModule", "initialize_modules", "run_modules"]
+__all__: list[str] = []

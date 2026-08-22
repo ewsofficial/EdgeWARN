@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CTAM internal API v1 response envelope",
+  "description": "Common wrapper for every /internal/ctam/v1 response. 'data' is deliberately permissive here; validate it against the resource schema for the endpoint as a second step.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "cycle_id", "module_id", "request_id", "data", "errors"],
+  "properties": {
+    "api_version": { "const": "1" },
+    "cycle_id": {
+      "description": "Null only when the request is rejected before a cycle is bound, such as an authentication failure.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{8}-[0-9]{6}\\Z"
+    },
+    "module_id": {
+      "description": "The authenticated caller. Null when authentication itself failed.",
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,127}\\Z"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}\\Z"
+    },
+    "data": {
+      "description": "Resource payload, or null on error.",
+      "type": ["object", "array", "null"]
+    },
+    "errors": {
+      "description": "Empty on success. Never contains a bearer token.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "enum": [
+              "authentication_failed",
+              "unsupported_version",
+              "file_unavailable",
+              "requirement_unmet",
+              "forbidden_path",
+              "stale_revision",
+              "conflict",
+              "invalid_patch",
+              "request_too_large",
+              "transaction_sealed",
+              "not_found",
+              "timed_out",
+              "internal_error"
+            ]
+          },
+          "message": {
+            "description": "Operator-facing and redacted. Must not echo a token or an absolute host path. The walker has no minLength, so non-emptiness is expressed as a pattern.",
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "resource": {
+            "description": "The resource the error is about, such as 'stormcells.current' or 'cells.history'.",
+            "type": ["string", "null"]
+          },
+          "pointer": {
+            "description": "For forbidden_path and invalid_patch, the rejected operation path exactly as submitted.",
+            "type": ["string", "null"]
+          },
+          "expected_revision": { "type": ["integer", "null"], "minimum": 0 },
+          "observed_revision": { "type": ["integer", "null"], "minimum": 0 },
+          "limit": {
+            "description": "For request_too_large, the limit that was exceeded, in the unit documented in internal-api-limits.md.",
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "retryable": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

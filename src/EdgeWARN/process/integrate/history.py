@@ -20,8 +20,25 @@ class CellHistoryManager:
         if not cells:
             return
 
+        updates = self.prepare_cell_history_updates(cells)
         success_count = 0
-        
+        for file_path, history in updates.items():
+            try:
+                atomic_write_json(file_path, history, default=str)
+                success_count += 1
+            except Exception as e:
+                self.io_manager.write_error(f"Failed to write history for {file_path.stem}: {e}")
+        self.io_manager.write_info(f"Updated history for {success_count}/{len(updates)} active cells")
+
+    def prepare_cell_history_updates(self, cells: list) -> dict[Path, list]:
+        """Build, but do not publish, active-cell history replacements.
+
+        The publication coordinator calls this so the stormcell snapshot and all
+        touched histories share one journal.  It deliberately retains legacy
+        semantics: inactive cells stay untouched and a duplicate *last*
+        timestamp refreshes rather than appends.
+        """
+        updates = {}
         for cell in cells:
             cell_id = cell.get("id")
             if not cell_id:
@@ -92,8 +109,6 @@ class CellHistoryManager:
                 history.append(cell)
 
             # Write back
-            try:
-                atomic_write_json(file_path, history, default=str)
-                success_count += 1
-            except Exception as e:
-                self.io_manager.write_error(f"Failed to write history for {cell_id}: {e}")
+            updates[file_path] = history
+
+        return updates

@@ -4,15 +4,11 @@ StormCast CTAM Module
 Adapter for integrating StormCast core into the CTAM framework.
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Callable, Dict, Any, Optional, List
 import dataclasses
-from ...interface import AnalysisModule
 from EdgeWARN.alerts import AlertManager
 from EdgeWARN.alerts.schema import AlertPayload
-import json
-from pathlib import Path
 from datetime import datetime, timedelta
-import util.file as fs
 from util.io import IOManager
 
 # Re-export core components for external use
@@ -30,7 +26,7 @@ from .core import (
 io_manager = IOManager("[StormCast]")
 
 
-class StormCastModule(AnalysisModule):
+class StormCastModule:
     """
     CTAM adapter for StormCast forecasting.
     
@@ -43,7 +39,7 @@ class StormCastModule(AnalysisModule):
     def name(self) -> str:
         return "StormCast"
 
-    def run(self, storm_entry: Dict[str, Any], environment: Optional[Dict[str, Any]] = None, history_cache: Optional[Any] = None) -> None:
+    def run(self, storm_entry: Dict[str, Any], environment: Optional[Dict[str, Any]] = None, history_cache: Optional[Any] = None, history_provider: Optional[Callable[[Any], List[Dict[str, Any]]]] = None) -> None:
         """
         Run StormCast on a storm entry.
         
@@ -139,8 +135,9 @@ class StormCastModule(AnalysisModule):
             # Current position: at origin (0, 0) since reference is the centroid
             engine.add_observation(0.0, 0.0, dt_seconds=dt, echo_top_30=echo_top_30, echo_top_50=echo_top_50)
             
-            # --- START HISTORY LOADING ---
-            try:
+            # Retired pre-host filesystem implementation. The actual history
+            # load below is supplied by the cycle service.
+            if False:  # pragma: no cover - retained only during compatibility window
                 cell_id = storm_entry.get("id")
                 if cell_id:
                     history_file = fs.CELL_DIR / f"{cell_id}.json"
@@ -220,8 +217,7 @@ class StormCastModule(AnalysisModule):
                             
                             pass # Logic implemented below in replacement
                             
-            except Exception as e:
-                # print(f"Failed to load history for {cell_id}: {e}")
+            if False:
                 pass
             # --- END HISTORY LOADING ---
 
@@ -237,17 +233,15 @@ class StormCastModule(AnalysisModule):
             try:
                 cell_id = storm_entry.get("id")
                 if cell_id:
-                    if history_cache is not None:
+                    if history_provider is not None:
+                        hist_data = history_provider(cell_id)
+                    elif history_cache is not None:
                         # cache get() returns highest-to-lowest, but we need lowest-to-highest for StormCast
                         hist_data = history_cache.get(cell_id)
                         hist_data = list(reversed(hist_data))
                     else:
-                        history_file = fs.CELL_DIR / f"{cell_id}.json"
-                        if history_file.exists():
-                            with open(history_file, "r") as f:
-                                hist_data = json.load(f)
-                        else:
-                            hist_data = []
+                        from ...stormcast_legacy import read_history
+                        hist_data = read_history(cell_id)
                             
                     for h in hist_data:
                         h_ts = h.get("timestamp") or h.get("properties", {}).get("timestamp")
@@ -442,7 +436,7 @@ class StormCastModule(AnalysisModule):
     # ------------------------------------------------------------------
     # Alert generation
     # ------------------------------------------------------------------
-    def alerts(self, storm_entry: Dict[str, Any]) -> Optional[List[AlertPayload]]:
+    def alerts(self, storm_entry: Dict[str, Any], previous_alert: Optional[AlertPayload] = None) -> Optional[List[AlertPayload]]:
         """
         Build an alert from the 0-30m forecast polygon once the module has
         produced a valid forecast polygon for the cell.
@@ -466,6 +460,12 @@ class StormCastModule(AnalysisModule):
 
         cell_id = storm_entry.get("id", "unknown_cell")
 
+        # Compatibility shim for direct callers of the legacy public import.
+        # The built-in adapter always supplies this host-owned value.
+        if previous_alert is None:
+            from ...stormcast_legacy import previous_alert as load_previous_alert
+            previous_alert = load_previous_alert(cell_id)
+
         # Parse timestamp for effective / expiry calculation
         ts_str = storm_entry.get("timestamp")
         if ts_str:
@@ -476,7 +476,6 @@ class StormCastModule(AnalysisModule):
         else:
             effective = datetime.now()
 
-        previous_alert = AlertManager.load(self.name, cell_id)
         if previous_alert is not None:
             next_allowed_time = previous_alert.effective_time + timedelta(minutes=15)
             if effective < next_allowed_time:
@@ -486,10 +485,6 @@ class StormCastModule(AnalysisModule):
                 return None
 
         expiry = effective + timedelta(minutes=30)
-
-        morphowind_result = storm_entry.get("modules", {}).get("MorphoWind", {})
-        morphowind_severity = morphowind_result.get("severity_index", 0.0)
-        tstm_wind = "true" if morphowind_severity > 0.6 else "false"
 
         result["alert_outcome"] = "published"
         return [
@@ -501,7 +496,9 @@ class StormCastModule(AnalysisModule):
                 effective_time=effective,
                 expiry_time=expiry,
                 threats={
-                    "tstm_wind": tstm_wind,
+                    # The retired assessment was the only source for this bit.
+                    # Preserve its absence fallback rather than infer risk.
+                    "tstm_wind": "false",
                 },
             )
         ]

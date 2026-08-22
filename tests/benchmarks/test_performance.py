@@ -423,27 +423,6 @@ class TestCTAMPerformance:
         assert result.duration_s < 1.0, \
             f"StormCast took {result.duration_s:.2f}s, expected < 1s"
     
-    def test_morphowind_module(self, sample_storm_cells):
-        """Test MorphoWind module performance."""
-        if sample_storm_cells is None or len(sample_storm_cells) == 0:
-            pytest.skip("No sample storm cells available")
-        
-        from EdgeWARN.ctam.modules.morphowind import MorphoWindModule
-        
-        result = PerformanceResult("MorphoWind Module")
-        result.start()
-        
-        module = MorphoWindModule()
-        for cell in sample_storm_cells:
-            module.process(cell)
-        
-        result.stop()
-        print(result.report())
-        
-        assert result.duration_s < 1.0, \
-            f"MorphoWind took {result.duration_s:.2f}s, expected < 1s"
-
-
 # =============================================================================
 # GLM INTEGRATION BENCHMARKS
 # =============================================================================
@@ -521,4 +500,3 @@ class TestProbSeverePerformance:
         assert result.duration_s < 0.5, \
             f"ProbSevere loading took {result.duration_s:.2f}s, expected < 0.5s"
         assert data is not None
-

@@ -101,8 +101,8 @@ The GOES render path renders each single-channel layer through the shared EWMRS 
 
 Current CLI coverage:
 
-- `run.py`: `--lat_limits`, `--lon_limits`, `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
-- `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `run.py`: `--lat_limits`, `--lon_limits`, `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--ctam-module-dir`, `--list-ctam-modules`, `--check-ctam-modules`, `--disable-tracking`, `--disable-polygon-expansion`, `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--ctam-module-dir`, `--list-ctam-modules`, `--check-ctam-modules`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
 - `common/ingest/nws/zone_sync.py`: `--assets-dir`, `--zone-types`, `--timeout-seconds`, `--max-retries`, `--max-workers`, `--pause-seconds`, `--progress` / `--no-progress`, `--apply`, `--report-path`, `--config-dir`
 - `common/ingest/nexrad/main.py`: `--site`, `--volume-id`, `--base-dir`, `--max-candidate-volumes-per-site`, `--config-dir`
 - `common/ingest/nexrad/pipeline/` (via `python -m`): `--site` (repeatable), `--base-dir`, `--scan-interval-seconds`, `--completion-interval-seconds`, `--max-candidate-volumes-per-site`, `--config-dir`
