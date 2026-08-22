@@ -1,0 +1,868 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "EdgeWARN CTAM Internal API",
+    "version": "1.0.0",
+    "description": "Loopback-only, cycle-scoped internal API for out-of-process CTAM modules. Not a public service API: it is bound to 127.0.0.1, exists only for the duration of one cycle, and every request is authenticated as exactly one module. The response 'data' member is validated against the resource schemas in docs/ctam/schema/; the pairing is declared per response with x-edgewarn-data-schema."
+  },
+  "servers": [{"url": "http://127.0.0.1:{port}/internal/ctam/v1", "variables": {"port": {"default": "0", "description": "Ephemeral port chosen at cycle start and passed to the module in its environment. Never a fixed well-known port."}}}],
+  "security": [{"moduleToken": []}],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getCtamHealth",
+        "summary": "Protocol version and cycle-scoped liveness",
+        "description": "Not public service health. A 200 here means this cycle's host is answering, not that the pipeline is healthy.",
+        "responses": {
+          "200": {
+            "description": "Host is answering for this cycle",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A0",
+                "data": {"supported_api_versions": ["1"], "cycle_bound": true},
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"}
+        }
+      }
+    },
+    "/cycle": {
+      "get": {
+        "operationId": "getCtamCycle",
+        "summary": "Cycle identity, state, readiness, and allowed operations",
+        "responses": {
+          "200": {
+            "description": "Cycle state",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "cycle-state.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A1",
+                "data": {
+                  "cycle_id": "20260805-120000",
+                  "analysis_time": "2026-08-05T12:00:00+00:00",
+                  "state": "external_modules_running",
+                  "ctam_ready": true,
+                  "module_state": "running",
+                  "requirements_satisfied": true,
+                  "allowed_operations": ["read_files", "read_stormcells", "read_history", "patch_stormcells", "patch_history", "commit"],
+                  "historical": false,
+                  "cell_count": 3,
+                  "deadline": "2026-08-05T12:00:30+00:00"
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"}
+        }
+      }
+    },
+    "/files": {
+      "get": {
+        "operationId": "listCtamFiles",
+        "summary": "Complete pinned cycle catalog",
+        "description": "Includes unavailable items with reasons. A module must not infer that an absent entry is merely late; the catalog is frozen for the cycle.",
+        "responses": {
+          "200": {
+            "description": "Catalog",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-item-schema": {"pointer": "/files", "schema": "file-descriptor.schema.json"},
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A2",
+                "data": {"files": [
+                  {
+                    "file_id": "input:mrms:MergedReflectivityQCComposite_00.50:current",
+                    "kind": "input",
+                    "family": "mrms",
+                    "product": "MergedReflectivityQCComposite_00.50",
+                    "role": "current",
+                    "analysis_time": "2026-08-05T12:00:00+00:00",
+                    "available": true,
+                    "validated": true,
+                    "readiness": "ready",
+                    "reason": null,
+                    "size_bytes": 2841160,
+                    "media_type": "application/x-grib2"
+                  },
+                  {
+                    "file_id": "input:mrms:VIL_00.50:current",
+                    "kind": "input",
+                    "family": "mrms",
+                    "product": "VIL_00.50",
+                    "role": "current",
+                    "analysis_time": "2026-08-05T12:00:00+00:00",
+                    "available": false,
+                    "validated": false,
+                    "readiness": "unavailable",
+                    "reason": "no staged file for this product at the pinned analysis time",
+                    "size_bytes": null,
+                    "media_type": "application/x-grib2"
+                  },
+                  {
+                    "file_id": "stormcells:current",
+                    "kind": "stormcells",
+                    "family": null,
+                    "product": null,
+                    "role": "current",
+                    "analysis_time": "2026-08-05T12:00:00+00:00",
+                    "available": true,
+                    "validated": true,
+                    "readiness": "ready",
+                    "reason": null,
+                    "size_bytes": 48213,
+                    "media_type": "application/json"
+                  }
+                ]},
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"}
+        }
+      }
+    },
+    "/files/{file_id}": {
+      "get": {
+        "operationId": "getCtamFile",
+        "summary": "One catalog descriptor",
+        "parameters": [{"$ref": "#/components/parameters/fileId"}],
+        "responses": {
+          "200": {
+            "description": "Descriptor",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "file-descriptor.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A3",
+                "data": {
+                  "file_id": "input:mrms:MergedReflectivityQCComposite_00.50:current",
+                  "kind": "input",
+                  "family": "mrms",
+                  "product": "MergedReflectivityQCComposite_00.50",
+                  "role": "current",
+                  "analysis_time": "2026-08-05T12:00:00+00:00",
+                  "available": true,
+                  "validated": true,
+                  "readiness": "ready",
+                  "reason": null,
+                  "size_bytes": 2841160,
+                  "media_type": "application/x-grib2"
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/files/{file_id}/content": {
+      "get": {
+        "operationId": "getCtamFileContent",
+        "summary": "Streaming or range read of an admitted artifact",
+        "description": "The only way a module obtains file bytes. The host never returns the shared writable source path. Requests above the streamed-file-size limit in docs/ctam/internal-api-limits.md are refused rather than truncated.",
+        "parameters": [{"$ref": "#/components/parameters/fileId"}, {"$ref": "#/components/parameters/range"}],
+        "responses": {
+          "200": {"description": "Whole artifact", "content": {"application/octet-stream": {}}},
+          "206": {"description": "Requested byte range", "content": {"application/octet-stream": {}}},
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {
+            "description": "Artifact is catalogued but not readable, so the descriptor's readiness is not 'ready'",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A4",
+                "data": null,
+                "errors": [{
+                  "code": "file_unavailable",
+                  "message": "artifact is catalogued but failed validation for this cycle",
+                  "resource": "input:mrms:VIL_00.50:current",
+                  "pointer": null,
+                  "expected_revision": null,
+                  "observed_revision": null,
+                  "limit": null,
+                  "retryable": false
+                }]
+              }
+            }}
+          },
+          "416": {"description": "Unsatisfiable range"}
+        }
+      }
+    },
+    "/requirements": {
+      "get": {
+        "operationId": "getCtamRequirements",
+        "summary": "The caller's declared requirements and their current evaluation",
+        "responses": {
+          "200": {
+            "description": "Evaluation",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "requirements-evaluation.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A5",
+                "data": {
+                  "module_id": "cellstats",
+                  "evaluated_at": "2026-08-05T12:00:04+00:00",
+                  "satisfied": true,
+                  "requirements": [
+                    {"selector": "stormcells.current", "required": true, "satisfied": true, "reason": null, "file_ids": ["stormcells:current"], "unmet_condition": null, "observed": null, "threshold": null},
+                    {"selector": "cells.history", "required": true, "satisfied": true, "reason": null, "file_ids": ["cell_history:146904"], "unmet_condition": null, "observed": 4, "threshold": 2},
+                    {"selector": "input:MRMS:VIL_00.50:current", "required": false, "satisfied": false, "reason": "no staged file for this product at the pinned analysis time", "file_ids": [], "unmet_condition": "missing", "observed": null, "threshold": null}
+                  ]
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"}
+        }
+      }
+    },
+    "/requirements/check": {
+      "post": {
+        "operationId": "checkCtamRequirements",
+        "summary": "Re-evaluate dynamic conditions before starting work",
+        "description": "Re-runs only the time-dependent conditions such as max_age_seconds. It cannot make an artifact appear: the catalog is pinned for the cycle.",
+        "responses": {
+          "200": {
+            "description": "Re-evaluation",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "requirements-evaluation.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A6",
+                "data": {
+                  "module_id": "cellstats",
+                  "evaluated_at": "2026-08-05T12:00:09+00:00",
+                  "satisfied": false,
+                  "requirements": [
+                    {"selector": "stormcells.current", "required": true, "satisfied": true, "reason": null, "file_ids": ["stormcells:current"], "unmet_condition": null, "observed": null, "threshold": null},
+                    {"selector": "input:MRMS:MergedReflectivityQCComposite_00.50:current", "required": true, "satisfied": false, "reason": "staged artifact is older than the declared maximum age", "file_ids": ["input:mrms:MergedReflectivityQCComposite_00.50:current"], "unmet_condition": "max_age_seconds", "observed": 241.0, "threshold": 180.0}
+                  ]
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"}
+        }
+      }
+    },
+    "/stormcells": {
+      "get": {
+        "operationId": "listCtamStormcells",
+        "summary": "Current working snapshot after committed predecessor modules",
+        "description": "Reflects predecessors that have already committed, not their staged work. The revision returned here is what a subsequent patch must cite.",
+        "responses": {
+          "200": {
+            "description": "Working snapshot",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A7",
+                "data": {
+                  "revision": 3,
+                  "latest_timestamp": "20260805-120000",
+                  "cells": [{
+                    "id": 146904,
+                    "timestamp": "2026-08-05T12:00:00+00:00",
+                    "num_gates": 812,
+                    "centroid": [35.25, 262.75],
+                    "max_refl": 58.5,
+                    "event_type": "continuing",
+                    "properties": {"morphology": "cluster", "p100EchoTop30": 11.2},
+                    "modules": {"StormCast": {"status": "success", "u": 9.634322526, "v": 1.01855566}}
+                  }]
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"}
+        }
+      }
+    },
+    "/stormcells/{cell_id}": {
+      "get": {
+        "operationId": "getCtamStormcell",
+        "summary": "One current cell by stable identifier",
+        "parameters": [{"$ref": "#/components/parameters/cellId"}],
+        "responses": {
+          "200": {
+            "description": "Cell entry",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A8",
+                "data": {
+                  "revision": 3,
+                  "cell": {
+                    "id": 146904,
+                    "timestamp": "2026-08-05T12:00:00+00:00",
+                    "num_gates": 812,
+                    "centroid": [35.25, 262.75],
+                    "max_refl": 58.5,
+                    "event_type": "continuing",
+                    "properties": {"morphology": "cluster", "p100EchoTop30": 11.2},
+                    "modules": {"StormCast": {"status": "success", "u": 9.634322526, "v": 1.01855566}}
+                  }
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "patch": {
+        "operationId": "patchCtamStormcell",
+        "summary": "Stage operations confined to the cell's modules and properties containers",
+        "description": "Staged, not published. Nothing reaches the filesystem until POST /transaction/commit. Every operation path is checked against the positive allowlist by decoded RFC 6901 segment, not by string prefix.",
+        "parameters": [{"$ref": "#/components/parameters/cellId"}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {
+            "schema": {"$ref": "../schema/patch-request.schema.json"},
+            "x-edgewarn-request-schema": "patch-request.schema.json",
+            "example": {
+              "api_version": "1",
+              "revision": 3,
+              "idempotency_key": "cellstats-146904-stormcells-01",
+              "operations": [
+                {"op": "add", "path": "/modules/CellStats", "value": {"gate_density": 0.42, "peak_gradient_dbz_km": 11.8, "computed_at": "2026-08-05T12:00:11+00:00"}},
+                {"op": "add", "path": "/properties/cellstats_severity", "value": 0.71}
+              ]
+            }
+          }}
+        },
+        "responses": {
+          "200": {
+            "description": "Operations staged",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "transaction.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7A9",
+                "data": {
+                  "transaction_id": "txn-cellstats-20260805-120000",
+                  "module_id": "cellstats",
+                  "state": "open",
+                  "staged": {"stormcell_operations": 2, "history_operations": 0, "alerts": 0, "cells_touched": [146904], "bytes": 184},
+                  "conflicts": [],
+                  "commit_id": null,
+                  "idempotency_key": null,
+                  "revisions": {"stormcells.current": 3}
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"},
+          "403": {"$ref": "#/components/responses/ForbiddenPath"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/StaleRevision"},
+          "413": {"$ref": "#/components/responses/RequestTooLarge"},
+          "422": {"$ref": "#/components/responses/InvalidPatch"}
+        }
+      }
+    },
+    "/cells/{cell_id}": {
+      "get": {
+        "operationId": "getCtamCellHistory",
+        "summary": "Read admitted cell history",
+        "description": "The stored file is a bare JSON array. This endpoint wraps it so a revision and the applied window can be reported. Entries are returned oldest first, matching the file. Note that the current writer replaces only the last entry on a timestamp match, so a history can legitimately contain a repeated timestamp out of order.",
+        "parameters": [
+          {"$ref": "#/components/parameters/cellId"},
+          {"$ref": "#/components/parameters/historyLimit"},
+          {"$ref": "#/components/parameters/historySince"}
+        ],
+        "responses": {
+          "200": {
+            "description": "History window",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7B2",
+                "data": {
+                  "revision": 1,
+                  "cell_id": 146904,
+                  "returned": 2,
+                  "truncated": false,
+                  "entries": [
+                    {"id": 146904, "timestamp": "2026-08-05T11:55:00+00:00", "centroid": [35.21, 262.70], "modules": {"StormCast": {"status": "success"}}},
+                    {"id": 146904, "timestamp": "2026-08-05T12:00:00+00:00", "centroid": [35.25, 262.75], "modules": {"StormCast": {"status": "success"}}}
+                  ]
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/cells/{cell_id}/entries/{timestamp}": {
+      "patch": {
+        "operationId": "patchCtamCellHistoryEntry",
+        "summary": "Stage history-entry operations confined to the same two containers",
+        "description": "A module may update its own previously written namespace in a past entry but cannot rewrite another module's historical result. Inventing a timestamp or deleting history is not a v1 operation.",
+        "parameters": [{"$ref": "#/components/parameters/cellId"}, {"$ref": "#/components/parameters/entryTimestamp"}],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {
+            "schema": {"$ref": "../schema/patch-request.schema.json"},
+            "x-edgewarn-request-schema": "patch-request.schema.json",
+            "example": {
+              "api_version": "1",
+              "revision": 1,
+              "idempotency_key": "cellstats-146904-history-01",
+              "operations": [
+                {"op": "test", "path": "/modules/CellStats/schema_version", "value": 1},
+                {"op": "replace", "path": "/modules/CellStats/gate_density", "value": 0.44}
+              ]
+            }
+          }}
+        },
+        "responses": {
+          "200": {
+            "description": "Operations staged",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "transaction.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7B3",
+                "data": {
+                  "transaction_id": "txn-cellstats-20260805-120000",
+                  "module_id": "cellstats",
+                  "state": "open",
+                  "staged": {"stormcell_operations": 2, "history_operations": 2, "alerts": 0, "cells_touched": [146904], "bytes": 232},
+                  "conflicts": [],
+                  "commit_id": null,
+                  "idempotency_key": null,
+                  "revisions": {"stormcells.current": 3, "cells.history": 1}
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"},
+          "403": {"$ref": "#/components/responses/ForbiddenPath"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/StaleRevision"},
+          "413": {"$ref": "#/components/responses/RequestTooLarge"},
+          "422": {"$ref": "#/components/responses/InvalidPatch"}
+        }
+      }
+    },
+    "/alerts": {
+      "post": {
+        "operationId": "stageCtamAlert",
+        "summary": "Stage a schema-valid alert payload owned by the caller",
+        "description": "Alerts are not written until the transaction commits. The alert id and source_module are validated and ownership-scoped: a module cannot publish an alert attributed to another module.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {
+            "example": {
+              "api_version": "1",
+              "revision": 3,
+              "alert": {
+                "id": "id:CELLSTATS:CellStats:146904:2026.08.05.12.00.00",
+                "source_module": "cellstats",
+                "cell_id": 146904,
+                "timestamp": "2026-08-05T12:00:00+00:00",
+                "threats": {"gate_density_high": "true"}
+              }
+            }
+          }}
+        },
+        "responses": {
+          "200": {
+            "description": "Alert staged",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "transaction.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7B4",
+                "data": {
+                  "transaction_id": "txn-cellstats-20260805-120000",
+                  "module_id": "cellstats",
+                  "state": "open",
+                  "staged": {"stormcell_operations": 2, "history_operations": 2, "alerts": 1, "cells_touched": [146904], "bytes": 421},
+                  "conflicts": [],
+                  "commit_id": null,
+                  "idempotency_key": null,
+                  "revisions": {"stormcells.current": 3, "cells.history": 1}
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"},
+          "403": {"$ref": "#/components/responses/ForbiddenPath"},
+          "413": {"$ref": "#/components/responses/RequestTooLarge"},
+          "422": {"$ref": "#/components/responses/InvalidPatch"}
+        }
+      }
+    },
+    "/transaction": {
+      "get": {
+        "operationId": "getCtamTransaction",
+        "summary": "Staged operation count, validation state, and conflict details",
+        "responses": {
+          "200": {
+            "description": "Transaction",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "transaction.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7B5",
+                "data": {
+                  "transaction_id": "txn-cellstats-20260805-120000",
+                  "module_id": "cellstats",
+                  "state": "open",
+                  "staged": {"stormcell_operations": 2, "history_operations": 2, "alerts": 1, "cells_touched": [146904], "bytes": 421},
+                  "conflicts": [],
+                  "commit_id": null,
+                  "idempotency_key": null,
+                  "revisions": {"stormcells.current": 3, "cells.history": 1}
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"}
+        }
+      },
+      "delete": {
+        "operationId": "abandonCtamTransaction",
+        "summary": "Explicitly abandon staged work",
+        "description": "Publishes nothing. A module exiting without committing reaches the same state, but an explicit abandon is distinguishable in the cycle status record.",
+        "responses": {
+          "200": {
+            "description": "Abandoned",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "transaction.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7B6",
+                "data": {
+                  "transaction_id": "txn-cellstats-20260805-120000",
+                  "module_id": "cellstats",
+                  "state": "abandoned",
+                  "staged": {"stormcell_operations": 0, "history_operations": 0, "alerts": 0, "cells_touched": [], "bytes": 0},
+                  "conflicts": [],
+                  "commit_id": null,
+                  "idempotency_key": null,
+                  "revisions": {}
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"},
+          "409": {"$ref": "#/components/responses/TransactionSealed"}
+        }
+      }
+    },
+    "/transaction/validate": {
+      "post": {
+        "operationId": "validateCtamTransaction",
+        "summary": "Validate without publication",
+        "responses": {
+          "200": {
+            "description": "Validation outcome. A 200 with a non-empty conflicts list and state 'rejected' means nothing would be published.",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "transaction.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7B7",
+                "data": {
+                  "transaction_id": "txn-cellstats-20260805-120000",
+                  "module_id": "cellstats",
+                  "state": "rejected",
+                  "staged": {"stormcell_operations": 2, "history_operations": 2, "alerts": 1, "cells_touched": [146904], "bytes": 421},
+                  "conflicts": [{
+                    "code": "stale_revision",
+                    "resource": "stormcells.current",
+                    "pointer": "/modules/CellStats",
+                    "message": "a predecessor module committed after this transaction read the snapshot",
+                    "expected_revision": 3,
+                    "observed_revision": 4
+                  }],
+                  "commit_id": null,
+                  "idempotency_key": null,
+                  "revisions": {"stormcells.current": 3, "cells.history": 1}
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"}
+        }
+      }
+    },
+    "/transaction/commit": {
+      "post": {
+        "operationId": "commitCtamTransaction",
+        "summary": "Seal the caller transaction",
+        "description": "Idempotent by request key: replaying the same idempotency_key returns the original result rather than committing twice. Sealing hands the staged work to the host, which is the sole publisher; the module does not write files.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {
+            "example": {"api_version": "1", "idempotency_key": "cellstats-20260805-120000-commit"}
+          }}
+        },
+        "responses": {
+          "200": {
+            "description": "Sealed",
+            "content": {"application/json": {
+              "schema": {"$ref": "../schema/response-envelope.schema.json"},
+              "x-edgewarn-data-schema": "transaction.schema.json",
+              "example": {
+                "api_version": "1",
+                "cycle_id": "20260805-120000",
+                "module_id": "cellstats",
+                "request_id": "req-01HFZ9K3M7B8",
+                "data": {
+                  "transaction_id": "txn-cellstats-20260805-120000",
+                  "module_id": "cellstats",
+                  "state": "sealed",
+                  "staged": {"stormcell_operations": 2, "history_operations": 2, "alerts": 1, "cells_touched": [146904], "bytes": 421},
+                  "conflicts": [],
+                  "commit_id": "cmt-cellstats-20260805-120000",
+                  "idempotency_key": "cellstats-20260805-120000-commit",
+                  "revisions": {"stormcells.current": 3, "cells.history": 1}
+                },
+                "errors": []
+              }
+            }}
+          },
+          "401": {"$ref": "#/components/responses/AuthenticationFailed"},
+          "409": {"$ref": "#/components/responses/TransactionSealed"},
+          "422": {"$ref": "#/components/responses/InvalidPatch"}
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "moduleToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Per-module, per-cycle bearer token passed to the module process in its environment. Scoped to one module id and expires when the cycle ends. Never logged and never echoed in an error message or status record."
+      }
+    },
+    "parameters": {
+      "fileId": {"name": "file_id", "in": "path", "required": true, "description": "Opaque catalog identifier. Not a path, and not stable across cycles.", "schema": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"}},
+      "cellId": {"name": "cell_id", "in": "path", "required": true, "description": "Canonical numeric cell identifier. Resolved through the host's internal index before it is used, never interpolated into a filesystem path.", "schema": {"type": "integer", "minimum": 0}},
+      "entryTimestamp": {"name": "timestamp", "in": "path", "required": true, "description": "History entry timestamp in compact form. The stored entries use ISO 8601 with an explicit offset, but a raw offset must not appear in a path segment because '+' is widely decoded as a space; the host converts between the two forms.", "schema": {"type": "string", "pattern": "^[0-9]{8}-[0-9]{6}$"}},
+      "range": {"name": "Range", "in": "header", "required": false, "description": "RFC 7233 byte range.", "schema": {"type": "string", "pattern": "^bytes=[0-9]*-[0-9]*$"}},
+      "historyLimit": {"name": "limit", "in": "query", "required": false, "description": "Most recent entries to return. A value above the maximum history window in docs/ctam/internal-api-limits.md is clamped down rather than rejected, so no maximum is declared here.", "schema": {"type": "integer", "minimum": 1, "default": 5}},
+      "historySince": {"name": "since", "in": "query", "required": false, "description": "Return entries at or after this analysis time.", "schema": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"}}
+    },
+    "responses": {
+      "AuthenticationFailed": {
+        "description": "Missing, unknown, or expired module token. cycle_id and module_id are null because no caller was established.",
+        "content": {"application/json": {
+          "schema": {"$ref": "../schema/response-envelope.schema.json"},
+          "example": {
+            "api_version": "1",
+            "cycle_id": null,
+            "module_id": null,
+            "request_id": "req-01HFZ9K3M7B0",
+            "data": null,
+            "errors": [{"code": "authentication_failed", "message": "module token is missing, unknown, or expired", "resource": null, "pointer": null, "expected_revision": null, "observed_revision": null, "limit": null, "retryable": false}]
+          }
+        }}
+      },
+      "ForbiddenPath": {
+        "description": "An operation path is outside the two containers, or names a key the caller does not own. Rejected before evaluation, so no operation in the request is staged.",
+        "content": {"application/json": {
+          "schema": {"$ref": "../schema/response-envelope.schema.json"},
+          "example": {
+            "api_version": "1",
+            "cycle_id": "20260805-120000",
+            "module_id": "cellstats",
+            "request_id": "req-01HFZ9K3M7C0",
+            "data": null,
+            "errors": [{
+              "code": "forbidden_path",
+              "message": "operation path names a key the caller does not own",
+              "resource": "stormcells.current",
+              "pointer": "/modules/StormCast/u",
+              "expected_revision": null,
+              "observed_revision": null,
+              "limit": null,
+              "retryable": false
+            }]
+          }
+        }}
+      },
+      "StaleRevision": {
+        "description": "A predecessor changed the resource after the caller read it. The patch is not applied to an unexpected base; the caller must re-read and retry.",
+        "content": {"application/json": {
+          "schema": {"$ref": "../schema/response-envelope.schema.json"},
+          "example": {
+            "api_version": "1",
+            "cycle_id": "20260805-120000",
+            "module_id": "cellstats",
+            "request_id": "req-01HFZ9K3M7C1",
+            "data": null,
+            "errors": [{
+              "code": "stale_revision",
+              "message": "resource changed after the revision cited by this request",
+              "resource": "stormcells.current",
+              "pointer": null,
+              "expected_revision": 3,
+              "observed_revision": 4,
+              "limit": null,
+              "retryable": true
+            }]
+          }
+        }}
+      },
+      "RequestTooLarge": {
+        "description": "The request body, patch payload, operation count, or nesting depth exceeded a documented limit. Enforced while reading the body, before parsing.",
+        "content": {"application/json": {
+          "schema": {"$ref": "../schema/response-envelope.schema.json"},
+          "example": {
+            "api_version": "1",
+            "cycle_id": "20260805-120000",
+            "module_id": "cellstats",
+            "request_id": "req-01HFZ9K3M7C2",
+            "data": null,
+            "errors": [{
+              "code": "request_too_large",
+              "message": "request body exceeds the configured maximum size",
+              "resource": "stormcells.current",
+              "pointer": null,
+              "expected_revision": null,
+              "observed_revision": null,
+              "limit": 1048576,
+              "retryable": false
+            }]
+          }
+        }}
+      },
+      "InvalidPatch": {
+        "description": "Well-formed JSON that does not satisfy the contract: an unsupported op, a malformed pointer, a non-finite number, or a properties key already written by detection or another module.",
+        "content": {"application/json": {
+          "schema": {"$ref": "../schema/response-envelope.schema.json"},
+          "example": {
+            "api_version": "1",
+            "cycle_id": "20260805-120000",
+            "module_id": "cellstats",
+            "request_id": "req-01HFZ9K3M7C3",
+            "data": null,
+            "errors": [{
+              "code": "invalid_patch",
+              "message": "properties key already exists in the frozen entry and was not written by this module",
+              "resource": "stormcells.current",
+              "pointer": "/properties/morphology",
+              "expected_revision": null,
+              "observed_revision": null,
+              "limit": null,
+              "retryable": false
+            }]
+          }
+        }}
+      },
+      "TransactionSealed": {
+        "description": "The transaction is already sealed or abandoned. A replay carrying the original idempotency_key returns 200 with the original result instead.",
+        "content": {"application/json": {
+          "schema": {"$ref": "../schema/response-envelope.schema.json"},
+          "example": {
+            "api_version": "1",
+            "cycle_id": "20260805-120000",
+            "module_id": "cellstats",
+            "request_id": "req-01HFZ9K3M7C4",
+            "data": null,
+            "errors": [{
+              "code": "transaction_sealed",
+              "message": "transaction is sealed and accepts no further operations",
+              "resource": null,
+              "pointer": null,
+              "expected_revision": null,
+              "observed_revision": null,
+              "limit": null,
+              "retryable": false
+            }]
+          }
+        }}
+      },
+      "NotFound": {
+        "description": "Unknown file, cell, or history timestamp. Never silently treated as empty.",
+        "content": {"application/json": {
+          "schema": {"$ref": "../schema/response-envelope.schema.json"},
+          "example": {
+            "api_version": "1",
+            "cycle_id": "20260805-120000",
+            "module_id": "cellstats",
+            "request_id": "req-01HFZ9K3M7B1",
+            "data": null,
+            "errors": [{"code": "not_found", "message": "no such identifier in this cycle", "resource": null, "pointer": null, "expected_revision": null, "observed_revision": null, "limit": null, "retryable": false}]
+          }
+        }}
+      }
+    }
+  }
+}

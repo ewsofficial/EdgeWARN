@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CTAM cycle catalog file descriptor",
+  "description": "One entry in the immutable CTAMCycleCatalog, as returned by GET /files/{file_id} and as an item of GET /files. Physical paths are deliberately absent: they are not part of the portable module contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "file_id",
+    "kind",
+    "family",
+    "product",
+    "role",
+    "analysis_time",
+    "available",
+    "validated",
+    "readiness",
+    "reason",
+    "size_bytes",
+    "media_type"
+  ],
+  "properties": {
+    "file_id": {
+      "description": "Opaque and stable within a cycle. Not stable across cycles, and never a path.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\\Z"
+    },
+    "kind": {
+      "description": "The artifact class. Determines which validation rule applies.",
+      "enum": ["input", "stormcells", "cell_history", "alerts"]
+    },
+    "family": {
+      "description": "Source family for kind=input, such as 'mrms' or 'goes'. Null for host-owned artifacts.",
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,31}\\Z"
+    },
+    "product": {
+      "description": "Product ID as recorded in the pinned CycleInputManifest, such as 'MergedReflectivityQCComposite_00.50'.",
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\Z"
+    },
+    "role": {
+      "description": "Which slot in the cycle this file fills. 'current' is the analysis time; 'previous' is the prior cycle StormCast needs for motion.",
+      "enum": ["current", "previous", "history", "forecast"]
+    },
+    "analysis_time": {
+      "description": "UTC, offset always written explicitly. Never naive.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})\\Z"
+    },
+    "available": {
+      "description": "The artifact exists and is readable. Says nothing about content.",
+      "type": "boolean"
+    },
+    "validated": {
+      "description": "The artifact passed its kind-specific validation rule. Can be false while available is true.",
+      "type": "boolean"
+    },
+    "readiness": {
+      "description": "Derived summary. 'ready' requires available and validated. A module must never infer readiness from 'available' alone.",
+      "enum": ["ready", "pending", "unavailable", "invalid", "stale"]
+    },
+    "reason": {
+      "description": "Null when readiness is 'ready'. Otherwise an actionable explanation.",
+      "type": ["string", "null"],
+      "pattern": "\\S"
+    },
+    "size_bytes": {
+      "description": "Null when the artifact is unavailable.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "media_type": {
+      "type": "string",
+      "pattern": "^[a-z]+/[A-Za-z0-9.+_-]+\\Z"
+    }
+  }
+}

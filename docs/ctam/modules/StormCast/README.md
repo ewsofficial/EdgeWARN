@@ -1,6 +1,10 @@
 # StormCast Module
 
-StormCast is a CTAM `AnalysisModule` that provides thunderstorm motion prediction by blending observed storm displacement vectors, storm history, Bunkers-style deviant motion, and RAP environmental wind profiles. It generates forecast tracks, forecast-polygon metadata, a 0-30 minute alert polygon when enough geometry is available, and uncertainty information.
+StormCast is the reserved CTAM built-in that provides thunderstorm motion
+prediction by blending observed storm displacement vectors, storm history,
+Bunkers-style deviant motion, and RAP environmental wind profiles. It generates
+forecast tracks, forecast-polygon metadata, a 0-30 minute alert polygon when
+enough geometry is available, and uncertainty information.
 
 ## Overview
 

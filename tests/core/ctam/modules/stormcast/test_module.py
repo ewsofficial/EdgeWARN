@@ -91,7 +91,6 @@ def test_alerts_returns_payload_for_eligible_cell():
                     (34.4, -82.2),
                 ],
             },
-            "MorphoWind": {"severity_index": 0.7},
         },
     }
 
@@ -120,7 +119,6 @@ def test_alerts_records_refresh_suppression_without_per_cell_log():
                     (34.4, -82.2),
                 ],
             },
-            "MorphoWind": {"severity_index": 0.7},
         },
     }
     previous_alert = type("PreviousAlert", (), {"effective_time": effective - timedelta(minutes=5)})()

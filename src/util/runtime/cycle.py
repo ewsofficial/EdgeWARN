@@ -325,6 +325,7 @@ class TandemCycleConfig:
     lon_limits: tuple[float, float]
     profile: bool
     disable_ctam: bool
+    disable_ctam_modules: bool
     disable_tracking: bool
     disable_polygon_expansion: bool
     refl_threshold: float
@@ -389,7 +390,7 @@ def run_tandem_cycle_once(
         args=(
             log_queue, shared_state, detection_ready_event, integration_ready_event,
             dt, config.lat_limits, config.lon_limits, detection_config,
-            config.profile, config.disable_ctam, config.disable_tracking,
+            config.profile, config.disable_ctam, config.disable_ctam_modules, config.disable_tracking,
             config.disable_polygon_expansion, config.mrms_core_only,
         ),
     )

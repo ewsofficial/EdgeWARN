@@ -119,13 +119,12 @@ def test_merge_property_patch_preserves_nested_existing_values(sample_cells):
     assert merged[0]["properties"]["wind_field"]["u850"] == 10.0
 
 
-def test_main_aborts_history_and_index_updates_when_save_fails(sample_cells):
+def test_main_aborts_index_updates_when_publication_fails(sample_cells):
     with patch.object(pipeline, "StatFileHandler") as MockHandler, \
          patch.object(pipeline, "StormCellIntegrator"), \
          patch.object(pipeline, "_run_parallel_enrichment", return_value=copy.deepcopy(sample_cells)), \
-         patch.object(pipeline, "_run_ctam_if_enabled", side_effect=lambda cells, *_args: cells), \
-         patch.object(pipeline, "_save_cells", side_effect=RuntimeError("disk full")), \
-         patch.object(pipeline, "_update_history") as mock_history, \
+         patch.object(pipeline, "_run_ctam_if_enabled", side_effect=lambda cells, *_args, **_kwargs: cells), \
+         patch.object(pipeline, "_publish_cycle", side_effect=RuntimeError("disk full")), \
          patch.object(pipeline, "_update_api_indexes") as mock_indexes:
         handler = MockHandler.return_value
         handler.load_json.return_value = (copy.deepcopy(sample_cells), "2024-01-01T00:00:00")
@@ -133,7 +132,6 @@ def test_main_aborts_history_and_index_updates_when_save_fails(sample_cells):
         with pytest.raises(RuntimeError, match="disk full"):
             pipeline.main(json_path="stormcells.json", remove_old_cells=False, disable_ctam=True)
 
-    mock_history.assert_not_called()
     mock_indexes.assert_not_called()
 
 

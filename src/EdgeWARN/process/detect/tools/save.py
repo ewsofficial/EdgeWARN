@@ -426,7 +426,7 @@ class CellDataSaver:
         to each ProbSevere cell entry using exponential weighting.
         Optimized with slice-based processing and Watershed-expanded masks.
         
-        Now includes Eager Scalar Extraction for MorphoWind metrics.
+        Includes detection-stage morphology metrics for downstream analysis.
         """
         from EdgeWARN.process.detect.tools.morphology import MorphologyEngine
 
@@ -545,7 +545,7 @@ class CellDataSaver:
                 "parent_ids": [],
                 "split_from": None,
                 "properties": {
-                    "morphology": morph_stats # Inject MorphoWind stats
+                    "morphology": morph_stats
                 }
             }
             results.append(entry)

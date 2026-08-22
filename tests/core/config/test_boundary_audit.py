@@ -11,7 +11,13 @@ from tests.core.config.source_inspect import SRC, production_sources
 
 CTAM = "EdgeWARN/ctam/"
 ENV_READERS = {"common/config/loader.py", "common/config/overlay.py", "config/loader.js"}
-URL_SENTINELS = {("api/middleware/logging.js", "http://edgewarn.invalid")}
+URL_SENTINELS = {
+    ("api/middleware/logging.js", "http://edgewarn.invalid"),
+    # The private loopback CTAM API is bound to 127.0.0.1 on an OS-assigned
+    # ephemeral port and is never reachable off-host; docs/ctam pins the URL
+    # shape. It is deliberately not a public, deployable endpoint.
+    ("EdgeWARN/ctam/api/server.py", "http://127.0.0.1:"),
+}
 CATALOG_REGISTRIES = {
     "EWMRS/rap/config.py": "the Phase 5 code-owned Uint16 display registry",
     CTAM: "explicitly out of scope for this configuration plan",

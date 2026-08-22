@@ -195,3 +195,15 @@ def resolve_base_dir(
     if platform_name != "Windows" and str(selected).startswith("~"):
         return Path(selected).expanduser()
     return Path(selected)
+
+
+def inherited_process_path() -> str:
+    """The ``PATH`` inherited from the launching process, for a child spawn.
+
+    A supervisor launching a subprocess passes this along so the child can
+    locate interpreters it shells out to, without inheriting the rest of the
+    host environment. It is not configuration policy, but it is read from the
+    environment, so it lives here to keep the environment-read boundary
+    confined to the configuration infrastructure.
+    """
+    return os.environ.get("PATH", "")

@@ -45,4 +45,10 @@ node_modules
 # Storm cell JSONs
 *overlay_manifest.json
 
+# Operator-installed CTAM modules
+# Anchored at the repository root: this is the one install directory an operator
+# populates, and its contents are not ours to commit. A source directory that
+# happens to be named ctam_modules deeper in the tree stays tracked.
+/ctam_modules/
+
 .kilo

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CTAM cycle state and readiness",
+  "description": "The 'data' payload of GET /cycle. Reports host-wide cycle progress and the caller's own readiness. ctam_ready is host readiness and does not imply the caller's requirements are met; a module must read requirements_satisfied for that.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "cycle_id",
+    "analysis_time",
+    "state",
+    "ctam_ready",
+    "module_state",
+    "requirements_satisfied",
+    "allowed_operations",
+    "historical"
+  ],
+  "properties": {
+    "cycle_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}\\Z"
+    },
+    "analysis_time": {
+      "description": "The requested analysis time for this cycle, not wall-clock now. Identical in real-time and historical execution.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})\\Z"
+    },
+    "state": {
+      "description": "Host cycle state. Mirrors the plan's state machine exactly.",
+      "enum": [
+        "catalog_building",
+        "requirements_evaluated",
+        "not_ready",
+        "stormcast_running",
+        "external_modules_running",
+        "committing",
+        "completed",
+        "failed"
+      ]
+    },
+    "ctam_ready": {
+      "description": "True only after the catalog is frozen, current stormcells are in memory, and every StormCast base requirement has been evaluated. Does not imply every optional source exists.",
+      "type": "boolean"
+    },
+    "module_state": {
+      "description": "The caller's own lifecycle state.",
+      "enum": [
+        "discovered",
+        "invalid",
+        "waiting",
+        "ready",
+        "running",
+        "committing",
+        "completed",
+        "skipped_disabled",
+        "skipped_missing_requirements",
+        "timed_out",
+        "failed"
+      ]
+    },
+    "requirements_satisfied": {
+      "description": "Every required selector for this caller resolved to a ready artifact. Optional selectors do not affect this value.",
+      "type": "boolean"
+    },
+    "allowed_operations": {
+      "description": "Which operations the host will currently accept from this caller. Empty means read nothing and write nothing.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "read_files",
+          "read_stormcells",
+          "read_history",
+          "patch_stormcells",
+          "patch_history",
+          "stage_alerts",
+          "commit"
+        ]
+      }
+    },
+    "historical": {
+      "description": "True when replaying an archived cycle. The API model and pinned catalog are identical either way; this exists so a module can label its own output.",
+      "type": "boolean"
+    },
+    "cell_count": {
+      "description": "Number of cells in the current working snapshot. Zero is legal and produces no patchable cells.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "deadline": {
+      "description": "Absolute UTC time at which the host will terminate the caller. Derived from the manifest timeout bounded by the limits document.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})\\Z"
+    }
+  }
+}
