@@ -1,8 +1,11 @@
 # Real-Time Runner Decomposition Plan
 
-**Audit baseline:** commit `28beff7242495170ad4cc34d22d74f0b3316e931`
-on `version-test/3.0.0`  
-**Package version:** `2.7.0`  
+**Audit baseline:** commit `8a6206d` ("MRG: Merge pull request #93
+from ewsofficial/yuchen-wei3667/configuration-extraction-yaml") on
+`version-test/3.0.0`. This is a re-audit; the original audit was taken at
+commit `28beff7`, before configuration extraction and the truthful-cycle-state
+work landed.  
+**Package version:** `2.7.0` on branch `version-test/3.0.0`  
 **Status:** planning only; this document does not implement the split
 
 ## Objective
@@ -24,40 +27,88 @@ The split must reduce lifecycle coupling and import/process complexity without
 duplicating source downloads, changing scientific outputs, or replacing one
 in-process race with an unreliable cross-process race.
 
-## Current-state evidence
+## Current-state evidence (re-audited at `8a6206d`)
 
 `src/run.py` currently owns all of the following:
 
-- MRMS timestamp discovery and the forever polling loop.
+- MRMS timestamp discovery (`latest_common_minute_1h` plus the HTTPS fallback)
+  and the forever polling loop.
 - A lifetime `multiprocessing.Manager`.
-- Per-cycle EdgeWARN and EWMRS workers and their readiness events/state.
-- Per-cycle MRMS, RAP, and scan-time GLM ingestion.
-- Persistent GOES ABI ingest and render processes, queues, and activity events.
-- Persistent METAR, NWS, and WPC processes.
-- Persistent NEXRAD ingest and render processes and a NEXRAD log queue.
-- Shutdown of every child and queue.
+- Per-cycle EdgeWARN and EWMRS workers and their readiness events/state via
+  `run_tandem_cycle_once()`.
+- Per-cycle MRMS, RAP, and scan-time GLM ingestion through
+  `common.pipeline.coordinator.run_tandem_ingest_cycle()`.
+- Persistent GOES ABI ingest and render processes, queues, and activity events,
+  registered on an in-process `AccessorySupervisor`.
+- Persistent METAR, NWS, and WPC processes, also on `AccessorySupervisor`.
+- Persistent NEXRAD ingest and render processes plus a NEXRAD log queue and an
+  atomic JSON heartbeat with staleness-based restarts.
+- Shutdown of every child and queue via `StartedProcessRegistry`.
 
-The process boundary is not merely located in `run.py`.
-`src/util/runtime/cycle.py` imports both EdgeWARN and EWMRS workers, while
-`src/util/runtime/background.py` imports GOES, accessory, NEXRAD, and EWMRS
-implementations at module load. Copying the entrypoint code into three files
-would therefore preserve much of the current coupling.
+Since the original audit, significant prerequisite work has landed inside this
+monolith. The plan must preserve it, not redo it:
+
+- **Truthful durable cycle state exists.** `src/util/runtime/cycle.py`
+  defines `CycleOutcome`, `CycleStageResult`, `CycleStatus`,
+  `CycleRetryPolicy` (bounded exponential backoff), `PersistedCycleState`, and
+  an atomically written `CycleStateStore`. `run.py` advances
+  `last_successful`/`selection_cursor` only after `run_tandem_cycle_once()`
+  returns a validated outcome, distinguishes attempted/successful/abandoned
+  scans across restarts, seeds from the stormcell watermark only when no
+  authoritative state exists, and persists pending retries with backoff.
+- **Exact-path input manifests exist.** `common/ingest/manifest.py`
+  (`CycleInputManifest`, `StagedInput`) is built by the shared coordinator,
+  alignment-validated, passed to both workers, consumed by detection input
+  preparation in `src/EdgeWARN/pipeline.py`, and honored by the EWMRS MRMS and
+  GOES render pipelines, which pin layers via
+  `CycleInputManifest.latest_for_directory()` (`input_manifest_bound`). The
+  remaining gap is that `_render_layer()` still falls back to
+  latest-by-mtime when no manifest is supplied, so exact-path selection is not
+  yet mandatory.
+- **Bounded child supervision exists in-process.** `AccessorySupervisor` in
+  `src/util/runtime/processes.py` implements bounded exponential restart
+  backoff, crash-loop disabling after `max_restarts` within a window, atomic
+  health-file publication, cleanup-event clearing on death, and heartbeat
+  staleness checks for the non-daemonic NEXRAD ingest child.
+- **Configuration is YAML-first.** `src/common/config/` (loader, overlay,
+  validator) reads catalogs from a configurable `config/` root
+  (`--config-dir` / `EDGEWARN_CONFIG_DIR`); `util/runtime/config.py` exposes
+  `section()`/`resolve_file()`; disable flags are
+  `argparse.BooleanOptionalAction` flags whose defaults resolve from
+  `runtime.yaml` with environment overrides via `overlay.resolve`.
+
+The process boundary is still not confined to `run.py`.
+`src/util/runtime/cycle.py` imports both `EdgeWARN.pipeline.edgewarn_tandem_worker`
+and `EWMRS.pipeline.ewmrs_tandem_worker` at module load, while
+`src/util/runtime/background.py` imports GOES, METAR/NWS/WPC, NEXRAD, and EWMRS
+implementations, and `src/util/runtime/__init__.py` re-exports all of them.
+Copying the entrypoint code into three files would therefore preserve much of
+the current coupling.
 
 The existing shared staged-ingest flow must also be handled deliberately:
 
 - Detection MRMS is released before integration MRMS and RAP complete.
-- EWMRS MRMS rendering currently waits for validated detection and integration
-  MRMS groups.
+- EWMRS MRMS rendering waits for validated detection and integration MRMS
+  groups (`ewmrs_mrms_inputs_ready`).
 - Primary integration requires integration MRMS and raw RAP, plus scan-time
-  GLM when GOES is enabled.
-- GOES ABI is an EWMRS render input and is already ingested by a background
-  loop; it is not a substitute for scan-time GLM.
-- RAP Uint16 conversion is an EWMRS-derived artifact, but it currently runs
-  inside the shared ingest coordinator.
-- EWMRS render helpers currently select latest source files independently.
-  Separate services make that unsafe unless the handoff pins exact paths.
-- EWMRS GUI cleanup currently reaches NEXRAD outputs. After the split, only the
-  NEXRAD service may clean NEXRAD artifacts.
+  GLM when GOES is enabled; GLM readiness is merged into the manifest before
+  integration release.
+- GOES ABI is an EWMRS render input ingested by the background
+  `goes_loop`; it is not a substitute for scan-time GLM. A
+  `pause_ingest_during_render` coordination option (YAML/env) pauses ABI
+  ingest while a GOES render is active, using in-process events.
+- RAP Uint16 conversion remains an EWMRS-derived artifact executed inside the
+  shared ingest coordinator (`_run_rap_uint16_conversion` in
+  `src/common/pipeline/coordinator.py`).
+- EWMRS GUI cleanup still reaches NEXRAD outputs:
+  `cleanup_old_gui_files()` calls `_cleanup_old_nexrad_gui_files()` in
+  `src/EWMRS/pipeline.py`. After the split, only the NEXRAD service may clean
+  NEXRAD artifacts.
+
+What has *not* changed since the original audit: `run.py` still parses
+arguments, calls `initialize_runtime()`, resolves coordination settings, and
+reassigns `sys.stdout`/`sys.stderr` as import side effects (module scope runs
+before `main()`).
 
 ## Requirements and non-negotiable behavior
 
@@ -79,10 +130,20 @@ The existing shared staged-ingest flow must also be handled deliberately:
   latest-by-mtime discovery.
 - Existing scientific schemas, API contracts, source selection, fallbacks,
   retention policies, and base-directory overrides remain unchanged.
+- Preserve the truthful cycle-state semantics already implemented:
+  `last_successful` advances only after a validated `CycleOutcome`, and
+  attempted/successful/abandoned state survives restarts via
+  `CycleStateStore`.
+- Preserve the exact-path input-manifest plumbing already implemented; make
+  manifest-bound selection mandatory rather than falling back to
+  latest-by-mtime when no manifest is supplied.
 - Existing disable flags retain their meaning when passed to the optional
-  all-services launcher.
+  all-services launcher. Flags now default from `runtime.yaml` through the
+  config overlay (`argparse.BooleanOptionalAction` plus `overlay.resolve`);
+  CLI values must continue to win over YAML/env layers.
 - No entrypoint may parse arguments, initialize runtime paths, or spawn
-  processes as an import side effect.
+  processes as an import side effect. (`run.py` currently violates this at
+  module scope; the split must not carry it forward.)
 - Every service must handle `SIGINT` and `SIGTERM`, close its own children, and
   leave no orphaned worker or stale permanent pause.
 
@@ -138,9 +199,13 @@ It may retain an EdgeWARN child worker if staged detection/integration overlap
 still provides a verified latency benefit, but that worker is private to this
 service.
 
-Advancing `last_processed` must occur only after a truthful primary
-`CycleOutcome`. This split must not preserve the current behavior that marks a
-timestamp processed before `run_tandem_cycle_once()` reports its result.
+Advancing `last_successful` already occurs only after a truthful
+`CycleOutcome` via `CycleStateStore` (re-audit finding); the split must carry
+`CycleStateStore`, `CycleRetryPolicy`, `PersistedCycleState`, and the
+selection-cursor logic into this service without regressing those semantics.
+The in-process `AccessorySupervisor` restart/health machinery should be
+generalized (see refactoring boundaries) so the primary can supervise its own
+private worker with the same bounded-backoff behavior.
 
 ### `src/run_ewmrs.py`
 
@@ -292,31 +357,43 @@ policy and retention must be sized together from measured render throughput.
 
 ## Refactoring boundaries
 
-Suggested modules:
+Suggested modules (new unless noted):
 
 - `src/util/runtime/primary_service.py` for timestamp polling and primary-cycle
-  orchestration.
+  orchestration, absorbing the polling/retry loop currently inline in
+  `run.py`'s `main()`.
 - `src/util/runtime/ewmrs_service.py` for phase consumption and accessory
   supervision.
 - `src/util/runtime/nexrad_service.py` for NEXRAD supervision.
 - `src/util/runtime/handoff.py` for schemas, atomic publication, discovery,
-  validation, leases, and checkpoints.
+  validation, leases, and checkpoints. Reuse the atomic-write pattern already
+  proven in `CycleStateStore`, `_record_health()`, and the NEXRAD heartbeat
+  writer.
 - `src/util/runtime/cli.py` for reusable common flags and service-specific
-  parsers.
-- `src/util/runtime/supervisor.py` for lifecycle helpers shared by service
-  parents and the optional launcher.
+  parsers. The existing monolithic parser lives in `util/io.py`
+  (`IOManager.get_args`) and resolves YAML defaults via the config overlay;
+  parser builders must preserve that overlay behavior per service.
+- Rename/generalize the existing `src/util/runtime/processes.py`
+  (`AccessorySupervisor`, `StartedProcessRegistry`) into a shared supervisor
+  module so every service parent gets the bounded-backoff, crash-loop, health,
+  and heartbeat-staleness behavior already implemented there.
 
 Split `src/util/runtime/cycle.py` so the primary path no longer imports
 `ewmrs_tandem_worker`. Split `src/util/runtime/background.py` by service so
-importing primary runtime code does not import EWMRS or NEXRAD implementations.
-Keep narrow compatibility re-exports only during migration and remove them
-after all callers and tests use the new modules.
+importing primary runtime code does not import EWMRS or NEXRAD implementations;
+today `src/util/runtime/__init__.py` re-exports every background loop, which
+forces the full import graph on every consumer. Keep narrow compatibility
+re-exports only during migration and remove them after all callers and tests
+use the new modules.
 
-The EWMRS rendering APIs must gain exact-input variants. Passing only `dt` is
-insufficient while `_render_layer()` and other helpers select latest local
-files. The handoff consumer should pass an immutable input manifest through
-the render stack. Apply the same exact-path rule to primary detection and
-integration as part of the prerequisite cycle-correctness work.
+Exact-input render variants now exist (`run_render_pipeline`,
+`run_mrms_render_pipeline`, and `run_goes_render_pipeline` all accept an
+`input_manifest` and pin layers via `latest_for_directory()`), and detection
+input preparation consumes the same manifest. Remaining work: make
+manifest-bound selection mandatory — `_render_layer()` still selects
+latest-by-mtime when no manifest is supplied (`input_manifest_bound` false) —
+and thread manifests through the durable handoff records instead of in-memory
+shared state.
 
 ## CLI contract
 
@@ -328,31 +405,39 @@ python src/run_ewmrs.py
 python src/run_nexrad.py
 ```
 
-All three accept `--base_dir` / `--base-dir`. Only the primary command needs
-latitude/longitude, detection, tracking, CTAM, and MRMS-core flags.
+All three accept `--base_dir` / `--base-dir` and `--config-dir`. Only the
+primary command needs latitude/longitude, detection, tracking, CTAM, and
+MRMS-core flags.
+
+Disable flags are `argparse.BooleanOptionalAction` switches whose defaults
+resolve from `runtime.yaml` through `overlay.resolve`, with environment
+overrides; each service must keep that layering for the flags it owns.
 
 Recommended service ownership:
 
 | Flag | Primary | EWMRS | NEXRAD | Launcher routing |
 | --- | --- | --- | --- | --- |
 | `--base-dir` | yes | yes | yes | all enabled services |
+| `--config-dir` | yes | yes | yes | all enabled services |
 | `--lat_limits`, `--lon_limits` | yes | no | no | primary |
 | `--profile` | yes | optional render profile | optional NEXRAD profile | relevant services |
 | `--disable-ctam` | yes | no | no | primary |
 | `--disable-tracking` | yes | no | no | primary |
 | `--disable-polygon-expansion` | yes | no | no | primary |
+| detection tuning: `--refl-threshold`, `--min-seed-percentage`, `--drop-offset` | yes | no | no | primary |
 | `--disable-goes` | disables scan GLM | disables ABI ingest/render | no | primary and EWMRS |
 | `--disable-metar` | no | yes | no | EWMRS |
 | `--disable-nws` | no | yes | no | EWMRS |
-| new `--disable-wpc` | no | yes | no | EWMRS |
+| new `--disable-wpc` | no | yes | no | EWMRS (WPC today runs unless `--mrms-core-only`; it has no dedicated flag) |
 | `--disable-ewmrs` | no direct meaning | no direct meaning | no | launcher omits EWMRS |
 | `--disable-nexrad` | no direct meaning | no direct meaning | no | launcher omits NEXRAD |
-| `--mrms-core-only` | MRMS-only primary behavior | no | no | starts only primary |
+| `--mrms-core-only` | MRMS-only primary behavior; implies disabling EWMRS, GOES/GLM, RAP, NEXRAD, NWS, METAR, WPC | no | no | starts only primary |
 
 Keep `IOManager` logging behavior, but replace its monolithic parser with
 parser builders so each service exposes only flags it honors. Add parser tests
 for both spellings of `--base-dir`, longitude normalization in the primary
-service, and exact legacy-flag routing in the launcher.
+service, YAML-default resolution through the overlay for each owned flag, and
+exact legacy-flag routing in the launcher.
 
 ## Lifecycle, health, and restart semantics
 
@@ -363,9 +448,14 @@ service, and exact legacy-flag routing in the launcher.
   last successful activity, current phase, and degraded children.
 - Heartbeats are diagnostic only; correctness uses committed phase records and
   checkpoints.
-- Child supervision uses bounded exponential backoff and resets the backoff
-  after a stable interval. Repeated crash loops become degraded health rather
-  than unbounded rapid respawn.
+- Child supervision uses bounded exponential backoff. `AccessorySupervisor`
+  already implements this within the monolith (exponential backoff,
+  crash-loop disabling after `max_restarts` within a window, atomic health
+  file, cleanup-event clearing, NEXRAD heartbeat-staleness restarts); extract
+  and reuse it rather than reimplementing. Add backoff reset after a stable
+  interval, which the current implementation does not do.
+- Heartbeat infrastructure partially exists (NEXRAD ingest heartbeat with
+  PID/staleness checks); extend it to all services.
 - Primary failure does not delete EWMRS/NEXRAD state. EWMRS drains already
   committed records. NEXRAD continues independently.
 - EWMRS failure cannot mark primary cycles failed. Its backlog and oldest
@@ -378,10 +468,13 @@ service, and exact legacy-flag routing in the launcher.
 ## NEXRAD contention after decomposition
 
 Separate parents improve fault isolation but do not reserve CPU, RAM, or disk
-bandwidth. The existing
-[NEXRAD / MRMS Resource-Contention Remediation Plan](nexrad-mrms-resource-contention-remediation-plan.md)
-currently proposes parent-owned multiprocessing events; those specific wiring
-steps are incompatible with independent services.
+bandwidth. The former NEXRAD / MRMS resource-contention remediation plan (no
+longer present in `plans/`) proposed parent-owned multiprocessing events; the
+in-process variant that landed instead is `goes_coordination.pause_ingest_during_render`
+in `config/runtime.yaml`, which pauses GOES ABI ingest while a GOES render is
+active using events shared inside one process. That mechanism works only
+because ingest and render share a parent; it does not translate across
+independent services.
 
 Replace that portion with an optional cross-service primary-activity lease:
 
@@ -404,18 +497,32 @@ turning the pause policy on.
 ### Phase 0 — Characterize and lock down contracts
 
 - [ ] Add deterministic tests for current flag behavior, service ownership,
-  phase readiness, cycle success/retry, and shutdown.
+  phase readiness, cycle success/retry, and shutdown. (Cycle-state,
+  retry-policy, and supervisor tests exist; extend them to handoff and
+  ownership contracts.)
 - [ ] Record an independent-process baseline for primary phase latency,
   EWMRS/NEXRAD freshness, CPU, RSS, disk I/O, and output hashes.
+  (`[PhaseTelemetry]` producer-time phase lines in `util/runtime/cycle.py`
+  provide the latency instrument.)
 - [ ] Define required versus optional render layers and the maximum retained
   cycle backlog.
-- [ ] Implement truthful structured cycle outcomes and exact-path input
-  manifests required by this plan.
+- [x] Implement truthful structured cycle outcomes: `CycleOutcome`,
+  `CycleStageResult`, `CycleRetryPolicy`, and the atomic restart-safe
+  `CycleStateStore` landed since the original audit (re-audit at `8a6206d`).
+- [x] Implement exact-path input manifests: `CycleInputManifest`/
+  `StagedInput` flow from the shared coordinator through detection input
+  preparation and the MRMS/GOES render pipelines with alignment validation
+  (re-audit at `8a6206d`). Follow-up: make manifest binding mandatory instead
+  of falling back to latest-by-mtime when no manifest is supplied.
 - [ ] Fix atomic publication prerequisites for shared source files and indexes.
+  (Atomic publication exists for cycle state, health, and NEXRAD heartbeats;
+  source-file and index publication still needs the same guarantee.)
 
 ### Phase 1 — Extract service modules without changing deployment
 
 - [ ] Move module-level parsing and runtime initialization into `main()`.
+  (`run.py` currently parses args, calls `initialize_runtime()`, resolves
+  coordination settings, and wraps `sys.stdout`/`sys.stderr` at import time.)
 - [ ] Split CLI builders and runtime imports by ownership.
 - [ ] Extract primary, EWMRS/accessory, and NEXRAD service functions.
 - [ ] Keep the existing runner as a temporary adapter calling those functions.
@@ -440,7 +547,9 @@ turning the pause policy on.
 - [ ] Verify non-daemonic parser-pool creation, independent component restart,
   shutdown, freshness, retention, and output parity.
 - [ ] Adapt cooperative pause coordination to the cross-process lease, still
-  default off.
+  default off. (The in-process `pause_ingest_during_render` option only covers
+  GOES ingest/render inside one parent; the lease replaces it for NEXRAD
+  across services.)
 
 ### Phase 4 — Cut EWMRS and accessories over
 
@@ -460,7 +569,9 @@ turning the pause policy on.
 - [ ] Rename/refactor tandem-specific config and telemetry to primary-cycle
   terminology.
 - [ ] Remove EWMRS and NEXRAD imports from the primary import graph.
-- [ ] Advance last-success state only after validated primary completion.
+- [x] Advance last-success state only after validated primary completion
+  (already implemented via `CycleStateStore.record_outcome`; verify the split
+  preserves it).
 - [ ] Verify primary operation with both other services stopped and during
   their independent restart.
 
