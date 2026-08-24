@@ -22,6 +22,7 @@ from tests.core.config.source_inspect import SRC, argparse_defaults
 REPO_ROOT = SRC.parent
 
 CLI_MODULES = [
+    "util/cli.py",
     "util/io.py",
     "common/ingest/nexrad/main.py",
     "common/ingest/nexrad/pipeline/__init__.py",
