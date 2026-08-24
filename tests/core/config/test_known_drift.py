@@ -1916,12 +1916,18 @@ def test_ewmrs_declaration_defaults_all_defer_to_the_catalog():
         ("run_render_pipeline", "phase_name"),
         ("run_render_pipeline", "cleanup_after"),
         ("cleanup_old_gui_files", "max_age_minutes"),
-        ("_cleanup_old_nexrad_gui_files", "max_age_minutes"),
         ("_maybe_cleanup_goes_gui_files", "max_age_minutes"),
-        ("render_pending_nexrad_gui_files", "max_source_age_minutes"),
-        ("run_nexrad_render_loop", "poll_interval_seconds"),
     ):
         assert param_default("EWMRS/pipeline.py", qualname, param) is None, (qualname, param)
+
+    # Decomposition Phase 3 moved the NEXRAD GUI loop into its own service
+    # package; its declaration defaults must keep deferring to the catalog.
+    for relative_path, qualname, param in (
+        ("NEXRAD/gui_pipeline.py", "cleanup_old_nexrad_gui_files", "max_age_minutes"),
+        ("NEXRAD/gui_pipeline.py", "render_pending_nexrad_gui_files", "max_source_age_minutes"),
+        ("NEXRAD/gui_pipeline.py", "run_nexrad_render_loop", "poll_interval_seconds"),
+    ):
+        assert param_default(relative_path, qualname, param) is None, (qualname, param)
 
 
 def test_ewmrs_three_owners_of_120_stay_three_keys():
@@ -2176,9 +2182,20 @@ def test_ewmrs_nexrad_render_loop_floor_and_width_come_from_the_catalog():
     assert nexrad_poll_interval_min_seconds() == recorded["poll_interval_min_seconds"] == 1.0
     assert nexrad_render_max_workers() == recorded["max_workers"] == 8
 
-    source = _ewmrs_pipeline_source()
-    assert "max(nexrad_poll_interval_min_seconds(), float(poll_interval_seconds))" in source
-    assert "min(nexrad_render_max_workers(), len(pending_metadata))" in source
+    # Decomposition Phase 3: the loop body now lives in the NEXRAD service
+    # package, which reads the same catalog keys.
+    from NEXRAD import config as nexrad_config
+
+    assert (
+        nexrad_config.nexrad_poll_interval_seconds()
+        == recorded["poll_interval_seconds"]
+        == 30.0
+    )
+    nexrad_source = (
+        (REPO_ROOT / "src/NEXRAD/gui_pipeline.py").read_text(encoding="utf-8")
+    )
+    assert "max(nexrad_poll_interval_min_seconds(), float(poll_interval_seconds))" in nexrad_source
+    assert "min(nexrad_render_max_workers(), len(pending_metadata))" in nexrad_source
 
 
 def test_ewmrs_generic_render_phase_still_cleans_up_by_default():

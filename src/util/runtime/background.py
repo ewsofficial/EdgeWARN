@@ -14,7 +14,8 @@ from common.ingest.mrms.config import get_abi_radc_channel_specs
 from common.ingest.mrms.downloader import download_goes_specs, download_goes_specs_async
 from common.ingest.nexrad.pipeline import run_realtime_ingestion_pipeline
 from common.ingest.wpc.main import run_wpc_ingest
-from EWMRS.pipeline import ewmrs_goes_worker, run_nexrad_render_loop as _run_nexrad_render_loop
+from EWMRS.pipeline import ewmrs_goes_worker
+from NEXRAD.gui_pipeline import run_nexrad_render_loop as _run_nexrad_render_loop
 from util.io import QueueWriter
 
 from .config import section
