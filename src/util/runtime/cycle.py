@@ -336,6 +336,11 @@ class TandemCycleConfig:
     mrms_core_only: bool
     goes_render_wait_seconds: float
     goes_render_wait_interval_seconds: float
+    # Phase 2 shadow handoff: publish durable mrms-ready/rap-ready records
+    # beneath <base_dir>/state/realtime/cycles/ alongside the in-memory
+    # release events. Publication failures never fail a cycle.
+    base_dir: str | None = None
+    handoff_enabled: bool = False
 
 
 def run_tandem_cycle_once(
@@ -424,6 +429,50 @@ def run_tandem_cycle_once(
             released_phases.add(phase)
         event.set()
 
+    # Shadow durable handoff (Phase 2): publish immutable phase records in
+    # parallel with the in-memory callbacks below. A failed publication or
+    # validation is logged and never blocks or fails the cycle.
+    publisher = None
+    if config.handoff_enabled and config.base_dir:
+        from util.runtime.handoff import PhaseRecordPublisher
+
+        publisher = PhaseRecordPublisher(config.base_dir)
+
+    def shadow_handoff(phase: str, state, ready: bool):
+        if publisher is None or not ready or state.input_manifest is None:
+            return
+        try:
+            committed = publisher.publish(phase, state.input_manifest)
+            if committed is None:
+                return
+            from util.runtime.handoff import read_phase_record, shadow_validate_phase_record
+
+            record = read_phase_record(committed)
+            if record is None:
+                print(
+                    f"[Handoff] {phase} record for {committed.parent.name} "
+                    "could not be re-read after commit"
+                )
+                return
+            layers = None
+            if phase == "mrms-ready":
+                try:
+                    from EWMRS.render.config import get_mrms_file_list
+
+                    layers = get_mrms_file_list()
+                except Exception:
+                    layers = None
+            problems = shadow_validate_phase_record(record, layers=layers)
+            if problems:
+                print(
+                    f"[Handoff] Shadow validation problems for {phase} "
+                    f"{record.cycle_id}: {list(problems)}"
+                )
+            else:
+                print(f"[Handoff] Shadow validation OK for {phase} {record.cycle_id}")
+        except Exception as exc:
+            print(f"[Handoff] Durable handoff publication failed for {phase}: {exc}")
+
     def publish(state, event, phase: str, *, integration=False):
         """Write the complete snapshot before waking a worker."""
         shared_state["detection_inputs_ready"] = state.detection_inputs_ready
@@ -477,6 +526,9 @@ def run_tandem_cycle_once(
                 if state.input_manifest is not None:
                     shared_state["input_manifest"] = state.input_manifest.as_dict()
                 shared_state["errors"] = dict(state.errors)
+                # rap_inputs_ready is settled before the base-integration
+                # release, so the raw-RAP record can be published here.
+                shadow_handoff("rap-ready", state, state.rap_inputs_ready)
                 publish_integration_if_ready()
 
             cycle_task = asyncio.create_task(run_tandem_ingest_cycle(
@@ -485,7 +537,10 @@ def run_tandem_cycle_once(
                 include_rap=not config.mrms_core_only,
                 include_ewmrs=config.ewmrs_enabled,
                 on_detection_ready=lambda state: publish(state, detection_ready_event, "detection_released"),
-                on_ewmrs_mrms_ready=lambda state: publish(state, ewmrs_mrms_ready_event, "ewmrs_mrms_released"),
+                on_ewmrs_mrms_ready=lambda state: (
+                    publish(state, ewmrs_mrms_ready_event, "ewmrs_mrms_released"),
+                    shadow_handoff("mrms-ready", state, state.ewmrs_mrms_inputs_ready),
+                ),
                 on_base_integration_ready=base_integration_ready,
             ))
             if glm_task is not None:

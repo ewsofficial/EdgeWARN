@@ -3,7 +3,7 @@
   "title": "runtime.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "identity", "run", "goes_coordination", "supervisor", "background_intervals", "cycle", "profiling"],
+  "required": ["schema_version", "identity", "run", "goes_coordination", "supervisor", "background_intervals", "cycle", "handoff", "profiling"],
   "properties": {
     "schema_version": { "type": "integer", "const": 1 },
     "identity": {
@@ -127,6 +127,14 @@
         "ingest_max_entries": { "type": "integer", "minimum": 1 },
         "log_drain_poll_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "max_backlog_cycles": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" }
       }
     },
     "profiling": {

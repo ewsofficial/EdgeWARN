@@ -245,6 +245,15 @@ cycle:
   # measured render throughput.
   max_backlog_cycles: 10
 
+# Phase 2 of plans/realtime-runner-decomposition-plan.md: shadow publication
+# of durable mrms-ready.json and rap-ready.json phase records beneath
+# state/realtime/cycles/<cycle-id>/, in parallel with the existing in-memory
+# release callbacks. Nothing consumes these records for correctness yet; the
+# per-cycle shadow validation only logs problems. Records are immutable: a
+# successful record is never overwritten by a later attempt.
+handoff:
+  enabled: true
+
 profiling:
   # TRI-STATE, not a boolean. performance.py:50 declares `_ENABLED: bool | None`
   # and null here means "no opinion": _resolve_enabled (:24-44) consults
