@@ -83,8 +83,46 @@ describe('service registry scanner', () => {
     expect(requiredServiceForRoute('/api/v3/radar-sites/KTLX/scans/20240101-120000/elevations/0.5/products/DBZH')).toBe('nexrad');
     expect(requiredServiceForRoute('/nexrad/KTLX')).toBe('nexrad');
     expect(requiredServiceForRoute('/api/v3/cells')).toBe('edgewarn');
+    expect(requiredServiceForRoute('/api/v3/render-products')).toBe('ewmrs');
+    expect(requiredServiceForRoute('/api/v3/models/rap/layers')).toBe('ewmrs');
+    expect(requiredServiceForRoute('/api/v3/analyses/wpc/surface')).toBe('ewmrs');
+    expect(requiredServiceForRoute('/api/v3/styles/colormaps')).toBe('ewmrs');
     expect(requiredServiceForRoute('/renders/get-items')).toBe('ewmrs');
     expect(requiredServiceForRoute('/health/ready')).toBeNull();
+  });
+});
+
+describe('SERVICE_NOT_ENABLED gating for the ewmrs route family', () => {
+  let baseDir;
+  afterEach(async () => {
+    resetServiceStateCache();
+    if (baseDir) await fs.rm(baseDir, { recursive: true, force: true });
+  });
+
+  async function createAppWithBaseDir() {
+    baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'svc-gate-ewmrs-'));
+    for (const dir of ['data', 'gui', 'wpc']) {
+      await fs.mkdir(path.join(baseDir, dir), { recursive: true });
+    }
+    const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
+    return app;
+  }
+
+  it('returns the legacy envelope on /renders and problem+json on v3 render routes when ewmrs is disabled', async () => {
+    const app = await createAppWithBaseDir();
+    const v3 = await request(app).get('/api/v3/render-products').expect(503).expect('Content-Type', /application\/problem\+json/);
+    expect(v3.body).toMatchObject({ code: 'SERVICE_NOT_ENABLED', service: 'ewmrs', state: 'disabled' });
+
+    const legacy = await request(app).get('/renders/get-items').expect(503);
+    expect(legacy.body.success).toBe(false);
+    expect(legacy.body.error).toMatchObject({ code: 'SERVICE_NOT_ENABLED', service: 'ewmrs', state: 'disabled', last_seen: null });
+  });
+
+  it('serves render routes normally when ewmrs heartbeats as active', async () => {
+    const app = await createAppWithBaseDir();
+    await writeHeartbeat(baseDir, 'ewmrs', freshHeartbeat({ service: 'ewmrs' }));
+    await request(app).get('/api/v3/render-products').expect(200);
+    await request(app).get('/colormaps').expect(200);
   });
 });
 

@@ -60,9 +60,11 @@ describe('unified API app', () => {
     await write('gui/CompRefQC/20260317-200000/index.json', JSON.stringify({ schema_version: 2, timestamp: '20260317-200000', representation: 'binary_chunks', chunk_format: renderFormat, tile_grid: { rows: 1, cols: 1, tile_size: 2 }, chunks: [[0, 0]] }));
     await write('gui/CompRefQC/20260317-200000/chunks/chunk_0_0.f16.gz', Buffer.from('H4sIAAAAAAAC/2NggAAAad8iZQgAAAA=', 'base64'));
     await write('gui/NEXRAD/KTLH/0.5/KTLH_DBZH_0.5_20260317-200000.bin.gz', 'gzip');
-    // The radar route family requires an active `nexrad` service heartbeat
-    // (decomposition Phase 3); without it these routes return 503.
-    await write('state/realtime/services/nexrad.json', JSON.stringify({ schema_version: 1, service: 'nexrad', pid: 1, run_id: 'test-run', updated_at: new Date().toISOString(), phase: 'supervising', degraded_children: [] }));
+    // Route families require an active service heartbeat for their owner
+    // (decomposition Phases 3-5); without them these routes return 503.
+    const heartbeat = (service) => JSON.stringify({ schema_version: 1, service, pid: 1, run_id: 'test-run', updated_at: new Date().toISOString(), phase: 'supervising', degraded_children: [] });
+    await write('state/realtime/services/nexrad.json', heartbeat('nexrad'));
+    await write('state/realtime/services/ewmrs.json', heartbeat('ewmrs'));
     await write('gui/RAP/CAPE/index.json', '["20260317-200000"]');
     await write('gui/RAP/CAPE/20260317-200000/metadata.json', '{"units":"J/kg","grid":{"ni":1,"nj":1}}');
     await write('gui/RAP/CAPE/20260317-200000/data.u16', 'u16');
@@ -108,6 +110,9 @@ describe('unified API app', () => {
     baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-wpc-'));
     await fs.mkdir(path.join(baseDir, 'wpc', 'surface_analysis'), { recursive: true });
     await fs.writeFile(path.join(baseDir, 'wpc', 'surface_analysis', 'wpc_sfc_20260317-200000.geojson'), '{"type":"FeatureCollection","features":[]}');
+    // WPC analyses are an EWMRS-owned route family (Phase 4 gating).
+    await fs.mkdir(path.join(baseDir, 'state', 'realtime', 'services'), { recursive: true });
+    await fs.writeFile(path.join(baseDir, 'state', 'realtime', 'services', 'ewmrs.json'), JSON.stringify({ schema_version: 1, service: 'ewmrs', pid: 1, run_id: 'test-run', updated_at: new Date().toISOString(), phase: 'supervising', degraded_children: [] }));
     const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
     const wpc = await request(app).get('/api/v3/analyses/wpc/surface/20260317-200000').expect(200).expect('Content-Type', /application\/geo\+json/);
     expect(wpc.body).toEqual({ type: 'FeatureCollection', features: [] });
