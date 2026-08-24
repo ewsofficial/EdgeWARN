@@ -34,6 +34,8 @@ OPERATIONAL_LITERAL_EXCEPTIONS = {
     ("common/ingest/nexrad/s3_chunks.py", "NexradChunkStore.list_recent_volume_ids", "limit"): "one-result helper default",
     ("common/ingest/nexrad/s3_chunks.py", "list_recent_volume_ids", "limit"): "one-result helper default",
     ("util/runtime/timing.py", "sleep_for", "interval"): "generic interruptible-sleep helper",
+    ("api/services/serviceRegistry.js", "<module>", "CACHE_TTL_MS"): "heartbeat scanner cache granularity from the decomposition plan, not deployable policy",
+    ("api/services/serviceRegistry.js", "<parameter>", "CACHE_TTL_MS"): "same scanner-cache constant seen by the JS literal scanner",
 }
 _CATALOG_NAME = re.compile(r"(?:product|event|pressure|catalog|channel|modifier|vcp)", re.I)
 _OPERATIONAL_NAME = re.compile(r"(?:timeout|poll|interval|retention|cache|worker|retry|backoff|cleanup|age|limit|ttl)", re.I)
@@ -177,9 +179,15 @@ def _operational_numeric_literals(root: Path = SRC) -> list[tuple[str, str, str]
                             found.append(entry)
         else:
             pattern = r"(?:const|let|var)\s+(\w*(?:timeout|poll|interval|retention|cache|worker|retry|backoff|cleanup|age|limit|ttl)\w*)\s*=\s*\d+(?:\.\d+)?\b"
-            found.extend((relative, "<module>", name) for name in re.findall(pattern, source, re.I))
+            for name in re.findall(pattern, source, re.I):
+                entry = (relative, "<module>", name)
+                if entry not in OPERATIONAL_LITERAL_EXCEPTIONS:
+                    found.append(entry)
             parameter_pattern = r"(\w*(?:timeout|poll|interval|retention|cache|worker|retry|backoff|cleanup|age|limit|ttl)\w*)\s*=\s*\d+(?:\.\d+)?\b"
-            found.extend((relative, "<parameter>", name) for name in re.findall(parameter_pattern, source, re.I))
+            for name in re.findall(parameter_pattern, source, re.I):
+                entry = (relative, "<parameter>", name)
+                if entry not in OPERATIONAL_LITERAL_EXCEPTIONS:
+                    found.append(entry)
     return sorted(found)
 
 
