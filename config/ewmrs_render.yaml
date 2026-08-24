@@ -41,31 +41,42 @@ chunk_format:
 # `outdir` (render target) are util.file attribute names resolved by getattr at
 # call time; an unknown name is a startup error. Note MRMS_VILDensity maps
 # MRMS_DVIL_DIR -> GUI_VILD_DIR -- the names are deliberately asymmetric.
+#
+# `required: true` marks a layer whose absence fails the EWMRS MRMS render
+# stage; optional-layer failures are logged but never gate the stage. Every
+# current layer is required, matching the pre-decomposition behavior where any
+# failed MRMS layer failed the stage. The accessor defaults missing `required`
+# to true for MRMS layers.
 mrms_layers:
-  - {name: MRMS_MergedReflectivityQC,         colormap_key: NWS_Reflectivity, filepath: MRMS_COMPOSITE_DIR,   outdir: GUI_COMPOSITE_DIR}
-  - {name: MRMS_EchoTop18,                    colormap_key: EnhancedEchoTop,  filepath: MRMS_ECHOTOP18_DIR,   outdir: GUI_ECHOTOP18_DIR}
-  - {name: MRMS_EchoTop30,                    colormap_key: EnhancedEchoTop,  filepath: MRMS_ECHOTOP30_DIR,   outdir: GUI_ECHOTOP30_DIR}
-  - {name: MRMS_ReflectivityAtLowestAltitude, colormap_key: NWS_Reflectivity, filepath: MRMS_RALA_DIR,        outdir: GUI_RALA_DIR}
-  - {name: MRMS_ReflectivityAt0C,             colormap_key: NWS_Reflectivity, filepath: MRMS_REF_0C_DIR,      outdir: GUI_REF_0C_DIR}
-  - {name: MRMS_ReflectivityAtM5C,            colormap_key: NWS_Reflectivity, filepath: MRMS_REFM5C_DIR,      outdir: GUI_REFM5C_DIR}
-  - {name: MRMS_ReflectivityAtM15C,           colormap_key: NWS_Reflectivity, filepath: MRMS_REFM15C_DIR,     outdir: GUI_REFM15C_DIR}
-  - {name: MRMS_PrecipRate,                   colormap_key: PrecipRate,       filepath: MRMS_PRECIPRATE_DIR,  outdir: GUI_PRECIPRATE_DIR}
-  - {name: MRMS_VILDensity,                   colormap_key: VILDensity,       filepath: MRMS_DVIL_DIR,        outdir: GUI_VILD_DIR}
-  - {name: MRMS_QPE,                          colormap_key: QPE_01H,          filepath: MRMS_QPE_DIR,         outdir: GUI_QPE_DIR}
-  - {name: MRMS_VIL,                          colormap_key: VIL,              filepath: MRMS_VIL_DIR,         outdir: GUI_VIL_DIR}
-  - {name: MRMS_VII,                          colormap_key: VIL,              filepath: MRMS_VII_DIR,         outdir: GUI_VII_DIR}
-  - {name: MRMS_MergedAzShear_0-2kmAGL,       colormap_key: AzShear,          filepath: MRMS_AZSHEARLOW_DIR,  outdir: GUI_AZSHEARLOW_DIR}
-  - {name: MRMS_MergedAzShear_3-6kmAGL,       colormap_key: AzShear,          filepath: MRMS_AZSHEARMID_DIR,  outdir: GUI_AZSHEARMID_DIR}
-  - {name: MRMS_MESH,                         colormap_key: MESH,             filepath: MRMS_MESH_DIR,        outdir: GUI_MESH_DIR}
+  - {name: MRMS_MergedReflectivityQC,         colormap_key: NWS_Reflectivity, filepath: MRMS_COMPOSITE_DIR,   outdir: GUI_COMPOSITE_DIR,   required: true}
+  - {name: MRMS_EchoTop18,                    colormap_key: EnhancedEchoTop,  filepath: MRMS_ECHOTOP18_DIR,   outdir: GUI_ECHOTOP18_DIR,   required: true}
+  - {name: MRMS_EchoTop30,                    colormap_key: EnhancedEchoTop,  filepath: MRMS_ECHOTOP30_DIR,   outdir: GUI_ECHOTOP30_DIR,   required: true}
+  - {name: MRMS_ReflectivityAtLowestAltitude, colormap_key: NWS_Reflectivity, filepath: MRMS_RALA_DIR,        outdir: GUI_RALA_DIR,        required: true}
+  - {name: MRMS_ReflectivityAt0C,             colormap_key: NWS_Reflectivity, filepath: MRMS_REF_0C_DIR,      outdir: GUI_REF_0C_DIR,      required: true}
+  - {name: MRMS_ReflectivityAtM5C,            colormap_key: NWS_Reflectivity, filepath: MRMS_REFM5C_DIR,      outdir: GUI_REFM5C_DIR,      required: true}
+  - {name: MRMS_ReflectivityAtM15C,           colormap_key: NWS_Reflectivity, filepath: MRMS_REFM15C_DIR,     outdir: GUI_REFM15C_DIR,     required: true}
+  - {name: MRMS_PrecipRate,                   colormap_key: PrecipRate,       filepath: MRMS_PRECIPRATE_DIR,  outdir: GUI_PRECIPRATE_DIR,  required: true}
+  - {name: MRMS_VILDensity,                   colormap_key: VILDensity,       filepath: MRMS_DVIL_DIR,        outdir: GUI_VILD_DIR,        required: true}
+  - {name: MRMS_QPE,                          colormap_key: QPE_01H,          filepath: MRMS_QPE_DIR,         outdir: GUI_QPE_DIR,         required: true}
+  - {name: MRMS_VIL,                          colormap_key: VIL,              filepath: MRMS_VIL_DIR,         outdir: GUI_VIL_DIR,         required: true}
+  - {name: MRMS_VII,                          colormap_key: VIL,              filepath: MRMS_VII_DIR,         outdir: GUI_VII_DIR,         required: true}
+  - {name: MRMS_MergedAzShear_0-2kmAGL,       colormap_key: AzShear,          filepath: MRMS_AZSHEARLOW_DIR,  outdir: GUI_AZSHEARLOW_DIR,  required: true}
+  - {name: MRMS_MergedAzShear_3-6kmAGL,       colormap_key: AzShear,          filepath: MRMS_AZSHEARMID_DIR,  outdir: GUI_AZSHEARMID_DIR,  required: true}
+  - {name: MRMS_MESH,                         colormap_key: MESH,             filepath: MRMS_MESH_DIR,        outdir: GUI_MESH_DIR,        required: true}
 
 # config.py get_goes_file_list(), 16 entries, one per ABI channel.
 # `mask_min`/`mask_max` are keyed by the layer's channel id.
+#
+# GOES ABI layers are optional (`required: false`): the GOES renderer has always
+# reported success ratios without gating on individual channels, so that
+# behavior is now explicit instead of implicit.
 goes_layers:
   # config.py:137, spread onto every layer at :144-146 by get_goes_file_list().
   common:
     source_type: goes_abi
     variable_name: CMI
     fallback_variable_names: [Rad]
+    required: false
   layers:
     - name: GOES_ABI_C01_Reflectance
       channel_id: C01
