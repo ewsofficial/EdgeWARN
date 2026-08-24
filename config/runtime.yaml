@@ -236,6 +236,15 @@ cycle:
   # on the worker processes.
   log_drain_poll_seconds: 1
 
+  # Phase 0 of plans/realtime-runner-decomposition-plan.md: the maximum number
+  # of committed cycle records a consumer (EWMRS) may retain behind the primary
+  # service. Once the durable handoff consumer lands (Phase 4), a backlog older
+  # than this many cycles is recorded as unrecoverable and processing resumes at
+  # the oldest still-valid record instead of silently rendering newer files
+  # under older cycle timestamps. Sized together with GUI retention against
+  # measured render throughput.
+  max_backlog_cycles: 10
+
 profiling:
   # TRI-STATE, not a boolean. performance.py:50 declares `_ENABLED: bool | None`
   # and null here means "no opinion": _resolve_enabled (:24-44) consults

@@ -217,3 +217,10 @@ class TestPublicationAndClassification:
             "degraded",
             "unsupported-schema",
         }
+
+
+def test_max_backlog_cycles_is_configured():
+    """Phase 0 defines the maximum retained cycle backlog for consumers."""
+    from util.runtime.config import section
+
+    assert int(section("cycle")["max_backlog_cycles"]) >= 1

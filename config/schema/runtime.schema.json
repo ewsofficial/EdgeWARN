@@ -103,7 +103,7 @@
     "cycle": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["state_file", "retry", "ingest_max_entries", "log_drain_poll_seconds"],
+      "required": ["state_file", "retry", "ingest_max_entries", "log_drain_poll_seconds", "max_backlog_cycles"],
       "properties": {
         "state_file": {
           "type": "object",
@@ -125,7 +125,8 @@
           }
         },
         "ingest_max_entries": { "type": "integer", "minimum": 1 },
-        "log_drain_poll_seconds": { "type": "number", "exclusiveMinimum": 0 }
+        "log_drain_poll_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "max_backlog_cycles": { "type": "integer", "minimum": 1 }
       }
     },
     "profiling": {

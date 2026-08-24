@@ -888,10 +888,22 @@ def ewmrs_tandem_worker(
                 max_entries=max_entries,
                 input_manifest=input_manifest,
             )
-            failed_layers = sorted(
+            # Only required layers gate the stage; optional-layer failures are
+            # surfaced as warnings but never fail the cycle.
+            required_layers = {
+                layer["name"]
+                for layer in get_mrms_file_list()
+                if layer.get("required", True)
+            }
+            failed_required = sorted(
                 str(layer_name)
                 for layer_name, output in results.items()
-                if output is None
+                if output is None and str(layer_name) in required_layers
+            )
+            failed_optional = sorted(
+                str(layer_name)
+                for layer_name, output in results.items()
+                if output is None and str(layer_name) not in required_layers
             )
             artifacts = [
                 str(path)
@@ -899,11 +911,11 @@ def ewmrs_tandem_worker(
                 if output is not None
                 for path in (output if isinstance(output, list) else [output])
             ]
-            if not results or failed_layers:
+            if not results or failed_required:
                 message = (
                     "EWMRS MRMS render did not produce the complete required layer set"
-                    if not failed_layers
-                    else f"EWMRS MRMS render missing required layers: {', '.join(failed_layers)}"
+                    if not failed_required
+                    else f"EWMRS MRMS render missing required layers: {', '.join(failed_required)}"
                 )
                 publish_stage(
                     "failed",
@@ -912,6 +924,8 @@ def ewmrs_tandem_worker(
                 )
             else:
                 publish_stage("completed", artifacts=artifacts)
+            for optional_layer in failed_optional:
+                log(f"WARN: Optional EWMRS MRMS layer failed to render: {optional_layer}")
             log(f"INFO: EWMRS MRMS render completed: {_summarize_results(results)}")
         log("INFO: EWMRS GOES render is decoupled from the tandem worker")
     except Exception as exc:

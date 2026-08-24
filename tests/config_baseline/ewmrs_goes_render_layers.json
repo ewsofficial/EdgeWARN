@@ -16,7 +16,8 @@
     },
     "mask_max": {
       "C01": 1.2
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C02_Reflectance",
@@ -35,7 +36,8 @@
     },
     "mask_max": {
       "C02": 1.2
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C03_Reflectance",
@@ -54,7 +56,8 @@
     },
     "mask_max": {
       "C03": 1.2
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C04_Reflectance",
@@ -73,7 +76,8 @@
     },
     "mask_max": {
       "C04": 1.2
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C05_Reflectance",
@@ -92,7 +96,8 @@
     },
     "mask_max": {
       "C05": 1.2
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C06_Reflectance",
@@ -111,7 +116,8 @@
     },
     "mask_max": {
       "C06": 1.2
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C07_BrightnessTemp",
@@ -130,7 +136,8 @@
     },
     "mask_max": {
       "C07": 330.0
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C08_BrightnessTemp",
@@ -149,7 +156,8 @@
     },
     "mask_max": {
       "C08": 300.0
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C09_BrightnessTemp",
@@ -168,7 +176,8 @@
     },
     "mask_max": {
       "C09": 310.0
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C10_BrightnessTemp",
@@ -187,7 +196,8 @@
     },
     "mask_max": {
       "C10": 320.0
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C11_BrightnessTemp",
@@ -206,7 +216,8 @@
     },
     "mask_max": {
       "C11": 330.0
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C12_BrightnessTemp",
@@ -225,7 +236,8 @@
     },
     "mask_max": {
       "C12": 330.0
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C13_BrightnessTemp",
@@ -244,7 +256,8 @@
     },
     "mask_max": {
       "C13": 330.0
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C14_BrightnessTemp",
@@ -263,7 +276,8 @@
     },
     "mask_max": {
       "C14": 330.0
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C15_BrightnessTemp",
@@ -282,7 +296,8 @@
     },
     "mask_max": {
       "C15": 330.0
-    }
+    },
+    "required": false
   },
   {
     "name": "GOES_ABI_C16_BrightnessTemp",
@@ -301,6 +316,7 @@
     },
     "mask_max": {
       "C16": 330.0
-    }
+    },
+    "required": false
   }
 ]
