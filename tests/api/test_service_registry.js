@@ -19,7 +19,6 @@ const freshHeartbeat = (overrides = {}) => JSON.stringify({
   run_id: 'run-abc',
   updated_at: new Date().toISOString(),
   phase: 'supervising',
-  version: '2.7.0',
   degraded_children: [],
   ...overrides,
 });
