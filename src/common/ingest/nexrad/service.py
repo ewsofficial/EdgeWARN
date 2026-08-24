@@ -52,6 +52,7 @@ from common.ingest.nexrad.writer import (
     local_scan_elevations_complete,
     write_site_manifest,
 )
+from util.atomic import atomic_write_text
 from util.io import IOManager
 
 io_manager = IOManager("[NEXRAD]")
@@ -147,13 +148,18 @@ def _emit_volume_perf_summary(
 
 
 def _write_text_if_changed(path: Path, content: str) -> None:
+    """Persist scan state through a temp file + atomic replace.
+
+    The state file survives process restarts and staleness checks, so a crash
+    mid write must never expose truncated JSON under the real name.
+    """
     if path.exists():
         try:
             if path.read_text(encoding="utf-8") == content:
                 return
         except Exception:
             pass
-    path.write_text(content, encoding="utf-8")
+    atomic_write_text(path, content)
 
 
 def _utc_now_timestamp() -> str:

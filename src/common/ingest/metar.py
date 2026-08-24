@@ -137,11 +137,11 @@ def _load_station_database():
 
         io.write_info(f"Parsed {len(_station_cache)} stations")
         
-        # Save to cache file
+        # Save to cache file; atomic so a crash mid write never leaves
+        # truncated JSON under the name the loader reads on next startup.
         try:
             cache_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(cache_file, 'w') as f:
-                json.dump(_station_cache, f)
+            atomic_write_json(cache_file, _station_cache)
             io.write_debug(f"Saved station cache to {cache_file}")
         except Exception as e:
             io.write_warning(f"Failed to save station cache: {e}")
