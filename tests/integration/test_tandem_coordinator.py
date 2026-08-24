@@ -57,7 +57,6 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch, tmp_pat
     monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
     monkeypatch.setattr(coordinator, "download_all_goes_files_async", fake_goes)
     monkeypatch.setattr(coordinator, "download_rap_async", fake_rap)
-    monkeypatch.setattr(coordinator, "_run_rap_uint16_conversion", lambda *args: asyncio.sleep(0, result=True))
 
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
 
@@ -135,7 +134,6 @@ def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch, tmp_path):
     monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
     monkeypatch.setattr(coordinator, "download_all_goes_files_async", fake_goes)
     monkeypatch.setattr(coordinator, "download_rap_async", fake_rap)
-    monkeypatch.setattr(coordinator, "_run_rap_uint16_conversion", lambda *args: asyncio.sleep(0, result=True))
 
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
     state = asyncio.run(
