@@ -13,6 +13,7 @@ never imports.
 """
 
 from datetime import datetime, timezone
+import multiprocessing
 import time
 import uuid
 
@@ -26,13 +27,11 @@ from util.runtime.cycle import (
     run_tandem_cycle_once,
 )
 from util.runtime.config import resolve_file, section
-from util.runtime.logging import drain_log_queue
 from util.runtime.scheduler import load_last_processed_from_stormcells
 
 
 def build_cycle_config(args):
-    """Freeze one validated per-cycle configuration plus GOES coordination."""
-    goes_coordination = section("goes_coordination")
+    """Freeze one validated per-cycle configuration for the primary service."""
     mrms_core_only = args.mrms_core_only
     handoff_settings = section("handoff")
     return TandemCycleConfig(
@@ -47,13 +46,8 @@ def build_cycle_config(args):
         min_seed_percentage=args.min_seed_percentage,
         drop_offset=args.drop_offset,
         config_dir=args.config_dir,
-        ewmrs_enabled=not args.disable_ewmrs and not mrms_core_only,
         goes_enabled=not args.disable_goes and not mrms_core_only,
         mrms_core_only=mrms_core_only,
-        goes_render_wait_seconds=goes_coordination["render_wait_seconds"],
-        goes_render_wait_interval_seconds=goes_coordination[
-            "render_wait_interval_seconds"
-        ],
         base_dir=args.base_dir,
         handoff_enabled=bool(overlay.resolve(
             None,
@@ -61,7 +55,7 @@ def build_cycle_config(args):
             yaml_value=handoff_settings["enabled"],
             key="handoff.enabled",
         )),
-    ), goes_coordination
+    )
 
 
 def report_effective_config(config_dir=None):
@@ -171,17 +165,15 @@ def run_primary_cycle_loop(
     *,
     checker,
     cycle_config,
-    goes_render_task_queue,
-    goes_render_log_queue,
-    goes_cycle_active_event,
-    manager,
-    supervisor,
+    supervisor=None,
 ):
-    """Poll for MRMS timestamps and drive tandem cycles until interrupted.
+    """Poll for MRMS timestamps and drive primary cycles until interrupted.
 
     Advances ``last_successful`` and the selection cursor only after a
     validated ``CycleOutcome``; failed scans retry with bounded exponential
-    backoff and are abandoned explicitly after ``max_attempts``.
+    backoff and are abandoned explicitly after ``max_attempts``. The
+    supervisor is optional: the primary service owns no accessory children,
+    so it is None for the standalone primary.
     """
     stormcell_last_successful, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
@@ -229,9 +221,13 @@ def run_primary_cycle_loop(
             ttl_seconds=nexrad_coordination["primary_lease_ttl_seconds"],
         )
 
+    # Hoisted out of the per-cycle path: a Manager spawns a child server
+    # process and IPC machinery on construction; one instance serves every
+    # cycle in this process.
+    manager = multiprocessing.Manager()
+
     try:
         while True:
-            drain_log_queue(goes_render_log_queue)
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
             latest_common = None
@@ -283,11 +279,8 @@ def run_primary_cycle_loop(
                         primary_lease.acquire(dt)
                     outcome = run_tandem_cycle_once(
                         dt,
-                        goes_render_task_queue,
-                        goes_render_log_queue,
                         manager,
                         config=cycle_config,
-                        goes_cycle_active_event=goes_cycle_active_event,
                     )
                 finally:
                     if primary_lease is not None:
@@ -353,10 +346,13 @@ def run_primary_cycle_loop(
                          f"selection cursor {selection_cursor}. Waiting..."
                      )
 
-            # Wait/Check loop — also monitor accessory processes
+            # Wait/Check loop — also monitor any supervised children
             for _ in range(supervisor_settings["check_ticks"]):
                 time.sleep(supervisor_settings["tick_seconds"])
-                supervisor.check()
+                if supervisor is not None:
+                    supervisor.check()
 
     except KeyboardInterrupt:
         print("CTRL+C detected, exiting ...")
+    finally:
+        manager.shutdown()

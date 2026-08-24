@@ -486,6 +486,30 @@ def run_render_pipeline(
     return results
 
 
+def mrms_required_layer_failures(results) -> tuple[list[str], list[str]]:
+    """Split rendered MRMS results into failed required and optional layers.
+
+    Only required layers gate an EWMRS stage; optional-layer failures are
+    surfaced as warnings but never fail a cycle.
+    """
+    required_layers = {
+        layer["name"]
+        for layer in get_mrms_file_list()
+        if layer.get("required", True)
+    }
+    failed_required = sorted(
+        str(layer_name)
+        for layer_name, output in results.items()
+        if output is None and str(layer_name) in required_layers
+    )
+    failed_optional = sorted(
+        str(layer_name)
+        for layer_name, output in results.items()
+        if output is None and str(layer_name) not in required_layers
+    )
+    return failed_required, failed_optional
+
+
 def run_mrms_render_pipeline(
     dt,
     max_entries: int | None = None,
@@ -615,23 +639,7 @@ def ewmrs_tandem_worker(
                 max_entries=max_entries,
                 input_manifest=input_manifest,
             )
-            # Only required layers gate the stage; optional-layer failures are
-            # surfaced as warnings but never fail the cycle.
-            required_layers = {
-                layer["name"]
-                for layer in get_mrms_file_list()
-                if layer.get("required", True)
-            }
-            failed_required = sorted(
-                str(layer_name)
-                for layer_name, output in results.items()
-                if output is None and str(layer_name) in required_layers
-            )
-            failed_optional = sorted(
-                str(layer_name)
-                for layer_name, output in results.items()
-                if output is None and str(layer_name) not in required_layers
-            )
+            failed_required, failed_optional = mrms_required_layer_failures(results)
             artifacts = [
                 str(path)
                 for output in results.values()
