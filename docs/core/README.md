@@ -114,6 +114,7 @@ falls back to the YAML catalogs when omitted rather than to a literal default.
 ## Additional References
 
 - `docs/core/ingestion.md`
+- `docs/core/service_registry.md`
 - `docs/core/goes_pipeline.md`
 - `docs/core/detection.md`
 - `docs/core/integration.md`
