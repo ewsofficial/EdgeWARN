@@ -6,6 +6,7 @@ import os
 import queue
 import signal
 import sys
+import time
 import traceback
 
 import common.ingest.metar as metar_ingest
@@ -15,7 +16,6 @@ from common.ingest.mrms.downloader import download_goes_specs, download_goes_spe
 from common.ingest.nexrad.pipeline import run_realtime_ingestion_pipeline
 from common.ingest.wpc.main import run_wpc_ingest
 from EWMRS.pipeline import ewmrs_goes_worker
-from NEXRAD.gui_pipeline import run_nexrad_render_loop as _run_nexrad_render_loop
 from util.io import QueueWriter
 
 from .config import section
@@ -195,6 +195,45 @@ def _write_nexrad_heartbeat(heartbeat_path, payload, *, latest_output):
     return latest_output
 
 
+def _wait_for_primary_quiescence(base_dir, log_func=None):
+    """Cooperative cross-service throttle (Phase 3, default off).
+
+    While the primary holds an unexpired activity lease, NEXRAD waits before
+    admitting a new ingest scan or render batch. An atomic unit already in
+    progress is never interrupted, and the wait is bounded by
+    ``pause_max_wait_seconds`` so the weather cycle can never block NEXRAD
+    indefinitely -- nor NEXRAD block itself on a crashed primary.
+    """
+    coordination = section("nexrad_coordination")
+    if not coordination["pause_ingest_during_primary_activity"]:
+        return
+
+    from util.runtime.handoff import primary_activity_held
+
+    deadline = time.monotonic() + coordination["pause_max_wait_seconds"]
+    while time.monotonic() < deadline:
+        held = primary_activity_held(base_dir)
+        if held is None:
+            return
+        message = (
+            f"Primary cycle {held.cycle_id} holds the activity lease; "
+            f"waiting before admitting new NEXRAD work"
+        )
+        if log_func is not None:
+            log_func(f"INFO: {message}")
+        else:
+            print(f"[NEXRAD] {message}")
+        sleep_for(
+            max(
+                0.1,
+                min(deadline - time.monotonic(), float(
+                    coordination["pause_poll_interval_seconds"]
+                )),
+            ),
+            interval=coordination["pause_poll_interval_seconds"],
+        )
+
+
 def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
     from common.ingest.nexrad.worker_pool import shutdown_nexrad_pool
 
@@ -216,6 +255,9 @@ def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
     try:
         while not _SHUTDOWN_REQUESTED:
             try:
+                if _SHUTDOWN_REQUESTED:
+                    return
+                _wait_for_primary_quiescence(base_dir, log_func=lambda msg: queue_log(log_queue, msg))
                 if _SHUTDOWN_REQUESTED:
                     return
                 queue_log(log_queue, "INFO: Starting NEXRAD ingest pipeline")
@@ -244,9 +286,16 @@ def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
 
 
 def nexrad_render_loop(base_dir):
+    from NEXRAD.gui_pipeline import run_nexrad_render_loop
+
     _configure_process_runtime("NEXRAD-Render")
     try:
-        _run_nexrad_render_loop(base_dir=base_dir)
+        # Quiescence is checked per poll cycle inside the loop so an atomic
+        # render already in progress is never interrupted.
+        run_nexrad_render_loop(
+            base_dir=base_dir,
+            wait_for_quiescence=lambda: _wait_for_primary_quiescence(base_dir),
+        )
     except (KeyboardInterrupt, SystemExit):
         return
 

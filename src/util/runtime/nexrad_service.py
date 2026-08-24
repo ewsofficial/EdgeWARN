@@ -1,13 +1,11 @@
-"""NEXRAD service supervision functions (decomposition Phase 1).
+"""NEXRAD service supervision functions (decomposition Phase 3).
 
 Owns the complete NEXRAD lifecycle registration: ingest (non-daemonic, with
-its heartbeat-staleness restart policy) and GUI rendering. Extracted from the
-former monolithic ``run.py`` so the future ``run_nexrad.py`` entry point can
-reuse this supervision verbatim.
+its heartbeat-staleness restart policy) and GUI rendering. Consumed by the
+standalone ``run_nexrad.py`` entry point.
 
-The render loop currently delegates into ``EWMRS.pipeline``; moving that
-implementation out of the EWMRS package is Phase 3 work. The supervision
-boundary already lives here.
+Since Phase 3 the render loop lives in ``NEXRAD.gui_pipeline``; importing this
+module loads neither EWMRS nor any other service's scientific stack.
 """
 
 from common.ingest.nexrad.config import (

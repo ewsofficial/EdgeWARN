@@ -137,6 +137,14 @@ class AccessorySupervisor:
     def request_stop(self):
         self._stop_event.set()
 
+    def disabled_names(self):
+        """Children whose restarts were disabled by crash-loop detection."""
+        return [
+            info["name"]
+            for info in self._process_info
+            if info.get("process") is not None and not info["enabled"]
+        ]
+
     def check(self):
         import multiprocessing
         now = time.monotonic()
