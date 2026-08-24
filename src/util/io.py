@@ -225,6 +225,7 @@ class IOManager:
         args.disable_ewmrs = overlay.resolve(args.disable_ewmrs, yaml_value=runtime_cfg["disable_ewmrs"], key="run.disable_ewmrs")
         args.disable_nws = overlay.resolve(args.disable_nws, yaml_value=runtime_cfg["disable_nws"], key="run.disable_nws")
         args.disable_metar = overlay.resolve(args.disable_metar, yaml_value=runtime_cfg["disable_metar"], key="run.disable_metar")
+        args.disable_wpc = overlay.resolve(args.disable_wpc, yaml_value=runtime_cfg["disable_wpc"], key="run.disable_wpc")
         args.disable_goes = overlay.resolve(args.disable_goes, yaml_value=runtime_cfg["disable_goes"], key="run.disable_goes")
         args.disable_nexrad = overlay.resolve(args.disable_nexrad, yaml_value=runtime_cfg["disable_nexrad"], key="run.disable_nexrad")
         args.mrms_core_only = overlay.resolve(args.mrms_core_only, yaml_value=runtime_cfg["mrms_core_only"], key="run.mrms_core_only")

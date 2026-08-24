@@ -94,6 +94,12 @@
         "@repr": "<not a literal>"
       }
     },
+    "--disable-wpc": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
     "--disable-goes": {
       "default": null,
       "action": {
@@ -223,6 +229,38 @@
     "--config-dir": {
       "default": null,
       "action": null
+    }
+  },
+  "run_ewmrs.py": {
+    "--profile": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--disable-metar": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--disable-nws": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--disable-wpc": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--disable-goes": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     }
   }
 }

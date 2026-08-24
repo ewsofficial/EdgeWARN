@@ -15,6 +15,7 @@
     "--disable-nws",
     "--disable-polygon-expansion",
     "--disable-tracking",
+    "--disable-wpc",
     "--drop-offset",
     "--lat_limits",
     "--list-ctam-modules",

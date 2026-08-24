@@ -1,38 +1,42 @@
-"""EWMRS/accessory service supervision functions (decomposition Phase 1).
+"""EWMRS/accessory service supervision functions (decomposition Phase 4).
 
-Registers the loops that will become the EWMRS service's own children once
-``run_ewmrs.py`` lands: METAR, NWS, and WPC continuous ingest, plus GOES ABI
-ingest and rendering. Extracted from the former monolithic ``run.py`` so the
-future entry point can reuse this registration verbatim while ``run.py``
-remains a temporary adapter.
+Registers every child of the standalone EWMRS service (``run_ewmrs.py``):
+METAR, NWS, and WPC continuous ingest, GOES ABI ingest and poll-based
+rendering, and the phase-record consumer that renders from the exact paths in
+committed ``mrms-ready``/``rap-ready`` records.
 
 NEXRAD is deliberately absent: it is supervised by
-``util.runtime.nexrad_service``, never here.
+``util.runtime.nexrad_service``, never here. The primary EdgeWARN service does
+not import this module.
 """
 
 from util.runtime.background import goes_loop, goes_render_loop, metar_loop, nws_loop, wpc_loop
+from util.runtime.ewmrs_consumer import ewmrs_consumer_loop
 
 
 def register_ewmrs_accessories(
     supervisor,
     *,
-    mrms_core_only,
+    base_dir,
     metar_enabled,
     nws_enabled,
+    wpc_enabled,
     goes_ingest_enabled,
     goes_render_enabled,
+    consumer_enabled=True,
     goes_cycle_active,
     goes_render_active,
     goes_pause_ingest_during_render,
     goes_poll_seconds,
-    goes_render_task_queue,
-    goes_render_log_queue,
+    child_log_queue=None,
 ):
-    """Add every non-NEXRAD accessory loop to *supervisor*.
+    """Add every EWMRS-owned child loop to *supervisor*.
 
-    ``goes_ingest_enabled`` gates ABI ingest plus the scan-time GLM collection
-    the primary integration consumes; ``goes_render_enabled`` additionally
-    requires EWMRS, because GOES rendering only exists when EWMRS does.
+    ``goes_ingest_enabled`` gates ABI ingest only; scan-time GLM is a primary
+    integration input and runs inside the primary service. Accessory loops are
+    optional inputs to primary integration — stopping one degrades those
+    inputs visibly without blocking MRMS detection, and a crash-looped child
+    is reported as a degraded entry in the EWMRS heartbeat rather than hidden.
     """
     supervisor.add(
         "METAR", metar_loop,
@@ -46,7 +50,7 @@ def register_ewmrs_accessories(
     )
     supervisor.add(
         "WPC", wpc_loop,
-        enabled=not mrms_core_only,
+        enabled=wpc_enabled,
         daemon=True,
     )
     supervisor.add(
@@ -56,10 +60,17 @@ def register_ewmrs_accessories(
         daemon=True,
         cleanup_event=goes_cycle_active,
     )
-    supervisor.add(
-        "GOES Render", goes_render_loop,
-        enabled=bool(goes_render_enabled),
-        args=(goes_render_task_queue, goes_render_log_queue, goes_render_active),
-        daemon=True,
-        cleanup_event=goes_render_active,
-    )
+    if child_log_queue is not None:
+        supervisor.add(
+            "GOES Render", goes_render_loop,
+            enabled=bool(goes_render_enabled),
+            args=(base_dir, child_log_queue, goes_render_active),
+            daemon=True,
+            cleanup_event=goes_render_active,
+        )
+        supervisor.add(
+            "EWMRS Consumer", ewmrs_consumer_loop,
+            enabled=consumer_enabled,
+            args=(base_dir, child_log_queue),
+            daemon=True,
+        )
