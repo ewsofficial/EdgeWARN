@@ -13,7 +13,6 @@ from common.ingest.manifest import CycleInputManifest
 from common.pipeline.coordinator import run_tandem_ingest_cycle
 from EdgeWARN.pipeline import edgewarn_tandem_worker
 from EdgeWARN.process.detect.config import DetectionConfig
-from EWMRS.pipeline import ewmrs_tandem_worker
 
 from .config import section
 from .goes import (
@@ -394,12 +393,18 @@ def run_tandem_cycle_once(
             config.disable_polygon_expansion, config.mrms_core_only,
         ),
     )
-    ewmrs_proc = (
-        multiprocessing.Process(
+    ewmrs_proc = None
+    if config.ewmrs_enabled:
+        # Imported here, not at module scope: importing the EWMRS pipeline is
+        # the render stack's entry into this module, and primary-only runtime
+        # code must be importable without it. The first cycle pays a cached
+        # module lookup; every later call is free.
+        from EWMRS.pipeline import ewmrs_tandem_worker
+
+        ewmrs_proc = multiprocessing.Process(
             target=ewmrs_tandem_worker,
             args=(log_queue, shared_state, ewmrs_mrms_ready_event, dt),
-        ) if config.ewmrs_enabled else None
-    )
+        )
     started_processes = StartedProcessRegistry()
     released_phases: set[str] = set()
 
