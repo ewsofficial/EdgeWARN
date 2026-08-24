@@ -1,9 +1,7 @@
 import asyncio
-import ctypes
 from datetime import datetime, timezone
 import json
 import os
-import queue
 import signal
 import sys
 import time
@@ -20,36 +18,12 @@ from util.io import QueueWriter
 
 from .config import section
 from .logging import queue_log
+from .process_identity import set_parent_death_signal as _set_parent_death_signal
+from .process_identity import set_process_name as _set_process_name
 from .timing import sleep_for, sleep_until_boundary
 
 
 _SHUTDOWN_REQUESTED = False
-
-
-def _set_process_name(name: str) -> None:
-    try:
-        import multiprocessing
-
-        multiprocessing.current_process().name = name
-    except Exception:
-        pass
-
-    try:
-        libc = ctypes.CDLL(None)
-        pr_set_name = 15
-        encoded = name.encode("utf-8")[:15]
-        libc.prctl(pr_set_name, ctypes.c_char_p(encoded), 0, 0, 0)
-    except Exception:
-        pass
-
-
-def _set_parent_death_signal(sig: int = signal.SIGTERM) -> None:
-    try:
-        libc = ctypes.CDLL(None)
-        pr_set_pdeathsig = 1
-        libc.prctl(pr_set_pdeathsig, sig, 0, 0, 0)
-    except Exception:
-        pass
 
 
 def _install_exit_signal_handlers() -> None:
@@ -106,61 +80,50 @@ def goes_loop(activity_event, render_active_event, pause_during_render=None, pol
         return
 
 
-def goes_render_loop(task_queue, log_queue, render_active_event):
+def goes_render_loop(base_dir, log_queue, render_active_event):
+    """EWMRS-owned GOES ABI render loop (decomposition Phase 4).
+
+    Poll-based: each cycle it pins the freshest complete local ABI input set
+    into a manifest and renders it. The primary no longer enqueues GOES
+    render tasks; GOES ingest and render share this service's process tree,
+    so the in-process ``pause_ingest_during_render`` events keep working.
+    """
+    from util.runtime.goes import collect_local_goes_inputs, get_ewmrs_goes_render_specs
+    from common.ingest.manifest import CycleInputManifest
+
+    _configure_process_runtime("GOES-Render")
+    coordination = section("goes_coordination")
+    specs = get_ewmrs_goes_render_specs()
     try:
-        while True:
-            task = task_queue.get()
-            if task is None:
-                render_active_event.clear()
+        while not _SHUTDOWN_REQUESTED:
+            target_dt = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            try:
+                inputs = collect_local_goes_inputs(target_dt, specs=specs)
+                if len(inputs) == len(specs):
+                    manifest = CycleInputManifest(cycle_time=target_dt, inputs=inputs)
+                    if not manifest.validate_alignment():
+                        queue_log(
+                            log_queue,
+                            f"INFO: Rendering pinned local GOES ABI input set for {target_dt.isoformat()}",
+                        )
+                        render_active_event.set()
+                        try:
+                            ewmrs_goes_worker(
+                                log_queue,
+                                target_dt,
+                                input_manifest=manifest.as_dict(),
+                            )
+                        finally:
+                            render_active_event.clear()
+            except KeyboardInterrupt:
                 return
-
-            latest_task = task
-            dropped_tasks = 0
-            saw_shutdown = False
-            while True:
-                try:
-                    queued_task = task_queue.get_nowait()
-                except queue.Empty:
-                    break
-
-                if queued_task is None:
-                    saw_shutdown = True
-                    continue
-
-                latest_task = queued_task
-                dropped_tasks += 1
-
-            if dropped_tasks > 0:
-                queue_log(log_queue, f"INFO: Dropped {dropped_tasks} stale queued GOES render task(s); latest-wins scheduling applied")
-
-            if isinstance(latest_task, tuple) and len(latest_task) >= 2:
-                dt, max_entries = latest_task[:2]
-                queued_at_iso = latest_task[2] if len(latest_task) > 2 else None
-                input_manifest = latest_task[3] if len(latest_task) > 3 else None
-            else:
-                dt, max_entries = latest_task
-                queued_at_iso = None
-                input_manifest = None
-
-            if queued_at_iso:
-                try:
-                    queue_lag_s = (datetime.now(timezone.utc) - datetime.fromisoformat(str(queued_at_iso))).total_seconds()
-                    queue_log(log_queue, f"INFO: Starting freshest queued GOES render for {dt.isoformat()} after {queue_lag_s:.1f}s queue lag")
-                except Exception:
-                    pass
-
-            render_active_event.set()
-            ewmrs_goes_worker(
-                log_queue,
-                dt,
-                max_entries=max_entries,
-                input_manifest=input_manifest,
+            except Exception as exc:
+                queue_log(log_queue, f"ERROR: EWMRS GOES render poll cycle failed: {exc}")
+            sleep_for(
+                coordination["poll_seconds"],
+                interval=coordination["poll_interval_seconds"],
             )
-
-            render_active_event.clear()
-            if saw_shutdown:
-                return
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         render_active_event.clear()
         return
 
