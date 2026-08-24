@@ -586,19 +586,29 @@ turning the pause policy on.
 
 ### Phase 0 — Characterize and lock down contracts
 
-- [ ] Define the canonical service-name registry (`edgewarn`, `ewmrs`,
+- [x] Define the canonical service-name registry (`edgewarn`, `ewmrs`,
   `nexrad`) and the API-consumable heartbeat schema, and record the
-  route-family-to-service dependency map.
-- [ ] Add deterministic tests for current flag behavior, service ownership,
+  route-family-to-service dependency map. (Landed:
+  `src/util/runtime/services.py`, `docs/core/service_registry.md`, and
+  `tests/util/test_runtime_services.py`.)
+- [x] Add deterministic tests for current flag behavior, service ownership,
   phase readiness, cycle success/retry, and shutdown. (Cycle-state,
-  retry-policy, and supervisor tests exist; extend them to handoff and
-  ownership contracts.)
+  retry-policy, and supervisor tests exist; extended with handoff and
+  ownership contracts in `tests/util/test_runtime_services.py`,
+  `tests/util/test_cli_ownership.py`,
+  `tests/unit/test_atomic_publication.py`, and
+  `tests/unit/test_entrypoint_import_safety.py`.)
 - [ ] Record an independent-process baseline for primary phase latency,
   EWMRS/NEXRAD freshness, CPU, RSS, disk I/O, and output hashes.
   (`[PhaseTelemetry]` producer-time phase lines in `util/runtime/cycle.py`
-  provide the latency instrument.)
-- [ ] Define required versus optional render layers and the maximum retained
-  cycle backlog.
+  provide the latency instrument; the parsing/aggregation harness landed as
+  `tests/benchmarks/phase_telemetry_baseline.py`. Actual measurement requires
+  live warm cycles and remains outstanding.)
+- [x] Define required versus optional render layers and the maximum retained
+  cycle backlog. (`required` on layers in `config/ewmrs_render.yaml`, surfaced
+  through `EWMRS.render.config`, consumed by the required-only stage gate in
+  `EWMRS/pipeline.py`; backlog cap is `cycle.max_backlog_cycles` in
+  `config/runtime.yaml`.)
 - [x] Implement truthful structured cycle outcomes: `CycleOutcome`,
   `CycleStageResult`, `CycleRetryPolicy`, and the atomic restart-safe
   `CycleStateStore` landed since the original audit (re-audit at `8a6206d`).
@@ -607,19 +617,32 @@ turning the pause policy on.
   preparation and the MRMS/GOES render pipelines with alignment validation
   (re-audit at `8a6206d`). Follow-up: make manifest binding mandatory instead
   of falling back to latest-by-mtime when no manifest is supplied.
-- [ ] Fix atomic publication prerequisites for shared source files and indexes.
-  (Atomic publication exists for cycle state, health, and NEXRAD heartbeats;
-  source-file and index publication still needs the same guarantee.)
+- [x] Fix atomic publication prerequisites for shared source files and indexes.
+  (Source-file downloads and GUI/API indexes were already atomic; NEXRAD
+  manifests and scan state, the EWMRS overlay manifest, and the METAR station
+  cache now publish via temp+replace too — see
+  `tests/unit/test_atomic_publication.py`.)
 
 ### Phase 1 — Extract service modules without changing deployment
 
-- [ ] Move module-level parsing and runtime initialization into `main()`.
-  (`run.py` currently parses args, calls `initialize_runtime()`, resolves
-  coordination settings, and wraps `sys.stdout`/`sys.stderr` at import time.)
-- [ ] Split CLI builders and runtime imports by ownership.
-- [ ] Extract primary, EWMRS/accessory, and NEXRAD service functions.
-- [ ] Keep the existing runner as a temporary adapter calling those functions.
-- [ ] Verify imports of each service do not load the other scientific stacks.
+- [x] Move module-level parsing and runtime initialization into `main()`.
+  (`run.py` no longer parses args, calls `initialize_runtime()`, resolves
+  coordination settings, or wraps `sys.stdout`/`sys.stderr` at import time;
+  guarded by `tests/unit/test_entrypoint_import_safety.py`.)
+- [x] Split CLI builders and runtime imports by ownership. (Flag builders live
+  in `src/util/cli.py` with ownership contract tests; `util.runtime` exports
+  are lazy via PEP 562 and `util/runtime/cycle.py` defers the EWMRS worker
+  import so primary runtime code imports without the EWMRS/NEXRAD stacks —
+  verified by `tests/unit/test_service_import_isolation.py`.)
+- [x] Extract primary, EWMRS/accessory, and NEXRAD service functions.
+  (`util/runtime/primary_service.py`, `util/runtime/ewmrs_service.py`,
+  `util/runtime/nexrad_service.py`.)
+- [x] Keep the existing runner as a temporary adapter calling those functions.
+  (`run.py` wires the extracted pieces together; deployment unchanged.)
+- [x] Verify imports of each service do not load the other scientific stacks.
+  (Primary runtime code loads neither EWMRS nor NEXRAD; remaining known edges:
+  `nexrad_render_loop` still delegates into `EWMRS.pipeline`, removed in
+  Phase 3.)
 
 ### Phase 2 — Introduce and shadow the durable handoff
 
