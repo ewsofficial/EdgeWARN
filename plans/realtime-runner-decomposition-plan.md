@@ -646,29 +646,59 @@ turning the pause policy on.
 
 ### Phase 2 — Introduce and shadow the durable handoff
 
-- [ ] Add versioned phase-record and checkpoint schemas.
-- [ ] Publish MRMS-ready and RAP-ready records in parallel with existing
-  in-memory callbacks.
-- [ ] Run a shadow EWMRS consumer that validates records and exact paths but
-  does not publish GUI output.
-- [ ] Test crash-between-temp-and-rename, malformed record, duplicate record,
+- [x] Add versioned phase-record and checkpoint schemas. (`util/runtime/handoff.py`:
+  `PHASE_RECORD_SCHEMA_VERSION`/`CONSUMER_CHECKPOINT_SCHEMA_VERSION`,
+  `PhaseRecord`, `ConsumerCheckpoint`, atomic publication via
+  `util.atomic.atomic_write_json`, and a backward-proof
+  `ConsumerCheckpointStore`.)
+- [x] Publish MRMS-ready and RAP-ready records in parallel with existing
+  in-memory callbacks. (`run_tandem_cycle_once` commits immutable records to
+  `state/realtime/cycles/<cycle-id>/mrms-ready.json`/`rap-ready.json`
+  alongside the release events, gated by `handoff.enabled` in
+  `runtime.yaml`; duplicates are idempotent and never overwritten.)
+- [x] Run a shadow EWMRS consumer that validates records and exact paths but
+  does not publish GUI output. (`shadow_validate_phase_record` +
+  `expected_layer_bindings` run per committed record inside the cycle and log
+  problems; no GUI output.)
+- [x] Test crash-between-temp-and-rename, malformed record, duplicate record,
   missing exact input, cleanup overlap, restart, and backlog behavior.
+  (`tests/util/test_runtime_handoff.py`,
+  `tests/integration/test_durable_handoff_wiring.py`.)
 - [ ] Compare shadow selections with the files used by the current tandem
-  worker for at least ten warm cycles.
+  worker for at least ten warm cycles. (The comparison helper exists;
+  actual measurement requires live warm cycles and remains outstanding,
+  like the Phase 0 telemetry baseline.)
 
 ### Phase 3 — Cut NEXRAD over to its service
 
-- [ ] Add `run_nexrad.py` and move ingest/render supervision to it.
-- [ ] Remove NEXRAD launch and cleanup from primary/EWMRS paths.
+- [x] Add `run_nexrad.py` and move ingest/render supervision to it.
+  (`run_nexrad.py` composes `util.cli` base-directory flags, reuses
+  `register_nexrad_supervision`, and takes the single-instance `nexrad` lock;
+  the render loop moved from `EWMRS.pipeline` to the new `NEXRAD/` package,
+  so importing NEXRAD runtime code no longer loads EWMRS.)
+- [x] Remove NEXRAD launch and cleanup from primary/EWMRS paths. (`run.py`
+  no longer registers NEXRAD children; `EWMRS.cleanup_old_gui_files` no
+  longer touches `gui/NEXRAD`, and `NEXRAD.gui_pipeline.cleanup_old_nexrad_gui_files`
+  owns that retention.)
 - [ ] Verify non-daemonic parser-pool creation, independent component restart,
-  shutdown, freshness, retention, and output parity.
-- [ ] Publish the `nexrad` service heartbeat under the canonical name and gate
+  shutdown, freshness, retention, and output parity. (Non-daemonic
+  registration and bounded-backoff supervision are preserved verbatim and
+  covered by tests; live parity/freshness verification remains outstanding.)
+- [x] Publish the `nexrad` service heartbeat under the canonical name and gate
   the radar route families (`/api/v3/radar-sites*`, `/nexrad/*`) behind it
-  with `SERVICE_NOT_ENABLED` responses.
-- [ ] Adapt cooperative pause coordination to the cross-process lease, still
-  default off. (The in-process `pause_ingest_during_render` option only covers
-  GOES ingest/render inside one parent; the lease replaces it for NEXRAD
-  across services.)
+  with `SERVICE_NOT_ENABLED` responses. (`run_nexrad.py` writes
+  `state/realtime/services/nexrad.json`; the Node API gained a
+  `serviceRegistry` scanner with a short TTL cache, problem+json gating on
+  v3 radar routes, the compatibility envelope on `/nexrad/*`, and a
+  diagnostic `services` block on `/health/ready`; documented in
+  `docs/api/api_endpoints.md` and the OpenAPI document, covered by
+  `tests/api/test_service_registry.js`.)
+- [x] Adapt cooperative pause coordination to the cross-process lease, still
+  default off. (`PrimaryActivityLease` in `util/runtime/handoff.py`;
+  `nexrad_coordination.pause_ingest_during_primary_activity: false` gates it
+  — the primary holds the lease around each cycle, and the NEXRAD loops wait
+  a bounded interval before admitting new work without interrupting an
+  atomic unit already in progress.)
 
 ### Phase 4 — Cut EWMRS and accessories over
 
