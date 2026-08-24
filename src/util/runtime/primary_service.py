@@ -33,6 +33,7 @@ def build_cycle_config(args):
     """Freeze one validated per-cycle configuration plus GOES coordination."""
     goes_coordination = section("goes_coordination")
     mrms_core_only = args.mrms_core_only
+    handoff_settings = section("handoff")
     return TandemCycleConfig(
         lat_limits=tuple(args.lat_limits),
         lon_limits=tuple(args.lon_limits),
@@ -52,6 +53,13 @@ def build_cycle_config(args):
         goes_render_wait_interval_seconds=goes_coordination[
             "render_wait_interval_seconds"
         ],
+        base_dir=args.base_dir,
+        handoff_enabled=bool(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_HANDOFF_ENABLED"],
+            yaml_value=handoff_settings["enabled"],
+            key="handoff.enabled",
+        )),
     ), goes_coordination
 
 
