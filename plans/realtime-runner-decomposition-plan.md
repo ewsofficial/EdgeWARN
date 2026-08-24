@@ -146,6 +146,10 @@ before `main()`).
   module scope; the split must not carry it forward.)
 - Every service must handle `SIGINT` and `SIGTERM`, close its own children, and
   leave no orphaned worker or stale permanent pause.
+- Each service is published under one canonical name from a single registry,
+  and the unified Node API must expose whether that named service is active;
+  requests that depend on an inactive service fail with a structured
+  `SERVICE_NOT_ENABLED` error rather than serving stale artifacts silently.
 
 ## Target topology
 
@@ -285,6 +289,7 @@ old monolithic implementation as a hidden fallback.
 | Cross-service phase records | Primary | EWMRS |
 | EWMRS consumer checkpoints | EWMRS | EWMRS |
 | NEXRAD consumer/checkpoint state | NEXRAD | NEXRAD |
+| Service heartbeats (`services/<name>.json`) | each service, own name only | Unified API, operators |
 
 This matrix is an enforcement target. Tests should fail if EWMRS invokes an
 MRMS/RAP downloader or if non-NEXRAD cleanup removes NEXRAD files.
@@ -315,6 +320,15 @@ Suggested layout:
         └── leases/
             └── primary-active.json
 ```
+
+The filenames under `services/` are the canonical service-name registry:
+`edgewarn`, `ewmrs`, `nexrad`. The same names are used for single-instance
+locks, heartbeats, lease ownership, and API discovery. Accessory loops
+(METAR, NWS, WPC, GOES ABI) are not top-level services; their status appears
+as child entries inside the EWMRS heartbeat rather than as separate files.
+Each service publishes an atomic heartbeat containing PID, run ID, version,
+last successful activity, current phase, and degraded children (see the
+lifecycle section).
 
 `<cycle-id>` must be a canonical UTC analysis timestamp, not process start
 time. Each phase record should contain:
@@ -465,6 +479,82 @@ exact legacy-flag routing in the launcher.
 - Forced shutdown never removes another service's lock, checkpoint, lease, or
   output.
 
+## API visibility of service state
+
+The unified Node API must make intentional or accidental service absence
+visible instead of silently serving stale artifacts. Discovery is by canonical
+service name, scanning `<BASE_DIR>/state/realtime/services/<name>.json`.
+
+### Service-name registry and heartbeat states
+
+| Name | Producer | Heartbeat file |
+| --- | --- | --- |
+| `edgewarn` | primary service | `services/edgewarn.json` |
+| `ewmrs` | EWMRS/accessory service | `services/ewmrs.json` |
+| `nexrad` | NEXRAD service | `services/nexrad.json` |
+
+A named service is in exactly one of these states, derived from its heartbeat:
+
+- `active`: file exists, parses against the supported schema version, belongs
+  to the current run (PID/run ID check where applicable), and `updated_at` is
+  within the staleness threshold.
+- `stale`: file exists but `updated_at` exceeds the threshold — the service
+  crashed, hung, or was killed without cleanup.
+- `disabled`: no heartbeat file exists — the service was never started or was
+  intentionally omitted (`--disable-*` flags, launcher `--services` subset,
+  service unit not enabled).
+- `degraded`: the service is active but reports degraded children (for
+  example a crash-looped accessory loop inside the EWMRS heartbeat). Degraded
+  services still serve requests; degradation is surfaced, never fabricated as
+  health.
+
+The staleness threshold reuses the existing supervisor settings from
+`config/runtime.yaml` rather than introducing a second tuning surface.
+
+### Route-family dependencies
+
+Each route family declares exactly one required service:
+
+| Route family | Required service |
+| --- | --- |
+| `/api/v3/cells*`, `/api/v3/storm-snapshots*`, `/api/v3/alert-snapshots*`, `/api/v3/alerts*` | `edgewarn` |
+| `/api/v3/render-products*`, `/api/v3/models/rap/*`, `/api/v3/analyses/wpc/*`, `/api/v3/styles/colormaps` | `ewmrs` |
+| `/api/v3/radar-sites*` | `nexrad` |
+| legacy adapters (`/renders/*`, `/wpc/*`, `/colormaps`, `/rap/*`, `/nexrad/*`) | same service as the v3 family they adapt |
+
+### Required behavior
+
+- A small shared scanner module resolves each service state with a short-lived
+  cache (mtime-based or 1–2 s TTL) so per-request scans do not amplify I/O.
+- When a request hits a route whose required service is not `active`, the API
+  returns HTTP 503 with the established error envelope:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SERVICE_NOT_ENABLED",
+    "message": "Required service is not active",
+    "service": "nexrad",
+    "state": "disabled",
+    "last_seen": null
+  }
+}
+```
+
+  `state` distinguishes `disabled`, `stale`, and (where detectable)
+  `unsupported-schema`; `last_seen` carries the heartbeat's `updated_at` when
+  present so operators can tell "turned off on purpose" apart from "crashed."
+- `/health/ready` keeps its existing directory-based status contract but gains
+  a diagnostic `services` block summarizing each registry name's state; it
+  does not flip to 503 solely because an optional service is disabled.
+- This is a documented, deliberate exception to "existing API contracts remain
+  unchanged": new error responses must be added to `docs/api/api_endpoints.md`
+  and the OpenAPI document when implemented.
+- The Python services only publish heartbeats; they never read them for
+  correctness. The API is a consumer, not a participant in the handoff
+  protocol.
+
 ## NEXRAD contention after decomposition
 
 Separate parents improve fault isolation but do not reserve CPU, RAM, or disk
@@ -496,6 +586,9 @@ turning the pause policy on.
 
 ### Phase 0 — Characterize and lock down contracts
 
+- [ ] Define the canonical service-name registry (`edgewarn`, `ewmrs`,
+  `nexrad`) and the API-consumable heartbeat schema, and record the
+  route-family-to-service dependency map.
 - [ ] Add deterministic tests for current flag behavior, service ownership,
   phase readiness, cycle success/retry, and shutdown. (Cycle-state,
   retry-policy, and supervisor tests exist; extend them to handoff and
@@ -546,6 +639,9 @@ turning the pause policy on.
 - [ ] Remove NEXRAD launch and cleanup from primary/EWMRS paths.
 - [ ] Verify non-daemonic parser-pool creation, independent component restart,
   shutdown, freshness, retention, and output parity.
+- [ ] Publish the `nexrad` service heartbeat under the canonical name and gate
+  the radar route families (`/api/v3/radar-sites*`, `/nexrad/*`) behind it
+  with `SERVICE_NOT_ENABLED` responses.
 - [ ] Adapt cooperative pause coordination to the cross-process lease, still
   default off. (The in-process `pause_ingest_during_render` option only covers
   GOES ingest/render inside one parent; the lease replaces it for NEXRAD
@@ -557,6 +653,9 @@ turning the pause policy on.
 - [ ] Consume committed MRMS/RAP records using exact paths.
 - [ ] Move RAP Uint16 conversion out of the shared primary coordinator.
 - [ ] Move GOES ABI ingest/render and METAR/NWS/WPC supervision.
+- [ ] Publish the `ewmrs` service heartbeat (with accessory child states) and
+  gate the render/RAP/WPC/colormap route families behind it with
+  `SERVICE_NOT_ENABLED` responses.
 - [ ] Constrain GUI cleanup by owner; EWMRS must not touch NEXRAD.
 - [ ] Remove the EWMRS worker, queues, events, and activity state from the
   primary process.
@@ -566,6 +665,9 @@ turning the pause policy on.
 ### Phase 5 — Finalize the primary service
 
 - [ ] Add `run_edgewarn.py` as the supported primary command.
+- [ ] Publish the `edgewarn` service heartbeat and gate the analysis route
+  families (`/cells`, `/storm-snapshots`, `/alert-snapshots`, `/alerts`)
+  behind it with `SERVICE_NOT_ENABLED` responses.
 - [ ] Rename/refactor tandem-specific config and telemetry to primary-cycle
   terminology.
 - [ ] Remove EWMRS and NEXRAD imports from the primary import graph.
@@ -591,6 +693,11 @@ turning the pause policy on.
 
 - [ ] Update `README.md`, `INSTALLATION.md`, `docs/core/README.md`,
   `docs/core/ingestion.md`, and `docs/core/goes_pipeline.md`.
+- [ ] Document the service-name registry, heartbeat states, route-family
+  dependencies, and `SERVICE_NOT_ENABLED` responses in
+  `docs/api/api_endpoints.md` and the OpenAPI document; add Jest/Supertest
+  coverage for the scanner (active/stale/disabled/degraded) and gated routes
+  under `tests/api/`.
 - [ ] Document systemd/container examples with one unit/container per direct
   service and a shared configured base directory.
 - [ ] Document single-writer requirements, service dependencies, health files,
@@ -630,6 +737,20 @@ turning the pause policy on.
   exact timestamps, indexes, and artifact hashes.
 - Verify `--disable-goes`, `--mrms-core-only`, `--disable-ewmrs`, and
   `--disable-nexrad` behavior through direct and launcher commands.
+
+### API service-visibility tests
+
+- Heartbeat states classify correctly: missing file (`disabled`), fresh file
+  (`active`), expired `updated_at` (`stale`), degraded children (`degraded`).
+- Gated routes return 503 `SERVICE_NOT_ENABLED` with the correct
+  `service`/`state`/`last_seen` fields when their service is disabled or
+  stale, and serve normally when it is active.
+- Route-family mapping is exhaustive: every public route declares exactly one
+  required service.
+- `/health/ready` keeps its directory-based status while reporting the
+  services block, including with all three services disabled.
+- The scanner cache does not serve state older than its TTL and does not
+  perform a heartbeat read per request under load.
 
 Run targeted tests first in `EdgeWARN-dev`, then the complete Python suite and
 the existing Node API suite. No test may depend on live NOAA/AWS availability
@@ -695,6 +816,9 @@ the convenience command.
   ownership violation, unbounded backlog, or orphaned process is observed.
 - Existing disable/base-directory behavior is preserved through the applicable
   direct command and optional launcher.
+- Each service publishes a heartbeat under its canonical name, and the unified
+  API reports `SERVICE_NOT_ENABLED` with `disabled`/`stale`/`degraded` state
+  for any route whose required service is not active.
 - The full relevant test suites and operational parity checks pass.
 - A single all-services command is promoted only after the stated performance
   gate passes.
