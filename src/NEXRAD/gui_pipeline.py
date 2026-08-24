@@ -300,4 +300,13 @@ def run_nexrad_render_loop(
             return
         except Exception as exc:
             io_manager.write_warning(f"NEXRAD render poll cycle failed: {exc}")
+        try:
+            # NEXRAD-owned retention (decomposition Phase 3): this service,
+            # not EWMRS, prunes gui/NEXRAD. Swept every poll cycle to match
+            # the cadence EWMRS previously applied on the render path.
+            removed = cleanup_old_nexrad_gui_files()
+            if removed > 0:
+                io_manager.write_debug(f"NEXRAD retention removed {removed} stale file(s)/dir(s)")
+        except Exception as exc:
+            io_manager.write_warning(f"NEXRAD retention sweep failed: {exc}")
         time.sleep(poll_interval_seconds)

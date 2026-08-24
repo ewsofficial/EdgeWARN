@@ -166,6 +166,11 @@ class PrimaryLeaseState:
 def _parse_lease_payload(payload, *, path_for_errors: str = "lease") -> PrimaryLeaseState:
     if not isinstance(payload, dict):
         raise PhaseRecordError(f"{path_for_errors} must be a JSON object")
+    schema_version = payload.get("schema_version")
+    if schema_version != 1:
+        raise PhaseRecordError(
+            f"{path_for_errors}: unsupported schema_version {schema_version!r}"
+        )
     for required in ("run_id", "cycle_id", "pid", "updated_at", "expires_at"):
         if required not in payload:
             raise PhaseRecordError(f"{path_for_errors}: {required} is required")
@@ -214,8 +219,28 @@ class PrimaryActivityLease:
         return destination
 
     def release(self) -> None:
+        """Clear the lease, but never a successor's lease from a stale owner.
+
+        A zombie primary waking up after a crash must not delete the live
+        lease of a restarted service, so the file is only removed when it is
+        absent, corrupt (unreadable state is ours to clear), or carries this
+        lease's own run ID.
+        """
+        destination = primary_lease_path(self._base_dir)
         try:
-            primary_lease_path(self._base_dir).unlink(missing_ok=True)
+            raw = destination.read_text(encoding="utf-8")
+            payload = json.loads(raw)
+            state = _parse_lease_payload(payload)
+        except (OSError, json.JSONDecodeError, PhaseRecordError, ValueError, TypeError):
+            state = None
+        if state is not None and state.run_id != self._run_id:
+            print(
+                "[Handoff] Skipping primary-activity lease removal: "
+                f"it is held by run {state.run_id}, not {self._run_id}"
+            )
+            return
+        try:
+            destination.unlink(missing_ok=True)
         except OSError as exc:
             print(f"[Handoff] Failed to clear primary-activity lease: {exc}")
 
@@ -331,6 +356,10 @@ class PhaseRecord:
         tolerances = payload.get("tolerances") or {}
         if not isinstance(tolerances, dict):
             raise PhaseRecordError("tolerances must be an object")
+        try:
+            converted_tolerances = {str(k): float(v) for k, v in tolerances.items()}
+        except (TypeError, ValueError):
+            raise PhaseRecordError("tolerances must map names to numbers") from None
         return cls(
             cycle_id=str(payload["cycle_id"]),
             phase=str(payload["phase"]),
@@ -341,7 +370,7 @@ class PhaseRecord:
             run_id=payload.get("run_id"),
             inputs=inputs,
             warnings=tuple(warnings),
-            tolerances={str(k): float(v) for k, v in tolerances.items()},
+            tolerances=converted_tolerances,
         )
 
     def validate_exact_inputs(self) -> tuple[str, ...]:
