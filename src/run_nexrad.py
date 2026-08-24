@@ -128,13 +128,13 @@ def main():
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, _request_stop)
 
+    supervisor.start_all()
     started_processes = StartedProcessRegistry()
     started_processes.processes = [
         (info["process"], info["name"])
         for info in supervisor._process_info
         if info["process"] is not None
     ]
-    supervisor.start_all()
 
     heartbeat_destination = str(
         services_dir(args.base_dir) / f"{SERVICE_NAME}.json"
@@ -158,6 +158,11 @@ def main():
             )
             write_heartbeat(beat, heartbeat_destination)
             for _ in range(check_ticks):
+                # Bounded-backoff restarts, crash-loop disabling, and
+                # heartbeat-staleness checks all happen here; without this
+                # call the supervision registration would be inert.
+                supervisor.check()
+                drain_log_queue(log_queue)
                 if stop_event.wait(tick_seconds):
                     break
     finally:

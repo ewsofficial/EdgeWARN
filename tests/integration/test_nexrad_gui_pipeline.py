@@ -193,3 +193,27 @@ def test_render_pending_nexrad_gui_files_renders_all_fresh_source_timestamps(mon
     assert rendered_timestamps == ["20260507-150001", "20260507-150011", "20260507-150021"]
 
 
+
+
+def test_render_loop_sweeps_retention_each_poll_cycle(monkeypatch):
+    """Phase 3: only the NEXRAD service cleans gui/NEXRAD -- so its loop must."""
+    calls = {"rendered": 0, "cleaned": 0}
+
+    monkeypatch.setattr(nexrad_gui, "render_pending_nexrad_gui_files", lambda **kwargs: calls.__setitem__("rendered", calls["rendered"] + 1) or 0)
+    monkeypatch.setattr(nexrad_gui, "cleanup_old_nexrad_gui_files", lambda: calls.__setitem__("cleaned", calls["cleaned"] + 1) or 0)
+    monkeypatch.setattr(nexrad_gui.time, "sleep", lambda seconds: None)
+
+    attempts = {"count": 0}
+
+    def quiescence():
+        attempts["count"] += 1
+        if attempts["count"] > 1:
+            raise KeyboardInterrupt
+
+    nexrad_gui.run_nexrad_render_loop(
+        poll_interval_seconds=0.01,
+        wait_for_quiescence=quiescence,
+    )
+
+    assert calls["rendered"] == 1
+    assert calls["cleaned"] == 1

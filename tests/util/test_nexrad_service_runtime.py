@@ -151,3 +151,23 @@ class TestHeartbeatPublicationContract:
         state, parsed = classify_heartbeat_state(destination, stale_after_seconds=60)
         assert state == "degraded"
         assert parsed.degraded_children == ("NEXRAD Ingest",)
+
+
+class TestLeaseReleaseOwnership:
+    def test_release_never_deletes_a_successors_lease(self, tmp_path):
+        stale_owner = PrimaryActivityLease(tmp_path, run_id="run-1", ttl_seconds=60)
+        successor = PrimaryActivityLease(tmp_path, run_id="run-2", ttl_seconds=60)
+        successor.acquire("20240501T120000Z")
+        # A zombie primary waking up after a crash must not clear the
+        # successor's live lease.
+        stale_owner.release()
+        held = primary_activity_held(tmp_path)
+        assert held is not None and held.run_id == "run-2"
+        successor.release()
+        assert primary_activity_held(tmp_path) is None
+
+    def test_release_clears_corrupt_lease_it_can_claim(self, tmp_path):
+        primary_lease_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+        primary_lease_path(tmp_path).write_text("{broken")
+        PrimaryActivityLease(tmp_path, run_id="run-1", ttl_seconds=60).release()
+        assert not primary_lease_path(tmp_path).exists()

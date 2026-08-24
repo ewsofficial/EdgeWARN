@@ -211,18 +211,21 @@ def _wait_for_primary_quiescence(base_dir, log_func=None):
     from util.runtime.handoff import primary_activity_held
 
     deadline = time.monotonic() + coordination["pause_max_wait_seconds"]
+    logged_wait = False
     while time.monotonic() < deadline:
         held = primary_activity_held(base_dir)
         if held is None:
             return
-        message = (
-            f"Primary cycle {held.cycle_id} holds the activity lease; "
-            f"waiting before admitting new NEXRAD work"
-        )
-        if log_func is not None:
-            log_func(f"INFO: {message}")
-        else:
-            print(f"[NEXRAD] {message}")
+        if not logged_wait:
+            message = (
+                f"Primary cycle {held.cycle_id} holds the activity lease; "
+                f"waiting before admitting new NEXRAD work"
+            )
+            if log_func is not None:
+                log_func(f"INFO: {message}")
+            else:
+                print(f"[NEXRAD] {message}")
+            logged_wait = True
         sleep_for(
             max(
                 0.1,
