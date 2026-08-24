@@ -59,6 +59,13 @@ def test_cycle_module_no_longer_imports_ewmrs_or_nexrad():
     assert flags["EDGEWARN"]
 
 
+def test_primary_service_module_avoids_ewmrs_and_nexrad():
+    flags = probe("import util.runtime.primary_service")
+    assert not flags["EWMRS"]
+    assert not flags["NEXRAD"]
+    assert flags["EDGEWARN"]
+
+
 def test_lazy_reexports_still_resolve():
     result = subprocess.run(
         [sys.executable, "-c",

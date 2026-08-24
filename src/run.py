@@ -1,176 +1,45 @@
+"""Temporary all-in-one runner (decomposition Phase 1 adapter).
+
+This module is being decomposed into three independently operable services
+(plans/realtime-runner-decomposition-plan.md). The service logic now lives in:
+
+- ``util.runtime.primary_service`` — MRMS selection, cycle state, retry, and
+  the primary polling loop;
+- ``util.runtime.ewmrs_service`` — METAR/NWS/WPC/GOES accessory supervision;
+- ``util.runtime.nexrad_service`` — NEXRAD ingest/render supervision.
+
+``main()`` below wires those pieces together exactly as before; deployment is
+unchanged. It performs no import-time work: parsing, runtime initialization,
+and stream wrapping all happen inside ``main()``.
+"""
+
 import sys
-import os
-from datetime import datetime, timezone
-import time
 import multiprocessing
 
-import util.file as fs
 from common.config import loader as config_loader, overlay
 from common.ingest.mrms.config import get_check_modifiers
 from EdgeWARN import initialize_runtime
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
-from util.runtime.config import resolve_file, section
+from util.release import get_release_version
 from util.runtime import (
     AccessorySupervisor,
-    CycleRetryPolicy,
-    CycleStateStore,
     StartedProcessRegistry,
-    TandemCycleConfig,
     drain_log_queue,
-    goes_loop,
-    goes_render_loop,
-    load_last_processed_from_stormcells,
-    metar_loop,
-    nexrad_ingest_loop,
-    nexrad_render_loop,
-    nws_loop,
-    run_tandem_cycle_once,
-    wpc_loop,
 )
-from util.release import get_release_version
-from common.ingest.nexrad.config import (
-    heartbeat_stale_seconds,
-    heartbeat_startup_grace_seconds,
+from util.runtime.config import resolve_file, section
+from util.runtime.ewmrs_service import register_ewmrs_accessories
+from util.runtime.nexrad_service import register_nexrad_supervision
+from util.runtime.primary_service import (
+    build_cycle_config,
+    log_effective_flags,
+    report_effective_config,
+    run_primary_cycle_loop,
 )
-
-
-def _resolve_retry_policy(cycle_settings):
-    retry_settings = cycle_settings["retry"]
-    return CycleRetryPolicy(
-        max_attempts=max(1, int(overlay.resolve(
-            None,
-            env_names=["EDGEWARN_CYCLE_MAX_ATTEMPTS"],
-            yaml_value=retry_settings["max_attempts"],
-            key="cycle.retry.max_attempts",
-        ))),
-        initial_backoff_seconds=max(0.0, float(overlay.resolve(
-            None,
-            env_names=["EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS"],
-            yaml_value=retry_settings["initial_backoff_seconds"],
-            key="cycle.retry.initial_backoff_seconds",
-        ))),
-        max_backoff_seconds=max(0.0, float(overlay.resolve(
-            None,
-            env_names=["EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS"],
-            yaml_value=retry_settings["max_backoff_seconds"],
-            key="cycle.retry.max_backoff_seconds",
-        ))),
-    )
-
-
-def _build_cycle_config(args):
-    goes_coordination = section("goes_coordination")
-    mrms_core_only = args.mrms_core_only
-    return TandemCycleConfig(
-        lat_limits=tuple(args.lat_limits),
-        lon_limits=tuple(args.lon_limits),
-        profile=args.profile,
-        disable_ctam=args.disable_ctam,
-        disable_ctam_modules=args.disable_ctam_modules,
-        disable_tracking=args.disable_tracking,
-        disable_polygon_expansion=args.disable_polygon_expansion,
-        refl_threshold=args.refl_threshold,
-        min_seed_percentage=args.min_seed_percentage,
-        drop_offset=args.drop_offset,
-        config_dir=args.config_dir,
-        ewmrs_enabled=not args.disable_ewmrs and not mrms_core_only,
-        goes_enabled=not args.disable_goes and not mrms_core_only,
-        mrms_core_only=mrms_core_only,
-        goes_render_wait_seconds=goes_coordination["render_wait_seconds"],
-        goes_render_wait_interval_seconds=goes_coordination[
-            "render_wait_interval_seconds"
-        ],
-    ), goes_coordination
-
-
-def report_effective_config(config_dir=None):
-    """Where this process's configuration actually came from.
-
-    Names only the catalogs already read, not all of ``CONFIG_NAMES``:
-    ``get_provenance`` loads on a miss, so naming every catalog would parse and
-    schema-validate 19 files purely to describe them.
-
-    Reports the winning layer per key rather than the value, so a key holding a
-    credential cannot be disclosed by a diagnostic.
-    """
-    root = config_loader.config_root(config_dir)
-    catalogs = ", ".join(
-        f"{name}@{config_loader.get_provenance(name, config_dir=config_dir)['schema_version']}"
-        for name in config_loader.loaded_config_names(config_dir=config_dir)
-    )
-    print(f"[Scheduler] Config root: {root}")
-    print(f"[Scheduler] Catalogs loaded: {catalogs or 'none'}")
-    active = overlay.overrides()
-    if active:
-        summary = ", ".join(f"{key} <- {layer}" for key, layer in sorted(active.items()))
-    else:
-        summary = "none; every resolved value came from YAML"
-    print(f"[Scheduler] Active overrides: {summary}")
-    all_origins = overlay.origins()
-    provenance = ", ".join(f"{key} <- {layer}" for key, layer in sorted(all_origins.items())) or "none"
-    print(f"[Scheduler] Resolved-key provenance: {provenance}")
-    print("[Scheduler] Provenance limit: only values resolved with overlay.resolve(key=...) are key-level; direct catalog reads are covered by Catalogs loaded above.")
-
-    # Lazy imports keep diagnostics from making optional render dependencies eager
-    # at module import time.
-    from common.ingest.mrms.config import get_mrms_modifiers
-    from EWMRS.render.config import get_mrms_file_list, get_goes_file_list
-    from EdgeWARN.process.integrate.config import get_datasets_config
-    from EWMRS.rap.config import get_rap_uint16_layers
-    print(
-        "[Scheduler] Enabled products: "
-        f"MRMS ingest={len(get_mrms_modifiers())}, "
-        f"MRMS readiness={len(get_check_modifiers())}, "
-        f"EWMRS MRMS={len(get_mrms_file_list())}, "
-        f"GOES={len(get_goes_file_list())}, "
-        f"integration datasets={len(get_datasets_config())}, "
-        f"RAP layers={len(get_rap_uint16_layers())}"
-    )
-    print("[Scheduler] Configuration changes require a process restart to take effect.")
-
-
-def _log_effective_flags(args):
-    mrms_core_only = args.mrms_core_only
-    ewmrs_enabled = not args.disable_ewmrs and not mrms_core_only
-    goes_enabled = not args.disable_goes and not mrms_core_only
-    print(
-        "[Scheduler] Configuration: "
-        f"lat={tuple(args.lat_limits)}, lon={tuple(args.lon_limits)}, "
-        f"refl_threshold={args.refl_threshold}, "
-        f"min_seed_percentage={args.min_seed_percentage}, "
-        f"drop_offset={args.drop_offset}, "
-        f"goes_decoupled={'yes' if goes_enabled else 'no'}"
-    )
-    if args.disable_ctam:
-        print("[Scheduler] CTAM execution disabled via --disable-ctam")
-    elif args.disable_ctam_modules:
-        print("[Scheduler] External CTAM modules disabled; built-in StormCast remains enabled")
-    if args.disable_tracking:
-        print("[Scheduler] Tracking disabled via --disable-tracking")
-    if args.disable_polygon_expansion:
-        print("[Scheduler] Polygon expansion disabled via --disable-polygon-expansion; using original ProbSevere polygons")
-    if args.disable_ewmrs:
-        print("[Scheduler] EWMRS pipeline disabled via --disable-ewmrs")
-    if args.disable_nws:
-        print("[Scheduler] NWS background ingest disabled via --disable-nws")
-    if args.disable_metar:
-        print("[Scheduler] METAR background ingest disabled via --disable-metar")
-    if args.disable_goes:
-        print("[Scheduler] GOES/GLM ingest and GOES rendering disabled via --disable-goes")
-    if args.disable_nexrad:
-        print("[Scheduler] NEXRAD ingest and rendering disabled via --disable-nexrad")
-    if mrms_core_only:
-        print("[Scheduler] MRMS-core-only mode: running MRMS detection, MRMS integration, and CTAM only")
 
 
 def main():
     """Scheduler: run a shared ingest cycle and launch EdgeWARN/EWMRS in tandem."""
-    # Everything that used to run at module scope now runs here: parsing an
-    # entrypoint's arguments, initializing runtime paths, resolving coordination
-    # settings, or wrapping the standard streams as an import side effect made
-    # every importer of this module pay for (and break under) full runtime
-    # startup. Module scope must stay free of side effects.
     sys.stdout = TimestampedOutput(sys.stdout)
     sys.stderr = TimestampedOutput(sys.stderr)
 
@@ -180,7 +49,7 @@ def main():
     initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
 
     print("Scheduler started. Press CTRL+C to exit.")
-    _log_effective_flags(args)
+    log_effective_flags(args)
 
     mrms_core_only = args.mrms_core_only
     ewmrs_enabled = not args.disable_ewmrs and not mrms_core_only
@@ -189,8 +58,7 @@ def main():
     goes_enabled = not args.disable_goes and not mrms_core_only
     nexrad_enabled = not args.disable_nexrad and not mrms_core_only
 
-    cycle_config, goes_coordination = _build_cycle_config(args)
-    goes_poll_seconds = goes_coordination["poll_seconds"]
+    cycle_config, goes_coordination = build_cycle_config(args)
     goes_pause_ingest_during_render = overlay.resolve(
         None,
         env_names=["EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER"],
@@ -200,39 +68,8 @@ def main():
     goes_cycle_active = multiprocessing.Event()
     goes_render_active = multiprocessing.Event()
 
-    checker = MRMSUpdateChecker(verbose=True)
-    stormcell_last_successful, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
-    print(init_message)
-    cycle_settings = section("cycle")
-    cycle_state_store = CycleStateStore(
-        resolve_file(cycle_settings["state_file"], "cycle.state_file")
-    )
-    persisted_cycle_state = cycle_state_store.load()
-    if stormcell_last_successful is not None:
-        persisted_cycle_state = cycle_state_store.seed_last_successful(
-            stormcell_last_successful
-        )
-
-    last_successful = persisted_cycle_state.last_successful
-    last_abandoned = persisted_cycle_state.last_abandoned
-    selection_cursor = persisted_cycle_state.selection_cursor
-    pending_timestamp = persisted_cycle_state.retry_timestamp
-    pending_attempt_count = (
-        persisted_cycle_state.attempt_count if pending_timestamp is not None else 0
-    )
-    retry_not_before = 0.0
-    retry_policy = _resolve_retry_policy(cycle_settings)
-    report_effective_config(args.config_dir)
-    print(
-        "[Scheduler] Cycle progress: "
-        f"last_successful={last_successful}, "
-        f"last_attempted={persisted_cycle_state.last_attempted}, "
-        f"last_abandoned={last_abandoned}, "
-        f"pending_retry={pending_timestamp}"
-    )
-
     print("[Scheduler] Starting background accessory ingests...")
-    # Hoisted out of _run_tandem_cycle: a Manager spawns a child server
+    # Hoisted out of the tandem cycle: a Manager spawns a child server
     # process and IPC machinery on construction; reusing one across cycles
     # avoids that startup cost every minute.
     manager = multiprocessing.Manager()
@@ -253,52 +90,28 @@ def main():
             supervisor_settings["health_file"], "supervisor.health_file"
         )),
     )
-    supervisor.add(
-        "METAR", metar_loop,
-        enabled=metar_enabled,
-        daemon=True,
+    register_ewmrs_accessories(
+        supervisor,
+        mrms_core_only=mrms_core_only,
+        metar_enabled=metar_enabled,
+        nws_enabled=nws_enabled,
+        # Scan-time GLM is a primary integration input: it runs whenever GOES
+        # is enabled, independent of EWMRS. GOES ABI rendering requires EWMRS.
+        goes_ingest_enabled=goes_enabled,
+        goes_render_enabled=bool(ewmrs_enabled and goes_enabled),
+        goes_cycle_active=goes_cycle_active,
+        goes_render_active=goes_render_active,
+        goes_pause_ingest_during_render=goes_pause_ingest_during_render,
+        goes_poll_seconds=goes_coordination["poll_seconds"],
+        goes_render_task_queue=goes_render_task_queue,
+        goes_render_log_queue=goes_render_log_queue,
     )
-    supervisor.add(
-        "NWS", nws_loop,
-        enabled=nws_enabled,
-        daemon=True,
-    )
-    supervisor.add(
-        "WPC", wpc_loop,
-        enabled=not mrms_core_only,
-        daemon=True,
-    )
-    supervisor.add(
-        "GOES", goes_loop,
-        enabled=goes_enabled,
-        args=(goes_cycle_active, goes_render_active, goes_pause_ingest_during_render, goes_poll_seconds),
-        daemon=True,
-        cleanup_event=goes_cycle_active,
-    )
-    supervisor.add(
-        "GOES Render", goes_render_loop,
-        enabled=bool(ewmrs_enabled and goes_enabled),
-        args=(goes_render_task_queue, goes_render_log_queue, goes_render_active),
-        daemon=True,
-        cleanup_event=goes_render_active,
-    )
-    supervisor.add(
-        "NEXRAD Render", nexrad_render_loop,
+    register_nexrad_supervision(
+        supervisor,
+        base_dir=args.base_dir,
+        nexrad_log_queue=nexrad_log_queue,
+        nexrad_heartbeat_path=nexrad_heartbeat_path,
         enabled=bool(ewmrs_enabled and nexrad_enabled),
-        args=(args.base_dir,),
-        daemon=True,
-    )
-    supervisor.add(
-        "NEXRAD Ingest", nexrad_ingest_loop,
-        enabled=bool(ewmrs_enabled and nexrad_enabled),
-        args=(nexrad_log_queue, args.base_dir, nexrad_heartbeat_path),
-        daemon=False,
-        heartbeat_path=nexrad_heartbeat_path,
-        # Called here rather than bound at import: get_args() exports
-        # EDGEWARN_CONFIG_DIR only when it runs, so an earlier read would
-        # freeze the repo default even in the parent process.
-        heartbeat_stale_seconds=heartbeat_stale_seconds(),
-        heartbeat_startup_grace_seconds=heartbeat_startup_grace_seconds(),
     )
     supervisor.start_all()
 
@@ -310,135 +123,22 @@ def main():
     ]
 
     try:
-        while True:
-            drain_log_queue(goes_render_log_queue)
-            drain_log_queue(nexrad_log_queue)
-            now = datetime.now(timezone.utc)
-            check_modifiers = get_check_modifiers()
-            latest_common = None
-            if pending_timestamp is None:
-                # The selection cursor may include an explicitly abandoned
-                # scan, while last_successful always remains truthful.
-                latest_common = checker.latest_common_minute_1h(
-                    check_modifiers,
-                    last_processed=selection_cursor,
-                )
-
-                is_new_s3 = bool(
-                    latest_common
-                    and (selection_cursor is None or latest_common > selection_cursor)
-                )
-                if not is_new_s3:
-                    latest_https = checker.check_https_fallback(check_modifiers, now)
-                    if latest_https and (
-                        selection_cursor is None or latest_https > selection_cursor
-                    ):
-                        print(
-                            f"[Scheduler] HTTPS Fallback found NEWER timestamp: {latest_https}"
-                        )
-                        latest_common = latest_https
-
-                if latest_common and (
-                    selection_cursor is None or latest_common > selection_cursor
-                ):
-                    pending_timestamp = latest_common
-                    pending_attempt_count = 0
-
-            should_run_pipeline = (
-                pending_timestamp is not None
-                and time.monotonic() >= retry_not_before
-            )
-
-            if should_run_pipeline:
-                dt = pending_timestamp
-                pending_attempt_count += 1
-                cycle_state_store.record_attempt(dt, pending_attempt_count)
-                print(
-                    f"[Scheduler] Starting tandem cycle for {dt} "
-                    f"(attempt {pending_attempt_count}/{retry_policy.max_attempts})"
-                )
-
-                outcome = run_tandem_cycle_once(
-                    dt,
-                    goes_render_task_queue,
-                    goes_render_log_queue,
-                    manager,
-                    config=cycle_config,
-                    goes_cycle_active_event=goes_cycle_active,
-                )
-                if outcome.completed:
-                    cycle_state_store.record_outcome(outcome, pending_attempt_count)
-                    last_successful = dt
-                    selection_cursor = max(
-                        value
-                        for value in (last_successful, last_abandoned)
-                        if value is not None
-                    )
-                    pending_timestamp = None
-                    pending_attempt_count = 0
-                    retry_not_before = 0.0
-                    print(
-                        f"Tandem cycle for {dt} finished with "
-                        f"{len(outcome.produced_artifacts)} validated artifact(s)"
-                    )
-                else:
-                    abandon = pending_attempt_count >= retry_policy.max_attempts
-                    cycle_state_store.record_outcome(
-                        outcome,
-                        pending_attempt_count,
-                        abandoned=abandon,
-                    )
-                    if abandon:
-                        last_abandoned = dt
-                        selection_cursor = max(
-                            value
-                            for value in (last_successful, last_abandoned)
-                            if value is not None
-                        )
-                        pending_timestamp = None
-                        pending_attempt_count = 0
-                        retry_not_before = 0.0
-                        print(
-                            f"[Scheduler] Tandem cycle for {dt} was explicitly "
-                            f"abandoned after {retry_policy.max_attempts} attempts; "
-                            f"errors={list(outcome.errors)}"
-                        )
-                    else:
-                        delay = retry_policy.delay_after(pending_attempt_count)
-                        retry_not_before = time.monotonic() + delay
-                        print(
-                            f"[Scheduler] Tandem cycle for {dt} failed and remains "
-                            f"pending; retrying in {delay:.1f}s; "
-                            f"errors={list(outcome.errors)}"
-                        )
-
-            else:
-                if pending_timestamp is not None:
-                    remaining = max(0.0, retry_not_before - time.monotonic())
-                    print(
-                        f"[Scheduler] Retry for {pending_timestamp} is pending "
-                        f"for another {remaining:.1f}s"
-                    )
-                elif not latest_common:
-                     print("[Scheduler] No new data found (S3 or HTTPS). Waiting...")
-                else:
-                     print(
-                         f"[Scheduler] Timestamp {latest_common} is not newer than "
-                         f"selection cursor {selection_cursor}. Waiting..."
-                     )
-
-            # Wait/Check loop — also monitor accessory processes
-            for _ in range(supervisor_settings["check_ticks"]):
-                time.sleep(supervisor_settings["tick_seconds"])
-                supervisor.check()
-
-    except KeyboardInterrupt:
-        print("CTRL+C detected, exiting ...")
+        run_primary_cycle_loop(
+            checker=MRMSUpdateChecker(verbose=True),
+            cycle_config=cycle_config,
+            goes_render_task_queue=goes_render_task_queue,
+            goes_render_log_queue=goes_render_log_queue,
+            nexrad_log_queue=nexrad_log_queue,
+            goes_cycle_active_event=goes_cycle_active,
+            manager=manager,
+            supervisor=supervisor,
+        )
     finally:
         supervisor.request_stop()
         started_processes.shutdown(queue_sentinels=[(goes_render_task_queue, None)], manager=manager)
         supervisor.shutdown()
         drain_log_queue(nexrad_log_queue)
+
 
 if __name__ == "__main__":
     try:
