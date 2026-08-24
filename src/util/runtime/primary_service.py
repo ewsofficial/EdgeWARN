@@ -196,6 +196,7 @@ def run_primary_cycle_loop(
     )
     retry_not_before = 0.0
     retry_policy = _resolve_retry_policy(cycle_settings)
+    report_effective_config(cycle_config.config_dir)
     print(
         "[Scheduler] Cycle progress: "
         f"last_successful={last_successful}, "

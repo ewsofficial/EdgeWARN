@@ -17,7 +17,6 @@ import sys
 import multiprocessing
 
 from common.config import loader as config_loader, overlay
-from common.ingest.mrms.config import get_check_modifiers
 from EdgeWARN import initialize_runtime
 from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
@@ -114,6 +113,9 @@ def main():
         enabled=bool(ewmrs_enabled and nexrad_enabled),
     )
     supervisor.start_all()
+    # Deliberate reordering versus the pre-split monolith: accessory children
+    # start before cycle-state restore instead of after. Any failure raised
+    # during restore is still cleaned up by the finally block below.
 
     started_processes = StartedProcessRegistry()
     started_processes.processes = [
