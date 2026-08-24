@@ -34,58 +34,57 @@ from common.ingest.nexrad.config import (
     heartbeat_startup_grace_seconds,
 )
 
-sys.stdout = TimestampedOutput(sys.stdout)
-sys.stderr = TimestampedOutput(sys.stderr)
 
-io_manager = IOManager("[Main]")
-args = io_manager.get_args()
-
-lat_limits = tuple(args.lat_limits)
-lon_limits = tuple(args.lon_limits)
-
-initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
-
-GOES_COORDINATION = section("goes_coordination")
-GOES_POLL_SECONDS = GOES_COORDINATION["poll_seconds"]
-GOES_RENDER_WAIT_SECONDS = GOES_COORDINATION["render_wait_seconds"]
-GOES_RENDER_WAIT_INTERVAL_SECONDS = GOES_COORDINATION["render_wait_interval_seconds"]
-GOES_CYCLE_ACTIVE = multiprocessing.Event()
-GOES_RENDER_ACTIVE = multiprocessing.Event()
-GOES_PAUSE_INGEST_DURING_RENDER = overlay.resolve(
-    None,
-    env_names=["EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER"],
-    yaml_value=GOES_COORDINATION["pause_ingest_during_render"],
-    key="goes_coordination.pause_ingest_during_render",
-)
-MRMS_CORE_ONLY = args.mrms_core_only
-EWMRS_ENABLED = not args.disable_ewmrs and not MRMS_CORE_ONLY
-NWS_ENABLED = not args.disable_nws and not MRMS_CORE_ONLY
-METAR_ENABLED = not args.disable_metar and not MRMS_CORE_ONLY
-GOES_ENABLED = not args.disable_goes and not MRMS_CORE_ONLY
-NEXRAD_ENABLED = not args.disable_nexrad and not MRMS_CORE_ONLY
-
-cycle_config = TandemCycleConfig(
-    lat_limits=lat_limits,
-    lon_limits=lon_limits,
-    profile=args.profile,
-    disable_ctam=args.disable_ctam,
-    disable_ctam_modules=args.disable_ctam_modules,
-    disable_tracking=args.disable_tracking,
-    disable_polygon_expansion=args.disable_polygon_expansion,
-    refl_threshold=args.refl_threshold,
-    min_seed_percentage=args.min_seed_percentage,
-    drop_offset=args.drop_offset,
-    config_dir=args.config_dir,
-    ewmrs_enabled=EWMRS_ENABLED,
-    goes_enabled=GOES_ENABLED,
-    mrms_core_only=MRMS_CORE_ONLY,
-    goes_render_wait_seconds=GOES_RENDER_WAIT_SECONDS,
-    goes_render_wait_interval_seconds=GOES_RENDER_WAIT_INTERVAL_SECONDS,
-)
+def _resolve_retry_policy(cycle_settings):
+    retry_settings = cycle_settings["retry"]
+    return CycleRetryPolicy(
+        max_attempts=max(1, int(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_CYCLE_MAX_ATTEMPTS"],
+            yaml_value=retry_settings["max_attempts"],
+            key="cycle.retry.max_attempts",
+        ))),
+        initial_backoff_seconds=max(0.0, float(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS"],
+            yaml_value=retry_settings["initial_backoff_seconds"],
+            key="cycle.retry.initial_backoff_seconds",
+        ))),
+        max_backoff_seconds=max(0.0, float(overlay.resolve(
+            None,
+            env_names=["EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS"],
+            yaml_value=retry_settings["max_backoff_seconds"],
+            key="cycle.retry.max_backoff_seconds",
+        ))),
+    )
 
 
+def _build_cycle_config(args):
+    goes_coordination = section("goes_coordination")
+    mrms_core_only = args.mrms_core_only
+    return TandemCycleConfig(
+        lat_limits=tuple(args.lat_limits),
+        lon_limits=tuple(args.lon_limits),
+        profile=args.profile,
+        disable_ctam=args.disable_ctam,
+        disable_ctam_modules=args.disable_ctam_modules,
+        disable_tracking=args.disable_tracking,
+        disable_polygon_expansion=args.disable_polygon_expansion,
+        refl_threshold=args.refl_threshold,
+        min_seed_percentage=args.min_seed_percentage,
+        drop_offset=args.drop_offset,
+        config_dir=args.config_dir,
+        ewmrs_enabled=not args.disable_ewmrs and not mrms_core_only,
+        goes_enabled=not args.disable_goes and not mrms_core_only,
+        mrms_core_only=mrms_core_only,
+        goes_render_wait_seconds=goes_coordination["render_wait_seconds"],
+        goes_render_wait_interval_seconds=goes_coordination[
+            "render_wait_interval_seconds"
+        ],
+    ), goes_coordination
 
-def report_effective_config():
+
+def report_effective_config(config_dir=None):
     """Where this process's configuration actually came from.
 
     Names only the catalogs already read, not all of ``CONFIG_NAMES``:
@@ -95,8 +94,6 @@ def report_effective_config():
     Reports the winning layer per key rather than the value, so a key holding a
     credential cannot be disclosed by a diagnostic.
     """
-    runtime_args = globals().get("args")
-    config_dir = getattr(runtime_args, "config_dir", None)
     root = config_loader.config_root(config_dir)
     catalogs = ", ".join(
         f"{name}@{config_loader.get_provenance(name, config_dir=config_dir)['schema_version']}"
@@ -133,16 +130,17 @@ def report_effective_config():
     print("[Scheduler] Configuration changes require a process restart to take effect.")
 
 
-def main():
-    """Scheduler: run a shared ingest cycle and launch EdgeWARN/EWMRS in tandem."""
-    print("Scheduler started. Press CTRL+C to exit.")
+def _log_effective_flags(args):
+    mrms_core_only = args.mrms_core_only
+    ewmrs_enabled = not args.disable_ewmrs and not mrms_core_only
+    goes_enabled = not args.disable_goes and not mrms_core_only
     print(
         "[Scheduler] Configuration: "
-        f"lat={lat_limits}, lon={lon_limits}, "
+        f"lat={tuple(args.lat_limits)}, lon={tuple(args.lon_limits)}, "
         f"refl_threshold={args.refl_threshold}, "
         f"min_seed_percentage={args.min_seed_percentage}, "
         f"drop_offset={args.drop_offset}, "
-        f"goes_decoupled={'yes' if GOES_ENABLED else 'no'}"
+        f"goes_decoupled={'yes' if goes_enabled else 'no'}"
     )
     if args.disable_ctam:
         print("[Scheduler] CTAM execution disabled via --disable-ctam")
@@ -162,8 +160,46 @@ def main():
         print("[Scheduler] GOES/GLM ingest and GOES rendering disabled via --disable-goes")
     if args.disable_nexrad:
         print("[Scheduler] NEXRAD ingest and rendering disabled via --disable-nexrad")
-    if MRMS_CORE_ONLY:
+    if mrms_core_only:
         print("[Scheduler] MRMS-core-only mode: running MRMS detection, MRMS integration, and CTAM only")
+
+
+def main():
+    """Scheduler: run a shared ingest cycle and launch EdgeWARN/EWMRS in tandem."""
+    # Everything that used to run at module scope now runs here: parsing an
+    # entrypoint's arguments, initializing runtime paths, resolving coordination
+    # settings, or wrapping the standard streams as an import side effect made
+    # every importer of this module pay for (and break under) full runtime
+    # startup. Module scope must stay free of side effects.
+    sys.stdout = TimestampedOutput(sys.stdout)
+    sys.stderr = TimestampedOutput(sys.stderr)
+
+    io_manager = IOManager("[Main]")
+    args = io_manager.get_args()
+
+    initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
+
+    print("Scheduler started. Press CTRL+C to exit.")
+    _log_effective_flags(args)
+
+    mrms_core_only = args.mrms_core_only
+    ewmrs_enabled = not args.disable_ewmrs and not mrms_core_only
+    nws_enabled = not args.disable_nws and not mrms_core_only
+    metar_enabled = not args.disable_metar and not mrms_core_only
+    goes_enabled = not args.disable_goes and not mrms_core_only
+    nexrad_enabled = not args.disable_nexrad and not mrms_core_only
+
+    cycle_config, goes_coordination = _build_cycle_config(args)
+    goes_poll_seconds = goes_coordination["poll_seconds"]
+    goes_pause_ingest_during_render = overlay.resolve(
+        None,
+        env_names=["EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER"],
+        yaml_value=goes_coordination["pause_ingest_during_render"],
+        key="goes_coordination.pause_ingest_during_render",
+    )
+    goes_cycle_active = multiprocessing.Event()
+    goes_render_active = multiprocessing.Event()
+
     checker = MRMSUpdateChecker(verbose=True)
     stormcell_last_successful, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
@@ -185,31 +221,8 @@ def main():
         persisted_cycle_state.attempt_count if pending_timestamp is not None else 0
     )
     retry_not_before = 0.0
-    retry_settings = cycle_settings["retry"]
-    retry_policy = CycleRetryPolicy(
-        max_attempts=max(1, int(overlay.resolve(
-            None,
-            env_names=["EDGEWARN_CYCLE_MAX_ATTEMPTS"],
-            yaml_value=retry_settings["max_attempts"],
-            key="cycle.retry.max_attempts",
-        ))),
-        initial_backoff_seconds=max(0.0, float(overlay.resolve(
-            None,
-            env_names=["EDGEWARN_CYCLE_RETRY_BACKOFF_SECONDS"],
-            yaml_value=retry_settings["initial_backoff_seconds"],
-            key="cycle.retry.initial_backoff_seconds",
-        ))),
-        max_backoff_seconds=max(0.0, float(overlay.resolve(
-            None,
-            env_names=["EDGEWARN_CYCLE_MAX_BACKOFF_SECONDS"],
-            yaml_value=retry_settings["max_backoff_seconds"],
-            key="cycle.retry.max_backoff_seconds",
-        ))),
-    )
-    # After the retry policy, not at module scope: the three EDGEWARN_CYCLE_*
-    # variables above resolve here, and module scope re-executes in every child
-    # spawned by the supervisor, which would repeat the block per process.
-    report_effective_config()
+    retry_policy = _resolve_retry_policy(cycle_settings)
+    report_effective_config(args.config_dir)
     print(
         "[Scheduler] Cycle progress: "
         f"last_successful={last_successful}, "
@@ -242,48 +255,48 @@ def main():
     )
     supervisor.add(
         "METAR", metar_loop,
-        enabled=METAR_ENABLED,
+        enabled=metar_enabled,
         daemon=True,
     )
     supervisor.add(
         "NWS", nws_loop,
-        enabled=NWS_ENABLED,
+        enabled=nws_enabled,
         daemon=True,
     )
     supervisor.add(
         "WPC", wpc_loop,
-        enabled=not MRMS_CORE_ONLY,
+        enabled=not mrms_core_only,
         daemon=True,
     )
     supervisor.add(
         "GOES", goes_loop,
-        enabled=GOES_ENABLED,
-        args=(GOES_CYCLE_ACTIVE, GOES_RENDER_ACTIVE, GOES_PAUSE_INGEST_DURING_RENDER, GOES_POLL_SECONDS),
+        enabled=goes_enabled,
+        args=(goes_cycle_active, goes_render_active, goes_pause_ingest_during_render, goes_poll_seconds),
         daemon=True,
-        cleanup_event=GOES_CYCLE_ACTIVE,
+        cleanup_event=goes_cycle_active,
     )
     supervisor.add(
         "GOES Render", goes_render_loop,
-        enabled=bool(EWMRS_ENABLED and GOES_ENABLED),
-        args=(goes_render_task_queue, goes_render_log_queue, GOES_RENDER_ACTIVE),
+        enabled=bool(ewmrs_enabled and goes_enabled),
+        args=(goes_render_task_queue, goes_render_log_queue, goes_render_active),
         daemon=True,
-        cleanup_event=GOES_RENDER_ACTIVE,
+        cleanup_event=goes_render_active,
     )
     supervisor.add(
         "NEXRAD Render", nexrad_render_loop,
-        enabled=bool(EWMRS_ENABLED and NEXRAD_ENABLED),
+        enabled=bool(ewmrs_enabled and nexrad_enabled),
         args=(args.base_dir,),
         daemon=True,
     )
     supervisor.add(
         "NEXRAD Ingest", nexrad_ingest_loop,
-        enabled=bool(EWMRS_ENABLED and NEXRAD_ENABLED),
+        enabled=bool(ewmrs_enabled and nexrad_enabled),
         args=(nexrad_log_queue, args.base_dir, nexrad_heartbeat_path),
         daemon=False,
         heartbeat_path=nexrad_heartbeat_path,
-        # Called here rather than bound at import: this module is imported
-        # before get_args() exports EDGEWARN_CONFIG_DIR, so an import-time read
-        # would freeze the repo default even in the parent process.
+        # Called here rather than bound at import: get_args() exports
+        # EDGEWARN_CONFIG_DIR only when it runs, so an earlier read would
+        # freeze the repo default even in the parent process.
         heartbeat_stale_seconds=heartbeat_stale_seconds(),
         heartbeat_startup_grace_seconds=heartbeat_startup_grace_seconds(),
     )
@@ -351,7 +364,7 @@ def main():
                     goes_render_log_queue,
                     manager,
                     config=cycle_config,
-                    goes_cycle_active_event=GOES_CYCLE_ACTIVE,
+                    goes_cycle_active_event=goes_cycle_active,
                 )
                 if outcome.completed:
                     cycle_state_store.record_outcome(outcome, pending_attempt_count)
@@ -435,7 +448,7 @@ if __name__ == "__main__":
         print("CTRL+C detected, exiting ...")
         sys.exit(0)
     except config_loader.ConfigError:
-        # This catches configuration failures reached after module initialization
+        # This catches configuration failures reached after argument parsing
         # (for example a malformed filesystem attribute in cycle.state_file).
         # Import-time ConfigError instances cannot be caught here; CI's
         # validate-config gate is responsible for rejecting those before startup.
