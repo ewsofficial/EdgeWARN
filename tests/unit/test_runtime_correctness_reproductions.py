@@ -616,7 +616,7 @@ def test_json_reader_never_observes_partial_index(monkeypatch, tmp_path):
 
 
 def test_binary_reader_never_observes_partial_nexrad_artifact(monkeypatch, tmp_path):
-    from EWMRS.render import nexrad
+    from NEXRAD import render as nexrad
 
     path = tmp_path / "field.bin.gz"
     old_payload = b"OLD_COMPLETE"

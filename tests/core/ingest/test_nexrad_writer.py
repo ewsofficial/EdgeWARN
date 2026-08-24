@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import util.file as fs
 import xarray as xr
-from EWMRS.render.nexrad import NEXRAD_FIELD_MAGIC, serialize_nexrad_elevation_artifacts
+from NEXRAD.render import NEXRAD_FIELD_MAGIC, serialize_nexrad_elevation_artifacts
 
 from common.ingest.nexrad.models import ElevationArtifact
 
