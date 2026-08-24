@@ -60,6 +60,9 @@ describe('unified API app', () => {
     await write('gui/CompRefQC/20260317-200000/index.json', JSON.stringify({ schema_version: 2, timestamp: '20260317-200000', representation: 'binary_chunks', chunk_format: renderFormat, tile_grid: { rows: 1, cols: 1, tile_size: 2 }, chunks: [[0, 0]] }));
     await write('gui/CompRefQC/20260317-200000/chunks/chunk_0_0.f16.gz', Buffer.from('H4sIAAAAAAAC/2NggAAAad8iZQgAAAA=', 'base64'));
     await write('gui/NEXRAD/KTLH/0.5/KTLH_DBZH_0.5_20260317-200000.bin.gz', 'gzip');
+    // The radar route family requires an active `nexrad` service heartbeat
+    // (decomposition Phase 3); without it these routes return 503.
+    await write('state/realtime/services/nexrad.json', JSON.stringify({ schema_version: 1, service: 'nexrad', pid: 1, run_id: 'test-run', updated_at: new Date().toISOString(), phase: 'supervising', degraded_children: [] }));
     await write('gui/RAP/CAPE/index.json', '["20260317-200000"]');
     await write('gui/RAP/CAPE/20260317-200000/metadata.json', '{"units":"J/kg","grid":{"ni":1,"nj":1}}');
     await write('gui/RAP/CAPE/20260317-200000/data.u16', 'u16');

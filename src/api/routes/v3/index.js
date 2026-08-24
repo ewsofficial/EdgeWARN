@@ -1,6 +1,7 @@
 import express from 'express';
 import { page, timestamp } from '../../services/validation.js';
 import { productCatalog } from '../../config/productCatalog.js';
+import { createServiceGate, problemJsonResponder } from '../../middleware/serviceGate.js';
 
 const listOptions = (req) => ({ cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined, limit: req.query.limit ? Number(req.query.limit) : undefined });
 const COLLECTION_PATHS = new Set(['/cells', '/storm-snapshots', '/alert-snapshots', '/observations/metar', '/render-products', '/radar-sites', '/models/rap/layers', '/analyses/wpc/surface']);
@@ -30,7 +31,12 @@ function methodNotAllowed(openApi) {
   };
 }
 
-export function createV3Router({ analysis, renders, ancillary, openApi, apiConfig }) {
+export function createV3Router({ analysis, renders, ancillary, openApi, apiConfig, serviceRegistry }) {
+  const requireService = (service) => createServiceGate({
+    serviceRegistry,
+    service,
+    respond: problemJsonResponder(apiConfig),
+  });
   const collection = (req, res, items) => { const result = page(items, listOptions(req), apiConfig.pagination); res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.collection}`).json({ data: result.data, meta: { nextCursor: result.nextCursor } }); };
   const resource = (req, res, data) => res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.resource}`).json({ data, meta: {} });
   const geojson = (req, res, data) => res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.resource}`).type('application/geo+json').json(data);
@@ -64,9 +70,9 @@ export function createV3Router({ analysis, renders, ancillary, openApi, apiConfi
       'X-Grid-Origin': 'bottom-left', 'X-Pixel-Row-Order': 'top-to-bottom'
     });
   } catch (error) { next(error); } });
-  router.get('/radar-sites', async (req, res, next) => { try { collection(req, res, await ancillary.listRadarSites()); } catch (error) { next(error); } });
-  router.get('/radar-sites/:siteId/availability', async (req, res, next) => { try { resource(req, res, await ancillary.radarAvailability(req.params.siteId.toUpperCase())); } catch (error) { next(error); } });
-  router.get('/radar-sites/:siteId/scans/:timestamp/elevations/:elevation/products/:productId', async (req, res, next) => { try { send(req, res, await ancillary.radarField(req.params.siteId, req.params.timestamp, req.params.elevation, req.params.productId), 'application/gzip'); } catch (error) { next(error); } });
+  router.get('/radar-sites', requireService('nexrad'), async (req, res, next) => { try { collection(req, res, await ancillary.listRadarSites()); } catch (error) { next(error); } });
+  router.get('/radar-sites/:siteId/availability', requireService('nexrad'), async (req, res, next) => { try { resource(req, res, await ancillary.radarAvailability(req.params.siteId.toUpperCase())); } catch (error) { next(error); } });
+  router.get('/radar-sites/:siteId/scans/:timestamp/elevations/:elevation/products/:productId', requireService('nexrad'), async (req, res, next) => { try { send(req, res, await ancillary.radarField(req.params.siteId, req.params.timestamp, req.params.elevation, req.params.productId), 'application/gzip'); } catch (error) { next(error); } });
   router.get('/models/rap/layers', async (req, res, next) => { try { collection(req, res, await ancillary.listRapLayers()); } catch (error) { next(error); } });
   router.get('/models/rap/layers/:layerId/snapshots', async (req, res, next) => { try { collection(req, res, await ancillary.rapSnapshots(req.params.layerId)); } catch (error) { next(error); } });
   router.get('/models/rap/layers/:layerId/snapshots/:timestamp/metadata', async (req, res, next) => { try { resource(req, res, await ancillary.rapMetadata(req.params.layerId, req.params.timestamp)); } catch (error) { next(error); } });

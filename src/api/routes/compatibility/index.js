@@ -1,11 +1,17 @@
 import express from 'express';
 import { getProductByLegacyId } from '../../config/productCatalog.js';
+import { createServiceGate, legacyEnvelopeResponder } from '../../middleware/serviceGate.js';
 
 const deprecate = (res) => res.set({ Deprecation: 'true', Link: '</api/v3/openapi.json>; rel="deprecation"' });
 const send = (res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).type(type).set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
 const value = (input) => typeof input === 'string' && input ? input : null;
 
-export function createCompatibilityRouter({ analysis, renders, ancillary, packageVersion }) {
+export function createCompatibilityRouter({ analysis, renders, ancillary, packageVersion, serviceRegistry }) {
+  const requireService = (service) => createServiceGate({
+    serviceRegistry,
+    service,
+    respond: legacyEnvelopeResponder(),
+  });
   const router = express.Router();
   router.get('/api/v2', (req, res) => deprecate(res).json({ message: 'EdgeWARN API v2', version: packageVersion, endpoints: { features: { cells: '/api/v2/features/cells[?id={int}]', timestamps: '/api/v2/features/timestamps[?timestamp={YYYYMMDD-HHMMSS}]', alerts: { official: '/api/v2/features/alerts/official[?id={id}|timestamp={YYYYMMDD-HHMMSS}]', edgewarn: '/api/v2/features/alerts/edgewarn[?id={id}|timestamp={YYYYMMDD-HHMMSS}]' } }, data: { metar: '/api/v2/data/metar[?timestamp={YYYYMMDD-HHMMSS}]' } } }));
   router.get('/api/v2/features/cells', async (req, res, next) => { try { deprecate(res); const id = value(req.query.id); res.json(id ? await analysis.getCell(id) : await analysis.listCells()); } catch (e) { next(e); } });
@@ -17,9 +23,9 @@ export function createCompatibilityRouter({ analysis, renders, ancillary, packag
   router.get('/renders/download', async (req, res, next) => { try { deprecate(res); const product = getProductByLegacyId(value(req.query.product)); const ts = value(req.query.timestamp); if (!product || !ts) return res.status(400).json({ error: 'Missing product or timestamp parameter' }); send(res, await renders.image(product.id, ts), 'image/png'); } catch (e) { next(e); } });
   router.get('/renders/tile', async (req, res, next) => { try { deprecate(res); const product = getProductByLegacyId(value(req.query.product)); const ts = value(req.query.timestamp); if (!product || !ts) return res.status(400).json({ error: 'Missing required parameters: product, timestamp' }); const hasX = req.query.x !== undefined; const hasY = req.query.y !== undefined; if (hasX !== hasY) return res.status(400).json({ error: 'Missing required parameters: x and y must both be provided together' }); if (!hasX) { const result = await renders.tiles(product.id, ts); return res.json({ product: product.legacyId, timestamp: ts, tile_grid: { rows: result.grid.rows, cols: result.grid.cols, tile_size: result.grid.tileSize }, tiles: result.tiles }); } send(res, await renders.tile(product.id, ts, Number(req.query.x), Number(req.query.y)), 'image/png'); } catch (e) { next(e); } });
   router.get('/renders/tile-info', async (req, res, next) => { try { deprecate(res); const product = getProductByLegacyId(value(req.query.product)); if (!product) return res.status(404).json({ error: 'Unknown product or no mapping found' }); const details = await renders.getProduct(product.id); const timestamps = await renders.listSnapshots(product.id); res.json({ product: product.legacyId, rows: details.grid.rows, cols: details.grid.cols, tile_size: details.grid.tileSize, timestamps }); } catch (e) { next(e); } });
-  router.get('/nexrad', async (req, res, next) => { try { deprecate(res); res.json(await ancillary.listRadarSites()); } catch (e) { next(e); } });
-  router.get('/nexrad/:site/:timestamp/:elevation', async (req, res, next) => { try { deprecate(res); const product = value(req.query.product); const opened = await ancillary.radarField(req.params.site, req.params.timestamp, req.params.elevation, product); send(res, opened, 'application/gzip', { 'Content-Disposition': `attachment; filename="${req.params.site}_${req.params.timestamp}_${req.params.elevation}_${product}.bin.gz"` }); } catch (e) { next(e); } });
-  router.get('/nexrad/:site', async (req, res, next) => { try { deprecate(res); const available = await ancillary.radarAvailability(req.params.site.toUpperCase()); res.json(Object.fromEntries(Object.entries(available).map(([elevation, scans]) => [elevation, scans.map((scan) => scan.timestamp)]))); } catch (e) { next(e); } });
+  router.get('/nexrad', requireService('nexrad'), async (req, res, next) => { try { deprecate(res); res.json(await ancillary.listRadarSites()); } catch (e) { next(e); } });
+  router.get('/nexrad/:site/:timestamp/:elevation', requireService('nexrad'), async (req, res, next) => { try { deprecate(res); const product = value(req.query.product); const opened = await ancillary.radarField(req.params.site, req.params.timestamp, req.params.elevation, product); send(res, opened, 'application/gzip', { 'Content-Disposition': `attachment; filename="${req.params.site}_${req.params.timestamp}_${req.params.elevation}_${product}.bin.gz"` }); } catch (e) { next(e); } });
+  router.get('/nexrad/:site', requireService('nexrad'), async (req, res, next) => { try { deprecate(res); const available = await ancillary.radarAvailability(req.params.site.toUpperCase()); res.json(Object.fromEntries(Object.entries(available).map(([elevation, scans]) => [elevation, scans.map((scan) => scan.timestamp)]))); } catch (e) { next(e); } });
   router.get('/rap/layers', async (req, res, next) => { try { deprecate(res); res.json(await ancillary.listRapLayers()); } catch (e) { next(e); } });
   router.get('/rap/mappings', async (req, res, next) => { try { deprecate(res); res.json(await ancillary.rapMappings()); } catch (e) { next(e); } });
   router.get('/rap/fetch', async (req, res, next) => { try { deprecate(res); res.json(await ancillary.rapSnapshots(value(req.query.layer))); } catch (e) { next(e); } });
