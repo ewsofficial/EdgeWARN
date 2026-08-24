@@ -84,5 +84,8 @@ def add_service_enablement_flags(parser):
     parser.add_argument("--disable-ewmrs", action=argparse.BooleanOptionalAction, default=None, help="Disable EWMRS workers and rendering pipeline (default: from runtime.yaml)")
     parser.add_argument("--disable-nws", action=argparse.BooleanOptionalAction, default=None, help="Disable background NWS alert ingestion (default: from runtime.yaml)")
     parser.add_argument("--disable-metar", action=argparse.BooleanOptionalAction, default=None, help="Disable background METAR ingestion (default: from runtime.yaml)")
+    # Decomposition Phase 4 CLI contract: WPC is EWMRS-owned and previously had
+    # no dedicated flag (it ran unless --mrms-core-only).
+    parser.add_argument("--disable-wpc", action=argparse.BooleanOptionalAction, default=None, help="Disable background WPC surface analysis ingestion (default: from runtime.yaml)")
     parser.add_argument("--disable-goes", action=argparse.BooleanOptionalAction, default=None, help="Disable GOES ingest, GLM ingest, and GOES rendering components (default: from runtime.yaml)")
     parser.add_argument("--disable-nexrad", action=argparse.BooleanOptionalAction, default=None, help="Disable background NEXRAD ingest and rendering (default: from runtime.yaml)")

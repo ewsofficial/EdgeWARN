@@ -18,7 +18,7 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["lat_limits", "lon_limits", "profile", "disable_ctam", "disable_tracking", "disable_polygon_expansion", "ctam_module_dir", "disable_ewmrs", "disable_nws", "disable_metar", "disable_goes", "disable_nexrad", "mrms_core_only"],
+      "required": ["lat_limits", "lon_limits", "profile", "disable_ctam", "disable_tracking", "disable_polygon_expansion", "ctam_module_dir", "disable_ewmrs", "disable_nws", "disable_metar", "disable_wpc", "disable_goes", "disable_nexrad", "mrms_core_only"],
       "properties": {
         "lat_limits": { "type": "array", "items": { "type": "number", "minimum": -90, "maximum": 90 }, "minItems": 2, "maxItems": 2 },
         "lon_limits": { "type": "array", "items": { "type": "number", "minimum": -180, "maximum": 360 }, "minItems": 2, "maxItems": 2 },
@@ -30,6 +30,7 @@
         "disable_ewmrs": { "type": "boolean" },
         "disable_nws": { "type": "boolean" },
         "disable_metar": { "type": "boolean" },
+        "disable_wpc": { "type": "boolean" },
         "disable_goes": { "type": "boolean" },
         "disable_nexrad": { "type": "boolean" },
         "mrms_core_only": { "type": "boolean" }
@@ -91,13 +92,15 @@
       "additionalProperties": false,
       "required": ["metar_boundary_minutes", "boundary_wait_interval_seconds", "nws_seconds", "nws_interval_seconds", "wpc_boundary_minutes", "nexrad_seconds", "nexrad_interval_seconds"],
       "properties": {
-        "metar_boundary_minutes": { "type": "integer", "exclusiveMinimum": 0 },
+        "metar_boundary_minutes": { "type": "number", "exclusiveMinimum": 0 },
         "boundary_wait_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
-        "nws_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "nws_seconds": { "type": "number", "minimum": 0 },
         "nws_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
-        "wpc_boundary_minutes": { "type": "integer", "exclusiveMinimum": 0 },
-        "nexrad_seconds": { "type": "number", "exclusiveMinimum": 0 },
-        "nexrad_interval_seconds": { "type": "number", "exclusiveMinimum": 0 }
+        "wpc_boundary_minutes": { "type": "number", "exclusiveMinimum": 0 },
+        "nexrad_seconds": { "type": "number", "minimum": 0 },
+        "nexrad_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "ewmrs_consumer_seconds": { "type": "number", "minimum": 1 },
+        "ewmrs_consumer_interval_seconds": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
     "cycle": {

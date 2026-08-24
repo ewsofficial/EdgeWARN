@@ -27,6 +27,8 @@ CLI_MODULES = [
     "common/ingest/nexrad/main.py",
     "common/ingest/nexrad/pipeline/__init__.py",
     "common/ingest/nws/zone_sync.py",
+    # Decomposition Phase 4: the standalone EWMRS service owns its parser.
+    "run_ewmrs.py",
 ]
 
 

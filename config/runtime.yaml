@@ -114,6 +114,8 @@ run:
   disable_ewmrs: false
   disable_nws: false
   disable_metar: false
+  # Phase 4 CLI contract: WPC is EWMRS-owned; this is its first dedicated flag.
+  disable_wpc: false
   disable_goes: false
   disable_nexrad: false
   # Setting this true here forces seven subsystems off, exactly as the flag does
@@ -199,6 +201,10 @@ background_intervals:
   # run continuously, and this is how long the loop waits before relaunching it.
   nexrad_seconds: 5
   nexrad_interval_seconds: 0.2          # :239, the subdivision of that 5 s
+  # Phase 4: how long the EWMRS record consumer waits between passes over
+  # state/realtime/cycles/ for new committed mrms-ready/rap-ready records.
+  ewmrs_consumer_seconds: 10
+  ewmrs_consumer_interval_seconds: 1.0
 
 cycle:
   # run.py:168-169. Named by filesystem attribute so it follows a relocated base dir.
