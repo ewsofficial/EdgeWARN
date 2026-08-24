@@ -10,20 +10,25 @@ from common.ingest.nexrad import config as nexrad_config
 from common.ingest.nexrad.parser import DREF_BLOCK, filter_msg31_blocks, iter_metadata_records, iter_sweep_records
 from common.ingest.nexrad.s3_chunks import extract_volume_timestamp, format_nexrad_timestamp, parse_nexrad_timestamp, required_volume_chunks
 from common.ingest.nexrad.models import ElevationArtifact, ElevationGroup
+from util.atomic import atomic_write_text
 
 IMPORTANT_DATA_VARS = None
 SCAN_TIMESTAMP_RE = re.compile(r"^\d{8}-\d{6}$")
 
 
 def _write_text_if_changed(path: Path, content: str) -> Path:
+    """Publish manifest text through a temp file + atomic replace.
+
+    The final filename is observable by the render/API side, so a crash mid
+    write must never leave a truncated manifest visible under its real name.
+    """
     if path.exists():
         try:
             if path.read_text(encoding="utf-8") == content:
                 return path
         except Exception:
             pass
-    path.write_text(content, encoding="utf-8")
-    return path
+    return atomic_write_text(path, content)
 
 
 def _filename_timestamp(timestamp: str | None) -> str:

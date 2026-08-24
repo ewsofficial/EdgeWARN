@@ -2,6 +2,7 @@ import xarray as xr
 import json
 import os
 from datetime import datetime
+from util.atomic import atomic_write_json
 from util.io import IOManager
 from pathlib import Path
 import re
@@ -251,9 +252,12 @@ class OverlayManifestUtils:
         """
         Saves the layers to a JSON file.
 
+        The file is published atomically (temp sibling + replace) so a crash
+        mid write can never leave a truncated overlay manifest visible under
+        its final name.
+
         Args:
             filepath (str): Path to the JSON file to save
         """
-        with open(filepath, 'w') as f:
-            json.dump(self.layers, f, indent=4)
+        atomic_write_json(filepath, self.layers, indent=4)
         io_manager.write_debug(f"Saved overlay manifest to {filepath}")
