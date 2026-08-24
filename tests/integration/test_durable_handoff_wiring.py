@@ -1,19 +1,20 @@
-"""Phase 2 wiring test: durable handoff published by the tandem cycle.
+"""Phase 4 wiring test: durable handoff published by the primary cycle.
 
-Drives ``run_tandem_cycle_once`` with stubbed workers and monkeypatched
-downloaders, asserting that mrms-ready.json and rap-ready.json are committed
-alongside the in-memory release events, that a failed phase publishes nothing,
-and that republication of the same cycle is idempotent.
+Drives ``run_tandem_cycle_once`` with a stubbed EdgeWARN worker and
+monkeypatched downloaders, asserting that mrms-ready.json and rap-ready.json
+are committed alongside the in-memory release events, that a failed phase
+publishes nothing, and that republication of the same cycle is idempotent.
+The cycle is primary-only now; EWMRS consumption is covered by
+``tests/util/test_ewmrs_consumer.py``.
 """
 
 import multiprocessing
-import sys
-import types
 from datetime import datetime, timezone
 
 import pytest
 
 import common.pipeline.coordinator as coordinator
+import util.runtime.cycle as cycle_module
 from common.ingest.manifest import staged_input_from_path
 from common.ingest.mrms.downloader import DownloadBatchResult
 from util.runtime.cycle import TandemCycleConfig, run_tandem_cycle_once
@@ -40,18 +41,19 @@ def _batch(tmp_path, timestamp, product):
     )
 
 
-def _stub_worker(*args, **kwargs):
+def _stub_worker(log_queue, shared_state, *_args, **_kwargs):
+    # Publish the same terminal contract a real EdgeWARN worker would.
+    shared_state["edgewarn_stage"] = {
+        "status": "completed",
+        "produced_artifacts": [],
+        "errors": [],
+    }
     return None
 
 
 @pytest.fixture()
 def stubbed_workers(monkeypatch):
-    import util.runtime.cycle as cycle_module
-
     monkeypatch.setattr(cycle_module, "edgewarn_tandem_worker", _stub_worker)
-    fake_ewmrs = types.ModuleType("EWMRS.pipeline")
-    fake_ewmrs.ewmrs_tandem_worker = _stub_worker
-    monkeypatch.setitem(sys.modules, "EWMRS.pipeline", fake_ewmrs)
 
 
 def _config(tmp_path, *, handoff_enabled=True):
@@ -67,11 +69,8 @@ def _config(tmp_path, *, handoff_enabled=True):
         min_seed_percentage=10.0,
         drop_offset=0.0,
         config_dir=None,
-        ewmrs_enabled=True,
         goes_enabled=False,
         mrms_core_only=False,
-        goes_render_wait_seconds=1.0,
-        goes_render_wait_interval_seconds=0.1,
         base_dir=str(tmp_path),
         handoff_enabled=handoff_enabled,
     )
@@ -93,58 +92,27 @@ def _patch_downloaders(monkeypatch, tmp_path):
         rap_path.write_bytes(b"grib")
         return rap_path
 
-    async def fake_uint16(rap_path, dt, log):
-        return {"layer": str(rap_path)}
-
     monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files_async", fake_detection)
     monkeypatch.setattr(coordinator.mrms_ingest, "download_detection_files", sync_detection)
     monkeypatch.setattr(
         coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration
     )
     monkeypatch.setattr(coordinator, "download_rap_async", fake_rap)
-    monkeypatch.setattr(coordinator, "_run_rap_uint16_conversion", fake_uint16)
-    # The shadow consumer resolves EWMRS render layers from configuration;
-    # point them at this test's staged directories.
-    def fake_layer_list():
-        return [
-            {"name": "DetectionLayer", "filepath": str(tmp_path / "staged" / "Detection")},
-            {
-                "name": "IntegrationLayer",
-                "filepath": str(tmp_path / "staged" / "Integration"),
-            },
-        ]
-
-    try:
-        import EWMRS.render.config as ewmrs_render_config
-
-        monkeypatch.setattr(
-            ewmrs_render_config, "get_mrms_file_list", fake_layer_list
-        )
-    except ImportError:
-        pass
+    # Phase 4: the coordinator no longer runs the RAP Uint16 conversion at all.
+    monkeypatch.setattr(
+        "EWMRS.pipeline.run_rap_uint16_pipeline",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("conversion must not run in the primary")),
+    )
 
 
 def _run_cycle(tmp_path, manager):
-    goes_render_task_queue = multiprocessing.Queue()
-    goes_render_log_queue = multiprocessing.Queue()
-    try:
-        return run_tandem_cycle_once(
-            DT,
-            goes_render_task_queue,
-            goes_render_log_queue,
-            manager,
-            config=_config(tmp_path),
-            goes_cycle_active_event=multiprocessing.Event(),
-        )
-    finally:
-        goes_render_task_queue.close()
-        goes_render_log_queue.close()
+    return run_tandem_cycle_once(DT, manager, config=_config(tmp_path))
 
 
 def test_cycle_publishes_mrms_and_rap_ready_records(stubbed_workers, monkeypatch, tmp_path):
     _patch_downloaders(monkeypatch, tmp_path)
     with multiprocessing.Manager() as manager:
-        _run_cycle(tmp_path, manager)
+        outcome = _run_cycle(tmp_path, manager)
 
     mrms_record = read_phase_record(
         phase_record_path(tmp_path, canonical_cycle_id(DT), "mrms-ready")
@@ -156,13 +124,15 @@ def test_cycle_publishes_mrms_and_rap_ready_records(stubbed_workers, monkeypatch
     assert rap_record is not None and rap_record.success
     products = {staged.product for staged in mrms_record.inputs}
     assert {"Detection", "Integration"} <= products
-    # The committed exact paths are the ones actually staged this cycle, and
-    # every configured layer binds to an exact pinned file.
+    # The committed exact paths are the ones actually staged this cycle.
     assert shadow_validate_phase_record(mrms_record) == ()
     assert shadow_validate_phase_record(rap_record) == ()
+    # The EWMRS stage no longer exists on the primary outcome.
+    assert set(outcome.stages) == {"ingest", "edgewarn"}
+    assert outcome.completed
 
 
-def test_failed_mrms_phase_publishes_no_ready_record(stubbed_workers, monkeypatch, tmp_path):
+def test_failed_mrms_phase_publishes_no_mrms_ready_record(stubbed_workers, monkeypatch, tmp_path):
     _patch_downloaders(monkeypatch, tmp_path)
 
     async def failing_detection(dt, max_entries=10, remove_old_files=True):
@@ -220,29 +190,13 @@ def test_republication_of_same_cycle_is_idempotent(stubbed_workers, monkeypatch,
 
 def test_disabled_handoff_publishes_nothing(stubbed_workers, monkeypatch, tmp_path):
     _patch_downloaders(monkeypatch, tmp_path)
-    goes_render_task_queue = multiprocessing.Queue()
-    goes_render_log_queue = multiprocessing.Queue()
-    try:
-        with multiprocessing.Manager() as manager:
-            run_tandem_cycle_once(
-                DT,
-                goes_render_task_queue,
-                goes_render_log_queue,
-                manager,
-                config=_config_with_handoff_disabled(tmp_path),
-                goes_cycle_active_event=multiprocessing.Event(),
-            )
-    finally:
-        goes_render_task_queue.close()
-        goes_render_log_queue.close()
+    with multiprocessing.Manager() as manager:
+        run_tandem_cycle_once(
+            DT,
+            manager,
+            config=_config(tmp_path, handoff_enabled=False),
+        )
 
     assert iter_committed_records(tmp_path, "mrms-ready") == []
     assert iter_committed_records(tmp_path, "rap-ready") == []
     assert not (tmp_path / "state" / "realtime").exists()
-
-
-def _config_with_handoff_disabled(tmp_path):
-    config = _config(tmp_path)
-    return type(config)(
-        **{**config.__dict__, "handoff_enabled": False}
-    )
