@@ -3,7 +3,7 @@
   "title": "runtime.yaml",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "identity", "run", "goes_coordination", "supervisor", "background_intervals", "cycle", "handoff", "profiling"],
+  "required": ["schema_version", "identity", "run", "goes_coordination", "nexrad_coordination", "supervisor", "background_intervals", "cycle", "handoff", "profiling"],
   "properties": {
     "schema_version": { "type": "integer", "const": 1 },
     "identity": {
@@ -127,6 +127,22 @@
         "ingest_max_entries": { "type": "integer", "minimum": 1 },
         "log_drain_poll_seconds": { "type": "number", "exclusiveMinimum": 0 },
         "max_backlog_cycles": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "nexrad_coordination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pause_ingest_during_primary_activity",
+        "primary_lease_ttl_seconds",
+        "pause_max_wait_seconds",
+        "pause_poll_interval_seconds"
+      ],
+      "properties": {
+        "pause_ingest_during_primary_activity": { "type": "boolean" },
+        "primary_lease_ttl_seconds": { "type": "number", "exclusiveMinimum": 0 },
+        "pause_max_wait_seconds": { "type": "number", "minimum": 0 },
+        "pause_poll_interval_seconds": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
     "handoff": {

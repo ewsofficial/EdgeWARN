@@ -29,6 +29,8 @@ from typing import Any, Callable
 from common.ingest.manifest import CycleInputManifest, StagedInput
 from util.atomic import atomic_write_json
 
+from .services import CANONICAL_SERVICE_NAMES, services_dir
+
 PHASE_RECORD_SCHEMA_VERSION = 1
 CONSUMER_CHECKPOINT_SCHEMA_VERSION = 1
 
@@ -102,6 +104,138 @@ def leases_dir(base_dir: str | os.PathLike) -> Path:
 
 def primary_lease_path(base_dir: str | os.PathLike) -> Path:
     return leases_dir(base_dir) / "primary-active.json"
+
+
+class ServiceLock:
+    """Single-instance advisory lock beneath the service-name registry.
+
+    Uses an OS file lock (``flock``), so a crashed owner releases it
+    automatically and no stale-lock stealing logic is needed. The lock file
+    lives beside the heartbeat files but is never read by the API; discovery
+    uses heartbeats only.
+    """
+
+    def __init__(self, base_dir: str | os.PathLike, name: str):
+        import fcntl
+
+        self._fcntl = fcntl
+        self._path = services_dir(base_dir) / f"{name}.lock"
+        if name not in CANONICAL_SERVICE_NAMES:
+            raise ValueError(
+                f"{name!r} is not a canonical service name "
+                f"(expected one of {', '.join(CANONICAL_SERVICE_NAMES)})"
+            )
+        self._handle = None
+
+    def acquire(self) -> None:
+        import fcntl
+
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = open(self._path, "a+")
+        try:
+            fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self._handle.close()
+            self._handle = None
+            raise RuntimeError(
+                f"another instance of the '{self._path.stem}' service already "
+                "holds its single-instance lock"
+            ) from None
+
+    def release(self) -> None:
+        if self._handle is None:
+            return
+        try:
+            self._fcntl.flock(self._handle.fileno(), self._fcntl.LOCK_UN)
+        finally:
+            self._handle.close()
+            self._handle = None
+
+
+@dataclass(frozen=True)
+class PrimaryLeaseState:
+    """Parsed view of a primary-activity lease record."""
+
+    run_id: str
+    cycle_id: str
+    pid: int
+    updated_at: datetime
+    expires_at: datetime
+
+
+def _parse_lease_payload(payload, *, path_for_errors: str = "lease") -> PrimaryLeaseState:
+    if not isinstance(payload, dict):
+        raise PhaseRecordError(f"{path_for_errors} must be a JSON object")
+    for required in ("run_id", "cycle_id", "pid", "updated_at", "expires_at"):
+        if required not in payload:
+            raise PhaseRecordError(f"{path_for_errors}: {required} is required")
+    return PrimaryLeaseState(
+        run_id=str(payload["run_id"]),
+        cycle_id=str(payload["cycle_id"]),
+        pid=int(payload["pid"]),
+        updated_at=_parse_utc(payload["updated_at"], f"{path_for_errors}.updated_at"),
+        expires_at=_parse_utc(payload["expires_at"], f"{path_for_errors}.expires_at"),
+    )
+
+
+class PrimaryActivityLease:
+    """Cross-process lease held while a latency-sensitive primary cycle runs.
+
+    NEXRAD checks :func:`primary_activity_held` before admitting new work so
+    it can cooperatively throttle during an active cycle; the lease carries an
+    expiry so a crashed primary can never pause NEXRAD forever. Feature-gated
+    by ``nexrad_coordination.pause_ingest_during_primary_activity``
+    (default off).
+    """
+
+    def __init__(self, base_dir: str | os.PathLike, *, run_id: str, ttl_seconds: float):
+        self._base_dir = base_dir
+        self._run_id = run_id
+        self._ttl_seconds = float(ttl_seconds)
+
+    def acquire(self, cycle_id: str) -> Path | None:
+        """Create or refresh the lease for *cycle_id*; returns the commit path."""
+        now = _utc_now()
+        payload = {
+            "schema_version": 1,
+            "run_id": self._run_id,
+            "cycle_id": str(cycle_id),
+            "pid": os.getpid(),
+            "heartbeat_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "expires_at": datetime.fromtimestamp(
+                now.timestamp() + self._ttl_seconds, tz=timezone.utc
+            ).isoformat(),
+        }
+        json.dumps(payload)
+        destination = primary_lease_path(self._base_dir)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(destination, payload)
+        return destination
+
+    def release(self) -> None:
+        try:
+            primary_lease_path(self._base_dir).unlink(missing_ok=True)
+        except OSError as exc:
+            print(f"[Handoff] Failed to clear primary-activity lease: {exc}")
+
+
+def primary_activity_held(
+    base_dir: str | os.PathLike,
+    *,
+    now: datetime | None = None,
+) -> PrimaryLeaseState | None:
+    """The active unexpired lease, or ``None`` when the primary is idle."""
+    reference = now or _utc_now()
+    try:
+        raw = primary_lease_path(base_dir).read_text(encoding="utf-8")
+        payload = json.loads(raw)
+        state = _parse_lease_payload(payload)
+    except (OSError, json.JSONDecodeError, PhaseRecordError, ValueError, TypeError):
+        return None
+    if state.expires_at <= reference:
+        return None
+    return state
 
 
 @dataclass(frozen=True)

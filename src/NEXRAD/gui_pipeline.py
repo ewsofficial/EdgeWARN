@@ -277,12 +277,22 @@ def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: in
     return rendered_count
 
 
-def run_nexrad_render_loop(*, base_dir=None, poll_interval_seconds: float | None = None) -> None:
+def run_nexrad_render_loop(
+    *,
+    base_dir=None,
+    poll_interval_seconds: float | None = None,
+    wait_for_quiescence=None,
+) -> None:
     if poll_interval_seconds is None:
         poll_interval_seconds = nexrad_poll_interval_seconds()
     poll_interval_seconds = max(nexrad_poll_interval_min_seconds(), float(poll_interval_seconds))
     while True:
         try:
+            # Optional cross-service throttle (decomposition Phase 3): checked
+            # before admitting a new render batch; a batch in progress is
+            # never interrupted.
+            if wait_for_quiescence is not None:
+                wait_for_quiescence()
             rendered = render_pending_nexrad_gui_files(base_dir=base_dir)
             if rendered > 0:
                 io_manager.write_info(f"NEXRAD render poll cycle wrote {rendered} artifact(s)")

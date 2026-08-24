@@ -1,4 +1,4 @@
-"""Temporary all-in-one runner (decomposition Phase 1 adapter).
+"""Temporary all-in-one runner (decomposition Phase 3 adapter).
 
 This module is being decomposed into three independently operable services
 (plans/realtime-runner-decomposition-plan.md). The service logic now lives in:
@@ -6,11 +6,12 @@ This module is being decomposed into three independently operable services
 - ``util.runtime.primary_service`` — MRMS selection, cycle state, retry, and
   the primary polling loop;
 - ``util.runtime.ewmrs_service`` — METAR/NWS/WPC/GOES accessory supervision;
-- ``util.runtime.nexrad_service`` — NEXRAD ingest/render supervision.
+- ``src/run_nexrad.py`` — the standalone NEXRAD service (ingest + render).
 
-``main()`` below wires those pieces together exactly as before; deployment is
-unchanged. It performs no import-time work: parsing, runtime initialization,
-and stream wrapping all happen inside ``main()``.
+NEXRAD is deliberately absent from this runner: it must be started as its own
+service. ``main()`` wires the remaining pieces together; deployment of the
+primary/EWMRS tandem is unchanged. It performs no import-time work: parsing,
+runtime initialization, and stream wrapping all happen inside ``main()``.
 """
 
 import sys
@@ -24,11 +25,9 @@ from util.release import get_release_version
 from util.runtime import (
     AccessorySupervisor,
     StartedProcessRegistry,
-    drain_log_queue,
 )
 from util.runtime.config import resolve_file, section
 from util.runtime.ewmrs_service import register_ewmrs_accessories
-from util.runtime.nexrad_service import register_nexrad_supervision
 from util.runtime.primary_service import (
     build_cycle_config,
     log_effective_flags,
@@ -48,6 +47,7 @@ def main():
     initialize_runtime(base_dir=args.base_dir, io_manager=io_manager)
 
     print("Scheduler started. Press CTRL+C to exit.")
+    print("[Scheduler] NEXRAD ingest/rendering is owned by run_nexrad.py and is not started here.")
     log_effective_flags(args)
 
     mrms_core_only = args.mrms_core_only
@@ -55,7 +55,6 @@ def main():
     nws_enabled = not args.disable_nws and not mrms_core_only
     metar_enabled = not args.disable_metar and not mrms_core_only
     goes_enabled = not args.disable_goes and not mrms_core_only
-    nexrad_enabled = not args.disable_nexrad and not mrms_core_only
 
     cycle_config, goes_coordination = build_cycle_config(args)
     goes_pause_ingest_during_render = overlay.resolve(
@@ -74,12 +73,8 @@ def main():
     manager = multiprocessing.Manager()
     goes_render_task_queue = multiprocessing.Queue()
     goes_render_log_queue = multiprocessing.Queue()
-    nexrad_log_queue = multiprocessing.Queue()
 
     supervisor_settings = section("supervisor")
-    nexrad_heartbeat_path = str(resolve_file(
-        supervisor_settings["nexrad_heartbeat_file"], "supervisor.nexrad_heartbeat_file"
-    ))
     supervisor = AccessorySupervisor(
         max_restarts=supervisor_settings["max_restarts"],
         restart_window_seconds=supervisor_settings["restart_window_seconds"],
@@ -105,13 +100,6 @@ def main():
         goes_render_task_queue=goes_render_task_queue,
         goes_render_log_queue=goes_render_log_queue,
     )
-    register_nexrad_supervision(
-        supervisor,
-        base_dir=args.base_dir,
-        nexrad_log_queue=nexrad_log_queue,
-        nexrad_heartbeat_path=nexrad_heartbeat_path,
-        enabled=bool(ewmrs_enabled and nexrad_enabled),
-    )
     supervisor.start_all()
     # Deliberate reordering versus the pre-split monolith: accessory children
     # start before cycle-state restore instead of after. Any failure raised
@@ -130,7 +118,6 @@ def main():
             cycle_config=cycle_config,
             goes_render_task_queue=goes_render_task_queue,
             goes_render_log_queue=goes_render_log_queue,
-            nexrad_log_queue=nexrad_log_queue,
             goes_cycle_active_event=goes_cycle_active,
             manager=manager,
             supervisor=supervisor,
@@ -139,7 +126,6 @@ def main():
         supervisor.request_stop()
         started_processes.shutdown(queue_sentinels=[(goes_render_task_queue, None)], manager=manager)
         supervisor.shutdown()
-        drain_log_queue(nexrad_log_queue)
 
 
 if __name__ == "__main__":

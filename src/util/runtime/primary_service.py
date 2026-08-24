@@ -14,6 +14,7 @@ never imports.
 
 from datetime import datetime, timezone
 import time
+import uuid
 
 import util.file as fs
 from common.config import loader as config_loader, overlay
@@ -137,7 +138,7 @@ def log_effective_flags(args):
     if args.disable_goes:
         print("[Scheduler] GOES/GLM ingest and GOES rendering disabled via --disable-goes")
     if args.disable_nexrad:
-        print("[Scheduler] NEXRAD ingest and rendering disabled via --disable-nexrad")
+        print("[Scheduler] NEXRAD runs in its own service (run_nexrad.py); this runner never starts it")
     if mrms_core_only:
         print("[Scheduler] MRMS-core-only mode: running MRMS detection, MRMS integration, and CTAM only")
 
@@ -172,7 +173,6 @@ def run_primary_cycle_loop(
     cycle_config,
     goes_render_task_queue,
     goes_render_log_queue,
-    nexrad_log_queue,
     goes_cycle_active_event,
     manager,
     supervisor,
@@ -215,10 +215,23 @@ def run_primary_cycle_loop(
 
     supervisor_settings = section("supervisor")
 
+    # Optional cross-service NEXRAD throttle (decomposition Phase 3, default
+    # off): while a latency-sensitive cycle runs, the primary holds an
+    # expiring lease so NEXRAD can cooperatively defer new work.
+    nexrad_coordination = section("nexrad_coordination")
+    primary_lease = None
+    if nexrad_coordination["pause_ingest_during_primary_activity"]:
+        from util.runtime.handoff import PrimaryActivityLease
+
+        primary_lease = PrimaryActivityLease(
+            fs.BASE_DIR,
+            run_id=uuid.uuid4().hex,
+            ttl_seconds=nexrad_coordination["primary_lease_ttl_seconds"],
+        )
+
     try:
         while True:
             drain_log_queue(goes_render_log_queue)
-            drain_log_queue(nexrad_log_queue)
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
             latest_common = None
@@ -264,14 +277,21 @@ def run_primary_cycle_loop(
                     f"(attempt {pending_attempt_count}/{retry_policy.max_attempts})"
                 )
 
-                outcome = run_tandem_cycle_once(
-                    dt,
-                    goes_render_task_queue,
-                    goes_render_log_queue,
-                    manager,
-                    config=cycle_config,
-                    goes_cycle_active_event=goes_cycle_active_event,
-                )
+                outcome = None
+                try:
+                    if primary_lease is not None:
+                        primary_lease.acquire(dt)
+                    outcome = run_tandem_cycle_once(
+                        dt,
+                        goes_render_task_queue,
+                        goes_render_log_queue,
+                        manager,
+                        config=cycle_config,
+                        goes_cycle_active_event=goes_cycle_active_event,
+                    )
+                finally:
+                    if primary_lease is not None:
+                        primary_lease.release()
                 if outcome.completed:
                     cycle_state_store.record_outcome(outcome, pending_attempt_count)
                     last_successful = dt

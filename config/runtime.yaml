@@ -245,6 +245,25 @@ cycle:
   # measured render throughput.
   max_backlog_cycles: 10
 
+# Phase 3 of plans/realtime-runner-decomposition-plan.md: cross-process
+# NEXRAD throttling. The in-process `goes_coordination.pause_ingest_during_render`
+# events above cannot reach across independent services, so when this policy is
+# enabled the primary holds a lease at state/realtime/leases/primary-active.json
+# while a cycle runs, and the NEXRAD service waits (without interrupting any
+# atomic unit already in progress) before admitting a new ingest scan or render
+# batch. Feature-gated and default off; the three-service split does not depend
+# on it.
+nexrad_coordination:
+  pause_ingest_during_primary_activity: false
+  # Lease lifetime: a crashed primary's lease expires after this long, so a
+  # crash can never pause NEXRAD forever.
+  primary_lease_ttl_seconds: 90.0
+  # How long the NEXRAD loops wait per quiescence window before proceeding
+  # anyway (observable timeout rather than an indefinite block), subdivided by
+  # the poll interval so shutdown stays responsive.
+  pause_max_wait_seconds: 30.0
+  pause_poll_interval_seconds: 0.5
+
 # Phase 2 of plans/realtime-runner-decomposition-plan.md: shadow publication
 # of durable mrms-ready.json and rap-ready.json phase records beneath
 # state/realtime/cycles/<cycle-id>/, in parallel with the existing in-memory
