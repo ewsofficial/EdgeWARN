@@ -737,6 +737,11 @@ turning the pause policy on.
 - [x] Verify EWMRS can start before primary, after primary, and after a
   backlog has accumulated. (`tests/util/test_ewmrs_consumer.py`: empty-start
   noop then pickup, committed-record recovery, and backlog-cap abandonment.)
+- [ ] Follow-up: prune committed cycle records beneath
+  `state/realtime/cycles/`. Nothing consumes them beyond the consumers'
+  checkpoints, so the tree grows one directory per cycle forever; retention
+  must be sized with `cycle.max_backlog_cycles` from measured render
+  throughput.
 
 ### Phase 5 — Finalize the primary service
 
