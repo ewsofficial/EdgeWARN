@@ -19,12 +19,14 @@ allowed to load the EWMRS render stack lazily inside its methods.
 """
 
 import signal
+import sys
 
 from util.io import QueueWriter
 from util.runtime.config import section
 from util.runtime.handoff import (
     ConsumerCheckpointStore,
     PhaseRecord,
+    phase_record_path,
     select_pending_records,
     shadow_validate_phase_record,
 )
@@ -32,6 +34,14 @@ from util.runtime.logging import queue_log
 from util.runtime.timing import sleep_for
 
 CONSUMER_NAME = "ewmrs"
+
+
+class RapRecordMissingInput(Exception):
+    """A committed rap-ready record pins no RAP-family input.
+
+    Retrying cannot fix a producer-side schema problem, so the drain marks
+    such cycles unrecoverable instead of blocking the phase forever.
+    """
 
 
 class EwmrsRecordConsumer:
@@ -79,23 +89,31 @@ class EwmrsRecordConsumer:
         )
         processed = skipped = 0
         for cycle_id, record, status in pending:
-            if record is None:
-                # Malformed evidence must stay visible: stop here instead of
-                # silently rendering a newer file under an older timestamp.
+            if status == "abandoned-backlog":
+                # Backlog-cap abandonment applies regardless of record state:
+                # a malformed oldest record must still be cap-able out.
                 self._log(
-                    f"[EWMRS] {phase} record for {cycle_id} is missing or "
-                    "malformed; stopping this drain until it is repaired"
+                    f"[EWMRS] {phase} cycle {cycle_id} exceeded the "
+                    "backlog cap; recorded as unrecoverable without rendering"
+                )
+                checkpoint_store.record(cycle_id)
+                skipped += 1
+                continue
+            if record is None:
+                # Distinguish evidence problems from in-flight commits: a
+                # missing file means the producer has not committed this
+                # phase yet (cycle dirs appear when the first phase lands),
+                # so wait quietly; an existing but unparseable file is real
+                # damage and stops the drain so newer cycles are never
+                # rendered under an older timestamp's identity.
+                if not phase_record_path(self.base_dir, cycle_id, phase).exists():
+                    break
+                self._log(
+                    f"[EWMRS] {phase} record for {cycle_id} is malformed; "
+                    "stopping this drain until it is repaired"
                 )
                 break
             try:
-                if status == "abandoned-backlog":
-                    self._log(
-                        f"[EWMRS] {phase} cycle {cycle_id} exceeded the "
-                        "backlog cap; recorded as unrecoverable without rendering"
-                    )
-                    checkpoint_store.record(cycle_id)
-                    skipped += 1
-                    continue
                 problems = shadow_validate_phase_record(
                     record,
                     layers=(self._mrms_layers() if phase == "mrms-ready" else None),
@@ -112,6 +130,11 @@ class EwmrsRecordConsumer:
                 checkpoint_store.record(cycle_id)
                 processed += 1
                 self._log(f"[EWMRS] Consumed {phase} cycle {cycle_id}")
+            except RapRecordMissingInput as exc:
+                self._log(f"[EWMRS] {phase} cycle {cycle_id} is unrecoverable: {exc}")
+                checkpoint_store.record(cycle_id)
+                skipped += 1
+                continue
             except Exception as exc:
                 # Render failure: do not advance the checkpoint; the record is
                 # retried on the next poll.
@@ -149,15 +172,25 @@ class EwmrsRecordConsumer:
             staged for staged in record.inputs if getattr(staged, "family", "") == "rap"
         ]
         if not rap_inputs:
-            raise RuntimeError("rap-ready record pins no RAP input")
+            # A producer bug (for example mrms-core-only publishing without
+            # staging RAP). Unrecoverable by retrying, so the drain treats it
+            # like any other validation failure via the raised error path --
+            # but raise a distinct type the caller can mark unrecoverable.
+            raise RapRecordMissingInput(
+                "rap-ready record pins no RAP input; producer is misconfigured"
+            )
         results = run_rap_uint16_pipeline(rap_inputs[0].path, record.analysis_time)
         incomplete = [name for name, path in results.items() if path is None]
         if not results or len(incomplete) == len(results):
             raise RuntimeError("RAP Uint16 conversion produced no usable layers")
 
 
-def ewmrs_consumer_loop(base_dir, log_queue):
-    """Supervised child target: consume committed records until stopped."""
+def ewmrs_consumer_loop(base_dir, log_queue, *, stop_event=None):
+    """Supervised child target: consume committed records until stopped.
+
+    ``stop_event`` is optional; without it the loop runs until SIGTERM (whose
+    handler raises SystemExit through the interruptible sleep) or SIGINT.
+    """
     from util.runtime.process_identity import set_process_name
 
     set_process_name("EWMRS-Consumer")
@@ -174,6 +207,8 @@ def ewmrs_consumer_loop(base_dir, log_queue):
     sleep_seconds = float(intervals["ewmrs_consumer_seconds"])
     poll_interval = float(intervals["ewmrs_consumer_interval_seconds"])
     while True:
+        if stop_event is not None and stop_event.is_set():
+            return
         try:
             processed, skipped = consumer.process_pending_once()
             if processed or skipped:
@@ -186,4 +221,10 @@ def ewmrs_consumer_loop(base_dir, log_queue):
             return
         except Exception as exc:
             queue_log(log_queue, f"ERROR: EWMRS consumer pass failed: {exc}")
-        sleep_for(sleep_seconds, interval=poll_interval)
+        if stop_event is not None:
+            for _ in range(max(1, int(sleep_seconds / poll_interval))):
+                if stop_event.is_set():
+                    return
+                sleep_for(poll_interval)
+        else:
+            sleep_for(sleep_seconds, interval=poll_interval)

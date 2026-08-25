@@ -28,7 +28,7 @@ def register_ewmrs_accessories(
     goes_render_active,
     goes_pause_ingest_during_render,
     goes_poll_seconds,
-    child_log_queue=None,
+    child_log_queue,
 ):
     """Add every EWMRS-owned child loop to *supervisor*.
 
@@ -60,17 +60,21 @@ def register_ewmrs_accessories(
         daemon=True,
         cleanup_event=goes_cycle_active,
     )
-    if child_log_queue is not None:
-        supervisor.add(
-            "GOES Render", goes_render_loop,
-            enabled=bool(goes_render_enabled),
-            args=(base_dir, child_log_queue, goes_render_active),
-            daemon=True,
-            cleanup_event=goes_render_active,
+    if child_log_queue is None:
+        raise ValueError(
+            "child_log_queue is required: the GOES Render and EWMRS Consumer "
+            "children route their logs through it"
         )
-        supervisor.add(
-            "EWMRS Consumer", ewmrs_consumer_loop,
-            enabled=consumer_enabled,
-            args=(base_dir, child_log_queue),
-            daemon=True,
-        )
+    supervisor.add(
+        "GOES Render", goes_render_loop,
+        enabled=bool(goes_render_enabled),
+        args=(base_dir, child_log_queue, goes_render_active),
+        daemon=True,
+        cleanup_event=goes_render_active,
+    )
+    supervisor.add(
+        "EWMRS Consumer", ewmrs_consumer_loop,
+        enabled=consumer_enabled,
+        args=(base_dir, child_log_queue),
+        daemon=True,
+    )

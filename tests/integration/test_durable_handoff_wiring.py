@@ -200,3 +200,26 @@ def test_disabled_handoff_publishes_nothing(stubbed_workers, monkeypatch, tmp_pa
     assert iter_committed_records(tmp_path, "mrms-ready") == []
     assert iter_committed_records(tmp_path, "rap-ready") == []
     assert not (tmp_path / "state" / "realtime").exists()
+
+
+def test_mrms_core_only_publishes_no_rap_ready_record(stubbed_workers, monkeypatch, tmp_path):
+    """Regression: mrms-core-only must not publish a rap-ready record that
+    pins no RAP input -- the consumer would stall its rap phase forever."""
+    _patch_downloaders(monkeypatch, tmp_path)
+    with multiprocessing.Manager() as manager:
+        run_primary_cycle_once(
+            DT,
+            manager,
+            config=_config_with(tmp_path, mrms_core_only=True),
+        )
+
+    # MRMS phases still commit their records...
+    mrms_records = iter_committed_records(tmp_path, "mrms-ready")
+    assert any(record is not None and record.success for _, record in mrms_records)
+    # ...but no RAP input was staged, so no successful rap-ready may exist.
+    assert all(record is None for _, record in iter_committed_records(tmp_path, "rap-ready"))
+
+
+def _config_with(tmp_path, **overrides):
+    base = _config(tmp_path).__dict__
+    return PrimaryCycleConfig(**{**base, **overrides})
