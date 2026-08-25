@@ -97,7 +97,7 @@ async def _ingest_rap(dt: datetime, log: LogFunc):
         return None, reason
 
 
-async def run_tandem_ingest_cycle(
+async def run_staged_ingest_cycle(
     dt: datetime,
     log: LogFunc,
     *,

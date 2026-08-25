@@ -20,15 +20,15 @@ _LAZY_EXPORTS = {
     "nexrad_render_loop": ".background",
     "nws_loop": ".background",
     "wpc_loop": ".background",
-    # .cycle — tandem cycle state and orchestration
+    # .cycle — primary cycle state and orchestration
     "CycleOutcome": ".cycle",
     "CycleRetryPolicy": ".cycle",
     "CycleStageResult": ".cycle",
     "CycleStateStore": ".cycle",
     "CycleStatus": ".cycle",
     "PersistedCycleState": ".cycle",
-    "TandemCycleConfig": ".cycle",
-    "run_tandem_cycle_once": ".cycle",
+    "PrimaryCycleConfig": ".cycle",
+    "run_primary_cycle_once": ".cycle",
     # .logging
     "drain_log_queue": ".logging",
     # .processes
@@ -47,7 +47,7 @@ __all__ = [
     "CycleStateStore",
     "CycleStatus",
     "PersistedCycleState",
-    "TandemCycleConfig",
+    "PrimaryCycleConfig",
     "StartedProcessRegistry",
     "drain_log_queue",
     "goes_loop",
@@ -57,7 +57,7 @@ __all__ = [
     "nexrad_ingest_loop",
     "nexrad_render_loop",
     "nws_loop",
-    "run_tandem_cycle_once",
+    "run_primary_cycle_once",
     "stop_process",
     "wpc_loop",
 ]

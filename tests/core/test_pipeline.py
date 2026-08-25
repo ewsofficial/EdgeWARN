@@ -60,7 +60,7 @@ def test_historical_pipeline_preserves_cell_and_stormcell_dirs(tmp_path):
     with patch.object(pipeline, "_cleanup_historical_data_dirs"), \
          patch.object(
              pipeline,
-            "run_tandem_ingest_cycle",
+            "run_staged_ingest_cycle",
             return_value=SimpleNamespace(
                 detection_inputs_ready=True,
                 errors={},
@@ -97,7 +97,7 @@ def test_historical_pipeline_reports_incomplete_when_staged_inputs_are_missing(t
     with patch.object(pipeline, "_cleanup_historical_data_dirs"), \
          patch.object(
              pipeline,
-             "run_tandem_ingest_cycle",
+             "run_staged_ingest_cycle",
              return_value=SimpleNamespace(
                 detection_inputs_ready=True,
                 errors={"rap_ingest": "RAP inputs unavailable"},
@@ -140,7 +140,7 @@ class _Event:
 
 
 def _run_edgewarn_worker(shared_state):
-    pipeline.edgewarn_tandem_worker(
+    pipeline.edgewarn_cycle_worker(
         _Queue(),
         shared_state,
         _Event(),

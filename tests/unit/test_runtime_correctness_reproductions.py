@@ -845,7 +845,7 @@ def test_default_goes_coordinator_keeps_readiness_false_when_both_paths_throw(
     monkeypatch.setattr(coordinator, "download_all_goes_files", sync_failure)
 
     state = asyncio.run(
-        coordinator.run_tandem_ingest_cycle(
+        coordinator.run_staged_ingest_cycle(
             datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc),
             lambda _message: None,
             include_goes=True,

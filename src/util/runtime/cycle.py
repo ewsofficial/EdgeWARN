@@ -9,8 +9,8 @@ from pathlib import Path
 import time
 
 from common.ingest.manifest import CycleInputManifest
-from common.pipeline.coordinator import run_tandem_ingest_cycle
-from EdgeWARN.pipeline import edgewarn_tandem_worker
+from common.pipeline.coordinator import run_staged_ingest_cycle
+from EdgeWARN.pipeline import edgewarn_cycle_worker
 from EdgeWARN.process.detect.config import DetectionConfig
 
 from .config import section
@@ -65,7 +65,7 @@ class CycleStageResult:
 
 @dataclass(frozen=True)
 class CycleOutcome:
-    """Validated terminal outcome for a full tandem cycle."""
+    """Validated terminal outcome for a full primary cycle."""
 
     timestamp: datetime
     stages: dict[str, CycleStageResult]
@@ -313,7 +313,7 @@ class CycleStateStore:
 
 
 @dataclass(frozen=True)
-class TandemCycleConfig:
+class PrimaryCycleConfig:
     lat_limits: tuple[float, float]
     lon_limits: tuple[float, float]
     profile: bool
@@ -334,11 +334,11 @@ class TandemCycleConfig:
     handoff_enabled: bool = False
 
 
-def run_tandem_cycle_once(
+def run_primary_cycle_once(
     dt,
     manager,
     *,
-    config: TandemCycleConfig,
+    config: PrimaryCycleConfig,
 ):
     """Run one primary cycle: staged ingest, scan-time GLM, and the EdgeWARN worker.
 
@@ -359,7 +359,7 @@ def run_tandem_cycle_once(
     render_inputs_ready_event = multiprocessing.Event()
     shared_state.update({
         "detection_inputs_ready": False,
-        "ewmrs_mrms_inputs_ready": False,
+        "render_mrms_inputs_ready": False,
         "edgewarn_integration_inputs_ready": False,
         "edgewarn_generated_file": "",
         "input_manifest": {},
@@ -381,7 +381,7 @@ def run_tandem_cycle_once(
     )
 
     edgewarn_proc = multiprocessing.Process(
-        target=edgewarn_tandem_worker,
+        target=edgewarn_cycle_worker,
         args=(
             log_queue, shared_state, detection_ready_event, integration_ready_event,
             dt, config.lat_limits, config.lon_limits, detection_config,
@@ -449,13 +449,13 @@ def run_tandem_cycle_once(
     def publish(state, event, phase: str):
         """Write the complete snapshot before waking a worker."""
         shared_state["detection_inputs_ready"] = state.detection_inputs_ready
-        shared_state["ewmrs_mrms_inputs_ready"] = state.ewmrs_mrms_inputs_ready
+        shared_state["render_mrms_inputs_ready"] = state.ewmrs_mrms_inputs_ready
         if state.input_manifest is not None:
             shared_state["input_manifest"] = state.input_manifest.as_dict()
         shared_state["errors"] = dict(state.errors)
         ready_key = {
             "detection_released": "detection_inputs_ready",
-            "ewmrs_mrms_released": "ewmrs_mrms_inputs_ready",
+            "render_mrms_released": "render_mrms_inputs_ready",
         }[phase]
         if phase == "detection_released":
             emit_phase(
@@ -499,14 +499,14 @@ def run_tandem_cycle_once(
                 durable_handoff("rap-ready", state, state.rap_inputs_ready)
                 publish_integration_if_ready()
 
-            cycle_task = asyncio.create_task(run_tandem_ingest_cycle(
+            cycle_task = asyncio.create_task(run_staged_ingest_cycle(
                 dt, lambda msg: queue_log(log_queue, msg),
                 include_goes=False,
                 include_rap=not config.mrms_core_only,
                 on_detection_ready=lambda state: publish(state, detection_ready_event, "detection_released"),
                 on_ewmrs_mrms_ready=lambda state: (
                     durable_handoff("mrms-ready", state, state.ewmrs_mrms_inputs_ready),
-                    publish(state, render_inputs_ready_event, "ewmrs_mrms_released"),
+                    publish(state, render_inputs_ready_event, "render_mrms_released"),
                 ),
                 on_base_integration_ready=base_integration_ready,
             ))
@@ -559,7 +559,7 @@ def run_tandem_cycle_once(
     # Failure paths may have occurred before a coordinator callback.  Release
     # every waiter after the terminal false state has been written.
     release(detection_ready_event, "detection_released", "ready" if shared_state["detection_inputs_ready"] else "unavailable")
-    release(render_inputs_ready_event, "ewmrs_mrms_released", "ready" if shared_state["ewmrs_mrms_inputs_ready"] else "unavailable")
+    release(render_inputs_ready_event, "render_mrms_released", "ready" if shared_state["render_mrms_inputs_ready"] else "unavailable")
     release(integration_ready_event, "integration_released", "ready" if edgewarn_integration_ready else "unavailable")
 
     try:
