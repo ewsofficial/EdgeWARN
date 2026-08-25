@@ -55,12 +55,26 @@ def test_cycle_module_no_longer_imports_ewmrs_or_nexrad():
     flags = probe("import util.runtime.cycle")
     assert not flags["EWMRS"]
     assert not flags["NEXRAD"]
-    # The detection worker is genuinely part of the tandem cycle today.
+    # The detection worker is genuinely part of the primary cycle today.
     assert flags["EDGEWARN"]
 
 
 def test_primary_service_module_avoids_ewmrs_and_nexrad():
     flags = probe("import util.runtime.primary_service")
+    assert not flags["EWMRS"]
+    assert not flags["NEXRAD"]
+    assert flags["EDGEWARN"]
+
+
+def test_primary_cycle_module_avoids_ewmrs_and_nexrad_after_phase_4_cut():
+    """Phase 5: the primary cycle imports neither EWMRS nor NEXRAD at all."""
+    flags = probe("import util.runtime.cycle")
+    assert not flags["EWMRS"]
+    assert not flags["NEXRAD"]
+
+
+def test_run_edgewarn_entrypoint_loads_no_ewmrs_or_nexrad_stack():
+    flags = probe("import run_edgewarn")
     assert not flags["EWMRS"]
     assert not flags["NEXRAD"]
     assert flags["EDGEWARN"]
