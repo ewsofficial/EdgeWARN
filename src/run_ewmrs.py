@@ -65,12 +65,9 @@ def _parse_args(argv=None):
     args = parser.parse_args(argv)
 
     def _resolve(flag, yaml_value, key):
-        return bool(overlay.resolve(
-            getattr(args, flag),
-            env_names=[key.replace(".", "_").upper()],
-            yaml_value=yaml_value,
-            key=key,
-        ))
+        # No env layer here, matching IOManager's resolution of these same
+        # run.* keys in the primary parser: CLI > YAML only.
+        return bool(overlay.resolve(getattr(args, flag), yaml_value=yaml_value, key=key))
 
     run_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
     args.disable_metar = _resolve("disable_metar", run_cfg["disable_metar"], "run.disable_metar")

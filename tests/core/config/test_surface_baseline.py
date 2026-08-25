@@ -222,7 +222,7 @@ def test_cli_default_baseline():
     )
 
 
-def test_only_four_modules_define_a_cli():
+def test_cli_modules_are_enumerated():
     found = sorted(
         path.relative_to(SRC).as_posix()
         for path in SRC.rglob("*.py")

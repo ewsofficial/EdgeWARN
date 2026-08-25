@@ -154,8 +154,11 @@ def build_service_commands(args, services, src_root):
                 cmd += [flag] + [str(item) for item in value]
             else:
                 cmd += [flag, str(value)]
-        if service == "edgewarn" and args.mrms_core_only:
-            cmd.append("--mrms-core-only")
+        if service == "edgewarn" and args.mrms_core_only is not None:
+            # Forwarded like every other routed boolean so an explicit
+            # --no-mrms-core-only overrides a YAML-set true instead of
+            # letting the child silently re-resolve it.
+            cmd.append("--mrms-core-only" if args.mrms_core_only else "--no-mrms-core-only")
         commands[service] = cmd
     return commands
 
@@ -170,12 +173,6 @@ def supervise(commands, *, src_root, stop_event=None):
     if stop_event is None:
         stop_event = threading.Event()
 
-    processes = {
-        service: subprocess.Popen(cmd, cwd=src_root)
-        for service, cmd in commands.items()
-    }
-    print(f"[Launcher] Started: {', '.join(f'{s} (pid {p.pid})' for s, p in processes.items())}")
-
     previous_handlers = {}
     original_int = signal.getsignal(signal.SIGINT)
 
@@ -183,6 +180,8 @@ def supervise(commands, *, src_root, stop_event=None):
         print(f"[Launcher] Signal {signum} received; stopping children...")
         stop_event.set()
 
+    # Install handlers BEFORE spawning so a signal landing during startup
+    # still tears down whatever children already exist.
     for signum in (signal.SIGINT, signal.SIGTERM):
         try:
             previous_handlers[signum] = signal.signal(signum, _forward)
@@ -197,16 +196,32 @@ def supervise(commands, *, src_root, stop_event=None):
                 except OSError:
                     pass
 
+    processes: dict[str, subprocess.Popen] = {}
     exit_code = 0
     try:
+        for service, cmd in commands.items():
+            try:
+                processes[service] = subprocess.Popen(cmd, cwd=src_root)
+            except Exception:
+                print(f"[Launcher] Failed to start '{service}'; stopping started children")
+                stop_event.set()
+                _terminate_children()
+                raise
+        print(f"[Launcher] Started: {', '.join(f'{s} (pid {p.pid})' for s, p in processes.items())}")
+
         while not stop_event.is_set():
             for service, proc in processes.items():
                 code = proc.poll()
                 if code is None:
                     continue
+                detail = (
+                    "cleanly before shutdown"
+                    if code == 0
+                    else f"unexpectedly (rc={code})"
+                )
                 print(
-                    f"[Launcher] Service '{service}' exited unexpectedly "
-                    f"(rc={code}); stopping the remaining children"
+                    f"[Launcher] Service '{service}' exited {detail}; "
+                    "stopping the remaining children"
                 )
                 exit_code = 1
                 stop_event.set()

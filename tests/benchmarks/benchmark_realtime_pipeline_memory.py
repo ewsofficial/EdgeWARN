@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
 import os
 import signal
 import subprocess
@@ -33,7 +34,7 @@ import psutil
 
 
 SAMPLE_INTERVAL_S = 0.1
-OUTPUT_DIR = Path("/tmp/kilo")
+DEFAULT_OUTPUT_DIR = Path("/tmp/kilo")
 
 _PRIMARY_FLAGS = [
     "--lat_limits", "20", "55",
@@ -56,6 +57,7 @@ def parse_args(argv=None):
     parser.add_argument("--entrypoint", default="run_edgewarn.py",
                         help="Entry point profiled in single mode")
     parser.add_argument("--duration", type=float, default=300.0)
+    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     return parser.parse_args(argv)
 
 
@@ -132,10 +134,11 @@ def _stop(proc, grace_s: float = 10.0):
 
 def main() -> int:
     args = parse_args()
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_root = Path(args.output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     mode_tag = "pipeline" if args.mode == "single" else args.mode
-    output_path = OUTPUT_DIR / f"{mode_tag}_memory_profile_{timestamp}.json"
+    output_path = output_root / f"{mode_tag}_memory_profile_{timestamp}.json"
 
     src_root = Path(__file__).resolve().parents[2] / "src"
     env = os.environ.copy()
@@ -150,11 +153,13 @@ def main() -> int:
     print(f"Output: {output_path}\n")
 
     processes = {}
+    stdout_chunks: dict[str, list[str]] = {}
+    drain_threads: list[threading.Thread] = []
     for tree_name, cmd in plan.items():
         # Inherited stdio in direct/launcher keeps logging out of the sampler;
         # single mode captures stdout for diagnostics as before.
         capture = args.mode == "single"
-        processes[tree_name] = subprocess.Popen(
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.STDOUT if capture else None,
@@ -162,22 +167,37 @@ def main() -> int:
             env=env,
             cwd=str(src_root),
         )
+        processes[tree_name] = proc
+        if capture:
+            # Drain concurrently so a chatty child can never fill the pipe
+            # buffer and stall mid-profile.
+            stdout_chunks[tree_name] = []
+
+            def _drain(name=tree_name, handle=proc.stdout):
+                for line in handle:
+                    stdout_chunks[name].append(line)
+
+            thread = threading.Thread(target=_drain, daemon=True)
+            thread.start()
+            drain_threads.append(thread)
 
     time.sleep(5)  # initialization warm-up, matching the historical harness
     print("Starting memory sampling...")
     started = time.time()
     samples: list[dict] = []
     sample_count = 0
+    warned_exits: set[str] = set()
 
     try:
         while time.time() - started < args.duration:
             elapsed = time.time() - started
             live = {name: proc.pid for name, proc in processes.items() if proc.poll() is None}
-            exited = [n for n, p in processes.items() if p.poll() is not None]
-            if exited and len(live) < len(processes):
-                print(f"Trees exited at {elapsed:.1f}s: {', '.join(exited)}")
-                if not live:
-                    break
+            exited = [n for n, p in processes.items() if p.poll() is not None and n not in warned_exits]
+            if exited:
+                warned_exits.update(exited)
+                print(f"Trees exited at {elapsed:.1f}s: {', '.join(sorted(exited))}")
+            if not live:
+                break
                 # Keep sampling the surviving trees until the duration ends.
             snapshot = _snapshot_memory(live)
             snapshot["elapsed_s"] = round(elapsed, 2)
@@ -208,11 +228,10 @@ def main() -> int:
     captured_stdout = {}
     for name, proc in processes.items():
         _stop(proc)
-        if proc.stdout:
-            try:
-                captured_stdout[name] = proc.stdout.read()[:10000]
-            except Exception:
-                captured_stdout[name] = ""
+    for thread in drain_threads:
+        thread.join(timeout=5)
+    for name, chunks in stdout_chunks.items():
+        captured_stdout[name] = "".join(chunks)[:10000]
 
     total_rss_values = [s["total_rss_mb"] for s in samples]
 

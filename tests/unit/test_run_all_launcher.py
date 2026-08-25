@@ -169,14 +169,18 @@ class TestSupervision:
             "sys.exit(run_all.main(['--services', 'edgewarn,ewmrs']))\n"
         )
 
-        proc = subprocess.Popen([sys.executable, str(driver)])
-        time.sleep(2.0)  # launcher + two sleepers up
-
-        proc.send_signal(signal.SIGINT)
+        proc = subprocess.Popen(
+            [sys.executable, str(driver)], start_new_session=True
+        )
         try:
+            time.sleep(2.0)  # launcher + two sleepers up
+
+            proc.send_signal(signal.SIGINT)
             code = proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            # Kill the whole process group so sleeper children cannot outlive
+            # the failed assertion.
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             pytest.fail("launcher did not exit after SIGINT")
 
         # Clean signal shutdown exits zero even though the children were killed.
