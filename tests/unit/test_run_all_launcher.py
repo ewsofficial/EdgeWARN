@@ -60,6 +60,20 @@ class TestServiceSelection:
         args, services = run_all._parse_args(["--mrms-core-only"])
         assert services == ["edgewarn"]
 
+    def test_yaml_mrms_core_only_starts_only_the_primary(self, monkeypatch):
+        monkeypatch.setattr(
+            run_all.config_loader,
+            "load_config",
+            lambda *_args, **_kwargs: {"run": {
+                "disable_ewmrs": False,
+                "disable_nexrad": False,
+                "mrms_core_only": True,
+            }},
+        )
+        args, services = run_all._parse_args([])
+        assert args.mrms_core_only is True
+        assert services == ["edgewarn"]
+
     def test_disable_flags_omit_services(self, monkeypatch):
         # CLI values must win over the YAML layer.
         _, services = run_all._parse_args(["--no-disable-ewmrs", "--disable-nexrad"])
@@ -104,10 +118,13 @@ class TestFlagRouting:
             "--lat_limits 20.0 55.0", "--lon_limits 230.0 300.0",
             "--disable-ctam", "--disable-tracking", "--disable-polygon-expansion",
             "--refl-threshold 25.0", "--min-seed-percentage 15.0", "--drop-offset 1.0",
-            "--mrms-core-only",
         ):
             assert token in edgewarn
             assert token not in ewmrs
+        # The resolved topology reaches every child so direct and supervised
+        # launches agree even if children inherited a different config root.
+        assert "--mrms-core-only" in edgewarn
+        assert "--mrms-core-only" in ewmrs
         # ...EWMRS-owned accessory flags stay EWMRS-only, and --disable-goes
         # is owned by both (scan-time GLM on primary, ABI on EWMRS).
         for token in ("--disable-metar", "--disable-nws", "--disable-wpc"):

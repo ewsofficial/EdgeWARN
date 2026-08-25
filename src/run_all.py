@@ -122,6 +122,11 @@ def _parse_args(argv=None):
         services = [name for name in services if name != "ewmrs"]
     if omit_nexrad:
         services = [name for name in services if name != "nexrad"]
+    args.mrms_core_only = bool(overlay.resolve(
+        args.mrms_core_only,
+        yaml_value=run_cfg["mrms_core_only"],
+        key="run.mrms_core_only",
+    ))
     if args.mrms_core_only:
         # MRMS-core-only implies disabling every non-primary component.
         services = [name for name in services if name == "edgewarn"]
@@ -154,11 +159,10 @@ def build_service_commands(args, services, src_root):
                 cmd += [flag] + [str(item) for item in value]
             else:
                 cmd += [flag, str(value)]
-        if service == "edgewarn" and args.mrms_core_only is not None:
-            # Forwarded like every other routed boolean so an explicit
-            # --no-mrms-core-only overrides a YAML-set true instead of
-            # letting the child silently re-resolve it.
-            cmd.append("--mrms-core-only" if args.mrms_core_only else "--no-mrms-core-only")
+        if args.mrms_core_only:
+            # Pass the resolved topology to every selected child. This keeps
+            # child behavior stable if its inherited config root differs.
+            cmd.append("--mrms-core-only")
         commands[service] = cmd
     return commands
 

@@ -62,6 +62,7 @@ def _parse_args(argv=None):
     parser.add_argument("--disable-nws", action=argparse.BooleanOptionalAction, default=None, help="Disable background NWS alert ingestion (default: from runtime.yaml)")
     parser.add_argument("--disable-wpc", action=argparse.BooleanOptionalAction, default=None, help="Disable background WPC surface analysis ingestion (default: from runtime.yaml)")
     parser.add_argument("--disable-goes", action=argparse.BooleanOptionalAction, default=None, help="Disable GOES ABI ingest and GOES rendering (default: from runtime.yaml)")
+    parser.add_argument("--mrms-core-only", action=argparse.BooleanOptionalAction, default=None, help="Run only the primary MRMS analysis service (default: from runtime.yaml)")
     args = parser.parse_args(argv)
 
     def _resolve(flag, yaml_value, key):
@@ -74,6 +75,7 @@ def _parse_args(argv=None):
     args.disable_nws = _resolve("disable_nws", run_cfg["disable_nws"], "run.disable_nws")
     args.disable_wpc = _resolve("disable_wpc", run_cfg["disable_wpc"], "run.disable_wpc")
     args.disable_goes = _resolve("disable_goes", run_cfg["disable_goes"], "run.disable_goes")
+    args.mrms_core_only = _resolve("mrms_core_only", run_cfg["mrms_core_only"], "run.mrms_core_only")
 
     # Publish the resolved config root so spawned children inherit it,
     # matching the monolithic runner's behavior.
@@ -88,6 +90,9 @@ def main():
 
     io_manager = IOManager("[EWMRS]")
     args = _parse_args()
+    if args.mrms_core_only:
+        print("[EWMRS] mrms-core-only is enabled; EWMRS/accessory service will not start.")
+        return
     fs.initialize_filesystem(args.base_dir)
 
     print(f"EWMRS service started (v{get_release_version()}). Press CTRL+C to exit.")
