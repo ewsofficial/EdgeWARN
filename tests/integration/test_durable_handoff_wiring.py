@@ -1,6 +1,6 @@
 """Phase 4 wiring test: durable handoff published by the primary cycle.
 
-Drives ``run_tandem_cycle_once`` with a stubbed EdgeWARN worker and
+Drives ``run_primary_cycle_once`` with a stubbed EdgeWARN worker and
 monkeypatched downloaders, asserting that mrms-ready.json and rap-ready.json
 are committed alongside the in-memory release events, that a failed phase
 publishes nothing, and that republication of the same cycle is idempotent.
@@ -17,7 +17,7 @@ import common.pipeline.coordinator as coordinator
 import util.runtime.cycle as cycle_module
 from common.ingest.manifest import staged_input_from_path
 from common.ingest.mrms.downloader import DownloadBatchResult
-from util.runtime.cycle import TandemCycleConfig, run_tandem_cycle_once
+from util.runtime.cycle import PrimaryCycleConfig, run_primary_cycle_once
 from util.runtime.handoff import (
     canonical_cycle_id,
     iter_committed_records,
@@ -53,11 +53,11 @@ def _stub_worker(log_queue, shared_state, *_args, **_kwargs):
 
 @pytest.fixture()
 def stubbed_workers(monkeypatch):
-    monkeypatch.setattr(cycle_module, "edgewarn_tandem_worker", _stub_worker)
+    monkeypatch.setattr(cycle_module, "edgewarn_cycle_worker", _stub_worker)
 
 
 def _config(tmp_path, *, handoff_enabled=True):
-    return TandemCycleConfig(
+    return PrimaryCycleConfig(
         lat_limits=(20.0, 55.0),
         lon_limits=(230.0, 300.0),
         profile=False,
@@ -106,7 +106,7 @@ def _patch_downloaders(monkeypatch, tmp_path):
 
 
 def _run_cycle(tmp_path, manager):
-    return run_tandem_cycle_once(DT, manager, config=_config(tmp_path))
+    return run_primary_cycle_once(DT, manager, config=_config(tmp_path))
 
 
 def test_cycle_publishes_mrms_and_rap_ready_records(stubbed_workers, monkeypatch, tmp_path):
@@ -191,7 +191,7 @@ def test_republication_of_same_cycle_is_idempotent(stubbed_workers, monkeypatch,
 def test_disabled_handoff_publishes_nothing(stubbed_workers, monkeypatch, tmp_path):
     _patch_downloaders(monkeypatch, tmp_path)
     with multiprocessing.Manager() as manager:
-        run_tandem_cycle_once(
+        run_primary_cycle_once(
             DT,
             manager,
             config=_config(tmp_path, handoff_enabled=False),

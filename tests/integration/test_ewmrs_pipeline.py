@@ -347,194 +347,36 @@ def test_cleanup_old_gui_files_never_touches_nexrad_outputs(monkeypatch, tmp_pat
     assert not stale_file.exists()
 
 
-def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monkeypatch):
-    queue = _FakeQueue()
-    mrms_ready_event = _FakeEvent()
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    shared_state = {
-        "ewmrs_mrms_inputs_ready": True,
-        "ewmrs_goes_inputs_ready": False,
-        "input_manifest": _manifest(dt).as_dict(),
-    }
-    mrms_calls = []
-    goes_calls = []
+def test_mrms_required_layer_failures_gate_only_required_layers(monkeypatch):
+    """Phase 4: required-only gating lives in one helper shared by the consumer.
 
+    Optional-layer failures never fail a stage; unlisted layers are treated as
+    optional; an empty result set fails outright.
+    """
     monkeypatch.setattr(
         ewmrs_pipeline,
-        "run_mrms_render_pipeline",
-        lambda *args, **kwargs: mrms_calls.append((args, kwargs)) or {"LayerOne": ["LayerOne.png"]},
-    )
-    monkeypatch.setattr(
-        ewmrs_pipeline,
-        "run_goes_render_pipeline",
-        lambda *args, **kwargs: goes_calls.append((args, kwargs)) or {},
-    )
-
-    ewmrs_pipeline.ewmrs_tandem_worker(
-        queue,
-        shared_state,
-        mrms_ready_event,
-        dt,
-    )
-
-    assert mrms_ready_event.wait_calls == 1
-    assert len(mrms_calls) == 1
-    assert goes_calls == []
-    assert shared_state["ewmrs_stage"] == {
-        "status": "completed",
-        "produced_artifacts": ["LayerOne.png"],
-        "errors": [],
-    }
-    assert any("Starting EWMRS MRMS render phase" in message for message in queue.messages)
-    assert any("GOES render is decoupled" in message for message in queue.messages)
-
-
-def test_ewmrs_tandem_worker_skips_mrms_when_inputs_not_ready(monkeypatch):
-    queue = _FakeQueue()
-    mrms_ready_event = _FakeEvent()
-    shared_state = {"ewmrs_mrms_inputs_ready": False, "ewmrs_goes_inputs_ready": True}
-    mrms_calls = []
-
-    monkeypatch.setattr(
-        ewmrs_pipeline,
-        "run_mrms_render_pipeline",
-        lambda *args, **kwargs: mrms_calls.append((args, kwargs)) or {},
-    )
-
-    ewmrs_pipeline.ewmrs_tandem_worker(
-        queue,
-        shared_state,
-        mrms_ready_event,
-        datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc),
-    )
-
-    assert mrms_ready_event.wait_calls == 1
-    assert mrms_calls == []
-    assert shared_state["ewmrs_stage"]["status"] == "unavailable"
-    assert any("skipping MRMS render" in message for message in queue.messages)
-
-
-def _patch_required_layers(monkeypatch, layers):
-    """Pin the configured MRMS layer requirements for a worker test."""
-    monkeypatch.setattr(ewmrs_pipeline, "get_mrms_file_list", lambda: layers)
-
-
-def test_ewmrs_tandem_worker_runs_only_mrms_phase_when_inputs_ready(monkeypatch):
-    queue = _FakeQueue()
-    mrms_ready_event = _FakeEvent()
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    shared_state = {
-        "ewmrs_mrms_inputs_ready": True,
-        "ewmrs_goes_inputs_ready": True,
-        "input_manifest": _manifest(dt).as_dict(),
-    }
-    captured = {}
-
-    def fake_run_mrms_render_pipeline(dt, max_entries=10, input_manifest=None):
-        captured["mrms_dt"] = dt
-        captured["mrms_max_entries"] = max_entries
-        return {"LayerOne": ["LayerOne.png"], "LayerTwo": None}
-
-    _patch_required_layers(
-        monkeypatch,
-        [
-            {"name": "LayerOne", "required": True},
-            {"name": "LayerTwo", "required": True},
+        "get_mrms_file_list",
+        lambda: [
+            {"name": "Required", "filepath": "/x", "required": True},
+            {"name": "Optional", "filepath": "/x", "required": False},
         ],
     )
-    monkeypatch.setattr(ewmrs_pipeline, "run_mrms_render_pipeline", fake_run_mrms_render_pipeline)
+    failed_required, failed_optional = ewmrs_pipeline.mrms_required_layer_failures({
+        "Required": ["out.png"],
+        "Optional": None,
+        "Unlisted": None,
+    })
+    assert failed_required == []
+    assert failed_optional == ["Optional", "Unlisted"]
 
-    ewmrs_pipeline.ewmrs_tandem_worker(queue, shared_state, mrms_ready_event, dt, max_entries=3)
+    failed_required, _ = ewmrs_pipeline.mrms_required_layer_failures({
+        "Required": None,
+        "Optional": ["out.png"],
+    })
+    assert failed_required == ["Required"]
 
-    assert mrms_ready_event.wait_calls == 1
-    assert captured == {
-        "mrms_dt": dt,
-        "mrms_max_entries": 3,
-    }
-    assert shared_state["ewmrs_stage"]["status"] == "failed"
-    assert "LayerTwo" in shared_state["ewmrs_stage"]["errors"][0]
-    assert shared_state["ewmrs_stage"]["produced_artifacts"] == ["LayerOne.png"]
-    assert any("Starting EWMRS MRMS render phase" in message for message in queue.messages)
-    assert any("1/2 layers succeeded" in message for message in queue.messages)
-    assert any("GOES render is decoupled" in message for message in queue.messages)
-
-
-def test_ewmrs_tandem_worker_completes_when_only_optional_layer_fails(monkeypatch):
-    """Optional-layer failures are logged as warnings, never gate the stage."""
-    queue = _FakeQueue()
-    mrms_ready_event = _FakeEvent()
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    shared_state = {
-        "ewmrs_mrms_inputs_ready": True,
-        "ewmrs_goes_inputs_ready": False,
-        "input_manifest": _manifest(dt).as_dict(),
-    }
-
-    _patch_required_layers(
-        monkeypatch,
-        [
-            {"name": "LayerOne", "required": True},
-            {"name": "LayerTwo", "required": False},
-        ],
-    )
-    monkeypatch.setattr(
-        ewmrs_pipeline,
-        "run_mrms_render_pipeline",
-        lambda *args, **kwargs: {"LayerOne": ["LayerOne.png"], "LayerTwo": None},
-    )
-
-    ewmrs_pipeline.ewmrs_tandem_worker(queue, shared_state, mrms_ready_event, dt)
-
-    assert shared_state["ewmrs_stage"]["status"] == "completed"
-    assert shared_state["ewmrs_stage"]["errors"] == []
-    assert shared_state["ewmrs_stage"]["produced_artifacts"] == ["LayerOne.png"]
-    assert any("Optional EWMRS MRMS layer failed" in m and "LayerTwo" in m for m in queue.messages)
-
-
-def test_ewmrs_tandem_worker_treats_unlisted_layers_as_optional(monkeypatch):
-    """A render result absent from the configured layer list cannot gate."""
-    queue = _FakeQueue()
-    mrms_ready_event = _FakeEvent()
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    shared_state = {
-        "ewmrs_mrms_inputs_ready": True,
-        "ewmrs_goes_inputs_ready": False,
-        "input_manifest": _manifest(dt).as_dict(),
-    }
-
-    _patch_required_layers(monkeypatch, [{"name": "LayerOne", "required": True}])
-    monkeypatch.setattr(
-        ewmrs_pipeline,
-        "run_mrms_render_pipeline",
-        lambda *args, **kwargs: {"LayerOne": ["LayerOne.png"], "Unknown": None},
-    )
-
-    ewmrs_pipeline.ewmrs_tandem_worker(queue, shared_state, mrms_ready_event, dt)
-
-    assert shared_state["ewmrs_stage"]["status"] == "completed"
-
-
-def test_ewmrs_tandem_worker_fails_when_no_results_at_all(monkeypatch):
-    queue = _FakeQueue()
-    mrms_ready_event = _FakeEvent()
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    shared_state = {
-        "ewmrs_mrms_inputs_ready": True,
-        "ewmrs_goes_inputs_ready": False,
-        "input_manifest": _manifest(dt).as_dict(),
-    }
-
-    _patch_required_layers(monkeypatch, [{"name": "LayerOne", "required": True}])
-    monkeypatch.setattr(
-        ewmrs_pipeline,
-        "run_mrms_render_pipeline",
-        lambda *args, **kwargs: {},
-    )
-
-    ewmrs_pipeline.ewmrs_tandem_worker(queue, shared_state, mrms_ready_event, dt)
-
-    assert shared_state["ewmrs_stage"]["status"] == "failed"
-    assert "complete required layer set" in shared_state["ewmrs_stage"]["errors"][0]
+    failed_required, failed_optional = ewmrs_pipeline.mrms_required_layer_failures({})
+    assert failed_required == [] and failed_optional == []
 
 
 def test_ewmrs_goes_worker_runs_goes_phase(monkeypatch):

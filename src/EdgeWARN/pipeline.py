@@ -12,7 +12,7 @@ import util.file as fs
 from common.ingest.manifest import CycleInputManifest
 from common.ingest.mrms.config import get_goes_modifiers, get_mrms_modifiers
 from common.ingest.mrms.pipeline import get_output_dirs
-from common.pipeline.coordinator import run_tandem_ingest_cycle
+from common.pipeline.coordinator import run_staged_ingest_cycle
 from EdgeWARN.api_integration.config import (
     initialize_at_startup_realtime,
     remove_old_cells_historical,
@@ -204,7 +204,7 @@ def run_edgewarn_integration_phase(
     return True
 
 
-def edgewarn_tandem_worker(
+def edgewarn_cycle_worker(
     log_queue,
     shared_state,
     detection_ready_event,
@@ -390,7 +390,7 @@ def historical_pipeline(
         perf_tracker.start("Ingestion")
         _cleanup_historical_data_dirs(pipeline_io)
         cycle_state = asyncio.run(
-            run_tandem_ingest_cycle(
+            run_staged_ingest_cycle(
                 dt,
                 lambda message: pipeline_io.write_info(message),
                 include_goes=False,

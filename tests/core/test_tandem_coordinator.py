@@ -10,7 +10,7 @@ from common.ingest.manifest import staged_input_from_path
 
 def _run_cycle(logs, **kwargs):
     return asyncio.run(
-        coordinator.run_tandem_ingest_cycle(
+        coordinator.run_staged_ingest_cycle(
             datetime(2026, 4, 27, 13, 0, tzinfo=timezone.utc),
             logs.append,
             include_goes=False,
