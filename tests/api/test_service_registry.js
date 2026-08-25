@@ -126,6 +126,41 @@ describe('SERVICE_NOT_ENABLED gating for the ewmrs route family', () => {
   });
 });
 
+describe('SERVICE_NOT_ENABLED gating for the edgewarn route family', () => {
+  let baseDir;
+  afterEach(async () => {
+    resetServiceStateCache();
+    if (baseDir) await fs.rm(baseDir, { recursive: true, force: true });
+  });
+
+  async function createAppWithBaseDir() {
+    baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'svc-gate-edgewarn-'));
+    for (const dir of ['data', 'gui', 'wpc']) {
+      await fs.mkdir(path.join(baseDir, dir), { recursive: true });
+    }
+    const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
+    return app;
+  }
+
+  it('returns 503 problem+json on analysis routes when the service is disabled', async () => {
+    const app = await createAppWithBaseDir();
+    for (const endpoint of ['/api/v3/cells', '/api/v3/storm-snapshots', '/api/v3/alert-snapshots']) {
+      const response = await request(app).get(endpoint).expect(503).expect('Content-Type', /application\/problem\+json/);
+      expect(response.body).toMatchObject({
+        code: 'SERVICE_NOT_ENABLED',
+        service: 'edgewarn',
+        state: 'disabled',
+      });
+    }
+  });
+
+  it('serves analysis routes normally when the service heartbeats as active', async () => {
+    const app = await createAppWithBaseDir();
+    await writeHeartbeat(baseDir, 'edgewarn', freshHeartbeat({ service: 'edgewarn' }));
+    await request(app).get('/api/v3/cells').expect(200);
+  });
+});
+
 describe('SERVICE_NOT_ENABLED gating for the nexrad route family', () => {
   let baseDir;
   afterEach(async () => {

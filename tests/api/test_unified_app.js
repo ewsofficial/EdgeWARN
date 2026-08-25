@@ -16,6 +16,9 @@ describe('unified API app', () => {
     await fs.mkdir(path.join(baseDir, 'wpc'), { recursive: true });
     await fs.writeFile(path.join(baseDir, 'data', 'cells', 'cell_index.json'), '{"cellIds":["4"]}');
     await fs.writeFile(path.join(baseDir, 'data', 'cells', '4.json'), '{"id":4}');
+    // Analysis route families require an active `edgewarn` heartbeat (Phase 5).
+    await fs.mkdir(path.join(baseDir, 'state', 'realtime', 'services'), { recursive: true });
+    await fs.writeFile(path.join(baseDir, 'state', 'realtime', 'services', 'edgewarn.json'), JSON.stringify({ schema_version: 1, service: 'edgewarn', pid: 1, run_id: 'test-run', updated_at: new Date().toISOString(), phase: 'cycling', degraded_children: [] }));
     const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
     const root = await request(app).get('/').expect(200);
     expect(root.body.links.api).toBe('/api/v3');
@@ -65,6 +68,7 @@ describe('unified API app', () => {
     const heartbeat = (service) => JSON.stringify({ schema_version: 1, service, pid: 1, run_id: 'test-run', updated_at: new Date().toISOString(), phase: 'supervising', degraded_children: [] });
     await write('state/realtime/services/nexrad.json', heartbeat('nexrad'));
     await write('state/realtime/services/ewmrs.json', heartbeat('ewmrs'));
+    await write('state/realtime/services/edgewarn.json', heartbeat('edgewarn'));
     await write('gui/RAP/CAPE/index.json', '["20260317-200000"]');
     await write('gui/RAP/CAPE/20260317-200000/metadata.json', '{"units":"J/kg","grid":{"ni":1,"nj":1}}');
     await write('gui/RAP/CAPE/20260317-200000/data.u16', 'u16');
@@ -97,6 +101,8 @@ describe('unified API app', () => {
     baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'unified-api-pages-'));
     await fs.mkdir(path.join(baseDir, 'data', 'cells'), { recursive: true });
     await fs.writeFile(path.join(baseDir, 'data', 'cells', 'cell_index.json'), JSON.stringify({ cellIds: Array.from({ length: 120 }, (_, i) => i + 1) }));
+    await fs.mkdir(path.join(baseDir, 'state', 'realtime', 'services'), { recursive: true });
+    await fs.writeFile(path.join(baseDir, 'state', 'realtime', 'services', 'edgewarn.json'), JSON.stringify({ schema_version: 1, service: 'edgewarn', pid: 1, run_id: 'test-run', updated_at: new Date().toISOString(), phase: 'cycling', degraded_children: [] }));
     const { app } = await createApp({ env: { EDGEWARN_BASE_DIR: baseDir, RATE_LIMIT_MAX_SEC: '0', RATE_LIMIT_MAX_MIN: '0' }, argv: [] });
     const first = await request(app).get('/api/v3/cells?limit=100').expect(200);
     expect(first.body.data).toHaveLength(100);
