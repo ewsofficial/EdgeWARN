@@ -10,7 +10,7 @@ src/
 ├── run_ewmrs.py                     # EWMRS/accessory service entry point
 ├── run_nexrad.py                    # NEXRAD service entry point
 ├── run_all.py                       # Optional all-services supervisor
-├── run.py                           # Deprecated thin alias for run_edgewarn.py
+├── run.py                           # Retired; directs callers to split services
 ├── process_historical.py            # Historical reprocessing entry point
 ├── api/                             # Unified Node.js HTTP API (app, routes, middleware, services)
 ├── config/                          # Node YAML catalog loader used by the API

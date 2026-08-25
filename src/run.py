@@ -1,20 +1,26 @@
-"""Deprecated primary runner alias (decomposition Phase 5).
+"""Retired monolithic runner entry point.
 
-The supported primary command is ``run_edgewarn.py``; this module forwards to
-it unchanged so existing automation keeps working during the migration window.
-It performs no import-time work and no ingest, scientific work, or rendering
-of its own.
+``run.py`` previously owned EdgeWARN analysis plus EWMRS accessories and
+NEXRAD in one process tree. That topology no longer exists, so forwarding this
+command to only ``run_edgewarn.py`` would silently omit operational services.
+Use the explicit service entry points (or ``run_all.py``) instead.
 """
 
 import sys
 
-from run_edgewarn import main
+
+def main() -> int:
+    print(
+        "run.py has been retired because it cannot preserve the former "
+        "all-services topology. Use one of:\n"
+        "  python src/run_all.py\n"
+        "  python src/run_edgewarn.py\n"
+        "  python src/run_ewmrs.py\n"
+        "  python src/run_nexrad.py",
+        file=sys.stderr,
+    )
+    return 2
 
 
 if __name__ == "__main__":
-    print("[Main] run.py is a deprecated alias; use run_edgewarn.py instead.")
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("CTRL+C detected, exiting ...")
-        sys.exit(0)
+    sys.exit(main())
