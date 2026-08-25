@@ -195,9 +195,14 @@ def test_consumer_loop_target_is_importable_and_wraps_streams(
 
     from util.io import QueueWriter
     from util.runtime.ewmrs_consumer import ewmrs_consumer_loop
+    from util.runtime import process_identity
 
     stop = threading.Event()
     stop.set()
+    parent_death_signal = []
+    monkeypatch.setattr(
+        process_identity, "set_parent_death_signal", lambda: parent_death_signal.append(True)
+    )
     monkeypatch.setattr(sys, "stdout", object(), raising=False)
     monkeypatch.setattr(sys, "stderr", object(), raising=False)
 
@@ -210,6 +215,7 @@ def test_consumer_loop_target_is_importable_and_wraps_streams(
         pass
 
     assert isinstance(sys.stdout, QueueWriter) or sys.stdout is not None
+    assert parent_death_signal == [True]
 
 
 def test_rap_record_without_rap_input_is_unrecoverable_not_blocking(

@@ -205,7 +205,17 @@ def supervise(commands, *, src_root, stop_event=None):
     try:
         for service, cmd in commands.items():
             try:
-                processes[service] = subprocess.Popen(cmd, cwd=src_root)
+                environment = os.environ.copy()
+                # The direct services arm PR_SET_PDEATHSIG only under this
+                # marker, so killing this launcher cannot strand service
+                # locks or their supervised descendants.
+                environment["EDGEWARN_LAUNCHER_PARENT_DEATHSIG"] = "1"
+                processes[service] = subprocess.Popen(
+                    cmd,
+                    cwd=src_root,
+                    env=environment,
+                    start_new_session=True,
+                )
             except Exception:
                 print(f"[Launcher] Failed to start '{service}'; stopping started children")
                 stop_event.set()
