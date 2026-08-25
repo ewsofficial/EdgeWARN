@@ -315,9 +315,15 @@ classified as one of:
 | `degraded` | active but reporting degraded children; degraded services still serve requests |
 | `unsupported-schema` | file exists but fails schema validation |
 
-Route families declare exactly one required service. Currently enforced:
-`/api/v3/radar-sites*` and the legacy `/nexrad/*` adapters require the
-`nexrad` service. When the required service is not active, requests receive
+Route families declare exactly one required service. Enforced families:
+
+| Required service | Route families |
+| --- | --- |
+| `edgewarn` | `/api/v3/cells*`, `/api/v3/storm-snapshots*`, `/api/v3/alert-snapshots*`, `/api/v3/alerts*` |
+| `ewmrs` | `/api/v3/render-products*`, `/api/v3/models/rap/*`, `/api/v3/analyses/wpc/*`, `/api/v3/styles/colormaps`, and the legacy `/renders/*`, `/rap/*`, `/wpc/*`, `/colormaps` adapters |
+| `nexrad` | `/api/v3/radar-sites*` and the legacy `/nexrad/*` adapters |
+
+When the required service is not active, requests receive
 `503` instead of silently serving stale artifacts.
 
 v3 routes answer with the problem+json envelope plus extension members:

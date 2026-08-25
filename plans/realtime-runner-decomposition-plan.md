@@ -702,33 +702,69 @@ turning the pause policy on.
 
 ### Phase 4 — Cut EWMRS and accessories over
 
-- [ ] Add `run_ewmrs.py`.
-- [ ] Consume committed MRMS/RAP records using exact paths.
-- [ ] Move RAP Uint16 conversion out of the shared primary coordinator.
-- [ ] Move GOES ABI ingest/render and METAR/NWS/WPC supervision.
-- [ ] Publish the `ewmrs` service heartbeat (with accessory child states) and
+- [x] Add `run_ewmrs.py`. (Standalone service with the `ewmrs` single-instance
+  lock, canonical heartbeat whose degraded-children list surfaces crash-looped
+  accessory loops, and SIGINT/SIGTERM shutdown of its own children; owns
+  METAR/NWS/WPC via the new dedicated `--disable-wpc` flag plus GOES ABI
+  ingest/render.)
+- [x] Consume committed MRMS/RAP records using exact paths.
+  (`util/runtime/ewmrs_consumer.py`: ordered per-phase drains over
+  `select_pending_records`, rendering from each record's pinned manifest;
+  per-phase durable checkpoints advance only after validated artifact
+  publication; malformed records stop the drain so newer cycles are never
+  rendered under older timestamps.)
+- [x] Move RAP Uint16 conversion out of the shared primary coordinator.
+  (`_run_rap_uint16_conversion` deleted from `common/pipeline/coordinator.py`;
+  conversion runs in the consumer's rap-ready handler.)
+- [x] Move GOES ABI ingest/render and METAR/NWS/WPC supervision. (GOES render
+  is a poll-based EWMRS-owned loop pinning local ABI inputs into a manifest —
+  no primary task queue; `register_ewmrs_accessories` registers every child of
+  the standalone service, including the record consumer. The primary process
+  starts no accessory children.)
+- [x] Publish the `ewmrs` service heartbeat (with accessory child states) and
   gate the render/RAP/WPC/colormap route families behind it with
-  `SERVICE_NOT_ENABLED` responses.
-- [ ] Constrain GUI cleanup by owner; EWMRS must not touch NEXRAD.
-- [ ] Remove the EWMRS worker, queues, events, and activity state from the
-  primary process.
-- [ ] Verify EWMRS can start before primary, after primary, and after a backlog
-  has accumulated.
+  `SERVICE_NOT_ENABLED` responses. (v3 problem+json gating on 16 routes,
+  compatibility envelope on the legacy adapters; OpenAPI 503 refs added;
+  covered by `tests/api/test_service_registry.js`.)
+- [x] Constrain GUI cleanup by owner; EWMRS must not touch NEXRAD. (Landed in
+  Phase 3: `EWMRS.cleanup_old_gui_files` sweeps only owned layers;
+  `NEXRAD.gui_pipeline.cleanup_old_nexrad_gui_files` is invoked by the NEXRAD
+  render loop itself.)
+- [x] Remove the EWMRS worker, queues, events, and activity state from the
+  primary process. (`ewmrs_tandem_worker` deleted; `run_tandem_cycle_once`
+  spawns only the EdgeWARN worker; GOES render queues/events removed from the
+  cycle signature; the outcome stages are now exactly `ingest` + `edgewarn`.)
+- [x] Verify EWMRS can start before primary, after primary, and after a
+  backlog has accumulated. (`tests/util/test_ewmrs_consumer.py`: empty-start
+  noop then pickup, committed-record recovery, and backlog-cap abandonment.)
 
 ### Phase 5 — Finalize the primary service
 
-- [ ] Add `run_edgewarn.py` as the supported primary command.
-- [ ] Publish the `edgewarn` service heartbeat and gate the analysis route
+- [x] Add `run_edgewarn.py` as the supported primary command. (Full primary
+  flag parser, `edgewarn` single-instance lock, canonical heartbeat refreshed
+  from the selection loop's ticks, SIGINT/SIGTERM shutdown; the old `run.py`
+  is a thin deprecated alias forwarding to it.)
+- [x] Publish the `edgewarn` service heartbeat and gate the analysis route
   families (`/cells`, `/storm-snapshots`, `/alert-snapshots`, `/alerts`)
   behind it with `SERVICE_NOT_ENABLED` responses.
-- [ ] Rename/refactor tandem-specific config and telemetry to primary-cycle
-  terminology.
-- [ ] Remove EWMRS and NEXRAD imports from the primary import graph.
+- [x] Rename/refactor tandem-specific config and telemetry to primary-cycle
+  terminology. (`TandemCycleConfig` → `PrimaryCycleConfig`,
+  `run_tandem_cycle_once` → `run_primary_cycle_once`, shared staged ingest
+  renamed `run_staged_ingest_cycle`, worker renamed `edgewarn_cycle_worker`,
+  and the render-readiness telemetry label renamed
+  `render_mrms_released`; scheduler log lines say "primary cycle".)
+- [x] Remove EWMRS and NEXRAD imports from the primary import graph. (The
+  cycle module no longer imports EWMRS at all — record validation is
+  primary-owned alignment/existence, layer-binding checks run in the EWMRS
+  consumer; verified by extended import-isolation probes for
+  `util.runtime.cycle` and `run_edgewarn`.)
 - [x] Advance last-success state only after validated primary completion
   (already implemented via `CycleStateStore.record_outcome`; verify the split
   preserves it).
 - [ ] Verify primary operation with both other services stopped and during
-  their independent restart.
+  their independent restart. (The primary starts no other-service children by
+  construction and the handoff is durable, but a live soak remains
+  outstanding.)
 
 ### Phase 6 — Add and qualify the optional launcher
 
