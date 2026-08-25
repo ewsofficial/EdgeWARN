@@ -29,6 +29,11 @@ CLI_MODULES = [
     "common/ingest/nws/zone_sync.py",
     # Decomposition Phase 4: the standalone EWMRS service owns its parser.
     "run_ewmrs.py",
+    # Decomposition Phase 6: the optional all-services supervisor owns its
+    # routing parser (no scientific imports).
+    "run_all.py",
+    # Decomposition Phase 7: launcher-routing parity flag (--profile).
+    "run_nexrad.py",
 ]
 
 

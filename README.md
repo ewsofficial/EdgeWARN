@@ -6,7 +6,7 @@ It ingests operational weather datasets, processes storm-cell products, renders 
 
 ## What This Repository Provides
 
-- Shared staged ingest orchestration for EdgeWARN + EWMRS tandem processing
+- Three independently operable real-time services (primary EdgeWARN analysis, EWMRS/accessories, NEXRAD) coordinated through durable runtime records, plus an optional all-services supervisor
 - EdgeWARN storm-cell detection, optional tracking/lineage, integration, CTAM analytics, and alert generation
 - EWMRS raster rendering, tiling, WPC surface-analysis serving, and colormap delivery
 - Historical reprocessing via `src/process_historical.py`
@@ -53,22 +53,41 @@ npm run debug:api
 
 ## Running Python Pipelines
 
-From `src/`:
+Three independently operable real-time services run from `src/`:
 
 ```bash
-python run.py --lat_limits 20 55 --lon_limits 230 300
+# Primary EdgeWARN service (latency-sensitive analysis cycle):
+python run_edgewarn.py --lat_limits 20 55 --lon_limits 230 300
+# EWMRS/accessory service (renders, GOES ABI, METAR/NWS/WPC):
+python run_ewmrs.py
+# NEXRAD service (Level-II ingest + rendering):
+python run_nexrad.py
+```
+
+`run_edgewarn.py` owns MRMS selection/ingest and the detection, integration,
+CTAM, alert, and cycle-state work, publishing durable `mrms-ready`/
+`rap-ready` records that `run_ewmrs.py` consumes. `run.py` remains as a
+deprecated thin alias for `run_edgewarn.py`, and an optional
+`python run_all.py` supervisor can start all three services in one command.
+
+Key primary flags include `--disable-ctam`, `--disable-tracking`,
+`--disable-polygon-expansion`, `--disable-goes`, `--mrms-core-only`,
+`--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`. The EWMRS
+service accepts `--disable-metar`, `--disable-nws`, `--disable-wpc`, and
+`--disable-goes`.
+
+Historical processing:
+
+```bash
 python process_historical.py --start 2024-01-01T00:00:00 --end 2024-01-01T01:00:00 --lat 20 55 --lon -130 -60
 ```
 
-Key realtime flags include `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`. CTAM module discovery is controlled by `--ctam-module-dir`, inspected with `--list-ctam-modules`, and gated with `--check-ctam-modules`.
+Historical runs support `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
 
-Historical processing supports `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, and `--drop-offset`.
-
-Both entry points also accept `--config-dir` to select the catalog tree. The
+All entry points also accept `--config-dir` to select the catalog tree. The
 `--disable-*` and `--profile` switches take their defaults from `runtime.yaml`
-when omitted, and each accepts a `--no-` form to re-enable.
-
-`run.py` normalizes `--lon_limits` into the `0-360` domain internally.
+when omitted, and each accepts a `--no-` form to re-enable. The primary
+service normalizes `--lon_limits` into the `0-360` domain internally.
 
 Historical runs persist the final stormcell artifacts to `<BASE_DIR>/data/stormcells/` using the runtime timestamped filenames.
 

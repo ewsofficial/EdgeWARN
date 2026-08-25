@@ -15,21 +15,25 @@ src/common/ingest/
 └── aws_async_compat.py    # AWS async/sync compatibility shim used by ingest helpers
 ```
 
-## Staged Tandem Ingest
+## Staged Shared Ingest
 
-`src/common/pipeline/coordinator.py` drives staged readiness for tandem execution:
+`src/common/pipeline/coordinator.py` (`run_staged_ingest_cycle`) drives staged readiness for the primary cycle:
 
-1. Detection inputs ready (MRMS detection subset)
-2. EWMRS MRMS inputs ready (detection + MRMS integration subset)
-3. Base EdgeWARN integration inputs ready (both MRMS groups + raw RAP)
-4. EWMRS GOES inputs ready (separate GOES ABI render phase boundary)
+1. Detection inputs ready (MRMS detection subset) — released to the EdgeWARN worker immediately
+2. Render MRMS inputs ready (detection + MRMS integration subset) — committed as a durable `mrms-ready` record for the EWMRS service
+3. Raw RAP validated — committed as a durable `rap-ready` record
+4. Base EdgeWARN integration inputs ready (both MRMS groups + raw RAP)
 5. EdgeWARN integration inputs ready (base inputs + scan-time GLM when enabled)
 
-Realtime workers are created before ingest starts and wait on these phase events. Detection is released as soon as its validated MRMS batch completes; EWMRS MRMS rendering follows once both validated MRMS groups complete. RAP Uint16 conversion and background ABI readiness do not delay either release.
-
-For realtime tandem execution in `src/run.py`, GOES ingest remains decoupled from the shared MRMS ingest cycle. The runner performs a best-effort local GOES availability check and always releases the GOES render phase so MRMS rendering is never blocked. EWMRS GOES readiness is tied to the full configured ABI scalar render set, currently `GOES_ABI_C01` through `GOES_ABI_C16`, while EdgeWARN integration readiness still checks GLM availability separately.
-
-Realtime execution also starts background loops for METAR, NWS, WPC, GOES ABI, GOES rendering, and NEXRAD ingest/render. Those loops are independent from the per-MRMS tandem cycle and write into the same configured runtime base directory.
+Since the decomposition, cross-service handoff is durable: `run_edgewarn.py`
+publishes the immutable phase records under
+`<BASE_DIR>/state/realtime/cycles/<cycle-id>/`, and `run_ewmrs.py` consumes
+them in order, rendering from each record's exact pinned paths with per-phase
+consumer checkpoints. GOES ABI ingest and rendering run entirely inside the
+EWMRS service as a poll-based loop over locally staged ABI files; NEXRAD runs
+entirely as its own service. The RAP Uint16Array conversion is an
+EWMRS-owned artifact executed by the consumer after it accepts a rap-ready
+record.
 
 ## MRMS + GOES
 
@@ -90,7 +94,7 @@ Primary entry points:
 ## RAP / Synoptic
 
 `src/common/ingest/synoptic/main.py` stages RAP files for integration.
-When tandem ingest receives a staged RAP path, EWMRS also runs the RAP Uint16Array conversion pipeline for configured layers.
+When the EWMRS service consumes a committed rap-ready record, it runs the RAP Uint16Array conversion pipeline for configured layers.
 
 Entry points:
 

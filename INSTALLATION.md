@@ -60,7 +60,7 @@ See `docs/core/configuration.md` for the authoritative owner of each setting.
 
 Overrides:
 
-- Python CLIs (`run.py`, `process_historical.py`): `--base_dir` or `--base-dir`
+- Python CLIs (all real-time services, `process_historical.py`): `--base_dir` or `--base-dir`
 - Unified API: `--base-dir` or `EDGEWARN_BASE_DIR`
 - `--base_dir` and `BASE_DIR` remain temporary compatibility aliases
 - RAP maximum analysis age: `EDGEWARN_RAP_MAX_AGE_MINUTES` (non-negative
@@ -97,15 +97,33 @@ CLI and environment overrides:
 
 See `docs/api/unified_v3.md` for migration details and the complete contract.
 
-## Running Real-Time Tandem Processing
+## Running Real-Time Services
 
-Run from `src/`:
+Three independently operable services run from `src/`. Start each in its own
+shell, service unit, or container; all of them share the configured runtime
+base directory.
 
 ```bash
-python run.py --lat_limits 20 55 --lon_limits 230 300
+cd src
+# Primary EdgeWARN service (latency-sensitive analysis cycle):
+python run_edgewarn.py --lat_limits 20 55 --lon_limits 230 300
+# EWMRS/accessory service (renders, GOES ABI, METAR/NWS/WPC):
+python run_ewmrs.py
+# NEXRAD service (Level-II ingest + rendering):
+python run_nexrad.py
 ```
 
-Common optional flags:
+An optional supervisor starts any subset with one command (it performs no
+ingest, rendering, or coordination work itself):
+
+```bash
+python run_all.py                                # all three services
+python run_all.py --services edgewarn,ewmrs      # a subset
+```
+
+`run.py` remains as a deprecated thin alias for `run_edgewarn.py`.
+
+### Primary flags
 
 - `--lat_limits <LAT_MIN> <LAT_MAX>` default `20 55`
 - `--lon_limits <LON_MIN> <LON_MAX>` default `230 300`
@@ -118,23 +136,29 @@ Common optional flags:
 - `--check-ctam-modules`
 - `--disable-tracking`
 - `--disable-polygon-expansion`
-- `--disable-ewmrs`
-- `--disable-nws`
-- `--disable-metar`
-- `--disable-goes`
-- `--disable-nexrad`
+- `--disable-goes` (disables scan-time GLM)
 - `--mrms-core-only`
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
 
+### EWMRS and NEXRAD flags
+
+- Both accept `--base_dir` / `--base-dir`, `--config-dir`, and `--profile`.
+- EWMRS additionally accepts `--disable-metar`, `--disable-nws`,
+  `--disable-wpc`, and `--disable-goes` (ABI ingest/render).
+
 Notes:
 
-- `run.py` normalizes `--lon_limits` into the `0-360` domain internally
-- `--disable-goes` disables GOES ingest, GLM ingest, and GOES rendering
-- `--disable-nexrad` disables NEXRAD Level II ingestion entirely
-- `--mrms-core-only` runs MRMS ingestion for EWMRS rendering without waiting on EdgeWARN detection outputs
-- `--disable-ewmrs` skips EWMRS workers and rendering while leaving EdgeWARN realtime processing enabled
+- The primary normalizes `--lon_limits` into the `0-360` domain internally.
+- `--mrms-core-only` runs MRMS-only primary behavior and implies disabling
+  every non-primary component.
+- Every `--disable-*` / `--profile` switch defaults from `runtime.yaml` when
+  omitted and accepts a `--no-` form to re-enable.
+- Each service publishes an atomic heartbeat under
+  `<BASE_DIR>/state/realtime/services/<name>.json`; the unified Node API uses
+  these to answer requests whose owning service is not active with a
+  structured `SERVICE_NOT_ENABLED` error instead of stale artifacts.
 
 ## Running Historical Reprocessing
 
