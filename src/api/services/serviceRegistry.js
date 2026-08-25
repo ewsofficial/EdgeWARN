@@ -42,7 +42,16 @@ export function requiredServiceForRoute(routePath) {
 
 function parseIsoTimestamp(value) {
   if (typeof value !== 'string' || value === '') return null;
-  const parsed = new Date(value);
+  // Python's datetime.fromisoformat treats a missing offset as UTC in the
+  // schema owner. ECMAScript treats date-times without an offset as local
+  // time, so normalize the shared wire format before parsing.
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})(?:[Tt ](\d{2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?)(Z|[+-]\d{2}:?\d{2})?)?$/);
+  if (!match) return null;
+  const [, date, time, offset] = match;
+  const normalized = time
+    ? `${date}T${time.replace(',', '.')}${offset || 'Z'}`
+    : `${date}T00:00:00Z`;
+  const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
 }
@@ -53,7 +62,7 @@ function parseHeartbeat(service, payload) {
   if (payload.service !== service) return null;
   const pid = payload.pid;
   if (!Number.isInteger(pid) || pid <= 0) return null;
-  if (typeof payload.run_id !== 'string' || payload.run_id === '') return null;
+  if (!Object.hasOwn(payload, 'run_id')) return null;
   const updatedAt = parseIsoTimestamp(payload.updated_at);
   if (!updatedAt) return null;
   const degradedChildren = payload.degraded_children ?? [];
@@ -68,8 +77,8 @@ function parseHeartbeat(service, payload) {
     pid,
     runId: payload.run_id,
     updatedAt,
-    phase: typeof payload.phase === 'string' && payload.phase !== '' ? payload.phase : 'unknown',
-    version: typeof payload.version === 'string' ? payload.version : null,
+    phase: payload.phase || 'unknown',
+    version: payload.version ?? null,
     lastSuccessfulActivity,
     degradedChildren,
   };
@@ -102,11 +111,16 @@ function readCachedStates(baseDir, options) {
   if (entry && nowMs - entry.readAt < CACHE_TTL_MS) return entry.states;
   const states = {};
   for (const name of CANONICAL_SERVICE_NAMES) {
-    let raw = null;
+    let raw;
     try {
       raw = fs.readFileSync(path.join(servicesDir(baseDir), `${name}.json`), 'utf8');
-    } catch {
-      raw = null;
+    } catch (error) {
+      // Match Python: an absent heartbeat means intentionally disabled or not
+      // started; an existing-but-unreadable file is an invalid artifact.
+      states[name] = error?.code === 'ENOENT'
+        ? classifyHeartbeatState(null, { service: name, staleAfterSeconds, now })
+        : { state: 'unsupported-schema', heartbeat: null };
+      continue;
     }
     states[name] = classifyHeartbeatState(raw, { service: name, staleAfterSeconds, now });
   }
