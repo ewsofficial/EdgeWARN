@@ -51,4 +51,7 @@ jobs:
 
       - name: Run Python tests
         shell: bash -el {0}
-        run: python -m pytest
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python -m pytest -o faulthandler_timeout=120
+        timeout-minutes: 25
