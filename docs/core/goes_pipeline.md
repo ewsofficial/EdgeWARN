@@ -15,7 +15,7 @@ EdgeWARN integration still treats GOES differently from EWMRS rendering: EWMRS G
 
 ## Source Data
 
-Realtime GOES ingest is driven from `src/run.py` and `src/common/ingest/mrms/config.py`.
+Realtime GOES ingest is owned by the EWMRS service (`run_ewmrs.py`) and configured through `src/common/ingest/mrms/config.py`. Scan-time GLM for integration remains a primary-service (`run_edgewarn.py`) input.
 
 - Bucket: `noaa-goes19`
 - ABI product: `ABI-L1b-RadC`
@@ -53,7 +53,7 @@ These products are written to GUI folders exposed through the EWMRS API as `prod
 
 ### 1. Background ingest
 
-`src/run.py` starts a dedicated `goes_loop()` process that:
+`run_ewmrs.py` supervises a dedicated `goes_loop()` child that:
 
 1. builds the full ABI channel spec list from `get_abi_radc_channel_specs()`
 2. downloads GOES files on a 60-second poll cadence
@@ -77,15 +77,10 @@ This makes the decoupled GOES render phase wait for a complete local ABI set bef
 
 ### 3. Render task scheduling
 
-When local readiness succeeds, `src/run.py` queues a decoupled GOES render task for `goes_render_loop()`.
+Since the decomposition, `goes_render_loop()` is a poll-based EWMRS-owned loop: each poll it pins the freshest complete local ABI set into an exact-path manifest and renders it once per distinct input selection.
 
-Queue behavior is intentionally latest-wins:
-
-- stale queued GOES render tasks are dropped
-- only the freshest queued cycle is rendered
-- rendering can optionally pause background ingest if `EDGEWARN_PAUSE_GOES_INGEST_DURING_RENDER` is enabled
-
-This keeps the render queue from falling behind during busy periods.
+- ingest and render share the EWMRS service's process tree, so rendering can optionally pause background ingest if `goes_coordination.pause_ingest_during_render` is enabled
+- no cross-process render queue exists; the primary never schedules GOES renders
 
 ## Render Pipeline
 
@@ -226,4 +221,4 @@ The GOES pipeline is designed to degrade per layer instead of failing the entire
 - stale queued render tasks are dropped in favor of the latest cycle
 - cleanup runs after GOES rendering and remains constrained to the configured GUI base directory
 
-This keeps MRMS rendering and the rest of the tandem pipeline moving even when some GOES inputs are late or absent.
+This keeps MRMS record consumption moving in the EWMRS service even when some GOES inputs are late or absent.

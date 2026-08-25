@@ -262,5 +262,61 @@
         "@repr": "<not a literal>"
       }
     }
+  },
+  "run_all.py": {
+    "--services": {
+      "default": {
+        "@repr": "<not a literal>"
+      },
+      "action": null
+    },
+    "--base_dir": {
+      "default": null,
+      "action": null
+    },
+    "--config-dir": {
+      "default": null,
+      "action": null
+    },
+    "--profile": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--lat_limits": {
+      "default": null,
+      "action": null
+    },
+    "--lon_limits": {
+      "default": null,
+      "action": null
+    },
+    "--refl-threshold": {
+      "default": null,
+      "action": null
+    },
+    "--min-seed-percentage": {
+      "default": null,
+      "action": null
+    },
+    "--drop-offset": {
+      "default": null,
+      "action": null
+    },
+    "--mrms-core-only": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    }
+  },
+  "run_nexrad.py": {
+    "--profile": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    }
   }
 }

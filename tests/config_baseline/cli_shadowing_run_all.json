@@ -1,0 +1,16 @@
+{
+  "shadows_yaml": [
+    "--services"
+  ],
+  "can_be_unset": [
+    "--base_dir",
+    "--config-dir",
+    "--drop-offset",
+    "--lat_limits",
+    "--lon_limits",
+    "--min-seed-percentage",
+    "--mrms-core-only",
+    "--profile",
+    "--refl-threshold"
+  ]
+}

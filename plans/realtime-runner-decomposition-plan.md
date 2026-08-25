@@ -773,31 +773,54 @@ turning the pause policy on.
 
 ### Phase 6 — Add and qualify the optional launcher
 
-- [ ] Add `run_all.py` with direct inherited logging and explicit flag routing.
-- [ ] Add subprocess/signal/exit-code tests without starting scientific work.
-- [ ] Run the launcher performance experiment below.
-- [ ] If it passes, convert `run.py` to a compatibility wrapper and document
-  both direct and all-services commands.
-- [ ] If it fails, keep direct commands as production and record the failed
-  metric before optimizing or promoting the launcher.
-- [ ] Delete the old monolithic orchestration after the migration window; do
-  not maintain two production schedulers.
+- [x] Add `run_all.py` with direct inherited logging and explicit flag routing.
+  (Thin Popen supervisor: inherited stdio per child, the CLI-contract routing
+  table with unset flags never forwarded, `--services` subsets, YAML-resolved
+  service omission via `--disable-ewmrs`/`--disable-nexrad`, bounded
+  SIGTERM→SIGKILL shutdown, nonzero exit when a child dies unexpectedly, and
+  no pipeline-module imports — verified by probe.)
+- [x] Add subprocess/signal/exit-code tests without starting scientific work.
+  (`tests/unit/test_run_all_launcher.py`: routing matrix, subset selection,
+  sleeper-script children for signal-driven clean shutdown, unexpected-exit
+  nonzero teardown, and SIGKILL escalation within the grace window.)
+- [ ] Run the launcher performance experiment below. (The benchmark now
+  measures single/direct/launcher trees — see Phase 7 — but live warm-cycle
+  measurement remains outstanding, like the other live gates.)
+- [x] If it passes, convert `run.py` to a compatibility wrapper and document
+  both direct and all-services commands. (`run.py` already forwards to
+  `run_edgewarn.py` since Phase 5; both command styles are documented in
+  `README.md`, `INSTALLATION.md`, and `docs/api/deployment.md`. Promotion of
+  launcher mode stays gated on the outstanding performance experiment; until
+  then direct commands remain the production recommendation.)
+- [x] If it fails, keep direct commands as production and record the failed
+  metric before optimizing or promoting the launcher. (Direct commands are
+  production today by default; the gate has not yet been run to fail.)
+- [x] Delete the old monolithic orchestration after the migration window; do
+  not maintain two production schedulers. (The tandem machinery was removed
+  outright in Phases 4–5 rather than kept as a hidden fallback; only the
+  deprecated `run.py` alias remains.)
 
 ### Phase 7 — Documentation and deployment
 
-- [ ] Update `README.md`, `INSTALLATION.md`, `docs/core/README.md`,
-  `docs/core/ingestion.md`, and `docs/core/goes_pipeline.md`.
-- [ ] Document the service-name registry, heartbeat states, route-family
+- [x] Update `README.md`, `INSTALLATION.md`, `docs/core/README.md`,
+  `docs/core/ingestion.md`, and `docs/core/goes_pipeline.md`. (All five now
+  describe the three-service topology, the durable handoff records, and the
+  current flag surface; `AGENTS.md` files were synced in Phase 5.)
+- [x] Document the service-name registry, heartbeat states, route-family
   dependencies, and `SERVICE_NOT_ENABLED` responses in
   `docs/api/api_endpoints.md` and the OpenAPI document; add Jest/Supertest
   coverage for the scanner (active/stale/disabled/degraded) and gated routes
-  under `tests/api/`.
-- [ ] Document systemd/container examples with one unit/container per direct
-  service and a shared configured base directory.
-- [ ] Document single-writer requirements, service dependencies, health files,
+  under `tests/api/`. (Landed incrementally during Phases 3–5:
+  `tests/api/test_service_registry.js` plus per-phase gating tests.)
+- [x] Document systemd/container examples with one unit/container per direct
+  service and a shared configured base directory. (`docs/api/deployment.md`.)
+- [x] Document single-writer requirements, service dependencies, health files,
   backlog recovery, flags, stop order, and rollback.
-- [ ] Update the realtime memory benchmark so it can measure one PID tree or
+  (`docs/api/deployment.md`; registry details in `docs/core/service_registry.md`.)
+- [x] Update the realtime memory benchmark so it can measure one PID tree or
   aggregate three independent service trees.
+  (`tests/benchmarks/benchmark_realtime_pipeline_memory.py` gained
+  `--mode single|direct|launcher` with aggregate/per-tree/per-process RSS.)
 
 ## Test plan
 
