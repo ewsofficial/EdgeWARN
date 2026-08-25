@@ -78,6 +78,21 @@ describe('service registry scanner', () => {
     expect(classifyHeartbeatState(await read('nexrad'), { service: 'nexrad', staleAfterSeconds: STALE_AFTER_SECONDS, now }).state).toBe('unsupported-schema');
   });
 
+  it('uses UTC for offset-less ISO timestamps and preserves Python-compatible fields', () => {
+    const now = new Date('2026-08-25T12:00:30Z');
+    const result = classifyHeartbeatState(freshHeartbeat({
+      run_id: 99,
+      updated_at: '2026-08-25T12:00:00',
+      phase: 7,
+      version: 3,
+    }), { service: 'nexrad', staleAfterSeconds: STALE_AFTER_SECONDS, now });
+
+    expect(result.state).toBe('active');
+    expect(result.heartbeat.updatedAt.toISOString()).toBe('2026-08-25T12:00:00.000Z');
+    expect(result.heartbeat.phase).toBe(7);
+    expect(result.heartbeat.version).toBe(3);
+  });
+
   it('maps route families to exactly one required service by longest prefix', () => {
     expect(requiredServiceForRoute('/api/v3/radar-sites')).toBe('nexrad');
     expect(requiredServiceForRoute('/api/v3/radar-sites/KTLX/scans/20240101-120000/elevations/0.5/products/DBZH')).toBe('nexrad');
