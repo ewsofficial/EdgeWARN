@@ -60,11 +60,17 @@ def _parse_args(argv=None):
     # accepted everywhere so the optional launcher can route uniformly;
     # profiling itself is not wired into the NEXRAD loops today.
     parser.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None, help="Profiling switch (accepted for launcher routing parity; default: from runtime.yaml)")
+    parser.add_argument("--mrms-core-only", action=argparse.BooleanOptionalAction, default=None, help="Run only the primary MRMS analysis service (default: from runtime.yaml)")
     args = parser.parse_args(argv)
 
     run_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
     # No env layer, matching IOManager's resolution of run.* keys elsewhere.
     overlay.resolve(getattr(args, "profile"), yaml_value=run_cfg["profile"], key="run.profile")
+    args.mrms_core_only = bool(overlay.resolve(
+        args.mrms_core_only,
+        yaml_value=run_cfg["mrms_core_only"],
+        key="run.mrms_core_only",
+    ))
 
     # Publish the resolved config root so spawned children inherit it,
     # matching the monolithic runner's behavior.
@@ -91,6 +97,9 @@ def main():
 
     io_manager = IOManager("[NEXRAD]")
     args = _parse_args()
+    if args.mrms_core_only:
+        print("[NEXRAD] mrms-core-only is enabled; NEXRAD service will not start.")
+        return
     fs.initialize_filesystem(args.base_dir)
 
     print(f"NEXRAD service started (v{get_release_version()}). Press CTRL+C to exit.")
