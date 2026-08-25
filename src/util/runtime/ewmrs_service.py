@@ -69,12 +69,12 @@ def register_ewmrs_accessories(
         "GOES Render", goes_render_loop,
         enabled=bool(goes_render_enabled),
         args=(base_dir, child_log_queue, goes_render_active),
-        daemon=True,
+        daemon=False,
         cleanup_event=goes_render_active,
     )
     supervisor.add(
         "EWMRS Consumer", ewmrs_consumer_loop,
         enabled=consumer_enabled,
         args=(base_dir, child_log_queue),
-        daemon=True,
+        daemon=False,
     )
