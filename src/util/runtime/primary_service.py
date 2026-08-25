@@ -1,7 +1,7 @@
 """Primary EdgeWARN service functions (decomposition Phase 1).
 
 Owns MRMS timestamp selection, the truthful cycle-state store, retry policy,
-and the primary polling loop that drives ``run_tandem_cycle_once``. Extracted
+and the primary polling loop that drives ``run_primary_cycle_once``. Extracted
 verbatim from the former monolithic ``run.py`` so the future
 ``run_edgewarn.py`` entry point can call this module directly while the old
 runner remains a temporary adapter.
@@ -23,8 +23,8 @@ from common.ingest.mrms.config import get_check_modifiers
 from util.runtime.cycle import (
     CycleRetryPolicy,
     CycleStateStore,
-    TandemCycleConfig,
-    run_tandem_cycle_once,
+    PrimaryCycleConfig,
+    run_primary_cycle_once,
 )
 from util.runtime.config import resolve_file, section
 from util.runtime.scheduler import load_last_processed_from_stormcells
@@ -34,7 +34,7 @@ def build_cycle_config(args):
     """Freeze one validated per-cycle configuration for the primary service."""
     mrms_core_only = args.mrms_core_only
     handoff_settings = section("handoff")
-    return TandemCycleConfig(
+    return PrimaryCycleConfig(
         lat_limits=tuple(args.lat_limits),
         lon_limits=tuple(args.lon_limits),
         profile=args.profile,
@@ -166,6 +166,7 @@ def run_primary_cycle_loop(
     checker,
     cycle_config,
     supervisor=None,
+    on_tick=None,
 ):
     """Poll for MRMS timestamps and drive primary cycles until interrupted.
 
@@ -173,7 +174,9 @@ def run_primary_cycle_loop(
     validated ``CycleOutcome``; failed scans retry with bounded exponential
     backoff and are abandoned explicitly after ``max_attempts``. The
     supervisor is optional: the primary service owns no accessory children,
-    so it is None for the standalone primary.
+    so it is None for the standalone primary. ``on_tick`` fires roughly once
+    per supervisor tick (used by ``run_edgewarn.py`` to refresh its service
+    heartbeat without blocking the selection loop).
     """
     stormcell_last_successful, init_message = load_last_processed_from_stormcells(fs.STORMCELL_DIR)
     print(init_message)
@@ -269,7 +272,7 @@ def run_primary_cycle_loop(
                 pending_attempt_count += 1
                 cycle_state_store.record_attempt(dt, pending_attempt_count)
                 print(
-                    f"[Scheduler] Starting tandem cycle for {dt} "
+                    f"[Scheduler] Starting primary cycle for {dt} "
                     f"(attempt {pending_attempt_count}/{retry_policy.max_attempts})"
                 )
 
@@ -277,7 +280,7 @@ def run_primary_cycle_loop(
                 try:
                     if primary_lease is not None:
                         primary_lease.acquire(dt)
-                    outcome = run_tandem_cycle_once(
+                    outcome = run_primary_cycle_once(
                         dt,
                         manager,
                         config=cycle_config,
@@ -297,7 +300,7 @@ def run_primary_cycle_loop(
                     pending_attempt_count = 0
                     retry_not_before = 0.0
                     print(
-                        f"Tandem cycle for {dt} finished with "
+                        f"Primary cycle for {dt} finished with "
                         f"{len(outcome.produced_artifacts)} validated artifact(s)"
                     )
                 else:
@@ -318,7 +321,7 @@ def run_primary_cycle_loop(
                         pending_attempt_count = 0
                         retry_not_before = 0.0
                         print(
-                            f"[Scheduler] Tandem cycle for {dt} was explicitly "
+                            f"[Scheduler] Primary cycle for {dt} was explicitly "
                             f"abandoned after {retry_policy.max_attempts} attempts; "
                             f"errors={list(outcome.errors)}"
                         )
@@ -326,7 +329,7 @@ def run_primary_cycle_loop(
                         delay = retry_policy.delay_after(pending_attempt_count)
                         retry_not_before = time.monotonic() + delay
                         print(
-                            f"[Scheduler] Tandem cycle for {dt} failed and remains "
+                            f"[Scheduler] Primary cycle for {dt} failed and remains "
                             f"pending; retrying in {delay:.1f}s; "
                             f"errors={list(outcome.errors)}"
                         )
@@ -349,6 +352,8 @@ def run_primary_cycle_loop(
             # Wait/Check loop — also monitor any supervised children
             for _ in range(supervisor_settings["check_ticks"]):
                 time.sleep(supervisor_settings["tick_seconds"])
+                if on_tick is not None:
+                    on_tick()
                 if supervisor is not None:
                     supervisor.check()
 
