@@ -5,8 +5,9 @@ This file applies to everything under `src/`.
 
 ## Purpose
 `src/` contains the runtime application code for EdgeWARN and EWMRS:
-- `run_edgewarn.py` is the supported primary service command (`run.py` is a
-  deprecated thin alias forwarding to it).
+- `run_edgewarn.py` is the supported primary service command. `run.py` is
+  retired and refuses to start because it cannot preserve the old all-services
+  topology; use `run_all.py` or explicit service commands instead.
 - `run_ewmrs.py` runs EWMRS rendering, GOES ABI ingest/render, and
   METAR/NWS/WPC accessories as a standalone service.
 - `run_nexrad.py` runs NEXRAD ingest and rendering as a standalone service.

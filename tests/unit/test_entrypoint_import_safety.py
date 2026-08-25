@@ -66,3 +66,18 @@ def test_run_py_module_scope_is_free_of_runtime_calls():
         assert banned not in module_body, (
             f"run.py module scope still performs runtime work: {banned!r}"
         )
+
+
+def test_run_py_refuses_the_silent_partial_topology():
+    result = subprocess.run(
+        [sys.executable, "src/run.py"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=REPO_ROOT,
+    )
+    assert result.returncode == 2
+    assert "retired" in result.stderr
+    assert "python src/run_all.py" in result.stderr
+    assert "python src/run_ewmrs.py" in result.stderr
+    assert "python src/run_nexrad.py" in result.stderr

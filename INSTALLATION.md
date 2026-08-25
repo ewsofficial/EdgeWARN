@@ -121,7 +121,9 @@ python run_all.py                                # all three services
 python run_all.py --services edgewarn,ewmrs      # a subset
 ```
 
-`run.py` remains as a deprecated thin alias for `run_edgewarn.py`.
+`run.py` is retired and exits with instructions rather than silently starting
+only the primary service. Use `run_all.py` for all services or the explicit
+service commands above.
 
 ### Primary flags
 
