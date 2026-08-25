@@ -48,6 +48,7 @@ def _configure_process_runtime(name: str) -> None:
 
 
 def goes_loop(activity_event, render_active_event, pause_during_render=None, poll_seconds=None):
+    _configure_process_runtime("GOES-Ingest")
     try:
         coordination = section("goes_coordination")
         if pause_during_render is None:
@@ -278,6 +279,7 @@ def nexrad_render_loop(base_dir):
 
 
 def metar_loop():
+    _configure_process_runtime("METAR-Ingest")
     try:
         intervals = section("background_intervals")
         boundary_minutes = intervals["metar_boundary_minutes"]
@@ -293,6 +295,7 @@ def metar_loop():
 
 
 def nws_loop():
+    _configure_process_runtime("NWS-Ingest")
     try:
         intervals = section("background_intervals")
         while True:
@@ -307,6 +310,7 @@ def nws_loop():
 
 
 def wpc_loop():
+    _configure_process_runtime("WPC-Ingest")
     try:
         intervals = section("background_intervals")
         boundary_minutes = intervals["wpc_boundary_minutes"]

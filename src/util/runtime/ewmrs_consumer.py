@@ -191,9 +191,10 @@ def ewmrs_consumer_loop(base_dir, log_queue, *, stop_event=None):
     ``stop_event`` is optional; without it the loop runs until SIGTERM (whose
     handler raises SystemExit through the interruptible sleep) or SIGINT.
     """
-    from util.runtime.process_identity import set_process_name
+    from util.runtime.process_identity import set_parent_death_signal, set_process_name
 
     set_process_name("EWMRS-Consumer")
+    set_parent_death_signal()
     sys.stdout = QueueWriter(log_queue)
     sys.stderr = QueueWriter(log_queue)
 

@@ -1,6 +1,53 @@
 from util.runtime import background
 
 
+def test_accessory_children_configure_parent_death_signal(monkeypatch):
+    configured = []
+    monkeypatch.setattr(
+        background, "_configure_process_runtime", configured.append
+    )
+    monkeypatch.setattr(
+        background, "section", lambda name: {
+            "goes_coordination": {
+                "pause_ingest_during_render": False,
+                "poll_seconds": 1,
+                "render_pause_poll_seconds": 1,
+                "render_pause_poll_interval_seconds": 1,
+                "poll_interval_seconds": 1,
+            },
+            "background_intervals": {
+                "metar_boundary_minutes": 5,
+                "boundary_wait_interval_seconds": 1,
+                "nws_seconds": 1,
+                "nws_interval_seconds": 1,
+                "wpc_boundary_minutes": 5,
+            },
+        }[name])
+    monkeypatch.setattr(background, "sleep_until_boundary", lambda *_args: (_ for _ in ()).throw(KeyboardInterrupt()))
+    def interrupt_async(coroutine):
+        coroutine.close()
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(background.asyncio, "run", interrupt_async)
+
+    class Event:
+        def is_set(self):
+            return False
+
+        def set(self):
+            pass
+
+        def clear(self):
+            pass
+
+    background.goes_loop(Event(), Event())
+    background.metar_loop()
+    background.nws_loop()
+    background.wpc_loop()
+
+    assert configured == ["GOES-Ingest", "METAR-Ingest", "NWS-Ingest", "WPC-Ingest"]
+
+
 class FakeQueue:
     def __init__(self):
         self.items = []

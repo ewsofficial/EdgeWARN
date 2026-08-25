@@ -32,6 +32,7 @@ from EdgeWARN.schedule.scheduler import MRMSUpdateChecker
 from util.io import TimestampedOutput, IOManager
 from util.release import get_release_version
 from util.runtime.handoff import ServiceLock
+from util.runtime.process_identity import set_parent_death_signal
 from util.runtime.primary_service import (
     build_cycle_config,
     log_effective_flags,
@@ -50,6 +51,8 @@ HEARTBEAT_MIN_INTERVAL_SECONDS = 2.0
 
 
 def main():
+    if os.environ.get("EDGEWARN_LAUNCHER_PARENT_DEATHSIG") == "1":
+        set_parent_death_signal()
     sys.stdout = TimestampedOutput(sys.stdout)
     sys.stderr = TimestampedOutput(sys.stderr)
 
