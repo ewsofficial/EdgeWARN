@@ -10,6 +10,8 @@ import {
   resetServiceStateCache,
 } from '../../src/api/services/serviceRegistry.js';
 
+const OPENAPI_PATH = path.resolve('src/api/openapi/v3.yaml');
+
 const STALE_AFTER_SECONDS = 60;
 
 const freshHeartbeat = (overrides = {}) => JSON.stringify({
@@ -104,6 +106,21 @@ describe('service registry scanner', () => {
     expect(requiredServiceForRoute('/api/v3/styles/colormaps')).toBe('ewmrs');
     expect(requiredServiceForRoute('/renders/get-items')).toBe('ewmrs');
     expect(requiredServiceForRoute('/health/ready')).toBeNull();
+  });
+});
+
+describe('OpenAPI chunk endpoint failures', () => {
+  it('documents both service gating and invalid render artifacts as 503 causes', async () => {
+    const spec = await fs.readFile(OPENAPI_PATH, 'utf8');
+    const openApi = JSON.parse(spec);
+    for (const route of [
+      '/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks',
+      '/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks/{x}/{y}',
+    ]) {
+      const response = openApi.paths[route].get.responses['503'];
+      expect(response.description).toContain('SERVICE_NOT_ENABLED');
+      expect(response.description).toContain('INVALID_ARTIFACT');
+    }
   });
 });
 
