@@ -495,8 +495,15 @@ def run_primary_cycle_once(
                     shared_state["input_manifest"] = state.input_manifest.as_dict()
                 shared_state["errors"] = dict(state.errors)
                 # rap_inputs_ready is settled before the base-integration
-                # release, so the raw-RAP record can be published here.
-                durable_handoff("rap-ready", state, state.rap_inputs_ready)
+                # release, so the raw-RAP record can be published here. In
+                # mrms-core-only mode no RAP is staged, and publishing a
+                # "successful" record without its input would poison the
+                # consumer's rap phase forever.
+                durable_handoff(
+                    "rap-ready",
+                    state,
+                    state.rap_inputs_ready and not config.mrms_core_only,
+                )
                 publish_integration_if_ready()
 
             cycle_task = asyncio.create_task(run_staged_ingest_cycle(

@@ -217,7 +217,7 @@ cycle:
     initial_backoff_seconds: 5.0
     max_backoff_seconds: 30.0
 
-  # Resolved inside run_tandem_ingest_cycle (coordinator.py:146) when the caller
+  # Resolved inside run_staged_ingest_cycle (coordinator.py:146) when the caller
   # passes nothing, which is now every caller. The S3 listing depth for MRMS
   # detection and MRMS integration ingest, and for those two tasks only.
   #

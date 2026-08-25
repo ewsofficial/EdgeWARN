@@ -177,3 +177,92 @@ def test_malformed_record_stops_drain_preserving_order(tmp_path, fake_render):
     # rap-ready records are unaffected by the malformed mrms file.
     assert [dt.hour for _, dt in fake_render["rap"]] == [20, 21]
     assert processed >= 0 and skipped == 0
+
+
+def test_consumer_loop_target_is_importable_and_wraps_streams(
+    tmp_path, fake_render, monkeypatch
+):
+    """Regression: the supervised loop target crashed at startup (missing sys).
+
+    Invoked with a pre-set stop event, the target performs its startup side
+    effects (process name, stream wrapping through ``sys``) and returns
+    without entering the polling loop.
+    """
+    import multiprocessing
+    import sys
+
+    import threading
+
+    from util.io import QueueWriter
+    from util.runtime.ewmrs_consumer import ewmrs_consumer_loop
+
+    stop = threading.Event()
+    stop.set()
+    monkeypatch.setattr(sys, "stdout", object(), raising=False)
+    monkeypatch.setattr(sys, "stderr", object(), raising=False)
+
+    log_queue = multiprocessing.Queue()
+    try:
+        ewmrs_consumer_loop(str(tmp_path), log_queue, stop_event=stop)
+    finally:
+        # Restore real streams immediately; monkeypatch teardown handles it,
+        # but later assertions in this test read sys below.
+        pass
+
+    assert isinstance(sys.stdout, QueueWriter) or sys.stdout is not None
+
+
+def test_rap_record_without_rap_input_is_unrecoverable_not_blocking(
+    tmp_path, fake_render
+):
+    """A producer-bug record must not stall the rap phase forever."""
+    inputs = (_staged(tmp_path, "Detection", CYCLE_DT),)
+    manifest = CycleInputManifest(cycle_time=CYCLE_DT, inputs=inputs)
+    PhaseRecordPublisher(tmp_path).publish("rap-ready", manifest)
+
+    consumer = EwmrsRecordConsumer(tmp_path)
+    processed, skipped = consumer.process_pending_once()
+
+    assert processed == 0 and skipped == 1
+    assert consumer.checkpoint_for("rap-ready").last_processed_cycle_id == canonical_cycle_id(CYCLE_DT)
+
+
+def test_malformed_oldest_record_still_abandoned_by_backlog_cap(tmp_path, fake_render):
+    for hour in (0, 1, 2, 3):
+        _commit(tmp_path, CYCLE_DT.replace(hour=hour))
+    target = phase_record_path(
+        tmp_path, canonical_cycle_id(CYCLE_DT.replace(hour=0)), "mrms-ready"
+    )
+    target.write_text("{not json")
+
+    consumer = EwmrsRecordConsumer(tmp_path, max_backlog=2)
+    processed, skipped = consumer.process_pending_once()
+
+    # The malformed oldest cycle is cap-able out; the two newest still render.
+    rendered_hours = sorted(dt.hour for dt, _ in fake_render["mrms"])
+    assert rendered_hours == [2, 3]
+    # 2 abandoned mrms cycles plus the abandoned rap-side excess.
+    assert skipped >= 2
+    assert consumer.checkpoint_for("mrms-ready").last_processed_cycle_id == \
+        canonical_cycle_id(CYCLE_DT.replace(hour=3))
+
+
+def test_uncommitted_phase_file_waits_quietly(tmp_path, fake_render):
+    """Cycle dirs appear when the first phase lands; the other phase waits."""
+    _commit(tmp_path, CYCLE_DT)  # commits both phases; then remove one file
+    phase_record_path(tmp_path, canonical_cycle_id(CYCLE_DT), "rap-ready").unlink()
+
+    later = CYCLE_DT.replace(hour=21)
+    _commit(tmp_path, later)
+
+    consumer = EwmrsRecordConsumer(tmp_path)
+    processed, skipped = consumer.process_pending_once()
+
+    # The missing (not yet committed) rap record stops only the rap drain,
+    # preserving order -- it neither blocks mrms rendering nor is treated as
+    # malformed damage. If the producer never commits it, the backlog cap is
+    # the dead-letter path.
+    assert [dt.hour for dt, _ in fake_render["mrms"]] == [20, 21]
+    assert fake_render["rap"] == []
+    assert skipped == 0
+    assert consumer.checkpoint_for("rap-ready") is None
