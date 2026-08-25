@@ -62,16 +62,9 @@ def _parse_args(argv=None):
     parser.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None, help="Profiling switch (accepted for launcher routing parity; default: from runtime.yaml)")
     args = parser.parse_args(argv)
 
-    def _resolve(flag, yaml_value, key):
-        return bool(overlay.resolve(
-            getattr(args, flag),
-            env_names=[key.replace(".", "_").upper()],
-            yaml_value=yaml_value,
-            key=key,
-        ))
-
     run_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
-    _resolve("profile", run_cfg["profile"], "run.profile")
+    # No env layer, matching IOManager's resolution of run.* keys elsewhere.
+    overlay.resolve(getattr(args, "profile"), yaml_value=run_cfg["profile"], key="run.profile")
 
     # Publish the resolved config root so spawned children inherit it,
     # matching the monolithic runner's behavior.
