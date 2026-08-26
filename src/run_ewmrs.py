@@ -42,7 +42,6 @@ from util.runtime import AccessorySupervisor, StartedProcessRegistry, drain_log_
 from util.runtime.config import resolve_file, section
 from util.runtime.ewmrs_service import register_ewmrs_accessories
 from util.runtime.handoff import ServiceLock
-from util.runtime.process_identity import set_parent_death_signal
 from util.runtime.services import (
     ServiceHeartbeat,
     services_dir,
@@ -86,8 +85,6 @@ def _parse_args(argv=None):
 
 
 def main():
-    if os.environ.get("EDGEWARN_LAUNCHER_PARENT_DEATHSIG") == "1":
-        set_parent_death_signal()
     sys.stdout = TimestampedOutput(sys.stdout)
     sys.stderr = TimestampedOutput(sys.stderr)
 
