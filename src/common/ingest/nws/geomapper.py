@@ -35,16 +35,14 @@ def _reset_bootstrap() -> None:
     _BOOTSTRAPPED = False
 
 
-def _ensure_zone_assets() -> None:
-    """Populate zone assets on first use if the catalog directory is empty.
+def ensure_zone_assets() -> None:
+    """Require pre-synchronized NWS zone assets before serving lookups.
 
-    The 74 zones.json files under ``assets/nws_zones/`` are not part of the
-    repository -- they are fetched on demand from api.weather.gov the first
-    time a lookup runs in this process. After a successful bootstrap the flag
-    is set so the check is a single boolean for the rest of the run; failures
-    are swallowed because the per-state load already returns an empty cache
-    on a missing file, and a hard failure here would turn a cache miss into a
-    crash for every alert.
+    Zone assets are an explicit operational prerequisite.  Fetching thousands
+    of zones from an alert-processing worker delays startup unpredictably and
+    can leave the registry only partially mapped after a failed bootstrap.
+    Use ``python scripts/sync_nws_zones.py`` from the repository root to create
+    or refresh the assets before starting a pipeline.
     """
     global _BOOTSTRAPPED
     if _BOOTSTRAPPED:
@@ -53,13 +51,18 @@ def _ensure_zone_assets() -> None:
     assets = _assets_dir()
     has_data = assets.is_dir() and any(assets.rglob("zones.json"))
     if not has_data:
-        try:
-            from .zone_sync import NWSZoneSync
-            NWSZoneSync(assets).sync(dry_run=False)
-        except Exception:
-            pass
+        raise RuntimeError(
+            f"NWS zone assets are missing from {assets}. "
+            "Run `python scripts/sync_nws_zones.py` from the repository root "
+            "before starting the pipeline."
+        )
 
     _BOOTSTRAPPED = True
+
+
+def _ensure_zone_assets() -> None:
+    """Backward-compatible private alias for :func:`ensure_zone_assets`."""
+    ensure_zone_assets()
 
 
 class ZoneLookup:
@@ -83,7 +86,7 @@ class ZoneLookup:
     @classmethod
     def _load_state(cls, state_code: str) -> None:
         """Load zone data for a state into cache."""
-        _ensure_zone_assets()
+        ensure_zone_assets()
         state_file = _assets_dir() / state_code / "zones.json"
         
         if not state_file.exists():

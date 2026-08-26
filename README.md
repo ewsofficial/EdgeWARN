@@ -119,7 +119,7 @@ analysis timestamp, not the local file modification time.
 
 The unified API honors `PORT`, `--debug-server`, `RATE_LIMIT_MAX_SEC`, and `RATE_LIMIT_MAX_MIN`. Use `ALLOWED_ORIGINS` and `TRUST_PROXY_IPS` to configure browser and proxy trust.
 
-See `INSTALLATION.md` for the full CLI reference, including API debug and rate-limit flags plus the `zone_sync.py` maintenance utility.
+See `INSTALLATION.md` for the full CLI reference, including API debug and rate-limit flags plus the `scripts/sync_nws_zones.py` maintenance utility required before NWS alert ingest.
 
 ## Testing
 

@@ -52,6 +52,20 @@ from util.runtime.services import (
 SERVICE_NAME = "ewmrs"
 
 
+def _require_nws_zone_assets(nws_enabled: bool) -> None:
+    """Fail EWMRS startup early when NWS geometry assets are unavailable."""
+    if not nws_enabled:
+        return
+
+    # Zone lookup is a required part of NWS alert processing. Validate the
+    # operator-maintained assets before starting any accessory child so a
+    # missing initial sync is an actionable startup failure, not a later
+    # background-loop error after alerts have been downloaded.
+    from common.ingest.nws.geomapper import ensure_zone_assets
+
+    ensure_zone_assets()
+
+
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="EdgeWARN EWMRS service: rendering, accessories, and record consumption"
@@ -94,6 +108,8 @@ def main():
         print("[EWMRS] mrms-core-only is enabled; EWMRS/accessory service will not start.")
         return
     fs.initialize_filesystem(args.base_dir)
+
+    _require_nws_zone_assets(nws_enabled=not args.disable_nws)
 
     print(f"EWMRS service started (v{get_release_version()}). Press CTRL+C to exit.")
     print("[EWMRS] MRMS/RAP downloads are owned by the primary service; this service consumes its committed records.")

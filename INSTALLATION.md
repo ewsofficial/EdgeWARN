@@ -195,15 +195,13 @@ Historical-processing note:
 
 ## Maintaining NWS Zone Assets
 
-`src/common/ingest/nws/zone_sync.py` refreshes `assets/nws_zones` from the NWS zone and UGC APIs.
+`scripts/sync_nws_zones.py` refreshes `assets/nws_zones` from the NWS zone and UGC APIs.
 
-The `assets/nws_zones/` directory is **not** part of the repository. On the
-first call to `ZoneLookup.get_polygon()` in a process, the geomapper checks
-whether the directory exists and contains any `zones.json` files; if not, it
-runs `NWSZoneSync(assets_dir).sync(dry_run=False)` synchronously to populate
-it from `api.weather.gov`. The check runs once per process, so subsequent
-lookups are not delayed by the bootstrap. A full initial sync is roughly
-8,600 zone codes at ~20 requests/second, so ~7 minutes the first time.
+The `assets/nws_zones/` directory is **not** part of the repository. It must
+be synchronized before starting a pipeline that ingests NWS alerts. If it is
+missing, the geomapper raises an error that directs the operator to this
+script. A full initial sync is roughly 8,600 zone codes at ~20 requests/second,
+so allow about seven minutes the first time.
 
 Run from repository root to refresh an already-populated tree (for example
 after NWS publishes a new zone):
@@ -211,7 +209,7 @@ after NWS publishes a new zone):
 Run from repository root:
 
 ```bash
-python src/common/ingest/nws/zone_sync.py --apply
+python scripts/sync_nws_zones.py
 ```
 
 Flags:
@@ -223,7 +221,7 @@ Flags:
 - `--max-workers <int>` default `16`
 - `--pause-seconds <float>` default `0.05`
 - `--progress` / `--no-progress` progress output, default on
-- `--apply` write updates; without it the command is a dry run
+- `--apply` is accepted for compatibility; this script always writes updates
 - `--report-path <path>` write the sync report JSON to a file
 - `--config-dir <path>` select the `config/` tree to read defaults from
 

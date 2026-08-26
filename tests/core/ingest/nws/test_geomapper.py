@@ -11,7 +11,7 @@ from EdgeWARN.ingest.nws.geomapper import (
     ZoneLookup,
     _assets_dir,
     _reset_bootstrap,
-    _ensure_zone_assets,
+    ensure_zone_assets,
     extract_exterior_polygon,
     process_warning
 )
@@ -19,17 +19,8 @@ import common.config.loader as config_loader
 
 
 @pytest.fixture(autouse=True)
-def _disable_zone_bootstrap(monkeypatch):
-    """Keep the auto-download trigger out of the unit tests.
-
-    The bootstrap calls api.weather.gov when the assets directory has no
-    zones.json, which would either hang the test or pollute tmp_path with
-    real data. Stubbing the helper to a no-op and resetting the cached
-    flag gives every test a clean, offline starting state.
-    """
-    monkeypatch.setattr(
-        "EdgeWARN.ingest.nws.geomapper._ensure_zone_assets", lambda: None
-    )
+def _reset_zone_asset_precondition():
+    """Keep each test independent of the process-local asset check."""
     _reset_bootstrap()
     yield
     _reset_bootstrap()
@@ -134,14 +125,23 @@ class TestZoneLookup:
             polygon2 = ZoneLookup.get_polygon("TXC121")
             assert polygon1 == polygon2
 
-    def test_missing_state_file(self, tmp_path):
-        """Test handling of missing state file"""
+    def test_missing_assets_explain_how_to_sync(self, tmp_path):
+        """An empty asset tree must fail before alert processing begins."""
         assets_dir = tmp_path / "assets" / "nws_zones"
         
         with patch.object(ZoneLookup, '_cache', {}):
             with patch('EdgeWARN.ingest.nws.geomapper._assets_dir', return_value=assets_dir):
-                polygon = ZoneLookup.get_polygon("XXC001")
-                assert polygon is None
+                with pytest.raises(RuntimeError, match=r"scripts/sync_nws_zones\.py"):
+                    ZoneLookup.get_polygon("XXC001")
+
+    def test_public_preflight_accepts_existing_zone_assets(self, tmp_path):
+        assets_dir = tmp_path / "assets" / "nws_zones"
+        state_dir = assets_dir / "TX"
+        state_dir.mkdir(parents=True)
+        (state_dir / "zones.json").write_text("[]", encoding="utf-8")
+
+        with patch('EdgeWARN.ingest.nws.geomapper._assets_dir', return_value=assets_dir):
+            ensure_zone_assets()
 
 
 class TestExtractExteriorPolygon:
