@@ -241,11 +241,12 @@ class TestConsumerCheckpoints:
             store.record("20240501T110000Z")
         assert store.load().last_processed_cycle_id == "20240501T120000Z"
 
-    def test_corrupt_checkpoint_reads_as_none(self, tmp_path):
+    def test_corrupt_checkpoint_fails_loudly(self, tmp_path):
         path = consumer_checkpoint_path(tmp_path, "ewmrs")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{broken")
-        assert ConsumerCheckpointStore(tmp_path, "ewmrs").load() is None
+        with pytest.raises(PhaseRecordError, match="corrupt consumer checkpoint"):
+            ConsumerCheckpointStore(tmp_path, "ewmrs").load()
 
 
 class TestBacklogSelection:
@@ -282,7 +283,7 @@ class TestBacklogSelection:
         selected = select_pending_records(
             tmp_path, "mrms-ready", checkpoint=checkpoint, max_backlog=10
         )
-        assert [cycle_id for cycle_id, _, _ in selected] == [
+        assert [cycle_id for cycle_id, _, status in selected if status == "pending"] == [
             "20240501T010000Z",
             "20240501T020000Z",
         ]
@@ -294,8 +295,9 @@ class TestBacklogSelection:
         selected = select_pending_records(
             tmp_path, "mrms-ready", checkpoint=checkpoint, max_backlog=10
         )
-        assert selected[0][0] == ids[2]
-        assert selected[0][2] == "pending"
+        assert selected[-2][0] == ids[2]
+        assert selected[-2][2] == "pending"
+        assert all(status == "already-processed" for _, _, status in selected[:2])
 
 
 def make_manifest_without_files_for(dt):

@@ -3,9 +3,9 @@
 // instead of silently serving stale artifacts. Degraded services still serve.
 
 export function createServiceGate({ serviceRegistry, service, respond }) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!serviceRegistry) return next();
-    const { state, heartbeat } = serviceRegistry.stateFor(service);
+    const { state, heartbeat } = await serviceRegistry.stateFor(service);
     if (state === 'active' || state === 'degraded') return next();
 
     const lastSeen = heartbeat ? heartbeat.updatedAt.toISOString() : null;

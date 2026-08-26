@@ -167,6 +167,7 @@ def run_primary_cycle_loop(
     cycle_config,
     supervisor=None,
     on_tick=None,
+    stop_event=None,
 ):
     """Poll for MRMS timestamps and drive primary cycles until interrupted.
 
@@ -230,7 +231,7 @@ def run_primary_cycle_loop(
     manager = multiprocessing.Manager()
 
     try:
-        while True:
+        while stop_event is None or not stop_event.is_set():
             now = datetime.now(timezone.utc)
             check_modifiers = get_check_modifiers()
             latest_common = None
@@ -351,6 +352,8 @@ def run_primary_cycle_loop(
 
             # Wait/Check loop — also monitor any supervised children
             for _ in range(supervisor_settings["check_ticks"]):
+                if stop_event is not None and stop_event.is_set():
+                    break
                 time.sleep(supervisor_settings["tick_seconds"])
                 if on_tick is not None:
                     on_tick()

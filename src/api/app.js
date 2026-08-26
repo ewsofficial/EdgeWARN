@@ -2,7 +2,6 @@ import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { loadConfig } from '../config/loader.js';
 import { createConfig } from './config/index.js';
 import { createCors } from './middleware/cors.js';
 import { errorHandler, notFound } from './middleware/errors.js';
@@ -48,19 +47,18 @@ export async function createApp(options = {}) {
       status: checks.every(Boolean) ? 'ready' : 'not-ready',
       requestId: req.requestId,
       config: config.diagnostics,
-      services: servicesSummary(),
+      services: await servicesSummary(),
     });
   });
   const analysis = createAnalysisService(repository); const renders = createRenderService(repository, config.api.render_defaults, config.api.artifacts.chunk_length_slack_bytes); const ancillary = createAncillaryServices(repository, { validation: config.api.validation, wpc: config.wpc });
   // Service-state visibility (decomposition Phase 3): the scanner classifies
   // the canonical heartbeats under <baseDir>/state/realtime/services/. The
-  // staleness threshold reuses the supervisor tuning from runtime.yaml rather
-  // than introducing a second surface.
+  // API staleness is intentionally independent of child restart tuning.
   const serviceRegistry = createServiceRegistry({
     baseDir: config.baseDir,
-    staleAfterSeconds: loadConfig('runtime', { configDir: config.configDir }).supervisor.restart_window_seconds,
+    staleAfterSeconds: config.api.server.service_stale_after_seconds,
   });
-  const servicesSummary = () => Object.fromEntries(Object.entries(serviceRegistry.states()).map(([name, entry]) => [name, {
+  const servicesSummary = async () => Object.fromEntries(Object.entries(await serviceRegistry.states()).map(([name, entry]) => [name, {
     state: entry.state,
     phase: entry.heartbeat?.phase ?? null,
     lastSeen: entry.heartbeat ? entry.heartbeat.updatedAt.toISOString() : null,

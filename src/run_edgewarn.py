@@ -78,7 +78,6 @@ def main():
     def _request_stop(signum, _frame):
         print("[EdgeWARN] Shutdown signal received; stopping after the current atomic unit...")
         stop_event.set()
-        raise KeyboardInterrupt
 
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, _request_stop)
@@ -110,6 +109,7 @@ def main():
             cycle_config=build_cycle_config(args),
             supervisor=None,
             on_tick=refresh_heartbeat,
+            stop_event=stop_event,
         )
     finally:
         stop_event.set()

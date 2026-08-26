@@ -26,7 +26,9 @@ from util.runtime.config import section
 from util.runtime.handoff import (
     ConsumerCheckpointStore,
     PhaseRecord,
+    PhaseRecordError,
     phase_record_path,
+    read_phase_record_strict,
     select_pending_records,
     shadow_validate_phase_record,
 )
@@ -55,7 +57,7 @@ class EwmrsRecordConsumer:
         self.base_dir = base_dir
         self._log = log if log is not None else print
         self._max_backlog = (
-            int(section("cycle")["max_backlog_cycles"])
+            int(section("cycle").get("max_backlog_cycles", 10))
             if max_backlog is None
             else int(max_backlog)
         )
@@ -89,6 +91,12 @@ class EwmrsRecordConsumer:
         )
         processed = skipped = 0
         for cycle_id, record, status in pending:
+            if status == "already-processed":
+                self._log(
+                    f"[EWMRS] Ignoring late-committed {phase} cycle {cycle_id}; "
+                    "its checkpoint has already advanced past it"
+                )
+                continue
             if status == "abandoned-backlog":
                 # Backlog-cap abandonment applies regardless of record state:
                 # a malformed oldest record must still be cap-able out.
@@ -108,15 +116,28 @@ class EwmrsRecordConsumer:
                 # rendered under an older timestamp's identity.
                 if not phase_record_path(self.base_dir, cycle_id, phase).exists():
                     break
-                self._log(
-                    f"[EWMRS] {phase} record for {cycle_id} is malformed; "
-                    "stopping this drain until it is repaired"
-                )
+                try:
+                    read_phase_record_strict(
+                        phase_record_path(self.base_dir, cycle_id, phase)
+                    )
+                except PhaseRecordError as exc:
+                    self._log(
+                        f"[EWMRS] {phase} record for {cycle_id} cannot be read safely; "
+                        f"stopping this drain: {exc}"
+                    )
                 break
             try:
+                # Re-read strictly at the consumption boundary.  A transient
+                # read failure must not be reported as producer corruption.
+                record = read_phase_record_strict(
+                    phase_record_path(self.base_dir, cycle_id, phase)
+                )
+                if record is None:
+                    break
                 problems = shadow_validate_phase_record(
                     record,
                     layers=(self._mrms_layers() if phase == "mrms-ready" else None),
+                    base_dir=self.base_dir,
                 )
                 if problems:
                     self._log(
@@ -135,6 +156,12 @@ class EwmrsRecordConsumer:
                 checkpoint_store.record(cycle_id)
                 skipped += 1
                 continue
+            except PhaseRecordError as exc:
+                self._log(
+                    f"[EWMRS] {phase} record for {cycle_id} cannot be read safely; "
+                    f"stopping this drain: {exc}"
+                )
+                break
             except Exception as exc:
                 # Render failure: do not advance the checkpoint; the record is
                 # retried on the next poll.
@@ -179,7 +206,8 @@ class EwmrsRecordConsumer:
             raise RapRecordMissingInput(
                 "rap-ready record pins no RAP input; producer is misconfigured"
             )
-        results = run_rap_uint16_pipeline(rap_inputs[0].path, record.analysis_time)
+        current = next((staged for staged in rap_inputs if staged.role == "current"), rap_inputs[0])
+        results = run_rap_uint16_pipeline(current.path, record.analysis_time)
         incomplete = [name for name, path in results.items() if path is None]
         if not results or len(incomplete) == len(results):
             raise RuntimeError("RAP Uint16 conversion produced no usable layers")
@@ -207,6 +235,8 @@ def ewmrs_consumer_loop(base_dir, log_queue, *, stop_event=None):
     intervals = section("background_intervals")
     sleep_seconds = float(intervals["ewmrs_consumer_seconds"])
     poll_interval = float(intervals["ewmrs_consumer_interval_seconds"])
+    if poll_interval <= 0:
+        poll_interval = max(sleep_seconds, 0.01)
     while True:
         if stop_event is not None and stop_event.is_set():
             return

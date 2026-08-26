@@ -76,8 +76,8 @@ def _parse_args(argv=None):
     parser.add_argument("--base_dir", "--base-dir", dest="base_dir", type=str, default=None)
     parser.add_argument("--config-dir", type=str, default=None)
     parser.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None)
-    parser.add_argument("--lat_limits", nargs="+", type=float, default=None)
-    parser.add_argument("--lon_limits", nargs="+", type=float, default=None)
+    parser.add_argument("--lat_limits", nargs=2, type=float, default=None)
+    parser.add_argument("--lon_limits", nargs=2, type=float, default=None)
     for flag in (
         "disable-ctam", "disable-tracking", "disable-polygon-expansion",
         "disable-goes", "disable-metar", "disable-nws", "disable-wpc",
@@ -259,7 +259,11 @@ def supervise(commands, *, src_root, stop_event=None):
             exit_code = exit_code or 1
 
         for service, proc in processes.items():
-            proc.wait()
+            try:
+                proc.wait(timeout=STOP_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                print(f"[Launcher] Service '{service}' did not exit after SIGKILL")
+                exit_code = 1
             print(f"[Launcher] Service '{service}' terminated (rc={proc.returncode})")
     finally:
         try:

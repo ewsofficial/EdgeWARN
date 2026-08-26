@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 
 // Mirror of src/util/runtime/services.py (the schema owner). Keep both sides
@@ -94,7 +94,8 @@ export function classifyHeartbeatState(raw, { service, staleAfterSeconds, now = 
   }
   const heartbeat = parseHeartbeat(service, payload);
   if (!heartbeat) return { state: 'unsupported-schema', heartbeat: null };
-  if ((now.getTime() - heartbeat.updatedAt.getTime()) / 1000 > staleAfterSeconds) {
+  const ageSeconds = (now.getTime() - heartbeat.updatedAt.getTime()) / 1000;
+  if (ageSeconds < -staleAfterSeconds || ageSeconds > staleAfterSeconds) {
     return { state: 'stale', heartbeat };
   }
   if (heartbeat.degradedChildren.length > 0) return { state: 'degraded', heartbeat };
@@ -104,7 +105,7 @@ export function classifyHeartbeatState(raw, { service, staleAfterSeconds, now = 
 let cache = new Map();
 const CACHE_TTL_MS = 1000;
 
-function readCachedStates(baseDir, options) {
+async function readCachedStates(baseDir, options) {
   const { staleAfterSeconds, now } = options;
   const entry = cache.get(baseDir);
   const nowMs = Date.now();
@@ -113,7 +114,7 @@ function readCachedStates(baseDir, options) {
   for (const name of CANONICAL_SERVICE_NAMES) {
     let raw;
     try {
-      raw = fs.readFileSync(path.join(servicesDir(baseDir), `${name}.json`), 'utf8');
+      raw = await fs.readFile(path.join(servicesDir(baseDir), `${name}.json`), 'utf8');
     } catch (error) {
       // Match Python: an absent heartbeat means intentionally disabled or not
       // started; an existing-but-unreadable file is an invalid artifact.
@@ -132,12 +133,12 @@ export function resetServiceStateCache() {
   cache = new Map();
 }
 
-export function scanServiceStates(baseDir, { staleAfterSeconds, now = new Date(), cached = true }) {
+export async function scanServiceStates(baseDir, { staleAfterSeconds, now = new Date(), cached = true }) {
   if (!cached) {
     const saved = cache.get(baseDir);
     cache.delete(baseDir);
     try {
-      return readCachedStates(baseDir, { staleAfterSeconds, now });
+      return await readCachedStates(baseDir, { staleAfterSeconds, now });
     } finally {
       if (saved) cache.set(baseDir, saved);
     }
@@ -149,11 +150,11 @@ export function createServiceRegistry({ baseDir, staleAfterSeconds }) {
   return {
     baseDir,
     staleAfterSeconds,
-    states(now) {
+    async states(now) {
       return scanServiceStates(baseDir, { staleAfterSeconds, now });
     },
-    stateFor(service, now) {
-      return this.states(now)[service];
+    async stateFor(service, now) {
+      return (await this.states(now))[service];
     },
   };
 }

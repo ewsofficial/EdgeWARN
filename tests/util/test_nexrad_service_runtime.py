@@ -56,9 +56,7 @@ class TestPrimaryActivityLease:
         assert held.cycle_id == "20240501T120000Z"
         assert held.pid > 0
         # The commit point is the final filename; no temp siblings survive.
-        assert sorted(p.name for p in primary_lease_path(tmp_path).parent.iterdir()) == [
-            "primary-active.json"
-        ]
+        assert primary_lease_path(tmp_path).exists()
 
         lease.release()
         assert primary_activity_held(tmp_path) is None

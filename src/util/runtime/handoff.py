@@ -106,6 +106,59 @@ def primary_lease_path(base_dir: str | os.PathLike) -> Path:
     return leases_dir(base_dir) / "primary-active.json"
 
 
+class _AdvisoryFileLock:
+    """Cross-platform non-blocking advisory lock used by runtime ownership."""
+
+    def __init__(self, path: Path):
+        self._path = path
+        self._handle = None
+        try:
+            import fcntl
+        except ImportError:  # pragma: no cover - exercised on Windows
+            fcntl = None
+        self._fcntl = fcntl
+
+    def acquire(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = open(self._path, "a+")
+        try:
+            if self._fcntl is not None:
+                self._fcntl.flock(self._handle.fileno(), self._fcntl.LOCK_EX | self._fcntl.LOCK_NB)
+            else:  # pragma: no cover - Windows
+                import msvcrt
+                self._handle.seek(0)
+                if self._handle.tell() == 0:
+                    self._handle.write("0")
+                    self._handle.flush()
+                self._handle.seek(0)
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            self._handle.close()
+            self._handle = None
+            raise
+
+    def release(self) -> None:
+        if self._handle is None:
+            return
+        try:
+            if self._fcntl is not None:
+                self._fcntl.flock(self._handle.fileno(), self._fcntl.LOCK_UN)
+            else:  # pragma: no cover - Windows
+                import msvcrt
+                self._handle.seek(0)
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_UNLCK, 1)
+        finally:
+            self._handle.close()
+            self._handle = None
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *_exc):
+        self.release()
+
+
 class ServiceLock:
     """Single-instance advisory lock beneath the service-name registry.
 
@@ -116,40 +169,25 @@ class ServiceLock:
     """
 
     def __init__(self, base_dir: str | os.PathLike, name: str):
-        import fcntl
-
-        self._fcntl = fcntl
         self._path = services_dir(base_dir) / f"{name}.lock"
         if name not in CANONICAL_SERVICE_NAMES:
             raise ValueError(
                 f"{name!r} is not a canonical service name "
                 f"(expected one of {', '.join(CANONICAL_SERVICE_NAMES)})"
             )
-        self._handle = None
+        self._lock = _AdvisoryFileLock(self._path)
 
     def acquire(self) -> None:
-        import fcntl
-
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._handle = open(self._path, "a+")
         try:
-            fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._lock.acquire()
         except OSError:
-            self._handle.close()
-            self._handle = None
             raise RuntimeError(
                 f"another instance of the '{self._path.stem}' service already "
                 "holds its single-instance lock"
             ) from None
 
     def release(self) -> None:
-        if self._handle is None:
-            return
-        try:
-            self._fcntl.flock(self._handle.fileno(), self._fcntl.LOCK_UN)
-        finally:
-            self._handle.close()
-            self._handle = None
+        self._lock.release()
 
 
 @dataclass(frozen=True)
@@ -198,6 +236,10 @@ class PrimaryActivityLease:
         self._run_id = run_id
         self._ttl_seconds = float(ttl_seconds)
 
+    def _owner_lock(self):
+        """A small companion lock serializing lease replacement and release."""
+        return _AdvisoryFileLock(primary_lease_path(self._base_dir).with_suffix(".lock"))
+
     def acquire(self, cycle_id: str) -> Path | None:
         """Create or refresh the lease for *cycle_id*; returns the commit path."""
         now = _utc_now()
@@ -212,10 +254,10 @@ class PrimaryActivityLease:
                 now.timestamp() + self._ttl_seconds, tz=timezone.utc
             ).isoformat(),
         }
-        json.dumps(payload)
         destination = primary_lease_path(self._base_dir)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(destination, payload)
+        with self._owner_lock():
+            atomic_write_json(destination, payload)
         return destination
 
     def release(self) -> None:
@@ -227,22 +269,23 @@ class PrimaryActivityLease:
         lease's own run ID.
         """
         destination = primary_lease_path(self._base_dir)
-        try:
-            raw = destination.read_text(encoding="utf-8")
-            payload = json.loads(raw)
-            state = _parse_lease_payload(payload)
-        except (OSError, json.JSONDecodeError, PhaseRecordError, ValueError, TypeError):
-            state = None
-        if state is not None and state.run_id != self._run_id:
-            print(
-                "[Handoff] Skipping primary-activity lease removal: "
-                f"it is held by run {state.run_id}, not {self._run_id}"
-            )
-            return
-        try:
-            destination.unlink(missing_ok=True)
-        except OSError as exc:
-            print(f"[Handoff] Failed to clear primary-activity lease: {exc}")
+        with self._owner_lock():
+            try:
+                raw = destination.read_text(encoding="utf-8")
+                payload = json.loads(raw)
+                state = _parse_lease_payload(payload)
+            except (OSError, json.JSONDecodeError, PhaseRecordError, ValueError, TypeError):
+                state = None
+            if state is not None and state.run_id != self._run_id:
+                print(
+                    "[Handoff] Skipping primary-activity lease removal: "
+                    f"it is held by run {state.run_id}, not {self._run_id}"
+                )
+                return
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError as exc:
+                print(f"[Handoff] Failed to clear primary-activity lease: {exc}")
 
 
 def primary_activity_held(
@@ -373,11 +416,19 @@ class PhaseRecord:
             tolerances=converted_tolerances,
         )
 
-    def validate_exact_inputs(self) -> tuple[str, ...]:
+    def validate_exact_inputs(self, *, base_dir: str | os.PathLike | None = None) -> tuple[str, ...]:
         """Errors for any committed path that no longer exists on disk."""
         errors = []
+        root = Path(base_dir).resolve() if base_dir is not None else None
         for staged in self.inputs:
-            if not staged.local_path.is_file():
+            path = staged.local_path.resolve()
+            if root is not None:
+                try:
+                    path.relative_to(root)
+                except ValueError:
+                    errors.append(f"{staged.product}: input path escapes runtime base directory: {staged.path}")
+                    continue
+            if not path.is_file():
                 errors.append(f"{staged.product}: missing exact input {staged.path}")
         return tuple(errors)
 
@@ -424,10 +475,6 @@ class PhaseRecordPublisher:
         )
         destination = phase_record_path(self._base_dir, record.cycle_id, phase)
         payload = record.as_dict()
-        # Validate the complete payload before touching the filesystem: this
-        # round-trip doubles as the serialization check.
-        json.dumps(payload)
-
         existing = read_phase_record(destination)
         if existing is not None:
             # published_at is per-attempt metadata; content identity decides
@@ -448,18 +495,28 @@ class PhaseRecordPublisher:
         return destination
 
 
-def read_phase_record(path: str | os.PathLike) -> PhaseRecord | None:
-    """Parse a phase record; ``None`` for missing/unreadable/malformed files."""
+def read_phase_record_strict(path: str | os.PathLike) -> PhaseRecord | None:
+    """Parse a phase record, distinguishing absence from I/O and corruption."""
     try:
         raw = Path(path).read_text(encoding="utf-8")
-    except OSError:
+    except FileNotFoundError:
         return None
+    except OSError as exc:
+        raise PhaseRecordError(f"cannot read phase record {path}: {exc}") from exc
     try:
         payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
+    except json.JSONDecodeError as exc:
+        raise PhaseRecordError(f"malformed phase record {path}: {exc}") from exc
     try:
         return PhaseRecord.from_dict(payload)
+    except PhaseRecordError as exc:
+        raise PhaseRecordError(f"malformed phase record {path}: {exc}") from exc
+
+
+def read_phase_record(path: str | os.PathLike) -> PhaseRecord | None:
+    """Best-effort compatibility reader; use the strict reader for drains."""
+    try:
+        return read_phase_record_strict(path)
     except PhaseRecordError:
         return None
 
@@ -533,13 +590,15 @@ class ConsumerCheckpointStore:
     def load(self) -> ConsumerCheckpoint | None:
         try:
             raw = self._path.read_text(encoding="utf-8")
-        except OSError:
+        except FileNotFoundError:
             return None
+        except OSError as exc:
+            raise PhaseRecordError(f"cannot read consumer checkpoint {self._path}: {exc}") from exc
         try:
             payload = json.loads(raw)
             return ConsumerCheckpoint.from_dict(payload)
-        except (json.JSONDecodeError, PhaseRecordError):
-            return None
+        except (json.JSONDecodeError, PhaseRecordError) as exc:
+            raise PhaseRecordError(f"corrupt consumer checkpoint {self._path}: {exc}") from exc
 
     def record(self, cycle_id: str) -> ConsumerCheckpoint:
         current = self.load()
@@ -554,7 +613,6 @@ class ConsumerCheckpointStore:
             updated_at=_utc_now(),
         )
         payload = checkpoint.as_dict()
-        json.dumps(payload)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(self._path, payload)
         return checkpoint
@@ -570,8 +628,9 @@ def select_pending_records(
     """Records a consumer should process next, honoring the backlog cap.
 
     Returns ``(cycle_id, record, status)`` triples oldest first where status is
-    ``"pending"`` or ``"abandoned-backlog"``. Cycles at or before the
-    checkpoint are excluded. When more than *max_backlog* unprocessed records
+    ``"pending"``, ``"abandoned-backlog"``, or ``"already-processed"``.
+    Cycles at or before the checkpoint are retained as an observable
+    ``"already-processed"`` status. When more than *max_backlog* unprocessed records
     remain, the excess oldest records are marked abandoned so processing
     resumes at the oldest still-valid record instead of silently rendering
     newer files under older cycle timestamps.
@@ -581,10 +640,15 @@ def select_pending_records(
     for cycle_id, record in committed:
         if checkpoint is not None and cycle_id <= checkpoint.last_processed_cycle_id:
             continue
-        pending.append((cycle_id, record))
+        else:
+            pending.append((cycle_id, record))
 
     abandoned_count = max(0, len(pending) - max(0, int(max_backlog)))
-    selected: list[tuple[str, PhaseRecord | None, str]] = []
+    selected: list[tuple[str, PhaseRecord | None, str]] = [
+        (cycle_id, record, "already-processed")
+        for cycle_id, record in committed
+        if checkpoint is not None and cycle_id <= checkpoint.last_processed_cycle_id
+    ]
     for index, (cycle_id, record) in enumerate(pending):
         if index < abandoned_count:
             selected.append((cycle_id, record, "abandoned-backlog"))
@@ -619,6 +683,7 @@ def shadow_validate_phase_record(
     record: PhaseRecord,
     *,
     layers=None,
+    base_dir: str | os.PathLike | None = None,
 ) -> tuple[str, ...]:
     """Full shadow validation of one committed record; returns problems.
 
@@ -633,7 +698,7 @@ def shadow_validate_phase_record(
         problems.append(f"{record.phase}: record is marked unsuccessful")
     manifest = record.to_manifest()
     problems.extend(sorted(manifest.validate_alignment()))
-    problems.extend(record.validate_exact_inputs())
+    problems.extend(record.validate_exact_inputs(base_dir=base_dir))
     if layers is not None:
         for name, bound in expected_layer_bindings(manifest, layers).items():
             if bound is None:
