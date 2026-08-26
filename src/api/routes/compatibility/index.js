@@ -3,7 +3,7 @@ import { getProductByLegacyId } from '../../config/productCatalog.js';
 import { createServiceGate, legacyEnvelopeResponder } from '../../middleware/serviceGate.js';
 
 const deprecate = (res) => res.set({ Deprecation: 'true', Link: '</api/v3/openapi.json>; rel="deprecation"' });
-const send = (res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).type(type).set('Content-Length', String(opened.size)); opened.handle.createReadStream().on('error', () => res.destroy()).pipe(res); };
+const send = (res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).type(type).set('Content-Length', String(opened.size)); const stream = opened.handle.createReadStream(); stream.on('error', () => { opened.handle.close(); res.destroy(); }); stream.pipe(res); res.on('close', () => opened.handle.close()); };
 const value = (input) => typeof input === 'string' && input ? input : null;
 
 export function createCompatibilityRouter({ analysis, renders, ancillary, packageVersion, serviceRegistry }) {
