@@ -26,6 +26,42 @@ def _assets_dir() -> Path:
     return repo_root() / zone_sync_cfg["assets_dir"]
 
 
+_BOOTSTRAPPED = False
+
+
+def _reset_bootstrap() -> None:
+    """Clear the per-process bootstrap flag. Test-only."""
+    global _BOOTSTRAPPED
+    _BOOTSTRAPPED = False
+
+
+def _ensure_zone_assets() -> None:
+    """Populate zone assets on first use if the catalog directory is empty.
+
+    The 74 zones.json files under ``assets/nws_zones/`` are not part of the
+    repository -- they are fetched on demand from api.weather.gov the first
+    time a lookup runs in this process. After a successful bootstrap the flag
+    is set so the check is a single boolean for the rest of the run; failures
+    are swallowed because the per-state load already returns an empty cache
+    on a missing file, and a hard failure here would turn a cache miss into a
+    crash for every alert.
+    """
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+
+    assets = _assets_dir()
+    has_data = assets.is_dir() and any(assets.rglob("zones.json"))
+    if not has_data:
+        try:
+            from .zone_sync import NWSZoneSync
+            NWSZoneSync(assets).sync(dry_run=False)
+        except Exception:
+            pass
+
+    _BOOTSTRAPPED = True
+
+
 class ZoneLookup:
     """Lazy-loading lookup for NWS zone polygons."""
     
@@ -47,6 +83,7 @@ class ZoneLookup:
     @classmethod
     def _load_state(cls, state_code: str) -> None:
         """Load zone data for a state into cache."""
+        _ensure_zone_assets()
         state_file = _assets_dir() / state_code / "zones.json"
         
         if not state_file.exists():
