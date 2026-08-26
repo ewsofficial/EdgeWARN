@@ -30,6 +30,7 @@ import threading
 import time
 
 from common.config import loader as config_loader, overlay
+from util.runtime.process_identity import set_parent_death_signal
 
 
 SERVICE_SCRIPTS = {
@@ -205,16 +206,15 @@ def supervise(commands, *, src_root, stop_event=None):
     try:
         for service, cmd in commands.items():
             try:
-                environment = os.environ.copy()
-                # The direct services arm PR_SET_PDEATHSIG only under this
-                # marker, so killing this launcher cannot strand service
-                # locks or their supervised descendants.
-                environment["EDGEWARN_LAUNCHER_PARENT_DEATHSIG"] = "1"
                 processes[service] = subprocess.Popen(
                     cmd,
                     cwd=src_root,
-                    env=environment,
                     start_new_session=True,
+                    # Arm this in the forked child before exec rather than
+                    # using an ambient environment marker that each service
+                    # has to parse.  The setting survives exec on Linux.
+                    # Windows has no PR_SET_PDEATHSIG equivalent here.
+                    preexec_fn=set_parent_death_signal if os.name == "posix" else None,
                 )
             except Exception:
                 print(f"[Launcher] Failed to start '{service}'; stopping started children")

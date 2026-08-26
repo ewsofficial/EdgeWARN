@@ -5,6 +5,7 @@
     "--disable-metar",
     "--disable-nws",
     "--disable-wpc",
+    "--mrms-core-only",
     "--profile"
   ]
 }

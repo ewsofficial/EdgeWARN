@@ -40,7 +40,6 @@ from util.release import get_release_version
 from util.runtime import AccessorySupervisor, StartedProcessRegistry, drain_log_queue
 from util.runtime.config import resolve_file, section
 from util.runtime.handoff import ServiceLock
-from util.runtime.process_identity import set_parent_death_signal
 from util.runtime.nexrad_service import register_nexrad_supervision
 from util.runtime.services import (
     ServiceHeartbeat,
@@ -93,8 +92,6 @@ def _legacy_ingest_activity(heartbeat_path):
 
 
 def main():
-    if os.environ.get("EDGEWARN_LAUNCHER_PARENT_DEATHSIG") == "1":
-        set_parent_death_signal()
     sys.stdout = TimestampedOutput(sys.stdout)
     sys.stderr = TimestampedOutput(sys.stderr)
 
