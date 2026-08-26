@@ -1,0 +1,259 @@
+"""Phase 6 optional-launcher contract tests.
+
+Covers ``src/run_all.py`` without starting any scientific work: exact flag
+routing, service-subset selection, subprocess signal forwarding, and
+exit-code semantics, all driven against throwaway sleeper scripts.
+"""
+
+import argparse
+from pathlib import Path
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+
+import pytest
+
+import run_all
+
+
+@pytest.fixture()
+def src_root(tmp_path):
+    root = tmp_path / "src"
+    root.mkdir()
+    return str(root)
+
+
+def _args(**overrides):
+    defaults = dict(
+        services="edgewarn,ewmrs,nexrad",
+        base_dir=None,
+        config_dir=None,
+        profile=None,
+        lat_limits=None,
+        lon_limits=None,
+        disable_ctam=None,
+        disable_tracking=None,
+        disable_polygon_expansion=None,
+        disable_goes=None,
+        disable_metar=None,
+        disable_nws=None,
+        disable_wpc=None,
+        disable_ewmrs=None,
+        disable_nexrad=None,
+        refl_threshold=None,
+        min_seed_percentage=None,
+        drop_offset=None,
+        mrms_core_only=None,
+    )
+    return argparse.Namespace(**{**defaults, **overrides})
+
+
+class TestServiceSelection:
+    def test_unknown_service_rejected(self):
+        with pytest.raises(SystemExit):
+            run_all._parse_args(["--services", "edgewarn,bogus"])
+
+    def test_mrms_core_only_starts_only_the_primary(self):
+        args, services = run_all._parse_args(["--mrms-core-only"])
+        assert services == ["edgewarn"]
+
+    def test_yaml_mrms_core_only_starts_only_the_primary(self, monkeypatch):
+        monkeypatch.setattr(
+            run_all.config_loader,
+            "load_config",
+            lambda *_args, **_kwargs: {"run": {
+                "disable_ewmrs": False,
+                "disable_nexrad": False,
+                "mrms_core_only": True,
+            }},
+        )
+        args, services = run_all._parse_args([])
+        assert args.mrms_core_only is True
+        assert services == ["edgewarn"]
+
+    def test_disable_flags_omit_services(self, monkeypatch):
+        # CLI values must win over the YAML layer.
+        _, services = run_all._parse_args(["--no-disable-ewmrs", "--disable-nexrad"])
+        assert "nexrad" not in services
+        assert "ewmrs" in services
+
+        _, services = run_all._parse_args(["--disable-ewmrs"])
+        assert "ewmrs" not in services
+        assert "nexrad" in services
+
+
+class TestFlagRouting:
+    def test_every_flag_routes_only_to_its_owners(self, src_root):
+        args = _args(
+            base_dir="/data",
+            config_dir="/cfg",
+            profile=True,
+            lat_limits=[20.0, 55.0],
+            lon_limits=[230.0, 300.0],
+            disable_ctam=True,
+            disable_tracking=True,
+            disable_polygon_expansion=True,
+            disable_goes=True,
+            disable_metar=True,
+            disable_nws=True,
+            disable_wpc=True,
+            refl_threshold=25.0,
+            min_seed_percentage=15.0,
+            drop_offset=1.0,
+            mrms_core_only=True,
+        )
+        commands = run_all.build_service_commands(args, ["edgewarn", "ewmrs"], src_root)
+
+        edgewarn = " ".join(commands["edgewarn"][2:])
+        ewmrs = " ".join(commands["ewmrs"][2:])
+        # Shared flags reach both...
+        for token in ("--base-dir /data", "--config-dir /cfg", "--profile"):
+            assert token in edgewarn
+            assert token in ewmrs
+        # ...primary-only flags stay primary-only...
+        for token in (
+            "--lat_limits 20.0 55.0", "--lon_limits 230.0 300.0",
+            "--disable-ctam", "--disable-tracking", "--disable-polygon-expansion",
+            "--refl-threshold 25.0", "--min-seed-percentage 15.0", "--drop-offset 1.0",
+        ):
+            assert token in edgewarn
+            assert token not in ewmrs
+        # The resolved topology reaches every child so direct and supervised
+        # launches agree even if children inherited a different config root.
+        assert "--mrms-core-only" in edgewarn
+        assert "--mrms-core-only" in ewmrs
+        # ...EWMRS-owned accessory flags stay EWMRS-only, and --disable-goes
+        # is owned by both (scan-time GLM on primary, ABI on EWMRS).
+        for token in ("--disable-metar", "--disable-nws", "--disable-wpc"):
+            assert token in ewmrs
+            assert token not in edgewarn
+        assert "--disable-goes" in ewmrs
+        assert "--disable-goes" in edgewarn
+
+    def test_unset_flags_are_never_forwarded(self, src_root):
+        commands = run_all.build_service_commands(_args(), ["nexrad"], src_root)
+        assert commands["nexrad"] == [
+            sys.executable, os.path.join(src_root, "run_nexrad.py")
+        ]
+
+    def test_explicit_false_forwards_no_form(self, src_root):
+        commands = run_all.build_service_commands(
+            _args(profile=False), ["ewmrs"], src_root
+        )
+        assert "--no-profile" in commands["ewmrs"]
+
+
+def _sleeper(tmp_path, *, name="sleeper.py", code=None, trap=False):
+    """A child that sleeps until terminated (or exits with *code*)."""
+    if code is not None:
+        body = f"import sys\nsys.exit({code})\n"
+    elif trap:
+        # Ignores SIGTERM entirely: only SIGKILL ends it.
+        body = (
+            "import signal, time\n"
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            "\nwhile True:\n"
+            "    time.sleep(0.1)\n"
+        )
+    else:
+        body = (
+            "import signal, sys, time\n"
+            "signal.signal(signal.SIGTERM, lambda *_a: sys.exit(0))\n"
+            "\nwhile True:\n"
+            "    time.sleep(0.1)\n"
+        )
+    path = tmp_path / name
+    path.write_text(body)
+    return str(path)
+
+
+class TestSupervision:
+    def test_signal_driven_shutdown_terminates_children_cleanly(self, tmp_path, src_root):
+        """End-to-end: SIGINT reaches the launcher's children through the driver."""
+        sleeper = _sleeper(tmp_path, name="run_edgewarn.py")
+        sleeper_b = _sleeper(tmp_path, name="run_ewmrs.py")
+        repo_src = str(Path(__file__).resolve().parents[2] / "src")
+        driver = tmp_path / "driver.py"
+        driver.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {repo_src!r})\n"
+            "import run_all\n"
+            f"run_all.SERVICE_SCRIPTS['edgewarn'] = {sleeper!r}\n"
+            f"run_all.SERVICE_SCRIPTS['ewmrs'] = {sleeper_b!r}\n"
+            "sys.exit(run_all.main(['--services', 'edgewarn,ewmrs']))\n"
+        )
+
+        proc = subprocess.Popen(
+            [sys.executable, str(driver)], start_new_session=True
+        )
+        try:
+            time.sleep(2.0)  # launcher + two sleepers up
+
+            proc.send_signal(signal.SIGINT)
+            code = proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            # Kill the whole process group so sleeper children cannot outlive
+            # the failed assertion.
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            pytest.fail("launcher did not exit after SIGINT")
+
+        # Clean signal shutdown exits zero even though the children were killed.
+        assert code == 0
+
+    def test_unexpected_child_exit_is_nonzero(self, tmp_path, src_root, monkeypatch):
+        quitter = _sleeper(tmp_path, name="quitter.py", code=3)
+        sleeper = _sleeper(tmp_path)
+        monkeypatch.setattr(run_all, "SERVICE_SCRIPTS", {
+            "edgewarn": sleeper, "ewmrs": quitter, "nexrad": sleeper,
+        })
+        commands = run_all.build_service_commands(_args(), list(run_all.SERVICE_SCRIPTS), src_root)
+
+        started = time.time()
+        code = run_all.supervise(commands, src_root=src_root)
+        elapsed = time.time() - started
+
+        assert code == 1
+        # The remaining children were torn down promptly, not waited out.
+        assert elapsed < 20
+
+    def test_survivors_are_escalated_to_sigkill_within_grace(
+        self, tmp_path, src_root, monkeypatch
+    ):
+        stubborn = _sleeper(tmp_path)  # ignores SIGTERM entirely
+        monkeypatch.setattr(run_all, "SERVICE_SCRIPTS", {"edgewarn": stubborn})
+        commands = run_all.build_service_commands(_args(), ["edgewarn"], src_root)
+
+        stop = threading.Event()
+
+        def run():
+            run_all.supervise(commands, src_root=src_root, stop_event=stop)
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        time.sleep(1.0)
+        stop.set()
+        deadline = time.time() + run_all.STOP_GRACE_SECONDS + 10
+        while thread.is_alive() and time.time() < deadline:
+            time.sleep(0.2)
+
+        assert not thread.is_alive()
+
+
+def test_launcher_imports_no_pipeline_module():
+    """Import-isolation probe: the launcher stays a thin supervisor."""
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import sys\nsys.path.insert(0, 'src')\nimport run_all\n"
+         "print('EWMRS:', 'EWMRS' in sys.modules)\n"
+         "print('NEXRAD:', 'common.ingest.nexrad' in sys.modules)\n"
+         "print('EDGEWARN:', 'EdgeWARN' in sys.modules)"],
+        capture_output=True, text=True, timeout=120, cwd=os.getcwd(),
+        env={**os.environ, "PYTHONPATH": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "EWMRS: False" in result.stdout
+    assert "NEXRAD: False" in result.stdout
+    assert "EDGEWARN: False" in result.stdout

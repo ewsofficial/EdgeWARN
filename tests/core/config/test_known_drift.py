@@ -363,7 +363,7 @@ def test_stormcell_resync_interval_has_no_config_key():
     """No counter can reach an interval here, so no key offers to tune one.
 
     The only path reaching `update_stormcell_index` is detection, and
-    `src/util/runtime/cycle.py` starts `edgewarn_tandem_worker` in a fresh
+    `src/util/runtime/cycle.py` starts `edgewarn_cycle_worker` in a fresh
     `multiprocessing.Process` per cycle. A per-instance counter is therefore zeroed
     before every update, so hoisting the manager inside the worker cannot help --
     the interval needs the counter to outlive the process, not just the call.
@@ -1681,11 +1681,17 @@ def test_the_colormap_candidates_still_find_the_shipped_file():
 
 
 def test_run_module_scope_is_outside_a_main_guard():
-    """Under Windows `spawn` this re-executes in every child process."""
+    """RESOLVED (Phase 1): parsing lives inside ``main()``, not module scope.
+
+    The original hazard was module-scope argument parsing re-executing under
+    Windows ``spawn`` in every child process. ``run.py`` is now a thin alias
+    over ``run_edgewarn.py`` with no parsing or side effects at all; the
+    live contract is enforced by ``tests/unit/test_entrypoint_import_safety``.
+    """
     source = (REPO_ROOT / "src/run.py").read_text(encoding="utf-8")
     guard_index = source.find('if __name__ == "__main__"')
     assert guard_index != -1
-    assert "get_args()" in source[:guard_index], "get_args() is expected at module scope today"
+    assert "get_args()" not in source
 
 
 # --- Silent fallbacks ----------------------------------------------------
@@ -1875,7 +1881,6 @@ EWMRS_MAX_ENTRIES_SITES = (
     "run_render_pipeline",
     "run_mrms_render_pipeline",
     "run_goes_render_pipeline",
-    "ewmrs_tandem_worker",
     "ewmrs_goes_worker",
 )
 
@@ -1916,12 +1921,18 @@ def test_ewmrs_declaration_defaults_all_defer_to_the_catalog():
         ("run_render_pipeline", "phase_name"),
         ("run_render_pipeline", "cleanup_after"),
         ("cleanup_old_gui_files", "max_age_minutes"),
-        ("_cleanup_old_nexrad_gui_files", "max_age_minutes"),
         ("_maybe_cleanup_goes_gui_files", "max_age_minutes"),
-        ("render_pending_nexrad_gui_files", "max_source_age_minutes"),
-        ("run_nexrad_render_loop", "poll_interval_seconds"),
     ):
         assert param_default("EWMRS/pipeline.py", qualname, param) is None, (qualname, param)
+
+    # Decomposition Phase 3 moved the NEXRAD GUI loop into its own service
+    # package; its declaration defaults must keep deferring to the catalog.
+    for relative_path, qualname, param in (
+        ("NEXRAD/gui_pipeline.py", "cleanup_old_nexrad_gui_files", "max_age_minutes"),
+        ("NEXRAD/gui_pipeline.py", "render_pending_nexrad_gui_files", "max_source_age_minutes"),
+        ("NEXRAD/gui_pipeline.py", "run_nexrad_render_loop", "poll_interval_seconds"),
+    ):
+        assert param_default(relative_path, qualname, param) is None, (qualname, param)
 
 
 def test_ewmrs_three_owners_of_120_stay_three_keys():
@@ -2176,9 +2187,20 @@ def test_ewmrs_nexrad_render_loop_floor_and_width_come_from_the_catalog():
     assert nexrad_poll_interval_min_seconds() == recorded["poll_interval_min_seconds"] == 1.0
     assert nexrad_render_max_workers() == recorded["max_workers"] == 8
 
-    source = _ewmrs_pipeline_source()
-    assert "max(nexrad_poll_interval_min_seconds(), float(poll_interval_seconds))" in source
-    assert "min(nexrad_render_max_workers(), len(pending_metadata))" in source
+    # Decomposition Phase 3: the loop body now lives in the NEXRAD service
+    # package, which reads the same catalog keys.
+    from NEXRAD import config as nexrad_config
+
+    assert (
+        nexrad_config.nexrad_poll_interval_seconds()
+        == recorded["poll_interval_seconds"]
+        == 30.0
+    )
+    nexrad_source = (
+        (REPO_ROOT / "src/NEXRAD/gui_pipeline.py").read_text(encoding="utf-8")
+    )
+    assert "max(nexrad_poll_interval_min_seconds(), float(poll_interval_seconds))" in nexrad_source
+    assert "min(nexrad_render_max_workers(), len(pending_metadata))" in nexrad_source
 
 
 def test_ewmrs_generic_render_phase_still_cleans_up_by_default():

@@ -548,7 +548,7 @@ def test_the_renderer_produces_exactly_the_moments_the_api_serves(api):
     renderer actually writes files under those names. Compared as sets because
     the mapping is keyed by NEXRAD block code and carries no ordering.
     """
-    from EWMRS.render.nexrad import RAW_NEXRAD_BLOCK_VARIABLE_NAMES
+    from NEXRAD.render import RAW_NEXRAD_BLOCK_VARIABLE_NAMES
 
     produced = set(RAW_NEXRAD_BLOCK_VARIABLE_NAMES.values())
     assert produced == set(api["validation"]["radar_products"]), RADAR_OWNERS
@@ -576,7 +576,7 @@ def test_the_renderer_reads_the_colormap_mapping_instead_of_restating_it(render)
     the constant is *absent* is the part that matters -- an accessor that agrees
     with a surviving constant still leaves two owners.
     """
-    from EWMRS.render import nexrad
+    from NEXRAD import render as nexrad
     from EWMRS.render.config import nexrad_variable_colormaps
 
     assert not hasattr(nexrad, "NEXRAD_VARIABLE_COLORMAP_KEYS")

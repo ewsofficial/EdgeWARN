@@ -616,7 +616,7 @@ def test_json_reader_never_observes_partial_index(monkeypatch, tmp_path):
 
 
 def test_binary_reader_never_observes_partial_nexrad_artifact(monkeypatch, tmp_path):
-    from EWMRS.render import nexrad
+    from NEXRAD import render as nexrad
 
     path = tmp_path / "field.bin.gz"
     old_payload = b"OLD_COMPLETE"
@@ -697,10 +697,15 @@ def test_supervisor_restarts_dead_process(monkeypatch, tmp_path):
 
     from util.runtime.processes import AccessorySupervisor
 
-    stop_worker = multiprocessing.Event()
+    # File-sentinel worker on purpose: the child is killed below, and a killed
+    # process can die holding a shared multiprocessing.Event's semaphore lock,
+    # which poisons the event for every later set()/wait()/clear() -- including
+    # the parent's, hanging the suite. A filesystem sentinel has no such state.
+    stop_file = tmp_path / "stop"
 
-    def worker(stop_event):
-        stop_event.wait()
+    def worker(stop_path):
+        while not os.path.exists(stop_path):
+            time.sleep(0.01)
 
     supervisor = AccessorySupervisor(
         health_path=str(tmp_path / "health.json"),
@@ -708,7 +713,7 @@ def test_supervisor_restarts_dead_process(monkeypatch, tmp_path):
         max_backoff_seconds=0.1,
         restart_window_seconds=60,
     )
-    supervisor.add("test", worker, args=(stop_worker,), enabled=True, daemon=True)
+    supervisor.add("test", worker, args=(str(stop_file),), enabled=True)
     supervisor.start_all()
     assert len([p for p in supervisor._process_info if p["process"] is not None and p["process"].is_alive()]) == 1
 
@@ -727,7 +732,7 @@ def test_supervisor_restarts_dead_process(monkeypatch, tmp_path):
     assert new_proc is not None
     assert new_proc.is_alive()
     assert new_proc.pid != proc.pid
-    stop_worker.set()
+    stop_file.write_text("stop")
     new_proc.join(timeout=2)
     assert not new_proc.is_alive()
 
@@ -845,7 +850,7 @@ def test_default_goes_coordinator_keeps_readiness_false_when_both_paths_throw(
     monkeypatch.setattr(coordinator, "download_all_goes_files", sync_failure)
 
     state = asyncio.run(
-        coordinator.run_tandem_ingest_cycle(
+        coordinator.run_staged_ingest_cycle(
             datetime(2026, 7, 26, 18, 0, tzinfo=timezone.utc),
             lambda _message: None,
             include_goes=True,

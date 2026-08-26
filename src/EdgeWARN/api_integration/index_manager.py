@@ -121,7 +121,7 @@ class APIIndexManager:
         No periodic resync counter, and no config key for one. An interval only
         means something if the counter outlives a single update, and it cannot:
         the only path here is detection, and src/util/runtime/cycle.py starts
-        edgewarn_tandem_worker in a fresh multiprocessing.Process per cycle, so
+        edgewarn_cycle_worker in a fresh multiprocessing.Process per cycle, so
         any per-instance counter is zeroed before every update regardless of the
         scope the manager is hoisted into. Adding an interval requires first
         moving the index commit somewhere that survives a cycle -- the long-lived

@@ -6,22 +6,15 @@ import json
 import multiprocessing
 import os
 from pathlib import Path
-import queue
 import time
 
 from common.ingest.manifest import CycleInputManifest
-from common.pipeline.coordinator import run_tandem_ingest_cycle
-from EdgeWARN.pipeline import edgewarn_tandem_worker
+from common.pipeline.coordinator import run_staged_ingest_cycle
+from EdgeWARN.pipeline import edgewarn_cycle_worker
 from EdgeWARN.process.detect.config import DetectionConfig
-from EWMRS.pipeline import ewmrs_tandem_worker
 
 from .config import section
-from .goes import (
-    collect_local_goes_inputs,
-    download_glm_for_scan,
-    get_ewmrs_goes_render_specs,
-    wait_for_local_goes_inputs,
-)
+from .goes import download_glm_for_scan
 from .logging import drain_log_queue, queue_log
 from .processes import StartedProcessRegistry
 
@@ -72,7 +65,7 @@ class CycleStageResult:
 
 @dataclass(frozen=True)
 class CycleOutcome:
-    """Validated terminal outcome for a full tandem cycle."""
+    """Validated terminal outcome for a full primary cycle."""
 
     timestamp: datetime
     stages: dict[str, CycleStageResult]
@@ -320,7 +313,7 @@ class CycleStateStore:
 
 
 @dataclass(frozen=True)
-class TandemCycleConfig:
+class PrimaryCycleConfig:
     lat_limits: tuple[float, float]
     lon_limits: tuple[float, float]
     profile: bool
@@ -332,44 +325,46 @@ class TandemCycleConfig:
     min_seed_percentage: float
     drop_offset: float
     config_dir: str | None
-    ewmrs_enabled: bool
     goes_enabled: bool
     mrms_core_only: bool
-    goes_render_wait_seconds: float
-    goes_render_wait_interval_seconds: float
+    # Phase 2 durable handoff: publish immutable mrms-ready/rap-ready records
+    # beneath <base_dir>/state/realtime/cycles/ for the EWMRS service to
+    # consume. Publication failures never fail a cycle.
+    base_dir: str | None = None
+    handoff_enabled: bool = False
 
 
-def run_tandem_cycle_once(
+def run_primary_cycle_once(
     dt,
-    goes_render_task_queue,
-    goes_render_log_queue,
     manager,
     *,
-    config: TandemCycleConfig,
-    goes_cycle_active_event,
+    config: PrimaryCycleConfig,
 ):
+    """Run one primary cycle: staged ingest, scan-time GLM, and the EdgeWARN worker.
+
+    Decomposition Phase 4: this is now a primary-only cycle. The EWMRS worker,
+    its readiness events, and the GOES render task queue are gone — EWMRS runs
+    as its own service (``run_ewmrs.py``) and consumes the committed
+    ``mrms-ready``/``rap-ready`` phase records published here.
+    """
     cycle_settings = section("cycle")
-    goes_coordination = section("goes_coordination")
     log_queue = multiprocessing.Queue()
     shared_state = manager.dict()
 
     detection_ready_event = multiprocessing.Event()
-    ewmrs_mrms_ready_event = multiprocessing.Event()
     integration_ready_event = multiprocessing.Event()
+    # No worker waits on render-input readiness anymore (the EWMRS service
+    # consumes durable records), but the transition keeps its own event so the
+    # release/telemetry path stays uniform.
+    render_inputs_ready_event = multiprocessing.Event()
     shared_state.update({
         "detection_inputs_ready": False,
-        "ewmrs_mrms_inputs_ready": False,
-        "ewmrs_goes_inputs_ready": False,
+        "render_mrms_inputs_ready": False,
         "edgewarn_integration_inputs_ready": False,
         "edgewarn_generated_file": "",
         "input_manifest": {},
         "edgewarn_stage": {
             "status": "pending",
-            "produced_artifacts": [],
-            "errors": [],
-        },
-        "ewmrs_stage": {
-            "status": "pending" if config.ewmrs_enabled else CycleStatus.DISABLED.value,
             "produced_artifacts": [],
             "errors": [],
         },
@@ -386,19 +381,13 @@ def run_tandem_cycle_once(
     )
 
     edgewarn_proc = multiprocessing.Process(
-        target=edgewarn_tandem_worker,
+        target=edgewarn_cycle_worker,
         args=(
             log_queue, shared_state, detection_ready_event, integration_ready_event,
             dt, config.lat_limits, config.lon_limits, detection_config,
             config.profile, config.disable_ctam, config.disable_ctam_modules, config.disable_tracking,
             config.disable_polygon_expansion, config.mrms_core_only,
         ),
-    )
-    ewmrs_proc = (
-        multiprocessing.Process(
-            target=ewmrs_tandem_worker,
-            args=(log_queue, shared_state, ewmrs_mrms_ready_event, dt),
-        ) if config.ewmrs_enabled else None
     )
     started_processes = StartedProcessRegistry()
     released_phases: set[str] = set()
@@ -419,18 +408,54 @@ def run_tandem_cycle_once(
             released_phases.add(phase)
         event.set()
 
-    def publish(state, event, phase: str, *, integration=False):
+    # Durable handoff: publish immutable phase records alongside the in-memory
+    # callbacks below. A failed publication or validation is logged and never
+    # blocks or fails the cycle. Validation deliberately stays primary-owned
+    # (alignment plus exact input existence) so no EWMRS import is needed here;
+    # the consumer re-validates against the configured render layers.
+    publisher = None
+    if config.handoff_enabled and config.base_dir:
+        from util.runtime.handoff import PhaseRecordPublisher
+
+        publisher = PhaseRecordPublisher(config.base_dir)
+
+    def durable_handoff(phase: str, state, ready: bool):
+        if publisher is None or not ready or state.input_manifest is None:
+            return
+        try:
+            committed = publisher.publish(phase, state.input_manifest)
+            if committed is None:
+                return
+            from util.runtime.handoff import read_phase_record, shadow_validate_phase_record
+
+            record = read_phase_record(committed)
+            if record is None:
+                print(
+                    f"[Handoff] {phase} record for {committed.parent.name} "
+                    "could not be re-read after commit"
+                )
+                return
+            problems = shadow_validate_phase_record(record)
+            if problems:
+                print(
+                    f"[Handoff] Validation problems for {phase} "
+                    f"{record.cycle_id}: {list(problems)}"
+                )
+            else:
+                print(f"[Handoff] Published validated {phase} record for {record.cycle_id}")
+        except Exception as exc:
+            print(f"[Handoff] Durable handoff publication failed for {phase}: {exc}")
+
+    def publish(state, event, phase: str):
         """Write the complete snapshot before waking a worker."""
         shared_state["detection_inputs_ready"] = state.detection_inputs_ready
-        shared_state["ewmrs_mrms_inputs_ready"] = state.ewmrs_mrms_inputs_ready
+        shared_state["render_mrms_inputs_ready"] = state.ewmrs_mrms_inputs_ready
         if state.input_manifest is not None:
             shared_state["input_manifest"] = state.input_manifest.as_dict()
-        if integration:
-            shared_state["edgewarn_integration_inputs_ready"] = state.edgewarn_integration_inputs_ready
         shared_state["errors"] = dict(state.errors)
         ready_key = {
             "detection_released": "detection_inputs_ready",
-            "ewmrs_mrms_released": "ewmrs_mrms_inputs_ready",
+            "render_mrms_released": "render_mrms_inputs_ready",
         }[phase]
         if phase == "detection_released":
             emit_phase(
@@ -442,9 +467,6 @@ def run_tandem_cycle_once(
     try:
         started_processes.start(edgewarn_proc, "EdgeWARN")
         emit_phase("edgewarn_worker_started", "started")
-        started_processes.start(ewmrs_proc, "EWMRS")
-        if ewmrs_proc is not None:
-            emit_phase("ewmrs_worker_started", "started")
 
         async def ingest_and_glm():
             glm_task = None
@@ -472,15 +494,27 @@ def run_tandem_cycle_once(
                 if state.input_manifest is not None:
                     shared_state["input_manifest"] = state.input_manifest.as_dict()
                 shared_state["errors"] = dict(state.errors)
+                # rap_inputs_ready is settled before the base-integration
+                # release, so the raw-RAP record can be published here. In
+                # mrms-core-only mode no RAP is staged, and publishing a
+                # "successful" record without its input would poison the
+                # consumer's rap phase forever.
+                durable_handoff(
+                    "rap-ready",
+                    state,
+                    state.rap_inputs_ready and not config.mrms_core_only,
+                )
                 publish_integration_if_ready()
 
-            cycle_task = asyncio.create_task(run_tandem_ingest_cycle(
+            cycle_task = asyncio.create_task(run_staged_ingest_cycle(
                 dt, lambda msg: queue_log(log_queue, msg),
                 include_goes=False,
                 include_rap=not config.mrms_core_only,
-                include_ewmrs=config.ewmrs_enabled,
                 on_detection_ready=lambda state: publish(state, detection_ready_event, "detection_released"),
-                on_ewmrs_mrms_ready=lambda state: publish(state, ewmrs_mrms_ready_event, "ewmrs_mrms_released"),
+                on_ewmrs_mrms_ready=lambda state: (
+                    durable_handoff("mrms-ready", state, state.ewmrs_mrms_inputs_ready),
+                    publish(state, render_inputs_ready_event, "render_mrms_released"),
+                ),
                 on_base_integration_ready=base_integration_ready,
             ))
             if glm_task is not None:
@@ -513,11 +547,10 @@ def run_tandem_cycle_once(
 
         cycle_state, glm_ready = asyncio.run(ingest_and_glm())
     except Exception as exc:
-        print(f"[Scheduler] Tandem ingest cycle failed for {dt}: {exc}")
+        print(f"[Scheduler] Primary ingest cycle failed for {dt}: {exc}")
         cycle_state = None
         glm_ready = False
 
-    goes_specs = get_ewmrs_goes_render_specs() if config.ewmrs_enabled and config.goes_enabled else []
     edgewarn_integration_ready = bool(
         cycle_state
         and cycle_state.detection_inputs_ready
@@ -533,141 +566,30 @@ def run_tandem_cycle_once(
     # Failure paths may have occurred before a coordinator callback.  Release
     # every waiter after the terminal false state has been written.
     release(detection_ready_event, "detection_released", "ready" if shared_state["detection_inputs_ready"] else "unavailable")
-    release(ewmrs_mrms_ready_event, "ewmrs_mrms_released", "ready" if shared_state["ewmrs_mrms_inputs_ready"] else "unavailable")
+    release(render_inputs_ready_event, "render_mrms_released", "ready" if shared_state["render_mrms_inputs_ready"] else "unavailable")
     release(integration_ready_event, "integration_released", "ready" if edgewarn_integration_ready else "unavailable")
 
-    goes_ready = False
-    goes_path = None
-    goes_manifest = None
     try:
-        if config.ewmrs_enabled and config.goes_enabled:
-            goes_inputs = collect_local_goes_inputs(dt, specs=goes_specs)
-            goes_manifest = CycleInputManifest(
-                cycle_time=dt,
-                inputs=goes_inputs,
-            )
-            goes_ready = (
-                len(goes_inputs) == len(goes_specs)
-                and not goes_manifest.validate_alignment()
-                and not goes_cycle_active_event.is_set()
-            )
-            goes_path = goes_inputs[0].path if goes_ready else None
-
-            if not goes_ready:
-                queue_log(
-                    log_queue,
-                    f"INFO: Waiting for background GOES ABI ingest cycle to fully stage render inputs for {dt.isoformat()}",
-                )
-                goes_inputs = wait_for_local_goes_inputs(
-                    dt,
-                    specs=goes_specs,
-                    timeout_seconds=config.goes_render_wait_seconds,
-                    interval_seconds=config.goes_render_wait_interval_seconds,
-                    activity_event=goes_cycle_active_event,
-                )
-                goes_manifest = CycleInputManifest(
-                    cycle_time=dt,
-                    inputs=goes_inputs,
-                )
-                goes_ready = (
-                    len(goes_inputs) == len(goes_specs)
-                    and not goes_manifest.validate_alignment()
-                )
-                goes_path = goes_inputs[0].path if goes_ready else None
-
-            if not goes_ready:
-                queue_log(
-                    log_queue,
-                    f"INFO: Background GOES ABI ingest did not finish staging the full render input set for {dt.isoformat()}; GOES render phase will be skipped",
-                )
-            else:
-                base_manifest = CycleInputManifest.from_dict(
-                    shared_state.get("input_manifest")
-                ) or CycleInputManifest(cycle_time=dt)
-                shared_state["input_manifest"] = base_manifest.with_inputs(
-                    goes_inputs
-                ).as_dict()
-                queue_log(
-                    log_queue,
-                    "INFO: Full pinned GOES ABI render input set is staged: "
-                    + ", ".join(record.path for record in goes_inputs),
-                )
-                dropped_render_tasks = 0
-                saw_shutdown = False
-                while True:
-                    try:
-                        queued_task = goes_render_task_queue.get_nowait()
-                    except queue.Empty:
-                        break
-
-                    if queued_task is None:
-                        saw_shutdown = True
-                        continue
-                    dropped_render_tasks += 1
-
-                goes_render_task_queue.put((
-                    dt,
-                    goes_coordination["render_task_max_entries"],
-                    datetime.now(timezone.utc).isoformat(),
-                    goes_manifest.as_dict(),
-                ))
-                if saw_shutdown:
-                    goes_render_task_queue.put(None)
-                if dropped_render_tasks > 0:
-                    queue_log(
-                        log_queue,
-                        f"INFO: Replaced {dropped_render_tasks} stale queued GOES render task(s) with latest ready cycle {dt.isoformat()}",
-                    )
-                queue_log(log_queue, f"INFO: Queued decoupled EWMRS GOES render for {dt.isoformat()}")
-        else:
-            goes_ready = False
-    except Exception as exc:
-        if config.ewmrs_enabled and config.goes_enabled:
-            queue_log(log_queue, f"WARN: Local GOES readiness check failed for {dt.isoformat()}: {exc}")
-    finally:
-        shared_state["ewmrs_goes_inputs_ready"] = config.ewmrs_enabled and goes_ready
-        errors = dict(shared_state.get("errors", {}))
-        if not config.ewmrs_enabled:
-            errors.pop("ewmrs_ingest", None)
-            errors.pop("ewmrs_goes_ingest", None)
-            errors.pop("ewmrs_rap_uint16", None)
-        elif goes_ready:
-            errors.pop("ewmrs_goes_ingest", None)
-        elif config.goes_enabled:
-            errors.setdefault("ewmrs_goes_ingest", "EWMRS GOES inputs unavailable")
-        shared_state["errors"] = errors
-
-    try:
-        while edgewarn_proc.is_alive() or (ewmrs_proc is not None and ewmrs_proc.is_alive()) or not log_queue.empty():
+        while edgewarn_proc.is_alive() or not log_queue.empty():
             drain_log_queue(log_queue)
-            drain_log_queue(goes_render_log_queue)
             time.sleep(cycle_settings["log_drain_poll_seconds"])
     except KeyboardInterrupt:
-        print("CTRL+C detected, stopping tandem cycle workers...")
+        print("CTRL+C detected, stopping primary cycle workers...")
         raise
     finally:
         started_processes.shutdown()
         drain_log_queue(log_queue)
-        drain_log_queue(goes_render_log_queue)
 
     edgewarn_stage = _stage_result_from_shared(
         shared_state.get("edgewarn_stage"),
         worker_exit_status=edgewarn_proc.exitcode,
         fallback_error="EdgeWARN worker exited without publishing a terminal stage result",
     )
-    if ewmrs_proc is None:
-        ewmrs_stage = CycleStageResult(status=CycleStatus.DISABLED)
-    else:
-        ewmrs_stage = _stage_result_from_shared(
-            shared_state.get("ewmrs_stage"),
-            worker_exit_status=ewmrs_proc.exitcode,
-            fallback_error="EWMRS worker exited without publishing a terminal stage result",
-        )
 
     ingest_errors = tuple(
         f"{name}: {message}"
         for name, message in dict(shared_state.get("errors", {})).items()
-        if name not in {"ewmrs_goes_ingest", "ewmrs_rap_uint16"}
+        if name != "ewmrs_goes_ingest"
     )
     ingest_ready = bool(
         cycle_state
@@ -683,7 +605,6 @@ def run_tandem_cycle_once(
     stages = {
         "ingest": ingest_stage,
         "edgewarn": edgewarn_stage,
-        "ewmrs": ewmrs_stage,
     }
     retryable = any(
         stage.status in {CycleStatus.UNAVAILABLE, CycleStatus.FAILED}

@@ -114,6 +114,8 @@ run:
   disable_ewmrs: false
   disable_nws: false
   disable_metar: false
+  # Phase 4 CLI contract: WPC is EWMRS-owned; this is its first dedicated flag.
+  disable_wpc: false
   disable_goes: false
   disable_nexrad: false
   # Setting this true here forces seven subsystems off, exactly as the flag does
@@ -199,6 +201,10 @@ background_intervals:
   # run continuously, and this is how long the loop waits before relaunching it.
   nexrad_seconds: 5
   nexrad_interval_seconds: 0.2          # :239, the subdivision of that 5 s
+  # Phase 4: how long the EWMRS record consumer waits between passes over
+  # state/realtime/cycles/ for new committed mrms-ready/rap-ready records.
+  ewmrs_consumer_seconds: 10
+  ewmrs_consumer_interval_seconds: 1.0
 
 cycle:
   # run.py:168-169. Named by filesystem attribute so it follows a relocated base dir.
@@ -211,7 +217,7 @@ cycle:
     initial_backoff_seconds: 5.0
     max_backoff_seconds: 30.0
 
-  # Resolved inside run_tandem_ingest_cycle (coordinator.py:146) when the caller
+  # Resolved inside run_staged_ingest_cycle (coordinator.py:146) when the caller
   # passes nothing, which is now every caller. The S3 listing depth for MRMS
   # detection and MRMS integration ingest, and for those two tasks only.
   #
@@ -235,6 +241,43 @@ cycle:
   # cycle.py:643. How often the tandem cycle drains its log queues while waiting
   # on the worker processes.
   log_drain_poll_seconds: 1
+
+  # Phase 0 of plans/realtime-runner-decomposition-plan.md: the maximum number
+  # of committed cycle records a consumer (EWMRS) may retain behind the primary
+  # service. Once the durable handoff consumer lands (Phase 4), a backlog older
+  # than this many cycles is recorded as unrecoverable and processing resumes at
+  # the oldest still-valid record instead of silently rendering newer files
+  # under older cycle timestamps. Sized together with GUI retention against
+  # measured render throughput.
+  max_backlog_cycles: 10
+
+# Phase 3 of plans/realtime-runner-decomposition-plan.md: cross-process
+# NEXRAD throttling. The in-process `goes_coordination.pause_ingest_during_render`
+# events above cannot reach across independent services, so when this policy is
+# enabled the primary holds a lease at state/realtime/leases/primary-active.json
+# while a cycle runs, and the NEXRAD service waits (without interrupting any
+# atomic unit already in progress) before admitting a new ingest scan or render
+# batch. Feature-gated and default off; the three-service split does not depend
+# on it.
+nexrad_coordination:
+  pause_ingest_during_primary_activity: false
+  # Lease lifetime: a crashed primary's lease expires after this long, so a
+  # crash can never pause NEXRAD forever.
+  primary_lease_ttl_seconds: 90.0
+  # How long the NEXRAD loops wait per quiescence window before proceeding
+  # anyway (observable timeout rather than an indefinite block), subdivided by
+  # the poll interval so shutdown stays responsive.
+  pause_max_wait_seconds: 30.0
+  pause_poll_interval_seconds: 0.5
+
+# Phase 2 of plans/realtime-runner-decomposition-plan.md: shadow publication
+# of durable mrms-ready.json and rap-ready.json phase records beneath
+# state/realtime/cycles/<cycle-id>/, in parallel with the existing in-memory
+# release callbacks. Nothing consumes these records for correctness yet; the
+# per-cycle shadow validation only logs problems. Records are immutable: a
+# successful record is never overwritten by a later attempt.
+handoff:
+  enabled: true
 
 profiling:
   # TRI-STATE, not a boolean. performance.py:50 declares `_ENABLED: bool | None`

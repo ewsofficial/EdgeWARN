@@ -97,29 +97,7 @@ async def _ingest_rap(dt: datetime, log: LogFunc):
         return None, reason
 
 
-async def _run_rap_uint16_conversion(rap_path, dt: datetime, log: LogFunc) -> bool:
-    try:
-        from EWMRS.pipeline import run_rap_uint16_pipeline
-
-        # The worker phases have already been released before this derived
-        # artifact starts, so keeping it in this coordinator avoids retaining
-        # a default-executor thread across a cycle shutdown.
-        results = run_rap_uint16_pipeline(rap_path, dt)
-        successful_layers = sum(1 for path in results.values() if path is not None)
-        complete = bool(results) and successful_layers == len(results)
-        level = "INFO" if complete else "WARN"
-        log(
-            f"{level}: EWMRS RAP Uint16Array conversion "
-            f"{'completed' if complete else 'incomplete'}: "
-            f"{successful_layers}/{len(results)} layers succeeded"
-        )
-        return complete
-    except Exception as exc:
-        log(f"WARN: EWMRS RAP Uint16Array conversion failed: {exc}")
-        return False
-
-
-async def run_tandem_ingest_cycle(
+async def run_staged_ingest_cycle(
     dt: datetime,
     log: LogFunc,
     *,
@@ -298,10 +276,9 @@ async def run_tandem_ingest_cycle(
     if include_goes and not goes_ok:
         state.errors["goes_ingest"] = "GOES inputs unavailable"
 
-    # This derived EWMRS artifact intentionally starts only after the raw-RAP
-    # transition was published above; it never delays a worker release.
-    if rap_ok and include_ewmrs and not await _run_rap_uint16_conversion(rap_path, dt, log):
-        state.errors["ewmrs_rap_uint16"] = "EWMRS RAP Uint16Array conversion failed"
+    # Decomposition Phase 4: the RAP Uint16 conversion is an EWMRS-owned
+    # derived artifact, executed by the EWMRS service after it consumes a
+    # committed rap-ready record. It no longer runs in this coordinator.
 
     state.ewmrs_goes_inputs_ready = (
         include_ewmrs

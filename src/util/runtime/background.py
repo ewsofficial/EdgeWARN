@@ -1,11 +1,10 @@
 import asyncio
-import ctypes
 from datetime import datetime, timezone
 import json
 import os
-import queue
 import signal
 import sys
+import time
 import traceback
 
 import common.ingest.metar as metar_ingest
@@ -14,41 +13,17 @@ from common.ingest.mrms.config import get_abi_radc_channel_specs
 from common.ingest.mrms.downloader import download_goes_specs, download_goes_specs_async
 from common.ingest.nexrad.pipeline import run_realtime_ingestion_pipeline
 from common.ingest.wpc.main import run_wpc_ingest
-from EWMRS.pipeline import ewmrs_goes_worker, run_nexrad_render_loop as _run_nexrad_render_loop
+from EWMRS.pipeline import ewmrs_goes_worker
 from util.io import QueueWriter
 
 from .config import section
 from .logging import queue_log
+from .process_identity import set_parent_death_signal as _set_parent_death_signal
+from .process_identity import set_process_name as _set_process_name
 from .timing import sleep_for, sleep_until_boundary
 
 
 _SHUTDOWN_REQUESTED = False
-
-
-def _set_process_name(name: str) -> None:
-    try:
-        import multiprocessing
-
-        multiprocessing.current_process().name = name
-    except Exception:
-        pass
-
-    try:
-        libc = ctypes.CDLL(None)
-        pr_set_name = 15
-        encoded = name.encode("utf-8")[:15]
-        libc.prctl(pr_set_name, ctypes.c_char_p(encoded), 0, 0, 0)
-    except Exception:
-        pass
-
-
-def _set_parent_death_signal(sig: int = signal.SIGTERM) -> None:
-    try:
-        libc = ctypes.CDLL(None)
-        pr_set_pdeathsig = 1
-        libc.prctl(pr_set_pdeathsig, sig, 0, 0, 0)
-    except Exception:
-        pass
 
 
 def _install_exit_signal_handlers() -> None:
@@ -73,6 +48,7 @@ def _configure_process_runtime(name: str) -> None:
 
 
 def goes_loop(activity_event, render_active_event, pause_during_render=None, poll_seconds=None):
+    _configure_process_runtime("GOES-Ingest")
     try:
         coordination = section("goes_coordination")
         if pause_during_render is None:
@@ -105,61 +81,61 @@ def goes_loop(activity_event, render_active_event, pause_during_render=None, pol
         return
 
 
-def goes_render_loop(task_queue, log_queue, render_active_event):
+def goes_render_loop(base_dir, log_queue, render_active_event):
+    """EWMRS-owned GOES ABI render loop (decomposition Phase 4).
+
+    Poll-based: each cycle it pins the freshest complete local ABI input set
+    into a manifest and renders it. The primary no longer enqueues GOES
+    render tasks; GOES ingest and render share this service's process tree,
+    so the in-process ``pause_ingest_during_render`` events keep working.
+    """
+    from util.runtime.goes import collect_local_goes_inputs, get_ewmrs_goes_render_specs
+    from common.ingest.manifest import CycleInputManifest
+
+    _configure_process_runtime("GOES-Render")
+    coordination = section("goes_coordination")
+    specs = get_ewmrs_goes_render_specs()
+    last_rendered_signature = None
     try:
-        while True:
-            task = task_queue.get()
-            if task is None:
-                render_active_event.clear()
+        while not _SHUTDOWN_REQUESTED:
+            target_dt = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+            try:
+                inputs = collect_local_goes_inputs(target_dt, specs=specs)
+                if len(inputs) == len(specs):
+                    manifest = CycleInputManifest(cycle_time=target_dt, inputs=inputs)
+                    if not manifest.validate_alignment():
+                        # Freshness guard: the poll loop runs continuously, but
+                        # re-rendering an unchanged pinned input set every
+                        # minute would burn I/O. Render each distinct input
+                        # selection once.
+                        signature = tuple(
+                            (record.path, record.analysis_time.isoformat())
+                            for record in sorted(inputs, key=lambda r: r.product)
+                        )
+                        if signature != last_rendered_signature:
+                            queue_log(
+                                log_queue,
+                                f"INFO: Rendering pinned local GOES ABI input set for {target_dt.isoformat()}",
+                            )
+                            render_active_event.set()
+                            try:
+                                ewmrs_goes_worker(
+                                    log_queue,
+                                    target_dt,
+                                    input_manifest=manifest.as_dict(),
+                                )
+                            finally:
+                                render_active_event.clear()
+                            last_rendered_signature = signature
+            except KeyboardInterrupt:
                 return
-
-            latest_task = task
-            dropped_tasks = 0
-            saw_shutdown = False
-            while True:
-                try:
-                    queued_task = task_queue.get_nowait()
-                except queue.Empty:
-                    break
-
-                if queued_task is None:
-                    saw_shutdown = True
-                    continue
-
-                latest_task = queued_task
-                dropped_tasks += 1
-
-            if dropped_tasks > 0:
-                queue_log(log_queue, f"INFO: Dropped {dropped_tasks} stale queued GOES render task(s); latest-wins scheduling applied")
-
-            if isinstance(latest_task, tuple) and len(latest_task) >= 2:
-                dt, max_entries = latest_task[:2]
-                queued_at_iso = latest_task[2] if len(latest_task) > 2 else None
-                input_manifest = latest_task[3] if len(latest_task) > 3 else None
-            else:
-                dt, max_entries = latest_task
-                queued_at_iso = None
-                input_manifest = None
-
-            if queued_at_iso:
-                try:
-                    queue_lag_s = (datetime.now(timezone.utc) - datetime.fromisoformat(str(queued_at_iso))).total_seconds()
-                    queue_log(log_queue, f"INFO: Starting freshest queued GOES render for {dt.isoformat()} after {queue_lag_s:.1f}s queue lag")
-                except Exception:
-                    pass
-
-            render_active_event.set()
-            ewmrs_goes_worker(
-                log_queue,
-                dt,
-                max_entries=max_entries,
-                input_manifest=input_manifest,
+            except Exception as exc:
+                queue_log(log_queue, f"ERROR: EWMRS GOES render poll cycle failed: {exc}")
+            sleep_for(
+                coordination["poll_seconds"],
+                interval=coordination["poll_interval_seconds"],
             )
-
-            render_active_event.clear()
-            if saw_shutdown:
-                return
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         render_active_event.clear()
         return
 
@@ -194,6 +170,48 @@ def _write_nexrad_heartbeat(heartbeat_path, payload, *, latest_output):
     return latest_output
 
 
+def _wait_for_primary_quiescence(base_dir, log_func=None):
+    """Cooperative cross-service throttle (Phase 3, default off).
+
+    While the primary holds an unexpired activity lease, NEXRAD waits before
+    admitting a new ingest scan or render batch. An atomic unit already in
+    progress is never interrupted, and the wait is bounded by
+    ``pause_max_wait_seconds`` so the weather cycle can never block NEXRAD
+    indefinitely -- nor NEXRAD block itself on a crashed primary.
+    """
+    coordination = section("nexrad_coordination")
+    if not coordination["pause_ingest_during_primary_activity"]:
+        return
+
+    from util.runtime.handoff import primary_activity_held
+
+    deadline = time.monotonic() + coordination["pause_max_wait_seconds"]
+    logged_wait = False
+    while time.monotonic() < deadline:
+        held = primary_activity_held(base_dir)
+        if held is None:
+            return
+        if not logged_wait:
+            message = (
+                f"Primary cycle {held.cycle_id} holds the activity lease; "
+                f"waiting before admitting new NEXRAD work"
+            )
+            if log_func is not None:
+                log_func(f"INFO: {message}")
+            else:
+                print(f"[NEXRAD] {message}")
+            logged_wait = True
+        sleep_for(
+            max(
+                0.1,
+                min(deadline - time.monotonic(), float(
+                    coordination["pause_poll_interval_seconds"]
+                )),
+            ),
+            interval=coordination["pause_poll_interval_seconds"],
+        )
+
+
 def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
     from common.ingest.nexrad.worker_pool import shutdown_nexrad_pool
 
@@ -215,6 +233,9 @@ def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
     try:
         while not _SHUTDOWN_REQUESTED:
             try:
+                if _SHUTDOWN_REQUESTED:
+                    return
+                _wait_for_primary_quiescence(base_dir, log_func=lambda msg: queue_log(log_queue, msg))
                 if _SHUTDOWN_REQUESTED:
                     return
                 queue_log(log_queue, "INFO: Starting NEXRAD ingest pipeline")
@@ -243,14 +264,22 @@ def nexrad_ingest_loop(log_queue, base_dir, heartbeat_path=None):
 
 
 def nexrad_render_loop(base_dir):
+    from NEXRAD.gui_pipeline import run_nexrad_render_loop
+
     _configure_process_runtime("NEXRAD-Render")
     try:
-        _run_nexrad_render_loop(base_dir=base_dir)
+        # Quiescence is checked per poll cycle inside the loop so an atomic
+        # render already in progress is never interrupted.
+        run_nexrad_render_loop(
+            base_dir=base_dir,
+            wait_for_quiescence=lambda: _wait_for_primary_quiescence(base_dir),
+        )
     except (KeyboardInterrupt, SystemExit):
         return
 
 
 def metar_loop():
+    _configure_process_runtime("METAR-Ingest")
     try:
         intervals = section("background_intervals")
         boundary_minutes = intervals["metar_boundary_minutes"]
@@ -266,6 +295,7 @@ def metar_loop():
 
 
 def nws_loop():
+    _configure_process_runtime("NWS-Ingest")
     try:
         intervals = section("background_intervals")
         while True:
@@ -280,6 +310,7 @@ def nws_loop():
 
 
 def wpc_loop():
+    _configure_process_runtime("WPC-Ingest")
     try:
         intervals = section("background_intervals")
         boundary_minutes = intervals["wpc_boundary_minutes"]

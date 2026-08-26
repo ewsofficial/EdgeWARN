@@ -22,10 +22,18 @@ from tests.core.config.source_inspect import SRC, argparse_defaults
 REPO_ROOT = SRC.parent
 
 CLI_MODULES = [
+    "util/cli.py",
     "util/io.py",
     "common/ingest/nexrad/main.py",
     "common/ingest/nexrad/pipeline/__init__.py",
     "common/ingest/nws/zone_sync.py",
+    # Decomposition Phase 4: the standalone EWMRS service owns its parser.
+    "run_ewmrs.py",
+    # Decomposition Phase 6: the optional all-services supervisor owns its
+    # routing parser (no scientific imports).
+    "run_all.py",
+    # Decomposition Phase 7: launcher-routing parity flag (--profile).
+    "run_nexrad.py",
 ]
 
 
@@ -214,7 +222,7 @@ def test_cli_default_baseline():
     )
 
 
-def test_only_four_modules_define_a_cli():
+def test_cli_modules_are_enumerated():
     found = sorted(
         path.relative_to(SRC).as_posix()
         for path in SRC.rglob("*.py")

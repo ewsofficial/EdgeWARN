@@ -1,5 +1,5 @@
 {
-  "util/io.py": {
+  "util/cli.py": {
     "--base_dir": {
       "default": null,
       "action": null
@@ -7,6 +7,14 @@
     "--config-dir": {
       "default": null,
       "action": null
+    },
+    "--list-ctam-modules": {
+      "default": false,
+      "action": "store_true"
+    },
+    "--check-ctam-modules": {
+      "default": false,
+      "action": "store_true"
     },
     "--profile": {
       "default": null,
@@ -29,14 +37,6 @@
     "--ctam-module-dir": {
       "default": null,
       "action": null
-    },
-    "--list-ctam-modules": {
-      "default": false,
-      "action": "store_true"
-    },
-    "--check-ctam-modules": {
-      "default": false,
-      "action": "store_true"
     },
     "--disable-tracking": {
       "default": null,
@@ -70,6 +70,12 @@
       "default": null,
       "action": null
     },
+    "--mrms-core-only": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
     "--disable-ewmrs": {
       "default": null,
       "action": {
@@ -88,6 +94,12 @@
         "@repr": "<not a literal>"
       }
     },
+    "--disable-wpc": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
     "--disable-goes": {
       "default": null,
       "action": {
@@ -99,12 +111,16 @@
       "action": {
         "@repr": "<not a literal>"
       }
-    },
-    "--mrms-core-only": {
+    }
+  },
+  "util/io.py": {
+    "--base_dir": {
       "default": null,
-      "action": {
-        "@repr": "<not a literal>"
-      }
+      "action": null
+    },
+    "--config-dir": {
+      "default": null,
+      "action": null
     },
     "--start": {
       "default": null,
@@ -213,6 +229,106 @@
     "--config-dir": {
       "default": null,
       "action": null
+    }
+  },
+  "run_ewmrs.py": {
+    "--profile": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--disable-metar": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--disable-nws": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--disable-wpc": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--disable-goes": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--mrms-core-only": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    }
+  },
+  "run_all.py": {
+    "--services": {
+      "default": {
+        "@repr": "<not a literal>"
+      },
+      "action": null
+    },
+    "--base_dir": {
+      "default": null,
+      "action": null
+    },
+    "--config-dir": {
+      "default": null,
+      "action": null
+    },
+    "--profile": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--lat_limits": {
+      "default": null,
+      "action": null
+    },
+    "--lon_limits": {
+      "default": null,
+      "action": null
+    },
+    "--refl-threshold": {
+      "default": null,
+      "action": null
+    },
+    "--min-seed-percentage": {
+      "default": null,
+      "action": null
+    },
+    "--drop-offset": {
+      "default": null,
+      "action": null
+    },
+    "--mrms-core-only": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    }
+  },
+  "run_nexrad.py": {
+    "--profile": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
+    },
+    "--mrms-core-only": {
+      "default": null,
+      "action": {
+        "@repr": "<not a literal>"
+      }
     }
   }
 }

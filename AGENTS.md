@@ -67,33 +67,43 @@ npm run api       # Start the unified API (default port 5000)
 npm run debug:api # Start the unified API in debug mode (port 3001)
 ```
 
-### Real-Time Tandem Processing (Python)
-Run from the `src` directory:
+### Real-Time Services (Python)
+
+Three independently operable services run from the `src` directory:
 
 ```bash
 cd src
-python run.py --lat_limits 20 55 --lon_limits 230 300
+# Primary EdgeWARN service (latency-sensitive analysis cycle):
+python run_edgewarn.py --lat_limits 20 55 --lon_limits 230 300
+# EWMRS/accessory service (renders, GOES ABI, METAR/NWS/WPC, record consumption):
+python run_ewmrs.py
+# NEXRAD service (Level-II ingest + rendering):
+python run_nexrad.py
 ```
 
-`run.py` currently performs a shared staged-ingest cycle and then launches EdgeWARN and EWMRS worker processes in tandem. It also starts background loops for METAR, NWS, and WPC ingestion.
+`run_edgewarn.py` owns MRMS selection/ingest, scan-time GLM, detection,
+integration, CTAM, cycle state, and publishes durable `mrms-ready`/
+`rap-ready` records that `run_ewmrs.py` consumes. `run.py` remains as a
+deprecated thin alias for `run_edgewarn.py`.
 
-Common optional flags:
+Primary optional flags:
 - `--lat_limits`
 - `--lon_limits`
 - `--base_dir` / `--base-dir`
+- `--config-dir`
 - `--profile`
 - `--disable-ctam`
 - `--disable-tracking`
 - `--disable-polygon-expansion`
-- `--disable-ewmrs`
-- `--disable-nws`
-- `--disable-metar`
 - `--disable-goes`
-- `--disable-nexrad`
 - `--mrms-core-only`
 - `--refl-threshold`
 - `--min-seed-percentage`
 - `--drop-offset`
+
+EWMRS service flags: `--base_dir`/`--base-dir`, `--config-dir`, `--profile`,
+`--disable-metar`, `--disable-nws`, `--disable-wpc`, `--disable-goes`.
+NEXRAD service flags: `--base_dir`/`--base-dir`, `--config-dir`.
 
 ### Historical Processing (Python)
 Run from the `src` directory:
@@ -163,8 +173,12 @@ EdgeWARN-Core/
 │   │   ├── colormaps.json              # Colormap definitions used by rendered products
 │   │   ├── pipeline.py                 # Render pipeline and GUI cleanup logic
 │   │   └── scheduler.py                # EWMRS scheduling helpers
+│   ├── NEXRAD/                         # NEXRAD GUI serialization, retention, and render loop
 │   ├── util/                           # Filesystem, I/O, GRIB, release, handler, and performance utilities
-│   ├── run.py                          # Real-time tandem scheduler entry point
+│   ├── run_edgewarn.py                 # Primary EdgeWARN service entry point
+│   ├── run_ewmrs.py                    # EWMRS/accessory service entry point
+│   ├── run_nexrad.py                   # NEXRAD service entry point
+│   ├── run.py                          # Deprecated thin alias for run_edgewarn.py
 │   └── process_historical.py           # Historical reprocessing entry point
 ├── tests/
 │   ├── api/                            # Jest/Supertest coverage for Node APIs
