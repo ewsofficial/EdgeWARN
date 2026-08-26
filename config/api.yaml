@@ -25,6 +25,7 @@ server:
   port: 5000                            # config/index.js:123, env PORT
   debug_port: 3001                      # server.js:22, --debug-server
   request_timeout_ms: 30000             # config/index.js:124; responds 503 (security.js:24)
+  service_stale_after_seconds: 30       # app.js; heartbeat age before route gating reports stale
   # Both are resolved against the source tree by config/index.js:169-170 and reach
   # app.js only as the already-validated absolute paths (:26 and :23).
   static_root: <src_dir>/EWMRS

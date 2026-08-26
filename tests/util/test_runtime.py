@@ -321,6 +321,10 @@ def test_supervisor_restarts_alive_process_with_stale_heartbeat(tmp_path):
     }), encoding="utf-8")
 
     supervisor.check()
+    # Restart backoff must not block `check()` (and therefore heartbeat
+    # publication); a later supervision tick performs the restart.
+    time.sleep(0.02)
+    supervisor.check()
 
     new_proc = supervisor._process_info[0]["process"]
     assert new_proc is not None and new_proc.is_alive()

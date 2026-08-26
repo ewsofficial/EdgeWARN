@@ -226,6 +226,9 @@ def classify_heartbeat_state(
 
     reference = now if now is not None else datetime.now(timezone.utc)
     age = (reference - beat.updated_at).total_seconds()
+    if age < -stale_after_seconds:
+        # Clock skew must not make a stale record look healthy forever.
+        return ("stale", beat)
     if age > stale_after_seconds:
         return ("stale", beat)
     if beat.degraded_children:

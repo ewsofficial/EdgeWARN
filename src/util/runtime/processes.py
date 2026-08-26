@@ -153,6 +153,10 @@ class AccessorySupervisor:
                 continue
             proc = info.get("process")
             if proc is None or not proc.is_alive():
+                if info.get("restart_not_before") is not None:
+                    if now >= info["restart_not_before"]:
+                        self._restart(info)
+                    continue
                 self._handle_death(info, now)
             else:
                 stale_age = self._stale_heartbeat_age(info, proc, now)
@@ -181,7 +185,7 @@ class AccessorySupervisor:
             if updated_at.tzinfo is None:
                 updated_at = updated_at.replace(tzinfo=timezone.utc)
             age = (datetime.now(timezone.utc) - updated_at).total_seconds()
-            return age if age > stale_after else None
+            return age if age < -stale_after or age > stale_after else None
         except Exception:
             startup_grace = info.get("heartbeat_startup_grace_seconds", 0.0)
             age = monotonic_now - started_at
@@ -225,22 +229,28 @@ class AccessorySupervisor:
             )
             self._record_health(name, "restarting", error=f"{reason}, restart pending", attempt=attempt)
 
-        time.sleep(delay)
+        # Do not block the owning service's supervision/heartbeat loop.  The
+        # next periodic check admits the restart once its deadline arrives.
+        info["restart_not_before"] = now + delay
+        return
 
-        if self._stop_event.is_set():
+    def _restart_due(self, info, now):
+        deadline = info.get("restart_not_before")
+        return deadline is None or now >= deadline
+
+    def _restart(self, info):
+        import multiprocessing
+        if self._stop_event.is_set() or not info["enabled"]:
             return
-
         proc = multiprocessing.Process(
-            target=info["target"],
-            args=info["args"],
-            kwargs=info["kwargs"],
-            name=info["name"],
+            target=info["target"], args=info["args"], kwargs=info["kwargs"], name=info["name"],
         )
         proc.daemon = info["daemon"]
         proc.start()
         info["process"] = proc
         info["started_monotonic"] = time.monotonic()
-        self._record_health(name, "running")
+        info["restart_not_before"] = None
+        self._record_health(info["name"], "running")
 
     def _record_health(self, name, status, *, error=None, attempt=None):
         if self.health_path is None:

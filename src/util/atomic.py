@@ -15,6 +15,24 @@ from pathlib import Path
 from typing import Iterator
 
 
+def _fsync_directory(directory: Path) -> None:
+    """Persist a rename in *directory* when the platform supports it."""
+    try:
+        flags = os.O_RDONLY
+        if hasattr(os, "O_DIRECTORY"):
+            flags |= os.O_DIRECTORY
+        fd = os.open(directory, flags)
+    except (AttributeError, OSError):
+        # Windows cannot open directories this way.  os.replace still gives
+        # atomic visibility there; FlushFileBuffers support is not exposed for
+        # a directory handle by Python.
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 @contextmanager
 def atomic_output_path(destination: str | Path, *, suffix: str = ".part") -> Iterator[Path]:
     """Yield a sibling temporary path and replace *destination* on success.
@@ -44,6 +62,9 @@ def atomic_output_path(destination: str | Path, *, suffix: str = ".part") -> Ite
         with temporary.open("r+b") as handle:
             os.fsync(handle.fileno())
         os.replace(temporary, destination)
+        # File fsync makes the payload durable; fsyncing the parent makes the
+        # name replacement durable across power loss on POSIX filesystems.
+        _fsync_directory(destination.parent)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise

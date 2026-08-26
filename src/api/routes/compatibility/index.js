@@ -10,9 +10,15 @@ export function createCompatibilityRouter({ analysis, renders, ancillary, packag
   const requireService = (service) => createServiceGate({
     serviceRegistry,
     service,
-    respond: legacyEnvelopeResponder(),
+    respond: (req, res, error) => {
+      deprecate(res);
+      return legacyEnvelopeResponder()(req, res, error);
+    },
   });
   const router = express.Router();
+  // v2 feature data is the legacy view of EdgeWARN-owned artifacts and must
+  // obey the same stale-service contract as v3.
+  router.use('/api/v2/features', requireService('edgewarn'));
   router.get('/api/v2', (req, res) => deprecate(res).json({ message: 'EdgeWARN API v2', version: packageVersion, endpoints: { features: { cells: '/api/v2/features/cells[?id={int}]', timestamps: '/api/v2/features/timestamps[?timestamp={YYYYMMDD-HHMMSS}]', alerts: { official: '/api/v2/features/alerts/official[?id={id}|timestamp={YYYYMMDD-HHMMSS}]', edgewarn: '/api/v2/features/alerts/edgewarn[?id={id}|timestamp={YYYYMMDD-HHMMSS}]' } }, data: { metar: '/api/v2/data/metar[?timestamp={YYYYMMDD-HHMMSS}]' } } }));
   router.get('/api/v2/features/cells', async (req, res, next) => { try { deprecate(res); const id = value(req.query.id); res.json(id ? await analysis.getCell(id) : await analysis.listCells()); } catch (e) { next(e); } });
   router.get('/api/v2/features/timestamps', async (req, res, next) => { try { deprecate(res); const ts = value(req.query.timestamp); res.json(ts ? await analysis.getStormSnapshot(ts) : await analysis.listStormSnapshots()); } catch (e) { next(e); } });
