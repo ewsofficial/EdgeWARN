@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import asyncio
 
-from common.pipeline.coordinator import run_tandem_ingest_cycle
+from common.pipeline.coordinator import run_staged_ingest_cycle
 import common.pipeline.coordinator as coordinator
 from common.ingest.manifest import staged_input_from_path
 from common.ingest.mrms.downloader import DownloadBatchResult
@@ -27,7 +27,7 @@ def _batch(tmp_path, timestamp, product):
     )
 
 
-def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch, tmp_path):
+def test_run_staged_ingest_cycle_preserves_staged_readiness(monkeypatch, tmp_path):
     call_order = []
     callbacks = []
 
@@ -57,12 +57,11 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch, tmp_pat
     monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
     monkeypatch.setattr(coordinator, "download_all_goes_files_async", fake_goes)
     monkeypatch.setattr(coordinator, "download_rap_async", fake_rap)
-    monkeypatch.setattr(coordinator, "_run_rap_uint16_conversion", lambda *args: asyncio.sleep(0, result=True))
 
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
 
     state = asyncio.run(
-        run_tandem_ingest_cycle(
+        run_staged_ingest_cycle(
             dt,
             lambda msg: None,
             on_detection_ready=lambda current_state: callbacks.append((
@@ -108,7 +107,7 @@ def test_run_tandem_ingest_cycle_preserves_staged_readiness(monkeypatch, tmp_pat
     assert state.edgewarn_integration_inputs_ready is True
 
 
-def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch, tmp_path):
+def test_run_staged_ingest_cycle_can_skip_goes_readiness(monkeypatch, tmp_path):
     call_order = []
 
     async def fake_detection(dt, max_entries=10, remove_old_files=True):
@@ -135,11 +134,10 @@ def test_run_tandem_ingest_cycle_can_skip_goes_readiness(monkeypatch, tmp_path):
     monkeypatch.setattr(coordinator.mrms_ingest, "download_integration_files_async", fake_mrms_integration)
     monkeypatch.setattr(coordinator, "download_all_goes_files_async", fake_goes)
     monkeypatch.setattr(coordinator, "download_rap_async", fake_rap)
-    monkeypatch.setattr(coordinator, "_run_rap_uint16_conversion", lambda *args: asyncio.sleep(0, result=True))
 
     dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
     state = asyncio.run(
-        run_tandem_ingest_cycle(
+        run_staged_ingest_cycle(
             dt,
             lambda msg: None,
             include_goes=False,
@@ -190,7 +188,7 @@ def test_second_prior_rap_analysis_releases_integration(monkeypatch, tmp_path):
 
     dt = datetime(2026, 7, 26, 13, 6, tzinfo=timezone.utc)
     state = asyncio.run(
-        run_tandem_ingest_cycle(
+        run_staged_ingest_cycle(
             dt,
             lambda _message: None,
             include_ewmrs=False,

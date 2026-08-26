@@ -311,306 +311,72 @@ def test_cleanup_old_gui_files_uses_dynamic_render_configuration(monkeypatch, tm
     assert json.loads((active_dir / "index.json").read_text()) == []
 
 
-def test_cleanup_old_gui_files_prunes_old_nexrad_site_timestamps(monkeypatch, tmp_path):
+def test_cleanup_old_gui_files_never_touches_nexrad_outputs(monkeypatch, tmp_path):
+    """Decomposition Phase 3: only the NEXRAD service cleans NEXRAD files.
+
+    EWMRS GUI cleanup sweeps only the layers it owns; everything beneath
+    ``gui/NEXRAD`` is left for ``NEXRAD.gui_pipeline`` even when it is stale.
+    """
+    import NEXRAD.gui_pipeline as nexrad_gui
+
     active_dir = tmp_path / "active"
     nexrad_root = tmp_path / "gui" / "NEXRAD"
     stale_elevation_dir = nexrad_root / "KTLH" / "0.5"
-    fresh_elevation_dir = nexrad_root / "KTLH" / "0.9"
-    empty_site_elevation_dir = nexrad_root / "KJAX" / "0.5"
 
     active_dir.mkdir()
     stale_elevation_dir.mkdir(parents=True)
-    fresh_elevation_dir.mkdir(parents=True)
-    empty_site_elevation_dir.mkdir(parents=True)
-
     stale_file = stale_elevation_dir / "KTLH_DBZH_0.5_20260317-170000.bin.gz"
-    fresh_file = fresh_elevation_dir / "KTLH_DBZH_0.9_20260317-193000.bin.gz"
-    empty_site_file = empty_site_elevation_dir / "KJAX_DBZH_0.5_20260317-160000.bin.gz"
     stale_file.write_bytes(b"stale")
-    fresh_file.write_bytes(b"fresh")
-    empty_site_file.write_bytes(b"empty-site")
 
     now = 1_800_000_000
     stale_mtime = now - (3 * 60 * 60)
-    fresh_mtime = now - (30 * 60)
     os.utime(stale_file, (stale_mtime, stale_mtime))
-    os.utime(empty_site_file, (stale_mtime, stale_mtime))
-    os.utime(fresh_file, (fresh_mtime, fresh_mtime))
 
     monkeypatch.setattr(ewmrs_pipeline, "get_file_list", lambda: [{"outdir": active_dir}])
     monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", nexrad_root)
-    monkeypatch.setattr(ewmrs_pipeline.time, "time", lambda: now)
+    monkeypatch.setattr(nexrad_gui.fs, "GUI_NEXRAD_DIR", nexrad_root)
+    monkeypatch.setattr(nexrad_gui.time, "time", lambda: now)
 
     ewmrs_pipeline.cleanup_old_gui_files(max_age_minutes=120)
 
-    assert not stale_elevation_dir.exists()
-    assert fresh_elevation_dir.exists()
-    assert not (nexrad_root / "KJAX").exists()
+    # Untouched: NEXRAD retention belongs to the NEXRAD service...
+    assert stale_file.exists()
+
+    # ...which does remove the same artifact when its own sweep runs.
+    nexrad_gui.cleanup_old_nexrad_gui_files(max_age_minutes=120)
+    assert not stale_file.exists()
 
 
-def test_render_pending_nexrad_gui_files_skips_existing_same_timestamp(monkeypatch, tmp_path):
-    nexrad_root = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5"
-    gui_root = tmp_path / "gui" / "NEXRAD"
-    artifact_path = nexrad_root / "KTLH_0.5_20260507-150001.nc"
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_path.write_bytes(b"artifact")
-    artifact_path.with_suffix(".json").write_text(json.dumps({
-        "site": "KTLH",
-        "volume_id": "999",
-        "scan_timestamp": "20260507-150000",
-        "elevation": "0.5",
-        "elevation_timestamp": "20260507-150001",
-    }))
-    existing_output = gui_root / "KTLH" / "0.5" / "KTLH_DBZH_0.5_20260507-150001.bin.gz"
-    existing_output.parent.mkdir(parents=True, exist_ok=True)
-    existing_output.write_bytes(b"existing")
+def test_mrms_required_layer_failures_gate_only_required_layers(monkeypatch):
+    """Phase 4: required-only gating lives in one helper shared by the consumer.
 
-    calls = []
-    monkeypatch.setattr(ewmrs_pipeline.fs, "NEXRAD_LEVEL2_DIR", tmp_path / "data" / "NEXRAD_Level2")
-    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", gui_root)
-    monkeypatch.setattr("EWMRS.render.nexrad.serialize_nexrad_elevation_artifacts", lambda *args, **kwargs: calls.append((args, kwargs)))
-
-    rendered = ewmrs_pipeline.render_pending_nexrad_gui_files()
-
-    assert rendered == 0
-    assert calls == []
-
-
-def test_render_pending_nexrad_gui_files_skips_stale_source_artifacts(monkeypatch, tmp_path):
-    nexrad_root = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5"
-    gui_root = tmp_path / "gui" / "NEXRAD"
-    artifact_path = nexrad_root / "KTLH_0.5_20260507-150001.nc"
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_path.write_bytes(b"artifact")
-    artifact_path.with_suffix(".json").write_text(json.dumps({
-        "site": "KTLH",
-        "volume_id": "999",
-        "scan_timestamp": "20260507-150000",
-        "elevation": "0.5",
-        "elevation_timestamp": "20260507-150001",
-    }))
-
-    calls = []
-    now = 1_800_000_000
-    stale_mtime = now - (3 * 60 * 60)
-    os.utime(artifact_path, (stale_mtime, stale_mtime))
-    monkeypatch.setattr(ewmrs_pipeline.fs, "NEXRAD_LEVEL2_DIR", tmp_path / "data" / "NEXRAD_Level2")
-    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", gui_root)
-    monkeypatch.setattr(ewmrs_pipeline.time, "time", lambda: now)
-    monkeypatch.setattr("EWMRS.render.nexrad.serialize_nexrad_elevation_artifacts", lambda *args, **kwargs: calls.append((args, kwargs)))
-
-    rendered = ewmrs_pipeline.render_pending_nexrad_gui_files()
-
-    assert rendered == 0
-    assert calls == []
-
-
-def test_render_pending_nexrad_gui_files_normalizes_iso_sidecar_timestamps(monkeypatch, tmp_path):
-    nexrad_root = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5"
-    gui_root = tmp_path / "gui" / "NEXRAD"
-    artifact_path = nexrad_root / "KTLH_0.5_20260519-132157.nc"
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_path.write_bytes(b"artifact")
-    artifact_path.with_suffix(".json").write_text(json.dumps({
-        "site": "KTLH",
-        "volume_id": "999",
-        "scan_timestamp": "2026-05-19T13:21:57Z",
-        "elevation": "0.5",
-        "elevation_timestamp": "2026-05-19T13:21:57Z",
-    }))
-
-    captured = []
-
-    def _fake_serialize(site, volume_id, scan_timestamp, artifacts):
-        captured.append((site, volume_id, scan_timestamp, artifacts[0].elevation_timestamp))
-        out_dir = gui_root / site / artifacts[0].elevation
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / f"{site}_DBZH_{artifacts[0].elevation}_{artifacts[0].elevation_timestamp}.bin.gz").write_bytes(b"rendered")
-
-    monkeypatch.setattr(ewmrs_pipeline.fs, "NEXRAD_LEVEL2_DIR", tmp_path / "data" / "NEXRAD_Level2")
-    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", gui_root)
-    monkeypatch.setattr("EWMRS.render.nexrad.serialize_nexrad_elevation_artifacts", _fake_serialize)
-
-    rendered = ewmrs_pipeline.render_pending_nexrad_gui_files()
-
-    assert rendered == 1
-    assert captured == [("KTLH", "999", "20260519-132157", "20260519-132157")]
-
-
-def test_render_pending_nexrad_gui_files_uses_eight_workers(monkeypatch, tmp_path):
-    gui_root = tmp_path / "gui" / "NEXRAD"
-    nexrad_root = tmp_path / "data" / "NEXRAD_Level2"
-    created = {}
-
-    metadata_items = []
-    for index in range(10):
-        timestamp = f"20260507-1500{index:02d}"
-        artifact_path = nexrad_root / f"K{index:03d}" / "0.5" / f"K{index:03d}_0.5_{timestamp}.nc"
-        artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_bytes(b"artifact")
-        metadata_items.append(
-            {
-                "site": f"K{index:03d}",
-                "volume_id": str(index),
-                "scan_timestamp": timestamp,
-                "elevation": "0.5",
-                "elevation_timestamp": timestamp,
-                "artifact_path": str(artifact_path),
-                "member_group_names": [],
-                "member_sweeps": [],
-            }
-        )
-
-    monkeypatch.setattr(ewmrs_pipeline.fs, "NEXRAD_LEVEL2_DIR", nexrad_root)
-    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", gui_root)
-    monkeypatch.setattr(ewmrs_pipeline, "_iter_latest_nexrad_artifacts", lambda: metadata_items)
-    monkeypatch.setattr(ewmrs_pipeline, "_nexrad_source_artifact_is_fresh", lambda *args, **kwargs: True)
-    monkeypatch.setattr(ewmrs_pipeline, "_nexrad_gui_timestamp_exists", lambda *args, **kwargs: False)
-    monkeypatch.setattr(ewmrs_pipeline, "_render_pending_nexrad_gui_artifact", lambda metadata: True)
-    monkeypatch.setattr(
-        "concurrent.futures.ThreadPoolExecutor",
-        lambda max_workers: created.setdefault("executor", _FakeExecutor(max_workers=max_workers)),
-    )
-    monkeypatch.setattr("concurrent.futures.as_completed", lambda futures: list(futures))
-
-    rendered = ewmrs_pipeline.render_pending_nexrad_gui_files()
-
-    assert rendered == 10
-    assert created["executor"].max_workers == 8
-
-
-def test_render_pending_nexrad_gui_files_renders_all_fresh_source_timestamps(monkeypatch, tmp_path):
-    nexrad_root = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5"
-    gui_root = tmp_path / "gui" / "NEXRAD"
-    rendered_timestamps = []
-
-    for timestamp in ("20260507-150001", "20260507-150011", "20260507-150021"):
-        artifact_path = nexrad_root / f"KTLH_0.5_{timestamp}.nc"
-        artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_bytes(b"artifact")
-        artifact_path.with_suffix(".json").write_text(json.dumps({
-            "site": "KTLH",
-            "volume_id": "999",
-            "scan_timestamp": timestamp,
-            "elevation": "0.5",
-            "elevation_timestamp": timestamp,
-        }))
-
-    def _fake_serialize(site, volume_id, scan_timestamp, artifacts):
-        artifact = artifacts[0]
-        rendered_timestamps.append(artifact.elevation_timestamp)
-        out_dir = gui_root / site / artifact.elevation
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / f"{site}_DBZH_{artifact.elevation}_{artifact.elevation_timestamp}.bin.gz").write_bytes(b"rendered")
-
-    monkeypatch.setattr(ewmrs_pipeline.fs, "NEXRAD_LEVEL2_DIR", tmp_path / "data" / "NEXRAD_Level2")
-    monkeypatch.setattr(ewmrs_pipeline.fs, "GUI_NEXRAD_DIR", gui_root)
-    monkeypatch.setattr("EWMRS.render.nexrad.serialize_nexrad_elevation_artifacts", _fake_serialize)
-
-    rendered = ewmrs_pipeline.render_pending_nexrad_gui_files()
-
-    assert rendered == 3
-    assert rendered_timestamps == ["20260507-150001", "20260507-150011", "20260507-150021"]
-
-
-def test_ewmrs_tandem_worker_runs_mrms_and_skips_goes_when_only_mrms_ready(monkeypatch):
-    queue = _FakeQueue()
-    mrms_ready_event = _FakeEvent()
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    shared_state = {
-        "ewmrs_mrms_inputs_ready": True,
-        "ewmrs_goes_inputs_ready": False,
-        "input_manifest": _manifest(dt).as_dict(),
-    }
-    mrms_calls = []
-    goes_calls = []
-
+    Optional-layer failures never fail a stage; unlisted layers are treated as
+    optional; an empty result set fails outright.
+    """
     monkeypatch.setattr(
         ewmrs_pipeline,
-        "run_mrms_render_pipeline",
-        lambda *args, **kwargs: mrms_calls.append((args, kwargs)) or {"LayerOne": ["LayerOne.png"]},
+        "get_mrms_file_list",
+        lambda: [
+            {"name": "Required", "filepath": "/x", "required": True},
+            {"name": "Optional", "filepath": "/x", "required": False},
+        ],
     )
-    monkeypatch.setattr(
-        ewmrs_pipeline,
-        "run_goes_render_pipeline",
-        lambda *args, **kwargs: goes_calls.append((args, kwargs)) or {},
-    )
+    failed_required, failed_optional = ewmrs_pipeline.mrms_required_layer_failures({
+        "Required": ["out.png"],
+        "Optional": None,
+        "Unlisted": None,
+    })
+    assert failed_required == []
+    assert failed_optional == ["Optional", "Unlisted"]
 
-    ewmrs_pipeline.ewmrs_tandem_worker(
-        queue,
-        shared_state,
-        mrms_ready_event,
-        dt,
-    )
+    failed_required, _ = ewmrs_pipeline.mrms_required_layer_failures({
+        "Required": None,
+        "Optional": ["out.png"],
+    })
+    assert failed_required == ["Required"]
 
-    assert mrms_ready_event.wait_calls == 1
-    assert len(mrms_calls) == 1
-    assert goes_calls == []
-    assert shared_state["ewmrs_stage"] == {
-        "status": "completed",
-        "produced_artifacts": ["LayerOne.png"],
-        "errors": [],
-    }
-    assert any("Starting EWMRS MRMS render phase" in message for message in queue.messages)
-    assert any("GOES render is decoupled" in message for message in queue.messages)
-
-
-def test_ewmrs_tandem_worker_skips_mrms_when_inputs_not_ready(monkeypatch):
-    queue = _FakeQueue()
-    mrms_ready_event = _FakeEvent()
-    shared_state = {"ewmrs_mrms_inputs_ready": False, "ewmrs_goes_inputs_ready": True}
-    mrms_calls = []
-
-    monkeypatch.setattr(
-        ewmrs_pipeline,
-        "run_mrms_render_pipeline",
-        lambda *args, **kwargs: mrms_calls.append((args, kwargs)) or {},
-    )
-
-    ewmrs_pipeline.ewmrs_tandem_worker(
-        queue,
-        shared_state,
-        mrms_ready_event,
-        datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc),
-    )
-
-    assert mrms_ready_event.wait_calls == 1
-    assert mrms_calls == []
-    assert shared_state["ewmrs_stage"]["status"] == "unavailable"
-    assert any("skipping MRMS render" in message for message in queue.messages)
-
-
-def test_ewmrs_tandem_worker_runs_only_mrms_phase_when_inputs_ready(monkeypatch):
-    queue = _FakeQueue()
-    mrms_ready_event = _FakeEvent()
-    dt = datetime(2026, 3, 17, 20, 0, tzinfo=timezone.utc)
-    shared_state = {
-        "ewmrs_mrms_inputs_ready": True,
-        "ewmrs_goes_inputs_ready": True,
-        "input_manifest": _manifest(dt).as_dict(),
-    }
-    captured = {}
-
-    def fake_run_mrms_render_pipeline(dt, max_entries=10, input_manifest=None):
-        captured["mrms_dt"] = dt
-        captured["mrms_max_entries"] = max_entries
-        return {"LayerOne": ["LayerOne.png"], "LayerTwo": None}
-
-    monkeypatch.setattr(ewmrs_pipeline, "run_mrms_render_pipeline", fake_run_mrms_render_pipeline)
-
-    ewmrs_pipeline.ewmrs_tandem_worker(queue, shared_state, mrms_ready_event, dt, max_entries=3)
-
-    assert mrms_ready_event.wait_calls == 1
-    assert captured == {
-        "mrms_dt": dt,
-        "mrms_max_entries": 3,
-    }
-    assert shared_state["ewmrs_stage"]["status"] == "failed"
-    assert "LayerTwo" in shared_state["ewmrs_stage"]["errors"][0]
-    assert shared_state["ewmrs_stage"]["produced_artifacts"] == ["LayerOne.png"]
-    assert any("Starting EWMRS MRMS render phase" in message for message in queue.messages)
-    assert any("1/2 layers succeeded" in message for message in queue.messages)
-    assert any("GOES render is decoupled" in message for message in queue.messages)
+    failed_required, failed_optional = ewmrs_pipeline.mrms_required_layer_failures({})
+    assert failed_required == [] and failed_optional == []
 
 
 def test_ewmrs_goes_worker_runs_goes_phase(monkeypatch):

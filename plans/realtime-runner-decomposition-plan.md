@@ -146,6 +146,10 @@ before `main()`).
   module scope; the split must not carry it forward.)
 - Every service must handle `SIGINT` and `SIGTERM`, close its own children, and
   leave no orphaned worker or stale permanent pause.
+- Each service is published under one canonical name from a single registry,
+  and the unified Node API must expose whether that named service is active;
+  requests that depend on an inactive service fail with a structured
+  `SERVICE_NOT_ENABLED` error rather than serving stale artifacts silently.
 
 ## Target topology
 
@@ -285,6 +289,7 @@ old monolithic implementation as a hidden fallback.
 | Cross-service phase records | Primary | EWMRS |
 | EWMRS consumer checkpoints | EWMRS | EWMRS |
 | NEXRAD consumer/checkpoint state | NEXRAD | NEXRAD |
+| Service heartbeats (`services/<name>.json`) | each service, own name only | Unified API, operators |
 
 This matrix is an enforcement target. Tests should fail if EWMRS invokes an
 MRMS/RAP downloader or if non-NEXRAD cleanup removes NEXRAD files.
@@ -315,6 +320,15 @@ Suggested layout:
         └── leases/
             └── primary-active.json
 ```
+
+The filenames under `services/` are the canonical service-name registry:
+`edgewarn`, `ewmrs`, `nexrad`. The same names are used for single-instance
+locks, heartbeats, lease ownership, and API discovery. Accessory loops
+(METAR, NWS, WPC, GOES ABI) are not top-level services; their status appears
+as child entries inside the EWMRS heartbeat rather than as separate files.
+Each service publishes an atomic heartbeat containing PID, run ID, version,
+last successful activity, current phase, and degraded children (see the
+lifecycle section).
 
 `<cycle-id>` must be a canonical UTC analysis timestamp, not process start
 time. Each phase record should contain:
@@ -465,6 +479,82 @@ exact legacy-flag routing in the launcher.
 - Forced shutdown never removes another service's lock, checkpoint, lease, or
   output.
 
+## API visibility of service state
+
+The unified Node API must make intentional or accidental service absence
+visible instead of silently serving stale artifacts. Discovery is by canonical
+service name, scanning `<BASE_DIR>/state/realtime/services/<name>.json`.
+
+### Service-name registry and heartbeat states
+
+| Name | Producer | Heartbeat file |
+| --- | --- | --- |
+| `edgewarn` | primary service | `services/edgewarn.json` |
+| `ewmrs` | EWMRS/accessory service | `services/ewmrs.json` |
+| `nexrad` | NEXRAD service | `services/nexrad.json` |
+
+A named service is in exactly one of these states, derived from its heartbeat:
+
+- `active`: file exists, parses against the supported schema version, belongs
+  to the current run (PID/run ID check where applicable), and `updated_at` is
+  within the staleness threshold.
+- `stale`: file exists but `updated_at` exceeds the threshold — the service
+  crashed, hung, or was killed without cleanup.
+- `disabled`: no heartbeat file exists — the service was never started or was
+  intentionally omitted (`--disable-*` flags, launcher `--services` subset,
+  service unit not enabled).
+- `degraded`: the service is active but reports degraded children (for
+  example a crash-looped accessory loop inside the EWMRS heartbeat). Degraded
+  services still serve requests; degradation is surfaced, never fabricated as
+  health.
+
+The staleness threshold reuses the existing supervisor settings from
+`config/runtime.yaml` rather than introducing a second tuning surface.
+
+### Route-family dependencies
+
+Each route family declares exactly one required service:
+
+| Route family | Required service |
+| --- | --- |
+| `/api/v3/cells*`, `/api/v3/storm-snapshots*`, `/api/v3/alert-snapshots*`, `/api/v3/alerts*` | `edgewarn` |
+| `/api/v3/render-products*`, `/api/v3/models/rap/*`, `/api/v3/analyses/wpc/*`, `/api/v3/styles/colormaps` | `ewmrs` |
+| `/api/v3/radar-sites*` | `nexrad` |
+| legacy adapters (`/renders/*`, `/wpc/*`, `/colormaps`, `/rap/*`, `/nexrad/*`) | same service as the v3 family they adapt |
+
+### Required behavior
+
+- A small shared scanner module resolves each service state with a short-lived
+  cache (mtime-based or 1–2 s TTL) so per-request scans do not amplify I/O.
+- When a request hits a route whose required service is not `active`, the API
+  returns HTTP 503 with the established error envelope:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SERVICE_NOT_ENABLED",
+    "message": "Required service is not active",
+    "service": "nexrad",
+    "state": "disabled",
+    "last_seen": null
+  }
+}
+```
+
+  `state` distinguishes `disabled`, `stale`, and (where detectable)
+  `unsupported-schema`; `last_seen` carries the heartbeat's `updated_at` when
+  present so operators can tell "turned off on purpose" apart from "crashed."
+- `/health/ready` keeps its existing directory-based status contract but gains
+  a diagnostic `services` block summarizing each registry name's state; it
+  does not flip to 503 solely because an optional service is disabled.
+- This is a documented, deliberate exception to "existing API contracts remain
+  unchanged": new error responses must be added to `docs/api/api_endpoints.md`
+  and the OpenAPI document when implemented.
+- The Python services only publish heartbeats; they never read them for
+  correctness. The API is a consumer, not a participant in the handoff
+  protocol.
+
 ## NEXRAD contention after decomposition
 
 Separate parents improve fault isolation but do not reserve CPU, RAM, or disk
@@ -496,16 +586,29 @@ turning the pause policy on.
 
 ### Phase 0 — Characterize and lock down contracts
 
-- [ ] Add deterministic tests for current flag behavior, service ownership,
+- [x] Define the canonical service-name registry (`edgewarn`, `ewmrs`,
+  `nexrad`) and the API-consumable heartbeat schema, and record the
+  route-family-to-service dependency map. (Landed:
+  `src/util/runtime/services.py`, `docs/core/service_registry.md`, and
+  `tests/util/test_runtime_services.py`.)
+- [x] Add deterministic tests for current flag behavior, service ownership,
   phase readiness, cycle success/retry, and shutdown. (Cycle-state,
-  retry-policy, and supervisor tests exist; extend them to handoff and
-  ownership contracts.)
+  retry-policy, and supervisor tests exist; extended with handoff and
+  ownership contracts in `tests/util/test_runtime_services.py`,
+  `tests/util/test_cli_ownership.py`,
+  `tests/unit/test_atomic_publication.py`, and
+  `tests/unit/test_entrypoint_import_safety.py`.)
 - [ ] Record an independent-process baseline for primary phase latency,
   EWMRS/NEXRAD freshness, CPU, RSS, disk I/O, and output hashes.
   (`[PhaseTelemetry]` producer-time phase lines in `util/runtime/cycle.py`
-  provide the latency instrument.)
-- [ ] Define required versus optional render layers and the maximum retained
-  cycle backlog.
+  provide the latency instrument; the parsing/aggregation harness landed as
+  `tests/benchmarks/phase_telemetry_baseline.py`. Actual measurement requires
+  live warm cycles and remains outstanding.)
+- [x] Define required versus optional render layers and the maximum retained
+  cycle backlog. (`required` on layers in `config/ewmrs_render.yaml`, surfaced
+  through `EWMRS.render.config`, consumed by the required-only stage gate in
+  `EWMRS/pipeline.py`; backlog cap is `cycle.max_backlog_cycles` in
+  `config/runtime.yaml`.)
 - [x] Implement truthful structured cycle outcomes: `CycleOutcome`,
   `CycleStageResult`, `CycleRetryPolicy`, and the atomic restart-safe
   `CycleStateStore` landed since the original audit (re-audit at `8a6206d`).
@@ -514,89 +617,210 @@ turning the pause policy on.
   preparation and the MRMS/GOES render pipelines with alignment validation
   (re-audit at `8a6206d`). Follow-up: make manifest binding mandatory instead
   of falling back to latest-by-mtime when no manifest is supplied.
-- [ ] Fix atomic publication prerequisites for shared source files and indexes.
-  (Atomic publication exists for cycle state, health, and NEXRAD heartbeats;
-  source-file and index publication still needs the same guarantee.)
+- [x] Fix atomic publication prerequisites for shared source files and indexes.
+  (Source-file downloads and GUI/API indexes were already atomic; NEXRAD
+  manifests and scan state, the EWMRS overlay manifest, and the METAR station
+  cache now publish via temp+replace too — see
+  `tests/unit/test_atomic_publication.py`.)
 
 ### Phase 1 — Extract service modules without changing deployment
 
-- [ ] Move module-level parsing and runtime initialization into `main()`.
-  (`run.py` currently parses args, calls `initialize_runtime()`, resolves
-  coordination settings, and wraps `sys.stdout`/`sys.stderr` at import time.)
-- [ ] Split CLI builders and runtime imports by ownership.
-- [ ] Extract primary, EWMRS/accessory, and NEXRAD service functions.
-- [ ] Keep the existing runner as a temporary adapter calling those functions.
-- [ ] Verify imports of each service do not load the other scientific stacks.
+- [x] Move module-level parsing and runtime initialization into `main()`.
+  (`run.py` no longer parses args, calls `initialize_runtime()`, resolves
+  coordination settings, or wraps `sys.stdout`/`sys.stderr` at import time;
+  guarded by `tests/unit/test_entrypoint_import_safety.py`.)
+- [x] Split CLI builders and runtime imports by ownership. (Flag builders live
+  in `src/util/cli.py` with ownership contract tests; `util.runtime` exports
+  are lazy via PEP 562 and `util/runtime/cycle.py` defers the EWMRS worker
+  import so primary runtime code imports without the EWMRS/NEXRAD stacks —
+  verified by `tests/unit/test_service_import_isolation.py`.)
+- [x] Extract primary, EWMRS/accessory, and NEXRAD service functions.
+  (`util/runtime/primary_service.py`, `util/runtime/ewmrs_service.py`,
+  `util/runtime/nexrad_service.py`.)
+- [x] Keep the existing runner as a temporary adapter calling those functions.
+  (`run.py` wires the extracted pieces together; deployment unchanged.)
+- [x] Verify imports of each service do not load the other scientific stacks.
+  (Primary runtime code loads neither EWMRS nor NEXRAD; remaining known edges:
+  `nexrad_render_loop` still delegates into `EWMRS.pipeline`, removed in
+  Phase 3.)
 
 ### Phase 2 — Introduce and shadow the durable handoff
 
-- [ ] Add versioned phase-record and checkpoint schemas.
-- [ ] Publish MRMS-ready and RAP-ready records in parallel with existing
-  in-memory callbacks.
-- [ ] Run a shadow EWMRS consumer that validates records and exact paths but
-  does not publish GUI output.
-- [ ] Test crash-between-temp-and-rename, malformed record, duplicate record,
+- [x] Add versioned phase-record and checkpoint schemas. (`util/runtime/handoff.py`:
+  `PHASE_RECORD_SCHEMA_VERSION`/`CONSUMER_CHECKPOINT_SCHEMA_VERSION`,
+  `PhaseRecord`, `ConsumerCheckpoint`, atomic publication via
+  `util.atomic.atomic_write_json`, and a backward-proof
+  `ConsumerCheckpointStore`.)
+- [x] Publish MRMS-ready and RAP-ready records in parallel with existing
+  in-memory callbacks. (`run_tandem_cycle_once` commits immutable records to
+  `state/realtime/cycles/<cycle-id>/mrms-ready.json`/`rap-ready.json`
+  alongside the release events, gated by `handoff.enabled` in
+  `runtime.yaml`; duplicates are idempotent and never overwritten.)
+- [x] Run a shadow EWMRS consumer that validates records and exact paths but
+  does not publish GUI output. (`shadow_validate_phase_record` +
+  `expected_layer_bindings` run per committed record inside the cycle and log
+  problems; no GUI output.)
+- [x] Test crash-between-temp-and-rename, malformed record, duplicate record,
   missing exact input, cleanup overlap, restart, and backlog behavior.
+  (`tests/util/test_runtime_handoff.py`,
+  `tests/integration/test_durable_handoff_wiring.py`.)
 - [ ] Compare shadow selections with the files used by the current tandem
-  worker for at least ten warm cycles.
+  worker for at least ten warm cycles. (The comparison helper exists;
+  actual measurement requires live warm cycles and remains outstanding,
+  like the Phase 0 telemetry baseline.)
 
 ### Phase 3 — Cut NEXRAD over to its service
 
-- [ ] Add `run_nexrad.py` and move ingest/render supervision to it.
-- [ ] Remove NEXRAD launch and cleanup from primary/EWMRS paths.
+- [x] Add `run_nexrad.py` and move ingest/render supervision to it.
+  (`run_nexrad.py` composes `util.cli` base-directory flags, reuses
+  `register_nexrad_supervision`, and takes the single-instance `nexrad` lock;
+  the render loop moved from `EWMRS.pipeline` to the new `NEXRAD/` package,
+  so importing NEXRAD runtime code no longer loads EWMRS.)
+- [x] Remove NEXRAD launch and cleanup from primary/EWMRS paths. (`run.py`
+  no longer registers NEXRAD children; `EWMRS.cleanup_old_gui_files` no
+  longer touches `gui/NEXRAD`, and `NEXRAD.gui_pipeline.cleanup_old_nexrad_gui_files`
+  owns that retention.)
 - [ ] Verify non-daemonic parser-pool creation, independent component restart,
-  shutdown, freshness, retention, and output parity.
-- [ ] Adapt cooperative pause coordination to the cross-process lease, still
-  default off. (The in-process `pause_ingest_during_render` option only covers
-  GOES ingest/render inside one parent; the lease replaces it for NEXRAD
-  across services.)
+  shutdown, freshness, retention, and output parity. (Non-daemonic
+  registration and bounded-backoff supervision are preserved verbatim and
+  covered by tests; live parity/freshness verification remains outstanding.)
+- [x] Publish the `nexrad` service heartbeat under the canonical name and gate
+  the radar route families (`/api/v3/radar-sites*`, `/nexrad/*`) behind it
+  with `SERVICE_NOT_ENABLED` responses. (`run_nexrad.py` writes
+  `state/realtime/services/nexrad.json`; the Node API gained a
+  `serviceRegistry` scanner with a short TTL cache, problem+json gating on
+  v3 radar routes, the compatibility envelope on `/nexrad/*`, and a
+  diagnostic `services` block on `/health/ready`; documented in
+  `docs/api/api_endpoints.md` and the OpenAPI document, covered by
+  `tests/api/test_service_registry.js`.)
+- [x] Adapt cooperative pause coordination to the cross-process lease, still
+  default off. (`PrimaryActivityLease` in `util/runtime/handoff.py`;
+  `nexrad_coordination.pause_ingest_during_primary_activity: false` gates it
+  — the primary holds the lease around each cycle, and the NEXRAD loops wait
+  a bounded interval before admitting new work without interrupting an
+  atomic unit already in progress.)
 
 ### Phase 4 — Cut EWMRS and accessories over
 
-- [ ] Add `run_ewmrs.py`.
-- [ ] Consume committed MRMS/RAP records using exact paths.
-- [ ] Move RAP Uint16 conversion out of the shared primary coordinator.
-- [ ] Move GOES ABI ingest/render and METAR/NWS/WPC supervision.
-- [ ] Constrain GUI cleanup by owner; EWMRS must not touch NEXRAD.
-- [ ] Remove the EWMRS worker, queues, events, and activity state from the
-  primary process.
-- [ ] Verify EWMRS can start before primary, after primary, and after a backlog
-  has accumulated.
+- [x] Add `run_ewmrs.py`. (Standalone service with the `ewmrs` single-instance
+  lock, canonical heartbeat whose degraded-children list surfaces crash-looped
+  accessory loops, and SIGINT/SIGTERM shutdown of its own children; owns
+  METAR/NWS/WPC via the new dedicated `--disable-wpc` flag plus GOES ABI
+  ingest/render.)
+- [x] Consume committed MRMS/RAP records using exact paths.
+  (`util/runtime/ewmrs_consumer.py`: ordered per-phase drains over
+  `select_pending_records`, rendering from each record's pinned manifest;
+  per-phase durable checkpoints advance only after validated artifact
+  publication; malformed records stop the drain so newer cycles are never
+  rendered under older timestamps.)
+- [x] Move RAP Uint16 conversion out of the shared primary coordinator.
+  (`_run_rap_uint16_conversion` deleted from `common/pipeline/coordinator.py`;
+  conversion runs in the consumer's rap-ready handler.)
+- [x] Move GOES ABI ingest/render and METAR/NWS/WPC supervision. (GOES render
+  is a poll-based EWMRS-owned loop pinning local ABI inputs into a manifest —
+  no primary task queue; `register_ewmrs_accessories` registers every child of
+  the standalone service, including the record consumer. The primary process
+  starts no accessory children.)
+- [x] Publish the `ewmrs` service heartbeat (with accessory child states) and
+  gate the render/RAP/WPC/colormap route families behind it with
+  `SERVICE_NOT_ENABLED` responses. (v3 problem+json gating on 16 routes,
+  compatibility envelope on the legacy adapters; OpenAPI 503 refs added;
+  covered by `tests/api/test_service_registry.js`.)
+- [x] Constrain GUI cleanup by owner; EWMRS must not touch NEXRAD. (Landed in
+  Phase 3: `EWMRS.cleanup_old_gui_files` sweeps only owned layers;
+  `NEXRAD.gui_pipeline.cleanup_old_nexrad_gui_files` is invoked by the NEXRAD
+  render loop itself.)
+- [x] Remove the EWMRS worker, queues, events, and activity state from the
+  primary process. (`ewmrs_tandem_worker` deleted; `run_tandem_cycle_once`
+  spawns only the EdgeWARN worker; GOES render queues/events removed from the
+  cycle signature; the outcome stages are now exactly `ingest` + `edgewarn`.)
+- [x] Verify EWMRS can start before primary, after primary, and after a
+  backlog has accumulated. (`tests/util/test_ewmrs_consumer.py`: empty-start
+  noop then pickup, committed-record recovery, and backlog-cap abandonment.)
+- [ ] Follow-up: prune committed cycle records beneath
+  `state/realtime/cycles/`. Nothing consumes them beyond the consumers'
+  checkpoints, so the tree grows one directory per cycle forever; retention
+  must be sized with `cycle.max_backlog_cycles` from measured render
+  throughput.
 
 ### Phase 5 — Finalize the primary service
 
-- [ ] Add `run_edgewarn.py` as the supported primary command.
-- [ ] Rename/refactor tandem-specific config and telemetry to primary-cycle
-  terminology.
-- [ ] Remove EWMRS and NEXRAD imports from the primary import graph.
+- [x] Add `run_edgewarn.py` as the supported primary command. (Full primary
+  flag parser, `edgewarn` single-instance lock, canonical heartbeat refreshed
+  from the selection loop's ticks, SIGINT/SIGTERM shutdown; the old `run.py`
+  is a thin deprecated alias forwarding to it.)
+- [x] Publish the `edgewarn` service heartbeat and gate the analysis route
+  families (`/cells`, `/storm-snapshots`, `/alert-snapshots`, `/alerts`)
+  behind it with `SERVICE_NOT_ENABLED` responses.
+- [x] Rename/refactor tandem-specific config and telemetry to primary-cycle
+  terminology. (`TandemCycleConfig` → `PrimaryCycleConfig`,
+  `run_tandem_cycle_once` → `run_primary_cycle_once`, shared staged ingest
+  renamed `run_staged_ingest_cycle`, worker renamed `edgewarn_cycle_worker`,
+  and the render-readiness telemetry label renamed
+  `render_mrms_released`; scheduler log lines say "primary cycle".)
+- [x] Remove EWMRS and NEXRAD imports from the primary import graph. (The
+  cycle module no longer imports EWMRS at all — record validation is
+  primary-owned alignment/existence, layer-binding checks run in the EWMRS
+  consumer; verified by extended import-isolation probes for
+  `util.runtime.cycle` and `run_edgewarn`.)
 - [x] Advance last-success state only after validated primary completion
   (already implemented via `CycleStateStore.record_outcome`; verify the split
   preserves it).
 - [ ] Verify primary operation with both other services stopped and during
-  their independent restart.
+  their independent restart. (The primary starts no other-service children by
+  construction and the handoff is durable, but a live soak remains
+  outstanding.)
 
 ### Phase 6 — Add and qualify the optional launcher
 
-- [ ] Add `run_all.py` with direct inherited logging and explicit flag routing.
-- [ ] Add subprocess/signal/exit-code tests without starting scientific work.
-- [ ] Run the launcher performance experiment below.
-- [ ] If it passes, convert `run.py` to a compatibility wrapper and document
-  both direct and all-services commands.
-- [ ] If it fails, keep direct commands as production and record the failed
-  metric before optimizing or promoting the launcher.
-- [ ] Delete the old monolithic orchestration after the migration window; do
-  not maintain two production schedulers.
+- [x] Add `run_all.py` with direct inherited logging and explicit flag routing.
+  (Thin Popen supervisor: inherited stdio per child, the CLI-contract routing
+  table with unset flags never forwarded, `--services` subsets, YAML-resolved
+  service omission via `--disable-ewmrs`/`--disable-nexrad`, bounded
+  SIGTERM→SIGKILL shutdown, nonzero exit when a child dies unexpectedly, and
+  no pipeline-module imports — verified by probe.)
+- [x] Add subprocess/signal/exit-code tests without starting scientific work.
+  (`tests/unit/test_run_all_launcher.py`: routing matrix, subset selection,
+  sleeper-script children for signal-driven clean shutdown, unexpected-exit
+  nonzero teardown, and SIGKILL escalation within the grace window.)
+- [ ] Run the launcher performance experiment below. (The benchmark now
+  measures single/direct/launcher trees — see Phase 7 — but live warm-cycle
+  measurement remains outstanding, like the other live gates.)
+- [x] If it passes, convert `run.py` to a compatibility wrapper and document
+  both direct and all-services commands. (`run.py` already forwards to
+  `run_edgewarn.py` since Phase 5; both command styles are documented in
+  `README.md`, `INSTALLATION.md`, and `docs/api/deployment.md`. Promotion of
+  launcher mode stays gated on the outstanding performance experiment; until
+  then direct commands remain the production recommendation.)
+- [x] If it fails, keep direct commands as production and record the failed
+  metric before optimizing or promoting the launcher. (Direct commands are
+  production today by default; the gate has not yet been run to fail.)
+- [x] Delete the old monolithic orchestration after the migration window; do
+  not maintain two production schedulers. (The tandem machinery was removed
+  outright in Phases 4–5 rather than kept as a hidden fallback; only the
+  deprecated `run.py` alias remains.)
 
 ### Phase 7 — Documentation and deployment
 
-- [ ] Update `README.md`, `INSTALLATION.md`, `docs/core/README.md`,
-  `docs/core/ingestion.md`, and `docs/core/goes_pipeline.md`.
-- [ ] Document systemd/container examples with one unit/container per direct
-  service and a shared configured base directory.
-- [ ] Document single-writer requirements, service dependencies, health files,
+- [x] Update `README.md`, `INSTALLATION.md`, `docs/core/README.md`,
+  `docs/core/ingestion.md`, and `docs/core/goes_pipeline.md`. (All five now
+  describe the three-service topology, the durable handoff records, and the
+  current flag surface; `AGENTS.md` files were synced in Phase 5.)
+- [x] Document the service-name registry, heartbeat states, route-family
+  dependencies, and `SERVICE_NOT_ENABLED` responses in
+  `docs/api/api_endpoints.md` and the OpenAPI document; add Jest/Supertest
+  coverage for the scanner (active/stale/disabled/degraded) and gated routes
+  under `tests/api/`. (Landed incrementally during Phases 3–5:
+  `tests/api/test_service_registry.js` plus per-phase gating tests.)
+- [x] Document systemd/container examples with one unit/container per direct
+  service and a shared configured base directory. (`docs/api/deployment.md`.)
+- [x] Document single-writer requirements, service dependencies, health files,
   backlog recovery, flags, stop order, and rollback.
-- [ ] Update the realtime memory benchmark so it can measure one PID tree or
+  (`docs/api/deployment.md`; registry details in `docs/core/service_registry.md`.)
+- [x] Update the realtime memory benchmark so it can measure one PID tree or
   aggregate three independent service trees.
+  (`tests/benchmarks/benchmark_realtime_pipeline_memory.py` gained
+  `--mode single|direct|launcher` with aggregate/per-tree/per-process RSS.)
 
 ## Test plan
 
@@ -630,6 +854,20 @@ turning the pause policy on.
   exact timestamps, indexes, and artifact hashes.
 - Verify `--disable-goes`, `--mrms-core-only`, `--disable-ewmrs`, and
   `--disable-nexrad` behavior through direct and launcher commands.
+
+### API service-visibility tests
+
+- Heartbeat states classify correctly: missing file (`disabled`), fresh file
+  (`active`), expired `updated_at` (`stale`), degraded children (`degraded`).
+- Gated routes return 503 `SERVICE_NOT_ENABLED` with the correct
+  `service`/`state`/`last_seen` fields when their service is disabled or
+  stale, and serve normally when it is active.
+- Route-family mapping is exhaustive: every public route declares exactly one
+  required service.
+- `/health/ready` keeps its directory-based status while reporting the
+  services block, including with all three services disabled.
+- The scanner cache does not serve state older than its TTL and does not
+  perform a heartbeat read per request under load.
 
 Run targeted tests first in `EdgeWARN-dev`, then the complete Python suite and
 the existing Node API suite. No test may depend on live NOAA/AWS availability
@@ -695,6 +933,9 @@ the convenience command.
   ownership violation, unbounded backlog, or orphaned process is observed.
 - Existing disable/base-directory behavior is preserved through the applicable
   direct command and optional launcher.
+- Each service publishes a heartbeat under its canonical name, and the unified
+  API reports `SERVICE_NOT_ENABLED` with `disabled`/`stale`/`degraded` state
+  for any route whose required service is not active.
 - The full relevant test suites and operational parity checks pass.
 - A single all-services command is promoted only after the stated performance
   gate passes.

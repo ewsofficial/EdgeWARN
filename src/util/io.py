@@ -5,6 +5,7 @@ import time
 
 from common.config import loader as config_loader
 from common.config import overlay
+from util import cli
 from util.ctam_config import export_ctam_module_dir, resolve_ctam_module_dir
 
 
@@ -116,22 +117,12 @@ class IOManager:
 
     @staticmethod
     def _add_common_processing_args(parser):
-        parser.add_argument("--base_dir", "--base-dir", dest="base_dir", type=str, default=None, help="Custom base directory for input/output data")
-        parser.add_argument("--config-dir", type=str, default=None, help="Override the config/ directory (else EDGEWARN_CONFIG_DIR or repo root)")
-        parser.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None, help="Enable performance profiling (default: from runtime.yaml; --no-profile disables)")
-        parser.add_argument("--disable-ctam", action=argparse.BooleanOptionalAction, default=None, help="Skip CTAM module execution during integration (default: from runtime.yaml; --no-disable-ctam re-enables)")
-        parser.add_argument("--disable-ctam-modules", action=argparse.BooleanOptionalAction, default=False, help="Skip discovered external CTAM modules but retain built-in StormCast")
-        # default=None, not the catalog value: `overlay.resolve` distinguishes
-        # "not given" from "given" by `is None`, and a real default here would
-        # make run.ctam_module_dir unreachable.
-        parser.add_argument("--ctam-module-dir", type=str, default=None, help="Override the directory installed CTAM module manifests are discovered from, relative to the repo root unless absolute (default: from runtime.yaml)")
-        parser.add_argument("--list-ctam-modules", action="store_true", help="List the CTAM modules discovered in the module root and exit without running the pipeline")
-        parser.add_argument("--check-ctam-modules", action="store_true", help="Validate the installed CTAM module manifests, exit nonzero if any is invalid, and run no pipeline work")
-        parser.add_argument("--disable-tracking", action=argparse.BooleanOptionalAction, default=None, help="Skip lineage detection and Kalman tracking in storm cell detection (default: from runtime.yaml; --no-disable-tracking re-enables)")
-        parser.add_argument("--disable-polygon-expansion", action=argparse.BooleanOptionalAction, default=None, help="Use original ProbSevere polygons directly and skip radar gate mapping plus watershed expansion (default: from runtime.yaml; --no-disable-polygon-expansion re-enables)")
-        parser.add_argument("--refl-threshold", type=float, default=None, help="Override the baseline reflectivity threshold used by storm cell detection (default: from detection.yaml)")
-        parser.add_argument("--min-seed-percentage", type=float, default=None, help="Override the minimum polygon seed coverage ratio used during gate expansion (default: from detection.yaml)")
-        parser.add_argument("--drop-offset", type=float, default=None, help="Override the dynamic reflectivity drop offset used during gate expansion (default: from detection.yaml)")
+        # Composed from the ownership-scoped builders in util.cli so every
+        # entry point assembles the exact flag set it honors from the same
+        # definitions. Order of registration follows the builder groups.
+        cli.add_base_directory_flags(parser)
+        cli.add_primary_processing_flags(parser)
+        cli.add_ctam_diagnostic_flags(parser)
 
     @staticmethod
     def _export_config_dir(args):
@@ -220,24 +211,10 @@ class IOManager:
 
     def get_args(self):
         parser = argparse.ArgumentParser(description="EdgeWARN modifier specification")
-        parser.add_argument("--lat_limits", type=float, nargs=2, metavar=("LAT_MIN", "LAT_MAX"), default=None, help="Latitude limits for processing (default: from runtime.yaml)")
-        parser.add_argument("--lon_limits", type=float, nargs=2, metavar=("LON_MIN", "LON_MAX"), default=None, help="Longitude limits for processing (default: from runtime.yaml)")
+        cli.add_primary_domain_flags(parser)
         self._add_common_processing_args(parser)
-        parser.add_argument("--disable-ewmrs", action=argparse.BooleanOptionalAction, default=None, help="Disable EWMRS workers and rendering pipeline (default: from runtime.yaml)")
-        parser.add_argument("--disable-nws", action=argparse.BooleanOptionalAction, default=None, help="Disable background NWS alert ingestion (default: from runtime.yaml)")
-        parser.add_argument("--disable-metar", action=argparse.BooleanOptionalAction, default=None, help="Disable background METAR ingestion (default: from runtime.yaml)")
-        parser.add_argument("--disable-goes", action=argparse.BooleanOptionalAction, default=None, help="Disable GOES ingest, GLM ingest, and GOES rendering components (default: from runtime.yaml)")
-        parser.add_argument("--disable-nexrad", action=argparse.BooleanOptionalAction, default=None, help="Disable background NEXRAD ingest and rendering (default: from runtime.yaml)")
-        parser.add_argument(
-            "--mrms-core-only",
-            action=argparse.BooleanOptionalAction,
-            default=None,
-            help=(
-                "Run only MRMS detection, MRMS feature integration, and CTAM; "
-                "disable EWMRS, GOES/GLM, RAP, NEXRAD, NWS, METAR, and WPC. "
-                "(default: from runtime.yaml)"
-            ),
-        )
+        cli.add_service_enablement_flags(parser)
+        cli.add_mrms_core_only_flag(parser)
         args = parser.parse_args()
         self._export_config_dir(args)
         self._run_ctam_diagnostics(args)
@@ -248,6 +225,7 @@ class IOManager:
         args.disable_ewmrs = overlay.resolve(args.disable_ewmrs, yaml_value=runtime_cfg["disable_ewmrs"], key="run.disable_ewmrs")
         args.disable_nws = overlay.resolve(args.disable_nws, yaml_value=runtime_cfg["disable_nws"], key="run.disable_nws")
         args.disable_metar = overlay.resolve(args.disable_metar, yaml_value=runtime_cfg["disable_metar"], key="run.disable_metar")
+        args.disable_wpc = overlay.resolve(args.disable_wpc, yaml_value=runtime_cfg["disable_wpc"], key="run.disable_wpc")
         args.disable_goes = overlay.resolve(args.disable_goes, yaml_value=runtime_cfg["disable_goes"], key="run.disable_goes")
         args.disable_nexrad = overlay.resolve(args.disable_nexrad, yaml_value=runtime_cfg["disable_nexrad"], key="run.disable_nexrad")
         args.mrms_core_only = overlay.resolve(args.mrms_core_only, yaml_value=runtime_cfg["mrms_core_only"], key="run.mrms_core_only")

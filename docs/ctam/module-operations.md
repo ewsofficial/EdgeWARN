@@ -3,8 +3,8 @@
 Validate an installation without running module code:
 
 ```bash
-python src/run.py --check-ctam-modules
-python src/run.py --list-ctam-modules
+python src/run_edgewarn.py --check-ctam-modules
+python src/run_edgewarn.py --list-ctam-modules
 ```
 
 Use `--ctam-module-dir` or `EDGEWARN_CTAM_MODULE_DIR` for a packaged module

@@ -135,20 +135,31 @@ def nexrad_variable_colormaps() -> dict:
 
 
 def get_mrms_file_list():
-    """Return the MRMS-backed render configuration list."""
+    """Return the MRMS-backed render configuration list.
+
+    Each entry carries ``required``: a required layer whose render fails gates
+    the EWMRS MRMS stage; optional-layer failures are logged only. Defaults to
+    true so an unannotated catalog keeps the historical all-layers-required
+    gate.
+    """
     return [
         {
             "name": layer["name"],
             "colormap_key": layer["colormap_key"],
             "filepath": _resolve_dir(layer["filepath"]),
             "outdir": _resolve_dir(layer["outdir"]),
+            "required": bool(layer.get("required", True)),
         }
         for layer in _render_config()["mrms_layers"]
     ]
 
 
 def get_goes_file_list():
-    """Return the GOES-backed render configuration list."""
+    """Return the GOES-backed render configuration list.
+
+    GOES ABI layers default to ``required: false``: the GOES renderer reports
+    success ratios without gating on individual channels.
+    """
     goes = _render_config()["goes_layers"]
     common = goes["common"]
     return [
@@ -164,6 +175,7 @@ def get_goes_file_list():
             "value_transform": layer["value_transform"],
             "mask_min": dict(layer["mask_min"]),
             "mask_max": dict(layer["mask_max"]),
+            "required": bool(common.get("required", False)),
         }
         for layer in goes["layers"]
     ]

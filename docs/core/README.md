@@ -6,7 +6,11 @@ This document summarizes the current runtime architecture implemented under `src
 
 ```text
 src/
-├── run.py                           # Real-time tandem scheduler entry point
+├── run_edgewarn.py                  # Primary EdgeWARN service entry point
+├── run_ewmrs.py                     # EWMRS/accessory service entry point
+├── run_nexrad.py                    # NEXRAD service entry point
+├── run_all.py                       # Optional all-services supervisor
+├── run.py                           # Retired; directs callers to split services
 ├── process_historical.py            # Historical reprocessing entry point
 ├── api/                             # Unified Node.js HTTP API (app, routes, middleware, services)
 ├── config/                          # Node YAML catalog loader used by the API
@@ -21,7 +25,7 @@ src/
 │   │   ├── metar.py                 # METAR ingest
 │   │   └── aws_async_compat.py      # AWS async/sync compatibility shim
 │   ├── config/                      # YAML catalog loader, overlay precedence, validation
-│   └── pipeline/                    # Tandem coordination (coordinator.py, goes_readiness.py)
+│   └── pipeline/                    # Shared staged-ingest coordination (coordinator.py, goes_readiness.py)
 ├── EdgeWARN/
 │   ├── pipeline.py                  # Top-level EdgeWARN orchestration
 │   ├── process/detect/              # Storm-cell detection and tracking
@@ -96,12 +100,16 @@ The GOES render path renders each single-channel layer through the shared EWMRS 
 
 ## Scheduling Modes
 
-- `run.py` starts waiting EdgeWARN/EWMRS workers, then releases each staged phase as its validated inputs arrive
+- The primary service (`run_edgewarn.py`) runs the staged ingest cycle, releases detection inputs first, publishes durable `mrms-ready`/`rap-ready` records, and drives the EdgeWARN worker; the EWMRS service (`run_ewmrs.py`) consumes those records and renders from their exact paths
+- NEXRAD runs entirely as its own service (`run_nexrad.py`), independent of both other services
 - `process_historical.py` iterates through a requested UTC time range and runs the historical EdgeWARN flow
 
 Current CLI coverage:
 
-- `run.py`: `--lat_limits`, `--lon_limits`, `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--ctam-module-dir`, `--list-ctam-modules`, `--check-ctam-modules`, `--disable-tracking`, `--disable-polygon-expansion`, `--disable-ewmrs`, `--disable-nws`, `--disable-metar`, `--disable-goes`, `--disable-nexrad`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `run_edgewarn.py`: `--lat_limits`, `--lon_limits`, `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--ctam-module-dir`, `--list-ctam-modules`, `--check-ctam-modules`, `--disable-tracking`, `--disable-polygon-expansion`, `--disable-goes`, `--mrms-core-only`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
+- `run_ewmrs.py`: `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-metar`, `--disable-nws`, `--disable-wpc`, `--disable-goes`
+- `run_nexrad.py`: `--base_dir` / `--base-dir`, `--config-dir`, `--profile`
+- `run_all.py`: `--services`, every routed flag above (unset flags are not forwarded), plus `--disable-ewmrs` / `--disable-nexrad` to omit services
 - `process_historical.py`: `--start`, `--end`, `--lat`, `--lon`, `--base_dir` / `--base-dir`, `--config-dir`, `--profile`, `--disable-ctam`, `--ctam-module-dir`, `--list-ctam-modules`, `--check-ctam-modules`, `--disable-tracking`, `--disable-polygon-expansion`, `--refl-threshold`, `--min-seed-percentage`, `--drop-offset`
 - `common/ingest/nws/zone_sync.py`: `--assets-dir`, `--zone-types`, `--timeout-seconds`, `--max-retries`, `--max-workers`, `--pause-seconds`, `--progress` / `--no-progress`, `--apply`, `--report-path`, `--config-dir`
 - `common/ingest/nexrad/main.py`: `--site`, `--volume-id`, `--base-dir`, `--max-candidate-volumes-per-site`, `--config-dir`
@@ -114,6 +122,7 @@ falls back to the YAML catalogs when omitted rather than to a literal default.
 ## Additional References
 
 - `docs/core/ingestion.md`
+- `docs/core/service_registry.md`
 - `docs/core/goes_pipeline.md`
 - `docs/core/detection.md`
 - `docs/core/integration.md`

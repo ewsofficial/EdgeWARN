@@ -5,11 +5,17 @@ This file applies to everything under `src/`.
 
 ## Purpose
 `src/` contains the runtime application code for EdgeWARN and EWMRS:
-- `run.py` launches the real-time tandem pipeline.
+- `run_edgewarn.py` is the supported primary service command. `run.py` is
+  retired and refuses to start because it cannot preserve the old all-services
+  topology; use `run_all.py` or explicit service commands instead.
+- `run_ewmrs.py` runs EWMRS rendering, GOES ABI ingest/render, and
+  METAR/NWS/WPC accessories as a standalone service.
+- `run_nexrad.py` runs NEXRAD ingest and rendering as a standalone service.
 - `process_historical.py` runs historical reprocessing.
 - `common/` holds shared ingest and coordination code.
 - `EdgeWARN/` contains the storm analysis, integration, CTAM, alerts, and API code.
 - `EWMRS/` contains the rendering service and API.
+- `NEXRAD/` contains NEXRAD GUI serialization, retention, and render loop.
 - `util/` contains shared helpers used across Python modules.
 
 ## Agent guidance

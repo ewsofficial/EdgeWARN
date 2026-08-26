@@ -300,6 +300,71 @@ are `/health/live` and `/health/ready`; only `/health/ready` touches the
 filesystem, returning `503` when any of the `data`, `gui`, or `wpc` roots is
 missing.
 
+## Service Visibility (`SERVICE_NOT_ENABLED`)
+
+Each Python runtime service publishes an atomic heartbeat beneath
+`<BASE_DIR>/state/realtime/services/<name>.json`; the filenames are the
+canonical service registry: `edgewarn`, `ewmrs`, and `nexrad`. A heartbeat is
+classified as one of:
+
+| State | Meaning |
+| --- | --- |
+| `active` | fresh heartbeat within the `api.yaml` `server.service_stale_after_seconds` threshold |
+| `stale` | heartbeat present but expired — the service crashed, hung, or was killed without cleanup |
+| `disabled` | no heartbeat file — never started or intentionally omitted |
+| `degraded` | active but reporting degraded children; degraded services still serve requests |
+| `unsupported-schema` | file exists but fails schema validation |
+
+Route families declare exactly one required service. Enforced families:
+
+| Required service | Route families |
+| --- | --- |
+| `edgewarn` | `/api/v3/cells*`, `/api/v3/storm-snapshots*`, `/api/v3/alert-snapshots*`, `/api/v3/alerts*`, and legacy `/api/v2/features/*` adapters |
+| `ewmrs` | `/api/v3/render-products*`, `/api/v3/models/rap/*`, `/api/v3/analyses/wpc/*`, `/api/v3/styles/colormaps`, and the legacy `/renders/*`, `/rap/*`, `/wpc/*`, `/colormaps` adapters |
+| `nexrad` | `/api/v3/radar-sites*` and the legacy `/nexrad/*` adapters |
+
+When the required service is not active, requests receive
+`503` instead of silently serving stale artifacts.
+
+Gated legacy responses retain the `Deprecation: true` and `Link: </api/v3/openapi.json>; rel="deprecation"` headers.
+
+v3 routes answer with the problem+json envelope plus extension members:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Service Not Enabled",
+  "status": 503,
+  "code": "SERVICE_NOT_ENABLED",
+  "service": "nexrad",
+  "state": "disabled",
+  "lastSeen": null,
+  "requestId": "…"
+}
+```
+
+Legacy compatibility routes answer with the compatibility envelope:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SERVICE_NOT_ENABLED",
+    "message": "Required service is not active",
+    "service": "nexrad",
+    "state": "stale",
+    "last_seen": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+`last_seen` carries the heartbeat's `updated_at` when present, so operators
+can tell "turned off on purpose" (`disabled`) apart from "crashed" (`stale`).
+
+`GET /health/ready` keeps its directory-based status contract and additionally
+reports a diagnostic `services` block summarizing each canonical name's state;
+it does not flip to `503` solely because an optional service is disabled.
+
 ### GET /robots.txt
 
 Serves `text/plain` disallowing every path for every user agent.
