@@ -197,6 +197,17 @@ Historical-processing note:
 
 `src/common/ingest/nws/zone_sync.py` refreshes `assets/nws_zones` from the NWS zone and UGC APIs.
 
+The `assets/nws_zones/` directory is **not** part of the repository. On the
+first call to `ZoneLookup.get_polygon()` in a process, the geomapper checks
+whether the directory exists and contains any `zones.json` files; if not, it
+runs `NWSZoneSync(assets_dir).sync(dry_run=False)` synchronously to populate
+it from `api.weather.gov`. The check runs once per process, so subsequent
+lookups are not delayed by the bootstrap. A full initial sync is roughly
+8,600 zone codes at ~20 requests/second, so ~7 minutes the first time.
+
+Run from repository root to refresh an already-populated tree (for example
+after NWS publishes a new zone):
+
 Run from repository root:
 
 ```bash

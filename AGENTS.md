@@ -194,7 +194,7 @@ EdgeWARN-Core/
 ├── assets/
 │   ├── EdgeWARN.png                    # Project branding
 │   ├── EWS_logo_072025.png             # Organization branding
-│   └── nws_zones/                      # Zone geometry assets used by NWS mapping
+│   └── nws_zones/                      # Zone geometry assets (gitignored; downloaded on first run by geomapper._ensure_zone_assets)
 ├── config/
 │   └── kalman.yaml                     # Tracking and Kalman filter configuration
 ├── plans/                              # Design notes and implementation plans

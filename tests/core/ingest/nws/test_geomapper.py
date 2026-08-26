@@ -10,10 +10,29 @@ from unittest.mock import patch, mock_open
 from EdgeWARN.ingest.nws.geomapper import (
     ZoneLookup,
     _assets_dir,
+    _reset_bootstrap,
+    _ensure_zone_assets,
     extract_exterior_polygon,
     process_warning
 )
 import common.config.loader as config_loader
+
+
+@pytest.fixture(autouse=True)
+def _disable_zone_bootstrap(monkeypatch):
+    """Keep the auto-download trigger out of the unit tests.
+
+    The bootstrap calls api.weather.gov when the assets directory has no
+    zones.json, which would either hang the test or pollute tmp_path with
+    real data. Stubbing the helper to a no-op and resetting the cached
+    flag gives every test a clean, offline starting state.
+    """
+    monkeypatch.setattr(
+        "EdgeWARN.ingest.nws.geomapper._ensure_zone_assets", lambda: None
+    )
+    _reset_bootstrap()
+    yield
+    _reset_bootstrap()
 
 
 class TestAssetsDirOwnership:

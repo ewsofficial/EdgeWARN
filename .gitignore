@@ -51,4 +51,9 @@ node_modules
 # happens to be named ctam_modules deeper in the tree stays tracked.
 /ctam_modules/
 
+# NWS zone assets: 74 polygons fetched from api.weather.gov on first use by
+# src/common/ingest/nws/geomapper.py:ZoneLookup via NWSZoneSync. Operators
+# populate this directory at runtime; it must not be re-committed.
+/assets/nws_zones/
+
 .kilo
