@@ -229,6 +229,9 @@ def test_write_elevation_artifacts_persists_parse_finished_at(tmp_path):
 
     manifest = json.loads(elevation_manifest_path("KTLH", "0.5", "20260507-150001").read_text(encoding="utf-8"))
     assert manifest["parse_finished_at"] == artifacts[0].parse_finished_at
+    assert artifacts[0].ingest_status == "success"
+    assert manifest["ingest_status"] == "success"
+    assert manifest["ingest_error"] is None
     assert manifest["file_written_at"].endswith("Z")
 
     parsed = bm._parse_iso_utc(manifest["parse_finished_at"])
@@ -255,7 +258,9 @@ def test_write_elevation_artifacts_does_not_persist_on_export_failure(tmp_path, 
             [("sweep_0", "batch", "20260507-150001")],
         )
 
-    assert not elevation_manifest_path("KTLH", "0.5", "20260507-150001").exists()
+    manifest = json.loads(elevation_manifest_path("KTLH", "0.5", "20260507-150001").read_text(encoding="utf-8"))
+    assert manifest["ingest_status"] == "failed"
+    assert manifest["ingest_error"].startswith("OSError: simulated export failure")
 
 
 def _chunks(site="KTLH", volume_id="999", stamp="20260507-150000", last_number=2):

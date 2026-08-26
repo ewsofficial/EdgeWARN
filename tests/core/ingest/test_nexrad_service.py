@@ -312,7 +312,7 @@ def _write_completion_sidecars(site, volume_id, scan_timestamp):
 
 
 @pytest.mark.asyncio
-async def test_stream_ingest_async_writes_site_manifest_only_after_completion(tmp_path, monkeypatch):
+async def test_stream_ingest_async_persists_partial_then_complete_site_status(tmp_path, monkeypatch):
     fs.initialize_filesystem(tmp_path)
     completion_states = iter([False, True])
 
@@ -339,7 +339,8 @@ async def test_stream_ingest_async_writes_site_manifest_only_after_completion(tm
         s3_client=object(),
         base_dir=tmp_path,
     )
-    assert not site_manifest_path("KTLH").exists()
+    partial_manifest = json.loads(site_manifest_path("KTLH").read_text(encoding="utf-8"))
+    assert partial_manifest["volumes"][0]["ingest_status"] == "partial"
 
     await service._stream_ingest_volume_async(
         "KTLH",
@@ -350,6 +351,7 @@ async def test_stream_ingest_async_writes_site_manifest_only_after_completion(tm
     )
 
     manifest = json.loads(site_manifest_path("KTLH").read_text(encoding="utf-8"))
+    assert manifest["volumes"][0]["ingest_status"] == "complete"
     assert manifest["volumes"][0]["volume_id"] == "999"
     assert manifest["volumes"][0]["volume_timestamp"] == "20260507-150000"
     assert manifest["volumes"][0]["sweeps"] == [

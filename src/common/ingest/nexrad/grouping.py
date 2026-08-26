@@ -20,6 +20,12 @@ def ingest_readiness_elevation_ids() -> tuple[str, ...]:
     return canonical_elevation_ids()
 
 
+# Backwards-compatible snapshot for benchmark consumers that import the
+# readiness set as a module constant. Runtime pipeline code should call the
+# function above so configuration changes are observed on each cycle.
+INGEST_READINESS_ELEVATION_IDS = ingest_readiness_elevation_ids()
+
+
 def _canonical_angle(fixed_angle: float) -> float:
     """Return the elevation angle used for the grouped output label."""
     angle = float(fixed_angle)

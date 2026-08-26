@@ -52,13 +52,16 @@ import sys
 sys.path.insert(0, sys.argv[1])
 from common.ingest.nexrad.pipeline import run_realtime_ingestion_pipeline
 config = json.loads(sys.argv[2])
-run_realtime_ingestion_pipeline(
-    sites=config.get("sites"),
-    base_dir=config.get("base_dir"),
-    scan_interval_seconds=config.get("scan_interval_seconds", 20),
-    completion_interval_seconds=config.get("completion_interval_seconds", 10),
-    max_candidate_volumes_per_site=config.get("max_candidate_volumes_per_site", 3),
-)
+try:
+    run_realtime_ingestion_pipeline(
+        sites=config.get("sites"),
+        base_dir=config.get("base_dir"),
+        scan_interval_seconds=config.get("scan_interval_seconds", 20),
+        completion_interval_seconds=config.get("completion_interval_seconds", 10),
+        max_candidate_volumes_per_site=config.get("max_candidate_volumes_per_site", 3),
+    )
+except KeyboardInterrupt:
+    pass
 """
 
 _REFERENCE_TIMESTAMP_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$")
@@ -210,6 +213,8 @@ class LatencyCollector:
         reference = _parse_reference_timestamp(reference_value)
         if reference is None:
             return None, "missing_or_invalid_reference_timestamp"
+        if reference < self.started_at:
+            return None, "reference_before_benchmark"
         latency = (finish - reference).total_seconds()
         if latency < 0:
             return None, "reference_after_parse_finish"
@@ -226,6 +231,18 @@ class LatencyCollector:
             return
         elevation_timestamp = payload.get("elevation_timestamp")
         parse_finished_at = payload.get("parse_finished_at")
+        ingest_status = payload.get("ingest_status")
+        if ingest_status not in (None, "success"):
+            self._exclusions.setdefault(site, []).append(
+                {
+                    "kind": "elevation",
+                    "volume_id": str(volume_id),
+                    "elevation": str(elevation),
+                    "ingest_status": ingest_status,
+                    "exclusion_reason": "ingest_not_successful",
+                }
+            )
+            return
         latency, reason = self._latency_and_reason(parse_finished_at, elevation_timestamp)
         if reason in ("stale", "missing_or_invalid_parse_finished_at"):
             return

@@ -398,6 +398,9 @@ def build_site_manifest(
     current_volume_timestamp: str | None = None,
     current_download_started_at: str | None = None,
     current_volume_parse_finished_at: str | None = None,
+    current_ingest_status: str | None = None,
+    current_ingest_error: str | None = None,
+    current_ingest_metrics: dict | None = None,
 ) -> dict:
     site_upper = str(site).upper()
     site_dir = fs.NEXRAD_LEVEL2_DIR / site_upper
@@ -479,8 +482,16 @@ def build_site_manifest(
         prior = previous_volumes.get(str(volume_id))
         if prior is not None and prior.get("volume_parse_finished_at"):
             volume.setdefault("volume_parse_finished_at", prior["volume_parse_finished_at"])
+        if prior is not None:
+            for key in ("ingest_status", "ingest_error", "ingest_metrics"):
+                if prior.get(key) is not None:
+                    volume.setdefault(key, prior[key])
         if str(volume_id) == str(current_volume_id) and current_volume_parse_finished_at:
             volume["volume_parse_finished_at"] = current_volume_parse_finished_at
+        if str(volume_id) == str(current_volume_id) and current_ingest_status:
+            volume["ingest_status"] = current_ingest_status
+            volume["ingest_error"] = current_ingest_error
+            volume["ingest_metrics"] = current_ingest_metrics or {}
 
     payload = {
         "site": site_upper,
@@ -498,6 +509,9 @@ def write_site_manifest(
     current_volume_timestamp: str | None = None,
     current_download_started_at: str | None = None,
     current_volume_parse_finished_at: str | None = None,
+    current_ingest_status: str | None = None,
+    current_ingest_error: str | None = None,
+    current_ingest_metrics: dict | None = None,
 ) -> Path:
     path = site_manifest_path(site)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -507,6 +521,9 @@ def write_site_manifest(
         current_volume_timestamp=current_volume_timestamp,
         current_download_started_at=current_download_started_at,
         current_volume_parse_finished_at=current_volume_parse_finished_at,
+        current_ingest_status=current_ingest_status,
+        current_ingest_error=current_ingest_error,
+        current_ingest_metrics=current_ingest_metrics,
     )
     return _write_text_if_changed(path, json.dumps(payload, separators=(",", ":")))
 
@@ -726,6 +743,8 @@ def _write_elevation_manifest(path: Path, artifact: ElevationArtifact) -> Path:
         "supplemental": artifact.supplemental,
         "file_written_at": artifact.file_written_at,
         "parse_finished_at": artifact.parse_finished_at,
+        "ingest_status": artifact.ingest_status,
+        "ingest_error": artifact.ingest_error,
         "netcdf_path": artifact.netcdf_path,
         "ar2v_path": artifact.ar2v_path,
     }
@@ -803,10 +822,37 @@ def write_elevation_artifacts(
     ]
     if hasattr(source, "volume_header") and hasattr(source, "record_buffer"):
         ar2v_path = store.elevation_ar2v_path(site, elevation_label, ts_for_filename)
-        _write_elevation_ar2v(ar2v_path, source, group_names)
     else:
         nc_path = store.elevation_netcdf_path(site, elevation_label, ts_for_filename)
-        _write_elevation_netcdf(nc_path, root_attrs, source, group_names)
+    try:
+        if ar2v_path is not None:
+            _write_elevation_ar2v(ar2v_path, source, group_names)
+        else:
+            _write_elevation_netcdf(nc_path, root_attrs, source, group_names)
+    except Exception as exc:
+        failed_artifact = ElevationArtifact(
+            site=site,
+            volume_id=volume_id,
+            volume_timestamp=scan_timestamp,
+            scan_timestamp=scan_timestamp,
+            elevation=elevation_label,
+            elevation_timestamp=elevation_timestamp,
+            first_sweep_index=group.first_sweep_index,
+            last_sweep_index=group.last_sweep_index,
+            first_sweep_timestamp=group.first_timestamp,
+            last_sweep_timestamp=group.last_timestamp,
+            member_group_names=group_names,
+            member_sweeps=member_sweeps,
+            waveforms_present=group.waveforms_present,
+            supplemental=group.supplemental,
+            download_started_at=download_started_at,
+            ingest_status="failed",
+            ingest_error=f"{type(exc).__name__}: {exc}",
+            netcdf_path=str(nc_path) if nc_path is not None else None,
+            ar2v_path=str(ar2v_path) if ar2v_path is not None else None,
+        )
+        _write_elevation_manifest(manifest_path, failed_artifact)
+        raise
     parse_finished_at = utc_timestamp_ms()
     file_written_at = _utc_now_timestamp()
 
@@ -828,6 +874,7 @@ def write_elevation_artifacts(
         download_started_at=download_started_at,
         file_written_at=file_written_at,
         parse_finished_at=parse_finished_at,
+        ingest_status="success",
         netcdf_path=str(nc_path) if nc_path is not None else None,
         ar2v_path=str(ar2v_path) if ar2v_path is not None else None,
     )

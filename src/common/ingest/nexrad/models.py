@@ -98,6 +98,8 @@ class ElevationArtifact:
     download_started_at: str | None = None
     file_written_at: str | None = None
     parse_finished_at: str | None = None
+    ingest_status: str = "success"
+    ingest_error: str | None = None
 
 
 @dataclass
@@ -110,6 +112,8 @@ class ScanStreamState:
     seen_elevation_keys: set[str] = field(default_factory=set)
     saved_artifacts: list[ElevationArtifact] = field(default_factory=list)
     parse_errors: list[str] = field(default_factory=list)
+    last_parsed_bytes: int = 0
+    worker_retry_count: int = 0
     finalized: bool = False
 
 

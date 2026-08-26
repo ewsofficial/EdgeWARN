@@ -72,6 +72,10 @@ def _new_volume_perf_totals() -> dict[str, object]:
         "first_useful_export": None,
         "chunk_list_ms": None,
         "chunk_count": 0,
+        "chunk_wait_ms": 0.0,
+        "chunk_fetch_ms": 0.0,
+        "chunk_bytes": 0,
+        "worker_retries": 0,
     }
 
 
@@ -139,6 +143,13 @@ def _emit_volume_perf_summary(
         parts.append(f"trimmed={bool(totals['buffer_trimmed'])}")
     if totals["first_useful_export"] is not None:
         parts.append(f"first_useful_export={totals['first_useful_export']}")
+    if int(totals["chunk_count"]):
+        parts.append(
+            f"chunk_fetch=wait:{float(totals['chunk_wait_ms']):.2f}ms "
+            f"request:{float(totals['chunk_fetch_ms']):.2f}ms bytes:{int(totals['chunk_bytes'])}"
+        )
+    if int(totals["worker_retries"]):
+        parts.append(f"worker_retries={int(totals['worker_retries'])}")
     if total_elapsed_ms is not None:
         parts.append(
             f"total_async_ingest={float(total_elapsed_ms):.2f}ms "
@@ -583,7 +594,7 @@ class NexradIngestService:
                 parsed_since_last_write = False
                 chunks_since_parse += 1
 
-                if chunks_since_parse >= self.parse_checkpoint_chunk_interval and current_state.bytes_written > 0:
+                if chunks_since_parse >= (2 if first_elevation_timestamp is None else self.parse_checkpoint_chunk_interval) and current_state.bytes_written > 0:
                     scan_file.flush()
                     prior_bytes_written = current_state.bytes_written
                     first_elevation_timestamp = self._run_worker_parse(
@@ -624,16 +635,10 @@ class NexradIngestService:
         self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
 
         complete = _required_elevation_paths_complete(site_upper, elevation_timestamps_by_id)
+        volume_parse_finished_at = None
 
         if complete:
             volume_parse_finished_at = utc_timestamp_ms()
-            write_site_manifest(
-                site_upper,
-                current_volume_id=volume_id,
-                current_volume_timestamp=scan_timestamp,
-                current_download_started_at=download_started_at,
-                current_volume_parse_finished_at=volume_parse_finished_at,
-            )
             if runtime_path.exists():
                 runtime_path.unlink(missing_ok=True)
             self._clear_runtime_state(site_upper, volume_id)
@@ -648,6 +653,17 @@ class NexradIngestService:
                 scan_timestamp=scan_timestamp,
                 download_started_at=download_started_at,
             )
+
+        write_site_manifest(
+            site_upper,
+            current_volume_id=volume_id,
+            current_volume_timestamp=scan_timestamp,
+            current_download_started_at=download_started_at,
+            current_volume_parse_finished_at=volume_parse_finished_at,
+            current_ingest_status="complete" if complete else "partial",
+            current_ingest_error=current_state.parse_errors[-1] if current_state.parse_errors else None,
+            current_ingest_metrics=dict(perf_totals),
+        )
 
         _emit_volume_perf_summary(site_upper, volume_id, totals=perf_totals)
 
@@ -684,6 +700,8 @@ class NexradIngestService:
         Returns the first elevation timestamp seen, or the existing value.
         """
         if not state.file_path or not Path(state.file_path).exists():
+            return first_elevation_timestamp
+        if state.bytes_written <= state.last_parsed_bytes:
             return first_elevation_timestamp
 
         if not isinstance(elevation_timestamps_by_id, dict):
@@ -723,6 +741,7 @@ class NexradIngestService:
 
             if result.buffer_trimmed and result.runtime_size is not None:
                 state.bytes_written = max(0, int(result.runtime_size))
+            state.last_parsed_bytes = state.bytes_written
 
             if result.parse_error:
                 state.parse_errors.append(result.parse_error)
@@ -770,6 +789,17 @@ class NexradIngestService:
             io_manager.write_warning(
                 f"[VOL {site}/{volume_id}] worker pool broke; recycled pool: {exc}"
             )
+            if state.worker_retry_count < 1:
+                state.worker_retry_count += 1
+                if perf_totals is not None:
+                    perf_totals["worker_retries"] = int(perf_totals["worker_retries"]) + 1
+                return self._run_worker_parse(
+                    state, site, volume_id, scan_timestamp, seen_elevation_exports, first_elevation_timestamp,
+                    download_started_at=download_started_at,
+                    elevation_timestamps_by_id=elevation_timestamps_by_id,
+                    perf_totals=perf_totals,
+                    base_dir=base_dir,
+                )
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or "").strip()
             stdout = (exc.stdout or "").strip()
@@ -845,6 +875,7 @@ class NexradIngestService:
                 pending_chunks,
                 s3_client=s3_client,
                 chunk_download_semaphore=chunk_download_semaphore,
+                perf_totals=perf_totals,
             ):
                 if not payload:
                     continue
@@ -944,7 +975,7 @@ class NexradIngestService:
                 previous_tail = (previous_tail + payload)[-MAX_MAGIC_OVERLAP:]
                 chunks_since_parse += 1
 
-                if chunks_since_parse >= self.parse_checkpoint_chunk_interval and current_state.bytes_written > 0:
+                if chunks_since_parse >= (2 if first_elevation_timestamp is None else self.parse_checkpoint_chunk_interval) and current_state.bytes_written > 0:
                     await scan_file.flush()
                     prior_bytes_written = current_state.bytes_written
                     first_elevation_timestamp = await asyncio.to_thread(
@@ -987,16 +1018,10 @@ class NexradIngestService:
         self.local_chunk_store.prune_station_scan_dirs(site_upper, scan_timestamp)
 
         complete = _required_elevation_paths_complete(site_upper, elevation_timestamps_by_id)
+        volume_parse_finished_at = None
 
         if complete:
             volume_parse_finished_at = utc_timestamp_ms()
-            write_site_manifest(
-                site_upper,
-                current_volume_id=volume_id,
-                current_volume_timestamp=scan_timestamp,
-                current_download_started_at=download_started_at,
-                current_volume_parse_finished_at=volume_parse_finished_at,
-            )
             if runtime_path.exists():
                 runtime_path.unlink(missing_ok=True)
             self._clear_runtime_state(site_upper, volume_id)
@@ -1011,6 +1036,17 @@ class NexradIngestService:
                 scan_timestamp=scan_timestamp,
                 download_started_at=download_started_at,
             )
+
+        write_site_manifest(
+            site_upper,
+            current_volume_id=volume_id,
+            current_volume_timestamp=scan_timestamp,
+            current_download_started_at=download_started_at,
+            current_volume_parse_finished_at=volume_parse_finished_at,
+            current_ingest_status="complete" if complete else "partial",
+            current_ingest_error=current_state.parse_errors[-1] if current_state.parse_errors else None,
+            current_ingest_metrics=dict(perf_totals or {}),
+        )
 
         return NexradIngestResult(
             site=site_upper,
@@ -1092,13 +1128,21 @@ class NexradIngestService:
                         await self._close_async_body(body)
             return payload
 
-    async def _prefetch_pending_chunks(self, pending_chunks, *, s3_client, chunk_download_semaphore=None):
+    async def _prefetch_pending_chunks(self, pending_chunks, *, s3_client, chunk_download_semaphore=None, perf_totals=None):
         semaphore = chunk_download_semaphore or asyncio.Semaphore(self.max_chunk_downloads)
         prefetch = max(1, min(self.in_volume_prefetch, len(pending_chunks)))
 
         async def _fetch_one(chunk):
+            wait_started_at = time.perf_counter()
             async with semaphore:
-                return await self._fetch_chunk_bytes(chunk, s3_client)
+                waited_ms = format_perf_ms(wait_started_at)
+                fetch_started_at = time.perf_counter()
+                payload = await self._fetch_chunk_bytes(chunk, s3_client)
+                if perf_totals is not None:
+                    perf_totals["chunk_wait_ms"] = float(perf_totals["chunk_wait_ms"]) + waited_ms
+                    perf_totals["chunk_fetch_ms"] = float(perf_totals["chunk_fetch_ms"]) + format_perf_ms(fetch_started_at)
+                    perf_totals["chunk_bytes"] = int(perf_totals["chunk_bytes"]) + len(payload)
+                return payload
 
         tasks = {}
         next_submit = 0
@@ -1304,7 +1348,7 @@ class NexradIngestService:
         s3_client = s3_client or get_unsigned_s3_client()
         for site in sites:
             volume_ids = self.volume_lister(site, limit=max_volumes_per_site, s3_client=s3_client)
-            for volume_id in volume_ids:
+            for volume_id in volume_ids[:1]:
                 station_vcp = None if station_vcps is None else station_vcps.get(str(site).upper())
                 result = self.ingest_allowed_vcp_volume(
                     site,
@@ -1391,7 +1435,7 @@ class NexradIngestService:
 
                     site, volume_ids = listed_site
                     station_vcp = station_vcps.get(site)
-                    for volume_id in volume_ids:
+                    for volume_id in volume_ids[:1]:
                         volume_work.append((site, volume_id, station_vcp))
 
                 volume_ingest_started_at = time.perf_counter()
