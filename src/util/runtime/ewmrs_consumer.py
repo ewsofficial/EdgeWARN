@@ -92,10 +92,9 @@ class EwmrsRecordConsumer:
         processed = skipped = 0
         for cycle_id, record, status in pending:
             if status == "already-processed":
-                self._log(
-                    f"[EWMRS] Ignoring late-committed {phase} cycle {cycle_id}; "
-                    "its checkpoint has already advanced past it"
-                )
+                # These records are retained for observability by the handoff
+                # selector. They are expected on every steady-state poll, so
+                # emitting one line per historical cycle is pure log noise.
                 continue
             if status == "abandoned-backlog":
                 # Backlog-cap abandonment applies regardless of record state:

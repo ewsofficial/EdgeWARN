@@ -122,6 +122,40 @@ class NexradRealtimeIngestionPipeline:
         )
         self.pending_tracker = NexradPendingVolumeTracker()
         self.last_seen_by_site: dict[str, str] = {}
+        self._pending_failure_message: str | None = None
+        self._pending_failure_count = 0
+        self._pending_failure_last_reported_at: float | None = None
+        # A completion pass is normally frequent. Repeatedly failing on the
+        # same corrupt/truncated object must not turn into a warning flood.
+        self._pending_failure_report_interval_seconds = 60.0
+
+    def _record_pending_failure(self, exc: Exception) -> None:
+        """Coalesce identical pending-cycle failures into periodic summaries."""
+        message = str(exc)
+        now = self.monotonic()
+        if message != self._pending_failure_message:
+            self._flush_pending_failure_summary()
+            self._pending_failure_message = message
+            self._pending_failure_count = 0
+            self._pending_failure_last_reported_at = None
+
+        self._pending_failure_count += 1
+        if (
+            self._pending_failure_last_reported_at is None
+            or now - self._pending_failure_last_reported_at
+            >= self._pending_failure_report_interval_seconds
+        ):
+            self._flush_pending_failure_summary()
+            self._pending_failure_last_reported_at = now
+
+    def _flush_pending_failure_summary(self) -> None:
+        if not self._pending_failure_count or self._pending_failure_message is None:
+            return
+        io_manager.write_warning(
+            f"{self._pending_failure_count} pending cycles failed: "
+            f"{self._pending_failure_message}"
+        )
+        self._pending_failure_count = 0
 
     def _timeout_for_stage(self, stage):
         if stage == "volume-discovery":
@@ -397,7 +431,11 @@ class NexradRealtimeIngestionPipeline:
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    io_manager.write_warning(f"[RUN] pending cycle failed: {exc}")
+                    self._record_pending_failure(exc)
+                else:
+                    self._flush_pending_failure_summary()
+                    self._pending_failure_message = None
+                    self._pending_failure_last_reported_at = None
                 next_completion_at = now + self.completion_interval_seconds
             delay = max(0.0, min(next_scan_at, next_completion_at) - self.monotonic())
             await self.sleeper(delay)

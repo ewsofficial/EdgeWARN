@@ -488,13 +488,14 @@ class StormCellTracker:
         # Process Assignment Results
         if assignment_result:
             # Matches (Re-acquisition / Continuation)
+            matched_pairs = len(assignment_result.matched)
+            resolved_pairs = missing_tracks = missing_detections = 0
             for track_id, det_id in assignment_result.matched:
-                self.io_manager.write_debug(f"Matching track_id: {track_id}, det_id: {det_id}")
                 track = unmatched_tracks_map.get(track_id)
                 detection = unmatched_detections_map.get(det_id)
-                self.io_manager.write_debug(f"Track found: {track is not None}, Detection found: {detection is not None}")
                 
                 if track and detection:
+                    resolved_pairs += 1
                     self._update_cell_fields(track, detection, timestamp)
                     # Reset lineage fields just in case
                     track['event_type'] = LineageEvent.ACTIVE.value
@@ -506,6 +507,16 @@ class StormCellTracker:
                     processed_old_ids.add(track_id)
                     processed_new_ids.add(det_id)
                     stats['reacquired'] += 1
+                else:
+                    missing_tracks += track is None
+                    missing_detections += detection is None
+
+            self.io_manager.write_debug(
+                "Assignment pair resolution: "
+                f"matched={matched_pairs}, resolved={resolved_pairs}, "
+                f"missing_tracks={missing_tracks}, "
+                f"missing_detections={missing_detections}"
+            )
             
             # Remaining Unmatched Tracks -> Prediction Mode
             for track_id in assignment_result.unmatched_tracks:

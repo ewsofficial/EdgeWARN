@@ -108,6 +108,17 @@ def test_consumer_started_before_primary_is_a_noop_then_picks_up(tmp_path, fake_
     assert (processed, skipped) == (2, 0)
 
 
+def test_already_processed_records_are_quiet_on_subsequent_polls(tmp_path, fake_render):
+    """Historical checkpoint records are expected, not one log event each."""
+    _commit(tmp_path, CYCLE_DT)
+    logs = []
+    consumer = EwmrsRecordConsumer(tmp_path, log=logs.append)
+    assert consumer.process_pending_once() == (2, 0)
+
+    assert consumer.process_pending_once() == (0, 0)
+    assert not any("Ignoring late-committed" in message for message in logs)
+
+
 def test_backlog_excess_marked_unrecoverable_without_rendering(tmp_path, fake_render):
     for hour in range(5):
         _commit(tmp_path, CYCLE_DT.replace(hour=hour))

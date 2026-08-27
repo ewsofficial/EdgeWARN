@@ -130,14 +130,15 @@ class HttpsFileFinder:
                 
         return valid_files
 
-    def find_files_sync(self, region, modifier):
+    def find_files_sync(self, region, modifier, *, log_scan=True):
         """
         Sync version of find_files using requests (for scheduler).
         """
         url = self.construct_url(region, modifier)
         target_ts_str = self.dt.strftime("%Y%m%d-%H%M")
         
-        self.io_manager.write_debug(f"Scanning (Sync) {url} for {target_ts_str}...")
+        if log_scan:
+            self.io_manager.write_debug(f"Scanning (Sync) {url} for {target_ts_str}...")
         
         try:
             response = requests.get(url, timeout=ncep_sync_timeout_seconds())

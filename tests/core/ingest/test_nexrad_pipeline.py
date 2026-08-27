@@ -513,6 +513,35 @@ async def test_pipeline_run_forever_uses_scan_and_pending_cadence(monkeypatch):
     assert pendings == [0.0, 20.0, 40.0]
 
 
+def test_pipeline_aggregates_repeated_pending_failures(monkeypatch):
+    now = {"value": 0.0}
+    warnings = []
+    pipeline = NexradRealtimeIngestionPipeline(monotonic=lambda: now["value"])
+    monkeypatch.setattr(
+        "common.ingest.nexrad.pipeline.io_manager.write_warning",
+        warnings.append,
+    )
+
+    failure = RuntimeError("Compressed data ended before the end-of-stream marker was reached")
+    pipeline._record_pending_failure(failure)
+    now["value"] = 20.0
+    pipeline._record_pending_failure(failure)
+    now["value"] = 40.0
+    pipeline._record_pending_failure(failure)
+
+    assert warnings == [
+        "1 pending cycles failed: "
+        "Compressed data ended before the end-of-stream marker was reached"
+    ]
+
+    now["value"] = 60.0
+    pipeline._record_pending_failure(failure)
+    assert warnings[-1] == (
+        "3 pending cycles failed: "
+        "Compressed data ended before the end-of-stream marker was reached"
+    )
+
+
 async def _return(value):
     return value
 

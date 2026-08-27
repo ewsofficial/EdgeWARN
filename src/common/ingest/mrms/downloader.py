@@ -36,6 +36,25 @@ import uuid
 io_manager = IOManager("[Ingest]")
 
 
+def _write_netcdf_atomically(dataset, destination: Path) -> None:
+    """Publish a completed NetCDF file without exposing a partial artifact.
+
+    The scan-time GLM task runs concurrently with the staged ingest cycle.
+    Readers must therefore never observe the final merged filename until the
+    writer has closed it completely.  Write to a sibling temporary path and
+    atomically replace the destination only after ``to_netcdf`` succeeds.
+    """
+    destination = Path(destination)
+    temporary = destination.with_name(f".{destination.name}.part")
+    temporary.unlink(missing_ok=True)
+    try:
+        dataset.to_netcdf(temporary, engine="netcdf4")
+        temporary.replace(destination)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def _narrow_mrms_lookup(dt, region, modifier):
     """Return the ``(prefix, start_after)`` pair that narrows one MRMS listing.
 
@@ -556,7 +575,7 @@ def download_goes_product(goes_spec, dt, hour_lookback=None, preloaded_files=Non
                     merged_path = outdir / merged_filename
                     
                     try:
-                        merged_ds.to_netcdf(merged_path)
+                        _write_netcdf_atomically(merged_ds, merged_path)
                         io_manager.write_info(f"Saved merged GLM file to: {merged_path}")
                         merged_ds.close()
                         
@@ -699,8 +718,9 @@ async def _download_goes_product_async(
                     merged_path = outdir / merged_filename
                     
                     try:
-                        # to_netcdf is also synchronous
-                        merged_ds.to_netcdf(merged_path)
+                        # NetCDF serialization is synchronous; publish only
+                        # after the temporary file is complete and closed.
+                        _write_netcdf_atomically(merged_ds, merged_path)
                         io_manager.write_info(f"[{trace_id}] Saved merged GLM file to: {merged_path}")
                         merged_ds.close()
                         

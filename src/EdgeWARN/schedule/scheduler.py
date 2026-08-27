@@ -183,7 +183,11 @@ class MRMSUpdateChecker:
         if reference_dt is None:
             reference_dt = datetime.datetime.now(datetime.timezone.utc)
             
-        print("[Scheduler] Attempting HTTPS Fallback for timestamps (Parallel)...")
+        print(
+            "[Scheduler] Attempting HTTPS Fallback for timestamps "
+            f"(Parallel; {len(modifiers)} sync scans for "
+            f"{reference_dt.strftime('%Y%m%d-%H%M')})..."
+        )
         
         modifier_times = []
         
@@ -194,7 +198,9 @@ class MRMSUpdateChecker:
                 # HttpsFileFinder seems lightweight
                 finder = HttpsFileFinder(reference_dt, io_manager)
                 # find_files_sync returns URLs
-                urls = finder.find_files_sync(region, modifier)
+                # This is one logical fallback probe. Log it once above,
+                # rather than once for every modifier URL below.
+                urls = finder.find_files_sync(region, modifier, log_scan=False)
                 
                 timestamps = set()
                 for url in urls:
