@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 
 import NEXRAD.gui_pipeline as nexrad_gui
 
@@ -117,6 +118,47 @@ def test_render_pending_nexrad_gui_files_normalizes_iso_sidecar_timestamps(monke
     assert captured == [("KTLH", "999", "20260519-132157", "20260519-132157")]
 
 
+def test_nexrad_discovery_ignores_partial_artifacts(monkeypatch, tmp_path):
+    elevation_dir = tmp_path / "data" / "NEXRAD_Level2" / "KTLH" / "0.5"
+    elevation_dir.mkdir(parents=True)
+    complete = elevation_dir / "KTLH_0.5_20260519-132157.ar2v"
+    partial = elevation_dir / "KTLH_0.5_20260519-132257.part.ar2v"
+    for artifact in (complete, partial):
+        artifact.write_bytes(b"artifact")
+        artifact.with_suffix(".json").write_text(json.dumps({
+            "scan_timestamp": "20260519-132157",
+            "elevation_timestamp": "20260519-132157",
+        }))
+
+    monkeypatch.setattr(nexrad_gui.fs, "NEXRAD_LEVEL2_DIR", tmp_path / "data" / "NEXRAD_Level2")
+
+    artifacts = list(nexrad_gui._iter_latest_nexrad_artifacts())
+
+    assert [Path(item["artifact_path"]).name for item in artifacts] == [complete.name]
+
+
+def test_nexrad_render_requires_valid_sidecar_before_serializing(monkeypatch, tmp_path):
+    artifact_path = tmp_path / "KTLH_0.5_20260519-132157.ar2v"
+    artifact_path.write_bytes(b"artifact")
+    calls = []
+    monkeypatch.setattr(
+        "NEXRAD.render.serialize_nexrad_elevation_artifacts",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    rendered = nexrad_gui._render_pending_nexrad_gui_artifact({
+        "site": "KTLH",
+        "volume_id": "999",
+        "scan_timestamp": "20260519-132157",
+        "elevation": "0.5",
+        "elevation_timestamp": "20260519-132157",
+        "artifact_path": artifact_path,
+    })
+
+    assert rendered is False
+    assert calls == []
+
+
 def test_render_pending_nexrad_gui_files_uses_eight_workers(monkeypatch, tmp_path):
     gui_root = tmp_path / "gui" / "NEXRAD"
     nexrad_root = tmp_path / "data" / "NEXRAD_Level2"
@@ -153,10 +195,37 @@ def test_render_pending_nexrad_gui_files_uses_eight_workers(monkeypatch, tmp_pat
     )
     monkeypatch.setattr("concurrent.futures.as_completed", lambda futures: list(futures))
 
+    nexrad_gui._inflight_renders.clear()
     rendered = nexrad_gui.render_pending_nexrad_gui_files()
 
     assert rendered == 10
     assert created["executor"].max_workers == 8
+
+
+def test_nexrad_inflight_tracking_skips_duplicate_submission(monkeypatch, tmp_path):
+    artifact_path = tmp_path / "KTLH_0.5_20260507-150001.nc"
+    metadata = {
+        "site": "KTLH",
+        "volume_id": "999",
+        "scan_timestamp": "20260507-150001",
+        "elevation": "0.5",
+        "elevation_timestamp": "20260507-150001",
+        "artifact_path": artifact_path,
+    }
+    submitted = []
+    monkeypatch.setattr(nexrad_gui, "_iter_latest_nexrad_artifacts", lambda: [metadata, metadata])
+    monkeypatch.setattr(nexrad_gui, "_nexrad_source_artifact_is_fresh", lambda *args, **kwargs: True)
+    monkeypatch.setattr(nexrad_gui, "_nexrad_gui_timestamp_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(nexrad_gui, "_render_pending_nexrad_gui_artifact", lambda item: submitted.append(item) or True)
+    monkeypatch.setattr("concurrent.futures.ThreadPoolExecutor", _FakeExecutor)
+    monkeypatch.setattr("concurrent.futures.as_completed", lambda futures: list(futures))
+    nexrad_gui._inflight_renders.clear()
+
+    rendered = nexrad_gui.render_pending_nexrad_gui_files()
+
+    assert rendered == 1
+    assert submitted == [metadata]
+    assert nexrad_gui._inflight_renders == set()
 
 
 def test_render_pending_nexrad_gui_files_renders_all_fresh_source_timestamps(monkeypatch, tmp_path):

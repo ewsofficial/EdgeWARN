@@ -148,6 +148,24 @@ def test_run_render_pipeline_binds_manifest_path_before_worker_submit(
     assert submitted[0]["input_manifest_bound"] is True
 
 
+def test_render_layer_skips_partial_pinned_input(tmp_path):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    partial = source_dir / ".MRMS_Test_20260317-200000.grib2.part"
+    partial.write_bytes(b"partial")
+
+    name, output = ewmrs_pipeline._render_layer({
+        "name": "Test",
+        "filepath": source_dir,
+        "outdir": tmp_path / "gui",
+        "input_manifest_bound": True,
+        "input_path": str(partial),
+    })
+
+    assert name == "Test"
+    assert output is None
+
+
 def test_run_goes_render_pipeline_is_explicit_no_op_without_layers(monkeypatch):
     monkeypatch.setattr(ewmrs_pipeline, "get_goes_file_list", lambda: [])
 

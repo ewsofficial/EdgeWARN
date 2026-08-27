@@ -122,6 +122,16 @@ class TestLatestFiles:
         assert str(file2) in result
         assert str(idx_file) not in result
 
+    def test_excludes_partial_files(self, tmp_path):
+        complete_file = tmp_path / "MRMS_20260419-001000.grib2"
+        partial_file = tmp_path / ".MRMS_20260419-001200.grib2.part"
+        complete_file.write_text("complete")
+        partial_file.write_text("partial")
+
+        result = fs.latest_files(tmp_path, 10)
+
+        assert result == [str(complete_file)]
+
     def test_returns_none_for_nonexistent_directory(self):
         """Test that None is returned for non-existent directory"""
         non_existent = Path("/non/existent/path")

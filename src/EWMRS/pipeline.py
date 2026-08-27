@@ -184,6 +184,11 @@ def _render_layer(layer) -> tuple[str, RenderOutput]:
                 if pinned_input_path is not None
                 else None
             )
+            if latest_file is not None and ".part" in latest_file.name.lower():
+                io_mgr.write_warning(
+                    f"Skipping {name}: pinned source is a partial file ({latest_file.name})"
+                )
+                return name, None
         else:
             latest_file = _latest_source_file(src_dir)
         if latest_file is None:

@@ -115,3 +115,19 @@ def test_goes_readiness_uses_encoded_time_instead_of_mtime(tmp_path):
 
     assert ready is True
     assert path == str(target)
+
+
+def test_goes_readiness_ignores_partial_downloads(tmp_path):
+    dt = datetime(2026, 4, 19, 0, 10, tzinfo=timezone.utc)
+    abi_dir = tmp_path / "VisibleRed"
+    abi_dir.mkdir()
+    partial = abi_dir / ".OR_ABI-L1b-RadC-M6C02_G19_s20261090010000.nc.part"
+    partial.write_bytes(b"incomplete")
+
+    ready, path = check_local_goes_ready(
+        dt,
+        specs=[{"name": "GOES_ABI_C02_Reflectance", "filepath": abi_dir}],
+    )
+
+    assert ready is False
+    assert path is None

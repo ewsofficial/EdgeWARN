@@ -95,7 +95,7 @@ def goes_render_loop(base_dir, log_queue, render_active_event):
     _configure_process_runtime("GOES-Render")
     coordination = section("goes_coordination")
     specs = get_ewmrs_goes_render_specs()
-    last_rendered_signature = None
+    completed_input_timestamps: set[tuple[tuple[str, str], ...]] = set()
     try:
         while not _SHUTDOWN_REQUESTED:
             target_dt = datetime.now(timezone.utc).replace(second=0, microsecond=0)
@@ -104,15 +104,15 @@ def goes_render_loop(base_dir, log_queue, render_active_event):
                 if len(inputs) == len(specs):
                     manifest = CycleInputManifest(cycle_time=target_dt, inputs=inputs)
                     if not manifest.validate_alignment():
-                        # Freshness guard: the poll loop runs continuously, but
-                        # re-rendering an unchanged pinned input set every
-                        # minute would burn I/O. Render each distinct input
-                        # selection once.
-                        signature = tuple(
-                            (record.path, record.analysis_time.isoformat())
-                            for record in sorted(inputs, key=lambda r: r.product)
+                        # A source's temporary filename changes when it is
+                        # atomically promoted. Deduplicate by the selected
+                        # products' encoded analysis timestamps, which remain
+                        # stable across that rename and across later polls.
+                        render_key = tuple(
+                            (record.product, record.analysis_time.isoformat())
+                            for record in sorted(inputs, key=lambda record: record.product)
                         )
-                        if signature != last_rendered_signature:
+                        if render_key not in completed_input_timestamps:
                             queue_log(
                                 log_queue,
                                 f"INFO: Rendering pinned local GOES ABI input set for {target_dt.isoformat()}",
@@ -126,7 +126,12 @@ def goes_render_loop(base_dir, log_queue, render_active_event):
                                 )
                             finally:
                                 render_active_event.clear()
-                            last_rendered_signature = signature
+                            completed_input_timestamps.add(render_key)
+                            # Keep a small rolling window for long-lived workers.
+                            if len(completed_input_timestamps) > 120:
+                                completed_input_timestamps = set(
+                                    sorted(completed_input_timestamps)[-60:]
+                                )
             except KeyboardInterrupt:
                 return
             except Exception as exc:

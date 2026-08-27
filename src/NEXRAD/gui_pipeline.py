@@ -10,6 +10,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -30,6 +31,8 @@ io_manager = IOManager("[NEXRAD-GUI]")
 _NEXRAD_SITE_DIR_PATTERN = re.compile(r"^[A-Z0-9]{4}$")
 _NEXRAD_ELEVATION_DIR_PATTERN = re.compile(r"^\d{1,3}(?:\.\d{1,2})?$")
 _NEXRAD_TIMESTAMP_PATTERN = re.compile(r"^\d{8}-\d{6}$")
+_inflight_renders: set[str] = set()
+_inflight_lock = threading.Lock()
 
 
 def cleanup_old_nexrad_gui_files(max_age_minutes: int | None = None) -> int:
@@ -178,6 +181,8 @@ def _iter_latest_nexrad_artifacts():
             for artifact_path in sorted(elevation_dir.iterdir(), key=lambda path: path.name):
                 if not artifact_path.is_file() or artifact_path.suffix not in {".nc", ".ar2v"}:
                     continue
+                if ".part" in artifact_path.name.lower():
+                    continue
                 existing = preferred_by_stem.get(artifact_path.stem)
                 if existing is None or (existing.suffix != ".nc" and artifact_path.suffix == ".nc"):
                     preferred_by_stem[artifact_path.stem] = artifact_path
@@ -206,6 +211,16 @@ def _render_pending_nexrad_gui_artifact(metadata: dict) -> bool:
     elevation = str(metadata["elevation"])
     timestamp = str(metadata["elevation_timestamp"])
     artifact_path = Path(metadata["artifact_path"])
+
+    # The sidecar is atomically written only after the source artifact is
+    # complete. Do not begin decompression until that commit marker is valid.
+    sidecar_path = artifact_path.with_suffix(".json")
+    try:
+        sidecar_payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(sidecar_payload, dict):
+        return False
 
     artifact = ElevationArtifact(
         site=site,
@@ -261,6 +276,11 @@ def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: in
             continue
         if _nexrad_gui_timestamp_exists(site, elevation, timestamp):
             continue
+        render_key = f"{site}/{elevation}/{timestamp}"
+        with _inflight_lock:
+            if render_key in _inflight_renders:
+                continue
+            _inflight_renders.add(render_key)
         pending_metadata.append(metadata)
 
     if not pending_metadata:
@@ -268,11 +288,21 @@ def render_pending_nexrad_gui_files(*, base_dir=None, max_source_age_minutes: in
 
     max_workers = min(nexrad_render_max_workers(), len(pending_metadata))
     rendered_count = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_render_pending_nexrad_gui_artifact, metadata) for metadata in pending_metadata]
-        for future in concurrent.futures.as_completed(futures):
-            if future.result():
-                rendered_count += 1
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_render_pending_nexrad_gui_artifact, metadata) for metadata in pending_metadata]
+            for future in concurrent.futures.as_completed(futures):
+                if future.result():
+                    rendered_count += 1
+    finally:
+        with _inflight_lock:
+            for metadata in pending_metadata:
+                render_key = (
+                    f"{str(metadata['site']).upper()}"
+                    f"/{metadata['elevation']}"
+                    f"/{metadata['elevation_timestamp']}"
+                )
+                _inflight_renders.discard(render_key)
 
     return rendered_count
 

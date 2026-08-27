@@ -130,7 +130,9 @@ def latest_goes_file_near_target(directory, target_dt, *, max_offset_minutes=Non
         candidates = [
             path
             for path in directory.iterdir()
-            if path.is_file() and path.suffix.lower() != ".idx"
+            if path.is_file()
+            and path.suffix.lower() != ".idx"
+            and ".part" not in path.name.lower()
         ]
     except OSError:
         candidates = []

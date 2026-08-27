@@ -259,7 +259,7 @@ def latest_files(directory, count):
         name = entry.name
         dot = name.rfind(".")
         suffix_lower = name[dot:].lower() if dot >= 0 else ""
-        if suffix_lower == ".idx":
+        if suffix_lower == ".idx" or ".part" in name.lower():
             continue
         if suffix_lower == ".gz" and name[:dot] in names_present:
             continue

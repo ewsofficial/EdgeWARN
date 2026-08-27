@@ -1,4 +1,8 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 from util.runtime import background
+import util.runtime.goes as runtime_goes
 
 
 def test_accessory_children_configure_parent_death_signal(monkeypatch):
@@ -54,6 +58,59 @@ class FakeQueue:
 
     def put(self, item):
         self.items.append(item)
+
+
+def test_goes_render_loop_deduplicates_renamed_inputs_by_analysis_time(monkeypatch):
+    rendered = []
+    sleeps = []
+    fixed_time = datetime(2026, 8, 27, 18, 0, tzinfo=timezone.utc)
+
+    class FakeManifest:
+        def __init__(self, *, cycle_time, inputs):
+            self.inputs = inputs
+
+        def validate_alignment(self):
+            return ()
+
+        def as_dict(self):
+            return {}
+
+    records = [
+        SimpleNamespace(
+            product="GOES_ABI_C02",
+            path="/tmp/.OR_ABI_s20262401800000.nc.part",
+            analysis_time=fixed_time,
+        ),
+        SimpleNamespace(
+            product="GOES_ABI_C02",
+            path="/tmp/OR_ABI_s20262401800000.nc",
+            analysis_time=fixed_time,
+        ),
+    ]
+
+    monkeypatch.setattr(background, "_configure_process_runtime", lambda _name: None)
+    monkeypatch.setattr(background, "section", lambda _name: {"poll_seconds": 1, "poll_interval_seconds": 1})
+    monkeypatch.setattr(runtime_goes, "get_ewmrs_goes_render_specs", lambda: [object()])
+    monkeypatch.setattr(runtime_goes, "collect_local_goes_inputs", lambda *_args, **_kwargs: [records.pop(0)])
+    monkeypatch.setattr("common.ingest.manifest.CycleInputManifest", FakeManifest)
+    monkeypatch.setattr(background, "ewmrs_goes_worker", lambda *_args, **_kwargs: rendered.append(True))
+    monkeypatch.setattr(background, "queue_log", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(background, "datetime", SimpleNamespace(now=lambda _tz: fixed_time))
+
+    def stop_after_second_sleep(*_args, **_kwargs):
+        sleeps.append(True)
+        if len(sleeps) == 2:
+            background._SHUTDOWN_REQUESTED = True
+
+    monkeypatch.setattr(background, "sleep_for", stop_after_second_sleep)
+    background._SHUTDOWN_REQUESTED = False
+
+    try:
+        background.goes_render_loop("/tmp", FakeQueue(), SimpleNamespace(set=lambda: None, clear=lambda: None))
+    finally:
+        background._SHUTDOWN_REQUESTED = False
+
+    assert rendered == [True]
 
 
 def test_nexrad_ingest_loop_restarts_after_exception(monkeypatch):
