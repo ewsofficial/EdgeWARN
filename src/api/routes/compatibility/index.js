@@ -1,26 +1,10 @@
 import express from 'express';
 import { getProductByLegacyId } from '../../config/productCatalog.js';
 import { createServiceGate, legacyEnvelopeResponder } from '../../middleware/serviceGate.js';
+import { streamArtifact } from '../../streamArtifact.js';
 
 const deprecate = (res) => res.set({ Deprecation: 'true', Link: '</api/v3/openapi.json>; rel="deprecation"' });
-const send = (res, opened, type, headers = {}) => {
-  let closePromise;
-  const closeHandle = () => {
-    if (!closePromise) {
-      closePromise = opened.handle.close().catch((error) => {
-        if (error?.code !== 'EBADF' && error?.code !== 'ERR_INVALID_STATE') console.error('Unable to close streamed artifact handle', error);
-      });
-    }
-    return closePromise;
-  };
-  res.set(opened.headers || {}).set(headers).type(type).set('Content-Length', String(opened.size));
-  const stream = opened.handle.createReadStream({ autoClose: false });
-  const abort = () => { stream.destroy(); void closeHandle(); };
-  stream.once('error', () => { void closeHandle(); res.destroy(); });
-  stream.once('end', () => void closeHandle());
-  res.once('close', abort);
-  stream.pipe(res);
-};
+const send = (req, res, opened, type, headers = {}) => streamArtifact(req, res, opened, type, headers);
 const value = (input) => typeof input === 'string' && input ? input : null;
 
 export function createCompatibilityRouter({ analysis, renders, ancillary, packageVersion, serviceRegistry }) {
@@ -43,17 +27,17 @@ export function createCompatibilityRouter({ analysis, renders, ancillary, packag
   router.get('/api/v2/data/metar', async (req, res, next) => { try { deprecate(res); const ts = value(req.query.timestamp); if (!ts) return res.json(await analysis.listMetarHours()); const result = await analysis.getMetar(ts); return res.json({ type: 'metar', timestamp: result.requestedTimestamp, data: result.observations }); } catch (e) { next(e); } });
   router.get('/renders/get-items', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); res.json((await renders.listProducts()).map((item) => item.legacyId)); } catch (e) { next(e); } });
   router.get('/renders/fetch', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); const product = getProductByLegacyId(value(req.query.product)); if (!product) return res.status(404).json({ error: 'Unknown product or no mapping found' }); res.json(await renders.listSnapshots(product.id)); } catch (e) { next(e); } });
-  router.get('/renders/download', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); const product = getProductByLegacyId(value(req.query.product)); const ts = value(req.query.timestamp); if (!product || !ts) return res.status(400).json({ error: 'Missing product or timestamp parameter' }); send(res, await renders.image(product.id, ts), 'image/png'); } catch (e) { next(e); } });
-  router.get('/renders/tile', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); const product = getProductByLegacyId(value(req.query.product)); const ts = value(req.query.timestamp); if (!product || !ts) return res.status(400).json({ error: 'Missing required parameters: product, timestamp' }); const hasX = req.query.x !== undefined; const hasY = req.query.y !== undefined; if (hasX !== hasY) return res.status(400).json({ error: 'Missing required parameters: x and y must both be provided together' }); if (!hasX) { const result = await renders.tiles(product.id, ts); return res.json({ product: product.legacyId, timestamp: ts, tile_grid: { rows: result.grid.rows, cols: result.grid.cols, tile_size: result.grid.tileSize }, tiles: result.tiles }); } send(res, await renders.tile(product.id, ts, Number(req.query.x), Number(req.query.y)), 'image/png'); } catch (e) { next(e); } });
+  router.get('/renders/download', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); const product = getProductByLegacyId(value(req.query.product)); const ts = value(req.query.timestamp); if (!product || !ts) return res.status(400).json({ error: 'Missing product or timestamp parameter' }); await send(req, res, await renders.image(product.id, ts), 'image/png'); } catch (e) { next(e); } });
+  router.get('/renders/tile', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); const product = getProductByLegacyId(value(req.query.product)); const ts = value(req.query.timestamp); if (!product || !ts) return res.status(400).json({ error: 'Missing required parameters: product, timestamp' }); const hasX = req.query.x !== undefined; const hasY = req.query.y !== undefined; if (hasX !== hasY) return res.status(400).json({ error: 'Missing required parameters: x and y must both be provided together' }); if (!hasX) { const result = await renders.tiles(product.id, ts); return res.json({ product: product.legacyId, timestamp: ts, tile_grid: { rows: result.grid.rows, cols: result.grid.cols, tile_size: result.grid.tileSize }, tiles: result.tiles }); } await send(req, res, await renders.tile(product.id, ts, Number(req.query.x), Number(req.query.y)), 'image/png'); } catch (e) { next(e); } });
   router.get('/renders/tile-info', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); const product = getProductByLegacyId(value(req.query.product)); if (!product) return res.status(404).json({ error: 'Unknown product or no mapping found' }); const details = await renders.getProduct(product.id); const timestamps = await renders.listSnapshots(product.id); res.json({ product: product.legacyId, rows: details.grid.rows, cols: details.grid.cols, tile_size: details.grid.tileSize, timestamps }); } catch (e) { next(e); } });
   router.get('/nexrad', requireService('nexrad'), async (req, res, next) => { try { deprecate(res); res.json(await ancillary.listRadarSites()); } catch (e) { next(e); } });
-  router.get('/nexrad/:site/:timestamp/:elevation', requireService('nexrad'), async (req, res, next) => { try { deprecate(res); const product = value(req.query.product); const opened = await ancillary.radarField(req.params.site, req.params.timestamp, req.params.elevation, product); send(res, opened, 'application/gzip', { 'Content-Disposition': `attachment; filename="${req.params.site}_${req.params.timestamp}_${req.params.elevation}_${product}.bin.gz"` }); } catch (e) { next(e); } });
+  router.get('/nexrad/:site/:timestamp/:elevation', requireService('nexrad'), async (req, res, next) => { try { deprecate(res); const product = value(req.query.product); const opened = await ancillary.radarField(req.params.site, req.params.timestamp, req.params.elevation, product); await send(req, res, opened, 'application/gzip', { 'Content-Disposition': `attachment; filename="${req.params.site}_${req.params.timestamp}_${req.params.elevation}_${product}.bin.gz"` }); } catch (e) { next(e); } });
   router.get('/nexrad/:site', requireService('nexrad'), async (req, res, next) => { try { deprecate(res); const available = await ancillary.radarAvailability(req.params.site.toUpperCase()); res.json(Object.fromEntries(Object.entries(available).map(([elevation, scans]) => [elevation, scans.map((scan) => scan.timestamp)]))); } catch (e) { next(e); } });
   router.get('/rap/layers', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); res.json(await ancillary.listRapLayers()); } catch (e) { next(e); } });
   router.get('/rap/mappings', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); res.json(await ancillary.rapMappings()); } catch (e) { next(e); } });
   router.get('/rap/fetch', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); res.json(await ancillary.rapSnapshots(value(req.query.layer))); } catch (e) { next(e); } });
   router.get('/rap/metadata', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); res.json(await ancillary.rapMetadata(value(req.query.layer), value(req.query.timestamp))); } catch (e) { next(e); } });
-  router.get('/rap/data', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); send(res, await ancillary.rapData(value(req.query.layer), value(req.query.timestamp)), 'application/octet-stream'); } catch (e) { next(e); } });
+  router.get('/rap/data', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); await send(req, res, await ancillary.rapData(value(req.query.layer), value(req.query.timestamp)), 'application/octet-stream'); } catch (e) { next(e); } });
   router.get('/wpc/fetch', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); if (req.query.type !== 'sfc') return res.status(400).json({ error: 'Invalid type' }); res.json(await ancillary.listWpcSurface()); } catch (e) { next(e); } });
   router.get('/wpc/download', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); if (req.query.type !== 'sfc') return res.status(400).json({ error: 'Invalid type' }); res.json(await ancillary.wpcSurface(value(req.query.timestamp))); } catch (e) { next(e); } });
   router.get('/colormaps', requireService('ewmrs'), async (req, res, next) => { try { deprecate(res); res.json(await ancillary.colormaps()); } catch (e) { next(e); } });
