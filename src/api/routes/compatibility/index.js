@@ -3,7 +3,24 @@ import { getProductByLegacyId } from '../../config/productCatalog.js';
 import { createServiceGate, legacyEnvelopeResponder } from '../../middleware/serviceGate.js';
 
 const deprecate = (res) => res.set({ Deprecation: 'true', Link: '</api/v3/openapi.json>; rel="deprecation"' });
-const send = (res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).type(type).set('Content-Length', String(opened.size)); const stream = opened.handle.createReadStream(); stream.on('error', () => { opened.handle.close(); res.destroy(); }); stream.pipe(res); res.on('close', () => opened.handle.close()); };
+const send = (res, opened, type, headers = {}) => {
+  let closePromise;
+  const closeHandle = () => {
+    if (!closePromise) {
+      closePromise = opened.handle.close().catch((error) => {
+        if (error?.code !== 'EBADF' && error?.code !== 'ERR_INVALID_STATE') console.error('Unable to close streamed artifact handle', error);
+      });
+    }
+    return closePromise;
+  };
+  res.set(opened.headers || {}).set(headers).type(type).set('Content-Length', String(opened.size));
+  const stream = opened.handle.createReadStream({ autoClose: false });
+  const abort = () => { stream.destroy(); void closeHandle(); };
+  stream.once('error', () => { void closeHandle(); res.destroy(); });
+  stream.once('end', () => void closeHandle());
+  res.once('close', abort);
+  stream.pipe(res);
+};
 const value = (input) => typeof input === 'string' && input ? input : null;
 
 export function createCompatibilityRouter({ analysis, renders, ancillary, packageVersion, serviceRegistry }) {

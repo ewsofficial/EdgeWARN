@@ -40,7 +40,31 @@ export function createV3Router({ analysis, renders, ancillary, openApi, apiConfi
   const collection = (req, res, items) => { const result = page(items, listOptions(req), apiConfig.pagination); res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.collection}`).json({ data: result.data, meta: { nextCursor: result.nextCursor } }); };
   const resource = (req, res, data) => res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.resource}`).json({ data, meta: {} });
   const geojson = (req, res, data) => res.set('Cache-Control', `public, max-age=${apiConfig.cache_control_max_age.resource}`).type('application/geo+json').json(data);
-  const send = (req, res, opened, type, headers = {}) => { res.set(opened.headers || {}).set(headers).set({ 'Cache-Control': `public, max-age=${apiConfig.cache_control_max_age.asset}, immutable`, ETag: opened.etag }).type(type); if (req.fresh) { opened.handle.close(); return res.status(304).end(); } res.set('Content-Length', String(opened.size)); if (req.method === 'HEAD') { opened.handle.close(); return res.end(); } const stream = opened.handle.createReadStream(); stream.on('error', () => { opened.handle.close(); res.destroy(); }); stream.pipe(res); res.on('close', () => opened.handle.close()); };
+  const send = (req, res, opened, type, headers = {}) => {
+    let closePromise;
+    const closeHandle = () => {
+      if (!closePromise) {
+        closePromise = opened.handle.close().catch((error) => {
+          // A peer can disconnect while the stream is closing.  The handle is
+          // already unusable in that case, so there is nothing left to release.
+          if (error?.code !== 'EBADF' && error?.code !== 'ERR_INVALID_STATE') console.error('Unable to close streamed artifact handle', error);
+        });
+      }
+      return closePromise;
+    };
+    res.set(opened.headers || {}).set(headers).set({ 'Cache-Control': `public, max-age=${apiConfig.cache_control_max_age.asset}, immutable`, ETag: opened.etag }).type(type);
+    if (req.fresh) { void closeHandle(); return res.status(304).end(); }
+    res.set('Content-Length', String(opened.size));
+    if (req.method === 'HEAD') { void closeHandle(); return res.end(); }
+    // Keep ownership of the FileHandle here.  Node 26 makes a handle finalized
+    // by GC a fatal ERR_INVALID_STATE, so the stream must not auto-close it.
+    const stream = opened.handle.createReadStream({ autoClose: false });
+    const abort = () => { stream.destroy(); void closeHandle(); };
+    stream.once('error', () => { void closeHandle(); res.destroy(); });
+    stream.once('end', () => void closeHandle());
+    res.once('close', abort);
+    stream.pipe(res);
+  };
   const router = express.Router();
   router.use(validateQuery(apiConfig));
   router.get('/', (req, res) => resource(req, res, { version: apiConfig.server.v3_api_version, links: { openapi: '/api/v3/openapi.json', cells: '/api/v3/cells', renderProducts: '/api/v3/render-products' } }));
