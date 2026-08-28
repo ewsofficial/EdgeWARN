@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -40,7 +39,7 @@ from util.atomic import atomic_write_json
 from util.io import IOManager, QueueWriter
 
 RenderOutput = Optional[list[Path]]
-_CHUNK_FILENAME_RE = re.compile(r"^chunk_(\d+)_(\d+)\.f16\.gz$")
+_VALUES_FILENAME = "values.f16.gz"
 
 io_manager = IOManager("[Pipeline]")
 
@@ -67,11 +66,11 @@ _LAST_GOES_GUI_CLEANUP_FUNC_ID: int | None = None
 
 
 @lru_cache(maxsize=tile_index_cache_entries())
-def _load_timestamp_chunk_index_cached(
+def _load_timestamp_render_index_cached(
     index_path_str: str,
     mtime_ns: int,
-) -> tuple[list[list[int]], dict, dict] | None:
-    """Cached read of a schema-versioned chunk index keyed on (path, mtime).
+) -> tuple[str, tuple[int, int], dict] | None:
+    """Cached read of a schema-versioned single-file index keyed on path and mtime.
 
     The mtime is part of the cache key, so any rewrite of index.json
     invalidates the entry automatically and the next call re-reads from
@@ -81,26 +80,26 @@ def _load_timestamp_chunk_index_cached(
     with open(index_path_str, "r") as f:
         data = json.load(f)
 
-    if not isinstance(data, dict) or data.get("schema_version") != 2 or data.get("representation") != "binary_chunks":
+    if not isinstance(data, dict) or data.get("schema_version") != 2 or data.get("representation") != "binary_file":
         return None
-    chunks = data.get("chunks")
-    tile_grid = data.get("tile_grid")
+    filename = data.get("file")
+    shape = data.get("shape")
     chunk_format = data.get("chunk_format")
-    if not isinstance(chunks, list) or not isinstance(tile_grid, dict) or not isinstance(chunk_format, dict):
+    if not isinstance(filename, str) or filename != _VALUES_FILENAME or not isinstance(shape, list) or len(shape) != 2 or not all(isinstance(value, int) and value > 0 for value in shape) or not isinstance(chunk_format, dict):
         return None
     if chunk_format.get("encoding") != "float16" or chunk_format.get("file_suffix") != ".f16.gz" or chunk_format.get("compression") != "gzip" or chunk_format.get("bytes_per_component") != 2 or chunk_format.get("channels") not in {1, 3}:
         return None
-    return chunks, tile_grid, chunk_format
+    return filename, (shape[0], shape[1]), chunk_format
 
 
-def _load_timestamp_chunk_index(timestamp_dir: Path) -> tuple[list[list[int]], dict, dict] | None:
+def _load_timestamp_render_index(timestamp_dir: Path) -> tuple[str, tuple[int, int], dict] | None:
     index_file = timestamp_dir / "index.json"
     try:
         stat_result = index_file.stat()
     except FileNotFoundError:
         return None
 
-    return _load_timestamp_chunk_index_cached(str(index_file), stat_result.st_mtime_ns)
+    return _load_timestamp_render_index_cached(str(index_file), stat_result.st_mtime_ns)
 
 
 def _ensure_dt(dt_in) -> datetime:
@@ -280,59 +279,29 @@ def _current_render_paths(out_dir: Path, timestamp_iso: str) -> RenderOutput:
     try:
         timestamp = _normalize_render_timestamp(timestamp_iso)
         timestamp_dir = out_dir / timestamp
-        chunk_dir = timestamp_dir / "chunks"
-        if not chunk_dir.is_dir():
-            return None
 
         index_file = out_dir / "index.json"
-        tile_grid = None
         if index_file.exists():
             with open(index_file, "r") as f:
                 data = json.load(f)
 
-            if not isinstance(data, dict) or data.get("schema_version") != 2 or data.get("representation") != "binary_chunks":
+            if not isinstance(data, dict) or data.get("schema_version") != 2 or data.get("representation") != "binary_file":
                 return None
             timestamps = data.get("timestamps", [])
             if timestamp not in timestamps:
                 return None
-            if not isinstance(data, list):
-                tile_grid = data.get("tile_grid")
-
-        timestamp_index = _load_timestamp_chunk_index(timestamp_dir)
+        timestamp_index = _load_timestamp_render_index(timestamp_dir)
         if timestamp_index is None:
             return None
 
-        indexed_tiles, timestamp_tile_grid, chunk_format = timestamp_index
-        if timestamp_tile_grid is not None:
-            tile_grid = timestamp_tile_grid
-
-        tile_paths: list[tuple[int, int, Path]] = []
-        for tile in indexed_tiles:
-            if not isinstance(tile, list) or len(tile) != 2:
-                return None
-
-            tile_x, tile_y = tile
-            if not isinstance(tile_x, int) or not isinstance(tile_y, int):
-                return None
-
-            if tile_grid is not None:
-                rows = tile_grid.get("rows")
-                cols = tile_grid.get("cols")
-                if isinstance(rows, int) and isinstance(cols, int):
-                    if tile_x < 0 or tile_x >= cols or tile_y < 0 or tile_y >= rows:
-                        return None
-
-            channels = chunk_format.get("channels")
-            if not isinstance(channels, int) or channels not in {1, 3}:
-                return None
-            tile_path = chunk_dir / f"chunk_{tile_x}_{tile_y}.f16.gz"
-            if not tile_path.is_file() or tile_path.stat().st_size <= 0:
-                return None
-
-            tile_paths.append((tile_y, tile_x, tile_path))
-
-        tile_paths.sort(key=lambda item: (item[0], item[1]))
-        return [path for _, _, path in tile_paths]
+        filename, _shape, chunk_format = timestamp_index
+        channels = chunk_format.get("channels")
+        if not isinstance(channels, int) or channels not in {1, 3}:
+            return None
+        value_path = timestamp_dir / filename
+        if not value_path.is_file() or value_path.stat().st_size <= 0:
+            return None
+        return [value_path]
     except Exception:
         return None
 def _normalize_render_timestamp(timestamp_iso: str) -> str:
@@ -406,7 +375,7 @@ def cleanup_old_gui_files(max_age_minutes: int | None = None):
 
                 timestamps = [ts for ts in timestamps if ts in existing_timestamps]
 
-                if isinstance(data, dict) and data.get("schema_version") == 2 and data.get("representation") == "binary_chunks":
+                if isinstance(data, dict) and data.get("schema_version") == 2 and data.get("representation") == "binary_file":
                     output_data = {**data, "timestamps": timestamps}
                 else:
                     output_data = {"timestamps": timestamps, "tile_grid": tile_grid} if tile_grid is not None else timestamps

@@ -215,68 +215,56 @@ def _chunk_format():
     return {"version": 2, "encoding": "float16", "file_suffix": ".f16.gz", "compression": "gzip", "channels": 1, "value_kind": "scalar", "no_data": "nan", "bytes_per_component": 2, "pixel_row_order": "top_to_bottom", "grid_origin": "bottom_left"}
 
 
-def _write_chunk(path, tile_size=350):
+def _write_values(path, shape=(350, 350)):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(gzip.compress(bytes(tile_size * tile_size * 2), mtime=0))
+    path.write_bytes(gzip.compress(bytes(shape[0] * shape[1] * 2), mtime=0))
 
 
-def test_current_render_paths_returns_sparse_cached_chunks(tmp_path):
+def test_current_render_paths_returns_cached_value_file(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
-    (tile_dir / "chunks").mkdir(parents=True)
-
-    for chunk_name in ("chunk_1_0.f16.gz", "chunk_0_0.f16.gz", "chunk_5_3.f16.gz"):
-        _write_chunk(tile_dir / "chunks" / chunk_name)
+    _write_values(tile_dir / "values.f16.gz", shape=(3500, 7000))
     (tile_dir / "index.json").write_text(json.dumps({
-        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(),
-        "chunks": [[1, 0], [0, 0], [5, 3]],
-        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_file", "chunk_format": _chunk_format(),
+        "file": "values.f16.gz", "shape": [3500, 7000],
     }))
 
     (out_dir / "index.json").write_text(json.dumps({
-        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_chunks", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
-        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_file", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
     }))
 
     paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
 
-    assert paths == [
-        tile_dir / "chunks" / "chunk_0_0.f16.gz",
-        tile_dir / "chunks" / "chunk_1_0.f16.gz",
-        tile_dir / "chunks" / "chunk_5_3.f16.gz",
-    ]
+    assert paths == [tile_dir / "values.f16.gz"]
 
 
-def test_current_render_paths_accepts_valid_zero_tile_timestamp(tmp_path):
+def test_current_render_paths_rejects_missing_value_file(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
-    (tile_dir / "chunks").mkdir(parents=True)
+    tile_dir.mkdir(parents=True)
     (tile_dir / "index.json").write_text(json.dumps({
-        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(), "chunks": [],
-        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_file", "chunk_format": _chunk_format(),
+        "file": "values.f16.gz", "shape": [3500, 7000],
     }))
     (out_dir / "index.json").write_text(json.dumps({
-        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_chunks", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
-        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_file", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
     }))
 
     paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
 
-    assert paths == []
+    assert paths is None
 
 
-def test_current_render_paths_rejects_invalid_chunk_index(tmp_path):
+def test_current_render_paths_rejects_invalid_value_index(tmp_path):
     out_dir = tmp_path / "gui"
     tile_dir = out_dir / "20260317-200000"
-    (tile_dir / "chunks").mkdir(parents=True)
-    _write_chunk(tile_dir / "chunks" / "chunk_0_0.f16.gz")
+    _write_values(tile_dir / "values.f16.gz")
     (tile_dir / "index.json").write_text(json.dumps({
-        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_chunks", "chunk_format": _chunk_format(), "chunks": [[0, 0], [20, 0]],
-        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+        "schema_version": 2, "timestamp": "20260317-200000", "representation": "binary_file", "chunk_format": _chunk_format(),
+        "file": "unexpected.f16.gz", "shape": [350, 350],
     }))
     (out_dir / "index.json").write_text(json.dumps({
-        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_chunks", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
-        "tile_grid": {"rows": 10, "cols": 20, "tile_size": 350},
+        "schema_version": 2, "timestamps": ["20260317-200000"], "representation": "binary_file", "chunk_format": {**_chunk_format(), "media_type": "application/octet-stream"},
     }))
 
     paths = ewmrs_pipeline._current_render_paths(out_dir, "2026-03-17T20:00:00")
