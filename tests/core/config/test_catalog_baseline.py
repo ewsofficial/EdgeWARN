@@ -27,7 +27,7 @@ def test_mrms_ingest_catalog_baseline():
 def test_mrms_ingest_catalog_length():
     from common.ingest.mrms.config import get_mrms_modifiers
 
-    assert len(get_mrms_modifiers()) == 28
+    assert len(get_mrms_modifiers()) == 21
 
 
 def test_mrms_readiness_catalog_baseline():

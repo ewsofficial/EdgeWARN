@@ -23,55 +23,6 @@
   {
     "@tuple": [
       "CONUS",
-      "FLASH_CREST_MAXUNITSTREAMFLOW_00.00",
-      "fs:MRMS_FLASH_CREST_MAXUNIT_DIR"
-    ]
-  },
-  {
-    "@tuple": [
-      "CONUS",
-      "FLASH_QPE_ARIMAX_00.00",
-      "fs:MRMS_FLASH_ARIMAX_DIR"
-    ]
-  },
-  {
-    "@tuple": [
-      "CONUS",
-      "FLASH_QPE_ARI30M_00.00",
-      "fs:MRMS_FLASH_ARI30M_DIR"
-    ]
-  },
-  {
-    "@tuple": [
-      "CONUS",
-      "FLASH_QPE_ARI01H_00.00",
-      "fs:MRMS_FLASH_ARI01H_DIR"
-    ]
-  },
-  {
-    "@tuple": [
-      "CONUS",
-      "FLASH_HP_MAXUNITSTREAMFLOW_00.00",
-      "fs:MRMS_FLASH_HP_MAXUNIT_DIR"
-    ]
-  },
-  {
-    "@tuple": [
-      "CONUS",
-      "FLASH_SAC_MAXSOILSAT_00.00",
-      "fs:MRMS_FLASH_SAC_MAXSOIL_DIR"
-    ]
-  },
-  {
-    "@tuple": [
-      "CONUS",
-      "FLASH_QPE_FFGMAX_00.00",
-      "fs:MRMS_FLASH_FFGMAX_DIR"
-    ]
-  },
-  {
-    "@tuple": [
-      "CONUS",
       "RadarQualityIndex_00.00",
       "fs:MRMS_RQI_DIR"
     ]

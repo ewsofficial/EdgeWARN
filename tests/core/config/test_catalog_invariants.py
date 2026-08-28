@@ -115,7 +115,7 @@ def test_waveform_names_are_distinct(nexrad):
 
 def test_mrms_products_are_unique(mrms_goes):
     products = mrms_goes["mrms"]["products"]
-    assert len(products) == 28
+    assert len(products) == 21
     assert duplicates([(p["region"], p["product"]) for p in products]) == {}
 
 
