@@ -97,8 +97,8 @@ rate_limits:
   # Both windows and both maxima are parameters of `createRateLimiters`
   # (rateLimit.js:3), supplied from this file at config/index.js:180-181. Editing
   # a window here takes effect on restart; no call-site change is needed.
-  per_second: {max: 40, window_ms: 1000}      # config/index.js:125, RATE_LIMIT_MAX_SEC
-  per_minute: {max: 2000, window_ms: 60000}   # config/index.js:126, RATE_LIMIT_MAX_MIN
+  per_second: {max: 100, window_ms: 1000}      # config/index.js:125, RATE_LIMIT_MAX_SEC
+  per_minute: {max: 6000, window_ms: 60000}   # config/index.js:126, RATE_LIMIT_MAX_MIN
   standard_headers: true
   legacy_headers: false
 
