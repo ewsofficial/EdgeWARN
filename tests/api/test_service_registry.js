@@ -109,13 +109,12 @@ describe('service registry scanner', () => {
   });
 });
 
-describe('OpenAPI chunk endpoint failures', () => {
+describe('OpenAPI render data endpoint failures', () => {
   it('documents both service gating and invalid render artifacts as 503 causes', async () => {
     const spec = await fs.readFile(OPENAPI_PATH, 'utf8');
     const openApi = JSON.parse(spec);
     for (const route of [
-      '/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks',
-      '/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks/{x}/{y}',
+      '/api/v3/render-products/{productId}/snapshots/{timestamp}/data',
     ]) {
       const response = openApi.paths[route].get.responses['503'];
       expect(response.description).toContain('SERVICE_NOT_ENABLED');

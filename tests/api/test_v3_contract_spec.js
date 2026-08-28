@@ -16,7 +16,7 @@ describe('unified API contract specification', () => {
       '/api/v3/storm-snapshots', '/api/v3/storm-snapshots/{timestamp}',
       '/api/v3/alert-snapshots', '/api/v3/alerts/{alertId}',
       '/api/v3/observations/metar/{timestamp}',
-      '/api/v3/render-products/{productId}/snapshots/{timestamp}/tiles/{x}/{y}',
+      '/api/v3/render-products/{productId}/snapshots/{timestamp}/data',
       '/api/v3/radar-sites/{siteId}/scans/{timestamp}/elevations/{elevation}/products/{productId}',
       '/api/v3/models/rap/layers/{layerId}/snapshots/{timestamp}/data',
       '/api/v3/analyses/wpc/surface/{timestamp}', '/api/v3/styles/colormaps'

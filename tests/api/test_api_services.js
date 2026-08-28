@@ -41,42 +41,27 @@ describe('unified API services', () => {
     await expect(service.getCell('../7')).rejects.toMatchObject({ code: 'INVALID_PATH' });
   });
 
-  it('uses canonical render IDs while preserving storage prefixes', async () => {
+  it('lists render snapshots from the product index', async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'api-services-'));
     const product = path.join(root, 'gui', 'CompRefQC');
     await fs.mkdir(product, { recursive: true });
     await fs.writeFile(path.join(product, 'index.json'), '{"timestamps":["20260317-200000"]}');
-    await fs.writeFile(path.join(product, 'MRMS_MergedReflectivityQC_20260317-200000.png'), 'png');
     const service = createRenderService(new ArtifactRepository({ gui: path.join(root, 'gui') }, REPOSITORY_LIMITS, REPOSITORY_CACHE, REPOSITORY_LIST_LIMIT), RENDER_DEFAULTS, 1024);
     await expect(service.listSnapshots('comp-ref-qc')).resolves.toEqual(['20260317-200000']);
-    const opened = await service.image('comp-ref-qc', '20260317-200000');
-    await expect(opened.handle.readFile()).resolves.toEqual(Buffer.from('png'));
-    await opened.handle.close();
   });
 
-  it('uses a product tile grid when a timestamp index omits grid metadata', async () => {
+  it('opens one indexed float16 file with its declared shape', async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'api-services-'));
     const product = path.join(root, 'gui', 'CompRefQC');
-    await fs.mkdir(path.join(product, '20260317-200000'), { recursive: true });
-    await fs.writeFile(path.join(product, 'index.json'), '{"tile_grid":{"rows":2,"cols":3,"tile_size":256}}');
-    await fs.writeFile(path.join(product, '20260317-200000', 'index.json'), '{"tiles":[[2,1]]}');
+    const timestamp = '20260317-200000'; const format = { version: 2, encoding: 'float16', file_suffix: '.f16.gz', compression: 'gzip', channels: 1, value_kind: 'scalar', no_data: 'nan', bytes_per_component: 2, pixel_row_order: 'top_to_bottom', grid_origin: 'bottom_left' };
+    await fs.mkdir(path.join(product, timestamp), { recursive: true });
+    await fs.writeFile(path.join(product, 'index.json'), JSON.stringify({ schema_version: 2, timestamps: [timestamp], representation: 'binary_file', chunk_format: { ...format, media_type: 'application/octet-stream' } }));
+    await fs.writeFile(path.join(product, timestamp, 'index.json'), JSON.stringify({ schema_version: 2, timestamp, representation: 'binary_file', chunk_format: format, file: 'values.f16.gz', shape: [2, 2] }));
+    await fs.writeFile(path.join(product, timestamp, 'values.f16.gz'), Buffer.from('H4sIAAAAAAAC/2NggAAAad8iZQgAAAA=', 'base64'));
     const service = createRenderService(new ArtifactRepository({ gui: path.join(root, 'gui') }, REPOSITORY_LIMITS, REPOSITORY_CACHE, REPOSITORY_LIST_LIMIT), RENDER_DEFAULTS, 1024);
-    await expect(service.tiles('comp-ref-qc', '20260317-200000')).resolves.toEqual({ grid: { rows: 2, cols: 3, tileSize: 256 }, tiles: [[2, 1]] });
-  });
-
-  it('opens only indexed RGBA chunks with their exact expected length', async () => {
-    root = await fs.mkdtemp(path.join(os.tmpdir(), 'api-services-'));
-    const product = path.join(root, 'gui', 'CompRefQC'); const timestamp = '20260317-200000';
-    await fs.mkdir(path.join(product, timestamp, 'chunks'), { recursive: true });
-    const format = { version: 2, encoding: 'float16', file_suffix: '.f16.gz', compression: 'gzip', channels: 1, value_kind: 'scalar', no_data: 'nan', bytes_per_component: 2, pixel_row_order: 'top_to_bottom', grid_origin: 'bottom_left' };
-    await fs.writeFile(path.join(product, 'index.json'), JSON.stringify({ schema_version: 2, timestamps: [timestamp], representation: 'binary_chunks', chunk_format: { ...format, media_type: 'application/octet-stream' }, tile_grid: { rows: 1, cols: 1, tile_size: 2 } }));
-    await fs.writeFile(path.join(product, timestamp, 'index.json'), JSON.stringify({ schema_version: 2, timestamp, representation: 'binary_chunks', chunk_format: format, tile_grid: { rows: 1, cols: 1, tile_size: 2 }, chunks: [[0, 0]] }));
-    await fs.writeFile(path.join(product, timestamp, 'chunks', 'chunk_0_0.f16.gz'), Buffer.from('H4sIAAAAAAAC/2NggAAAad8iZQgAAAA=', 'base64'));
-    const service = createRenderService(new ArtifactRepository({ gui: path.join(root, 'gui') }, REPOSITORY_LIMITS, REPOSITORY_CACHE, REPOSITORY_LIST_LIMIT), RENDER_DEFAULTS, 1024);
-    await expect(service.chunks('comp-ref-qc', timestamp)).resolves.toMatchObject({ chunks: [[0, 0]], grid: { tileSize: 2 } });
-    const opened = await service.chunk('comp-ref-qc', timestamp, 0, 0);
+    const opened = await service.data('comp-ref-qc', timestamp);
     expect(opened.size).toBe(23); await opened.handle.close();
-    await expect(service.chunk('comp-ref-qc', timestamp, 1, 0)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(service.data('comp-ref-qc', 'invalid')).rejects.toMatchObject({ code: 'INVALID_PATH' });
   });
 
   it('closes a RAP data handle when its metadata is malformed', async () => {

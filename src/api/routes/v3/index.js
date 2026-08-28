@@ -58,17 +58,13 @@ export function createV3Router({ analysis, renders, ancillary, openApi, apiConfi
   router.get('/render-products', requireService('ewmrs'), async (req, res, next) => { try { const available = new Set((await renders.listProducts()).map((item) => item.id)); collection(req, res, await Promise.all(productCatalog.filter((item) => available.has(item.id)).map((item) => renders.getProduct(item.id)))); } catch (error) { next(error); } });
   router.get('/render-products/:productId', requireService('ewmrs'), async (req, res, next) => { try { resource(req, res, await renders.getProduct(req.params.productId)); } catch (error) { next(error); } });
   router.get('/render-products/:productId/snapshots', requireService('ewmrs'), async (req, res, next) => { try { collection(req, res, await renders.listSnapshots(req.params.productId)); } catch (error) { next(error); } });
-  router.get('/render-products/:productId/snapshots/:timestamp/image', requireService('ewmrs'), async (req, res, next) => { try { await send(req, res, await renders.image(req.params.productId, req.params.timestamp), 'image/png'); } catch (error) { next(error); } });
-  router.get('/render-products/:productId/snapshots/:timestamp/tiles', requireService('ewmrs'), async (req, res, next) => { try { resource(req, res, await renders.tiles(req.params.productId, req.params.timestamp)); } catch (error) { next(error); } });
-  router.get('/render-products/:productId/snapshots/:timestamp/tiles/:x/:y', requireService('ewmrs'), async (req, res, next) => { try { await send(req, res, await renders.tile(req.params.productId, req.params.timestamp, Number(req.params.x), Number(req.params.y)), 'image/png'); } catch (error) { next(error); } });
-  router.get('/render-products/:productId/snapshots/:timestamp/chunks', requireService('ewmrs'), async (req, res, next) => { try { resource(req, res, await renders.chunks(req.params.productId, req.params.timestamp)); } catch (error) { next(error); } });
-  router.get('/render-products/:productId/snapshots/:timestamp/chunks/:x/:y', requireService('ewmrs'), async (req, res, next) => { try {
-    const opened = await renders.chunk(req.params.productId, req.params.timestamp, Number(req.params.x), Number(req.params.y)); const { grid: chunkGrid } = opened.chunk;
+  router.get('/render-products/:productId/snapshots/:timestamp/data', requireService('ewmrs'), async (req, res, next) => { try {
+    const opened = await renders.data(req.params.productId, req.params.timestamp); const { render } = opened;
     await send(req, res, opened, 'application/octet-stream', {
-      'X-EWMRS-Format-Version': '2', 'X-Data-Type': 'float16', 'X-Value-Kind': opened.chunk.format.value_kind,
-      'X-Channel-Count': String(opened.chunk.format.channels), 'X-No-Data': 'nan', 'Content-Encoding': 'gzip',
-      'X-Chunk-Width': String(chunkGrid.tileSize), 'X-Chunk-Height': String(chunkGrid.tileSize),
-      'X-Grid-Origin': 'bottom-left', 'X-Pixel-Row-Order': 'top-to-bottom'
+      'X-EWMRS-Format-Version': '2', 'X-Data-Type': 'float16', 'X-Value-Kind': render.format.value_kind,
+      'X-Channel-Count': String(render.format.channels), 'X-No-Data': 'nan', 'Content-Encoding': 'gzip',
+      'X-Image-Width': String(render.shape.width), 'X-Image-Height': String(render.shape.height),
+      'X-Pixel-Row-Order': 'top-to-bottom'
     });
   } catch (error) { next(error); } });
   router.get('/radar-sites', requireService('nexrad'), async (req, res, next) => { try { collection(req, res, await ancillary.listRadarSites()); } catch (error) { next(error); } });

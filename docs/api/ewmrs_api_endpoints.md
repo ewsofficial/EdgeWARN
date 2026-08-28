@@ -7,7 +7,8 @@ These legacy EWMRS routes are compatibility adapters mounted by the unified
 ## API Overview
 
 - Base URL: `/`
-- Response format: JSON for metadata/list routes, PNG for render downloads/tiles, raw binary for RAP Uint16 arrays
+- Response format: JSON for metadata/list routes and raw binary for RAP Uint16 arrays.
+  Render payloads are available only from the unified v3 single-file endpoint.
 
 There is no separate EWMRS process, port, or configuration surface. These routes
 share the unified service's runtime settings, documented in
@@ -51,6 +52,12 @@ A fixed body that inspects nothing. Use `/health/ready` for an actual readiness
 signal.
 
 ## Render Endpoints
+
+The former `/renders/download`, `/renders/tile`, and `/renders/tile-info`
+compatibility endpoints have been removed. Use
+`GET /api/v3/render-products/{productId}/snapshots/{timestamp}/data`, which
+returns the complete gzip-compressed `values.f16.gz` float16 raster. Its
+`X-Image-Width` and `X-Image-Height` headers describe the top-to-bottom array.
 
 ### GET /renders/get-items
 

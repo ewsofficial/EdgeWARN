@@ -32,10 +32,8 @@ Errors use `application/problem+json`.
   only; there is no `/alerts` collection. `/alert-snapshots` and `/alerts/{id}`
   additionally accept the `source` query parameter (`official` or `edgewarn`).
 - Renders: `/api/v3/render-products`, and
-  `/api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
-  lists sparse float16 value chunks; `/chunks/{x}/{y}` returns the binary payload.
-  The historical `/image` and `/tiles` resources remain PNG-only compatibility
-  endpoints and never relabel a binary chunk as an image.
+  `/api/v3/render-products/{productId}/snapshots/{timestamp}/data` downloads
+  one float16 raster for a product timestamp.
 - Radar: `/api/v3/radar-sites`
 - RAP: `/api/v3/models/rap/layers`
 - WPC: `/api/v3/analyses/wpc/surface`
@@ -46,39 +44,18 @@ Canonical render IDs use lower-kebab-case, such as `comp-ref-qc`, `qpe-01h`,
 and `goes-abi-c13`. The product catalog preserves the mapping to runtime
 folders and legacy file prefixes.
 
-## EWMRS binary chunks
+## EWMRS binary render files
 
-MRMS and GOES ABI renders publish one-channel float16 value chunks. They are
-gzip-compressed `chunk_{x}_{y}.f16.gz` files under
-`<BASE_DIR>/gui/<product>/<timestamp>/chunks/`. `NaN` is the no-data value;
-gzip uses deterministic metadata and the API sends `Content-Encoding: gzip`.
-Clients apply the published product colormap to the scalar values; GOES RGB
-composites are derived client-side from the raw ABI channel chunks. Chunks
-retain top-to-bottom row order and a bottom-left chunk-grid origin.
+MRMS and GOES ABI renders publish one gzip-compressed `values.f16.gz` raster
+under `<BASE_DIR>/gui/<product>/<timestamp>/`. `NaN` is the no-data value;
+the raw payload remains a tightly packed, top-to-bottom float16 array. The
+timestamp `index.json` records its `shape`, and the `/data` response provides
+the same dimensions through `X-Image-Width` and `X-Image-Height`. Verify the
+decoded byte length equals `width * height * channels * 2` before creating a
+`Uint16Array` or `Float16Array`. Responses are immutable and support ETag
+conditional GET and HEAD.
 
-Fetch the `/chunks` listing first. It provides the grid, format descriptor,
-and the authoritative sparse coordinate list—missing coordinates are fully
-transparent chunks, not a request to synthesize pixels. The payload endpoint
-sets `X-EWMRS-Format-Version`, `X-Data-Type`, `X-Value-Kind`, `X-Channel-Count`,
-`X-No-Data`, `X-Chunk-Width`, `X-Chunk-Height`, `X-Grid-Origin`, and
-`X-Pixel-Row-Order`. Verify that the decoded byte length equals
-`width * height * channels * 2` before creating a `Uint16Array` or
-`Float16Array`; responses are immutable and support ETag conditional GET and
-HEAD.
-
-```js
-const listing = await (await fetch(chunkListUrl)).json();
-const response = await fetch(chunkUrl);
-const bytes = new Uint16Array(await response.arrayBuffer());
-if (bytes.byteLength !== 350 * 350 * 2) throw new Error('invalid float16 scalar chunk');
-// Interpret as float16 (or upload as half-float); grid y=0 is the bottom row.
-```
-
-One float16 component is two bytes, so a `350 x 350` single-channel chunk is
-`245000` bytes and `bytes.length` is `122500`. Compare `byteLength`, not
-element count, against `width * height * channels * 2`.
-
-These float16 value chunks are distinct from RAP `data.u16` scalar arrays and NEXRAD
+These float16 value files are distinct from RAP `data.u16` scalar arrays and NEXRAD
 `.bin.gz` products, which have their own metadata and decoders.
 
 ## Migration

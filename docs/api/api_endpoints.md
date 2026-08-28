@@ -217,41 +217,26 @@ The unified API's EWMRS compatibility adapter exposes tiled GUI products through
 
 - `GET /renders/get-items`
 - `GET /renders/fetch?product={product}`
-- `GET /renders/download?product={product}&timestamp={YYYYMMDD-HHMMSS}`
-- `GET /renders/tile?product={product}&timestamp={YYYYMMDD-HHMMSS}[&x={int}&y={int}]`
-- `GET /renders/tile-info?product={product}`
-
-For `/renders/tile`, supplying both `x` and `y` returns a PNG tile; omitting both returns the valid tile coordinates listed in the timestamp folder's `index.json`.
-
 GOES products exposed through those routes include:
 
 - scalar ABI folders `GOES_ABI_C01` through `GOES_ABI_C16`
 
 Behavior notes:
 
-- ABI single-channel products are generated from staged `ABI-L1b-RadC` channels on the GOES CONUS `EPSG:3857` tile grid.
+- ABI single-channel products are generated from staged `ABI-L1b-RadC` channels on the GOES CONUS `EPSG:3857` raster grid.
 - Missing or time-misaligned channels skip only the affected layer; other GOES products continue rendering.
-- Current GOES renders are tile-first; `/renders/download` only resolves the legacy flat PNG naming contract when such files exist.
-- Listing mode reads the timestamp folder's `index.json` and never scans the
-  directory for filenames. It looks for a `tiles` array, which is the legacy
-  key. Schema-version-2 indexes written by the current renderers publish
-  `chunks` instead, so against a freshly rendered product this route reports
-  `tiles: []` with a valid `tile_grid` rather than failing. That is not an error
-  condition; it means the product has no PNG tiles to list.
+- Each timestamp publishes one `values.f16.gz` file and an `index.json` that
+  records its shape and float16 encoding.
 
 See `docs/api/ewmrs_api_endpoints.md` for the full EWMRS route contracts and `docs/core/goes_pipeline.md` for the ingest-to-render flow.
 
-New clients should use the unified API chunk contract:
+New clients should use the unified single-file render contract:
 
-- `GET /api/v3/render-products/{productId}/snapshots/{timestamp}/chunks`
-- `GET /api/v3/render-products/{productId}/snapshots/{timestamp}/chunks/{x}/{y}`
+- `GET /api/v3/render-products/{productId}/snapshots/{timestamp}/data`
 
-The second resource is `application/octet-stream`, not PNG. It returns exact
-scalar float16 value chunks (gzip-compressed, `NaN` no-data) with top-to-bottom
-rows and bottom-left chunk-grid coordinates.
-The index's sparse `chunks` list is authoritative; omitted chunks are
-transparent. Legacy `/renders/download` and `/renders/tile` remain PNG-only
-and return missing-artifact responses when no compatibility PNG exists.
+The resource is `application/octet-stream`, not PNG. It returns the complete
+gzip-compressed scalar float16 raster (`NaN` no-data) in top-to-bottom row
+order. `X-Image-Width` and `X-Image-Height` provide its dimensions.
 
 ## EWMRS RAP Uint16 Products
 
