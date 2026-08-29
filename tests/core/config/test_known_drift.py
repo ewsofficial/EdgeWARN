@@ -2082,30 +2082,13 @@ def test_ewmrs_numeric_thread_caps_are_one_value_across_a_fixed_list():
     assert "OMP_NUM_THREADS" not in source
 
 
-def test_ewmrs_tile_threads_env_bypasses_the_cpu_cap_but_the_catalog_does_not():
-    """DECISION PRESERVED: the override and the catalog value are not equivalent.
-
-    `EWMRS_TILE_THREADS` returns `min(tile_count, cap)`, skipping the CPU count;
-    the catalog value goes through `min(tile_count, cap, cpu_count)`. Routing
-    both through `overlay.resolve` would have been tidier and would have changed
-    behavior on any machine with fewer than 8 cores, so the two branches stay.
-    """
-    import os as _os
-
-    from EWMRS.pipeline_config import TILE_THREADS_ENV, max_tile_threads
-    from EWMRS.render.render import _resolve_tile_workers
-
-    recorded = _ewmrs_pipeline_yaml()
-    assert max_tile_threads() == recorded["render_threads"]["max_tile_threads"] == 8
-
-    cpu_count = max(1, _os.cpu_count() or 1)
-    with mock.patch.dict("os.environ", {}, clear=True):
-        assert _resolve_tile_workers(1000) == min(8, cpu_count)
-    with mock.patch.dict("os.environ", {TILE_THREADS_ENV: "1000"}):
-        assert _resolve_tile_workers(1000) == 1000
+def test_ewmrs_single_file_render_has_no_tile_thread_override():
+    """The single-file renderer has no per-tile worker pool to configure."""
+    import EWMRS.render.render as render
 
     render_source = (REPO_ROOT / "src/EWMRS/render/render.py").read_text(encoding="utf-8")
-    assert "min(tile_count, max_tile_threads(), cpu_cap)" in render_source
+    assert not hasattr(render, "_resolve_tile_workers")
+    assert "EWMRS_TILE_THREADS" not in render_source
 
 
 def test_ewmrs_lru_cache_sizes_come_from_the_catalog_at_import(tmp_path):
@@ -2130,7 +2113,7 @@ def test_ewmrs_lru_cache_sizes_come_from_the_catalog_at_import(tmp_path):
       is a memory-footprint difference, not a wrong answer.
     """
     from common.config import loader as config_loader
-    from EWMRS.pipeline import _load_timestamp_chunk_index_cached
+    from EWMRS.pipeline import _load_timestamp_render_index_cached
     from EWMRS.pipeline_config import colormap_cache_entries, tile_index_cache_entries
     from EWMRS.render.render import _get_cached_cmap
 
@@ -2138,7 +2121,7 @@ def test_ewmrs_lru_cache_sizes_come_from_the_catalog_at_import(tmp_path):
     assert tile_index_cache_entries() == recorded["caches"]["tile_index_entries"] == 512
     assert colormap_cache_entries() == recorded["caches"]["colormap_entries"] == 128
 
-    assert _load_timestamp_chunk_index_cached.cache_info().maxsize == tile_index_cache_entries()
+    assert _load_timestamp_render_index_cached.cache_info().maxsize == tile_index_cache_entries()
     assert _get_cached_cmap.cache_info().maxsize == colormap_cache_entries()
 
     # The keying claim is exercised by loading the same catalog from a second

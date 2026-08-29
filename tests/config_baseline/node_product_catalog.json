@@ -4,7 +4,7 @@
     "legacyId": "CompRefQC",
     "storageDirectory": "CompRefQC",
     "legacyFilePrefix": "MRMS_MergedReflectivityQC",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "nws-reflectivity"
   },
   {
@@ -12,7 +12,7 @@
     "legacyId": "EchoTop18",
     "storageDirectory": "EchoTop18",
     "legacyFilePrefix": "MRMS_EchoTop18",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "enhanced-echo-top"
   },
   {
@@ -20,7 +20,7 @@
     "legacyId": "EchoTop30",
     "storageDirectory": "EchoTop30",
     "legacyFilePrefix": "MRMS_EchoTop30",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "enhanced-echo-top"
   },
   {
@@ -28,7 +28,7 @@
     "legacyId": "RALA",
     "storageDirectory": "RALA",
     "legacyFilePrefix": "MRMS_ReflectivityAtLowestAltitude",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "nws-reflectivity"
   },
   {
@@ -36,28 +36,28 @@
     "legacyId": "Ref0C",
     "storageDirectory": "Ref0C",
     "legacyFilePrefix": "MRMS_ReflectivityAt0C",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   },
   {
     "id": "ref-m5c",
     "legacyId": "RefM5C",
     "storageDirectory": "RefM5C",
     "legacyFilePrefix": "MRMS_ReflectivityAtM5C",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   },
   {
     "id": "ref-m15c",
     "legacyId": "RefM15C",
     "storageDirectory": "RefM15C",
     "legacyFilePrefix": "MRMS_ReflectivityAtM15C",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   },
   {
     "id": "precip-rate",
     "legacyId": "PrecipRate",
     "storageDirectory": "PrecipRate",
     "legacyFilePrefix": "MRMS_PrecipRate",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "precip-rate"
   },
   {
@@ -65,7 +65,7 @@
     "legacyId": "VIL",
     "storageDirectory": "VIL",
     "legacyFilePrefix": "MRMS_VIL",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "vil"
   },
   {
@@ -73,7 +73,7 @@
     "legacyId": "VILDensity",
     "storageDirectory": "VILDensity",
     "legacyFilePrefix": "MRMS_VILDensity",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "vil-density"
   },
   {
@@ -81,7 +81,7 @@
     "legacyId": "MESH",
     "storageDirectory": "MESH",
     "legacyFilePrefix": "MRMS_MESH",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "mesh"
   },
   {
@@ -89,7 +89,7 @@
     "legacyId": "QPE_01H",
     "storageDirectory": "QPE_01H",
     "legacyFilePrefix": "MRMS_QPE",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "qpe-01h"
   },
   {
@@ -97,7 +97,7 @@
     "legacyId": "VII",
     "storageDirectory": "VII",
     "legacyFilePrefix": "MRMS_VII",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "vil"
   },
   {
@@ -105,7 +105,7 @@
     "legacyId": "AzShearLow",
     "storageDirectory": "AzShearLow",
     "legacyFilePrefix": "MRMS_MergedAzShear_0-2kmAGL",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "az-shear"
   },
   {
@@ -113,7 +113,7 @@
     "legacyId": "AzShearMid",
     "storageDirectory": "AzShearMid",
     "legacyFilePrefix": "MRMS_MergedAzShear_3-6kmAGL",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "az-shear"
   },
   {
@@ -121,7 +121,7 @@
     "legacyId": "GOES_ABI_C01",
     "storageDirectory": "GOES_ABI_C01",
     "legacyFilePrefix": "GOES_ABI_C01_Reflectance",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "goes-rgb-raw"
   },
   {
@@ -129,7 +129,7 @@
     "legacyId": "GOES_ABI_C02",
     "storageDirectory": "GOES_ABI_C02",
     "legacyFilePrefix": "GOES_ABI_C02_Reflectance",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "goes-rgb-raw"
   },
   {
@@ -137,7 +137,7 @@
     "legacyId": "GOES_ABI_C03",
     "storageDirectory": "GOES_ABI_C03",
     "legacyFilePrefix": "GOES_ABI_C03_Reflectance",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "goes-rgb-raw"
   },
   {
@@ -145,7 +145,7 @@
     "legacyId": "GOES_ABI_C04",
     "storageDirectory": "GOES_ABI_C04",
     "legacyFilePrefix": "GOES_ABI_C04_Reflectance",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "goes-rgb-raw"
   },
   {
@@ -153,7 +153,7 @@
     "legacyId": "GOES_ABI_C05",
     "storageDirectory": "GOES_ABI_C05",
     "legacyFilePrefix": "GOES_ABI_C05_Reflectance",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "goes-rgb-raw"
   },
   {
@@ -161,7 +161,7 @@
     "legacyId": "GOES_ABI_C06",
     "storageDirectory": "GOES_ABI_C06",
     "legacyFilePrefix": "GOES_ABI_C06_Reflectance",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "goes-rgb-raw"
   },
   {
@@ -169,49 +169,49 @@
     "legacyId": "GOES_ABI_C07",
     "storageDirectory": "GOES_ABI_C07",
     "legacyFilePrefix": "GOES_ABI_C07_BrightnessTemp",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   },
   {
     "id": "goes-abi-c08",
     "legacyId": "GOES_ABI_C08",
     "storageDirectory": "GOES_ABI_C08",
     "legacyFilePrefix": "GOES_ABI_C08_BrightnessTemp",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   },
   {
     "id": "goes-abi-c09",
     "legacyId": "GOES_ABI_C09",
     "storageDirectory": "GOES_ABI_C09",
     "legacyFilePrefix": "GOES_ABI_C09_BrightnessTemp",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   },
   {
     "id": "goes-abi-c10",
     "legacyId": "GOES_ABI_C10",
     "storageDirectory": "GOES_ABI_C10",
     "legacyFilePrefix": "GOES_ABI_C10_BrightnessTemp",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   },
   {
     "id": "goes-abi-c11",
     "legacyId": "GOES_ABI_C11",
     "storageDirectory": "GOES_ABI_C11",
     "legacyFilePrefix": "GOES_ABI_C11_BrightnessTemp",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   },
   {
     "id": "goes-abi-c12",
     "legacyId": "GOES_ABI_C12",
     "storageDirectory": "GOES_ABI_C12",
     "legacyFilePrefix": "GOES_ABI_C12_BrightnessTemp",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   },
   {
     "id": "goes-abi-c13",
     "legacyId": "GOES_ABI_C13",
     "storageDirectory": "GOES_ABI_C13",
     "legacyFilePrefix": "GOES_ABI_C13_BrightnessTemp",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "goes-ir"
   },
   {
@@ -219,7 +219,7 @@
     "legacyId": "GOES_ABI_C14",
     "storageDirectory": "GOES_ABI_C14",
     "legacyFilePrefix": "GOES_ABI_C14_BrightnessTemp",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "goes-ir"
   },
   {
@@ -227,7 +227,7 @@
     "legacyId": "GOES_ABI_C15",
     "storageDirectory": "GOES_ABI_C15",
     "legacyFilePrefix": "GOES_ABI_C15_BrightnessTemp",
-    "representation": "png-tiles",
+    "representation": "float16-file",
     "colormapId": "goes-ir"
   },
   {
@@ -235,6 +235,6 @@
     "legacyId": "GOES_ABI_C16",
     "storageDirectory": "GOES_ABI_C16",
     "legacyFilePrefix": "GOES_ABI_C16_BrightnessTemp",
-    "representation": "png-tiles"
+    "representation": "float16-file"
   }
 ]
