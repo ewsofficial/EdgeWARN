@@ -199,17 +199,17 @@ class GUIValueWriter:
             timestamps.append(new_timestamp)
             timestamps.sort(reverse=True)
 
-            try:
-                output_data = {
-                    "schema_version": chunk_schema_version(),
-                    "timestamps": timestamps,
-                    "representation": "binary_file",
-                    "chunk_format": chunk_format_descriptor(include_media_type=True),
-                }
+        try:
+            output_data = {
+                "schema_version": chunk_schema_version(),
+                "timestamps": timestamps,
+                "representation": "binary_file",
+                "chunk_format": chunk_format_descriptor(include_media_type=True),
+            }
 
-                atomic_write_json(index_file, output_data)
-            except Exception as e:
-                io_manager.write_error(f"Failed to update index.json in {self.outdir}: {e}")
+            atomic_write_json(index_file, output_data)
+        except Exception as e:
+            io_manager.write_error(f"Failed to update index.json in {self.outdir}: {e}")
 
 class GUILayerRenderer:
     def __init__(self, dataset: Dataset, outdir: Path, colormap_key, file_name, timestamp):

@@ -238,6 +238,24 @@ class TestUpdateIndex:
         idx = json.loads((tmp_path / "out" / "index.json").read_text())
         assert idx["representation"] == "binary_file"
 
+    def test_rewrites_stale_metadata_when_timestamp_already_exists(self, tmp_path):
+        outdir = tmp_path / "out"
+        outdir.mkdir()
+        timestamp = "20260317-200000"
+        (outdir / "index.json").write_text(json.dumps({
+            "schema_version": 1,
+            "timestamps": [timestamp],
+            "representation": "binary_chunks",
+        }))
+
+        self._renderer(outdir)._update_index(timestamp)
+
+        idx = json.loads((outdir / "index.json").read_text())
+        assert idx["timestamps"] == [timestamp]
+        assert idx["schema_version"] == 2
+        assert idx["representation"] == "binary_file"
+        assert idx["chunk_format"]["encoding"] == "float16"
+
     def test_corrupt_json_gets_overwritten(self, tmp_path):
         (tmp_path / "out").mkdir()
         (tmp_path / "out" / "index.json").write_text("{ invalid json")
