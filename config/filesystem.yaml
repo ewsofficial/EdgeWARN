@@ -1,66 +1,19 @@
-# filesystem.yaml — Audit §7 Filesystem
-#
-# Source: src/util/file.py -- _FromCatalog:17, _find_existing_path:36,
-#         the GUI_COLORMAP_JSON probe inside _define_paths:197,
-#         initialize_filesystem:219, the module-scope _define_paths bind:238,
-#         latest_files:244, clean_idx_files:292, _is_safe_directory:313,
-#         clean_old_files:323, clean_files_by_age:362;
-#         src/api/config/index.js -- createConfig:74;
-#         src/EdgeWARN/process/detect/main.py -- main:83
-#
-# Citations name the function they point into, not a bare line span. util/file.py
-# has shifted ~26 lines twice while this file existed, and a span silently drifts
-# onto the wrong function whereas a name plus a line can be checked in one grep.
-# A citation that points at the wrong function is worse than none.
-#
-# `cleanup_defaults` and `colormap_search_path` are consumed through
-# src/util/file_config.py, which reads this file per call so a --config-dir
-# resolved after import still applies.
+# Runtime filesystem defaults. Prefer CLI or environment overrides over editing shared paths.
 
 schema_version: 1
 
-# This is the only catalog that owns runtime base-directory defaults. The
-# selected value is CLI > EDGEWARN_BASE_DIR > BASE_DIR > YAML.
+# Default runtime location. Override per deployment instead of committing local paths.
 base_dir:
   posix: ~/EdgeWARN_input
   windows: 'C:\\EdgeWARN_input'
 
-# The fallback every cleaner in util/file.py resolves to when its caller passes
-# nothing. clean_files_by_age takes max_age_minutes only, so max_files reaches
-# clean_old_files alone.
-#
-# max_files is resolved from a sentinel rather than from `None`, because `None` is
-# already a value there: it means "age only, no count cap", which the RAP
-# pre-download sweep passes deliberately. Raising max_files here does not raise it
-# for callers that pass their own, and does not affect that uncapped pass at all.
+# Fallback retention only; product-specific retention should take precedence.
 cleanup_defaults:
   max_age_minutes: 60
   max_files: 10
 
-  # detect/main.py:107 calls clean_files_by_age(fs.STORMCELL_DIR,
-  # max_age_minutes=...), the one live caller that overrides the 60 above. It is
-  # recorded as detection.yaml's `stormcell_cleanup_max_age_minutes` because the
-  # owner is the detector, not the filesystem layer. Noted here so the 60 is not
-  # mistaken for a global ceiling. (common/ingest/metar.py:413,457 pass this key's
-  # own accessor rather than a literal; common/ingest/mrms/downloader.py:218,231
-  # pass per-product values. That path is spelled out because an
-  # EdgeWARN/ingest/metar.py also exists -- a four-line re-export shim, so a bare
-  # `metar.py:413` names a file with only 4 lines in it.)
 
-# The ordered candidates util/file.py probes for colormaps.json, first hit wins;
-# if none exists the first is used anyway, so it is also the reported location.
-#
-# Tokens, not absolute paths, because neither location is knowable when this file
-# is written: <src_dir> is wherever the tree was installed and <gui_dir> follows
-# --base_dir. They are expanded by common.config.loader.expand_path against the
-# <base_dir>/<gui_dir>/<src_dir> allowlist, which rejects `..` and anything
-# resolving outside the named root.
-#
-# A `Path.cwd() / "colormaps.json"` probe used to lead this list, which made the
-# answer depend on where the operator happened to launch from. It is deliberately
-# not carried over: src/EWMRS/colormaps.json is the shipped file, so the entry
-# that used to sit behind the cwd probe now leads, and the resolved path is
-# unchanged for every launch directory that did not shadow it.
+# Search order: bundled defaults first, then runtime override.
 colormap_search_path:
   - <src_dir>/EWMRS/colormaps.json
   - <gui_dir>/colormaps.json

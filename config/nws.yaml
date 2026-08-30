@@ -1,46 +1,13 @@
-# nws.yaml — Audit §1 zone_sync CLI, §7 NWS
-#
-# Read through src/common/ingest/nws/config.py, whose accessors are per-call --
-# `src/run.py` imports this package before get_args() publishes the config root,
-# so a value bound at module scope would freeze the repo default.
-#
-# Source: main.py:55,66,81,127,142,144,155,215; registry.py:89,239,249,569;
-#         zone_sync.py:74,104,182-194,226,259,269,462-479;
-#         geomapper.py:78,85,115,161,163,205,337,387
-#
-# Every key in this file is read. The one exception used to be `zone_sync.accept`,
-# which has moved to `runtime.yaml identity.weather_api_accept` -- see the note at
-# the end of the zone_sync block; plans/source-configuration-extraction-plan.md
-# has the wider inventory.
-#
-# The seven `zone_sync` keys the CLI can override reach NWSZoneSync twice over:
-# _resolve_zone_sync_args (zone_sync.py:462-479) overlays the flags on this file
-# and main() passes the result explicitly, while the constructor falls back to
-# this file for any argument a non-CLI caller omits.
-#
-# `assets_dir` is the one key here with a second consumer: geomapper.py reads it
-# back to look polygons up. See its comment below.
-#
-# `zone_sync.apply` and `zone_sync.report_path` are deliberately absent, and no
-# UNUSED marker would fit them because there is nothing to mark: `--apply` is
-# `action="store_true"` (zone_sync.py:443-447) so argparse fixes its False before
-# any YAML could be consulted, and `--report-path` (:448-452) has no default at
-# all. A key for either could never be reached.
+# NWS ingest and geometry defaults. Filtering and simplification affect downstream alert matching.
 
 schema_version: 1
 
+# NWS alert ingest. Event filtering affects both alert storage and cell matching.
 nws:
-  # This used to be three literal 2.0s -- passed explicitly by main.py's
-  # _get_registry, and again as the signature default of both AlertRegistry and
-  # get_registry. They agreed, so the split was invisible; raising the retention
-  # window meant finding all three. The two signatures now default to None and
-  # resolve here, which also means a test constructing a registry without a TTL
-  # gets the operator's value rather than a second one.
+  # Alert-cache lifetime; lower values refresh more often but increase API traffic.
   registry_ttl_hours: 2.0
 
-  # Discarded on ingest, so nothing downstream can recover an event named here.
-  # 19 entries: the source set literally repeated five of them, which Python
-  # silently collapsed, and the duplicates are not reproduced here.
+  # Intentionally ignored events; review before removing entries because volume can rise sharply.
   dropped_events:
     - Administrative Message
     - Freezing Spray Advisory
@@ -62,61 +29,24 @@ nws:
     - Air Stagnation Advisory
     - Beach Hazards Statement
 
-  # Was the same literal twice, in the sync and async downloads.
   active_alerts_url: https://api.weather.gov/alerts/active
 
-  # Read size for the async alert download's streaming copy to a temp file
-  # (main.py:155). The sync download at :89 has no counterpart key because it does
-  # not stream -- it calls `response.read()` for the whole body at once -- so this
-  # sizes one loop rather than being a shared knob the two downloads disagree on.
-  #
-  # Distinct from `mrms.ncep_https.download_chunk_size_bytes`, which is the same
-  # 8192 for a different subsystem's stream; collapsing them would couple the
-  # alert feed's memory profile to the MRMS grib fallback's.
   download_chunk_size_bytes: 8192
 
-  # registry.py _derive_snapshot_alert_name. Only `event` is rescored, by scanning
-  # the alert description. Order here is priority order -- the first match wins,
-  # so a description carrying both phrases reads as a Tornado Emergency. Every
-  # other event keeps its own name.
-  #
-  # `description_contains` is matched against the UPPERCASED description, so a
-  # lowercase phrase here can never match. The schema pattern enforces that.
+  # Text-based severity upgrades; phrases must match official alert wording.
   tornado_upgrade:
     event: Tornado Warning
     rules:
       - {description_contains: TORNADO EMERGENCY,               name: Tornado Emergency}
       - {description_contains: PARTICULARLY DANGEROUS SITUATION, name: PDS Tornado Warning}
 
+# Geometry simplification balances size against intersection accuracy.
 geomapper:
-  # Was one value declared four times as a keyword default, in round_coords,
-  # _normalize_ring, _geometry_to_polygon_rings, and round_geojson_coords, with no
-  # caller overriding any of them -- so changing the rounding meant finding and
-  # editing all four signatures. All four now default to None and resolve here.
-  # They stay parameters so a caller already holding the value can pass it down
-  # rather than re-resolve it per ring.
-  #
-  # Deliberately NOT the same key as `zone_sync.geometry_precision` below, which
-  # is 5. This one is a fixed precision applied when an alert polygon is built;
-  # that one is a floor that escalates. Collapsing them would silently give the
-  # escalation a different starting digit.
   geometry_precision: 4
 
-  # Douglas-Peucker tolerance in degrees, applied to the union of an alert's zone
-  # polygons (geomapper.py extract_exterior_polygon) to cut the point count on
-  # coastlines and rivers. ~1.1 km at the equator, so it is coarse enough to be
-  # visible: raising it shrinks the payload and moves the drawn boundary.
-  #
-  # Only ever reached through the default -- the sole production caller,
-  # _get_cached_union_exterior, passes no tolerance. `0` disables simplification
-  # entirely rather than meaning "no error", which is why the floor is inclusive.
+  # Do not raise without validating alert-to-cell matching near boundaries.
   simplify_tolerance: 0.01
 
-  # Removed from every alert's properties before it reaches disk, so anything
-  # listed here is unrecoverable downstream -- the same one-way filter as
-  # `nws.dropped_events`, at field granularity instead of event granularity.
-  # Applied at both exits of process_warning, the early geometry-present return
-  # and the zone-mapped path.
   junk_keys:
     - references
     - sender
@@ -129,75 +59,26 @@ geomapper:
     - web
     - eventCode
 
-  # The zone-union cache size is deliberately absent. It is `lru_cache(maxsize=1024)`
-  # on _get_cached_union_exterior, an argument evaluated when the module is
-  # imported -- which is before the config root is published, the one position a
-  # catalog value provably cannot be read from. Wiring it means building the cache
-  # lazily on first call, and that indirection costs more clarity than a sizing
-  # knob with a single owner and no duplicate is worth.
 
+# Zone-asset downloader. Concurrency is capped to be respectful of weather.gov.
 zone_sync:
-  # Resolved against the config root's parent, which is the repo root only for an
-  # unrelocated tree. Read by BOTH ends of the zone pipeline -- zone_sync.py:385
-  # writes polygons under here, geomapper.py:_assets_dir reads them back -- so despite
-  # living under `zone_sync` this key is not private to that CLI. The reader used
-  # to find the directory by walking up from its own __file__ instead, which
-  # agreed with the writer until either end was pointed elsewhere; a disagreement
-  # dropped alert polygons without an error.
   assets_dir: assets/nws_zones
 
-  # These four, plus pause_seconds and progress below, reach NWSZoneSync from two
-  # directions: main() overlays the CLI on them, and the constructor falls back to
-  # them for a caller with no CLI. Each used to be restated as a signature default
-  # -- zone_types via a ZONE_TYPES module constant, the rest as literals -- so an
-  # instance built without arguments ran on the source copy rather than this file.
   zone_types: [forecast, fire, public, county, marine]
-  timeout_seconds: 30                   # --timeout-seconds is type=int
+  timeout_seconds: 30
   max_retries: 3
   max_workers: 16
 
-  # Linear, not exponential, and multiplied by the 1-based attempt number, so
-  # three retries wait 0.25 s then 0.5 s. Unlike runtime.yaml's supervisor
-  # backoff there is no ceiling.
   retry_backoff_seconds: 0.25
 
-  # A FLOOR, not a fixed precision: geometry_to_rings walks
-  # `range(precision, precision_max)`, so a ring that degenerates at 5 decimals is
-  # retried at 6 and 7 before being given up on. Raising the floor narrows that
-  # escalation window; the ceiling is exclusive. The ceiling was a literal `8` in
-  # that `range` while the floor was a parameter, which left half the window owned
-  # by the source -- hence both keys, resolved together.
   geometry_precision: 5
+  # Safety ceiling for downloaded geometry precision; avoid raising without storage review.
   geometry_precision_max: 8
 
-  # Per-request throttle against api.weather.gov, applied in the worker before
-  # each zone-detail fetch and scaled by max_workers so this stays a whole-job
-  # rate: 0.05 is ~20 requests/second however many threads run. A full rebuild is
-  # ~8,600 codes, so ~7 minutes.
-  #
-  # This file used to record 0.0, which matched what ran but disabled throttling
-  # entirely; the pause was also in the collection loop, downstream of every
-  # submitted future, where it could not slow the API down at all. 0.05 is the
-  # constructor's long-standing intent and is now the one value.
   pause_seconds: 0.05
 
-  progress: true                        # --no-progress disables
+  progress: true
 
-  # Neither outbound header is here. The User-Agent template is hardcoded in
-  # `util/release.py format_user_agent()`, with the `identity.contact` half still
-  # coming from `runtime.yaml identity`; the Accept is `identity.weather_api_accept`.
-  # Both reach this subsystem through util/release.py weather_api_headers() at
-  # zone_sync.py:194 and nws/main.py:81,142.
-  #
-  # `accept` used to live here, UNUSED on purpose: the same `application/geo+json`
-  # went out from four sites spanning this subsystem and NEXRAD, so a key nested
-  # under `zone_sync` could only ever own one of them. It moved to
-  # `identity.weather_api_accept` rather than being wired in place, which would
-  # have made one call site configurable while an operator reasonably believed all
-  # four had moved.
 
-  # `{zone_type}` for the catalog listing; `{zone_type}` and `{code}` for the
-  # per-zone detail fetch. Both are str.format patterns, so a placeholder the
-  # code does not supply is a KeyError at request time rather than a bad URL.
   zone_catalog_url_pattern: 'https://api.weather.gov/zones/{zone_type}'
   zone_detail_url_pattern: 'https://api.weather.gov/zones/{zone_type}/{code}'

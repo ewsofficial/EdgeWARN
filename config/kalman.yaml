@@ -1,125 +1,61 @@
-# Kalman Filter Configuration for Storm Cell Tracking
-# 
-# This configuration file controls the behavior of the Kalman filter
-# used for storm cell tracking continuity and measurement assignment.
+# Tracking defaults calibrated for normal scan cadence. Tune coupled values only with replay validation.
 
 schema_version: 1
 
+# Filter-noise settings are coupled to observed position uncertainty.
 kalman_filter:
-  # Process noise. One knob, not three.
-  #
-  # `position` and `velocity` used to sit alongside `acceleration` here, and this
-  # comment claimed all three "enter np.diag directly, so each is a VARIANCE".
-  # They did enter an np.diag -- into `_Q` in _initialize_noise_matrices -- but
-  # `_Q` was then read by nothing. predict() builds its own Q per step via
-  # _build_process_noise_matrix, which consumes `acceleration` alone. So two of
-  # the three keys were inert while the comment asserted they had effect: an
-  # operator retuning the filter would have moved the two that did nothing.
-  #
-  # They were deleted rather than wired. _build_process_noise_matrix implements
-  # the piecewise-constant white-noise-jerk model, in which every block of Q --
-  # position, velocity and acceleration -- is derived from the single scalar below
-  # times a power of dt. Adding independent position and velocity variances is a
-  # change to the filter's model, not a config extraction, and it would retune
-  # storm tracking as a side effect.
-  #
-  # This scalar scales the whole 3x3 jerk block, so it is a spectral density on
-  # jerk rather than a per-state variance. Raising it loosens the filter across
-  # position, velocity and acceleration together.
   process_noise:
     acceleration: 0.1
-  
-  # Measurement noise parameters
-  # Controls the uncertainty in observations from ProbSevere
-  measurement_noise:
-    position: 0.5      # Position measurement noise (km)
 
+  measurement_noise:
+    position: 0.5
+
+# Lifecycle thresholds; lower confidence limits retain weaker tracks.
 tracking:
-  # Maximum time a storm can be tracked in prediction mode (minutes)
-  # After this time, the storm will be terminated if not re-acquired
-  #
-  # This is the only copy of the value. The loader previously disagreed with
-  # itself here -- a `.get(..., 10.0)` fallback against a 6.0 dataclass default --
-  # and 6.0 was kept as the resolution because it was the value that shipped
-  # whenever the key was present, which was always.
   max_prediction_time_minutes: 6.0
-  
-  # Minimum confidence before termination
-  # Confidence decays over time while in prediction mode
-  # When confidence drops below this threshold, the storm is terminated
+
   confidence_threshold: 0.4
-  
-  # Per-scan confidence decay factor
-  # confidence = base_confidence * decay_factor^scan_count
-  # Lower values = faster decay
+
   confidence_decay_factor: 0.7
 
+# Matching gates and costs; tune as a set to avoid unstable associations.
 assignment:
-  # Pre-filtering (Stage 1)
-  # Spatial pre-filter radius used by the hybrid assignment method. Detections
-  # beyond this radius from a track are not considered before matching.
-  prefilter_radius_km: 16.0       # 10 miles
-  
-  # Gating parameters (Stage 2)
-  # Mahalanobis distance threshold for validation gate
-  # Chi-squared 95% confidence with 2 degrees of freedom ≈ 5.99
-  # Higher values = more permissive gating
+  # Initial candidate radius; too small loses fast cells, too large raises false matches.
+  prefilter_radius_km: 16.0
+
   gating_threshold: 6.0
-  
-  # Minimum gating radius (km)
-  # Fallback for collapsed covariance scenarios
-  # Prevents rejection of physically close detections when uncertainty is very small
+
   min_gating_radius_km: 2.0
-  
-  # Cost function weights
-  # The total cost is: w1*d_position + w2*d_velocity + w3*d_shape
+
   weights:
-    # Position cost weight (Mahalanobis distance)
-    # Scale-normalized distance accounting for covariance
     position: 1.0
-    
-    # Velocity direction consistency weight
-    # Penalizes assignments that imply backward or sideways motion
-    # Higher values = stronger preference for motion-consistent matches
+
     velocity_direction: 2.0
-    
-    # Size/reflectivity similarity weight
-    # Compares max reflectivity and number of gates
-    # Lower weight since these can vary significantly
+
     size_similarity: 0.5
-  
-  # Algorithm selection
-  # - hybrid: Pre-filter + global linear assignment
-  # - hungarian: Alias retained for compatibility; tracker routes it to hybrid
-  # - greedy: Nearest-neighbor assignment
+
+  # Greedy is the supported production assignment mode.
   method: greedy
 
-# --- Sections below are top-level here but nested in the typed config. ---
-# Each is loaded as a member of the config object whose consumer reads it:
-# filter_internals -> KalmanConfig.internals, confidence -> TrackingConfig.confidence,
-# assignment_costs -> AssignmentConfig.costs. They stay siblings in the file so the
-# schema keeps one flat section per subsystem.
 
-# src/EdgeWARN/process/detect/kalman/filter.py, state.py
+# Numerical-stability settings; do not change without Kalman-filter expertise.
 filter_internals:
   initial_position_uncertainty_km: 1.0
   innovation_covariance_regularization: 1.0e-6
   singular_retry_regularization: 1.0e-4
-  initial_velocity_variance: 100.0      # (m/s)²
+  initial_velocity_variance: 100.0
   initial_acceleration_variance: 1.0
 
-# src/EdgeWARN/process/detect/kalman/confidence.py
+# Confidence shaping values; all terms jointly determine decay behavior.
 confidence:
-  time_penalty_weight: 0.3              # 1 - (t/max_t) * weight
+  time_penalty_weight: 0.3
   motion_factor_variance_denominator: 2500.0
-  factor_floor: 0.8                     # motion and position factors
-  position_decay_onset_std: 5.0         # avg_std > onset -> 1/(1+(avg-onset)/scale)
+  factor_floor: 0.8
+  position_decay_onset_std: 5.0
   position_decay_scale: 30.0
 
-# src/EdgeWARN/process/detect/kalman/assignment.py
+# Cost normalization constants; change only with assignment regression tests.
 assignment_costs:
-  # Public assignment helpers accept ``dt_seconds=None``; the realtime tracker
-  # always supplies a concrete interval, while direct callers use this fallback.
   default_dt_seconds: 120.0
   predicted_speed_deadband_ms: 1.0
   implied_speed_deadband_ms: 0.5

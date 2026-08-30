@@ -1,52 +1,27 @@
-# ewmrs_render.yaml — Audit §8 render
-#
-# Source: src/EWMRS/render/{config,render,tiler,tools,goes_transform,nexrad}.py
-# Values verified against the working tree at commit e426fb2.
-# Every block below is wired, by one of two mechanisms. `mrms_layers`,
-# `goes_layers`, `goes_transform` and `nexrad_gui` are read per call through the
-# render/config.py accessor named at each block. `tiles` and `chunk_format` are
-# the exception: they bind module constants at config.py:63-77, because they are
-# wire-format invariants rather than operator settings and so have nothing to
-# gain from following a late --config-dir.
-#
-# Worker/thread and cache sizing live in ewmrs_pipeline.yaml, which owns all
-# EWMRS concurrency knobs.
+# Renderer contract. Layer names, wire format, and storage paths must match producers and clients.
 
 schema_version: 1
 
 tiles:
-  # config.py:63-64. Pixels. render.py:176-182 requires the rendered dimensions to
-  # be an exact multiple of it and raises rather than padding, so this is not a
-  # free knob: it must divide every layer's grid.
+  # Default tile edge length. Keep synchronized with API render defaults.
   tile_size: 350
 
-# config.py:68-77, republished to clients by chunk_format_descriptor (:80-101) and
-# stamped into both index levels at render.py:311-314,350-353. Wire-format
-# invariant, NOT operator-tunable.
+# On-disk/client wire contract; change only with coordinated producer and client updates.
 chunk_format:
-  wire_version: 2                       # CHUNK_SCHEMA_VERSION
-  format_version: 2                     # CHUNK_FORMAT_VERSION
+  wire_version: 2
+  format_version: 2
   encoding: float16
   data_type: float16
   channels: 1
   value_kind: scalar
-  no_data: nan                          # the literal string "nan", not a float
+  no_data: nan
   file_suffix: .f16.gz
   compression: gzip
   media_type: application/octet-stream
   bytes_per_component: 2
   pixel_row_order: top_to_bottom
   grid_origin: bottom_left
-# config.py get_mrms_file_list(), 15 entries. `filepath` (ingest source) and
-# `outdir` (render target) are util.file attribute names resolved by getattr at
-# call time; an unknown name is a startup error. Note MRMS_VILDensity maps
-# MRMS_DVIL_DIR -> GUI_VILD_DIR -- the names are deliberately asymmetric.
-#
-# `required: true` marks a layer whose absence fails the EWMRS MRMS render
-# stage; optional-layer failures are logged but never gate the stage. Every
-# current layer is required, matching the pre-decomposition behavior where any
-# failed MRMS layer failed the stage. The accessor defaults missing `required`
-# to true for MRMS layers.
+# Required layer catalog. Each source and output directory must exist in ingest configuration.
 mrms_layers:
   - {name: MRMS_MergedReflectivityQC,         colormap_key: NWS_Reflectivity, filepath: MRMS_COMPOSITE_DIR,   outdir: GUI_COMPOSITE_DIR,   required: true}
   - {name: MRMS_EchoTop18,                    colormap_key: EnhancedEchoTop,  filepath: MRMS_ECHOTOP18_DIR,   outdir: GUI_ECHOTOP18_DIR,   required: true}
@@ -64,14 +39,8 @@ mrms_layers:
   - {name: MRMS_MergedAzShear_3-6kmAGL,       colormap_key: AzShear,          filepath: MRMS_AZSHEARMID_DIR,  outdir: GUI_AZSHEARMID_DIR,  required: true}
   - {name: MRMS_MESH,                         colormap_key: MESH,             filepath: MRMS_MESH_DIR,        outdir: GUI_MESH_DIR,        required: true}
 
-# config.py get_goes_file_list(), 16 entries, one per ABI channel.
-# `mask_min`/`mask_max` are keyed by the layer's channel id.
-#
-# GOES ABI layers are optional (`required: false`): the GOES renderer has always
-# reported success ratios without gating on individual channels, so that
-# behavior is now explicit instead of implicit.
+# GOES layer catalog. Channel IDs and physical transforms must match ABI metadata.
 goes_layers:
-  # config.py:137, spread onto every layer at :144-146 by get_goes_file_list().
   common:
     source_type: goes_abi
     variable_name: CMI
@@ -207,34 +176,12 @@ goes_layers:
       mask_min: {C16: 180.0}
       mask_max: {C16: 330.0}
 
-goes_transform:                         # render/goes_transform.py
-  # Resolved to a rasterio.enums.Resampling member by render/config.py
-  # goes_transform_resampling(), which both reprojection entry points defer to
-  # via a `resampling=None` parameter. It used to be a signature default on each
-  # of them AND an explicit argument at the one live call site, so this key was
-  # outvoted three times over.
-  #
-  # Owns the GOES ABI path only. EWMRS/pipeline.py reprojects the non-GOES layers
-  # with `nearest` on purpose, to keep radar edges crisp -- a different policy,
-  # deliberately not this key, and not a copy that drifted.
-  #
-  # The schema enum omits `gauss`, which rasterio defines but does not accept for
-  # warping. The accessor re-checks against rasterio.warp.SUPPORTED_RESAMPLING
-  # anyway, because that list belongs to a different project than this schema.
+goes_transform:
+  # Bilinear is the normal imagery tradeoff; change only after visual validation.
   resampling: bilinear
-  # CRS extraction (from_cf, then a +proj=geos from_proj4 reconstruction) and
-  # radian-vs-metre axis detection are algorithms, not settings; they stay in
-  # goes_transform.py.
 
+# Colormap keys must exist in the colormap catalog.
 nexrad_gui:
-  # The sole owner, and the only key in this block a code path reads:
-  # render/config.py nexrad_variable_colormaps(), called by render/nexrad.py once
-  # per serialization and hoisted above the per-sweep loop. The renderer used to
-  # restate this as a module constant, which made editing here change nothing the
-  # GUI drew.
-  #
-  # A moment omitted here is still served by the API; it just goes undrawn. CCORH
-  # is deliberately that case -- see test_ccorh_is_servable_but_deliberately_uncolored.
   variable_colormaps:
     DBZH: NWS_Reflectivity
     VRADH: VRADH

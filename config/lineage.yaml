@@ -1,43 +1,17 @@
-# lineage.yaml — Audit §4
-#
-# Consumed through src/EdgeWARN/process/detect/lineage/config.py. Every key below
-# is the single owner of its default: the corresponding parameter defaults to
-# None, so a caller-supplied value still wins but no literal competes with this
-# file. Values are unchanged from the pre-extraction literals.
-#
-# `min_area_deg2` is deliberately absent: 1e-10 is a local variable inside
-# calculate_overlap_ratio guarding a division, not a knob.
-#
-# `antimeridian_normalization` is deliberately absent: the 350/10/180 test in
-# _normalize_antimeridian is an algorithm branch, and bounds_overlap uses a
-# *different* two-condition form of the same test with no span check. One YAML
-# block cannot describe both, so recording it would create a key that appears to
-# control wrap handling while half the code ignores it.
-#
-# `buffer.file_name` is deliberately absent: LineageBuffer.BUFFER_FILE is a class
-# constant read directly by load() and save(), never injected. It names an
-# internal state artifact, not an operator setting.
+# Lineage defaults. Overlap and buffering settings affect split/merge continuity.
 
 schema_version: 1
 
 lineage:
-  # StormCellTracker.overlap_threshold. The threshold the tracker applies to
-  # merge/split detection before forwarding it into LineageDetector.
+  # Minimum overlap for continued lineage; tune only with split/merge test cases.
   tracked_overlap_ratio: 0.10
 
-  # bounds_overlap buffer. Slack on the cheap bounding-box pre-filter that runs
-  # before any area overlap is computed. It is applied on the tracked path:
-  # _find_split_overlaps calls bounds_overlap with no buffer for every candidate.
-  # Widening it only admits more candidates to the exact test; it cannot create
-  # an event.
+  # Keep zero unless geographic rounding demonstrably rejects valid overlaps.
   bounds_prefilter_buffer_deg: 0.0
 
-  # LineageBuffer constructor. Hysteresis: an event must be seen on this many
-  # *consecutive* scans before it is emitted.
+  # Confirmation buffering limits false split/merge events and bounds pending memory.
   buffer:
     min_confirmations: 2
     max_pending: 100
     prune_after_scans: 5
-    # Expected scan spacing, used only to age out pending entries in
-    # prune_inactive(); it does not schedule anything.
     scan_interval_seconds: 120.0

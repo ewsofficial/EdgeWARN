@@ -1,39 +1,18 @@
-# integration.yaml — Audit §5
-#
-# Source: src/EdgeWARN/process/integrate/config.py:28-30,33-41,55,83-93;
-#         core/stats.py:3,9; core/integrator.py:5,346; azshear/constants.py:1,10-12;
-#         azshear/integration.py:74; integrate_glm.py:60;
-#         integrate_rap.py:12,32-48,119,150,159;
-#         pipeline.py:20,50,92,282,349,358; history.py:52,92;
-#         src/util/grib_loader.py:54,58
-# Read through src/EdgeWARN/process/integrate/config.py. The active sections are
-# the single source of truth -- no active value below is also declared in Python.
-#
-# `cell_history.max_payloads` is deliberately absent: it was fabricated. Cell
-# history is appended without a cap (history.py:92) and the files are named
-# `{cell_id}.json` (history.py:52), not `cell_{id}.json`. The only real cap is
-# the read-side `payload[-5:]` recorded as `azshear.history_window`.
+# Storm-cell integration catalog. Names, keys, and field mappings are output contracts.
 
 schema_version: 1
 
+# Serialized integration output settings.
 output:
-  # Applies to every integrated property value: MRMS statistics, single-variable
-  # maxima, and RAP point/derived fields. The AzShear feature block rounds to 3
-  # and 4 places instead; those are separate, in-code decisions.
+  # Output precision; change only if all API consumers tolerate the new representation.
   decimals: 2
 
+# Lightning binning; changing resolution affects all derived GLM statistics.
 glm:
-  # Coarse lat/lon bin edge used to index flash candidates before the exact
-  # point-in-polygon test. Affects performance only, never the flash counts.
-  bin_size_degrees: 1.0                 # integrate_glm.py:60
+  bin_size_degrees: 1.0
 
-# 25 entries. `filepath` is a util.file attribute name, resolved with getattr so
-# that initialize_filesystem rebinds are picked up -- same convention as
-# ewmrs_render.yaml. `method` is required on every entry: Ref15 previously omitted
-# it and inherited an invisible "max" default inside prepare_stats_specs, which
-# meant the reduction a dataset used was not visible where it was declared.
+# Statistic catalog. Keep keys stable because they are stored in storm-cell outputs.
 stats_datasets:
-  # {name, filepath, key, method, percentile}
   - {name: Ref0,            filepath: MRMS_REF_0C_DIR,    key: Ref0,               method: max}
   - {name: Ref5,            filepath: MRMS_REFM5C_DIR,    key: Ref5,               method: max}
   - {name: Ref15,           filepath: MRMS_REFM15C_DIR,   key: Ref15,              method: max}
@@ -60,10 +39,7 @@ stats_datasets:
   - {name: Reflectivity at Lowest Altitude, filepath: MRMS_RALA_DIR, key: maxRALA, method: max}
   - {name: VII,             filepath: MRMS_VII_DIR,       key: maxVII,             method: max}
 
-# 40 pairs, reached through config.py:33-41 probsevere_field_map() and applied at
-# core/integrator.py:346. output_property: probsevere_source_field. The mapping is
-# not mechanical -- casing, underscores and abbreviations all vary -- so it cannot
-# be generated.
+# Upstream-to-output field mapping. Preserve output keys for compatibility.
 probsevere_field_map:
   ProbSevere: ProbSevere
   ProbWind: ProbWind
@@ -80,11 +56,6 @@ probsevere_field_map:
   MLLR: MLLR
   EBShear: EBSHEAR
   SRH01km: SRH01KM
-  # VERBATIM SOURCE TYPO, carried over from the PROBSEVERE_FIELD_MAP constant this
-  # section replaced: the storm-relative *helicity* key 0-2 km reads the
-  # storm-relative *wind* field SRW02KM. Reproduced exactly so the catalog matches
-  # running behavior; fixing it changes output values and must be a reviewed
-  # decision, not a transcription.
   SRH02km: SRW02KM
   SRW46km: SRW46KM
   MeanWind_1-3kmAGL: MEANWIND_1-3kmAGL
@@ -111,26 +82,15 @@ probsevere_field_map:
   PWAT: PWAT
   avg_beam_hgt: AVG_BEAM_HGT
 
-rap_products:                           # config.py:83-93 get_rap_products()
-  # The 37 isobaric levels the u/v products expand over. Kept as one anchor so the
-  # identical list is not written out twice; the loader resolves it before
-  # get_rap_products() returns, so no consumer sees the alias.
+# RAP field catalog. Filters and aliases accommodate GRIB naming variants.
+rap_products:
+  # Supported pressure levels; retain ordered, standard levels for vertical products.
   isobaric_levels_mb: &isobaric_levels_mb
     [1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750,
      725, 700, 675, 650, 625, 600, 575, 550, 525, 500, 475,
       450, 425, 400, 375, 350, 325, 300, 275, 250, 225, 200,
       175, 150, 125, 100]
 
-  # `var_aliases` is the key src/util/grib_loader.py:54 reads. Spelled from the
-  # repo root, not shortened: every other path in this file resolves inside the
-  # integrate package, and this is the one module that does not, so a relative
-  # spelling here points at a file that does not exist. A plain `aliases` key would
-  # be ignored and every product would fall back to its single `var` short name.
-  #
-  # `levels` is required on the u/v entries: integrate_rap.py:150 branches on
-  # `"levels" in product`, and the else branch reads `product["key"]` (:159), which
-  # these two do not have. Without it the 74 wind_field.* values vanish and the
-  # apply loop raises KeyError.
   products:
     - {var: u,   var_aliases: [u, UGRD, u-component_of_wind_isobaric, wind_u], filter: {typeOfLevel: isobaricInhPa}, levels: *isobaric_levels_mb, key_template: 'wind_field.u{level}'}
     - {var: v,   var_aliases: [v, VGRD, v-component_of_wind_isobaric, wind_v], filter: {typeOfLevel: isobaricInhPa}, levels: *isobaric_levels_mb, key_template: 'wind_field.v{level}'}
@@ -138,13 +98,9 @@ rap_products:                           # config.py:83-93 get_rap_products()
     - {var: v10, var_aliases: [v10, 10v, v],   filter: {typeOfLevel: heightAboveGround, level: 10}, key: v10m}
     - {var: t2m, var_aliases: [t2m, 2t, t],    filter: {typeOfLevel: heightAboveGround, level: 2}, key: temp_2m,     transform: kelvin_to_celsius}
     - {var: d2m, var_aliases: [d2m, 2d, dpt],  filter: {typeOfLevel: heightAboveGround, level: 2}, key: dewpoint_2m, transform: kelvin_to_celsius}
-    # The only product that declares no var_aliases, so src/util/grib_loader.py:58
-    # falls back to the single `var` short name.
     - {var: gh,  filter: {typeOfLevel: isothermZero}, key: freezing_level_m}
 
-  # `transform` names are checked against integrate_rap.TRANSFORMS (:12) when
-  # RAP extraction resolves a product through _transform_for (:32-48); an
-  # unknown name aborts that run.
+  # Derived formulas reference keys defined by the product catalog above.
   derived:
     - {key: dewpoint_depression,   formula: 'temp_2m - dewpoint_2m'}
     - {key: freezing_level_height, formula: 'freezing_level_m / 1000'}

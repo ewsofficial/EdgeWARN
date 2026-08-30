@@ -1,289 +1,107 @@
-# runtime.yaml — Audit §1 (src/util/io.py shared parser), §2 env vars, §7 scheduler
-#
-# Source: src/run.py:48-58,60-65,168-169,186-204,228-238,252,284,415-416;
-#         src/util/io.py:86-89,92-105,113-127,130-143,147-164,166-176,187;
-#         src/util/runtime/config.py; src/util/runtime/processes.py:12-30,78-81,84-99,152-173;
-#         src/util/runtime/background.py:77-103,204-205,236-239,255-258,277,284-287;
-#         src/util/runtime/goes.py:54-107; src/util/runtime/cycle.py:128-137,350,479,609,643;
-#         src/util/performance.py:14-44,50,96-105; src/EdgeWARN/pipeline.py:235,380;
-#         src/common/pipeline/goes_readiness.py:18-19,127;
-#         src/common/pipeline/coordinator.py:146
-#
-# Every key below is read by the source it names. Children spawned by the
-# supervisor receive no argv, so they re-read this file through
-# util/runtime/config.py using the EDGEWARN_CONFIG_DIR that io.py exports.
-#
-# `profile`, `mrms_core_only` and the eight `disable_*` toggles were absent while
-# each was an argparse `action="store_true"` flag, which fixed the value to False
-# before any YAML could be consulted -- writing `true` here could never take
-# effect. io.py:117-120,150-164 now declares them with
-# `argparse.BooleanOptionalAction` and `default=None`, so a flag says True
-# (`--profile`), False (`--no-profile`), or nothing at all, and this file owns the
-# "nothing" case; :135-138,171-176 resolve them against the values below. Every
-# value below reproduces the old argparse default, so the effective behavior of a
-# bare `run.py` is unchanged.
-#
-# --mrms-core-only fans out further than the old comment here claimed: it forces
-# EWMRS, NWS, METAR, GOES and NEXRAD off (run.py:61-65), WPC off (:252), and RAP
-# ingest off (cycle.py:479) -- seven subsystems, not three.
-#
-# Python reads no environment variable for the base directory -- util/file.py
-# chooses by platform.system() at import time and accepts an override only through
-# initialize_filesystem(). The EDGEWARN_BASE_DIR/BASE_DIR pair is Node-only; see
-# filesystem.yaml.
+# Service runtime defaults. Prefer supported CLI flags and environment variables for deployments.
 
 schema_version: 1
 
-# Outbound HTTP headers, shared by every subsystem that calls a public API. Nine
-# request sites, which once carried three different hardcoded User-Agents and left
-# two sites anonymous. Four go through util/release.py weather_api_headers() --
-# zone_sync.py:194, nws/main.py:81,142 and nexrad/weather_api.py:101 -- and the
-# five METAR fetches read format_user_agent() directly, because they talk to
-# Aviation Weather rather than api.weather.gov and never send the `Accept` below.
-#
-# Only two of those five ask for `Accept-Encoding` (metar.yaml explains why the
-# other three must not). The two anonymous sites were the sync observation fetch
-# and the async fallback session, which sent urllib's and aiohttp's default agents
-# to a service that asks callers to identify themselves.
+# Request metadata sent to upstream weather services.
 identity:
-  # Only the contact half of the outbound User-Agent is configured here.
-  # `util/release.py format_user_agent()` hardcodes the `(EdgeWARN/{version},
-  # {contact})` shape and fills `{version}` from package.json at call time, so the
-  # advertised version cannot drift from the release the way a copied literal did.
-  #
-  # api.weather.gov asks callers to identify themselves with a reachable contact
-  # address, and the parenthesized `(app, contact)` shape is the form its
-  # documentation shows. The shape is fixed in code, so this address is the only
-  # operator-controlled fragment that reaches the header and it cannot deliver a
-  # second header.
   contact: ewsbackend@gmail.com
 
-  # Content negotiation for api.weather.gov, whose zone, alert and radar-station
-  # endpoints all answer in GeoJSON. Narrower in scope than the User-Agent above:
-  # it covers the four api.weather.gov sites, not METAR.
-  #
-  # It lives here rather than under `nws.yaml zone_sync` -- where it sat UNUSED,
-  # unread on purpose -- because the identical literal went out from four sites
-  # spanning two subsystems, so a key nested under either could only ever own one
-  # of them, and wiring it there would have made one call site configurable while
-  # an operator reasonably believed all four had moved. The schema forbids
-  # whitespace and CR/LF here for the same header-injection reason as above.
   weather_api_accept: application/geo+json
 
+# Feature defaults; use CLI flags for one-off runs instead of editing this file.
 run:
-  # io.py:147-148,169-170. The CLI flags default to None so these values win
-  # unless --lat_limits/--lon_limits is passed.
+  # Default processing region. Narrowing bounds reduces ingest and processing cost.
   lat_limits: [20, 55]
-  # io.py:187 rewrites this to `lon % 360` after the overlay, so a negative
-  # western longitude here becomes its 0-360 equivalent. Recorded pre-normalized.
-  #
-  # historical.yaml's `lon` is NOT normalized and stays signed; both schemas
-  # therefore permit -180..360 rather than one enforcing a convention the other
-  # ignores. handler.py:118-123 converts per dataset either way.
   lon_limits: [230, 300]
 
-  # io.py:117-120, resolved at :135-138 in _resolve_common_processing_args, so
-  # these four are the only toggles that reach process_historical.py as well as
-  # run.py.
-  #
-  # `profile: true` only calls perf_tracker.set_enabled(True)
-  # (pipeline.py:235,380). It does not compete with `profiling.perf_tracker`
-  # below, which stays the tri-state owner for everything else.
   profile: false
   disable_ctam: false
   disable_tracking: false
   disable_polygon_expansion: false
 
-  # util/ctam_config.py resolve_ctam_module_dir, overridable by
-  # --ctam-module-dir or EDGEWARN_CTAM_MODULE_DIR. The operator-owned install
-  # root for external CTAM modules: EdgeWARN/ctam/discovery.py scans it one level
-  # deep and reads a `module.toml` from each subdirectory that has one. Nothing
-  # under it is imported or executed by discovery, so a broken module is reported
-  # rather than run.
-  #
-  # Relative to the *repository* root unless absolute -- not to the working
-  # directory, which a supervisor child does not control -- and .gitignore
-  # excludes the default location, because its contents are the operator's and
-  # not ours to commit. A missing directory means "no external modules", which is
-  # a supported configuration and not a startup error.
   ctam_module_dir: ctam_modules
 
-  # io.py:150-164, resolved at :171-176 in get_args. run.py only;
-  # process_historical.py declares no such flags, so these keys are not read on
-  # the historical path.
   disable_ewmrs: false
   disable_nws: false
   disable_metar: false
-  # Phase 4 CLI contract: WPC is EWMRS-owned; this is its first dedicated flag.
   disable_wpc: false
   disable_goes: false
   disable_nexrad: false
-  # Setting this true here forces seven subsystems off, exactly as the flag does
-  # (run.py:61-65, :252, cycle.py:479) -- see the note at the top of this file.
   mrms_core_only: false
 
+# GOES handoff timing. Values are coupled; avoid shortening waits without observing missed renders.
 goes_coordination:
-  poll_seconds: 60                      # run.py:49 -> background.py:81
-  render_wait_seconds: 30               # run.py:50
-  render_wait_interval_seconds: 1.0     # run.py:51
-  render_max_offset_minutes: 20.0       # goes_readiness.py:18-19,127
-  # run.py:54-58. Read through common/config/overlay.py, so the truthy set is
-  # {1, true, yes, on} tested AFTER strip().lower(): "True " and " YES" read
-  # true, and anything outside the set ("2", "enabled") reads false.
+  poll_seconds: 60
+  render_wait_seconds: 30
+  render_wait_interval_seconds: 1.0
+  render_max_offset_minutes: 20.0
+  # Leave false unless diagnosing resource contention; it can delay ingest.
   pause_ingest_during_render: false
 
-  # background.py:85-87. While a render holds the pause, the ingest loop wakes
-  # every 0.2 s inside a 1 s window rather than sleeping the full poll interval.
   render_pause_poll_seconds: 1.0
   render_pause_poll_interval_seconds: 0.2
-  # background.py:103, the interval the 60 s poll is subdivided into so shutdown
-  # is observed promptly.
   poll_interval_seconds: 1.0
 
-  # goes.py:57,90. A floor, not a period: it clamps the caller's requested
-  # interval (`render_wait_interval_seconds` above) so a zero or negative
-  # override cannot spin the readiness wait.
   render_wait_interval_floor_seconds: 0.1
-  # goes.py:71,107, the subdivision of each readiness-wait sleep.
   render_wait_poll_granularity_seconds: 0.2
 
-  # cycle.py:609, the second element of the render task tuple; background.py:136
-  # unpacks it as `dt, max_entries = latest_task[:2]`.
   render_task_max_entries: 10
 
-# processes.py AccessorySupervisor. A dead child is restarted with exponential
-# backoff; more than max_restarts deaths inside restart_window_seconds disables
-# restarts for that child rather than looping forever.
+# Accessory process supervision. Backoff values prevent restart storms.
 supervisor:
-  # run.py:415-416, the shutdown-watch loop -- 30 ticks of 0.5 s, so the
-  # scheduler notices a dead accessory within 15 s. These two are consumed in
-  # run.py, not processes.py.
   check_ticks: 30
   tick_seconds: 0.5
-  max_restarts: 5                       # processes.py:78, and run.py:232
-  restart_window_seconds: 60.0          # :79, run.py:233
-  base_backoff_seconds: 1.0             # :80, run.py:234
-  max_backoff_seconds: 30.0             # :81, run.py:235
+  max_restarts: 5
+  restart_window_seconds: 60.0
+  base_backoff_seconds: 1.0
+  max_backoff_seconds: 30.0
 
-  # processes.py:16-30 stop_process. terminate() is given join_timeout seconds;
-  # a child still alive after that is kill()ed and joined for one more second.
   stop_join_timeout_seconds: 5
   stop_kill_join_timeout_seconds: 1
 
-  # There is deliberately no `heartbeat_startup_grace_seconds` here. The grace
-  # reaches a child only if that child was registered with BOTH a heartbeat_path
-  # and a heartbeat_stale_seconds -- _stale_heartbeat_age returns None without
-  # the pair (processes.py:155) -- and the sole such child, NEXRAD Ingest,
-  # supplies its own from nexrad.yaml at run.py:284. A value here could never
-  # reach a consumer.
-  #
-  # It is also narrower than "startup grace" suggests: it is read only in the
-  # failure branch (processes.py:173), where the heartbeat file is absent,
-  # unparseable, or owned by another pid. Once a heartbeat lands, staleness is
-  # judged against heartbeat_stale_seconds alone, so raising the grace cannot
-  # slow the detection of a child that started reporting and then stopped.
 
-  # DATA_DIR-relative artifacts the supervisor writes. Named by filesystem
-  # attribute, resolved with getattr(util.file, dir) at call time so a base
-  # directory rebound by initialize_filesystem() is honored.
-  health_file: {dir: DATA_DIR, name: runtime/accessory_health.json}      # run.py:236-238
-  nexrad_heartbeat_file: {dir: DATA_DIR, name: runtime/nexrad_ingest_heartbeat.json}  # run.py:228-230
+  health_file: {dir: DATA_DIR, name: runtime/accessory_health.json}
+  nexrad_heartbeat_file: {dir: DATA_DIR, name: runtime/nexrad_ingest_heartbeat.json}
 
-# background.py accessory loop cadences. `sleep_until_boundary(n)` waits for the
-# next n-minute wall-clock boundary; `sleep_for(n, ...)` waits n seconds.
+# Background-loop cadence; shorter intervals increase CPU and upstream request load.
 background_intervals:
-  metar_boundary_minutes: 5             # background.py:256
-  boundary_wait_interval_seconds: 1.0   # :258,:287 shutdown-check granularity
-  nws_seconds: 120                      # :277
-  nws_interval_seconds: 1.0             # :277, the subdivision of that 120 s
-  wpc_boundary_minutes: 15              # :285
-  # :205,238. A restart delay, not a cadence: the NEXRAD pipeline is expected to
-  # run continuously, and this is how long the loop waits before relaunching it.
+  metar_boundary_minutes: 5
+  boundary_wait_interval_seconds: 1.0
+  nws_seconds: 120
+  nws_interval_seconds: 1.0
+  wpc_boundary_minutes: 15
   nexrad_seconds: 5
-  nexrad_interval_seconds: 0.2          # :239, the subdivision of that 5 s
-  # Phase 4: how long the EWMRS record consumer waits between passes over
-  # state/realtime/cycles/ for new committed mrms-ready/rap-ready records.
+  nexrad_interval_seconds: 0.2
   ewmrs_consumer_seconds: 10
   ewmrs_consumer_interval_seconds: 1.0
 
+# Durable primary-cycle state. Retry settings control recovery from transient ingest failures.
 cycle:
-  # run.py:168-169. Named by filesystem attribute so it follows a relocated base dir.
   state_file: {dir: DATA_DIR, name: runtime/cycle_state.json}
 
-  retry:                                # cycle.py:128-137 CycleRetryPolicy
+  retry:
     max_attempts: 3
-    # run.py:193,199 clamp both with max(0.0, ...), so 0 is legal and means
-    # "retry immediately" -- these are not exclusive-positive bounds.
     initial_backoff_seconds: 5.0
     max_backoff_seconds: 30.0
 
-  # Resolved inside run_staged_ingest_cycle (coordinator.py:146) when the caller
-  # passes nothing, which is now every caller. The S3 listing depth for MRMS
-  # detection and MRMS integration ingest, and for those two tasks only.
-  #
-  # The parameter default was a literal 10 until this key became its owner. The
-  # realtime path passed the key explicitly and the historical path did not, so
-  # raising this value used to move realtime runs only -- a silent split that
-  # resolving it from here, in both resolution sites, now makes impossible.
-  #
-  # The second site is common/ingest/mrms/main.py:34, which resolves this same key
-  # for the entry points a caller invokes directly rather than through the
-  # coordinator. Two sites, one owner: ingest.yaml deliberately holds no copy
-  # of this depth, because a copy there is what produced the split above.
-  #
-  # It does not reach GOES. The coordinator used to hand this same count to the
-  # GOES task, which discarded it in favor of a fixed depth of 96, because GLM
-  # publishes roughly 180 objects an hour and a depth of 10 would never list
-  # back to the target scan. The GOES signatures no longer accept a count at
-  # all, so raising this value cannot widen a GOES search.
+  # Shared listing depth; raising it increases remote listing work across a cycle.
   ingest_max_entries: 10
 
-  # cycle.py:643. How often the tandem cycle drains its log queues while waiting
-  # on the worker processes.
   log_drain_poll_seconds: 1
 
-  # Phase 0 of plans/realtime-runner-decomposition-plan.md: the maximum number
-  # of committed cycle records a consumer (EWMRS) may retain behind the primary
-  # service. Once the durable handoff consumer lands (Phase 4), a backlog older
-  # than this many cycles is recorded as unrecoverable and processing resumes at
-  # the oldest still-valid record instead of silently rendering newer files
-  # under older cycle timestamps. Sized together with GUI retention against
-  # measured render throughput.
   max_backlog_cycles: 10
 
-# Phase 3 of plans/realtime-runner-decomposition-plan.md: cross-process
-# NEXRAD throttling. The in-process `goes_coordination.pause_ingest_during_render`
-# events above cannot reach across independent services, so when this policy is
-# enabled the primary holds a lease at state/realtime/leases/primary-active.json
-# while a cycle runs, and the NEXRAD service waits (without interrupting any
-# atomic unit already in progress) before admitting a new ingest scan or render
-# batch. Feature-gated and default off; the three-service split does not depend
-# on it.
+# Primary/NEXRAD coordination; leave pauses disabled unless host contention is confirmed.
 nexrad_coordination:
   pause_ingest_during_primary_activity: false
-  # Lease lifetime: a crashed primary's lease expires after this long, so a
-  # crash can never pause NEXRAD forever.
   primary_lease_ttl_seconds: 90.0
-  # How long the NEXRAD loops wait per quiescence window before proceeding
-  # anyway (observable timeout rather than an indefinite block), subdivided by
-  # the poll interval so shutdown stays responsive.
   pause_max_wait_seconds: 30.0
   pause_poll_interval_seconds: 0.5
 
-# Phase 2 of plans/realtime-runner-decomposition-plan.md: shadow publication
-# of durable mrms-ready.json and rap-ready.json phase records beneath
-# state/realtime/cycles/<cycle-id>/, in parallel with the existing in-memory
-# release callbacks. Nothing consumes these records for correctness yet; the
-# per-cycle shadow validation only logs problems. Records are immutable: a
-# successful record is never overwritten by a later attempt.
+# Set false only when intentionally running components independently.
 handoff:
   enabled: true
 
+# Optional profiler path; null disables profiling overhead.
 profiling:
-  # TRI-STATE, not a boolean. performance.py:50 declares `_ENABLED: bool | None`
-  # and null here means "no opinion": _resolve_enabled (:24-44) consults
-  # EDGEWARN_PERF_TRACKER first and falls back to this value, so writing `false`
-  # would pin profiling off for anyone who has not set the variable. Either way
-  # the deferral ends once TimingTracker.set_enabled (:96-105) pins the global,
-  # which `--profile` does at EdgeWARN/pipeline.py:235,380.
   perf_tracker: null

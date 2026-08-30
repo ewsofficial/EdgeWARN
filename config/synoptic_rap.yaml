@@ -1,40 +1,17 @@
-# synoptic_rap.yaml — Audit §7 RAP/Synoptic
-#
-# Consumed through src/common/ingest/synoptic/config.py, which reads this file
-# per call rather than at import so a `--config-dir` resolved after import still
-# applies. Every key below is the single owner of its default; no literal in the
-# ingest code competes with it. Values are unchanged from the pre-extraction
-# literals.
+# RAP ingest defaults. Filename patterns must remain synchronized with NOAA S3 naming.
 
 schema_version: 1
 
+# RAP source, naming, and retention settings. Keep templates and regex synchronized.
 rap:
   bucket: noaa-rap-pds
-  # Remote S3 object name and its parent directory, formatted by
-  # _build_synoptic_s3_params with `hour` and `date` respectively.
   file_pattern: 'rap.t{hour:02d}z.awp130pgrbf00.grib2'
   dir_pattern: 'rap.{date}'
-  # Local name written by _build_synoptic_s3_params -- NOT the remote name. It is
-  # uppercased and carries the date, so the two cannot be derived from each other.
   local_file_pattern: 'RAP.{date}-{hour:02d}z.awp130pgrbf00.grib2'
-  # strftime format for the `date` field of all three patterns above.
   date_format: '%Y%m%d'
-  # Parses `local_file_pattern` back into a timestamp in parse_rap_analysis_time,
-  # which pairs `date_format` with "%H" over the two capture groups. Anchored at
-  # both ends, and not derived from `file_pattern`.
   filename_regex: '^RAP\.(?P<date>\d{8})-(?P<hour>\d{2})z\.awp130pgrbf00\.grib2$'
-  # Age budget for accepting an older analysis hour. _eligible_analysis_times
-  # walks backwards one step at a time until the budget is exhausted.
-  #
-  # The generic download_synoptic helper used to declare a competing 60-minute
-  # default, unreachable because download_rap always passed this value. It now
-  # requires the argument outright rather than defaulting to this key: the helper
-  # is dataset-generic, so a second dataset must name its own budget instead of
-  # inheriting RAP's. This key also bounds manifest freshness and cache
-  # retention, which that dataset would then have been contradicting.
-  max_age_minutes: 180                  # validated int >= 0
-  lookback_step_hours: 1                # _eligible_analysis_times step
-  # Retained RAP analyses, applied by clean_rap_cache. The pre-download sweep in
-  # download_rap/download_rap_async passes None (no cap); only the post-download
-  # sweep applies this.
+  # Maximum accepted analysis age; larger values trade freshness for availability.
+  max_age_minutes: 180
+  lookback_step_hours: 1
+  # Local retention cap; keep enough analyses for fallback without growing disk use.
   max_files: 3

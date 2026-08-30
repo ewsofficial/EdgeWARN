@@ -1,47 +1,14 @@
-# historical.yaml — Audit §1
-#
-# The historical path is not served by this file alone: `get_historical_args`
-# also resolves the four shared processing toggles (`profile`, `disable_ctam`,
-# `disable_tracking`, `disable_polygon_expansion`) against `runtime.yaml`'s `run`
-# block, so a `--config-dir` must carry runtime.yaml and detection.yaml too.
-#
-# `lat` and `lon` are consumed through `IOManager.get_historical_args`,
-# which overlays them onto CLI flags so a flag still outranks this file. The
-# remaining keys have no flag and are consumed through
-# src/EdgeWARN/historical_config.py. Every key below is the single owner of its
-# default; no literal in the replay loop competes with it. Values are unchanged
-# from the pre-extraction literals.
-#
-# `start` and `end` are deliberately absent: `get_historical_args` declares both
-# flags `required=True` with no default, so a YAML value could never be reached.
-# They were recorded as `null` placeholders, which is exactly the inert-key
-# hazard this migration is meant to remove.
+# Historical replay defaults. Keep the one-minute cadence unless intentionally downsampling.
 
 schema_version: 1
 
 historical:
+  # CONUS processing bounds; use a smaller region to reduce replay cost.
   lat: [20, 55]
-  # Signed -180..180 here, unlike runtime.yaml's lon_limits, which io.py:158
-  # rewrites to 0..360 on the realtime path. Nothing normalizes this key, so the
-  # two files really do carry different conventions for the same quantity.
-  #
-  # That split is safe rather than a bug to fix: handler.py:118-123 converts per
-  # dataset in whichever direction the file needs, so either convention reaches
-  # the same subset. Both schemas therefore state the same wide bound
-  # (-180..360) instead of one enforcing a convention the other ignores -- a
-  # narrow 180 cap here would have rejected an operator writing [230, 300],
-  # which handler.py handles correctly.
   lon: [-130, -60]
-  # Cursor advance per replay iteration in process_historical.py, applied on every
-  # branch of the scan loop.
+  # One minute matches MRMS cadence; larger steps intentionally skip scans.
   step_minutes: 1
-  # Only iterations that reach the pipeline sleep; the two early `continue`
-  # branches skip it, so a long run of already-processed timestamps is not
-  # throttled at all.
+  # Small pause protects upstream services during long replays.
   throttle_seconds: 1
 
-  # _cleanup_historical_data_dirs passes this to clean_old_files as max_files
-  # only, so filesystem.yaml's max_age_minutes still applies on top of it -- a
-  # directory is trimmed to this many files AND anything older than that budget is
-  # dropped. Applied to ingest data directories only; protected_dirs are skipped.
   cleanup_max_files: 5

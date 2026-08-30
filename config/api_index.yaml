@@ -1,38 +1,16 @@
-# api_index.yaml — Audit §6
-#
-# Consumed through src/EdgeWARN/api_integration/config.py, which reads this file
-# per call so a --config-dir resolved after import still applies. Every key below
-# is the single owner of its default, and every one is read: no literal in the
-# index manager or either pipeline competes with it, and no key here is inert.
-#
-# Split out of alerts.yaml, which held these values only because the audit grouped
-# them there. Nothing here concerns alerts: this is the index the API serves.
+# API index lifecycle defaults for realtime and historical runs.
 
 schema_version: 1
 
 api_index:
-  # SPLIT because the two pipelines disagree. `realtime` is the default every
-  # declaration site resolves to when a caller passes nothing, which is what the
-  # realtime tandem worker does; historical_pipeline passes `historical`
-  # explicitly. One key could not record both.
+  # Realtime cleanup is recommended; historical runs retain cells for reproducibility.
   remove_old_cells:
     realtime: true
     historical: false
 
-  # Whether initialize_runtime bootstraps the index at startup. The same
-  # realtime/historical split as above and for the same reason: a replay reuses
-  # whatever the realtime run indexed rather than rebuilding it.
-  #
-  # This was recorded under alerts.yaml as `runtime.initialize_indexes`, which
-  # read as a runtime concern. It gates APIIndexManager.initialize_indexes(), so
-  # the owner is this subsystem.
   initialize_at_startup:
     realtime: true
     historical: false
 
-  # Age budget in cleanup_inactive_cells, converted to seconds at the use site.
-  #
-  # The alert-file cleanup age that used to sit beside this in alerts.yaml is
-  # gone: CTAM alert extraction is deferred, so manager.py's `120` is once again
-  # the sole owner of that separate concern. The two were never one knob.
+  # Keep aligned with storm-cell retention unless historical behavior is intentionally different.
   inactive_cell_max_age_minutes: 120

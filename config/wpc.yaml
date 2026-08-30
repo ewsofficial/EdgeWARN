@@ -1,77 +1,37 @@
-# wpc.yaml — Audit §7 WPC
-#
-# This file owns every value below, but it has two readers rather than one.
-#
-# Every key except the two named next is read on the ingest side through the
-# accessors in src/common/ingest/wpc/config.py, which the downloader, converter,
-# and ingest entry point call per use -- no module constants remain.
-#
-# `surface_filename_prefix` and `surface_filename_suffix` have no Python accessor at
-# all. They are read only by the Node API, which loads this file through
-# src/config/loader.js and builds from them the surface-analysis filenames it
-# serves. Renaming either means editing src/api/services/ancillary.js, and nothing
-# on the Python side will reveal that.
+# WPC ingest defaults. File naming values are shared with the API and should be changed together.
 
 schema_version: 1
 
+# WPC surface-analysis source and output settings.
 wpc:
   coded_sfc_base_url: https://ftp.wpc.ncep.noaa.gov/coded_sfc
 
-  # WPC publishes every 3 hours. The list of publish hours is NOT a key here:
-  # `config.valid_hours()` derives it as range(0, 24, this). It used to be a
-  # second key holding that interval enumerated by hand, with nothing coupling
-  # the two, so editing the interval alone left a stale list and the downloader
-  # asked for hours WPC never publishes -- failing into its fallback every run.
-  #
-  # The schema restricts this to a divisor of 24 rather than any positive number.
-  # The downloader wraps off the last publish hour to the previous day, so an
-  # interval that does not tile the day would leave a short gap across midnight,
-  # and a fractional one cannot index whole hours at all.
+  # Must divide 24 because WPC analyses are aligned to a fixed daily schedule.
   update_interval_hours: 3
   http_timeout_seconds: 30
 
-  # SECURITY: this key pins verification on, it does not offer to turn it off.
-  # The schema fixes it to `true` and the downloader raises if it ever reads
-  # false, so loosening either fails loudly rather than silently downgrading the
-  # connection. Unlike metar.yaml, WPC has never skipped verification.
+  # Keep true; the downloader rejects insecure production operation.
   verify_tls: true
 
-  # URL and output naming. `codsus` is the WPC product code; the date directory
-  # and the local GeoJSON name use the same %Y%m%d stamp but different shapes.
   date_format: '%Y%m%d'
+  # Remote product naming; change only if WPC changes its publication format.
   remote_filename_pattern: 'codsus{hour:02d}_hr'
+  # Writer format shared with cleanup; keep synchronized with prefix/suffix below.
   output_filename_pattern: 'wpc_sfc_{date}-{hour:02d}0000.geojson'
   latest_filename: latest.geojson
 
-  # The two halves of the same name as the *reader* sees it. The API's
-  # listWpcSurface and wpcSurface both match these files and rebuild their names,
-  # and cannot use `output_filename_pattern`: that is a Python `str.format` template
-  # and `{hour:02d}` is not something JS can evaluate. Splitting the invariant part
-  # into a prefix and a suffix lets the API derive both an anchored regex and a
-  # filename from one pair of strings, instead of carrying a hand-written regex
-  # that would be a fifth shape to keep in agreement with the four above.
-  #
-  # Deliberately looser than the writer: Python always emits `HH0000`, while the
-  # API accepts any `\d{8}-\d{6}`, so it still serves the older non-hour-aligned
-  # files already on disk. Tightening the reader would strand them.
+  # API reader contract; update with output naming only in a coordinated change.
   surface_filename_prefix: wpc_sfc_
   surface_filename_suffix: .geojson
 
-  # The retention sweep matches `output_filename_pattern` but not
-  # `latest_filename`, so the file the API serves is never deleted. Three
-  # different string shapes have to agree here and no schema can check it.
   cleanup_glob: 'wpc_sfc_*.geojson'
-  # WPC's own window: inheriting filesystem.yaml's 60 would keep almost nothing,
-  # since a 3-hourly product would be swept before its successor arrived.
+  # Six hours retains at least the current and prior 3-hour analyses.
   cleanup_max_age_minutes: 360
-  # Each run also backfills the previous analysis, so a missed cycle self-heals.
   previous_analysis_lookback_hours: 3
 
-  # Used when a parsed feature code is absent from `feature_types`; the label
-  # falls back to the raw code itself, so a dropped entry renders unnamed and
-  # black rather than failing. A baseline snapshot guards the table for that
-  # reason.
+  # Used only for unknown WPC feature codes; add a feature type when possible.
   fallback_geojson_color: '#000000'
+  # Display mapping for WPC codes; preserve codes and use valid CSS hex colors.
   feature_types:
     COLD:  {name: Cold Front,        color: '#0000FF'}
     WARM:  {name: Warm Front,        color: '#FF0000'}
