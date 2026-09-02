@@ -46,10 +46,19 @@ function parseIntegerOverride(value, fallback, label, options) {
 }
 
 function parseOrigins(value) {
-  if (Array.isArray(value)) return Object.freeze([...new Set(value)]);
+  if (Array.isArray(value)) {
+    for (const origin of value) {
+      if (origin === '*') continue;
+      let url;
+      try { url = new URL(origin); } catch { throw new Error(`Invalid allowed origin: ${origin}`); }
+      if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol)) throw new Error(`Invalid allowed origin: ${origin}`);
+    }
+    return Object.freeze([...new Set(value)]);
+  }
   if (!value) return [];
   const origins = value.split(',').map((origin) => origin.trim()).filter(Boolean);
   for (const origin of origins) {
+    if (origin === '*') continue;
     let url;
     try { url = new URL(origin); } catch { throw new Error(`Invalid allowed origin: ${origin}`); }
     if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol)) throw new Error(`Invalid allowed origin: ${origin}`);

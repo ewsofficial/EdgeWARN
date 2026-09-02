@@ -19,8 +19,8 @@ server:
 security:
   # One year; do not lower for production HTTPS deployments.
   hsts_max_age_seconds: 31536000
-  # Keep empty unless a reviewed browser origin must access the API.
-  allowed_origins: []
+  # Use ["*"] to allow any origin. Keep empty to deny all cross-origin requests.
+  allowed_origins: ["*"]
 
   # Leave false unless the deployment has a known, trusted proxy topology.
   trust_proxy: false
