@@ -28,6 +28,38 @@ conda activate EdgeWARN-dev
 npm install
 ```
 
+4. Register the Python package command in the active environment:
+
+```bash
+python -m pip install --no-deps -e .
+edgewarn --version
+```
+
+`environment.yml` is the sole runtime dependency authority. `--no-deps`
+ensures pip only installs the EdgeWARN package and its `edgewarn` console
+entry point; Conda supplies Python and every runtime dependency. Use the same
+flag for editable and wheel installs.
+
+The packaged command is intentionally limited to help and version output in
+package-command Phase 1. The `run` and `configure` dispatchers are added by the
+subsequent implementation phases.
+
+### Deploying editable configuration
+
+The YAML configuration tree is deployment state and is not installed inside
+the Python wheel. Container and service images should copy the complete tree,
+including its schemas, to an operator-editable location:
+
+```bash
+install -d /etc/edgewarn
+cp -R config /etc/edgewarn/config
+```
+
+The package command's later run/configure phases select that copy with
+`--config-path /etc/edgewarn/config`. Keeping it outside site-packages permits
+atomic updates and read-only production mounts without modifying the installed
+wheel.
+
 ## Runtime Base Directory
 
 Most generated data is written outside the repository into a base directory.

@@ -22,6 +22,8 @@ dependencies:
   - proj
   - psutil
   - ijson
+  - ruamel.yaml
+  - textual
   - pip:
     - gputil
     - pytest

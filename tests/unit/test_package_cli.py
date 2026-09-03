@@ -1,0 +1,78 @@
+"""Phase 1 contracts for the installed ``edgewarn`` command."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+import pytest
+
+from edgewarn_cli import main as cli
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_python_and_node_package_versions_match():
+    metadata = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    package_json = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
+
+    assert metadata["project"]["name"] == "edgewarn-core"
+    assert metadata["project"]["version"] == package_json["version"]
+    assert metadata["project"]["scripts"]["edgewarn"] == "edgewarn_cli.main:main"
+
+
+def test_main_without_arguments_prints_help(capsys):
+    assert cli.main([]) == 0
+    output = capsys.readouterr().out
+    assert "run" in output
+    assert "configure" in output
+
+
+def test_version_uses_installed_distribution_metadata(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "version", lambda name: "9.8.7")
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["--version"])
+
+    assert excinfo.value.code == 0
+    assert capsys.readouterr().out.strip() == "edgewarn 9.8.7"
+
+
+def test_command_package_import_has_no_runtime_side_effects(tmp_path):
+    probe = (
+        "import json, sys\n"
+        "before = set(sys.modules)\n"
+        "import edgewarn_cli\n"
+        "loaded = set(sys.modules) - before\n"
+        "blocked = sorted(name for name in loaded if "
+        "name == 'EdgeWARN' or name.startswith('EdgeWARN.') or "
+        "name == 'EWMRS' or name.startswith('EWMRS.') or "
+        "name == 'NEXRAD' or name.startswith('NEXRAD.'))\n"
+        "print(json.dumps(blocked))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_phase_one_subcommands_fail_clearly(capsys):
+    for command in ("run", "configure"):
+        with pytest.raises(SystemExit) as excinfo:
+            cli.main([command])
+        assert excinfo.value.code == 2
+
+    assert "later package-command phase" in capsys.readouterr().err
