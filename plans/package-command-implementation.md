@@ -3,7 +3,7 @@
 **Planning baseline:** commit `5cfbb048` on branch
 `yuchen-wei3667/package-commands`
 **Package version:** `2.7.0` from `package.json`
-**Status:** Phases 1-3 implemented; Phases 4-5 remain planned
+**Status:** Phases 1-4 implemented; Phase 5 remains planned
 
 ## Implementation progress
 
@@ -12,7 +12,7 @@
       and package/import tests.
 - [x] Phase 2: topology-aware `edgewarn run` dispatch.
 - [x] Phase 3: safe noninteractive configuration mutation.
-- [ ] Phase 4: interactive configuration TUI.
+- [x] Phase 4: interactive configuration TUI.
 - [ ] Phase 5: Docker and final documentation integration.
 
 ## Objective
@@ -422,7 +422,7 @@ returns `1` rather than exposing an unstable union of child exit codes.
       validated before process startup.
 - [x] Noninteractive configuration edits are typed, locked, schema-validated,
       comment-preserving, atomic, and rollback-tested.
-- [ ] No-argument configuration opens the two-layer TUI only on a real terminal.
+- [x] No-argument configuration opens the two-layer TUI only on a real terminal.
 - [ ] Docker uses the registered command and exec-form process arguments.
 - [ ] Packaging, operator, configuration, and container documentation is synced.
 - [ ] Focused and full Python/Node validation matrices pass.

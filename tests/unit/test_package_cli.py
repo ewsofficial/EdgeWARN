@@ -69,9 +69,12 @@ def test_command_package_import_has_no_runtime_side_effects(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_configure_without_assignment_reports_interactive_mode_unavailable(capsys):
+def test_configure_without_assignment_requires_a_tty(capsys):
     with pytest.raises(SystemExit) as excinfo:
         cli.main(["configure"])
     assert excinfo.value.code == 2
 
-    assert "interactive configuration not set up yet" in capsys.readouterr().err
+    assert (
+        "interactive configuration requires TTY stdin and stdout"
+        in capsys.readouterr().err
+    )

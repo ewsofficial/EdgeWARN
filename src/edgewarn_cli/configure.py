@@ -311,9 +311,30 @@ def edit_configuration(
 
 def configure_from_namespace(args: argparse.Namespace) -> int:
     if args.target is None and args.value is None:
-        args.parser.error(
-            "interactive configuration not set up yet; use FILE.KEY VALUE"
-        )
+        if not os.sys.stdin.isatty() or not os.sys.stdout.isatty():
+            args.parser.error(
+                "interactive configuration requires TTY stdin and stdout; "
+                "use FILE.KEY VALUE for a noninteractive edit"
+            )
+
+        from common.config import loader
+        from yaml import YAMLError
+
+        try:
+            root = resolve_config_root(args.config_path)
+            loader.reset_cache()
+            loader.validate_all_configs(config_dir=root)
+            from edgewarn_cli.tui import run_tui
+
+            return run_tui(root, loader.CONFIG_NAMES)
+        except (loader.ConfigError, ValueError, YAMLError) as exc:
+            args.parser.error(str(exc))
+        except (ConfigureIOError, OSError, ImportError) as exc:
+            print(
+                f"edgewarn configure: cannot start interactive editor: {exc}",
+                file=os.sys.stderr,
+            )
+            return 1
     if args.target is None or args.value is None:
         args.parser.error("configure requires both FILE.KEY and VALUE")
 
