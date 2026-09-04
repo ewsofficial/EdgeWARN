@@ -1,4 +1,4 @@
-name: EdgeWARN-dev
+name: EdgeWARN
 channels:
   - anaconda
   - conda-forge
