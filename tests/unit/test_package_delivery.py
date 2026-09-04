@@ -26,7 +26,8 @@ def test_compose_separates_runtime_and_configuration_mounts():
     services = compose["services"]
 
     production_mounts = services["edgewarn"]["volumes"]
-    assert "edgewarn-runtime:/var/lib/edgewarn" in production_mounts
+    assert "${EDGEWARN_HOST_BASE_DIR:-./EdgeWARN_input}:/var/lib/edgewarn" in production_mounts
+    assert services["edgewarn"]["environment"]["EDGEWARN_BASE_DIR"] == "/var/lib/edgewarn"
     assert "./config:/etc/edgewarn/config:ro" in production_mounts
 
     admin = services["edgewarn-configure"]

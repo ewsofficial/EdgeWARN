@@ -277,8 +277,9 @@ Build the image and start the default all-service topology:
 
 ```bash
 docker build -t edgewarn-core:2.7.0 .
+export EDGEWARN_HOST_BASE_DIR=/srv/edgewarn/runtime
 docker run --rm --name edgewarn \
-  -v edgewarn-runtime:/var/lib/edgewarn \
+  -v "$EDGEWARN_HOST_BASE_DIR:/var/lib/edgewarn" \
   -v "$PWD/config:/etc/edgewarn/config:ro" \
   edgewarn-core:2.7.0
 ```
@@ -310,6 +311,9 @@ docker run --rm \
 Runtime output and configuration are separate mounts. Production should keep
 configuration read-only; `edgewarn run` needs only read access. An attempted
 edit fails with status `1` before replacement and leaves the file unchanged.
+In Compose, set `EDGEWARN_HOST_BASE_DIR` to the host runtime directory; Compose
+mounts it at `/var/lib/edgewarn` and passes that container path to the package
+as `EDGEWARN_BASE_DIR` for every supervised worker.
 For an intentional interactive administrative edit, use the Compose profile,
 which is the only supplied service with a read-write configuration mount:
 
