@@ -276,12 +276,12 @@ Child-specific failures are logged with the worker name; the supervisor returns
 Build the image and start the default all-service topology:
 
 ```bash
-docker build -t edgewarn-core:2.7.0 .
+docker build -t edgewarn-core:3.0.0 .
 export EDGEWARN_HOST_BASE_DIR=/srv/edgewarn/runtime
 docker run --rm --name edgewarn \
   -v "$EDGEWARN_HOST_BASE_DIR:/var/lib/edgewarn" \
   -v "$PWD/config:/etc/edgewarn/config:ro" \
-  edgewarn-core:2.7.0
+  edgewarn-core:3.0.0
 ```
 
 The image installs a built wheel and has this exec-form process contract:
@@ -297,15 +297,15 @@ Override the complete `CMD` to select a specialized topology:
 docker run --rm \
   -v edgewarn-runtime:/var/lib/edgewarn \
   -v "$PWD/config:/etc/edgewarn/config:ro" \
-  edgewarn-core:2.7.0 run core --config-path /etc/edgewarn/config
+  edgewarn-core:3.0.0 run core --config-path /etc/edgewarn/config
 docker run --rm \
   -v edgewarn-runtime:/var/lib/edgewarn \
   -v "$PWD/config:/etc/edgewarn/config:ro" \
-  edgewarn-core:2.7.0 run ewmrs --config-path /etc/edgewarn/config
+  edgewarn-core:3.0.0 run ewmrs --config-path /etc/edgewarn/config
 docker run --rm \
   -v edgewarn-runtime:/var/lib/edgewarn \
   -v "$PWD/config:/etc/edgewarn/config:ro" \
-  edgewarn-core:2.7.0 run nexrad --config-path /etc/edgewarn/config
+  edgewarn-core:3.0.0 run nexrad --config-path /etc/edgewarn/config
 ```
 
 Runtime output and configuration are separate mounts. Production should keep

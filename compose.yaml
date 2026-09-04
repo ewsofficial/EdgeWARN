@@ -2,7 +2,7 @@ services:
   edgewarn:
     build:
       context: .
-    image: edgewarn-core:2.7.0
+    image: edgewarn-core:3.0.0
     environment:
       # Set EDGEWARN_HOST_BASE_DIR to choose the host directory.  The package
       # receives the mounted container path through its supported environment
@@ -14,7 +14,7 @@ services:
     stop_grace_period: 25s
 
   edgewarn-configure:
-    image: edgewarn-core:2.7.0
+    image: edgewarn-core:3.0.0
     profiles: ["admin"]
     command: ["configure", "--config-path", "/etc/edgewarn/config"]
     stdin_open: true
