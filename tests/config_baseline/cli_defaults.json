@@ -19,6 +19,20 @@
       "action": "append"
     }
   },
+  "edgewarn_cli/configure.py": {
+    "--config-path": {
+      "default": null,
+      "action": null
+    },
+    "target": {
+      "default": null,
+      "action": null
+    },
+    "value": {
+      "default": null,
+      "action": null
+    }
+  },
   "util/cli.py": {
     "--base_dir": {
       "default": null,

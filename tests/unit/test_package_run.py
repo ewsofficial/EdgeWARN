@@ -69,6 +69,10 @@ def test_worker_argv_maps_core_to_edgewarn_without_retokenizing():
 def test_dispatch_validates_before_building_and_scopes_worker_argv(monkeypatch, tmp_path):
     events = []
 
+    from edgewarn_cli import config_path
+
+    monkeypatch.setattr(config_path, "resolve_config_root", lambda path: tmp_path.resolve())
+
     monkeypatch.setattr(config_loader, "reset_cache", lambda: events.append("reset"))
 
     def export(path):

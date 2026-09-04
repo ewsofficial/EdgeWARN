@@ -141,17 +141,20 @@ def run_from_namespace(args: argparse.Namespace) -> int:
     # nor the supervisor module. Validation intentionally precedes command
     # construction and therefore every subprocess/filesystem side effect.
     from common.config import loader as config_loader
+    from edgewarn_cli.config_path import resolve_config_root
     from yaml import YAMLError
 
     try:
         config_loader.reset_cache()
-        config_root = config_loader.export_config_root(args.config_path)
+        config_root = resolve_config_root(args.config_path)
+        config_loader.export_config_root(config_root)
         config_loader.validate_all_configs(config_dir=config_root)
     except (
         config_loader.ConfigError,
         json.JSONDecodeError,
         OSError,
         UnicodeError,
+        ValueError,
         YAMLError,
     ) as exc:
         args.parser.error(str(exc))

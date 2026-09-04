@@ -1,8 +1,7 @@
 """Top-level ``edgewarn`` console command.
 
-Service dispatch is implemented by :mod:`edgewarn_cli.run`; configuration
-editing is intentionally introduced by a later phase of
-``plans/package-command-implementation.md``.
+Service dispatch and safe configuration editing are imported lazily while the
+parser is constructed; importing :mod:`edgewarn_cli` remains side-effect free.
 """
 
 from __future__ import annotations
@@ -32,14 +31,6 @@ def _release_version() -> str:
         return str(value) if value else "unknown"
 
 
-def _not_implemented(args: argparse.Namespace) -> int:
-    args.parser.error(
-        f"'edgewarn {args.command}' is registered but will be implemented in "
-        "a later package-command phase"
-    )
-    return 2
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="edgewarn",
@@ -53,14 +44,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     from edgewarn_cli.run import add_run_parser
+    from edgewarn_cli.configure import add_configure_parser
 
     add_run_parser(subparsers)
-
-    configure_parser = subparsers.add_parser(
-        "configure",
-        help="modify EdgeWARN configuration (editing is added in Phase 3)",
-    )
-    configure_parser.set_defaults(handler=_not_implemented, parser=configure_parser)
+    add_configure_parser(subparsers)
     return parser
 
 

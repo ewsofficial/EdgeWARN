@@ -3,7 +3,7 @@
 **Planning baseline:** commit `5cfbb048` on branch
 `yuchen-wei3667/package-commands`
 **Package version:** `2.7.0` from `package.json`
-**Status:** Phases 1-2 implemented; Phases 3-5 remain planned
+**Status:** Phases 1-3 implemented; Phases 4-5 remain planned
 
 ## Implementation progress
 
@@ -11,7 +11,7 @@
       lookup, dependency declarations, editable configuration deployment notes,
       and package/import tests.
 - [x] Phase 2: topology-aware `edgewarn run` dispatch.
-- [ ] Phase 3: safe noninteractive configuration mutation.
+- [x] Phase 3: safe noninteractive configuration mutation.
 - [ ] Phase 4: interactive configuration TUI.
 - [ ] Phase 5: Docker and final documentation integration.
 
@@ -420,7 +420,7 @@ returns `1` rather than exposing an unstable union of child exit codes.
 - [x] Worker-scoped JSON argv reaches only its named worker.
 - [x] `--config-path` is resolved once, propagated to every child, and fully
       validated before process startup.
-- [ ] Noninteractive configuration edits are typed, locked, schema-validated,
+- [x] Noninteractive configuration edits are typed, locked, schema-validated,
       comment-preserving, atomic, and rollback-tested.
 - [ ] No-argument configuration opens the two-layer TUI only on a real terminal.
 - [ ] Docker uses the registered command and exec-form process arguments.
