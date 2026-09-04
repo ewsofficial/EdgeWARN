@@ -1,0 +1,50 @@
+"""Phase 5 delivery contracts for containers and package-command CI."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_container_uses_installed_exec_form_package_command():
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert 'ENTRYPOINT ["edgewarn"]' in dockerfile
+    assert 'CMD ["run", "--config-path", "/etc/edgewarn/config"]' in dockerfile
+    assert "python src/run_" not in dockerfile
+    assert "STOPSIGNAL SIGTERM" in dockerfile
+    assert "pip wheel" in dockerfile
+    assert "pip install" in dockerfile
+
+
+def test_compose_separates_runtime_and_configuration_mounts():
+    compose = yaml.safe_load((REPO_ROOT / "compose.yaml").read_text(encoding="utf-8"))
+    services = compose["services"]
+
+    production_mounts = services["edgewarn"]["volumes"]
+    assert "edgewarn-runtime:/var/lib/edgewarn" in production_mounts
+    assert "./config:/etc/edgewarn/config:ro" in production_mounts
+
+    admin = services["edgewarn-configure"]
+    assert admin["profiles"] == ["admin"]
+    assert admin["command"] == [
+        "configure",
+        "--config-path",
+        "/etc/edgewarn/config",
+    ]
+    assert "./config:/etc/edgewarn/config:rw" in admin["volumes"]
+
+
+def test_ci_builds_and_smoke_tests_the_installed_wheel():
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "package-command:" in workflow
+    assert "pip wheel" in workflow
+    assert "edgewarn --help" in workflow
+    assert "edgewarn --version" in workflow
+    assert "edgewarn configure" in workflow
+    assert "test_run_all_launcher.py" in workflow

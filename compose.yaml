@@ -1,0 +1,23 @@
+services:
+  edgewarn:
+    build:
+      context: .
+    image: edgewarn-core:2.7.0
+    environment:
+      EDGEWARN_BASE_DIR: /var/lib/edgewarn
+    volumes:
+      - edgewarn-runtime:/var/lib/edgewarn
+      - ./config:/etc/edgewarn/config:ro
+    stop_grace_period: 25s
+
+  edgewarn-configure:
+    image: edgewarn-core:2.7.0
+    profiles: ["admin"]
+    command: ["configure", "--config-path", "/etc/edgewarn/config"]
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./config:/etc/edgewarn/config:rw
+
+volumes:
+  edgewarn-runtime:

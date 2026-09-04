@@ -40,10 +40,6 @@ ensures pip only installs the EdgeWARN package and its `edgewarn` console
 entry point; Conda supplies Python and every runtime dependency. Use the same
 flag for editable and wheel installs.
 
-The packaged command is intentionally limited to help and version output in
-package-command Phase 1. The `run` and `configure` dispatchers are added by the
-subsequent implementation phases.
-
 ### Deploying editable configuration
 
 The YAML configuration tree is deployment state and is not installed inside
@@ -55,10 +51,9 @@ install -d /etc/edgewarn
 cp -R config /etc/edgewarn/config
 ```
 
-The package command's later run/configure phases select that copy with
-`--config-path /etc/edgewarn/config`. Keeping it outside site-packages permits
-atomic updates and read-only production mounts without modifying the installed
-wheel.
+Select that copy with `--config-path /etc/edgewarn/config`. Keeping it outside
+site-packages permits atomic updates and read-only production mounts without
+modifying the installed wheel.
 
 ## Runtime Base Directory
 
@@ -131,6 +126,44 @@ See `docs/api/unified_v3.md` for migration details and the complete contract.
 
 ## Running Real-Time Services
 
+### Package command
+
+`edgewarn run` is the deployment-facing supervisor. It validates every YAML
+document and matching schema before starting any child process or initializing
+the runtime filesystem.
+
+| Command | Selected services |
+| --- | --- |
+| `edgewarn run` | Primary EdgeWARN, EWMRS/accessories, and NEXRAD |
+| `edgewarn run core` | Primary EdgeWARN only |
+| `edgewarn run ewmrs` | Primary EdgeWARN producer followed by EWMRS/accessories |
+| `edgewarn run nexrad` | NEXRAD Level-II ingest and NEXRAD rendering |
+
+The EWMRS consumer requires products from the primary service, so `ewmrs`
+intentionally starts both. NEXRAD's launcher owns both of its supervised
+children; it is not ingest-only.
+
+Use `--config-path` to select a complete deployed tree. Forward launcher flags
+as a repeatable, worker-scoped JSON array so quoting is preserved and no
+argument is broadcast to unrelated workers:
+
+```bash
+edgewarn run core --config-path /etc/edgewarn/config
+edgewarn run core \
+  --args core '["--lat_limits", "20", "55", "--disable-ctam"]'
+edgewarn run ewmrs \
+  --args core '["--lat_limits", "20", "55"]' \
+  --args ewmrs '["--disable-wpc"]'
+edgewarn run nexrad --args nexrad '["--profile"]'
+```
+
+Each `JSON_ARGV` value must be an array containing only strings. A worker may
+appear once and only when its topology is selected. The wrapper rejects
+configuration and topology flags inside forwarded arrays because it injects
+the single resolved configuration path itself.
+
+### Direct source commands
+
 Three independently operable services run from `src/`. Start each in its own
 shell, service unit, or container; all of them share the configured runtime
 base directory.
@@ -193,6 +226,101 @@ Notes:
   `<BASE_DIR>/state/realtime/services/<name>.json`; the unified Node API uses
   these to answer requests whose owning service is not active with a
   structured `SERVICE_NOT_ENABLED` error instead of stale artifacts.
+
+## Editing Configuration
+
+A noninteractive edit names the YAML file without `.yaml`, traverses a dotted
+leaf path, and parses the new value as one YAML scalar:
+
+```bash
+edgewarn configure ewmrs_pipeline.workers.budget_mb.goes 2048
+edgewarn configure --config-path /etc/edgewarn/config \
+  runtime.run.disable_nexrad true
+edgewarn configure runtime.profiling.perf_tracker null
+edgewarn configure runtime.run.ctam_module_dir '"ctam_modules"'
+```
+
+Only scalar replacement is supported. Before replacement, the command locks
+the configuration root, revalidates the complete tree, checks the target path,
+and validates the proposed document. It preserves comments, ordering,
+permissions, and final-newline behavior, writes with flush/`fsync` plus atomic
+replace, then revalidates from disk. A failed post-write check restores the
+same-process backup. Symlink escapes and read-only targets are rejected.
+
+Running without a dotted assignment opens the interactive editor only when
+both stdin and stdout are terminals:
+
+```bash
+edgewarn configure --config-path /etc/edgewarn/config
+```
+
+The first screen selects one of the registered files; the second lists each
+leaf's path, value, type, and schema constraints. Select a row and edit it with
+`Ctrl+S`; schema errors stay on screen and do not change disk. `Esc` navigates
+back and `q` quits when an editor is not open. For automation and noninteractive
+containers, always use the dotted assignment form.
+
+### Package command exit statuses
+
+| Status | Meaning |
+| --- | --- |
+| `0` | Help/version, successful edit, or clean signal-driven shutdown |
+| `1` | Child startup/runtime failure, forced shutdown, or write/rollback I/O failure |
+| `2` | Usage, forwarded-argument, config-root, YAML, or schema validation error |
+
+Child-specific failures are logged with the worker name; the supervisor returns
+`1` instead of exposing the child's implementation-specific status.
+
+## Containers
+
+Build the image and start the default all-service topology:
+
+```bash
+docker build -t edgewarn-core:2.7.0 .
+docker run --rm --name edgewarn \
+  -v edgewarn-runtime:/var/lib/edgewarn \
+  -v "$PWD/config:/etc/edgewarn/config:ro" \
+  edgewarn-core:2.7.0
+```
+
+The image installs a built wheel and has this exec-form process contract:
+
+```dockerfile
+ENTRYPOINT ["edgewarn"]
+CMD ["run", "--config-path", "/etc/edgewarn/config"]
+```
+
+Override the complete `CMD` to select a specialized topology:
+
+```bash
+docker run --rm \
+  -v edgewarn-runtime:/var/lib/edgewarn \
+  -v "$PWD/config:/etc/edgewarn/config:ro" \
+  edgewarn-core:2.7.0 run core --config-path /etc/edgewarn/config
+docker run --rm \
+  -v edgewarn-runtime:/var/lib/edgewarn \
+  -v "$PWD/config:/etc/edgewarn/config:ro" \
+  edgewarn-core:2.7.0 run ewmrs --config-path /etc/edgewarn/config
+docker run --rm \
+  -v edgewarn-runtime:/var/lib/edgewarn \
+  -v "$PWD/config:/etc/edgewarn/config:ro" \
+  edgewarn-core:2.7.0 run nexrad --config-path /etc/edgewarn/config
+```
+
+Runtime output and configuration are separate mounts. Production should keep
+configuration read-only; `edgewarn run` needs only read access. An attempted
+edit fails with status `1` before replacement and leaves the file unchanged.
+For an intentional interactive administrative edit, use the Compose profile,
+which is the only supplied service with a read-write configuration mount:
+
+```bash
+docker compose build edgewarn
+docker compose --profile admin run --rm edgewarn-configure
+```
+
+`docker stop` sends `SIGTERM` directly to the exec-form `edgewarn` supervisor.
+It forwards the signal to every selected service, waits up to its bounded grace
+period, escalates survivors, reaps every child, and exits `0` for a clean stop.
 
 ## Running Historical Reprocessing
 

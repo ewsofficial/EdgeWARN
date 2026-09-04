@@ -3,7 +3,9 @@
 **Planning baseline:** commit `5cfbb048` on branch
 `yuchen-wei3667/package-commands`
 **Package version:** `2.7.0` from `package.json`
-**Status:** Phases 1-4 implemented; Phase 5 remains planned
+**Status:** Phases 1-5 implemented. Focused package-command verification passes;
+the complete repository Python suite still has unrelated pre-existing CTAM
+failures (see the verification report in the handoff).
 
 ## Implementation progress
 
@@ -13,7 +15,7 @@
 - [x] Phase 2: topology-aware `edgewarn run` dispatch.
 - [x] Phase 3: safe noninteractive configuration mutation.
 - [x] Phase 4: interactive configuration TUI.
-- [ ] Phase 5: Docker and final documentation integration.
+- [x] Phase 5: Docker and final documentation integration.
 
 ## Objective
 
@@ -423,6 +425,16 @@ returns `1` rather than exposing an unstable union of child exit codes.
 - [x] Noninteractive configuration edits are typed, locked, schema-validated,
       comment-preserving, atomic, and rollback-tested.
 - [x] No-argument configuration opens the two-layer TUI only on a real terminal.
-- [ ] Docker uses the registered command and exec-form process arguments.
-- [ ] Packaging, operator, configuration, and container documentation is synced.
+- [x] Docker uses the registered command and exec-form process arguments.
+- [x] Packaging, operator, configuration, and container documentation is synced.
 - [ ] Focused and full Python/Node validation matrices pass.
+
+### Verification note
+
+Phase 5 focused verification is green (package delivery contracts, installed
+wheel smoke tests, topology/supervisor tests, configuration mutation/TUI tests,
+both config validators, and the complete Node suite). The full Python suite was
+run against the repository and reached 2,019 collected tests, but it reports
+failures in pre-existing CTAM read-only API, documentation-citation, and
+runner tests outside this package-command plan. The full-matrix checklist stays
+unchecked until those unrelated baseline failures are resolved.
