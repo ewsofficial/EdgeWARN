@@ -1,8 +1,8 @@
 """Top-level ``edgewarn`` console command.
 
-Phase 1 establishes the installed command, help, and version contract. Service
-dispatch and configuration editing are intentionally introduced by later
-phases of ``plans/package-command-implementation.md``.
+Service dispatch is implemented by :mod:`edgewarn_cli.run`; configuration
+editing is intentionally introduced by a later phase of
+``plans/package-command-implementation.md``.
 """
 
 from __future__ import annotations
@@ -52,11 +52,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    run_parser = subparsers.add_parser(
-        "run",
-        help="run EdgeWARN services (dispatch is added in Phase 2)",
-    )
-    run_parser.set_defaults(handler=_not_implemented, parser=run_parser)
+    from edgewarn_cli.run import add_run_parser
+
+    add_run_parser(subparsers)
 
     configure_parser = subparsers.add_parser(
         "configure",

@@ -145,6 +145,37 @@ class TestFlagRouting:
         )
         assert "--no-profile" in commands["ewmrs"]
 
+    def test_scoped_argv_is_appended_once_and_config_is_canonical(self, src_root):
+        commands = run_all.build_service_commands(
+            _args(config_dir="/cfg"),
+            ["edgewarn", "ewmrs"],
+            src_root,
+            service_argv={
+                "edgewarn": ("--lat_limits", "20", "55"),
+                "ewmrs": ("--disable-wpc",),
+            },
+        )
+
+        assert commands["edgewarn"][-5:] == [
+            "--lat_limits", "20", "55", "--config-dir", "/cfg"
+        ]
+        assert commands["ewmrs"][-3:] == ["--disable-wpc", "--config-dir", "/cfg"]
+        assert commands["edgewarn"].count("--config-dir") == 1
+        assert commands["ewmrs"].count("--config-dir") == 1
+
+    @pytest.mark.parametrize(
+        "forwarded",
+        [("--config-dir", "/other"), ("--config-path=/other",)],
+    )
+    def test_scoped_argv_cannot_override_config(self, src_root, forwarded):
+        with pytest.raises(ValueError, match="cannot override"):
+            run_all.build_service_commands(
+                _args(config_dir="/cfg"),
+                ["edgewarn"],
+                src_root,
+                service_argv={"edgewarn": forwarded},
+            )
+
 
 def _sleeper(tmp_path, *, name="sleeper.py", code=None, trap=False):
     """A child that sleeps until terminated (or exits with *code*)."""
@@ -171,6 +202,31 @@ def _sleeper(tmp_path, *, name="sleeper.py", code=None, trap=False):
 
 
 class TestSupervision:
+    def test_child_startup_exit_returns_nonzero_and_reaps_other_children(
+        self, tmp_path, src_root, monkeypatch
+    ):
+        sleeper = _sleeper(tmp_path)
+        missing = str(tmp_path / "missing.py")
+        monkeypatch.setattr(
+            run_all,
+            "SERVICE_SCRIPTS",
+            {"edgewarn": sleeper, "ewmrs": missing},
+        )
+        commands = run_all.build_service_commands(
+            _args(), ["edgewarn", "ewmrs"], src_root
+        )
+
+        assert run_all.supervise(commands, src_root=src_root) == 1
+
+    def test_popen_failure_returns_nonzero(self, src_root, monkeypatch):
+        def fail_to_start(*_args, **_kwargs):
+            raise OSError("cannot exec")
+
+        monkeypatch.setattr(run_all.subprocess, "Popen", fail_to_start)
+        commands = run_all.build_service_commands(_args(), ["edgewarn"], src_root)
+
+        assert run_all.supervise(commands, src_root=src_root) == 1
+
     def test_signal_driven_shutdown_terminates_children_cleanly(self, tmp_path, src_root):
         """End-to-end: SIGINT reaches the launcher's children through the driver."""
         sleeper = _sleeper(tmp_path, name="run_edgewarn.py")

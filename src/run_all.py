@@ -137,15 +137,37 @@ def _parse_args(argv=None):
     return args, services
 
 
-def build_service_commands(args, services, src_root):
-    """Explicit argv per selected service; unset flags are never forwarded."""
+def build_service_commands(args, services, src_root, *, service_argv=None):
+    """Build explicit argv per selected service without shell tokenization.
+
+    ``service_argv`` contains already-validated, service-specific arguments.
+    The configuration path remains launcher-owned and is injected exactly once.
+    """
+    service_argv = service_argv or {}
+    unknown = [service for service in service_argv if service not in services]
+    if unknown:
+        raise ValueError(
+            f"arguments supplied for unselected service(s): {', '.join(unknown)}"
+        )
+    for service, forwarded in service_argv.items():
+        forbidden = next(
+            (
+                item
+                for item in forwarded
+                if item.split("=", 1)[0] in {"--config-dir", "--config-path"}
+            ),
+            None,
+        )
+        if forbidden is not None:
+            raise ValueError(
+                f"service argument {forbidden!r} cannot override --config-dir"
+            )
+
     commands = {}
     for service in services:
         cmd = [sys.executable, str(os.path.join(src_root, SERVICE_SCRIPTS[service]))]
         if args.base_dir is not None:
             cmd += ["--base-dir", args.base_dir]
-        if args.config_dir is not None:
-            cmd += ["--config-dir", args.config_dir]
         for flag, owners in _ROUTING.items():
             if service not in owners:
                 continue
@@ -164,6 +186,9 @@ def build_service_commands(args, services, src_root):
             # Pass the resolved topology to every selected child. This keeps
             # child behavior stable if its inherited config root differs.
             cmd.append("--mrms-core-only")
+        cmd.extend(service_argv.get(service, ()))
+        if args.config_dir is not None:
+            cmd += ["--config-dir", str(args.config_dir)]
         commands[service] = cmd
     return commands
 
@@ -216,11 +241,14 @@ def supervise(commands, *, src_root, stop_event=None):
                     # Windows has no PR_SET_PDEATHSIG equivalent here.
                     preexec_fn=set_parent_death_signal if os.name == "posix" else None,
                 )
-            except Exception:
-                print(f"[Launcher] Failed to start '{service}'; stopping started children")
+            except Exception as exc:
+                print(
+                    f"[Launcher] Failed to start '{service}': {exc}; "
+                    "stopping started children"
+                )
+                exit_code = 1
                 stop_event.set()
-                _terminate_children()
-                raise
+                break
         print(f"[Launcher] Started: {', '.join(f'{s} (pid {p.pid})' for s, p in processes.items())}")
 
         while not stop_event.is_set():

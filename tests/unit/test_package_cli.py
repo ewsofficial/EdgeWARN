@@ -69,10 +69,9 @@ def test_command_package_import_has_no_runtime_side_effects(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_phase_one_subcommands_fail_clearly(capsys):
-    for command in ("run", "configure"):
-        with pytest.raises(SystemExit) as excinfo:
-            cli.main([command])
-        assert excinfo.value.code == 2
+def test_unimplemented_configure_command_fails_clearly(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["configure"])
+    assert excinfo.value.code == 2
 
     assert "later package-command phase" in capsys.readouterr().err

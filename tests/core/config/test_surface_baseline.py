@@ -22,6 +22,9 @@ from tests.core.config.source_inspect import SRC, argparse_defaults
 REPO_ROOT = SRC.parent
 
 CLI_MODULES = [
+    # Package command: top-level version handling and Phase 2 run dispatch.
+    "edgewarn_cli/main.py",
+    "edgewarn_cli/run.py",
     "util/cli.py",
     "util/io.py",
     "common/ingest/nexrad/main.py",

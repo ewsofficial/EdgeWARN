@@ -3,14 +3,14 @@
 **Planning baseline:** commit `5cfbb048` on branch
 `yuchen-wei3667/package-commands`
 **Package version:** `2.7.0` from `package.json`
-**Status:** Phase 1 implemented; Phases 2-5 remain planned
+**Status:** Phases 1-2 implemented; Phases 3-5 remain planned
 
 ## Implementation progress
 
 - [x] Phase 1: Python packaging, console registration, installed-version
       lookup, dependency declarations, editable configuration deployment notes,
       and package/import tests.
-- [ ] Phase 2: topology-aware `edgewarn run` dispatch.
+- [x] Phase 2: topology-aware `edgewarn run` dispatch.
 - [ ] Phase 3: safe noninteractive configuration mutation.
 - [ ] Phase 4: interactive configuration TUI.
 - [ ] Phase 5: Docker and final documentation integration.
@@ -55,7 +55,7 @@ that behavior rather than create another ingest process in the package layer.
 ```text
 edgewarn run [all|core|ewmrs|nexrad]
              [--config-path PATH]
-             [--command-args WORKER JSON_ARGV]
+             [--args WORKER JSON_ARGV]
 ```
 
 - `--config-path` selects the complete configuration directory. Its default is
@@ -67,7 +67,7 @@ edgewarn run [all|core|ewmrs|nexrad]
   and the matching `schema/*.schema.json` files. All documents are validated
   before filesystem initialization or child-process creation. Failure prints
   the filename and dotted path from `ConfigError` and exits with status `2`.
-- `--command-args` is repeatable and worker-scoped. `WORKER` is one of `core`,
+- `--args` is repeatable and worker-scoped. `WORKER` is one of `core`,
   `ewmrs`, or `nexrad`; `JSON_ARGV` is a JSON array of strings. JSON avoids shell
   re-tokenization and works consistently with Docker's exec-form `CMD`.
 - A worker may be named only if it is part of the selected topology. Repeating
@@ -83,12 +83,12 @@ Examples:
 edgewarn run
 edgewarn run core --config-path /etc/edgewarn/config
 edgewarn run core \
-  --command-args core '["--lat_limits", "20", "55", "--disable-ctam"]'
+  --args core '["--lat_limits", "20", "55", "--disable-ctam"]'
 edgewarn run ewmrs \
-  --command-args core '["--lat_limits", "20", "55"]' \
-  --command-args ewmrs '["--disable-wpc"]'
+  --args core '["--lat_limits", "20", "55"]' \
+  --args ewmrs '["--disable-wpc"]'
 edgewarn run nexrad \
-  --command-args nexrad '["--profile"]'
+  --args nexrad '["--profile"]'
 ```
 
 The JSON-argv contract resolves the current ambiguity around passing arguments
@@ -415,10 +415,10 @@ returns `1` rather than exposing an unstable union of child exit codes.
 
 - [x] `pyproject.toml` installs `edgewarn = edgewarn_cli.main:main`.
 - [x] Source/editable and clean wheel installs both work outside the repo root.
-- [ ] Default, core, EWMRS-with-core, and complete NEXRAD modes match the public
+- [x] Default, core, EWMRS-with-core, and complete NEXRAD modes match the public
       topology contract.
-- [ ] Worker-scoped JSON argv reaches only its named worker.
-- [ ] `--config-path` is resolved once, propagated to every child, and fully
+- [x] Worker-scoped JSON argv reaches only its named worker.
+- [x] `--config-path` is resolved once, propagated to every child, and fully
       validated before process startup.
 - [ ] Noninteractive configuration edits are typed, locked, schema-validated,
       comment-preserving, atomic, and rollback-tested.

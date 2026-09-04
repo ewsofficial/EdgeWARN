@@ -1,4 +1,24 @@
 {
+  "edgewarn_cli/main.py": {
+    "--version": {
+      "default": null,
+      "action": "version"
+    }
+  },
+  "edgewarn_cli/run.py": {
+    "mode": {
+      "default": "all",
+      "action": null
+    },
+    "--config-path": {
+      "default": null,
+      "action": null
+    },
+    "--args": {
+      "default": [],
+      "action": "append"
+    }
+  },
   "util/cli.py": {
     "--base_dir": {
       "default": null,
