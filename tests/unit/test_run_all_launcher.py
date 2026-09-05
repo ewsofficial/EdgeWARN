@@ -227,6 +227,42 @@ class TestSupervision:
 
         assert run_all.supervise(commands, src_root=src_root) == 1
 
+    def test_stop_request_during_startup_prevents_remaining_spawns(
+        self, src_root, monkeypatch
+    ):
+        stop_event = threading.Event()
+        spawned = []
+
+        class Child:
+            pid = 1234
+            returncode = None
+
+            def poll(self):
+                return self.returncode
+
+            def send_signal(self, _signum):
+                self.returncode = 0
+
+            def wait(self, timeout):
+                return self.returncode
+
+        def spawn(command, **_kwargs):
+            spawned.append(command)
+            stop_event.set()
+            return Child()
+
+        monkeypatch.setattr(run_all.subprocess, "Popen", spawn)
+        commands = {
+            "edgewarn": ["edgewarn"],
+            "ewmrs": ["ewmrs"],
+            "nexrad": ["nexrad"],
+        }
+
+        assert run_all.supervise(
+            commands, src_root=src_root, stop_event=stop_event
+        ) == 0
+        assert spawned == [["edgewarn"]]
+
     def test_signal_driven_shutdown_terminates_children_cleanly(self, tmp_path, src_root):
         """End-to-end: SIGINT reaches the launcher's children through the driver."""
         sleeper = _sleeper(tmp_path, name="run_edgewarn.py")

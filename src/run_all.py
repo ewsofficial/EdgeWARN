@@ -230,6 +230,9 @@ def supervise(commands, *, src_root, stop_event=None):
     exit_code = 0
     try:
         for service, cmd in commands.items():
+            if stop_event.is_set():
+                print("[Launcher] Shutdown requested; not starting remaining services")
+                break
             try:
                 processes[service] = subprocess.Popen(
                     cmd,
