@@ -108,6 +108,37 @@ def test_example_edit_preserves_comments_order_permissions_and_newline(config_tr
     assert stat.S_IMODE(target.stat().st_mode) == mode
 
 
+@pytest.mark.parametrize("value", ["on", "off", "yes", "no", "null"])
+def test_ambiguous_yaml_strings_remain_strings_on_disk(config_tree, value):
+    configure.edit_configuration(
+        config_tree, "runtime.run.ctam_module_dir", f'"{value}"'
+    )
+
+    loaded = yaml.safe_load((config_tree / "runtime.yaml").read_text(encoding="utf-8"))
+    assert loaded["run"]["ctam_module_dir"] == value
+    assert isinstance(loaded["run"]["ctam_module_dir"], str)
+
+
+def test_serialized_document_is_validated_before_atomic_replace(config_tree, monkeypatch):
+    called = False
+
+    def invalid_runtime_parse(_content):
+        raise loader.ConfigError("runtime.yaml", "run", "serialized mismatch")
+
+    def replacement_must_not_run(*_args):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(configure, "_runtime_parse", invalid_runtime_parse)
+    monkeypatch.setattr(configure, "_atomic_replace", replacement_must_not_run)
+
+    with pytest.raises(loader.ConfigError, match="serialized mismatch"):
+        configure.edit_configuration(
+            config_tree, "runtime.run.ctam_module_dir", '"on"'
+        )
+    assert called is False
+
+
 def test_cli_prints_only_edit_summary(config_tree, capsys):
     assert main(
         [

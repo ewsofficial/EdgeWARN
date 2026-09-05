@@ -255,6 +255,13 @@ def _serialize(document: Any, *, final_newline: bool) -> bytes:
     return text.encode("utf-8")
 
 
+def _runtime_parse(content: bytes) -> Any:
+    """Parse serialized bytes with the same YAML implementation as runtime."""
+    import yaml
+
+    return yaml.safe_load(content.decode("utf-8"))
+
+
 def _write_temporary(fd: int, content: bytes) -> None:
     with os.fdopen(fd, "wb") as handle:
         written = handle.write(content)
@@ -317,9 +324,18 @@ def edit_configuration(
         document, original, mode, final_newline = _load_document(target)
         parent, key = resolve_leaf(document, target_spec.segments)
         old_value = parent[key]
-        parent[key] = new_value
+        if isinstance(new_value, str):
+            from ruamel.yaml.scalarstring import DoubleQuotedScalarString
+
+            parent[key] = DoubleQuotedScalarString(new_value)
+        else:
+            parent[key] = new_value
         loader.validate_document(target_spec.name, document, config_dir=root)
         replacement = _serialize(document, final_newline=final_newline)
+        serialized_document = _runtime_parse(replacement)
+        loader.validate_document(
+            target_spec.name, serialized_document, config_dir=root
+        )
 
         _atomic_replace(target, replacement, mode)
         try:
