@@ -419,7 +419,7 @@ npm run test:watch
 npm run test:coverage
 ```
 
-Python tests (with `EdgeWARN-dev` active):
+Python tests (with `EdgeWARN` active):
 
 ```bash
 python -m pytest tests/

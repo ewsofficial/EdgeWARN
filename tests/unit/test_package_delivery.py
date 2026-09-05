@@ -12,6 +12,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def test_container_uses_installed_exec_form_package_command():
     dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    environment = yaml.safe_load(
+        (REPO_ROOT / "environment.yml").read_text(encoding="utf-8")
+    )["name"]
 
     assert 'ENTRYPOINT ["edgewarn"]' in dockerfile
     assert 'CMD ["run", "--config-path", "/etc/edgewarn/config"]' in dockerfile
@@ -19,6 +22,8 @@ def test_container_uses_installed_exec_form_package_command():
     assert "STOPSIGNAL SIGTERM" in dockerfile
     assert "pip wheel" in dockerfile
     assert "pip install" in dockerfile
+    assert f'/opt/conda/envs/{environment}/bin' in dockerfile
+    assert "/opt/conda/envs/EdgeWARN-dev/bin" not in dockerfile
 
 
 def test_compose_separates_runtime_and_configuration_mounts():

@@ -18,7 +18,7 @@ RUN conda env create --file environment.yml \
     && conda clean --all --yes \
     && rm -rf /tmp/edgewarn-build /tmp/edgewarn-wheel
 
-ENV PATH="/opt/conda/envs/EdgeWARN-dev/bin:${PATH}" \
+ENV PATH="/opt/conda/envs/EdgeWARN/bin:${PATH}" \
     EDGEWARN_BASE_DIR="/var/lib/edgewarn"
 
 WORKDIR /opt/edgewarn
