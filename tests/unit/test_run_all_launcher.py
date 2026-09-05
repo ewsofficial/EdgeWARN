@@ -263,6 +263,42 @@ class TestSupervision:
         ) == 0
         assert spawned == [["edgewarn"]]
 
+    def test_unexpected_supervisor_error_terminates_and_reaps_children(
+        self, src_root, monkeypatch
+    ):
+        class Child:
+            pid = 1234
+
+            def __init__(self):
+                self.returncode = None
+                self.signals = []
+                self.waits = []
+
+            def poll(self):
+                return self.returncode
+
+            def send_signal(self, signum):
+                self.signals.append(signum)
+                self.returncode = 0
+
+            def wait(self, timeout):
+                self.waits.append(timeout)
+                return self.returncode
+
+        child = Child()
+        monkeypatch.setattr(run_all.subprocess, "Popen", lambda *_a, **_k: child)
+        monkeypatch.setattr(
+            run_all.time, "sleep", lambda _seconds: (_ for _ in ()).throw(
+                RuntimeError("supervisor failed")
+            )
+        )
+
+        with pytest.raises(RuntimeError, match="supervisor failed"):
+            run_all.supervise({"edgewarn": ["edgewarn"]}, src_root=src_root)
+
+        assert child.signals == [signal.SIGTERM]
+        assert child.waits == [run_all.STOP_GRACE_SECONDS]
+
     def test_signal_driven_shutdown_terminates_children_cleanly(self, tmp_path, src_root):
         """End-to-end: SIGINT reaches the launcher's children through the driver."""
         sleeper = _sleeper(tmp_path, name="run_edgewarn.py")

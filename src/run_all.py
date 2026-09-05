@@ -226,6 +226,22 @@ def supervise(commands, *, src_root, stop_event=None):
                 except OSError:
                     pass
 
+    def _cleanup_after_error():
+        """Best-effort cleanup that preserves the exception which triggered it."""
+        for proc in processes.values():
+            try:
+                if proc.poll() is None:
+                    proc.send_signal(signal.SIGTERM)
+                proc.wait(timeout=STOP_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.send_signal(signal.SIGKILL)
+                    proc.wait(timeout=STOP_GRACE_SECONDS)
+                except BaseException:
+                    pass
+            except BaseException:
+                pass
+
     processes: dict[str, subprocess.Popen] = {}
     exit_code = 0
     try:
@@ -299,6 +315,9 @@ def supervise(commands, *, src_root, stop_event=None):
             print(f"[Launcher] Service '{service}' terminated (rc={returncode})")
             if returncode != 0:
                 exit_code = 1
+    except BaseException:
+        _cleanup_after_error()
+        raise
     finally:
         try:
             signal.signal(signal.SIGINT, original_int)
