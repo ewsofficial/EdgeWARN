@@ -26,18 +26,15 @@ CLI_MODULES = [
     "edgewarn_cli/main.py",
     "edgewarn_cli/run.py",
     "edgewarn_cli/configure.py",
+    "edgewarn_cli/nws_zones.py",
     "util/cli.py",
     "util/io.py",
     "common/ingest/nexrad/main.py",
     "common/ingest/nexrad/pipeline/__init__.py",
     "common/ingest/nws/zone_sync.py",
-    # Decomposition Phase 4: the standalone EWMRS service owns its parser.
-    "run_ewmrs.py",
     # Decomposition Phase 6: the optional all-services supervisor owns its
     # routing parser (no scientific imports).
     "run_all.py",
-    # Decomposition Phase 7: launcher-routing parity flag (--profile).
-    "run_nexrad.py",
 ]
 
 

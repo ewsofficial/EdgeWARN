@@ -131,7 +131,9 @@ class TestZoneLookup:
         
         with patch.object(ZoneLookup, '_cache', {}):
             with patch('EdgeWARN.ingest.nws.geomapper._assets_dir', return_value=assets_dir):
-                with pytest.raises(RuntimeError, match=r"scripts/sync_nws_zones\.py"):
+                with pytest.raises(
+                    RuntimeError, match=r"edgewarn sync-nws-zones --apply"
+                ):
                     ZoneLookup.get_polygon("XXC001")
 
     def test_public_preflight_accepts_existing_zone_assets(self, tmp_path):
