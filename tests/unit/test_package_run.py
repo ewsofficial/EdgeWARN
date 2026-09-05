@@ -104,6 +104,51 @@ def test_worker_argument_preflight_accepts_service_grammar():
     )
 
 
+@pytest.mark.parametrize(
+    ("service", "abbreviation"),
+    [
+        ("edgewarn", ("--drop-off", "4")),
+        ("ewmrs", ("--disable-wp",)),
+        ("nexrad", ("--prof",)),
+    ],
+)
+def test_worker_argument_preflight_rejects_abbreviations(service, abbreviation):
+    with pytest.raises(ValueError, match="invalid arguments"):
+        package_run.preflight_worker_argv({service: abbreviation})
+
+
+@pytest.mark.parametrize(
+    ("service", "argv"),
+    [
+        ("edgewarn", ("--lat_limits", "20", "55", "--disable-ctam")),
+        ("ewmrs", ("--disable-wpc", "--no-profile")),
+        ("nexrad", ("--profile", "--base-dir", "/runtime")),
+    ],
+)
+def test_preflight_uses_the_direct_launcher_grammar(service, argv, monkeypatch):
+    from util.cli import build_service_parser
+
+    direct_parser = build_service_parser(service, add_help=False)
+    direct = direct_parser.parse_args(argv)
+    calls = []
+
+    def parser_for(requested_service, *, add_help):
+        calls.append((requested_service, add_help))
+        return direct_parser
+
+    monkeypatch.setattr("util.cli.build_service_parser", parser_for)
+    package_run.preflight_worker_argv({service: argv})
+
+    assert calls == [(service, False)]
+    assert direct_parser.parse_args(argv) == direct
+
+
+@pytest.mark.parametrize("one_shot", ["--list-ctam-modules", "--check-ctam-modules"])
+def test_primary_one_shot_modes_cannot_bypass_supervision(one_shot):
+    with pytest.raises(ValueError, match="one-shot argument"):
+        package_run.preflight_worker_argv({"edgewarn": (one_shot,)})
+
+
 def test_dispatch_validates_before_building_and_scopes_worker_argv(monkeypatch, tmp_path):
     events = []
 
