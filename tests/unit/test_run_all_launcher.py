@@ -259,6 +259,39 @@ class TestSupervision:
         # Clean signal shutdown exits zero even though the children were killed.
         assert code == 0
 
+    def test_signal_driven_shutdown_reports_child_cleanup_failure(
+        self, tmp_path, src_root
+    ):
+        failing_child = tmp_path / "run_edgewarn.py"
+        failing_child.write_text(
+            "import signal, sys, time\n"
+            "signal.signal(signal.SIGTERM, lambda *_a: sys.exit(7))\n"
+            "\nwhile True:\n"
+            "    time.sleep(0.1)\n"
+        )
+        driver = tmp_path / "driver.py"
+        repo_src = str(Path(__file__).resolve().parents[2] / "src")
+        driver.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {repo_src!r})\n"
+            "import run_all\n"
+            f"run_all.SERVICE_SCRIPTS['edgewarn'] = {str(failing_child)!r}\n"
+            "sys.exit(run_all.main(['--services', 'edgewarn']))\n"
+        )
+
+        proc = subprocess.Popen(
+            [sys.executable, str(driver)], start_new_session=True
+        )
+        try:
+            time.sleep(1.0)
+            proc.send_signal(signal.SIGTERM)
+            code = proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            pytest.fail("launcher did not exit after SIGTERM")
+
+        assert code == 1
+
     def test_unexpected_child_exit_is_nonzero(self, tmp_path, src_root, monkeypatch):
         quitter = _sleeper(tmp_path, name="quitter.py", code=3)
         sleeper = _sleeper(tmp_path)

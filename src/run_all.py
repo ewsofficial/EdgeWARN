@@ -288,11 +288,14 @@ def supervise(commands, *, src_root, stop_event=None):
 
         for service, proc in processes.items():
             try:
-                proc.wait(timeout=STOP_GRACE_SECONDS)
+                returncode = proc.wait(timeout=STOP_GRACE_SECONDS)
             except subprocess.TimeoutExpired:
                 print(f"[Launcher] Service '{service}' did not exit after SIGKILL")
                 exit_code = 1
-            print(f"[Launcher] Service '{service}' terminated (rc={proc.returncode})")
+                continue
+            print(f"[Launcher] Service '{service}' terminated (rc={returncode})")
+            if returncode != 0:
+                exit_code = 1
     finally:
         try:
             signal.signal(signal.SIGINT, original_int)
