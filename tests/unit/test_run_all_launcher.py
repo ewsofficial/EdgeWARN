@@ -331,6 +331,33 @@ class TestSupervision:
         # Clean signal shutdown exits zero even though the children were killed.
         assert code == 0
 
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX signal return code")
+    def test_signal_driven_shutdown_accepts_raw_sigterm_exit(
+        self, tmp_path, src_root
+    ):
+        sleeper = tmp_path / "run_edgewarn.py"
+        sleeper.write_text("import time\ntime.sleep(300)\n", encoding="utf-8")
+        driver = tmp_path / "driver.py"
+        repo_src = str(Path(__file__).resolve().parents[2] / "src")
+        driver.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {repo_src!r})\n"
+            "import run_all\n"
+            f"run_all.SERVICE_SCRIPTS['edgewarn'] = {str(sleeper)!r}\n"
+            "sys.exit(run_all.main(['--services', 'edgewarn']))\n",
+            encoding="utf-8",
+        )
+
+        launcher = subprocess.Popen([sys.executable, str(driver)])
+        try:
+            time.sleep(1.0)
+            launcher.send_signal(signal.SIGTERM)
+            assert launcher.wait(timeout=10) == 0
+        finally:
+            if launcher.poll() is None:
+                launcher.kill()
+                launcher.wait()
+
     def test_signal_driven_shutdown_reports_child_cleanup_failure(
         self, tmp_path, src_root
     ):

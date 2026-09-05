@@ -345,7 +345,12 @@ def supervise(commands, *, src_root, stop_event=None):
                 exit_code = 1
                 continue
             print(f"[Launcher] Service '{service}' terminated (rc={returncode})")
-            if returncode != 0:
+            expected_signal_exit = (
+                os.name == "posix"
+                and returncode == -signal.SIGTERM
+                and exit_code == 0
+            )
+            if returncode != 0 and not expected_signal_exit:
                 exit_code = 1
     except BaseException:
         _cleanup_after_error()
