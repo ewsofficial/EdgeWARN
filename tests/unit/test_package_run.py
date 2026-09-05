@@ -79,6 +79,31 @@ def test_worker_relative_base_directories_resolve_from_invocation_directory(tmp_
     assert normalized["ewmrs"][0].startswith("--base_dir=/")
 
 
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (("--drop-ofset", "4"), "invalid arguments"),
+        (("--drop-offset",), "invalid arguments"),
+        (("--drop-offset", "not-a-number"), "invalid arguments"),
+        (("--help",), "one-shot argument"),
+        (("--check-ctam-modules",), "one-shot argument"),
+    ],
+)
+def test_worker_argument_preflight_rejects_before_spawn(argv, message):
+    with pytest.raises(ValueError, match=message):
+        package_run.preflight_worker_argv({"edgewarn": argv})
+
+
+def test_worker_argument_preflight_accepts_service_grammar():
+    package_run.preflight_worker_argv(
+        {
+            "edgewarn": ("--drop-offset", "4"),
+            "ewmrs": ("--disable-wpc",),
+            "nexrad": ("--base-dir", "/runtime"),
+        }
+    )
+
+
 def test_dispatch_validates_before_building_and_scopes_worker_argv(monkeypatch, tmp_path):
     events = []
 

@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 
 import util.file as fs
 from common.config import loader as config_loader, overlay
-from util.cli import add_base_directory_flags
+from util.cli import build_service_parser
 from util.io import IOManager, TimestampedOutput
 from util.release import get_release_version
 from util.runtime import AccessorySupervisor, StartedProcessRegistry, drain_log_queue
@@ -66,16 +66,7 @@ def _require_nws_zone_assets(nws_enabled: bool) -> None:
 
 
 def _parse_args(argv=None):
-    parser = argparse.ArgumentParser(
-        description="EdgeWARN EWMRS service: rendering, accessories, and record consumption"
-    )
-    add_base_directory_flags(parser)
-    parser.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None, help="Render profiling switch (accepted for CLI-contract parity; default: from runtime.yaml)")
-    parser.add_argument("--disable-metar", action=argparse.BooleanOptionalAction, default=None, help="Disable background METAR ingestion (default: from runtime.yaml)")
-    parser.add_argument("--disable-nws", action=argparse.BooleanOptionalAction, default=None, help="Disable background NWS alert ingestion (default: from runtime.yaml)")
-    parser.add_argument("--disable-wpc", action=argparse.BooleanOptionalAction, default=None, help="Disable background WPC surface analysis ingestion (default: from runtime.yaml)")
-    parser.add_argument("--disable-goes", action=argparse.BooleanOptionalAction, default=None, help="Disable GOES ABI ingest and GOES rendering (default: from runtime.yaml)")
-    parser.add_argument("--mrms-core-only", action=argparse.BooleanOptionalAction, default=None, help="Run only the primary MRMS analysis service (default: from runtime.yaml)")
+    parser = build_service_parser("ewmrs")
     args = parser.parse_args(argv)
 
     filesystem = config_loader.load_config("filesystem", config_dir=args.config_dir)

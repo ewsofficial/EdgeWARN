@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 
 import util.file as fs
 from common.config import loader as config_loader, overlay
-from util.cli import add_base_directory_flags
+from util.cli import build_service_parser
 from util.io import IOManager, TimestampedOutput
 from util.release import get_release_version
 from util.runtime import AccessorySupervisor, StartedProcessRegistry, drain_log_queue
@@ -51,15 +51,7 @@ SERVICE_NAME = "nexrad"
 
 
 def _parse_args(argv=None):
-    parser = argparse.ArgumentParser(
-        description="EdgeWARN NEXRAD service: Level-II ingest and GUI rendering"
-    )
-    add_base_directory_flags(parser)
-    # CLI-contract parity with the other services (decomposition Phase 7):
-    # accepted everywhere so the optional launcher can route uniformly;
-    # profiling itself is not wired into the NEXRAD loops today.
-    parser.add_argument("--profile", action=argparse.BooleanOptionalAction, default=None, help="Profiling switch (accepted for launcher routing parity; default: from runtime.yaml)")
-    parser.add_argument("--mrms-core-only", action=argparse.BooleanOptionalAction, default=None, help="Run only the primary MRMS analysis service (default: from runtime.yaml)")
+    parser = build_service_parser("nexrad")
     args = parser.parse_args(argv)
 
     filesystem = config_loader.load_config("filesystem", config_dir=args.config_dir)

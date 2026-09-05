@@ -156,6 +156,24 @@ def canonicalize_worker_paths(
     return result
 
 
+def preflight_worker_argv(worker_argv: Mapping[str, Sequence[str]]) -> None:
+    """Apply each selected service's argparse grammar before any process starts."""
+    from util.cli import build_service_parser
+
+    one_shot = {"-h", "--help", "--list-ctam-modules", "--check-ctam-modules"}
+    for service, argv in worker_argv.items():
+        command = next((item for item in argv if item in one_shot), None)
+        if command is not None:
+            raise ValueError(
+                f"one-shot argument {command!r} is not valid in supervised service mode"
+            )
+        parser = build_service_parser(service, add_help=False)
+        try:
+            parser.parse_args(argv)
+        except SystemExit as exc:
+            raise ValueError(f"invalid arguments for worker {service!r}") from exc
+
+
 def run_from_namespace(args: argparse.Namespace) -> int:
     """Validate package-owned inputs and dispatch through ``run_all``."""
     invocation_dir = Path.cwd()
@@ -215,6 +233,7 @@ def run_from_namespace(args: argparse.Namespace) -> int:
         worker_argv = canonicalize_worker_paths(
             parse_worker_argv(args.args, services), invocation_dir
         )
+        preflight_worker_argv(worker_argv)
     except ValueError as exc:
         args.parser.error(str(exc))
     src_root = str(Path(run_all.__file__).resolve().parent)
