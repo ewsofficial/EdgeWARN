@@ -129,12 +129,40 @@ def parse_worker_argv(
     return parsed
 
 
+def canonicalize_worker_paths(
+    worker_argv: Mapping[str, Sequence[str]], invocation_dir: Path
+) -> dict[str, tuple[str, ...]]:
+    """Resolve worker base-directory arguments before the launcher changes CWD."""
+    result: dict[str, tuple[str, ...]] = {}
+    for service, argv in worker_argv.items():
+        normalized = list(argv)
+        index = 0
+        while index < len(normalized):
+            item = normalized[index]
+            if item in {"--base-dir", "--base_dir"} and index + 1 < len(normalized):
+                normalized[index + 1] = str(
+                    (invocation_dir / Path(normalized[index + 1]).expanduser()).resolve()
+                )
+                index += 2
+                continue
+            for prefix in ("--base-dir=", "--base_dir="):
+                if item.startswith(prefix):
+                    normalized[index] = prefix + str(
+                        (invocation_dir / Path(item[len(prefix):]).expanduser()).resolve()
+                    )
+                    break
+            index += 1
+        result[service] = tuple(normalized)
+    return result
+
+
 def run_from_namespace(args: argparse.Namespace) -> int:
     """Validate package-owned inputs and dispatch through ``run_all``."""
+    invocation_dir = Path.cwd()
     # Import only at execution time: help and parser errors need neither YAML
     # nor the supervisor module. Validation intentionally precedes command
     # construction and therefore every subprocess/filesystem side effect.
-    from common.config import loader as config_loader
+    from common.config import loader as config_loader, overlay
     from edgewarn_cli.config_path import resolve_config_root
     from yaml import YAMLError
 
@@ -156,7 +184,12 @@ def run_from_namespace(args: argparse.Namespace) -> int:
     import run_all
 
     launcher_args = argparse.Namespace(
-        base_dir=None,
+        base_dir=str(
+            overlay.resolve_base_dir(
+                None,
+                config_loader.load_config("filesystem", config_dir=config_root),
+            ).expanduser().resolve()
+        ),
         config_dir=str(config_root),
         profile=None,
         lat_limits=None,
@@ -179,7 +212,9 @@ def run_from_namespace(args: argparse.Namespace) -> int:
         services = tuple(
             run_all.resolve_services(launcher_args, TOPOLOGIES[args.mode])
         )
-        worker_argv = parse_worker_argv(args.args, services)
+        worker_argv = canonicalize_worker_paths(
+            parse_worker_argv(args.args, services), invocation_dir
+        )
     except ValueError as exc:
         args.parser.error(str(exc))
     src_root = str(Path(run_all.__file__).resolve().parent)

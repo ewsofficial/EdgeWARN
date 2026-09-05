@@ -66,6 +66,19 @@ def test_worker_argv_maps_core_to_edgewarn_without_retokenizing():
     }
 
 
+def test_worker_relative_base_directories_resolve_from_invocation_directory(tmp_path):
+    normalized = package_run.canonicalize_worker_paths(
+        {
+            "edgewarn": ("--base-dir", "./runtime"),
+            "ewmrs": ("--base_dir=~/ewmrs-runtime",),
+        },
+        tmp_path,
+    )
+
+    assert normalized["edgewarn"] == ("--base-dir", str(tmp_path / "runtime"))
+    assert normalized["ewmrs"][0].startswith("--base_dir=/")
+
+
 def test_dispatch_validates_before_building_and_scopes_worker_argv(monkeypatch, tmp_path):
     events = []
 
@@ -84,6 +97,10 @@ def test_dispatch_validates_before_building_and_scopes_worker_argv(monkeypatch, 
         config_loader,
         "validate_all_configs",
         lambda **kwargs: events.append(("validate", kwargs["config_dir"])),
+    )
+    monkeypatch.setattr(config_loader, "load_config", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        "common.config.overlay.resolve_base_dir", lambda *_args, **_kwargs: tmp_path / "runtime"
     )
 
     def build(args, services, src_root, *, service_argv):
@@ -140,6 +157,10 @@ def test_dispatch_resolves_persisted_topology_before_building(monkeypatch, tmp_p
     monkeypatch.setattr(config_loader, "reset_cache", lambda: None)
     monkeypatch.setattr(config_loader, "export_config_root", lambda _path: None)
     monkeypatch.setattr(config_loader, "validate_all_configs", lambda **_kwargs: None)
+    monkeypatch.setattr(config_loader, "load_config", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        "common.config.overlay.resolve_base_dir", lambda *_args, **_kwargs: tmp_path / "runtime"
+    )
     monkeypatch.setattr(
         run_all, "resolve_services", lambda args, requested: ["edgewarn"]
     )
