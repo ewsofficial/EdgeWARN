@@ -31,6 +31,7 @@ def test_main_without_arguments_prints_help(capsys):
     output = capsys.readouterr().out
     assert "run" in output
     assert "configure" in output
+    assert "sync-nws-zones" in output
 
 
 def test_version_uses_installed_distribution_metadata(monkeypatch, capsys):

@@ -11,6 +11,7 @@ services:
     volumes:
       - ${EDGEWARN_HOST_BASE_DIR:-./EdgeWARN_input}:/var/lib/edgewarn
       - ./config:/etc/edgewarn/config:ro
+      - ${EDGEWARN_NWS_ASSETS_DIR:-./assets/nws_zones}:/etc/edgewarn/assets/nws_zones:ro
     stop_grace_period: 25s
 
   edgewarn-configure:
@@ -21,3 +22,11 @@ services:
     tty: true
     volumes:
       - ./config:/etc/edgewarn/config:rw
+
+  edgewarn-sync-nws-zones:
+    image: edgewarn-core:3.0.0
+    profiles: ["admin"]
+    command: ["sync-nws-zones", "--apply", "--config-path", "/etc/edgewarn/config"]
+    volumes:
+      - ./config:/etc/edgewarn/config:ro
+      - ${EDGEWARN_NWS_ASSETS_DIR:-./assets/nws_zones}:/etc/edgewarn/assets/nws_zones:rw

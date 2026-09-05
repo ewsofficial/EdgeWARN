@@ -359,7 +359,7 @@ Historical-processing note:
 
 ## Maintaining NWS Zone Assets
 
-`scripts/sync_nws_zones.py` refreshes `assets/nws_zones` from the NWS zone and UGC APIs.
+`edgewarn sync-nws-zones` refreshes `assets/nws_zones` from the NWS zone and UGC APIs in both source and installed deployments. The repository script remains a compatibility wrapper.
 
 The `assets/nws_zones/` directory is **not** part of the repository. It must
 be synchronized before starting a pipeline that ingests NWS alerts. If it is
@@ -370,11 +370,22 @@ so allow about seven minutes the first time.
 Run from repository root to refresh an already-populated tree (for example
 after NWS publishes a new zone):
 
-Run from repository root:
+For a native installation:
 
 ```bash
-python scripts/sync_nws_zones.py
+edgewarn sync-nws-zones --apply
 ```
+
+For Compose, initialize the host-mounted asset directory before starting the
+default topology:
+
+```bash
+docker compose --profile admin run --rm edgewarn-sync-nws-zones
+docker compose up edgewarn
+```
+
+Set `EDGEWARN_NWS_ASSETS_DIR` to relocate the host asset directory; it defaults
+to `./assets/nws_zones` and is mounted read-only into the runtime container.
 
 Flags:
 
