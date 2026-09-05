@@ -64,6 +64,33 @@ _ROUTING = {
 _LIST_FLAGS = {"--lat_limits", "--lon_limits"}
 
 
+def resolve_services(args, requested):
+    """Apply environment/YAML topology settings to requested services."""
+    run_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
+    omit_ewmrs = bool(overlay.resolve(
+        args.disable_ewmrs, env_names=["EDGEWARN_DISABLE_EWMRS"],
+        yaml_value=run_cfg["disable_ewmrs"], key="run.disable_ewmrs",
+    ))
+    omit_nexrad = bool(overlay.resolve(
+        args.disable_nexrad, env_names=["EDGEWARN_DISABLE_NEXRAD"],
+        yaml_value=run_cfg["disable_nexrad"], key="run.disable_nexrad",
+    ))
+    services = list(requested)
+    if omit_ewmrs:
+        services = [name for name in services if name != "ewmrs"]
+    if omit_nexrad:
+        services = [name for name in services if name != "nexrad"]
+    args.mrms_core_only = bool(overlay.resolve(
+        args.mrms_core_only, yaml_value=run_cfg["mrms_core_only"],
+        key="run.mrms_core_only",
+    ))
+    if args.mrms_core_only:
+        services = [name for name in services if name == "edgewarn"]
+    if not services:
+        raise ValueError("service selection resolved to an empty set")
+    return services
+
+
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Optional supervisor starting the three EdgeWARN services"
@@ -104,36 +131,10 @@ def _parse_args(argv=None):
     # Service omission flags resolve from YAML when not given on the CLI so a
     # deployment unit can pin its topology without repeating flags. The other
     # disable flags are pure pass-through: children keep their own layering.
-    run_cfg = config_loader.load_config("runtime", config_dir=args.config_dir)["run"]
-    omit_ewmrs = bool(overlay.resolve(
-        args.disable_ewmrs,
-        env_names=["EDGEWARN_DISABLE_EWMRS"],
-        yaml_value=run_cfg["disable_ewmrs"],
-        key="run.disable_ewmrs",
-    ))
-    omit_nexrad = bool(overlay.resolve(
-        args.disable_nexrad,
-        env_names=["EDGEWARN_DISABLE_NEXRAD"],
-        yaml_value=run_cfg["disable_nexrad"],
-        key="run.disable_nexrad",
-    ))
-
-    services = list(requested)
-    if omit_ewmrs:
-        services = [name for name in services if name != "ewmrs"]
-    if omit_nexrad:
-        services = [name for name in services if name != "nexrad"]
-    args.mrms_core_only = bool(overlay.resolve(
-        args.mrms_core_only,
-        yaml_value=run_cfg["mrms_core_only"],
-        key="run.mrms_core_only",
-    ))
-    if args.mrms_core_only:
-        # MRMS-core-only implies disabling every non-primary component.
-        services = [name for name in services if name == "edgewarn"]
-
-    if not services:
-        parser.error("service selection resolved to an empty set")
+    try:
+        services = resolve_services(args, requested)
+    except ValueError as exc:
+        parser.error(str(exc))
     return args, services
 
 

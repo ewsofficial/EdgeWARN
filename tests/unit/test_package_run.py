@@ -92,6 +92,9 @@ def test_dispatch_validates_before_building_and_scopes_worker_argv(monkeypatch, 
 
     monkeypatch.setattr(run_all, "build_service_commands", build)
     monkeypatch.setattr(
+        run_all, "resolve_services", lambda args, requested: tuple(requested)
+    )
+    monkeypatch.setattr(
         run_all,
         "supervise",
         lambda commands, *, src_root: events.append(("supervise", commands)) or 0,
@@ -127,6 +130,28 @@ def test_dispatch_validates_before_building_and_scopes_worker_argv(monkeypatch, 
         "supervise",
         {"edgewarn": ["edgewarn"], "ewmrs": ["ewmrs"]},
     )
+
+
+def test_dispatch_resolves_persisted_topology_before_building(monkeypatch, tmp_path):
+    events = []
+    monkeypatch.setattr(
+        "edgewarn_cli.config_path.resolve_config_root", lambda _path: tmp_path
+    )
+    monkeypatch.setattr(config_loader, "reset_cache", lambda: None)
+    monkeypatch.setattr(config_loader, "export_config_root", lambda _path: None)
+    monkeypatch.setattr(config_loader, "validate_all_configs", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        run_all, "resolve_services", lambda args, requested: ["edgewarn"]
+    )
+    monkeypatch.setattr(
+        run_all,
+        "build_service_commands",
+        lambda args, services, src_root, **kwargs: events.append(tuple(services)) or {},
+    )
+    monkeypatch.setattr(run_all, "supervise", lambda commands, *, src_root: 0)
+
+    assert cli.main(["run", "all", "--config-path", str(tmp_path)]) == 0
+    assert events == [("edgewarn",)]
 
 
 def test_missing_config_exits_two_before_command_construction(monkeypatch, tmp_path):

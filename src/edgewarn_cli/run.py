@@ -131,12 +131,6 @@ def parse_worker_argv(
 
 def run_from_namespace(args: argparse.Namespace) -> int:
     """Validate package-owned inputs and dispatch through ``run_all``."""
-    services = TOPOLOGIES[args.mode]
-    try:
-        worker_argv = parse_worker_argv(args.args, services)
-    except ValueError as exc:
-        args.parser.error(str(exc))
-
     # Import only at execution time: help and parser errors need neither YAML
     # nor the supervisor module. Validation intentionally precedes command
     # construction and therefore every subprocess/filesystem side effect.
@@ -177,8 +171,17 @@ def run_from_namespace(args: argparse.Namespace) -> int:
         refl_threshold=None,
         min_seed_percentage=None,
         drop_offset=None,
-        mrms_core_only=False,
+        disable_ewmrs=None,
+        disable_nexrad=None,
+        mrms_core_only=None,
     )
+    try:
+        services = tuple(
+            run_all.resolve_services(launcher_args, TOPOLOGIES[args.mode])
+        )
+        worker_argv = parse_worker_argv(args.args, services)
+    except ValueError as exc:
+        args.parser.error(str(exc))
     src_root = str(Path(run_all.__file__).resolve().parent)
     commands = run_all.build_service_commands(
         launcher_args,
