@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tomllib
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -79,3 +80,38 @@ def test_configure_without_assignment_requires_a_tty(capsys):
         "interactive configuration requires TTY stdin and stdout"
         in capsys.readouterr().err
     )
+
+
+def test_installed_nws_zone_sync_dispatches_apply(monkeypatch, tmp_path, capsys):
+    from common.ingest.nws import zone_sync
+    from edgewarn_cli import config_path
+
+    calls = []
+
+    class Syncer:
+        def __init__(self, **kwargs):
+            calls.append(("init", kwargs))
+
+        def sync(self, *, dry_run):
+            calls.append(("sync", dry_run))
+            return Namespace(to_dict=lambda: {"updated": 1})
+
+    monkeypatch.setattr(config_path, "resolve_config_root", lambda _path: tmp_path)
+    monkeypatch.setattr(zone_sync, "_resolve_zone_sync_args", lambda args: args)
+    monkeypatch.setattr(zone_sync, "NWSZoneSync", Syncer)
+
+    assert cli.main([
+        "sync-nws-zones",
+        "--apply",
+        "--config-path", str(tmp_path),
+        "--assets-dir", str(tmp_path / "zones"),
+        "--zone-types", "forecast",
+        "--timeout-seconds", "30",
+        "--max-retries", "3",
+        "--max-workers", "2",
+        "--pause-seconds", "0.05",
+        "--no-progress",
+    ]) == 0
+
+    assert calls[-1] == ("sync", False)
+    assert json.loads(capsys.readouterr().out) == {"updated": 1}

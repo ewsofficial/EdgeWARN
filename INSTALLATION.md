@@ -282,9 +282,11 @@ Build the image and start the default all-service topology:
 ```bash
 docker build -t edgewarn-core:3.0.0 .
 export EDGEWARN_HOST_BASE_DIR=/srv/edgewarn/runtime
+export EDGEWARN_NWS_ASSETS_DIR=/srv/edgewarn/nws-zones
 docker run --rm --name edgewarn \
   -v "$EDGEWARN_HOST_BASE_DIR:/var/lib/edgewarn" \
   -v "$PWD/config:/etc/edgewarn/config:ro" \
+  -v "$EDGEWARN_NWS_ASSETS_DIR:/etc/edgewarn/assets/nws_zones:ro" \
   edgewarn-core:3.0.0
 ```
 
@@ -301,14 +303,17 @@ Override the complete `CMD` to select a specialized topology:
 docker run --rm \
   -v edgewarn-runtime:/var/lib/edgewarn \
   -v "$PWD/config:/etc/edgewarn/config:ro" \
+  -v "$EDGEWARN_NWS_ASSETS_DIR:/etc/edgewarn/assets/nws_zones:ro" \
   edgewarn-core:3.0.0 run core --config-path /etc/edgewarn/config
 docker run --rm \
   -v edgewarn-runtime:/var/lib/edgewarn \
   -v "$PWD/config:/etc/edgewarn/config:ro" \
+  -v "$EDGEWARN_NWS_ASSETS_DIR:/etc/edgewarn/assets/nws_zones:ro" \
   edgewarn-core:3.0.0 run ewmrs --config-path /etc/edgewarn/config
 docker run --rm \
   -v edgewarn-runtime:/var/lib/edgewarn \
   -v "$PWD/config:/etc/edgewarn/config:ro" \
+  -v "$EDGEWARN_NWS_ASSETS_DIR:/etc/edgewarn/assets/nws_zones:ro" \
   edgewarn-core:3.0.0 run nexrad --config-path /etc/edgewarn/config
 ```
 

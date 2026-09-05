@@ -41,8 +41,8 @@ def ensure_zone_assets() -> None:
     Zone assets are an explicit operational prerequisite.  Fetching thousands
     of zones from an alert-processing worker delays startup unpredictably and
     can leave the registry only partially mapped after a failed bootstrap.
-    Use ``python scripts/sync_nws_zones.py`` from the repository root to create
-    or refresh the assets before starting a pipeline.
+    Use ``edgewarn sync-nws-zones --apply`` to create or refresh the assets
+    before starting a pipeline.
     """
     global _BOOTSTRAPPED
     if _BOOTSTRAPPED:
@@ -53,8 +53,7 @@ def ensure_zone_assets() -> None:
     if not has_data:
         raise RuntimeError(
             f"NWS zone assets are missing from {assets}. "
-            "Run `python scripts/sync_nws_zones.py` from the repository root "
-            "before starting the pipeline."
+            "Run `edgewarn sync-nws-zones --apply` before starting the pipeline."
         )
 
     _BOOTSTRAPPED = True
