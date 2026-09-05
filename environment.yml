@@ -1,8 +1,7 @@
 name: EdgeWARN
 channels:
-  - anaconda
   - conda-forge
-  - defaults
+channel_priority: strict
 dependencies:
   - python=3.13
   - pyyaml
