@@ -221,27 +221,58 @@ def supervise(commands, *, src_root, stop_event=None):
 
     def _terminate_children(force=False):
         for proc in processes.values():
-            if proc.poll() is None:
-                try:
-                    proc.send_signal(signal.SIGKILL if force else signal.SIGTERM)
-                except OSError:
-                    pass
+            signum = signal.SIGKILL if force else signal.SIGTERM
+            try:
+                if os.name == "posix":
+                    # Every service is a session/process-group leader. Signal
+                    # the group even if that leader has already exited: CTAM
+                    # modules and other descendants may still be running.
+                    os.killpg(proc.pid, signum)
+                elif proc.poll() is None:
+                    proc.send_signal(signum)
+            except ProcessLookupError:
+                # Test doubles and a concurrently reaped group can have no
+                # process group; retain direct-child behavior when possible.
+                if proc.poll() is None:
+                    try:
+                        proc.send_signal(signum)
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+
+    def _tree_is_alive(proc):
+        # Reap an exited leader before probing its group. Otherwise the leader
+        # remains a zombie and makes killpg(..., 0) report a false survivor.
+        leader_alive = proc.poll() is None
+        if os.name != "posix":
+            return leader_alive
+        try:
+            os.killpg(proc.pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
 
     def _cleanup_after_error():
         """Best-effort cleanup that preserves the exception which triggered it."""
+        _terminate_children()
         for proc in processes.values():
             try:
-                if proc.poll() is None:
-                    proc.send_signal(signal.SIGTERM)
                 proc.wait(timeout=STOP_GRACE_SECONDS)
             except subprocess.TimeoutExpired:
+                pass
+            except BaseException:
+                pass
+        forced = any(_tree_is_alive(proc) for proc in processes.values())
+        if forced:
+            _terminate_children(force=True)
+            for proc in processes.values():
                 try:
-                    proc.send_signal(signal.SIGKILL)
                     proc.wait(timeout=STOP_GRACE_SECONDS)
                 except BaseException:
                     pass
-            except BaseException:
-                pass
 
     processes: dict[str, subprocess.Popen] = {}
     exit_code = 0
@@ -297,10 +328,10 @@ def supervise(commands, *, src_root, stop_event=None):
         _terminate_children()
         deadline = time.monotonic() + STOP_GRACE_SECONDS
         while time.monotonic() < deadline:
-            if all(proc.poll() is not None for proc in processes.values()):
+            if all(not _tree_is_alive(proc) for proc in processes.values()):
                 break
             time.sleep(0.2)
-        survivors = [s for s, p in processes.items() if p.poll() is None]
+        survivors = [s for s, p in processes.items() if _tree_is_alive(p)]
         if survivors:
             print(f"[Launcher] Escalating to SIGKILL for: {', '.join(survivors)}")
             _terminate_children(force=True)

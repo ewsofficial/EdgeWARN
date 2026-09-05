@@ -402,6 +402,55 @@ class TestSupervision:
 
         assert not thread.is_alive()
 
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX process-group contract")
+    def test_shutdown_kills_descendant_after_service_leader_exits(
+        self, tmp_path, src_root
+    ):
+        descendant_pid = tmp_path / "descendant.pid"
+        worker = tmp_path / "run_edgewarn.py"
+        worker.write_text(
+            "import pathlib, signal, subprocess, sys, time\n"
+            "child = subprocess.Popen([sys.executable, '-c', "
+            "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "time.sleep(300)'])\n"
+            f"pathlib.Path({str(descendant_pid)!r}).write_text(str(child.pid))\n"
+            "signal.signal(signal.SIGTERM, lambda *_args: sys.exit(0))\n"
+            "while True:\n"
+            "    time.sleep(0.05)\n",
+            encoding="utf-8",
+        )
+        driver = tmp_path / "driver.py"
+        repo_src = str(Path(__file__).resolve().parents[2] / "src")
+        driver.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {repo_src!r})\n"
+            "import run_all\n"
+            "run_all.STOP_GRACE_SECONDS = 0.5\n"
+            f"run_all.SERVICE_SCRIPTS['edgewarn'] = {str(worker)!r}\n"
+            "sys.exit(run_all.main(['--services', 'edgewarn']))\n",
+            encoding="utf-8",
+        )
+
+        launcher = subprocess.Popen([sys.executable, str(driver)])
+        try:
+            deadline = time.time() + 10
+            while not descendant_pid.exists() and time.time() < deadline:
+                time.sleep(0.05)
+            assert descendant_pid.exists()
+            pid = int(descendant_pid.read_text())
+
+            launcher.send_signal(signal.SIGTERM)
+            assert launcher.wait(timeout=10) == 1
+
+            deadline = time.time() + 5
+            while Path(f"/proc/{pid}").exists() and time.time() < deadline:
+                time.sleep(0.05)
+            assert not Path(f"/proc/{pid}").exists()
+        finally:
+            if launcher.poll() is None:
+                launcher.kill()
+                launcher.wait()
+
 
 def test_launcher_imports_no_pipeline_module():
     """Import-isolation probe: the launcher stays a thin supervisor."""
