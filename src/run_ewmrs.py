@@ -40,7 +40,6 @@ from util.io import IOManager, TimestampedOutput
 from util.release import get_release_version
 from util.runtime import AccessorySupervisor, StartedProcessRegistry, drain_log_queue
 from util.runtime.config import resolve_file, section
-from util.runtime.ewmrs_service import register_ewmrs_accessories
 from util.runtime.handoff import ServiceLock
 from util.runtime.services import (
     ServiceHeartbeat,
@@ -79,6 +78,11 @@ def _parse_args(argv=None):
     parser.add_argument("--mrms-core-only", action=argparse.BooleanOptionalAction, default=None, help="Run only the primary MRMS analysis service (default: from runtime.yaml)")
     args = parser.parse_args(argv)
 
+    filesystem = config_loader.load_config("filesystem", config_dir=args.config_dir)
+    args.base_dir = str(
+        overlay.resolve_base_dir(args.base_dir, filesystem).expanduser().resolve()
+    )
+
     def _resolve(flag, yaml_value, key):
         # No env layer here, matching IOManager's resolution of these same
         # run.* keys in the primary parser: CLI > YAML only.
@@ -99,6 +103,8 @@ def _parse_args(argv=None):
 
 
 def main():
+    from util.runtime.ewmrs_service import register_ewmrs_accessories
+
     sys.stdout = TimestampedOutput(sys.stdout)
     sys.stderr = TimestampedOutput(sys.stderr)
 
