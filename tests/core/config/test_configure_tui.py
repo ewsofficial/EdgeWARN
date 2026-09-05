@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from textual.widgets import DataTable, Input, Select, Static
+from textual.widgets import DataTable, Input, Label, OptionList, Static
 
 from common.config import loader
 from edgewarn_cli.main import main
@@ -109,12 +109,19 @@ async def test_file_selection_and_every_runtime_leaf_render(config_tree):
     async with app.run_test(size=(140, 45)) as pilot:
         await pilot.pause()
         assert isinstance(app.screen, FileSelectionScreen)
-        selector = app.screen.query_one("#config-file", Select)
-        assert [value for _label, value in selector._options[1:]] == list(
-            loader.CONFIG_NAMES
+        assert (
+            app.screen.query_one("#file-title", Label).content
+            == "Select Configuration File:"
         )
+        file_list = app.screen.query_one("#config-file", OptionList)
+        assert [
+            str(file_list.get_option_at_index(index).prompt)
+            for index in range(file_list.option_count)
+        ] == [f"{name}.yaml" for name in loader.CONFIG_NAMES]
 
-        selector.value = "runtime"
+        file_list.highlighted = list(loader.CONFIG_NAMES).index("runtime")
+        await pilot.pause()
+        await pilot.press("enter")
         await pilot.pause()
 
         assert isinstance(app.screen, VariableBrowserScreen)
@@ -132,8 +139,12 @@ async def test_file_selection_and_every_runtime_leaf_render(config_tree):
 
 
 async def _open_runtime_leaf(app, pilot, path):
-    selector = app.screen.query_one("#config-file", Select)
-    selector.value = "runtime"
+    from common.config import loader as config_loader
+
+    file_list = app.screen.query_one("#config-file", OptionList)
+    file_list.highlighted = list(config_loader.CONFIG_NAMES).index("runtime")
+    await pilot.pause()
+    await pilot.press("enter")
     await pilot.pause()
     table = app.screen.query_one("#variables", DataTable)
     table.move_cursor(row=table.get_row_index(path))

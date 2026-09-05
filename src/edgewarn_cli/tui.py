@@ -16,9 +16,9 @@ from typing import Any
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Vertical
+from textual.containers import Vertical
 from textual.screen import ModalScreen, Screen
-from textual.widgets import DataTable, Footer, Header, Input, Label, Select, Static
+from textual.widgets import DataTable, Footer, Header, Input, Label, OptionList, Static
 
 from edgewarn_cli.configure import (
     ConfigureError,
@@ -181,13 +181,18 @@ def flatten_document(document: Any, schema: Mapping[str, Any]) -> tuple[ConfigLe
 
 
 def load_catalog(config_root: Path, name: str) -> tuple[ConfigLeaf, ...]:
-    """Load one already-validated catalog and its schema for presentation."""
+    """Load one already-validated catalog and its schema for presentation.
+
+    The top-level ``schema_version`` marker is omitted: it must never change.
+    """
     target = _safe_target(config_root, name)
     document, _original, _mode, _newline = _load_document(target)
     schema_path = config_root / "schema" / f"{name}.schema.json"
     with schema_path.open("r", encoding="utf-8") as handle:
         schema = json.load(handle)
-    return flatten_document(document, schema)
+    return tuple(
+        leaf for leaf in flatten_document(document, schema) if leaf.path != "schema_version"
+    )
 
 
 class FileSelectionScreen(Screen[None]):
@@ -201,20 +206,16 @@ class FileSelectionScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Container(id="file-selection"):
-            yield Label("Select a configuration file", id="file-title")
-            yield Select(
-                ((f"{name}.yaml", name) for name in self.config_names),
-                prompt="Configuration file",
-                id="config-file",
-            )
+        yield Label("Select Configuration File:", id="file-title")
+        yield OptionList(
+            *(f"{name}.yaml" for name in self.config_names),
+            id="config-file",
+        )
         yield Footer()
 
-    @on(Select.Changed, "#config-file")
-    def select_file(self, event: Select.Changed) -> None:
-        if event.value is Select.NULL:
-            return
-        self.app.open_catalog(str(event.value))
+    @on(OptionList.OptionSelected, "#config-file")
+    def select_file(self, event: OptionList.OptionSelected) -> None:
+        self.app.open_catalog(self.config_names[event.option_index])
 
     def action_quit(self) -> None:
         self.app.exit(0)
@@ -341,20 +342,15 @@ class EditScreen(ModalScreen[EditOutcome | None]):
 class EdgeWarnConfigApp(App[int]):
     """Textual application hosting file selection, browsing, and editing."""
 
+    TITLE = "EdgeWARN Configuration Menu"
+
     CSS = """
-    FileSelectionScreen {
-        align-horizontal: center;
-    }
-    #file-selection {
-        width: 70;
-        height: auto;
-        margin: 4 0;
-        padding: 1 2;
-        border: round $accent;
-    }
     #file-title, #catalog-title, #editor-title {
         text-style: bold;
         margin-bottom: 1;
+    }
+    #config-file {
+        height: 1fr;
     }
     #catalog-title, #browser-status {
         padding: 0 1;
