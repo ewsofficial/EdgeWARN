@@ -9,9 +9,9 @@ COPY environment.yml pyproject.toml README.md ./
 COPY src ./src
 COPY config ./config
 RUN conda env create --file environment.yml \
-    && /opt/conda/envs/EdgeWARN-dev/bin/python -m pip wheel \
+    && /opt/conda/envs/EdgeWARN/bin/python -m pip wheel \
         --no-deps --no-build-isolation --wheel-dir /tmp/edgewarn-wheel . \
-    && /opt/conda/envs/EdgeWARN-dev/bin/python -m pip install \
+    && /opt/conda/envs/EdgeWARN/bin/python -m pip install \
         --no-deps /tmp/edgewarn-wheel/edgewarn_core-*.whl \
     && mkdir -p /etc/edgewarn \
     && cp -a config /etc/edgewarn/config \

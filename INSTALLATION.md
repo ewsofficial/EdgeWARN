@@ -19,7 +19,7 @@ cd EdgeWARN-Core
 
 ```bash
 conda env create -f environment.yml
-conda activate EdgeWARN-dev
+conda activate EdgeWARN
 ```
 
 3. Install Node.js dependencies:
