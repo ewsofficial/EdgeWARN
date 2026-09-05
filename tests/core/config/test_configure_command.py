@@ -61,6 +61,18 @@ def test_dotted_path_mapping_keys_take_precedence_over_indices():
     assert parent[key] == 2
 
 
+def test_escaped_dotted_mapping_key_can_be_edited(config_tree):
+    result = configure.edit_configuration(
+        config_tree,
+        r"ingest.mrms.ncep_https.directory_map.EchoTop_18_00\.50",
+        '"changed"',
+    )
+
+    document = yaml.safe_load((config_tree / "ingest.yaml").read_text(encoding="utf-8"))
+    assert document["mrms"]["ncep_https"]["directory_map"]["EchoTop_18_00.50"] == "changed"
+    assert result.dotted_path.endswith(r"EchoTop_18_00\.50")
+
+
 @pytest.mark.parametrize(
     "target",
     ["", ".runtime.key", "runtime..key", "runtime.key.", "runtime", "runtime.yaml.run"],

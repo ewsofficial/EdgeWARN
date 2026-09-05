@@ -88,6 +88,13 @@ def test_flattening_uses_canonical_sequence_paths_and_skips_aliases():
     assert leaves[0].constraints == "type=integer; >= 0; items=2"
 
 
+def test_flattening_preserves_typed_segments_for_dotted_keys():
+    leaves = flatten_document({"directory_map": {"EchoTop_18_00.50": "x"}}, {})
+
+    assert leaves[0].path == r"directory_map.EchoTop_18_00\.50"
+    assert leaves[0].segments == ("directory_map", "EchoTop_18_00.50")
+
+
 def test_schema_summary_covers_types_enums_numeric_and_array_bounds():
     assert schema_summary(
         {

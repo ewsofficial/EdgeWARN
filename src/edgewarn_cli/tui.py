@@ -23,9 +23,11 @@ from textual.widgets import DataTable, Footer, Header, Input, Label, OptionList,
 from edgewarn_cli.configure import (
     ConfigureError,
     ConfigureIOError,
+    DottedTarget,
     _load_document,
     _safe_target,
     edit_configuration,
+    format_segments,
 )
 
 
@@ -34,6 +36,7 @@ class ConfigLeaf:
     """One editable YAML scalar and the context shown in the browser."""
 
     path: str
+    segments: tuple[str, ...]
     value: Any
     type_name: str
     constraints: str
@@ -167,7 +170,8 @@ def flatten_document(document: Any, schema: Mapping[str, Any]) -> tuple[ConfigLe
 
         leaves.append(
             ConfigLeaf(
-                path=".".join(path),
+                path=format_segments(path),
+                segments=path,
                 value=value,
                 type_name=_type_name(value),
                 constraints=schema_summary(
@@ -328,7 +332,9 @@ class EditScreen(ModalScreen[EditOutcome | None]):
         value = self.query_one("#editor-value", Input).value
         try:
             result = edit_configuration(
-                self.config_root, f"{self.catalog_name}.{self.leaf.path}", value
+                self.config_root,
+                DottedTarget(self.catalog_name, self.leaf.segments),
+                value,
             )
         except (ConfigureError, loader.ConfigError, ValueError, YAMLError) as exc:
             self.query_one("#editor-error", Static).update(str(exc))

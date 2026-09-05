@@ -238,7 +238,11 @@ edgewarn configure --config-path /etc/edgewarn/config \
   runtime.run.disable_nexrad true
 edgewarn configure runtime.profiling.perf_tracker null
 edgewarn configure runtime.run.ctam_module_dir '"ctam_modules"'
+edgewarn configure 'ingest.mrms.ncep_https.directory_map.EchoTop_18_00\.50' '"EchoTop_18"'
 ```
+
+Escape a literal `.` or `\` in a mapping key with a leading backslash. The
+interactive editor preserves these path segments automatically.
 
 Only scalar replacement is supported. Before replacement, the command locks
 the configuration root, revalidates the complete tree, checks the target path,

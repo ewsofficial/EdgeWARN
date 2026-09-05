@@ -31,7 +31,7 @@ class DottedTarget:
 
     @property
     def dotted_path(self) -> str:
-        return ".".join(self.segments)
+        return format_segments(self.segments)
 
 
 @dataclass(frozen=True)
@@ -58,12 +58,44 @@ def add_configure_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(handler=configure_from_namespace, parser=parser)
 
 
+def format_segments(segments: Sequence[str]) -> str:
+    """Render path segments with literal dots and backslashes escaped."""
+    return ".".join(segment.replace("\\", "\\\\").replace(".", "\\.") for segment in segments)
+
+
+def _split_escaped_path(value: str) -> tuple[str, ...]:
+    segments: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for character in value:
+        if escaped:
+            if character not in {".", "\\"}:
+                raise ConfigureError(f"unsupported path escape \\{character}")
+            current.append(character)
+            escaped = False
+        elif character == "\\":
+            escaped = True
+        elif character == ".":
+            if not current:
+                raise ConfigureError("configuration path contains an empty segment")
+            segments.append("".join(current))
+            current = []
+        else:
+            current.append(character)
+    if escaped:
+        raise ConfigureError("configuration path ends with an incomplete escape")
+    if not current:
+        raise ConfigureError("configuration path contains an empty segment")
+    segments.append("".join(current))
+    return tuple(segments)
+
+
 def parse_dotted_target(value: str, config_names: Sequence[str]) -> DottedTarget:
-    if not value or value.startswith(".") or value.endswith(".") or ".." in value:
+    if not value:
         raise ConfigureError("configuration path contains an empty segment")
     if ".yaml." in value or value.endswith(".yaml"):
         raise ConfigureError("use a filename stem without .yaml")
-    parts = value.split(".")
+    parts = _split_escaped_path(value)
     name, segments = parts[0], parts[1:]
     if name not in config_names:
         raise ConfigureError(
@@ -263,13 +295,19 @@ def _atomic_replace(target: Path, content: bytes, mode: int) -> None:
 
 
 def edit_configuration(
-    config_root: str | os.PathLike[str], dotted_target: str, scalar_text: str
+    config_root: str | os.PathLike[str], dotted_target: str | DottedTarget, scalar_text: str
 ) -> EditResult:
     """Apply one locked, validated, atomic configuration leaf edit."""
     from common.config import loader
 
     root = resolve_config_root(config_root)
-    target_spec = parse_dotted_target(dotted_target, loader.CONFIG_NAMES)
+    target_spec = (
+        dotted_target
+        if isinstance(dotted_target, DottedTarget)
+        else parse_dotted_target(dotted_target, loader.CONFIG_NAMES)
+    )
+    if target_spec.name not in loader.CONFIG_NAMES:
+        raise ConfigureError(f"unknown configuration name {target_spec.name!r}")
     new_value = parse_scalar(scalar_text)
 
     with _configuration_lock(root):
