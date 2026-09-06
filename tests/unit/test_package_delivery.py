@@ -24,11 +24,16 @@ def test_container_uses_installed_exec_form_package_command():
     assert "pip install" in dockerfile
     assert f'/opt/conda/envs/{environment}/bin' in dockerfile
     assert "/opt/conda/envs/EdgeWARN-dev/bin" not in dockerfile
+    assert "FROM nws-zones-${EDGEWARN_SYNC_NWS_ZONES} AS nws-zones" in dockerfile
+    assert "COPY --from=runtime-build" in dockerfile
+    assert "COPY --from=nws-zones" in dockerfile
 
 
 def test_compose_separates_runtime_and_configuration_mounts():
     compose = yaml.safe_load((REPO_ROOT / "compose.yaml").read_text(encoding="utf-8"))
     services = compose["services"]
+
+    assert services["edgewarn"]["build"]["args"] == ["EDGEWARN_SYNC_NWS_ZONES"]
 
     production_mounts = services["edgewarn"]["volumes"]
     assert "${EDGEWARN_HOST_BASE_DIR:-./EdgeWARN_input}:/var/lib/edgewarn" in production_mounts

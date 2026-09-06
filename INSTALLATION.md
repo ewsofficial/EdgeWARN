@@ -393,6 +393,21 @@ docker compose --profile admin run --rm edgewarn-sync-nws-zones
 docker compose up edgewarn
 ```
 
+Alternatively, enable the build-time sync switch to bundle a fresh snapshot in
+the image:
+
+```bash
+EDGEWARN_SYNC_NWS_ZONES=true docker compose build edgewarn
+docker compose up edgewarn
+```
+
+With BuildKit (the default builder used by current Docker Compose), the zone
+download stage runs independently and in parallel with the runtime Conda
+environment solve. The normal host-mounted zone directory still takes
+precedence when it contains synchronized assets; the bundled snapshot is used
+as a fallback when that mount is empty. The switch defaults to `false` so
+ordinary builds do not contact the NWS zone APIs.
+
 Set `EDGEWARN_NWS_ASSETS_DIR` to relocate the host asset directory; it defaults
 to `./assets/nws_zones` and is mounted read-only into the runtime container.
 

@@ -2,6 +2,11 @@ services:
   edgewarn:
     build:
       context: .
+      args:
+        # Comment EDGEWARN_SYNC_NWS_ZONES to disable NWS zone sync
+        # Disabling this will prevent EWMRS from working
+        # BuildKit downloads it in parallel with the runtime Conda solve.
+        - EDGEWARN_SYNC_NWS_ZONES
     image: edgewarn-core:3.0.0
     environment:
       # Set EDGEWARN_HOST_BASE_DIR to choose the host directory.  The package
