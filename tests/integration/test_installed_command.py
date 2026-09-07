@@ -53,7 +53,15 @@ def installed_command(tmp_path_factory):
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     edgewarn = environment / ("Scripts/edgewarn.exe" if os.name == "nt" else "bin/edgewarn")
     install = subprocess.run(
-        [str(python), "-m", "pip", "install", "--no-deps", str(wheel)],
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--force-reinstall",
+            str(wheel),
+        ],
         cwd=root,
         capture_output=True,
         text=True,

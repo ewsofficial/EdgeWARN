@@ -1,12 +1,12 @@
 
 import json
-import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Sequence, cast
 from shapely.geometry import Polygon, MultiPolygon, shape
 from shapely.ops import unary_union
 
 from common.config.loader import load_config, repo_root
+from common.config.overlay import resolve
 from .config import geometry_precision, junk_keys, simplify_tolerance
 
 
@@ -32,7 +32,11 @@ def _assets_dir() -> Path:
     if configured.is_dir() and any(configured.rglob("zones.json")):
         return configured
 
-    bundled_value = os.environ.get("EDGEWARN_BUNDLED_NWS_ZONES_DIR")
+    bundled_value = resolve(
+        None,
+        env_names=("EDGEWARN_BUNDLED_NWS_ZONES_DIR",),
+        yaml_value=None,
+    )
     if bundled_value:
         bundled = Path(bundled_value)
         if bundled.is_dir() and any(bundled.rglob("zones.json")):
